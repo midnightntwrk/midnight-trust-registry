@@ -42,7 +42,20 @@ const assertExactTarballs = (artifactDir, filenames) => {
   }
 };
 
-const packedEntries = (tarball) => run("tar", ["-tzf", tarball]).split("\n");
+export function packedEntries(tarball) {
+  const paths = run("tar", ["-tzf", tarball]).split("\n").filter(Boolean);
+  const verbose = run("tar", ["-tvzf", tarball]).split("\n").filter(Boolean);
+  if (paths.length !== verbose.length) {
+    throw new Error("Packed package archive listings disagree");
+  }
+  for (let index = 0; index < paths.length; index += 1) {
+    const expectedType = paths[index].endsWith("/") ? "d" : "-";
+    if (verbose[index][0] !== expectedType) {
+      throw new Error(`Packed package contains a non-regular archive entry: ${paths[index]}`);
+    }
+  }
+  return paths;
+}
 const assertPackedPackageIdentity = (tarball, name, version) => {
   const manifest = JSON.parse(readPackedTarEntry(tarball, "package/package.json").toString("utf8"));
   if (manifest.name !== name || manifest.version !== version) {

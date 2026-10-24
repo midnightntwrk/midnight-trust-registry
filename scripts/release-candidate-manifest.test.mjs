@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, test } from "node:test";
@@ -12,6 +12,7 @@ import {
   assertRequiredPackedPaths,
   buildReleaseCandidateManifest,
   hashPackedTarEntry,
+  packedEntries,
   verifyReleaseCandidateArtifacts,
 } from "./release-candidate-manifest.mjs";
 
@@ -67,6 +68,7 @@ const packDomain = (root, includeAlias = false, name = "@midnight-ntwrk/trust-re
   }
   if (includeAlias) put(root, "packed-domain/x/package.json", "shadowed-domain\n");
   const tarball = join(root, "artifacts/npm/midnight-ntwrk-trust-registry-domain-0.1.0.tgz");
+  mkdirSync(dirname(tarball), { recursive: true });
   const packed = spawnSync("tar", ["-czf", tarball, "package", ...(includeAlias ? ["x"] : [])], {
     cwd: join(root, "packed-domain"), encoding: "utf8",
   });
@@ -81,6 +83,27 @@ test("required packed paths reject an API tarball without its runtime entrypoint
   assert.throws(() => assertRequiredPackedPaths(entries, workspace),
     /packed artifact is missing required files: dist\/index.js/u);
   assert.doesNotThrow(() => assertRequiredPackedPaths([...entries, "package/dist/index.js"], workspace));
+});
+
+test("packed entrypoints must be regular files rather than symlinks", () => {
+  const root = mkdtempSync(join(tmpdir(), "tr-packed-entry-type-"));
+  roots.push(root);
+  const tarball = packDomain(root);
+  const entrypoint = join(root, "packed-domain/package/dist/index.js");
+  rmSync(entrypoint);
+  symlinkSync("browser.js", entrypoint);
+  const packed = spawnSync("tar", ["-czf", tarball, "package"], {
+    cwd: join(root, "packed-domain"), encoding: "utf8",
+  });
+  assert.equal(packed.status, 0, packed.stderr);
+  assert.throws(() => packedEntries(tarball), /non-regular archive entry: package\/dist\/index.js/u);
+  rmSync(entrypoint);
+  symlinkSync("../README.md", entrypoint);
+  const second = spawnSync("tar", ["-czf", tarball, "package"], {
+    cwd: join(root, "packed-domain"), encoding: "utf8",
+  });
+  assert.equal(second.status, 0, second.stderr);
+  assert.throws(() => packedEntries(tarball), /non-regular archive entry/u);
 });
 
 test("candidate manifest binds signed source inputs and exact package bytes", () => {
@@ -122,6 +145,21 @@ test("candidate manifest binds signed source inputs and exact package bytes", ()
   assert.equal(manifest.packages[0].sha256,
     createHash("sha256").update(readFileSync(contractTarball)).digest("hex"));
   assert.equal(verifyReleaseCandidateArtifacts(manifest, input.artifactDir, input.workspaces).length, 2);
+  const domainEntrypoint = join(root, "packed-domain/package/dist/index.js");
+  rmSync(domainEntrypoint);
+  symlinkSync("browser.js", domainEntrypoint);
+  const linked = spawnSync("tar", ["-czf", domainTarball, "package"], {
+    cwd: join(root, "packed-domain"), encoding: "utf8",
+  });
+  assert.equal(linked.status, 0, linked.stderr);
+  assert.throws(() => buildReleaseCandidateManifest(input), /non-regular archive entry/u);
+  const linkedDomain = { ...manifest.packages[1], sizeBytes: statSync(domainTarball).size,
+    sha256: createHash("sha256").update(readFileSync(domainTarball)).digest("hex") };
+  assert.throws(() => verifyReleaseCandidateArtifacts({ ...manifest,
+    packages: [manifest.packages[0], linkedDomain],
+  }, input.artifactDir, input.workspaces), /non-regular archive entry/u);
+  rmSync(domainEntrypoint);
+  packDomain(root);
   packDomain(root, true);
   assert.throws(() => buildReleaseCandidateManifest(input), /non-canonical archive paths/u);
   const aliasedDomain = { ...manifest.packages[1], sizeBytes: statSync(domainTarball).size,

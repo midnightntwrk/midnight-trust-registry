@@ -229,6 +229,8 @@ runtime input, not as an unpinned writable container layer.
 Every package tarball must use canonical `package/` paths; aliases, dot segments,
 and duplicate normalized paths are rejected so the checked entries cannot be
 shadowed by another top-level archive prefix during installation. Its packed
+members must be regular files or directories; a symlinked required entrypoint
+or any other linked or special member fails before installation. The packed
 `package/package.json` name and version must match the release workspace.
 The manifest-backed package smoke rehashes private temporary copies before
 passing them to `npm install`, so changes to the original staging paths after
