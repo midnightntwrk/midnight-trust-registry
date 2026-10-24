@@ -32,6 +32,12 @@ Midnight transaction; the fixture uses deterministic local time and finality.
 `tr-adversarial-case-report-v1` JSON object to stdout. Its sorted case results
 include a stable pass/fail reason code; a failing case does not stop later
 cases. The command exits nonzero on a failed case or a count other than 198.
+On a clean committed checkout, `pnpm run adversarial:report -- --archive`
+also writes the full report once to a mode-0600 file under private ignored
+`artifacts/adversarial-reports/`, named for the current source commit. It
+prints the archive path, SHA-256, source revision, and pass/fail summary;
+it refuses to overwrite an earlier run for that commit. The archive is
+test evidence, not a deployed-ledger or release-qualification result.
 `pnpm run check:adversarial-parity -- --require-full` additionally compares
 those isolated case IDs with the governed demo's machine-readable matrix.
 The demo remains useful as one sequential actor journey, but its independent

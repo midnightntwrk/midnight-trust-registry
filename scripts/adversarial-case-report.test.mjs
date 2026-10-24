@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { parseAdversarialTap, runIsolatedAdversarialCases } from "./adversarial-case-report.mjs";
+import { archiveAdversarialCaseReport, parseAdversarialTap,
+  runIsolatedAdversarialCases } from "./adversarial-case-report.mjs";
 
 test("reports every isolated outcome after a case fails", () => {
   const directory = mkdtempSync(join(tmpdir(), "tr-adversarial-report-"));
@@ -40,4 +41,43 @@ ok 1 - case-a
 # tests 2
 `);
   assert.deepEqual(report.cases[1], { id: "case-b", status: "failed", reason: "missing-outcome" });
+});
+
+test("archives the complete case report once under a private source-scoped path", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "tr-adversarial-archive-"));
+  try {
+    const report = parseAdversarialTap(`# Subtest: case-a
+ok 1 - case-a
+# Subtest: case-b
+not ok 2 - case-b
+# tests 2
+`);
+    const sourceRevision = "a".repeat(40);
+    const archived = await archiveAdversarialCaseReport(report, sourceRevision, directory);
+    const bytes = readFileSync(archived.path);
+    assert.deepEqual(JSON.parse(bytes), {
+      format: "tr-adversarial-case-archive-v1", sourceRevision, report,
+    });
+    assert.equal(statSync(archived.path).mode & 0o077, 0);
+    assert.equal(archived.summary.failed, 1);
+    await assert.rejects(archiveAdversarialCaseReport(report, sourceRevision, directory),
+      { code: "EEXIST" });
+    assert.deepEqual(readFileSync(archived.path), bytes);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("rejects a public archive directory or malformed source revision", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "tr-adversarial-public-"));
+  try {
+    const report = parseAdversarialTap("# Subtest: case-a\nok 1 - case-a\n# tests 1\n");
+    await assert.rejects(archiveAdversarialCaseReport(report, "bad", directory),
+      /source revision/u);
+    chmodSync(directory, 0o755);
+    await assert.rejects(archiveAdversarialCaseReport(report, "a".repeat(40), directory),
+      /private directory/u);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
