@@ -15,13 +15,21 @@ const MAX_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_MANIFEST_BYTES = 1024 * 1024;
 const MAX_ARCHIVES = 64;
 const Bytes32Schema = z.string().regex(/^0x[0-9a-f]{64}$/u);
+const ActionSequenceSchema = z.string().regex(/^(0|[1-9][0-9]{0,19})$/u)
+  .refine((value) => BigInt(value) < (1n << 64n));
 const ProposalRoleSchema = z.enum(["issuer", "verifier", "auditor", "maintainer", "recognition"]);
+const ReservationContextSchema = z.strictObject({
+  actionSequence: ActionSequenceSchema,
+  actionKind: Bytes32Schema,
+  actionPayloadHash: Bytes32Schema,
+});
 const AttemptSchema = z.strictObject({
   role: ProposalRoleSchema,
   authorizationId: z.string().trim().min(1).max(256),
   evidenceCommitment: Bytes32Schema,
   state: z.enum(["reserved", "submitted", "observed"]),
   eventHash: Bytes32Schema.nullable(),
+  reservationContext: ReservationContextSchema.optional(),
 }).refine((attempt) => (attempt.state === "reserved") === (attempt.eventHash === null));
 const StateSchema = z.strictObject({
   version: z.literal(1),
@@ -52,6 +60,7 @@ const DeploymentBindingSchema = z.strictObject({
 });
 
 export type GovernedProposalSubmissionRole = z.infer<typeof ProposalRoleSchema>;
+export type ProposalReservationContext = z.infer<typeof ReservationContextSchema>;
 export type ProposalSubmissionAttempt = z.infer<typeof AttemptSchema>;
 export type FinalizedProposalReader = (
   role: GovernedProposalSubmissionRole,
@@ -132,6 +141,7 @@ export interface ProposalSubmissionJournal {
     authorizationId: string,
     evidenceCommitment: string,
     execute: () => Promise<GovernedMembershipActionReceipt>,
+    reservationContext?: ProposalReservationContext,
   ): Promise<GovernedMembershipActionReceipt>;
   reconcile(
     role: GovernedProposalSubmissionRole,
@@ -230,8 +240,10 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
     authorizationId: string,
     evidenceCommitment: string,
     execute: () => Promise<GovernedMembershipActionReceipt>,
+    reservationContext?: ProposalReservationContext,
   ): Promise<GovernedMembershipActionReceipt> {
     const key = this.parseKey(role, authorizationId, evidenceCommitment);
+    const context = reservationContext === undefined ? undefined : ReservationContextSchema.parse(reservationContext);
     await this.withWrite(async () => {
       const storage = await this.readStorage();
       const existing = [...storage.active.attempts, ...storage.archived].find((attempt) => attempt.role === key.role
@@ -245,13 +257,15 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
         throw new ProposalSubmissionBlockedByReservationError(blocker.role, blocker.authorizationId);
       }
       if (storage.active.attempts.length >= MAX_ENTRIES) throw new ProposalSubmissionCapacityError();
-      const attempts = [...storage.active.attempts, { ...key, state: "reserved" as const, eventHash: null }];
+      const attempts = [...storage.active.attempts,
+        { ...key, state: "reserved" as const, eventHash: null, ...(context === undefined ? {} : { reservationContext: context }) }];
       const projectedAttempts = storage.active.attempts.map((attempt) => attempt.state === "reserved"
         ? { ...attempt, state: "submitted", eventHash: `0x${"0".repeat(64)}` }
         : attempt);
       const submittedSize = Buffer.byteLength(JSON.stringify({
         version: 1,
-        attempts: [...projectedAttempts, { ...key, state: "submitted", eventHash: `0x${"0".repeat(64)}` }],
+        attempts: [...projectedAttempts, { ...key, state: "submitted", eventHash: `0x${"0".repeat(64)}`,
+          ...(context === undefined ? {} : { reservationContext: context }) }],
       }), "utf8");
       if (submittedSize > MAX_FILE_BYTES) throw new ProposalSubmissionCapacityError();
       await this.writeActive(storage, StateSchema.parse({

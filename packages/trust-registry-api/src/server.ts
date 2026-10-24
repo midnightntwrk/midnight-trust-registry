@@ -172,6 +172,7 @@ import {
   ProposalSubmissionOutcomeUnknownError,
   type GovernedProposalSubmissionRole,
   type ProposalSubmissionJournal,
+  type ProposalReservationContext,
 } from "./proposal-submission-journal.js";
 import { MutationIntentOperationMismatchError } from "./mutation-intent-preflight.js";
 import { MutationActorNonceCapacityExceededError, MutationIntentActorRejectedError, MutationNonceAlreadyUsedError, MutationNonceCapacityExceededError, MutationNonceClockRollbackError } from "./signed-mutation-state.js";
@@ -936,6 +937,7 @@ export const createTrustRegistryApiServer = (
     role: GovernedProposalSubmissionRole,
     authorizationId: string,
     evidenceCommitment: string,
+    prepared: ProposalReservationContext,
     execute: () => Promise<GovernedMembershipActionReceipt>,
   ): Promise<GovernedMembershipActionReceipt> => {
     if (options.proposalSubmissionJournal === undefined) return execute();
@@ -943,6 +945,8 @@ export const createTrustRegistryApiServer = (
       await assertJournalMatchesLocalDeployment();
       return await options.proposalSubmissionJournal.executeOnce(
         role, authorizationId, evidenceCommitment, execute,
+        { actionSequence: prepared.actionSequence, actionKind: prepared.actionKind,
+          actionPayloadHash: prepared.actionPayloadHash },
       );
     } catch (error) {
       return mapSubmissionJournalError(error);
@@ -1432,7 +1436,7 @@ export const createTrustRegistryApiServer = (
               await port.preflightSubmission?.(
                 binding, body.evidenceCommitment, signers, evidenceVerifierSignature, current,
               );
-              return executeProposal("recognition", recognitionId, body.evidenceCommitment, async () =>
+              return executeProposal("recognition", recognitionId, body.evidenceCommitment, prepared, async () =>
                 GovernedMembershipActionReceiptSchema.parse(await port.execute(
                   binding, body.evidenceCommitment, signers, evidenceVerifierSignature, current,
                 )));
@@ -1508,7 +1512,7 @@ export const createTrustRegistryApiServer = (
         requireValidProposalSigners(signerContext, signers);
         try {
           const receipt = GovernedMembershipActionReceiptSchema.parse(
-            await executeProposal("issuer", authorizationId, body.evidence.commitment,
+            await executeProposal("issuer", authorizationId, body.evidence.commitment, prepared,
               () => port.execute(authorizationId, body.evidence, signers, evidenceVerifierSignature)),
           );
           writeJson(response, 202, receipt);
@@ -1579,7 +1583,7 @@ export const createTrustRegistryApiServer = (
         requireValidProposalSigners(signerContext, signers);
         try {
           const receipt = GovernedMembershipActionReceiptSchema.parse(
-            await executeProposal("verifier", authorizationId, body.evidence.commitment,
+            await executeProposal("verifier", authorizationId, body.evidence.commitment, prepared,
               () => port.execute(authorizationId, body.evidence, signers, evidenceVerifierSignature)),
           );
           writeJson(response, 202, receipt);
@@ -1650,7 +1654,7 @@ export const createTrustRegistryApiServer = (
         requireValidProposalSigners(signerContext, signers);
         try {
           const receipt = GovernedMembershipActionReceiptSchema.parse(
-            await executeProposal("auditor", authorizationId, body.evidence.commitment,
+            await executeProposal("auditor", authorizationId, body.evidence.commitment, prepared,
               () => port.execute(authorizationId, body.evidence, signers, evidenceVerifierSignature)),
           );
           writeJson(response, 202, receipt);
@@ -1721,7 +1725,7 @@ export const createTrustRegistryApiServer = (
         requireValidProposalSigners(signerContext, signers);
         try {
           const receipt = GovernedMembershipActionReceiptSchema.parse(
-            await executeProposal("maintainer", maintainerId, body.evidence.commitment,
+            await executeProposal("maintainer", maintainerId, body.evidence.commitment, prepared,
               () => port.execute(maintainerId, body.evidence, signers, evidenceVerifierSignature)),
           );
           writeJson(response, 202, receipt);

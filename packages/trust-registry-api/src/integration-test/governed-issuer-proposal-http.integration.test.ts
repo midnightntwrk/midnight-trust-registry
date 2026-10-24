@@ -155,7 +155,14 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       const uncertain = await post("submit", request);
       expect(uncertain.status).toBe(503);
       expect((await uncertain.json()).type).toMatch(/proposal-submission-uncertain$/u);
-      expect(await journal.read("issuer", issuer.authorizationId)).toMatchObject({ state: "reserved", eventHash: null });
+      expect(await journal.read("issuer", issuer.authorizationId)).toMatchObject({
+        state: "reserved", eventHash: null,
+        reservationContext: {
+          actionSequence: prepared.actionSequence,
+          actionKind: prepared.actionKind,
+          actionPayloadHash: prepared.actionPayloadHash,
+        },
+      });
       expect(harness.simulator.getLedger().issuerAuthorizationCount).toBe(1n);
       const duplicate = await post("submit", request);
       expect(duplicate.status).toBe(409);

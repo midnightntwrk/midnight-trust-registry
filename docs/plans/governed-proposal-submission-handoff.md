@@ -148,14 +148,16 @@ reservation is still missing; [#220](https://github.com/midnightntwrk/midnight-t
 blocks the local RC until it is designed, tested, and independently reviewed.
 A conflicting finalized observation also leaves the reservation blocked and
 must be handled by that recovery/security process, not by deleting the file.
-One candidate recovery proof would first persist the exact signed action
-sequence and payload context with the reservation, then require an independently
-authenticated finalized checkpoint where the governance sequence has advanced
-past it and the append-only proposal record for this authorization is absent.
-The journal does not yet persist that context, and no such non-inclusion proof,
-operator decision, or recovery operation is implemented. Legacy reservations
-without the context must remain blocked unless a separately reviewed proof
-applies; a null indexer read or elapsed time alone is never enough.
+The journal now persists the validated prepared action sequence, kind, and
+payload hash alongside new API-created reservations. These bytes are audit
+metadata, not independently authenticated ledger evidence or permission to
+recover. One candidate recovery proof would require a finalized checkpoint
+where the governance sequence has advanced past the signed sequence and the
+append-only proposal record for this authorization is absent. No such
+non-inclusion proof, operator decision, or recovery operation is implemented.
+Legacy reservations without the context must remain blocked unless a
+separately reviewed proof applies; a null indexer read or elapsed time alone
+is never enough.
 Once a valid receipt is durably recorded as `submitted`, the global reservation
 pause ends; the same authorization still cannot be submitted again, and only
 a matching finalized observation can mark it `observed`.

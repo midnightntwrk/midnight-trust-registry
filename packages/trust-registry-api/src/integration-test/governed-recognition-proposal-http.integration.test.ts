@@ -322,7 +322,14 @@ describe("governed recognition proposal HTTP", () => {
       const accepted = await submit(prepared, [first, other]);
       expect(accepted.status).toBe(202);
       expect((await accepted.json() as { eventHash: string }).eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
-      expect(await journal.read("recognition", recognition.recognitionId)).toMatchObject({ state: "submitted", evidenceCommitment });
+      expect(await journal.read("recognition", recognition.recognitionId)).toMatchObject({
+        state: "submitted", evidenceCommitment,
+        reservationContext: {
+          actionSequence: prepared.actionSequence,
+          actionKind: prepared.actionKind,
+          actionPayloadHash: prepared.actionPayloadHash,
+        },
+      });
       expect(harness.simulator.getLedger().recognitionCount).toBe(1n);
       expect(harness.simulator.getLedger().issuerAuthorizationCount).toBe(0n);
       expect((await submit(prepared, [first, other])).status).toBe(409);

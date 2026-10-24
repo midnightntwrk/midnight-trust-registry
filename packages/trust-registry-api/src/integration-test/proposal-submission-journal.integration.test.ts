@@ -22,6 +22,11 @@ const evidenceCommitment = `0x${"11".repeat(32)}`;
 const otherCommitment = `0x${"22".repeat(32)}`;
 const eventHash = `0x${"33".repeat(32)}`;
 const otherEventHash = `0x${"44".repeat(32)}`;
+const reservationContext = {
+  actionSequence: "7",
+  actionKind: `0x${"55".repeat(32)}`,
+  actionPayloadHash: `0x${"66".repeat(32)}`,
+};
 const authorizationId = "auth:journal:test:v1";
 const roles: GovernedProposalSubmissionRole[] = ["issuer", "verifier", "auditor", "maintainer", "recognition"];
 
@@ -100,6 +105,37 @@ describe("private governed proposal submission journal", () => {
       async () => ({ eventHash, evidenceCommitment }))).toMatchObject({ state: "observed", eventHash });
     await expect(submitOther()).resolves.toEqual({ eventHash: otherEventHash });
     expect(executions).toBe(2);
+  });
+
+  it("retains signed action context through an ambiguous result and restart", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    await expect(journal.executeOnce("issuer", authorizationId, evidenceCommitment,
+      async () => { throw new Error("submission outcome unknown"); }, reservationContext))
+      .rejects.toBeInstanceOf(ProposalSubmissionOutcomeUnknownError);
+    const reopened = new FileProposalSubmissionJournal(path);
+    expect(await reopened.read("issuer", authorizationId)).toMatchObject({
+      state: "reserved", reservationContext,
+    });
+    expect(JSON.parse(await readFile(path, "utf8")).attempts[0].reservationContext).toEqual(reservationContext);
+  });
+
+  it("rejects invalid signed action context before creating a reservation", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    let executed = false;
+    await expect(journal.executeOnce("issuer", authorizationId, evidenceCommitment, async () => {
+      executed = true;
+      return { eventHash };
+    }, { ...reservationContext, actionSequence: (1n << 64n).toString() })).rejects.toThrow();
+    expect(executed).toBe(false);
+    expect(await journal.read("issuer", authorizationId)).toBeNull();
+    await writeFile(path, JSON.stringify({
+      version: 1,
+      attempts: [{ role: "issuer", authorizationId, evidenceCommitment,
+        state: "reserved", eventHash: null,
+        reservationContext: { ...reservationContext, actionSequence: (1n << 64n).toString() } }],
+    }), { mode: 0o600 });
+    await expect(journal.read("issuer", authorizationId)).rejects
+      .toBeInstanceOf(InvalidProposalSubmissionJournalError);
   });
 
   it("rejects conflicting finalized records and different evidence on the same authorization", async () => {
