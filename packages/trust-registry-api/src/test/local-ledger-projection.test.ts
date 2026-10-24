@@ -112,6 +112,28 @@ const fixture = () => {
 };
 
 describe("finalized Compact projection coverage", () => {
+  it("does not serve file-backed lists as complete local-ledger projections", async () => {
+    const { snapshot } = fixture();
+    const source: TrustRegistryApiStateSource = {
+      mode: "local-ledger",
+      async loadSnapshot() { return snapshot; },
+    };
+    const server = createTrustRegistryApiServer({ source });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("Expected local HTTP listener");
+      for (const path of ["/v1/authorizations/issuer", "/v1/recognitions"]) {
+        const response = await fetch(`http://127.0.0.1:${address.port}${path}`);
+        expect(response.status).toBe(503);
+        expect((await response.json()).type).toMatch(/local-list-projection-unavailable$/u);
+      }
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) =>
+        error ? reject(error) : resolve()));
+    }
+  });
+
   it("resolves local current records by finalized selection, not lifecycle timestamps", async () => {
     const { snapshot } = fixture();
     const currentIssuer = snapshot.issuerEntries[1]!;

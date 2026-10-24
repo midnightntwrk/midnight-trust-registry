@@ -874,6 +874,13 @@ export const createTrustRegistryApiServer = (
         "Only current finalized authorization and recognition lookups are supported.");
     }
   };
+  const requireCompleteLocalListProjection = (): void => {
+    if (options.source.mode === "local-ledger") {
+      throw jsonProblem(problemBaseUri, "local-list-projection-unavailable", 503,
+        "complete local ledger list projection unavailable",
+        "Authorization and recognition lists require a complete finalized checkpoint-bound projection.");
+    }
+  };
   const trqpAdapter = new TrustRegistryTrqpAdapter(
     createTrqpSourceFromStateSource(options.source),
     {
@@ -2422,6 +2429,7 @@ export const createTrustRegistryApiServer = (
         const query = TrustRegistryApiAuthorizationListQuerySchema.parse(
           Object.fromEntries(url.searchParams),
         );
+        requireCompleteLocalListProjection();
         const entries = await listAuthorizationEntries(options.source, role, query);
         writeJson(
           response,
@@ -2569,6 +2577,7 @@ export const createTrustRegistryApiServer = (
         const query = TrustRegistryApiRecognitionListQuerySchema.parse(
           Object.fromEntries(url.searchParams),
         );
+        requireCompleteLocalListProjection();
         const entries = await listRecognitionEntries(options.source, query);
         writeJson(
           response,
