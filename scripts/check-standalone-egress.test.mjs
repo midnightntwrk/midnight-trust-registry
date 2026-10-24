@@ -45,14 +45,22 @@ test("does not mistake DNS, TLS, or timeout failure for denied egress", () => {
   }), /DNS resolution/u);
 });
 
-test("rejects broad /0 and /1 routes regardless of flags", () => {
+test("rejects broad /0 through /8 routes regardless of flags", () => {
   assert.equal(hasBroadOutboundRoute(`${header}\neth0\t00000000\t00000000\t0001\t0\t0\t0\t00000000\n`), true);
   assert.equal(hasBroadOutboundRoute(`${header}\neth0\t00000000\t00000000\t0007\t0\t0\t0\t00000080\n`), true);
+  assert.equal(hasBroadOutboundRoute(`${header}\neth0\t00000000\t00000000\t0001\t0\t0\t0\t000000C0\n`), true);
+  assert.equal(hasBroadOutboundRoute(`${header}\neth0\t00000000\t00000000\t0001\t0\t0\t0\t000000FF\n`), true);
+  assert.equal(hasBroadOutboundRoute(`${header}\neth0\t00000000\t00000000\t0001\t0\t0\t0\t000080FF\n`), false);
   assert.equal(hasBroadOutboundRoute(`${header}\r\n${subnet}\r\n`), false);
   assert.equal(hasBroadOutboundRoute(`${header}\n`), false);
   assert.equal(hasValidRouteTable(isolatedRoute), true);
+  assert.equal(hasValidRouteTable(`${header}\neth0\t00000000\t00000000\t0001\t0\t0\t0\t00FF00FF\n`), false);
   assert.equal(hasValidRouteTable(`${header}\n`), false);
   assert.equal(hasValidRouteTable(""), false);
+  assert.throws(() => validateEgressProbe({
+    controlRoute, isolatedRoute: `${header}\neth0\t00000000\t00000000\t0001\t0\t0\t0\t000000C0\n`,
+    controlCode: 0, isolatedCode: 7, isolatedDnsCode: 2, isolatedDnsOutput: "",
+  }), /broad outbound route/u);
   assert.throws(() => validateEgressProbe({
     controlRoute, isolatedRoute: `${header}\n`, controlCode: 0, isolatedCode: 7,
     isolatedDnsCode: 2, isolatedDnsOutput: "",

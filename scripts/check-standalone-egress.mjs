@@ -42,12 +42,21 @@ async function runInNetwork(command, image, network, entrypoint, args) {
   }
 }
 
+function routePrefixLength(hexMask) {
+  if (!/^[0-9a-fA-F]{8}$/u.test(hexMask)) return null;
+  const bytes = hexMask.match(/../gu).map((byte) => Number.parseInt(byte, 16));
+  const mask = ((bytes[3] << 24) | (bytes[2] << 16) | (bytes[1] << 8) | bytes[0]) >>> 0;
+  const hostMask = (~mask) >>> 0;
+  if ((hostMask & ((hostMask + 1) >>> 0)) !== 0) return null;
+  return Math.clz32(hostMask);
+}
+
 export function hasBroadOutboundRoute(routeTable) {
   return routeTable.split("\n").slice(1).some((line) => {
     const columns = line.trim().split(/\s+/u);
-    if (columns.length < 8 || !/^[0-9a-fA-F]{8}$/u.test(columns[7])) return false;
-    const mask = Number.parseInt(columns[7], 16);
-    return (mask === 0 || (mask & (mask - 1)) === 0) && mask !== 0xffffffff;
+    if (columns.length < 8) return false;
+    const prefix = routePrefixLength(columns[7]);
+    return prefix !== null && prefix <= 8;
   });
 }
 
@@ -59,7 +68,7 @@ export function hasValidRouteTable(routeTable) {
     const columns = line.trim().split(/\s+/u);
     return columns.length >= 8
       && /^[0-9a-fA-F]{8}$/u.test(columns[1])
-      && /^[0-9a-fA-F]{8}$/u.test(columns[7]);
+      && routePrefixLength(columns[7]) !== null;
   });
 }
 
@@ -182,7 +191,7 @@ export async function observeStandaloneEgress(dependencies = {}) {
     internalBridgeHttpsConnectionDenied: true,
     internalBridgeCanaryDnsResolutionDenied: true,
     internalBridgeBroadOutboundRouteAbsent: true,
-    scope: "canary HTTPS and DNS on ledger bridge only; wallet, API, browser, backups, and actor journeys not verified",
+    scope: "canary HTTPS and DNS plus /0-/8 route absence on ledger bridge only; wallet, API, browser, backups, and actor journeys not verified",
   };
 }
 

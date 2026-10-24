@@ -1225,7 +1225,8 @@ This contacts the external third-party host `example.com` from a restricted
 ephemeral copy of the pinned node image on Docker's normal bridge. The same
 IP-pinned HTTPS request must then fail on the dedicated internal bridge,
 and the canary's DNS lookup must fail there as well. The control must have a
-broad outbound route; the internal probe must have no `/0` or `/1` route.
+broad outbound route; the internal probe must have no `/0` through `/8`
+route and rejects malformed route masks.
 The isolated probes target the observed Docker network ID, which must remain
 the same before and after the probe; the wizard also requires its topology and
 egress observations to agree on that ID. A replaced ledger bridge invalidates
