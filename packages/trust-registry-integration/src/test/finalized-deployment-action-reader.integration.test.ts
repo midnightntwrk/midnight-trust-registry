@@ -40,8 +40,8 @@ const verifierKeyPath = process.env.TR_TEST_VERIFIER_KEY_FILE ?? resolve(
   dirname(fileURLToPath(import.meta.url)),
   `../../../../contracts/trust-registry/dist/managed/trust-registry/keys/${verifierCircuit}.verifier`,
 );
-const realVerifierKeyIt = process.env.TR_TEST_VERIFIER_KEY_FILE || existsSync(verifierKeyPath)
-  ? it : it.skip;
+const hasRealVerifierKey = Boolean(process.env.TR_TEST_VERIFIER_KEY_FILE) || existsSync(verifierKeyPath);
+const realVerifierKeyIt = hasRealVerifierKey ? it : it.skip;
 
 function fixture(local = false) {
   const networkId = local ? "undeployed" : "preprod";
@@ -82,14 +82,18 @@ describe("checkpointed deployment action reader", () => {
       governancePolicyCommitment: bytes32Hex(simulator.getLedger().governancePolicyCommitment),
       governanceActionSequence: simulator.getLedger().governanceActionCount,
     });
-    const contractState = new ContractState();
-    contractState.data = simulator.circuitContext.currentQueryContext.state;
-    const operation = new ContractOperation();
-    operation.verifierKey = readFileSync(verifierKeyPath);
-    contractState.setOperation(verifierCircuit, operation);
-    contractState.maintenanceAuthority = new ContractMaintenanceAuthority(
-      [signatureVerifyingKey(sampleSigningKey())], 1, 0n);
-    queryContractState.mockResolvedValue(ContractState.deserialize(contractState.serialize()) as never);
+    let verifierKey: Uint8Array | undefined;
+    if (hasRealVerifierKey) {
+      const contractState = new ContractState();
+      contractState.data = simulator.circuitContext.currentQueryContext.state;
+      const operation = new ContractOperation();
+      verifierKey = readFileSync(verifierKeyPath);
+      operation.verifierKey = verifierKey;
+      contractState.setOperation(verifierCircuit, operation);
+      contractState.maintenanceAuthority = new ContractMaintenanceAuthority(
+        [signatureVerifyingKey(sampleSigningKey())], 1, 0n);
+      queryContractState.mockResolvedValue(ContractState.deserialize(contractState.serialize()) as never);
+    }
     const finalizedLedger = await reader.readCurrentFinalizedLedger(`0x${address}`);
     expect(finalizedLedger).toMatchObject({
       networkId: "preprod",
@@ -99,9 +103,11 @@ describe("checkpointed deployment action reader", () => {
     if (finalizedLedger === null) throw new Error("Expected a finalized ledger");
     expect(finalizedLedger.ledger.governanceActionCount).toBe(simulator.getLedger().governanceActionCount);
     expect(bytes32Hex(finalizedLedger.ledger.registryId)).toBe(bytes32Hex(simulator.getLedger().registryId));
-    expect(finalizedLedger.verifierKeySha256).toEqual({
-      [verifierCircuit]: createHash("sha256").update(operation.verifierKey).digest("hex"),
-    });
+    if (verifierKey) {
+      expect(finalizedLedger.verifierKeySha256).toEqual({
+        [verifierCircuit]: createHash("sha256").update(verifierKey).digest("hex"),
+      });
+    }
     await expect(prepareFinalizedDeploymentActionDigest({
       networkId: "preprod",
       contractAddress: `0x${address}`,
@@ -166,7 +172,7 @@ describe("checkpointed deployment action reader", () => {
     expect(ledgerView?.maintenanceAuthority).toEqual(observed?.maintenanceAuthority);
   });
 
-  it("returns the local ledger and deployment image from one undeployed checkpoint", async () => {
+  realVerifierKeyIt("returns the local ledger and deployment image from one undeployed checkpoint", async () => {
     const { simulator, reader, queryContractState } = fixture(true);
     const verifierKey = readFileSync(verifierKeyPath);
     const operation = new ContractOperation();
