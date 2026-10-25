@@ -69,7 +69,7 @@ function fixture(local = false) {
 }
 
 describe("checkpointed deployment action reader", () => {
-  it("decodes real Compact ledger state at the selected finalized block", async () => {
+  realVerifierKeyIt("decodes real Compact ledger state at the selected finalized block", async () => {
     const { simulator, reader, queryContractState } = fixture();
     const actionState = await reader.readCurrentFinalizedActionState(`0x${address}`);
     expect(queryContractState).toHaveBeenCalledWith(address, { type: "blockHash", blockHash });
@@ -166,7 +166,7 @@ describe("checkpointed deployment action reader", () => {
     expect(ledgerView?.maintenanceAuthority).toEqual(observed?.maintenanceAuthority);
   });
 
-  it("returns the local ledger and deployment image from one undeployed checkpoint", async () => {
+  realVerifierKeyIt("returns the local ledger and deployment image from one undeployed checkpoint", async () => {
     const { simulator, reader, queryContractState } = fixture(true);
     const verifierKey = readFileSync(verifierKeyPath);
     const operation = new ContractOperation();
