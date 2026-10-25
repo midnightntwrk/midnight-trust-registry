@@ -69,7 +69,7 @@ function fixture(local = false) {
 }
 
 describe("checkpointed deployment action reader", () => {
-  it("decodes real Compact ledger state at the selected finalized block", async () => {
+  realVerifierKeyIt("decodes real Compact ledger state at the selected finalized block", async () => {
     const { simulator, reader, queryContractState } = fixture();
     const actionState = await reader.readCurrentFinalizedActionState(`0x${address}`);
     expect(queryContractState).toHaveBeenCalledWith(address, { type: "blockHash", blockHash });
