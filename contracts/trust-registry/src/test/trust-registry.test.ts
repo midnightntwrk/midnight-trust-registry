@@ -2765,6 +2765,47 @@ describe("trust registry contract", () => {
     expect(simulator.getLedger().governanceActionCount).toBe(proposeIssuerSequence);
   });
 
+  it("does not count two maintainer IDs controlled by one public key as a quorum", () => {
+    const registry = createInitializedRegistryFixture(21);
+    const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
+    const duplicateKeyMaintainer = {
+      ...createMaintainerMembershipFixture("shared-key", 22),
+      publicKey: bootstrapPublicKey,
+      seed: bootstrapMaintainer.seed,
+    };
+    activateAdditionalMaintainer(registry, duplicateKeyMaintainer);
+    activateAdditionalMaintainer(registry, createMaintainerMembershipFixture("independent-key", 23));
+
+    const nextPolicy = labelToBytes32("policy:shared-key:v2");
+    const policyPayload = computeUpdateMaintainerThresholdPolicyPayloadHash(
+      simulator.getLedger().governancePolicyCommitment, nextPolicy, 2n, 2n, 1n, 1n,
+    );
+    simulator.updateMaintainerThresholdPolicy(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      signFixtureDeploymentBoundActionFromSeed(simulator,
+        bootstrapMaintainer.seed, registryId, simulator.getLedger().governancePolicyCommitment,
+        UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND, policyPayload,
+        simulator.getLedger().governanceActionCount),
+      nextPolicy, 2n, 2n, 1n, 1n,
+    );
+
+    const payload = labelToBytes32("audit:shared-maintainer-key");
+    const sequence = simulator.getLedger().governanceActionCount;
+    const signature = signFixtureDeploymentBoundActionFromSeed(simulator,
+      bootstrapMaintainer.seed, registryId, simulator.getLedger().governancePolicyCommitment,
+      GENERIC_AUDIT_ACTION_KIND, payload, sequence,
+    );
+    const duplicateSigner = createMaintainerCoAuthorizer(
+      duplicateKeyMaintainer, simulator, registryId, GENERIC_AUDIT_ACTION_KIND,
+      payload, sequence,
+    );
+    expect(() => simulator.authorizeMaintainerAuditEvent(
+      bootstrapMaintainer.keyId, bootstrapPublicKey, signature, payload, [duplicateSigner],
+    )).toThrow(/public keys must be distinct/u);
+    expect(simulator.getLedger().governanceActionCount).toBe(sequence);
+  });
+
   it("bootstraps before any maintainer action and rejects tampered authorization", () => {
     const registryId = labelToBytes32("registry:kanon");
     const actionKind = GENERIC_AUDIT_ACTION_KIND;
