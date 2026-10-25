@@ -69,7 +69,7 @@ function fixture(local = false) {
 }
 
 describe("checkpointed deployment action reader", () => {
-  realVerifierKeyIt("decodes real Compact ledger state at the selected finalized block", async () => {
+  it("decodes Compact action state and full deployment state when keyed", async () => {
     const { simulator, reader, queryContractState } = fixture();
     const actionState = await reader.readCurrentFinalizedActionState(`0x${address}`);
     expect(queryContractState).toHaveBeenCalledWith(address, { type: "blockHash", blockHash });
@@ -82,18 +82,16 @@ describe("checkpointed deployment action reader", () => {
       governancePolicyCommitment: bytes32Hex(simulator.getLedger().governancePolicyCommitment),
       governanceActionSequence: simulator.getLedger().governanceActionCount,
     });
-    let verifierKey: Uint8Array | undefined;
-    if (hasRealVerifierKey) {
-      const contractState = new ContractState();
-      contractState.data = simulator.circuitContext.currentQueryContext.state;
-      const operation = new ContractOperation();
-      verifierKey = readFileSync(verifierKeyPath);
-      operation.verifierKey = verifierKey;
-      contractState.setOperation(verifierCircuit, operation);
-      contractState.maintenanceAuthority = new ContractMaintenanceAuthority(
-        [signatureVerifyingKey(sampleSigningKey())], 1, 0n);
-      queryContractState.mockResolvedValue(ContractState.deserialize(contractState.serialize()) as never);
-    }
+    if (!hasRealVerifierKey) return;
+    const contractState = new ContractState();
+    contractState.data = simulator.circuitContext.currentQueryContext.state;
+    const operation = new ContractOperation();
+    const verifierKey = readFileSync(verifierKeyPath);
+    operation.verifierKey = verifierKey;
+    contractState.setOperation(verifierCircuit, operation);
+    contractState.maintenanceAuthority = new ContractMaintenanceAuthority(
+      [signatureVerifyingKey(sampleSigningKey())], 1, 0n);
+    queryContractState.mockResolvedValue(ContractState.deserialize(contractState.serialize()) as never);
     const finalizedLedger = await reader.readCurrentFinalizedLedger(`0x${address}`);
     expect(finalizedLedger).toMatchObject({
       networkId: "preprod",
@@ -103,11 +101,9 @@ describe("checkpointed deployment action reader", () => {
     if (finalizedLedger === null) throw new Error("Expected a finalized ledger");
     expect(finalizedLedger.ledger.governanceActionCount).toBe(simulator.getLedger().governanceActionCount);
     expect(bytes32Hex(finalizedLedger.ledger.registryId)).toBe(bytes32Hex(simulator.getLedger().registryId));
-    if (verifierKey) {
-      expect(finalizedLedger.verifierKeySha256).toEqual({
-        [verifierCircuit]: createHash("sha256").update(verifierKey).digest("hex"),
-      });
-    }
+    expect(finalizedLedger.verifierKeySha256).toEqual({
+      [verifierCircuit]: createHash("sha256").update(verifierKey).digest("hex"),
+    });
     await expect(prepareFinalizedDeploymentActionDigest({
       networkId: "preprod",
       contractAddress: `0x${address}`,
