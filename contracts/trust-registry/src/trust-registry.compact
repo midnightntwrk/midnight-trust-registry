@@ -2080,6 +2080,17 @@ circuit verifyAuthorizedMaintainerSigner(
   return disclosedMaintainerKeyId;
 }
 
+pure circuit assertDistinctMaintainerSignerPublicKeys(
+  left: JubjubPoint,
+  right: JubjubPoint
+): [] {
+  assert(
+    jubjubPointX(left) != jubjubPointX(right)
+      || jubjubPointY(left) != jubjubPointY(right),
+    "Maintainer signer public keys must be distinct"
+  );
+}
+
 circuit finalizeAuthorizedMaintainerAction(
   actionSequence: Uint<64>,
   actionKind: Bytes<32>,
@@ -2239,6 +2250,10 @@ circuit performAuthorizedMaintainerAction(
     signerKeyIdLess(signer1KeyId, signer2KeyId),
     "Maintainer signer keys must be sorted"
   );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer1.publicKey,
+    authorizationBundle.signer2.publicKey
+  );
   if (disclosedSignerCount == 2) {
     return finalizeAuthorizedMaintainerAction(
       actionSequence,
@@ -2260,6 +2275,14 @@ circuit performAuthorizedMaintainerAction(
   assert(
     signerKeyIdLess(signer2KeyId, signer3KeyId),
     "Maintainer signer keys must be sorted"
+  );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer1.publicKey,
+    authorizationBundle.signer3.publicKey
+  );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer2.publicKey,
+    authorizationBundle.signer3.publicKey
   );
   if (disclosedSignerCount == 3) {
     return finalizeAuthorizedMaintainerAction(
@@ -2283,6 +2306,18 @@ circuit performAuthorizedMaintainerAction(
     signerKeyIdLess(signer3KeyId, signer4KeyId),
     "Maintainer signer keys must be sorted"
   );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer1.publicKey,
+    authorizationBundle.signer4.publicKey
+  );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer2.publicKey,
+    authorizationBundle.signer4.publicKey
+  );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer3.publicKey,
+    authorizationBundle.signer4.publicKey
+  );
   if (disclosedSignerCount == 4) {
     return finalizeAuthorizedMaintainerAction(
       actionSequence,
@@ -2304,6 +2339,22 @@ circuit performAuthorizedMaintainerAction(
   assert(
     signerKeyIdLess(signer4KeyId, signer5KeyId),
     "Maintainer signer keys must be sorted"
+  );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer1.publicKey,
+    authorizationBundle.signer5.publicKey
+  );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer2.publicKey,
+    authorizationBundle.signer5.publicKey
+  );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer3.publicKey,
+    authorizationBundle.signer5.publicKey
+  );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer4.publicKey,
+    authorizationBundle.signer5.publicKey
   );
   if (disclosedSignerCount == 5) {
     return finalizeAuthorizedMaintainerAction(

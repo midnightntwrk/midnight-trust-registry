@@ -15,9 +15,6 @@ import {
   type IssuerGovernedResourceType,
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
-  createMaintainerFixture as createContractMaintainerFixture,
-} from "@midnight-ntwrk/trust-registry-contract/testing";
-import {
   IssuerResourceType,
 } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 
@@ -371,15 +368,13 @@ export const createMaintainerScenarioFixture = (
     "v1",
   );
   const subjectDid = createMidnightDid(`maintainer:${label}`);
-  const keyMaterial = createContractMaintainerFixture(label, 33);
-
   return {
     maintainerId,
     maintainerIdCommitment: bytes32Commitment(maintainerId),
     subjectDid,
     subjectDidCommitment: bytes32Commitment(subjectDid),
     keyId: bytes32Commitment(`${subjectDid}#key-1`),
-    seed: keyMaterial.seed,
+    seed: bytes32Commitment(`maintainer-fixture-key:${label}`),
     trustLevel: "governance-approved",
   };
 };
