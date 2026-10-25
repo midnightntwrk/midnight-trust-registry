@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -40,6 +40,8 @@ const verifierKeyPath = process.env.TR_TEST_VERIFIER_KEY_FILE ?? resolve(
   dirname(fileURLToPath(import.meta.url)),
   `../../../../contracts/trust-registry/dist/managed/trust-registry/keys/${verifierCircuit}.verifier`,
 );
+const realVerifierKeyIt = process.env.TR_TEST_VERIFIER_KEY_FILE || existsSync(verifierKeyPath)
+  ? it : it.skip;
 
 function fixture(local = false) {
   const networkId = local ? "undeployed" : "preprod";
@@ -125,7 +127,7 @@ describe("checkpointed deployment action reader", () => {
       ?.bootstrapMaintainer).toBeNull();
   });
 
-  it("hashes real verifier-key bytes after ContractState serialization at one checkpoint", async () => {
+  realVerifierKeyIt("hashes real verifier-key bytes after ContractState serialization at one checkpoint", async () => {
     const { simulator, reader, queryContractState } = fixture();
     const verifierKey = readFileSync(verifierKeyPath);
     const operation = new ContractOperation();
