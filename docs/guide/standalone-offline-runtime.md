@@ -499,8 +499,12 @@ other processes, or release qualification. Review the new genesis and repeat
 the first-run approvals for that instance. Never use `down -v` on either
 project while its history is evidence.
 
-The local Midnight network uses network ID `undeployed`, not `preprod`. The
-dedicated smoke stack keeps node RPC, indexer, and proof-server services on
+The [`standalone` network profile](../spec/network-profiles.md) maps the local
+Midnight network to ID `undeployed`, not `preprod`. This ID is a Midnight.js
+network selector, not a universal genesis hash or a trusted node. The wizard
+writes the profile-derived `TR_NETWORK_ID` to the isolated Compose stack; a
+different standalone installation still needs its own approved genesis pin.
+The dedicated smoke stack keeps node RPC, indexer, and proof-server services on
 its internal bridge. On Docker Desktop, that bridge does **not** publish the
 configured loopback ports to the host, even though Compose records the port
 bindings. Probe service aliases from a container on the isolated network;

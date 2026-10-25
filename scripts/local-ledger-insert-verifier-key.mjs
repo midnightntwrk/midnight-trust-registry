@@ -10,6 +10,7 @@ import {
   createLocalNetworkDeploymentActionReader,
   FileDeploymentAttemptJournal,
   FileVerifierKeyInsertionJournal,
+  getLocalNetworkProfile,
   reconcileLocalVerifierKeyInsertion,
   submitLocalVerifierKeyInsertion,
   VerifierKeyInsertionOutcomeUnknownError,
@@ -77,11 +78,11 @@ export async function runLocalVerifierKeyInsertion(plan, dependencies = {}, mode
   if (createHash("sha256").update(moduleBytes).digest("hex") !== plan.providerModuleSha256) {
     throw new Error("Provider module bytes disagree with the approved SHA-256");
   }
-  setNetworkId("undeployed");
+  setNetworkId(getLocalNetworkProfile().networkId);
   await (dependencies.validateEndpoints ?? createLocalNetworkDeploymentActionReader)(plan.network);
   await (dependencies.observe ?? checkLocalLedgerPreflight)({
     format: "tr-local-ledger-pin-v1",
-    networkId: "undeployed",
+    networkId: getLocalNetworkProfile().networkId,
     sourceRevision: plan.sourceRevision,
     rpcUrl: plan.network.rpcUrl,
     expectedGenesisHash: plan.network.expectedGenesisHash,

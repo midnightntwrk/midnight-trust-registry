@@ -4,7 +4,7 @@ import { lstat, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { createLocalRpcFinalizedCheckpointSource } from "@midnight-ntwrk/trust-registry-integration";
+import { createLocalRpcFinalizedCheckpointSource, getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
 
 const HASH = /^0x[0-9a-f]{64}$/u;
 const REVISION = /^[0-9a-f]{40}$/u;
@@ -14,7 +14,7 @@ const FIELDS = ["allowedHosts", "expectedGenesisHash", "format", "networkId", "r
 export async function checkLocalLedgerPreflight(plan, fetchImpl) {
   if (plan === null || typeof plan !== "object" || Array.isArray(plan)
     || Object.keys(plan).sort().join("\0") !== FIELDS.join("\0")
-    || plan.format !== "tr-local-ledger-pin-v1" || plan.networkId !== "undeployed"
+    || plan.format !== "tr-local-ledger-pin-v1" || plan.networkId !== getLocalNetworkProfile().networkId
     || !REVISION.test(plan.sourceRevision)
     || !HASH.test(plan.expectedGenesisHash)
     || /^0x0{64}$/u.test(plan.expectedGenesisHash)
@@ -30,7 +30,7 @@ export async function checkLocalLedgerPreflight(plan, fetchImpl) {
     fetchImpl,
   });
   const checkpoint = await source.readCurrentFinalizedCheckpoint();
-  if (checkpoint === null || checkpoint.networkId !== "undeployed"
+  if (checkpoint === null || checkpoint.networkId !== getLocalNetworkProfile().networkId
     || checkpoint.blockHash === plan.expectedGenesisHash.slice(2)) {
     throw new Error("Local ledger has no progressing finalized head");
   }

@@ -11,6 +11,7 @@ import {
   deployLocalTrustRegistryOnce,
   deployLocalTrustRegistryStagedOnce,
   FileDeploymentAttemptJournal,
+  getLocalNetworkProfile,
   reconcileLocalStagedDeployment,
 } from "@midnight-ntwrk/trust-registry-integration";
 
@@ -37,7 +38,7 @@ export function validateLocalDeploymentPlan(plan) {
   if ((!full && !staged)
     || !REVISION.test(plan.sourceRevision) || !SHA256.test(plan.providerModuleSha256)
     || !exactFields(plan.network, NETWORK_FIELDS)
-    || plan.network.networkId !== "undeployed"
+    || plan.network.networkId !== getLocalNetworkProfile().networkId
     || !HASH.test(plan.network.expectedGenesisHash)
     || /^0x0{64}$/u.test(plan.network.expectedGenesisHash)
     || !["rpcUrl", "indexerHttpUrl", "indexerWsUrl"].every(
@@ -76,11 +77,11 @@ async function loadApprovedMaterial(plan, dependencies, approval, factoryName) {
   if (createHash("sha256").update(moduleBytes).digest("hex") !== plan.providerModuleSha256) {
     throw new Error("Provider module bytes disagree with the approved SHA-256");
   }
-  setNetworkId("undeployed");
+  setNetworkId(getLocalNetworkProfile().networkId);
   await (dependencies.validateEndpoints ?? createLocalNetworkDeploymentActionReader)(plan.network);
   await (dependencies.observe ?? checkLocalLedgerPreflight)({
     format: "tr-local-ledger-pin-v1",
-    networkId: "undeployed",
+    networkId: getLocalNetworkProfile().networkId,
     sourceRevision: plan.sourceRevision,
     rpcUrl: plan.network.rpcUrl,
     expectedGenesisHash: plan.network.expectedGenesisHash,
