@@ -28,6 +28,12 @@ test("manifest lint works before packages are installed", () => {
     }
     assert.equal(existsSync(join(root, "node_modules")), false);
     assert.equal(checkWorkspaceManifests(root), true);
+    const integrationPath = join(root, "packages/trust-registry-integration/package.json");
+    const integration = JSON.parse(readFileSync(integrationPath, "utf8"));
+    delete integration.exports["./local-pinned-submission-provider"];
+    writeFileSync(integrationPath, JSON.stringify(integration));
+    assert.throws(() => checkWorkspaceManifests(root), /integration\/package.json export keys/);
+    copyFileSync(join(source, "packages/trust-registry-integration/package.json"), integrationPath);
     const rootPackagePath = join(root, "package.json");
     const rootPackage = JSON.parse(readFileSync(rootPackagePath, "utf8"));
     delete rootPackage.devDependencies["@midnight-ntwrk/trust-registry-contract"];

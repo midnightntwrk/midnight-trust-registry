@@ -82,9 +82,15 @@ export const workspaceCatalog = [
     manifest: {
       name: "@midnight-ntwrk/trust-registry-integration",
       files: ["dist/**", "src/compact/vc-authority-consumer.compact", "README.md"],
-      exports: [".", "./fixtures/vc-authority-consumer.compact"],
-      requiredPackedPaths: ["README.md", "package.json", "dist/index.js", "src/compact/vc-authority-consumer.compact"],
-      smokeImports: ["@midnight-ntwrk/trust-registry-integration"],
+      exports: [".", "./local-pinned-submission-provider", "./fixtures/vc-authority-consumer.compact"],
+      requiredPackedPaths: [
+        "README.md", "package.json", "dist/index.js", "dist/local-pinned-submission-provider.js",
+        "src/compact/vc-authority-consumer.compact",
+      ],
+      smokeImports: [
+        "@midnight-ntwrk/trust-registry-integration",
+        "@midnight-ntwrk/trust-registry-integration/local-pinned-submission-provider",
+      ],
     },
   },
   {
