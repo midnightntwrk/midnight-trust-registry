@@ -18,6 +18,8 @@ const ZERO_HASH = /^0x0{64}$/u;
 const SERVICES = ["node", "indexer", "proof-server"];
 const BASELINE = "restart-baseline.json";
 const VERIFICATION = "restart-verification.json";
+const INTERRUPTED_BASELINE = /^restart-baseline\.json\.[1-9][0-9]*\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/u;
+const INTERRUPTED_VERIFICATION = /^restart-verification\.json\.[1-9][0-9]*\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/u;
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -60,8 +62,7 @@ async function privateDirectory(directory) {
 async function publishedEvidenceLinkIsInterruptedWrite(path, stat) {
   const name = basename(path);
   if (![BASELINE, VERIFICATION].includes(name) || stat.nlink !== 2n) return false;
-  const companion = new RegExp(`^${name.replaceAll(".", "\\.")}\\.[1-9][0-9]*\\.`
-    + "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.tmp$", "u");
+  const companion = name === BASELINE ? INTERRUPTED_BASELINE : INTERRUPTED_VERIFICATION;
   for (const entry of await readdir(dirname(path))) {
     if (!companion.test(entry)) continue;
     const candidate = await lstat(join(dirname(path), entry));

@@ -17,4 +17,4 @@ secrets:
   indexerName: indexer-credentials
   apiApprovalName: api-approval
   apiKeyringName: reviewer-keyring
-  apiReviewerFingerprint: CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
+  apiReviewerFingerprint: CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC # checkov:skip=CKV_SECRET_6: repeated-character public test fingerprint, not a secret
