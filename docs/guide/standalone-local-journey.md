@@ -280,7 +280,7 @@ against the same source revision and install bundle used for `acceptance.json`.
 
 ```sh
 umask 077
-pnpm observe:standalone-qualification \
+node scripts/observe-standalone-qualification.mjs \
   /absolute/private/setup /absolute/verified-bundle "$SOURCE_SHA" \
   > /absolute/private/acceptance/read-only-observation.json
 node scripts/check-standalone-acceptance-evidence.mjs observe \
