@@ -22,8 +22,10 @@ export function assertImmutableProviderTree(rootPath, options = {}) {
   const root = resolve(rootPath);
   const boundary = options.boundary ?? parse(root).root;
   const trustedUid = options.trustedUid ?? 0;
+  const maxEntries = options.maxEntries ?? MAX_ENTRIES;
   if (!isAbsolute(boundary) || !within(resolve(boundary), root)
-    || !Number.isSafeInteger(trustedUid) || trustedUid < 0) {
+    || !Number.isSafeInteger(trustedUid) || trustedUid < 0
+    || !Number.isSafeInteger(maxEntries) || maxEntries < 1 || maxEntries > MAX_ENTRIES) {
     throw new Error("Provider tree trust boundary is invalid");
   }
   const stop = resolve(boundary);
@@ -41,6 +43,7 @@ export function assertImmutableProviderTree(rootPath, options = {}) {
   let files = 0;
   let directories = 0;
   let links = 0;
+  let entries = 1;
   const pending = [root];
   while (pending.length > 0) {
     const directory = pending.pop();
@@ -51,9 +54,10 @@ export function assertImmutableProviderTree(rootPath, options = {}) {
     }
     directories += 1;
     for (const name of readdirSync(directory)) {
-      if (files + directories + pending.length >= MAX_ENTRIES) {
+      if (entries >= maxEntries) {
         throw new Error("Provider code tree exceeds the bounded entry count");
       }
+      entries += 1;
       const path = join(directory, name);
       const entry = lstatSync(path);
       if (entry.uid !== trustedUid) {

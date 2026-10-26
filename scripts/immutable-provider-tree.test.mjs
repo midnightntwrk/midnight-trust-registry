@@ -21,8 +21,8 @@ async function fixture(run) {
   await chmod(root, 0o555);
   try {
     return await run({ boundary, root, nested,
-      check: () => assertImmutableProviderTree(root, {
-        boundary, trustedUid: process.getuid(),
+      check: (options = {}) => assertImmutableProviderTree(root, {
+        boundary, trustedUid: process.getuid(), ...options,
       }) });
   } finally {
     await chmod(root, 0o755);
@@ -101,6 +101,16 @@ test("internal links cannot hide writable file or directory targets", () => fixt
   await chmod(join(root, "entry.mjs"), 0o444);
   await chmod(nested, 0o775);
   assert.throws(check, /mutable or linked entry/u);
+}));
+
+test("the entry limit counts internal links as well as files and directories", () => fixture(async ({ root, check }) => {
+  assert.equal(check({ maxEntries: 4 }).files, 2);
+  await chmod(root, 0o755);
+  await symlink("entry.mjs", join(root, "alias.mjs"));
+  await chmod(root, 0o555);
+  assert.throws(() => check({ maxEntries: 4 }), /bounded entry count/u);
+  assert.equal(check({ maxEntries: 5 }).links, 1);
+  assert.throws(() => check({ maxEntries: 500_001 }), /trust boundary is invalid/u);
 }));
 
 test("rejects a provider root selected through a linked ancestor", () => fixture(async ({ boundary, root }) => {
