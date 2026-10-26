@@ -1583,6 +1583,16 @@ not production secrets or public-network security guidance.
 
 ### Ambiguous proposal review
 
+The pinned submission provider's in-memory pending/uncertain sets guard only
+overlapping calls in one process. The private, deployment-bound proposal
+journal is the cross-restart authority: its reservation must be durable
+*before* the provider broadcasts. A failed journal write stops submission;
+restarting the API or provider must reopen the same bound journal and keep an
+ambiguous reservation blocked. Synthetic HTTP and journal tests exercise this
+ordering and restart behavior, but do not prove a real local-ledger restart or
+non-inclusion. Preserve the original journal and its binding sidecar across
+service restart and backup/restore.
+
 Keep the API mutation path stopped when a proposal reservation has an unknown
 outcome. `trust-registry-api inspect-local-proposal-recovery` reads the bound
 private journal and signed local plan; a `reviewCandidate` result is an audit

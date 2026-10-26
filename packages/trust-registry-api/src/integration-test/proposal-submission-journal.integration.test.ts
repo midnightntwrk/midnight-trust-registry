@@ -41,6 +41,16 @@ describe("private governed proposal submission journal", () => {
   });
   afterEach(async () => { await rm(directory, { recursive: true, force: true }); });
 
+  it("never calls the submission port when the reservation cannot be persisted", async () => {
+    const blockedParent = join(directory, "not-a-directory");
+    await writeFile(blockedParent, "blocked", { mode: 0o600 });
+    const journal = new FileProposalSubmissionJournal(join(blockedParent, "journal.json"));
+    const execute = vi.fn(async () => ({ eventHash }));
+    await expect(journal.executeOnce("issuer", authorizationId, evidenceCommitment,
+      execute, reservationContext)).rejects.toThrow();
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   it("reads a reservation and deployment binding atomically without releasing it", async () => {
     const journal = new FileProposalSubmissionJournal(path);
     const contractAddress = `0x${"aa".repeat(32)}`;

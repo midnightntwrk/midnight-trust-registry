@@ -28,7 +28,10 @@ import {
   type PreparedGovernedIssuerProposal,
 } from "../governed-issuer-proposals.js";
 import { resolveCompactProposalObservation } from "../compact-proposal-observation.js";
-import { FileProposalSubmissionJournal } from "../proposal-submission-journal.js";
+import {
+  FileProposalSubmissionJournal,
+  ProposalSubmissionBlockedByReservationError,
+} from "../proposal-submission-journal.js";
 import {
   assertCurrentProposalQuorum,
   InvalidProposalQuorumError,
@@ -104,7 +107,7 @@ describe("Compact-backed issuer proposals over HTTP", () => {
     let eventHash: string | undefined;
     let executions = 0;
     let preflights = 0;
-    const server = createTrustRegistryApiServer({
+    const serverOptions: Parameters<typeof createTrustRegistryApiServer>[0] = {
       source: {
         mode: "local-ledger", localDeploymentBinding: { contractAddress, expectedGenesisHash: genesisHash },
         loadSnapshot: async () => operatorSnapshot,
@@ -152,12 +155,13 @@ describe("Compact-backed issuer proposals over HTTP", () => {
           async () => finalizedLedger, harness.registryId, "issuer", authorizationId,
         ),
       },
-    });
+    };
+    let server = createTrustRegistryApiServer(serverOptions);
     try {
       await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
       const address = server.address();
       if (address === null || typeof address === "string") throw new Error("API listener address unavailable");
-      const endpoint = `http://127.0.0.1:${address.port}/v1/governed/issuer/${issuer.authorizationId}/proposal`;
+      let endpoint = `http://127.0.0.1:${address.port}/v1/governed/issuer/${issuer.authorizationId}/proposal`;
       const post = (action: "prepare" | "submit" | "resolve", body: unknown) => fetch(`${endpoint}/${action}`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
       });
@@ -243,14 +247,32 @@ describe("Compact-backed issuer proposals over HTTP", () => {
         },
       });
       expect(harness.simulator.getLedger().issuerAuthorizationCount).toBe(1n);
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      const reopenedJournal = new FileProposalSubmissionJournal(journalPath);
+      await reopenedJournal.assertDeploymentBinding(harness.registryId, contractAddress, genesisHash);
+      serverOptions.proposalSubmissionJournal = reopenedJournal;
+      server = createTrustRegistryApiServer(serverOptions);
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const restartedAddress = server.address();
+      if (restartedAddress === null || typeof restartedAddress === "string") {
+        throw new Error("Restarted API listener address unavailable");
+      }
+      endpoint = `http://127.0.0.1:${restartedAddress.port}/v1/governed/issuer/${issuer.authorizationId}/proposal`;
       const duplicate = await post("submit", request);
       expect(duplicate.status).toBe(409);
+      expect(executions).toBe(1);
+      await expect(reopenedJournal.executeOnce("verifier", "another-authorization", evidence.commitment,
+        async () => { executions += 1; return { eventHash: `0x${"cd".repeat(32)}` }; }, {
+          actionSequence: prepared.actionSequence, actionKind: prepared.actionKind,
+          actionPayloadHash: prepared.actionPayloadHash,
+        })).rejects.toBeInstanceOf(ProposalSubmissionBlockedByReservationError);
       expect(executions).toBe(1);
       expect(await (await post("resolve", { evidence })).json()).toEqual({ state: "not-observed" });
       finalizedLedger = harness.simulator.getLedger();
       expect(eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
       expect(await (await post("resolve", { evidence })).json()).toEqual({ state: "observed", eventHash });
-      expect(await journal.read("issuer", issuer.authorizationId)).toMatchObject({ state: "observed", eventHash });
+      expect(await reopenedJournal.read("issuer", issuer.authorizationId)).toMatchObject({ state: "observed", eventHash });
     } finally {
       server.closeAllConnections();
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
