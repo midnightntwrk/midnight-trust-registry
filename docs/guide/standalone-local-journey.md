@@ -145,6 +145,36 @@ results.
    exact commit, findings, and verdict under issue #232. Release remains
    blocked while any high/critical finding or required evidence is missing.
 
+## Operator acceptance record
+
+Run the cases below against one approved deployment and one pinned install
+inventory. Record `pass`, `fail`, or `not-run` for **each** case; never infer a
+pass from simulator tests, a wizard status field, or an HTTP response alone.
+Keep the command, UTC time, source SHA, inventory SHA-256, signed-plan SHA-256,
+contract address, genesis hash, authenticated finalized checkpoint, and
+redacted raw output for each case in the private evidence bundle. Preserve
+transaction IDs and journal states for writes. After a mutation, require the
+operator-reviewed re-sign/restart before accepting a new current-state read.
+
+| Case | Action and expected result | Required evidence |
+| --- | --- | --- |
+| `L01` | Approve genesis, deploy once, and read back the constructor, authority, and every verifier key at a finalized checkpoint. | Signed approval, exact-source bundle, deployment journal, authenticated inclusion/readback, complete key-hash comparison. |
+| `L02` | Transition from bootstrap authority to the release-approved threshold roster; old bootstrap authority cannot act. | Signed roster, distinct custodian proofs, finalized transition and rejection receipts. The 1-of-3 development roster does not pass. |
+| `A01` | Submit issuer application with local DID/VC/status evidence; governed proposal and decision create a current issuer grant. | Accepted evidence commitment, exact-intent signatures, one-attempt journal, finalized event and by-ID/current API readback. |
+| `A02` | Repeat `A01` for verifier and auditor grants, including their distinct policy and mandate scopes. | Separate finalized receipts and current reads for each role; no role substitution. |
+| `A03` | Perform a maintainer-governed action and a scoped external-authority recognition decision. | Threshold signatures, finalized action sequence/events, current maintenance and recognition readback. Recognition must not imply membership. |
+| `A04` | Resolve the issuer DID and validate the live VC status authority; relying party checks current evidence and TRQP against the same local deployment. | Authenticated DID/status responses, trusted-time decision, selected finalized checkpoint, API/TRQP outputs. A fixture status response fails. |
+| `N01` | Reject wrong authority, stale signed plan, substituted evidence, revoked or suspended grant, and unavailable local status. | Per-case denial with no unintended ledger mutation; uncertain submissions remain quarantined. |
+| `O01` | Repeat actor reads and a governed action with external egress denied while local service traffic remains available. | Host/container/wallet/browser/prover egress logs, positive controls, receipts and readbacks from the same deployment. API-container canary denial alone does not pass. |
+| `R01` | Restart each service, then restore a backup in a distinct isolated project; reject stale or conflicting checkpoint and reconcile an ambiguous submission without blind retry. | Before/after authenticated checkpoints, contract and journal state, restore logs, operator recovery decision. |
+| `S01` | Have a non-author human assess the exact candidate and all retained evidence. | Reviewer identity, scope, findings, dispositions, and release-owner sign-off under issue #232. |
+
+Do not mark the end-to-end journey complete unless `L01` through `S01` all
+pass at a single reviewed candidate SHA. These cases are an acceptance
+procedure, not evidence that any deployed run has occurred. The current
+read-only query probe can support part of `A04`; it cannot satisfy `A01` to
+`A03`, `O01`, or `R01`.
+
 ## Evidence verdict
 
 Use these labels consistently:
