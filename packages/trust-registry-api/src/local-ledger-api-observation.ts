@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { buildSnapshotSummary } from "@midnight-ntwrk/trust-registry-cli";
 import { canonicalizeJson } from "@midnight-ntwrk/trust-registry-domain";
@@ -60,12 +60,13 @@ export async function observeLocalApiCurrentReads(input: {
   expectedPlanSha256?: string;
   fetchImpl?: typeof fetch;
 }): Promise<{
-  format: "tr-local-api-current-read-observation-v3";
+  format: "tr-local-api-current-read-observation-v4";
   observedAt: string;
   apiOrigin: string;
   registryId: string;
   sourceFinalizedBlockHash: string;
   currentEpochId: string;
+  selectedStateSha256: string;
   counts: Record<"issuer" | "verifier" | "auditor" | "recognition", number>;
   resolvedLookups: Record<"issuer" | "verifier" | "auditor" | "recognition", number>;
   ambiguousLookups: Record<"issuer" | "verifier" | "auditor", number>;
@@ -227,12 +228,18 @@ export async function observeLocalApiCurrentReads(input: {
     throw new Error("Local API health changed during current-read observation");
   }
   return {
-    format: "tr-local-api-current-read-observation-v3",
+    format: "tr-local-api-current-read-observation-v4",
     observedAt: new Date().toISOString(),
     apiOrigin: origin,
     registryId: snapshot.registry.registryId,
     sourceFinalizedBlockHash: selection.finalizedBlockHash,
     currentEpochId: snapshot.currentEpoch.epochId,
+    selectedStateSha256: createHash("sha256").update(canonicalizeJson({
+      snapshot: jsonProjection(snapshot),
+      authorizationIds: Object.fromEntries((["issuer", "verifier", "auditor"] as const)
+        .map((role) => [role, [...selection.authorizationIds[role]].sort()])),
+      recognitionIds: [...selection.recognitionIds].sort(),
+    })).digest("hex"),
     counts,
     resolvedLookups,
     ambiguousLookups,

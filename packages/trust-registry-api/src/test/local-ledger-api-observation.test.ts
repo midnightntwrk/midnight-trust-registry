@@ -34,7 +34,8 @@ describe("local API current-read observation (route-level only)", () => {
       const port = (server.address() as AddressInfo).port;
       const result = await observeLocalApiCurrentReads({ source, apiOrigin: `http://127.0.0.1:${port}` });
       expect(result).toMatchObject({
-        format: "tr-local-api-current-read-observation-v3",
+        format: "tr-local-api-current-read-observation-v4",
+        selectedStateSha256: expect.stringMatching(/^[0-9a-f]{64}$/u),
         registryId: snapshot.registry.registryId,
         sourceFinalizedBlockHash: selection.finalizedBlockHash,
         currentEpochId: snapshot.currentEpoch.epochId,

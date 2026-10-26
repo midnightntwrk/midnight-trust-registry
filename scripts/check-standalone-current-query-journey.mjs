@@ -13,10 +13,11 @@ const BLOCK_HASH = /^0x[0-9a-f]{64}$/u;
 const ROLES = ["issuer", "verifier", "auditor", "recognition"];
 
 function checkedRead(report, sourceRevision) {
-  if (report?.format !== "tr-standalone-api-current-read-probe-v3"
+  if (report?.format !== "tr-standalone-api-current-read-probe-v4"
     || report.releaseQualified !== false || report.sourceRevision !== sourceRevision
     || report.routeReadback !== "same-container-signed-plan-current-only"
     || !SHA256.test(report.planSha256 ?? "")
+    || !SHA256.test(report.selectedStateSha256 ?? "")
     || !BLOCK_HASH.test(report.sourceFinalizedBlockHash ?? "")
     || /^0x0{64}$/u.test(report.sourceFinalizedBlockHash)
     || typeof report.registryId !== "string" || report.registryId.length === 0
@@ -67,6 +68,7 @@ export async function observeStandaloneCurrentQueryJourney(setupDirectory, bundl
     || second.apiRestartCount !== first.apiRestartCount
     || second.networkId !== first.networkId
     || second.planSha256 !== first.planSha256
+    || second.selectedStateSha256 !== first.selectedStateSha256
     || second.registryId !== first.registryId
     || second.currentEpochId !== first.currentEpochId
     || ROLES.some((role) => second.counts[role] !== first.counts[role]
@@ -74,11 +76,12 @@ export async function observeStandaloneCurrentQueryJourney(setupDirectory, bundl
     throw new Error("Current-query deployment, signed plan, or selected actor reads changed during egress probe");
   }
   return {
-    format: "tr-standalone-current-query-journey-v1",
+    format: "tr-standalone-current-query-journey-v2",
     sourceRevision: status.sourceRevision,
     apiContainerId: first.apiContainerId,
     networkId: first.networkId,
     planSha256: first.planSha256,
+    selectedStateSha256: first.selectedStateSha256,
     registryId: first.registryId,
     currentEpochId: first.currentEpochId,
     finalizedCheckpoints: [first.sourceFinalizedBlockHash, second.sourceFinalizedBlockHash],

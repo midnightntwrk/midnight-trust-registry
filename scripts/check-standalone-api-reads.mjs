@@ -44,11 +44,12 @@ function checkedCurrentReadReport(stdout) {
   } catch {
     throw new Error("Packaged API current-read probe did not return JSON");
   }
-  if (report?.format !== "tr-local-api-current-read-observation-v3"
+  if (report?.format !== "tr-local-api-current-read-observation-v4"
     || report.releaseQualified !== false
     || report.apiOrigin !== "http://127.0.0.1:4400"
     || !/^[0-9a-f]{40}$/u.test(report.planSourceRevision ?? "")
     || !/^[0-9a-f]{64}$/u.test(report.planSha256 ?? "")
+    || !/^[0-9a-f]{64}$/u.test(report.selectedStateSha256 ?? "")
     || !canonicalTimestamp(report.observedAt)
     || !canonicalTimestamp(report.planNotAfter)
     || Date.parse(report.observedAt) > Date.parse(report.planNotAfter)
@@ -98,7 +99,7 @@ export async function probeStandaloneApiCurrentReads(bundle, env = process.env, 
     throw new Error("API runtime container or internal network changed during current-read probe");
   }
   return {
-    format: "tr-standalone-api-current-read-probe-v3",
+    format: "tr-standalone-api-current-read-probe-v4",
     sourceRevision: before.sourceRevision,
     apiContainerId: before.apiContainerId,
     apiStartedAt: before.apiStartedAt,
@@ -109,6 +110,7 @@ export async function probeStandaloneApiCurrentReads(bundle, env = process.env, 
     observedAt: current.observedAt,
     registryId: current.registryId,
     sourceFinalizedBlockHash: current.sourceFinalizedBlockHash,
+    selectedStateSha256: current.selectedStateSha256,
     currentEpochId: current.currentEpochId,
     counts: current.counts,
     resolvedLookups: current.resolvedLookups,
