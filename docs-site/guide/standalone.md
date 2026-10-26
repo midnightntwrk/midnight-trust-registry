@@ -29,11 +29,14 @@ proof parameters, generated keys, and private approval evidence.
 
 ## Bring up the ledger bridge
 
-1. While online, select a **GPG-signed exact-source install bundle** containing
-   the release manifest, ten packages, six pinned images, and proof parameters.
-   Verify it with `node scripts/check-standalone-install.mjs "$INSTALL"` and
-   record its source SHA and inventory SHA-256. A bundle from another source
-   revision is a stop condition.
+1. While online, select a bundle **derived from an approved GPG-signed source
+   commit** containing the release manifest, ten packages, six pinned images,
+   and proof parameters. Independently authenticate the source commit and
+   compare the bundle inventory SHA-256 with an approved digest received
+   through a separate channel. `check-standalone-install.mjs` verifies the
+   bundle's internal bytes, **not its provenance**. Record the source SHA,
+   signer fingerprint, and inventory SHA-256. A missing independent approval,
+   mismatched digest, or bundle from another source revision is a stop condition.
 2. Choose a nonexistent setup path under an existing private parent directory,
    unused loopback ports, and a unique `tr-standalone-local-*` Docker project.
    The wizard creates the mode-0700 setup directory. Run `init` and
@@ -44,9 +47,14 @@ proof parameters, generated keys, and private approval evidence.
    portals must not start before the human approvals and signed API plan.
 
 ```sh
-INSTALL=/absolute/verified/standalone-install/SOURCE_SHA
+SOURCE_SHA=replace-with-approved-40-character-commit
+INSTALL=/absolute/verified/standalone-install/$SOURCE_SHA
 SETUP=/absolute/private/standalone-setup
 PROJECT=tr-standalone-local-my-run
+git verify-commit "$SOURCE_SHA"
+shasum -a 256 "$INSTALL/install-inventory.json"
+# Compare the signer fingerprint and inventory digest with independently
+# approved values before continuing. The checker alone cannot do that.
 node scripts/check-standalone-install.mjs "$INSTALL"
 node scripts/standalone-setup-wizard.mjs init "$SETUP" "$INSTALL"
 node scripts/standalone-setup-wizard.mjs prepare-stack "$SETUP" "$PROJECT" 39944 38088 36300
@@ -86,9 +94,6 @@ docker compose --env-file "$SETUP/stack.env" -p "$PROJECT" \
 docker compose --env-file "$SETUP/stack.env" -p "$PROJECT" \
   -f "$INSTALL/compose.yml" -f "$INSTALL/compose.offline.yml" up --pull never -d --wait
 node scripts/check-standalone-restart.mjs verify "$SETUP"
-# After observation, stop only this project. Preserve its volumes and evidence.
-docker compose --env-file "$SETUP/stack.env" -p "$PROJECT" \
-  -f "$INSTALL/compose.yml" -f "$INSTALL/compose.offline.yml" stop
 ```
 
 The observer requires a **later** finalized height than the captured baseline.
@@ -96,6 +101,16 @@ If `verify` runs before that height exists, wait for node/indexer progress and
 retry the read-only check; investigate any other failure before retrying. A
 passing simultaneous restart remains pre-deployment smoke, not the separate
 service-restart and backup-restore acceptance case `R01`.
+
+If ending the smoke run rather than continuing to human approval and
+deployment, stop **only** this project. Preserve its volumes and evidence.
+When resuming, start it again with the same verified bundle, image tags, and
+private environment, wait for health, and re-observe before continuing.
+
+```sh
+docker compose --env-file "$SETUP/stack.env" -p "$PROJECT" \
+  -f "$INSTALL/compose.yml" -f "$INSTALL/compose.offline.yml" stop
+```
 
 ## Continue to real end-to-end acceptance
 
