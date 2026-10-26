@@ -148,7 +148,8 @@ describe("Compact-backed verifier proposals over HTTP", () => {
       })).status).toBe(403);
       expect((await submit(prepared, encoded, [first])).status).toBe(403);
       const wrongSignature = signVerifierProposalEvidenceFromSeed(second.seed,
-        bytes(prepared.registryId), bytes(prepared.evidenceVerifierKeyIdCommitment), bytes(prepared.actionPayloadHash));
+        bytes(prepared.registryId), bytes(prepared.networkIdCommitment), bytes(prepared.contractAddress),
+        bytes(prepared.evidenceVerifierKeyIdCommitment), bytes(prepared.actionPayloadHash));
       expect((await submit(prepared,
         `0x${Buffer.from(encodeJubjubSignature(wrongSignature)).toString("hex")}`)).status).toBe(403);
       expect((await submit(prepared, "0x00")).status).toBe(400);
