@@ -98,11 +98,15 @@ results.
    Before an operator actor run, check the wizard's ledger prerequisites:
 
    ```sh
-   node scripts/check-standalone-journey-prerequisites.mjs /absolute/private/setup
+   node scripts/check-standalone-journey-prerequisites.mjs /absolute/private/setup "$SOURCE_SHA"
    ```
 
-   Exit code 2 lists missing gates; exit code 0 means only that wizard-recorded
-   ledger prerequisites are present. It does not verify the complete
+   Set `SOURCE_SHA` to the full signed commit selected for this install
+   candidate, not an old setup record's SHA. A source mismatch is a missing
+   gate; rebuild and review a source-matched bundle rather than reusing the
+   old deployment evidence. Exit code 2 lists missing gates; exit code 0
+   means only that wizard-recorded ledger prerequisites are present. It does
+   not verify the complete
    verifier-key inventory, signed API plan, authenticated finality, egress
    denial, an actor action, or release readiness.
    Once the approved API is actually running, run the read-only current-query

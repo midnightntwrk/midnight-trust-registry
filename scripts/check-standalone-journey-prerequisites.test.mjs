@@ -41,6 +41,20 @@ test("empty key evidence and active setup lock block the journey", () => {
   assert.deepEqual(report.missing, ["setupUnlocked", "recordedKeyInsertionsReconciled"]);
 });
 
+test("candidate source revision must match the retained install setup", () => {
+  const matching = assessStandaloneJourneyPrerequisites(approved, "a".repeat(40));
+  assert.equal(matching.expectedSourceRevision, "a".repeat(40));
+  assert.equal(matching.gates.sourceMatchesCandidate, true);
+  assert.equal(matching.ledgerPrerequisitesObserved, true);
+
+  const stale = assessStandaloneJourneyPrerequisites(approved, "b".repeat(40));
+  assert.equal(stale.gates.sourceMatchesCandidate, false);
+  assert.deepEqual(stale.missing, ["sourceMatchesCandidate"]);
+  assert.equal(stale.ledgerPrerequisitesObserved, false);
+  assert.throws(() => assessStandaloneJourneyPrerequisites(approved, "bad"),
+    /Expected candidate source revision/u);
+});
+
 test("rejects malformed status rather than implying a clean run", () => {
   assert.throws(() => assessStandaloneJourneyPrerequisites({ ...approved, releaseQualified: true }),
     /Invalid standalone wizard status/u);

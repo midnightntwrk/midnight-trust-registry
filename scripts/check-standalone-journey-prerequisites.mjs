@@ -8,12 +8,18 @@ import { standaloneSetupStatus } from "./standalone-setup-wizard.mjs";
 const SHA = /^[0-9a-f]{40}$/u;
 
 /** Only checks wizard-recorded prerequisites, not an actor run or independent finality. */
-export function assessStandaloneJourneyPrerequisites(status) {
+export function assessStandaloneJourneyPrerequisites(status, expectedSourceRevision = null) {
   if (!status || typeof status !== "object" || !SHA.test(status.sourceRevision ?? "")
     || !Array.isArray(status.stagedVerifierKeys) || status.releaseQualified !== false) {
     throw new Error("Invalid standalone wizard status; inspect the private setup record");
   }
+  if (expectedSourceRevision !== null && !SHA.test(expectedSourceRevision)) {
+    throw new Error("Expected candidate source revision must be a full lowercase commit SHA");
+  }
   const gates = {
+    ...(expectedSourceRevision === null ? {} : {
+      sourceMatchesCandidate: status.sourceRevision === expectedSourceRevision,
+    }),
     setupUnlocked: status.setupLock === "absent",
     installStaged: status.install === "verified-staged-bytes-only",
     stackObserved: status.stackConfiguration === "observed-ledger-bridge-only",
@@ -31,6 +37,7 @@ export function assessStandaloneJourneyPrerequisites(status) {
   return {
     format: "tr-standalone-journey-prerequisites-v1",
     sourceRevision: status.sourceRevision,
+    expectedSourceRevision,
     gates,
     missing,
     ledgerPrerequisitesObserved: missing.length === 0,
@@ -45,10 +52,11 @@ export function assessStandaloneJourneyPrerequisites(status) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    if (process.argv.length !== 3) {
-      throw new Error("Usage: check-standalone-journey-prerequisites.mjs <private-setup-dir>");
+    if (process.argv.length !== 4) {
+      throw new Error("Usage: check-standalone-journey-prerequisites.mjs <private-setup-dir> <candidate-source-sha>");
     }
-    const report = assessStandaloneJourneyPrerequisites(await standaloneSetupStatus(process.argv[2]));
+    const report = assessStandaloneJourneyPrerequisites(
+      await standaloneSetupStatus(process.argv[2]), process.argv[3]);
     console.log(JSON.stringify(report, null, 2));
     if (!report.ledgerPrerequisitesObserved) process.exitCode = 2;
   } catch (error) {
