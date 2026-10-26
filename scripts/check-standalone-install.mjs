@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
 
 import { verifyReleaseCandidateArtifacts } from "./release-candidate-manifest.mjs";
+import { matchesApprovedRuntimeHealthcheck } from "./runtime-healthcheck.mjs";
 import { staticImageIdentityFromArchive, validateStaticImageManifest } from "./static-runtime-archive.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
@@ -157,7 +158,11 @@ export function installedApiImageIdFromArchive(archive, manifest, sourceRevision
     || config.config?.User !== "1000:1000"
     || config.config?.WorkingDir !== "/app"
     || JSON.stringify(config.config?.Entrypoint) !== JSON.stringify(["node", "/app/bin/trust-registry-api.mjs"])
-    || config.config?.Cmd != null || config.config?.Healthcheck != null
+    || config.config?.Cmd != null
+    || (manifest.format === "tr-api-runtime-image-v2"
+      ? !matchesApprovedRuntimeHealthcheck(config.config?.Healthcheck, "api")
+      : config.config?.Healthcheck != null
+        && !matchesApprovedRuntimeHealthcheck(config.config.Healthcheck, "api"))
     || config.config?.OnBuild != null || config.config?.Volumes != null
     || !Array.isArray(environment) || environment.some((entry) => typeof entry !== "string"
       || /^(?:NODE_OPTIONS|NODE_PATH|LD_PRELOAD|LD_LIBRARY_PATH)=/u.test(entry))) {

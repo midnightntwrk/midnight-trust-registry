@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 
 import { STANDALONE_PROOF_PARAMETER_PATHS, verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
+import { approvedRuntimeHealthcheck } from "./runtime-healthcheck.mjs";
 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const revision = "a".repeat(40);
@@ -43,6 +44,8 @@ async function apiImageArchive(root, labelRevision = revision, repoTags = null, 
   const config = JSON.stringify({ os: "linux", architecture: "arm64", config: {
     Labels: { "org.opencontainers.image.revision": labelRevision }, User: "1000:1000",
     WorkingDir: "/app", Entrypoint: ["node", "/app/bin/trust-registry-api.mjs"],
+    ...(!options.omitHealthcheck ? { Healthcheck: options.healthcheck
+      ?? approvedRuntimeHealthcheck("api") } : {}),
     ...(options.env ? { Env: options.env } : {}),
     ...(options.volumes ? { Volumes: options.volumes } : {}),
   } });
@@ -85,6 +88,8 @@ async function staticImageArchive(root, role, options = {}) {
   const config = JSON.stringify({ os: "linux", architecture: "arm64", config: {
     Labels: { "org.opencontainers.image.revision": options.labelRevision ?? revision },
     User: "1000:1000", WorkingDir: "/app",
+    ...(!options.omitHealthcheck ? { Healthcheck: options.healthcheck
+      ?? approvedRuntimeHealthcheck(role) } : {}),
     Env: options.env ?? [`TR_STATIC_ROLE=${role}`],
     ...(options.volumes ? { Volumes: options.volumes } : {}),
     Cmd: ["node", "/app/entrypoint.mjs", "--host", "0.0.0.0", "--port", "4173"],
@@ -255,6 +260,12 @@ test("v4 binds an API archive to the exact install source and runtime config", a
     } });
     await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
     await verifyStandaloneInstallBundle(root, () => {});
+    inventory.apiRuntime = await apiImageArchive(root, revision, null, { portals: {
+      admin: { fileCount: 2, sha256: "a".repeat(64) },
+      applicant: { fileCount: 2, sha256: "b".repeat(64) },
+    }, omitHealthcheck: true });
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /runtime config disagrees/u);
     inventory.apiRuntime = await apiImageArchive(root);
     await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
 
@@ -297,6 +308,7 @@ test("v4 binds an API archive to the exact install source and runtime config", a
       { extraPlatform: true },
       { env: ["NODE_OPTIONS=--import=data:text/javascript,throw%20Error('injected')"] },
       { volumes: { "/app/portals": {} } },
+      { healthcheck: { ...approvedRuntimeHealthcheck("api"), Test: ["CMD-SHELL", "true"] } },
     ]) {
       const changed = await apiImageArchive(root, revision, null, options);
       const changedManifest = JSON.parse(await readFile(apiManifestPath));
@@ -352,6 +364,8 @@ test("v5 binds both portal OCI archives to the exact install source and roles", 
       { env: ["TR_STATIC_ROLE=admin", "TR_STATIC_ROLE=applicant"] },
       { env: ["TR_STATIC_ROLE=admin", "NODE_OPTIONS=--import=/tmp/evil.mjs"] },
       { volumes: { "/app/public": {} } },
+      { healthcheck: { ...approvedRuntimeHealthcheck("admin"), Test: ["CMD-SHELL", "true"] } },
+      { omitHealthcheck: true },
       { extraPlatform: true },
     ]) {
       inventory.portalRuntimes.admin = await staticImageArchive(root, "admin", options);
