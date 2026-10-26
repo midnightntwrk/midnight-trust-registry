@@ -211,12 +211,14 @@ export const createApplicantPortalApp = (
   const initialUrl = options.initialUrl ?? new URL(window.location.href);
   const storage = options.storage ?? window.localStorage;
   const fetchImpl = options.fetchImpl ?? window.fetch.bind(window);
+  const sameOriginApi = initialUrl.pathname.startsWith("/applicant/");
   // An explicit query parameter is a one-off override for local testing and
   // should not silently replace the persisted default.
   const queryBase = initialUrl.searchParams.get("apiBase");
 
   const state: AppState = {
-    apiBase: normalizeApiBaseUrl(queryBase ?? storage.getItem(STORAGE_KEY) ?? "http://127.0.0.1:4400"),
+    apiBase: sameOriginApi ? initialUrl.origin
+      : normalizeApiBaseUrl(queryBase ?? storage.getItem(STORAGE_KEY) ?? "http://127.0.0.1:4400"),
     error: undefined,
     flash: undefined,
     inspection: undefined,
@@ -793,6 +795,7 @@ export const createApplicantPortalApp = (
   const bindEvents = () => {
     root.querySelector<HTMLFormElement>("[data-api-base-form]")?.addEventListener("submit", (event) => {
       event.preventDefault();
+      if (sameOriginApi) return;
       const form = event.currentTarget as HTMLFormElement | null;
       if (form === null) {
         return;
@@ -1109,10 +1112,10 @@ export const createApplicantPortalApp = (
             <form class="panel" data-api-base-form>
               <label class="label">
                 API base URL
-                <input class="input mono" type="url" name="apiBase" value="${escapeHtml(state.apiBase)}" />
+                <input class="input mono" type="url" name="apiBase" value="${escapeHtml(state.apiBase)}"${sameOriginApi ? " disabled" : ""} />
               </label>
               <div class="row">
-                <button class="button" type="submit"${state.loading ? " disabled" : ""}>Connect</button>
+                <button class="button" type="submit"${sameOriginApi || state.loading ? " disabled" : ""}>Connect</button>
                 <button class="button secondary" type="button" data-refresh${state.loading ? " disabled" : ""}>Refresh</button>
               </div>
             </form>

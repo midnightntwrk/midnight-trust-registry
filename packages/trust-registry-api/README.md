@@ -15,6 +15,11 @@ Current scope:
 - keep the first service slices file-backed and local-first instead of
   introducing a separate database or runtime persistence layer
 
+Snapshot and operator-workspace modes are fixture-backed and loopback-only,
+including read-only listeners. They are not a substitute for a finalized local
+ledger. The signed local-ledger mode is the only CLI mode that can request
+cluster binding; that capability alone does not qualify a release deployment.
+
 `assertLocalLedgerEvidenceMatchesSnapshot` is a building block for the
 separate local-ledger mode tracked in #219. Given a caller-authenticated
 finalized Compact ledger, contract address, and sequence-to-time mapping, it
@@ -36,12 +41,27 @@ It re-reads and verifies the entire candidate snapshot for each request and
 fails closed if the view is missing or mismatched, or the file differs from its
 approved digest or the finalized Compact projection. The CLI constructs these
 inputs from a reviewer-signed runtime plan and the local checkpoint/indexer
-reader. This source still has only simulator and test-double coverage, not
+reader. Current-map coverage does not prove that a historical evidence archive
+contains every transition. In local-ledger mode, historical authorization and
+recognition evaluation plus TRQP decision/evidence routes return 501 with
+`historical-decisions-out-of-scope`. They are deferred from the local-only
+0.1.0 profile, not temporarily unavailable current decisions. Fixture modes retain
+their development behavior. This source still has only simulator and
+test-double coverage, not
 proof of a real local-ledger deployment, finalized readback, offline actor
 journey, or 0.1.0 release qualification.
+An embedded local-ledger server refuses demo mutations and unjournaled governed
+proposal ports. Proposal ports require a configured one-attempt journal,
+admission source, and finalized proposal observation; the operator must supply
+a durable journal and independently authenticated reader. Presence checks alone
+are not qualification. Other governed action ports remain disabled until they
+have an equivalent durable submission path.
 
-For local-ledger mode, a reviewer must detach-sign a `tr-local-api-runtime-v1`
-JSON plan. The operator supplies the exact plan, detached signature, a private
+For local-ledger mode, a reviewer must detach-sign a `tr-local-api-runtime-v2`
+JSON plan. Write it as compact JSON with an optional final newline, or as
+two-space-indented JSON with a final newline. Duplicate keys, alternative
+escaping, and other noncanonical encodings are rejected even if signed. The
+operator supplies the exact plan, detached signature, a private
 public-key keyring, and the out-of-band approved signing-key fingerprint:
 
 ```sh
@@ -49,26 +69,77 @@ trust-registry-api serve \
   --local-ledger-plan /run/trust-registry/api-plan.json \
   --local-ledger-signature /run/trust-registry/api-plan.sig \
   --local-ledger-keyring /run/trust-registry/reviewer-keyring \
-  --local-ledger-reviewer '<approved-40-character-GPG-signing-key-fingerprint>' \
+  --local-ledger-reviewer '<approved-40-character-GPG-primary-fingerprint>' \
+  --serve-portals \
   --host 127.0.0.1 --port 4400
 ```
 
 The plan pins `undeployed`, the source revision, absolute install-inventory,
 release-manifest and snapshot paths plus their SHA-256 digests, nonzero approved
 genesis and contract hashes, exact local RPC/indexer endpoints and allowed
-hosts, a contiguous governance-sequence-to-UTC-timestamp map covering the
-finalized governance count, and a validity window no longer than 90 days. The
+hosts, the exact release-manifest verifier-key catalog, the ordered maintenance
+committee public keys, threshold and decimal counter, a contiguous
+governance-sequence-to-UTC-timestamp map covering the finalized governance
+count, and a validity window no longer than 90 days. The v1 plan no longer
+authorizes local API startup, and v3 install inventories without an API image
+pin are unsupported in all local-ledger API modes. The
 plan and signature must be regular files owned by root or the runtime user, and the
 reviewer keyring must be a private directory with its approved public key in
 `pubring.kbx`. The CLI verifies private copies of the exact plan bytes it
 parses and copies the read-only public keyring into private GPG scratch space;
-the pinned fingerprint is the exact key that signs the plan, including a
-signing subkey if used. It checks the install bytes, constructs the pinned local reader,
+the pinned fingerprint is the approved primary signing-key fingerprint. A
+signature made by its signing subkey is accepted only when GnuPG reports that
+same primary fingerprint and the reported signer key ID or fingerprint matches
+the signing key. Any valid signing subkey of that primary can approve
+the plan; an earlier configuration pinned to one signing subkey must be
+re-approved with the primary fingerprint before upgrading. This profile
+requires a version-4 40-character fingerprint, a detached binary-document signature,
+and SHA-256, SHA-384, or SHA-512 as its signature hash. It checks the install
+bytes, constructs the pinned local reader,
 and requires a successful finalized Compact readback and snapshot match before
-listening. Every query rechecks the snapshot digest and finalized projection;
-missing sequence timestamps or an expired plan fail closed. File-backed snapshot/workspace mode
+listening. Every query rechecks the snapshot digest, finalized projection,
+verifier-key bytes, and maintenance authority in the same finalized contract
+read; a key or committee change requires a new manually reviewed signed plan.
+missing sequence timestamps or an expired plan fail closed. Ledger read and
+projection failures return a generic 503 without exposing provider or file details.
+Any governed mutation changes the finalized action count, so the current
+signed plan and snapshot become stale until an independently reviewed
+replacement is signed and installed. `/health` fails closed during that gap;
+the local Helm readiness probe uses this endpoint. This manual rotation has
+not been exercised as a live local-ledger actor journey.
+For each governed mutation, stop or drain query traffic, wait for an independently
+authenticated finalized checkpoint, prepare a new snapshot and complete ordered
+sequence timestamp map, and have the reviewer inspect the exact source, install,
+genesis, contract, checkpoint, snapshot digest, verifier keys, maintenance
+authority, map and validity window before
+detached-signing a new canonical plan. Install the new snapshot, plan and signature
+as one immutable versioned set; change the service's paths to that set and restart
+the API. Before switching traffic, run `trust-registry-api check-local-ledger-plan`
+with the same four `--local-ledger-*` arguments shown above. It checks the
+detached signature, source/install pins, current finalized ledger view, and
+snapshot without opening a listener; it does not check the running image,
+authenticate finality independently, or qualify the release. Do not overwrite
+a running plan or snapshot in place. Startup must pass
+signature, pin and finalized-readback checks, then `/health` and current actor
+queries must pass before restoring traffic. If any check fails, leave the API
+unavailable and reconcile the finalized ledger; never roll back to a plan whose
+governance count is stale or restart in fixture mode. Preserve both signed versions
+for audit. This is an operator procedure, not an automated signer or live test.
+All local-ledger HTTP responses use `Cache-Control: no-store` so intermediaries
+and browsers are not instructed to reuse stale authorization decisions.
+With `--serve-portals`, the API serves packaged admin and applicant assets at
+`/admin/` and `/applicant/` on its own origin. Startup fails if either portal's
+HTML or JavaScript entry point is absent. In these paths the portals ignore
+stored or query-selected API URLs and use their current origin, so the
+applicant's private-evidence requests do not require cross-origin access.
+Do not put an ingress that routes those paths to a different image in front of
+this mode; TLS, authenticated exposure, and offline browser journeys still
+require deployment validation. Without the flag, the API does not serve portals.
+File-backed snapshot/workspace mode
 cannot be combined with local-ledger mode, and demo mutations are forbidden.
-Until qualification is complete, local-ledger mode also binds only to loopback.
+By default local-ledger mode binds only to loopback. Guarded `--cluster-bind` can
+expose the signed mode on all interfaces with an API image source-revision check,
+but does not by itself satisfy local deployment or offline-runtime gates.
 
 The signed map is a reviewer attestation, not proof that timestamps were
 derived from authenticated ledger history. The plan's `sourceRevision` is not

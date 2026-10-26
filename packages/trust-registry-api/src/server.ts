@@ -171,6 +171,7 @@ import {
 } from "./proposal-submission-journal.js";
 import { MutationIntentOperationMismatchError } from "./mutation-intent-preflight.js";
 import { MutationActorNonceCapacityExceededError, MutationIntentActorRejectedError, MutationNonceAlreadyUsedError, MutationNonceCapacityExceededError, MutationNonceClockRollbackError } from "./signed-mutation-state.js";
+import { LocalLedgerSourceUnavailableError } from "./local-ledger-source.js";
 import { computeOperatorWorkspaceCommitment } from "./workspace-commitment.js";
 import {
   TrustRegistryApiApplicationActionSchema,
@@ -363,6 +364,13 @@ const asProblem = (
 ): TrustRegistryApiProblemDetails => {
   if (error instanceof HttpProblem) {
     return error.problem;
+  }
+  if (error instanceof LocalLedgerSourceUnavailableError) {
+    return TrustRegistryApiProblemDetailsSchema.parse({
+      type: `${problemBaseUri}/local-ledger-unavailable`,
+      title: "local ledger unavailable",
+      status: 503,
+    });
   }
   if (error instanceof SyntaxError) {
     return TrustRegistryApiProblemDetailsSchema.parse({
@@ -788,6 +796,24 @@ export const createTrustRegistryApiServer = (
     || options.governedVerifierProposals !== undefined
     || options.governedAuditorProposals !== undefined
     || options.governedMaintainerProposals !== undefined;
+  if (options.source.mode === "local-ledger") {
+    if (options.allowUnsafeDemoMutations === true) {
+      throw new Error("Local-ledger mode forbids demo mutations");
+    }
+    if (options.governedMembershipActions !== undefined
+      || options.governedEpochPublication !== undefined
+      || options.governedPolicyActions !== undefined) {
+      throw new Error("Local-ledger governed actions require a durable submission adapter");
+    }
+    if ((hasMembershipProposalPort || options.governedRecognitionProposals !== undefined)
+      && (options.proposalSubmissionJournal === undefined
+        || options.readFinalizedProposalLedger === undefined
+        || (hasMembershipProposalPort && options.proposalAdmission === undefined)
+        || (options.governedRecognitionProposals !== undefined
+          && options.recognitionAccreditation === undefined))) {
+      throw new Error("Local-ledger proposals require durable submission and finalized observation with admission");
+    }
+  }
   if (options.proposalSubmissionJournal !== undefined
     && ((hasMembershipProposalPort && options.proposalAdmission === undefined)
       || (!hasMembershipProposalPort && (options.governedRecognitionProposals === undefined
@@ -800,6 +826,13 @@ export const createTrustRegistryApiServer = (
     throw new Error("Journaled recognition proposals require side-effect-free submission preflight");
   }
   const problemBaseUri = options.problemBaseUri ?? DEFAULT_PROBLEM_BASE;
+  const requireCompleteHistoricalProjection = (): void => {
+    if (options.source.mode === "local-ledger") {
+      throw jsonProblem(problemBaseUri, "historical-decisions-out-of-scope", 501,
+        "historical decisions are outside the local 0.1.0 profile",
+        "Only current finalized authorization and recognition lookups are supported.");
+    }
+  };
   const trqpAdapter = new TrustRegistryTrqpAdapter(
     createTrqpSourceFromStateSource(options.source),
     {
@@ -937,11 +970,17 @@ export const createTrustRegistryApiServer = (
 
   return createServer(async (request, response) => {
     if (options.corsPolicy === "none") corsDisabledResponses.add(response);
+    if (options.source.mode === "local-ledger") response.setHeader("cache-control", "no-store");
     let privateApplicantRoute = false;
     try {
       const method = request.method ?? "GET";
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
-      const segments = routeSegments(url.pathname);
+      let segments: string[];
+      try {
+        segments = routeSegments(url.pathname);
+      } catch {
+        throw jsonProblem(problemBaseUri, "invalid-request-path", 400, "invalid request path");
+      }
       privateApplicantRoute = segments[0] === "v1" && (
         (segments.length === 4 && segments[1] === "application-evidence"
           && (segments[3] === "binding" || segments[3] === "challenges"
@@ -990,7 +1029,15 @@ export const createTrustRegistryApiServer = (
           }
           await authorizeRecognitionRequest(segments[3]!, request);
         }
-        if (options.readFinalizedProposalLedger === undefined || options.proposalContractAddress === undefined) {
+        const proposalReader = options.source.mode === "local-ledger"
+          ? options.source.readFinalizedProposalLedger : options.readFinalizedProposalLedger;
+        const pinnedAddress = options.source.mode === "local-ledger"
+          ? options.source.localProposalContractAddress : undefined;
+        const proposalContractAddress = options.source.mode === "local-ledger"
+          ? pinnedAddress !== undefined && /^0x[0-9a-fA-F]{64}$/u.test(pinnedAddress)
+            ? Buffer.from(pinnedAddress.slice(2), "hex") : undefined
+          : options.proposalContractAddress;
+        if (proposalReader === undefined || proposalContractAddress === undefined) {
           throw jsonProblem(problemBaseUri, "proposal-evidence-unavailable", 503,
             "proposal evidence unavailable");
         }
@@ -998,8 +1045,8 @@ export const createTrustRegistryApiServer = (
         try {
           const registry = await loadRegistryRecord(options.source);
           snapshot = await resolveCompactProposalEvidenceSnapshot(
-            options.readFinalizedProposalLedger, registry.registryId, role as ProposalRole, segments[3]!,
-            options.proposalContractAddress,
+            proposalReader, registry.registryId, role as ProposalRole, segments[3]!,
+            proposalContractAddress,
           );
         } catch {
           throw jsonProblem(problemBaseUri, "proposal-evidence-unavailable", 503,
@@ -2141,6 +2188,7 @@ export const createTrustRegistryApiServer = (
       ) {
         const body = await parseJsonBody(request,
           (value) => TrustRegistryApiEvaluateAuthorizationRequestSchema.parse(value), problemBaseUri);
+        requireCompleteHistoricalProjection();
         const evaluation = await evaluateAuthorizationEvidenceAtTimestamp(options.source, body, body.at);
         if (evaluation === null) {
           throw jsonProblem(problemBaseUri, "authorization-not-found", 404,
@@ -2166,6 +2214,7 @@ export const createTrustRegistryApiServer = (
           (value) => TrustRegistryApiEvaluateAuthorizationRequestSchema.parse(value),
           problemBaseUri,
         );
+        requireCompleteHistoricalProjection();
         const evaluation = await evaluateAuthorizationEntryAtTimestamp(
           options.source,
           body,
@@ -2287,6 +2336,7 @@ export const createTrustRegistryApiServer = (
       ) {
         const body = await parseJsonBody(request,
           (value) => TrustRegistryApiEvaluateRecognitionRequestSchema.parse(value), problemBaseUri);
+        requireCompleteHistoricalProjection();
         const evaluation = await evaluateRecognitionEvidenceAtTimestamp(options.source, body, body.at);
         if (evaluation === null) {
           throw jsonProblem(problemBaseUri, "recognition-not-found", 404,
@@ -2312,6 +2362,7 @@ export const createTrustRegistryApiServer = (
           (value) => TrustRegistryApiEvaluateRecognitionRequestSchema.parse(value),
           problemBaseUri,
         );
+        requireCompleteHistoricalProjection();
         const evaluation = await evaluateRecognitionEntryAtTimestamp(
           options.source,
           body,
@@ -2447,6 +2498,9 @@ export const createTrustRegistryApiServer = (
           (value) => TrqpAuthorizationRequestSchema.parse(value),
           problemBaseUri,
         );
+        if (segments[3] === "query" || segments[3] === "evidence") {
+          requireCompleteHistoricalProjection();
+        }
         const result = segments[3] === "query"
           ? await trqpAdapter.queryAuthorization(body)
           : segments[3] === "evidence"
@@ -2481,6 +2535,9 @@ export const createTrustRegistryApiServer = (
           (value) => TrqpRecognitionRequestSchema.parse(value),
           problemBaseUri,
         );
+        if (segments[3] === "query" || segments[3] === "evidence") {
+          requireCompleteHistoricalProjection();
+        }
         const result = segments[3] === "query"
           ? await trqpAdapter.queryRecognition(body)
           : segments[3] === "evidence"

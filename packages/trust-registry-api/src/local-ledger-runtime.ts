@@ -3,15 +3,16 @@ import { spawnSync } from "node:child_process";
 import { constants, existsSync } from "node:fs";
 import { lstat, mkdtemp, open, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 
 import type { SequenceToTimestamp } from "@midnight-ntwrk/trust-registry-client";
 import {
   createLocalNetworkDeploymentActionReader,
+  type FinalizedRegistryLedgerView,
   type LocalNetworkDeploymentActionReaderConfig,
 } from "@midnight-ntwrk/trust-registry-integration";
 
-import { createLocalLedgerBoundSource } from "./local-ledger-source.js";
+import { createLocalLedgerBoundSource, LocalLedgerSourceUnavailableError } from "./local-ledger-source.js";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
@@ -19,8 +20,42 @@ const REVISION = /^[0-9a-f]{40}$/u;
 const FINGERPRINT = /^[0-9A-F]{40}$/u;
 const DECIMAL = /^(0|[1-9][0-9]*)$/u;
 
+export function assertApprovedReviewerSignatureStatus(
+  output: string,
+  exitStatus: number | null,
+  expectedPrimaryFingerprint: string,
+  now = Date.now(),
+): void {
+  const statuses = output.split("\n").filter((line) => line.startsWith("[GNUPG:] "));
+  const valid = statuses.filter((line) => line.startsWith("[GNUPG:] VALIDSIG "));
+  const good = statuses.filter((line) => line.startsWith("[GNUPG:] GOODSIG "));
+  const fields = valid[0]?.split(/\s+/u);
+  const signerFingerprint = fields?.[2];
+  const goodSignerKeyId = good[0]?.split(/\s+/u)[2];
+  const primaryFingerprint = fields?.[11];
+  const signedAt = Number(fields?.[4]);
+  const expiresAt = Number(fields?.[5]);
+  const hashAlgorithm = fields?.[9];
+  const signatureClass = fields?.[10];
+  const nowSeconds = Math.floor(now / 1000);
+  if (exitStatus !== 0 || !FINGERPRINT.test(expectedPrimaryFingerprint)
+    || valid.length !== 1 || good.length !== 1
+    || fields?.length !== 12
+    || !FINGERPRINT.test(signerFingerprint ?? "")
+    || ![signerFingerprint?.slice(-16), signerFingerprint].includes(goodSignerKeyId)
+    || primaryFingerprint !== expectedPrimaryFingerprint
+    || !Number.isSafeInteger(signedAt) || signedAt <= 0 || signedAt > nowSeconds + 300
+    || !Number.isSafeInteger(expiresAt) || expiresAt < 0
+    || (expiresAt !== 0 && expiresAt <= nowSeconds)
+    || !["8", "9", "10"].includes(hashAlgorithm ?? "")
+    || signatureClass !== "00"
+    || statuses.some((line) => /^\[GNUPG:\] (?:BADSIG|ERRSIG|EXPKEYSIG|EXPSIG|REVKEYSIG|KEYREVOKED|SIGEXPIRED|PLAINTEXT|PLAINTEXT_LENGTH)\b/u.test(line))) {
+    throw new Error("Local API runtime plan lacks the approved detached reviewer signature");
+  }
+}
+
 export type LocalLedgerRuntimePlan = LocalNetworkDeploymentActionReaderConfig & {
-  format: "tr-local-api-runtime-v1";
+  format: "tr-local-api-runtime-v2";
   sourceRevision: string;
   installInventoryPath: string;
   installInventorySha256: string;
@@ -29,6 +64,12 @@ export type LocalLedgerRuntimePlan = LocalNetworkDeploymentActionReaderConfig & 
   contractAddress: string;
   snapshotPath: string;
   snapshotSha256: string;
+  verifierKeySha256: Readonly<Record<string, string>>;
+  maintenanceAuthority: {
+    committee: readonly string[];
+    threshold: number;
+    counter: string;
+  };
   sequenceTimestamps: Readonly<Record<string, string>>;
   notBefore: string;
   notAfter: string;
@@ -42,6 +83,32 @@ const canonicalTimestamp = (value: unknown): number => {
   return Number.isFinite(parsed) && new Date(parsed).toISOString() === value ? parsed : Number.NaN;
 };
 
+function parseCanonicalApprovedPlan(bytes: Buffer): unknown {
+  const raw = bytes.toString("utf8");
+  const value: unknown = JSON.parse(raw);
+  const compact = JSON.stringify(value);
+  if (!Buffer.from(raw, "utf8").equals(bytes)
+    || ![compact, `${compact}\n`, `${JSON.stringify(value, null, 2)}\n`].includes(raw)) {
+    throw new Error("Local API runtime plan must use canonical signed JSON without duplicate keys");
+  }
+  return value;
+}
+
+function validMaintenanceAuthority(value: unknown): boolean {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const authority = value as Record<string, unknown>;
+  if (!exactKeys(authority, ["committee", "threshold", "counter"])
+    || !Array.isArray(authority.committee) || authority.committee.length === 0
+    || authority.committee.some((key: unknown) =>
+      typeof key !== "string" || !HASH.test(key) || /^0x0{64}$/u.test(key))
+    || new Set(authority.committee).size !== authority.committee.length
+    || !Number.isSafeInteger(authority.threshold)
+    || (authority.threshold as number) < 1
+    || (authority.threshold as number) > authority.committee.length
+    || typeof authority.counter !== "string" || !DECIMAL.test(authority.counter)) return false;
+  return true;
+}
+
 export function validateLocalLedgerRuntimePlan(value: unknown): LocalLedgerRuntimePlan {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("Local API runtime plan must be an object");
@@ -49,9 +116,10 @@ export function validateLocalLedgerRuntimePlan(value: unknown): LocalLedgerRunti
   const plan = value as Record<string, unknown>;
   if (!exactKeys(plan, ["allowedHosts", "contractAddress", "expectedGenesisHash", "format",
     "indexerHttpUrl", "indexerWsUrl", "installInventoryPath", "installInventorySha256",
-    "networkId", "notAfter", "notBefore", "releaseManifestPath", "releaseManifestSha256", "rpcUrl", "sequenceTimestamps",
-    "snapshotPath", "snapshotSha256", "sourceRevision"])
-    || plan.format !== "tr-local-api-runtime-v1" || plan.networkId !== "undeployed"
+    "maintenanceAuthority", "networkId", "notAfter", "notBefore", "releaseManifestPath",
+    "releaseManifestSha256", "rpcUrl", "sequenceTimestamps", "snapshotPath", "snapshotSha256",
+    "sourceRevision", "verifierKeySha256"])
+    || plan.format !== "tr-local-api-runtime-v2" || plan.networkId !== "undeployed"
     || typeof plan.sourceRevision !== "string" || !REVISION.test(plan.sourceRevision)
     || typeof plan.expectedGenesisHash !== "string" || !HASH.test(plan.expectedGenesisHash)
     || /^0x0{64}$/u.test(plan.expectedGenesisHash)
@@ -68,6 +136,12 @@ export function validateLocalLedgerRuntimePlan(value: unknown): LocalLedgerRunti
     || plan.allowedHosts.some((host) => typeof host !== "string" || host.length === 0)
     || plan.sequenceTimestamps === null || typeof plan.sequenceTimestamps !== "object"
     || Array.isArray(plan.sequenceTimestamps)
+    || plan.verifierKeySha256 === null || typeof plan.verifierKeySha256 !== "object"
+    || Array.isArray(plan.verifierKeySha256)
+    || Object.keys(plan.verifierKeySha256).length === 0
+    || Object.entries(plan.verifierKeySha256).some(([name, digest]) =>
+      name.length === 0 || typeof digest !== "string" || !SHA256.test(digest))
+    || !validMaintenanceAuthority(plan.maintenanceAuthority)
     || !Number.isFinite(canonicalTimestamp(plan.notBefore))
     || !Number.isFinite(canonicalTimestamp(plan.notAfter))
     || canonicalTimestamp(plan.notAfter) <= canonicalTimestamp(plan.notBefore)
@@ -129,6 +203,39 @@ export function sequenceTimestampMap(plan: LocalLedgerRuntimePlan): SequenceToTi
   };
 }
 
+export function assertApprovedPlanCoversGovernanceCount(
+  plan: Pick<LocalLedgerRuntimePlan, "sequenceTimestamps">,
+  count: unknown,
+): void {
+  if (typeof count !== "bigint"
+    || count !== BigInt(Object.keys(plan.sequenceTimestamps).length - 1)) {
+    throw new Error("Approved sequence timestamps do not cover the finalized governance count");
+  }
+}
+
+export function assertApprovedDeploymentImage(
+  plan: Pick<LocalLedgerRuntimePlan, "verifierKeySha256" | "maintenanceAuthority">,
+  view: Pick<FinalizedRegistryLedgerView, "verifierKeySha256" | "maintenanceAuthority">,
+): void {
+  const expected = plan.verifierKeySha256;
+  const observed = view.verifierKeySha256;
+  if (observed === null || typeof observed !== "object" || Array.isArray(observed)
+    || Object.keys(observed).length !== Object.keys(expected).length
+    || Object.entries(expected).some(([name, digest]) =>
+      !Object.hasOwn(observed, name) || observed[name] !== digest)) {
+    throw new Error("Finalized verifier-key catalog differs from the approved local plan");
+  }
+  const authority = view.maintenanceAuthority;
+  const approved = plan.maintenanceAuthority;
+  if (!authority || !Array.isArray(authority.committee)
+    || authority.committee.length !== approved.committee.length
+    || authority.committee.some((key, index) => key !== approved.committee[index])
+    || authority.threshold !== approved.threshold
+    || authority.counter !== BigInt(approved.counter)) {
+    throw new Error("Finalized maintenance authority differs from the approved local plan");
+  }
+}
+
 export async function assertLocalApiImageSourceRevision(
   expectedRevision: string,
   path = "/app/source-revision",
@@ -150,7 +257,7 @@ export async function loadApprovedLocalLedgerRuntimePlan(input: {
   requireApiRuntimePin?: boolean;
 }): Promise<LocalLedgerRuntimePlan> {
   if (!FINGERPRINT.test(input.reviewerFingerprint)) {
-    throw new Error("Local API reviewer signing-key fingerprint must be canonical");
+    throw new Error("Local API reviewer primary signing-key fingerprint must be canonical");
   }
   const planBytes = await boundedFile(input.planPath, 1024 * 1024);
   const signatureBytes = await boundedFile(input.signaturePath, 64 * 1024);
@@ -160,7 +267,7 @@ export async function loadApprovedLocalLedgerRuntimePlan(input: {
     throw new Error("Local API reviewer keyring must be a private directory");
   }
   const keyringBytes = await boundedFile(join(input.keyringDirectory, "pubring.kbx"), 8 * 1024 * 1024);
-  const gpg = ["/opt/homebrew/bin/gpg", "/usr/local/bin/gpg", "/usr/bin/gpg"].find(existsSync);
+  const gpg = ["/usr/bin/gpg", "/opt/homebrew/bin/gpg", "/usr/local/bin/gpg"].find(existsSync);
   if (gpg === undefined) throw new Error("Local API runtime requires an installed GPG verifier");
   const temporary = await mkdtemp(join(tmpdir(), "tr-local-api-approval-"));
   try {
@@ -175,20 +282,15 @@ export async function loadApprovedLocalLedgerRuntimePlan(input: {
       "--verify", signatureCopy, planCopy],
     { encoding: "utf8", timeout: 10_000, maxBuffer: 1024 * 1024,
       env: { PATH: "/usr/bin:/bin", HOME: temporary, LC_ALL: "C" } });
-    const statuses = (verification.stdout ?? "").split("\n")
-      .filter((line) => line.startsWith("[GNUPG:] "));
-    const valid = statuses.filter((line) => line.startsWith("[GNUPG:] VALIDSIG "));
-    const good = statuses.filter((line) => line.startsWith("[GNUPG:] GOODSIG "));
-    const rejected = statuses.some((line) => /^\[GNUPG:\] (?:BADSIG|ERRSIG|EXPKEYSIG|EXPSIG|REVKEYSIG)\b/u.test(line));
-    const fingerprint = /^\[GNUPG:\] VALIDSIG ([0-9A-F]{40})\b/u.exec(valid[0] ?? "")?.[1];
-    if (verification.status !== 0 || verification.error || rejected
-      || good.length !== 1 || valid.length !== 1 || fingerprint !== input.reviewerFingerprint) {
+    if (verification.error) {
       throw new Error("Local API runtime plan lacks the approved detached reviewer signature");
     }
+    assertApprovedReviewerSignatureStatus(verification.stdout ?? "", verification.status,
+      input.reviewerFingerprint);
   } finally {
     await rm(temporary, { recursive: true, force: true });
   }
-  const plan = validateLocalLedgerRuntimePlan(JSON.parse(planBytes.toString("utf8")));
+  const plan = validateLocalLedgerRuntimePlan(parseCanonicalApprovedPlan(planBytes));
   const inventoryBytes = await boundedFile(plan.installInventoryPath, 1024 * 1024);
   const manifestBytes = await boundedFile(plan.releaseManifestPath, 1024 * 1024);
   const digest = (bytes: Buffer): string => createHash("sha256").update(bytes).digest("hex");
@@ -199,9 +301,11 @@ export async function loadApprovedLocalLedgerRuntimePlan(input: {
   const inventory = JSON.parse(inventoryBytes.toString("utf8"));
   const manifest = JSON.parse(manifestBytes.toString("utf8"));
   const installFormat = inventory?.format;
-  const supportedFormat = ["tr-standalone-install-v3", "tr-standalone-install-v4",
+  const supportedFormat = ["tr-standalone-install-v4",
     "tr-standalone-install-v5", "tr-standalone-install-v6"].includes(installFormat);
-  const requiresApiPin = installFormat !== "tr-standalone-install-v3";
+  if (installFormat === "tr-standalone-install-v3" && input.requireApiRuntimePin === true) {
+    throw new Error("Cluster API binding requires a signed install with an API image pin");
+  }
   const requiresPortalPins = installFormat === "tr-standalone-install-v5"
     || installFormat === "tr-standalone-install-v6";
   const artifactPin = (value: unknown, manifestPath: string, archivePath: string): boolean => {
@@ -215,8 +319,11 @@ export async function loadApprovedLocalLedgerRuntimePlan(input: {
     || manifest?.format !== "tr-release-candidate-manifest-v2"
     || inventory.sourceRevision !== plan.sourceRevision
     || manifest.sourceRevision !== plan.sourceRevision
-    || (requiresApiPin && !artifactPin(inventory.apiRuntime,
-      "images/api.manifest.json", "images/api.image.tar"))
+    || inventory.packageManifest !== "release-manifest.json"
+    || inventory.packageManifestSha256 !== plan.releaseManifestSha256
+    || plan.releaseManifestPath !== join(dirname(plan.installInventoryPath), inventory.packageManifest)
+    || !artifactPin(inventory.apiRuntime,
+      "images/api.manifest.json", "images/api.image.tar")
     || (requiresPortalPins && (!["admin", "applicant"].every((role) =>
       artifactPin(inventory.portalRuntimes?.[role],
         `images/${role}.manifest.json`, `images/${role}.image.tar`))
@@ -228,8 +335,14 @@ export async function loadApprovedLocalLedgerRuntimePlan(input: {
         || !SHA256.test(inventory.installRelay.sha256)))) {
     throw new Error("Local API runtime inventory or release manifest disagrees with approved install artifacts");
   }
-  if (input.requireApiRuntimePin === true && !requiresApiPin) {
-    throw new Error("Cluster API binding requires a signed install with an API image pin");
+  const approvedKeys = Object.entries(plan.verifierKeySha256);
+  if (manifest.verifierKeySha256 === null || typeof manifest.verifierKeySha256 !== "object"
+    || Array.isArray(manifest.verifierKeySha256)
+    || Object.keys(manifest.verifierKeySha256 ?? {}).length !== approvedKeys.length
+    || approvedKeys.some(([name, hash]) =>
+      !Object.hasOwn(manifest.verifierKeySha256, name)
+      || manifest.verifierKeySha256[name] !== hash)) {
+    throw new Error("Local API approved verifier-key catalog differs from the release manifest");
   }
   return plan;
 }
@@ -243,24 +356,30 @@ export async function createApprovedLocalLedgerRuntimeSource(plan: LocalLedgerRu
     reader: {
       async readCurrentFinalizedLedger(address) {
         const view = await reader.readCurrentFinalizedLedger(address);
-        if (view !== null && (typeof view.ledger.governanceActionCount !== "bigint"
-          || view.ledger.governanceActionCount
-            !== BigInt(Object.keys(plan.sequenceTimestamps).length - 1))) {
-          throw new Error("Approved sequence timestamps do not cover the finalized governance count");
+        if (view !== null) {
+          assertApprovedDeploymentImage(plan, view);
+          assertApprovedPlanCoversGovernanceCount(plan, view.ledger.governanceActionCount);
         }
         return view;
       },
     },
     sequenceToTimestamp: sequenceTimestampMap(plan),
   });
+  const assertPlanCurrent = () => {
+    const now = Date.now();
+    if (now < Date.parse(plan.notBefore) || now > Date.parse(plan.notAfter)) {
+      throw new LocalLedgerSourceUnavailableError(new Error("Local API runtime plan is not currently valid"));
+    }
+  };
   return {
     ...source,
     async loadSnapshot() {
-      const now = Date.now();
-      if (now < Date.parse(plan.notBefore) || now > Date.parse(plan.notAfter)) {
-        throw new Error("Local API runtime plan is not currently valid");
-      }
+      assertPlanCurrent();
       return source.loadSnapshot();
+    },
+    async readFinalizedProposalLedger() {
+      assertPlanCurrent();
+      return source.readFinalizedProposalLedger();
     },
   };
 }

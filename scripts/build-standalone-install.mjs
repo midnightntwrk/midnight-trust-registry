@@ -95,9 +95,8 @@ export async function stageStaticRuntimeImage(inputDirectory, destination, role,
     archive, archiveSha256: await sha256(join(destination, archive)) };
 }
 
-/** Creates a fresh bundle only; failed output is retained for inspection. */
-export async function buildStandaloneInstall(options = {}) {
-  const sourceRevision = verifiedSourceRevision();
+export function validateStandaloneInstallInputs(options, sourceRevision, inspectImage = (reference) =>
+  JSON.parse(command("docker", ["image", "inspect", reference, "--format", "{{json .RepoDigests}}"]))) {
   const staticDirectories = [options.adminImageDirectory, options.applicantImageDirectory];
   if (staticDirectories.some((directory) => directory !== undefined)
     && (staticDirectories.some((directory) => directory === undefined)
@@ -118,8 +117,32 @@ export async function buildStandaloneInstall(options = {}) {
     throw new Error("Explicit install paths must be absolute");
   }
   const destination = join(outputRoot, sourceRevision);
-  mkdirSync(outputRoot, { recursive: true });
   if (existsSync(destination)) throw new Error("Install bundle already exists; do not overwrite release bytes");
+  for (const name of STANDALONE_PROOF_PARAMETER_PATHS) {
+    const source = join(proofSource, name);
+    if (!existsSync(source) || !lstatSync(source).isFile()) {
+      throw new Error(`Proof parameter is missing or not a regular file: ${name}`);
+    }
+  }
+  const pinned = pinnedStandaloneImages(readFileSync(join(root, "deploy/standalone/compose.yml"), "utf8"));
+  for (const { role, reference } of pinned) {
+    const digests = inspectImage(reference);
+    if (!Array.isArray(digests) || !digests.includes(reference)) {
+      throw new Error(`Local image does not retain approved repository digest: ${role}`);
+    }
+  }
+  return { sourceRevision, outputRoot, proofSource, destination, pinned };
+}
+
+export function preflightStandaloneInstall(options = {}) {
+  const sourceRevision = verifiedSourceRevision();
+  return validateStandaloneInstallInputs(options, sourceRevision);
+}
+
+/** Creates a fresh bundle only; failed output is retained for inspection. */
+export async function buildStandaloneInstall(options = {}) {
+  const { sourceRevision, outputRoot, proofSource, destination, pinned } = preflightStandaloneInstall(options);
+  mkdirSync(outputRoot, { recursive: true });
   mkdirSync(destination, { mode: 0o700 });
   const packages = join(destination, "packages");
   mkdirSync(packages);
@@ -151,7 +174,10 @@ export async function buildStandaloneInstall(options = {}) {
   }
 
   const images = [];
-  const pinned = pinnedStandaloneImages(readFileSync(composeTarget, "utf8"));
+  const stagedPinned = pinnedStandaloneImages(readFileSync(composeTarget, "utf8"));
+  if (JSON.stringify(stagedPinned) !== JSON.stringify(pinned)) {
+    throw new Error("Runtime Compose image pins changed after preflight");
+  }
   mkdirSync(join(destination, "images"));
   for (const { role, reference } of pinned) {
     const digests = JSON.parse(command("docker", ["image", "inspect", reference,
@@ -191,7 +217,9 @@ export async function buildStandaloneInstall(options = {}) {
   const inventory = {
     format: portalRuntimes ? "tr-standalone-install-v6"
       : apiRuntime ? "tr-standalone-install-v4" : "tr-standalone-install-v3", sourceRevision,
-    packageManifest: "release-manifest.json", artifactDirectory: "packages",
+    packageManifest: "release-manifest.json",
+    packageManifestSha256: await sha256(join(destination, "release-manifest.json")),
+    artifactDirectory: "packages",
     runtimeCompose, images, proofParameters: { directory: "proof-params", files: proofFiles },
     ...(apiRuntime ? { apiRuntime } : {}),
     ...(portalRuntimes ? { portalRuntimes } : {}),
@@ -207,11 +235,16 @@ export async function buildStandaloneInstall(options = {}) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (process.argv.length !== 2 && (process.argv.length !== 4 || process.argv[2] !== "--api-image-dir")
-    && (process.argv.length !== 8 || process.argv[2] !== "--api-image-dir"
-      || process.argv[4] !== "--admin-image-dir" || process.argv[6] !== "--applicant-image-dir")) {
-    throw new Error("Usage: node scripts/build-standalone-install.mjs [--api-image-dir <absolute-directory> [--admin-image-dir <absolute-directory> --applicant-image-dir <absolute-directory>]]");
+  const args = process.argv.slice(2);
+  const preflight = args[0] === "--preflight";
+  if (preflight) args.shift();
+  if (args.length !== 0 && (args.length !== 2 || args[0] !== "--api-image-dir")
+    && (args.length !== 6 || args[0] !== "--api-image-dir"
+      || args[2] !== "--admin-image-dir" || args[4] !== "--applicant-image-dir")) {
+    throw new Error("Usage: node scripts/build-standalone-install.mjs [--preflight] [--api-image-dir <absolute-directory> [--admin-image-dir <absolute-directory> --applicant-image-dir <absolute-directory>]]");
   }
-  console.log(JSON.stringify(await buildStandaloneInstall({ apiImageDirectory: process.argv[3],
-    adminImageDirectory: process.argv[5], applicantImageDirectory: process.argv[7] })));
+  const options = { apiImageDirectory: args[1], adminImageDirectory: args[3],
+    applicantImageDirectory: args[5] };
+  console.log(JSON.stringify(preflight ? preflightStandaloneInstall(options)
+    : await buildStandaloneInstall(options)));
 }

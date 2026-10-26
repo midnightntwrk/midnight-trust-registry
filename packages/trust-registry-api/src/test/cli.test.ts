@@ -15,6 +15,8 @@ describe("API CLI binding", () => {
       [...localArgs, "--snapshot", "fixture.json"],
       [...localArgs, "--workspace", "workspace.json"],
       [...localArgs, "--unsafe-demo-mutations"],
+      ["serve", "--snapshot", "fixture.json", "--serve-portals"],
+      ["serve", "--workspace", "workspace.json", "--serve-portals"],
       ["serve", "--snapshot", "fixture.json", "--local-ledger-signature", "/run/api-plan.sig"],
     ]) {
       expect(() => parseTrustRegistryApiCliArgs(args)).toThrow();
@@ -28,6 +30,7 @@ describe("API CLI binding", () => {
     expect(parseTrustRegistryApiCliArgs([
       ...localArgs, "--host", "0.0.0.0", "--cluster-bind",
     ]).clusterBind).toBe(true);
+    expect(parseTrustRegistryApiCliArgs([...localArgs, "--serve-portals"]).servePortals).toBe(true);
     for (const args of [
       [...localArgs, "--cluster-bind"],
       ["serve", "--snapshot", "fixture.json", "--host", "0.0.0.0", "--cluster-bind"],
@@ -41,6 +44,22 @@ describe("API CLI binding", () => {
     ])).toThrow(/forbids demo mutations/u);
   });
 
+  it("preflights only the complete signed local plan without listener options", () => {
+    const preflight = ["check-local-ledger-plan", ...localArgs.slice(1)];
+    expect(parseTrustRegistryApiCliArgs(preflight).command).toBe("check-local-ledger-plan");
+    for (const args of [
+      preflight.slice(0, -2),
+      [...preflight, "--host", "0.0.0.0"],
+      [...preflight, "--port", "4400"],
+      [...preflight, "--cluster-bind"],
+      [...preflight, "--serve-portals"],
+      [...preflight, "--unsafe-demo-mutations"],
+      ["check-local-ledger-plan", "--snapshot", "fixture.json"],
+    ]) {
+      expect(() => parseTrustRegistryApiCliArgs(args)).toThrow();
+    }
+  });
+
   it("refuses public demo mutation listeners", () => {
     for (const host of ["0.0.0.0", "::", "192.0.2.1", "registry.example", "localhost"]) {
       expect(() => parseTrustRegistryApiCliArgs([
@@ -51,6 +70,19 @@ describe("API CLI binding", () => {
       expect(parseTrustRegistryApiCliArgs([
         "serve", "--workspace", "workspace.json", "--host", host, "--unsafe-demo-mutations",
       ]).host).toBe(host);
+    }
+  });
+
+  it("keeps read-only fixture sources on loopback too", () => {
+    for (const source of [["--snapshot", "fixture.json"], ["--workspace", "workspace.json"]]) {
+      for (const host of ["0.0.0.0", "::", "192.0.2.1", "registry.example", "localhost"]) {
+        expect(() => parseTrustRegistryApiCliArgs([
+          "serve", ...source, "--host", host,
+        ])).toThrow(/Fixture-backed API modes require a loopback host/u);
+      }
+      for (const host of ["127.0.0.1", "::1"]) {
+        expect(parseTrustRegistryApiCliArgs(["serve", ...source, "--host", host]).host).toBe(host);
+      }
     }
   });
 });

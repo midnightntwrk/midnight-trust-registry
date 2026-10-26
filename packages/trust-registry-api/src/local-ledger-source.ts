@@ -10,12 +10,20 @@ import type {
 } from "@midnight-ntwrk/trust-registry-integration";
 
 import { assertLocalLedgerEvidenceMatchesSnapshot } from "./local-ledger-projection.js";
+import type { FinalizedProposalLedgerReader } from "./compact-proposal-observation.js";
 import type { TrustRegistryApiStateSource } from "./source.js";
 
 const CONTRACT_ADDRESS = /^0x[0-9a-f]{64}$/u;
 const FINALIZED_HASH = /^0x[0-9a-f]{64}$/u;
 const SNAPSHOT_SHA256 = /^[0-9a-f]{64}$/u;
 const MAX_SNAPSHOT_BYTES = 64 * 1024 * 1024;
+
+export class LocalLedgerSourceUnavailableError extends Error {
+  constructor(cause: unknown) {
+    super("Finalized local Trust Registry state is unavailable", { cause });
+    this.name = "LocalLedgerSourceUnavailableError";
+  }
+}
 
 async function readBoundedSnapshot(path: string): Promise<Buffer> {
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -50,7 +58,7 @@ export function createLocalLedgerBoundSource(input: {
   contractAddress: string;
   reader: Pick<FinalizedRegistryBootstrapReader, "readCurrentFinalizedLedger">;
   sequenceToTimestamp: SequenceToTimestamp;
-}): TrustRegistryApiStateSource {
+}): TrustRegistryApiStateSource & { readFinalizedProposalLedger: FinalizedProposalLedgerReader } {
   const address = input.contractAddress.toLowerCase();
   if (!CONTRACT_ADDRESS.test(address) || /^0x0{64}$/u.test(address)) {
     throw new Error("A nonzero deployed local contract address is required");
@@ -60,9 +68,8 @@ export function createLocalLedgerBoundSource(input: {
     throw new Error("An approved snapshot SHA-256 digest is required");
   }
   const addressBytes = Uint8Array.from(Buffer.from(address.slice(2), "hex"));
-  return {
-    mode: "local-ledger",
-    async loadSnapshot() {
+  const readBoundState = async () => {
+    try {
       const view = await input.reader.readCurrentFinalizedLedger(address);
       if (view === null) throw new Error("Finalized local Trust Registry ledger is unavailable");
       if (view.networkId !== "undeployed" || view.contractAddress.toLowerCase() !== address
@@ -82,7 +89,19 @@ export function createLocalLedgerBoundSource(input: {
         contractAddress: addressBytes,
         sequenceToTimestamp: input.sequenceToTimestamp,
       });
-      return snapshot;
+      return { snapshot, ledger: view.ledger };
+    } catch (cause) {
+      throw new LocalLedgerSourceUnavailableError(cause);
+    }
+  };
+  return {
+    mode: "local-ledger",
+    localProposalContractAddress: address,
+    async loadSnapshot() {
+      return (await readBoundState()).snapshot;
+    },
+    async readFinalizedProposalLedger() {
+      return (await readBoundState()).ledger;
     },
   };
 }

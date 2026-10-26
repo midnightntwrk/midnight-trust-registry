@@ -7,6 +7,9 @@ info:
     ports. A response is not independently authenticated ledger evidence.
     Packaged CLI read routes work without trusted ports; private/governed routes
     return 503 unless an embedding host installs the corresponding port.
+    The local-ledger 0.1.0 profile supports current decisions only. Historical
+    authorization, recognition, and TRQP decision/evidence routes return 501;
+    fixture-backed mode retains its development-only historical behavior.
 servers:
   - url: http://127.0.0.1:4400
     description: Local reference server only
@@ -56,6 +59,12 @@ x-responses:
     '400': { $ref: '#/components/responses/BadRequest' }
     '404': { $ref: '#/components/responses/NotFound' }
     '424': { $ref: '#/components/responses/MissingEvidence' }
+  historical: &historicalResponses
+    '200': { description: Fixture-backed historical result; not local-ledger 0.1.0 evidence }
+    '400': { $ref: '#/components/responses/BadRequest' }
+    '404': { $ref: '#/components/responses/NotFound' }
+    '424': { $ref: '#/components/responses/MissingEvidence' }
+    '501': { $ref: '#/components/responses/HistoricalOutOfScope' }
   governed: &governedResponses
     '200': { description: Prepared signing context }
     '201': { description: One-use challenge created by the trusted intake port }
@@ -280,6 +289,7 @@ components:
     Forbidden: { description: Actor, scope, or signer not authorized }
     Conflict: { description: Stale context, replay, or workspace lock }
     MissingEvidence: { description: Required historical bundle or epoch unavailable }
+    HistoricalOutOfScope: { description: Historical decisions are outside the local-ledger 0.1.0 profile }
     PortUnavailable: { description: Trusted port or resolver not installed }
 paths:
   /health:
@@ -362,15 +372,16 @@ paths:
     post:
       tags: [Query]
       summary: Evaluate authorization at a requested instant
+      description: Fixture-mode history only; local-ledger 0.1.0 returns 501 historical-decisions-out-of-scope.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/HistoricalAuthorizationLookup' } } }
-      responses: *queryResponses
+      responses: *historicalResponses
   /v1/authorizations/evaluate/evidence:
     post:
       tags: [Query]
       summary: Export timestamp-selected authorization evidence
-      description: The response is a historical claim, not proof of current trust. Returns 404 for no matching statement and 424 when epoch-bound evidence is unavailable.
+      description: Fixture-mode history only; local-ledger 0.1.0 returns 501 historical-decisions-out-of-scope. A fixture response is not proof of current trust.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/HistoricalAuthorizationLookup' } } }
@@ -381,6 +392,7 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
         '424': { $ref: '#/components/responses/MissingEvidence' }
+        '501': { $ref: '#/components/responses/HistoricalOutOfScope' }
   /v1/authorizations/resolve:
     post:
       tags: [Query]
@@ -414,15 +426,16 @@ paths:
     post:
       tags: [Query]
       summary: Evaluate recognition at a requested instant
+      description: Fixture-mode history only; local-ledger 0.1.0 returns 501 historical-decisions-out-of-scope.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/RecognitionLookup' } } }
-      responses: *queryResponses
+      responses: *historicalResponses
   /v1/recognitions/evaluate/evidence:
     post:
       tags: [Query]
       summary: Export timestamp-selected recognition evidence
-      description: The response is a historical claim, not proof of current trust. Returns 404 for no matching statement and 424 when epoch-bound evidence is unavailable.
+      description: Fixture-mode history only; local-ledger 0.1.0 returns 501 historical-decisions-out-of-scope. A fixture response is not proof of current trust.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/RecognitionLookup' } } }
@@ -433,6 +446,7 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
         '424': { $ref: '#/components/responses/MissingEvidence' }
+        '501': { $ref: '#/components/responses/HistoricalOutOfScope' }
   /v1/recognitions/resolve:
     post:
       tags: [Query]
@@ -451,22 +465,26 @@ paths:
     post:
       tags: [Query]
       summary: Query TRQP authorizations
-      responses: *queryResponses
+      description: Fixture-mode history only; local-ledger 0.1.0 returns 501 historical-decisions-out-of-scope.
+      responses: *historicalResponses
   /v1/trqp/authorizations/evidence:
     post:
       tags: [Query]
       summary: Retrieve TRQP authorization evidence
-      responses: *queryResponses
+      description: Fixture-mode history only; local-ledger 0.1.0 returns 501 historical-decisions-out-of-scope.
+      responses: *historicalResponses
   /v1/trqp/recognitions/query:
     post:
       tags: [Query]
       summary: Query TRQP recognitions
-      responses: *queryResponses
+      description: Fixture-mode history only; local-ledger 0.1.0 returns 501 historical-decisions-out-of-scope.
+      responses: *historicalResponses
   /v1/trqp/recognitions/evidence:
     post:
       tags: [Query]
       summary: Retrieve TRQP recognition evidence
-      responses: *queryResponses
+      description: Fixture-mode history only; local-ledger 0.1.0 returns 501 historical-decisions-out-of-scope.
+      responses: *historicalResponses
   /v1/pending-applications:
     post:
       tags: [Private intake]

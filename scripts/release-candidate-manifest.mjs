@@ -14,6 +14,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const HASH = /^[0-9a-f]{40}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
 const CONTRACT_PREFIX = "package/dist/managed/trust-registry";
+const CONTRACT_SOURCE_ENTRY = "package/src/trust-registry.compact";
+const GENERATED_CONTRACT_ENTRY = `${CONTRACT_PREFIX}/contract/index.js`;
 const hashBytes = (value) => createHash("sha256").update(value).digest("hex");
 const sha256 = (path) => {
   const hash = createHash("sha256");
@@ -41,6 +43,12 @@ const assertExactTarballs = (artifactDir, filenames) => {
 };
 
 const packedEntries = (tarball) => run("tar", ["-tzf", tarball]).split("\n");
+const assertPackedPackageIdentity = (tarball, name, version) => {
+  const manifest = JSON.parse(readPackedTarEntry(tarball, "package/package.json").toString("utf8"));
+  if (manifest.name !== name || manifest.version !== version) {
+    throw new Error(`Packed package identity differs from candidate workspace: ${name}`);
+  }
+};
 const packedContractInfo = (tarball) => JSON.parse(readPackedTarEntry(tarball,
   `${CONTRACT_PREFIX}/compiler/contract-info.json`).toString("utf8"));
 const verifierKeyEntry = (name) => `${CONTRACT_PREFIX}/keys/${name}.verifier`;
@@ -77,6 +85,8 @@ export function buildReleaseCandidateManifest(input) {
     if (!existsSync(path) || statSync(path).size === 0) {
       throw new Error(`${workspace}: packed artifact is missing or empty: ${filename}`);
     }
+    assertCanonicalPackedPaths(packedEntries(path));
+    assertPackedPackageIdentity(path, manifest.name, manifest.version);
     return {
       workspace,
       name: manifest.name,
@@ -97,9 +107,21 @@ export function buildReleaseCandidateManifest(input) {
   const contractInfoPath = join(repoRoot,
     "contracts/trust-registry/dist/managed/trust-registry/compiler/contract-info.json");
   const contractInfo = json(contractInfoPath);
+  const compactCompilerVersion = readFileSync(join(repoRoot, ".compact-version"), "utf8").trim();
+  if (contractInfo["compiler-version"] !== compactCompilerVersion) {
+    throw new Error("Generated contract compiler version differs from the candidate toolchain pin");
+  }
   if (hashPackedTarEntry(contractTarball, `${CONTRACT_PREFIX}/compiler/contract-info.json`)
     !== sha256(contractInfoPath)) {
     throw new Error("Packed contract metadata does not match the candidate tree");
+  }
+  for (const [packed, source] of [
+    [CONTRACT_SOURCE_ENTRY, "contracts/trust-registry/src/trust-registry.compact"],
+    [GENERATED_CONTRACT_ENTRY, "contracts/trust-registry/dist/managed/trust-registry/contract/index.js"],
+  ]) {
+    if (hashPackedTarEntry(contractTarball, packed) !== sha256(join(repoRoot, source))) {
+      throw new Error(`Packed contract does not match the candidate tree: ${packed}`);
+    }
   }
   const verifierKeySha256 = verifierKeyHashes(contractTarball, contractInfo);
   const sourceKeys = join(repoRoot, "contracts/trust-registry/dist/managed/trust-registry/keys");
@@ -119,7 +141,7 @@ export function buildReleaseCandidateManifest(input) {
     format: "tr-release-candidate-manifest-v2",
     sourceRevision: revision,
     packageVersion: packageRoot.version,
-    compactCompilerVersion: readFileSync(join(repoRoot, ".compact-version"), "utf8").trim(),
+    compactCompilerVersion,
     packageManager: packageRoot.packageManager,
     lockfileSha256: sha256(join(repoRoot, "pnpm-lock.yaml")),
     contractSourceSha256: sha256(join(repoRoot, "contracts/trust-registry/src/trust-registry.compact")),
@@ -134,15 +156,32 @@ export function buildReleaseCandidateManifest(input) {
 }
 
 export function assertFullPackedContract(paths, contractInfo) {
-  const listed = paths.filter((path) => path.length > 0);
-  if (new Set(listed).size !== listed.length) {
-    throw new Error("Packed contract contains duplicate archive paths");
-  }
+  assertCanonicalPackedPaths(paths);
   const files = paths.map((path) => path.replace(/^package\//u, ""));
   const required = "dist/managed/trust-registry/compiler/contract-info.json";
   if (!files.includes(required)) throw new Error(`Packed contract is missing ${required}`);
   const missing = missingFullContractArtifacts(files, "trust-registry", proofCircuitNames(contractInfo));
   if (missing.length > 0) throw new Error(`Packed contract has incomplete proof artifacts: ${missing.join(" and ")}`);
+}
+
+export function assertCanonicalPackedPaths(paths) {
+  const listed = paths.filter((path) => path.length > 0);
+  const normalized = listed.map((path) => path.endsWith("/") ? path.slice(0, -1) : path);
+  if (new Set(normalized).size !== listed.length) {
+    throw new Error("Packed package contains duplicate archive paths");
+  }
+  for (const path of listed) {
+    if (!path.startsWith("package/") || /[\\\x00-\x1f\x7f]/u.test(path)) {
+      throw new Error("Packed package contains non-canonical archive paths");
+    }
+    const relative = path.slice("package/".length);
+    if (relative === "") continue;
+    const segments = relative.split("/");
+    if (path.endsWith("/")) segments.pop();
+    if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
+      throw new Error("Packed package contains non-canonical archive paths");
+    }
+  }
 }
 
 export function verifyReleaseCandidateArtifacts(manifest, artifactDir, workspaces = artifactWorkspaces) {
@@ -180,12 +219,21 @@ export function verifyReleaseCandidateArtifacts(manifest, artifactDir, workspace
     if (!existsSync(path) || statSync(path).size !== entry.sizeBytes || sha256(path) !== entry.sha256) {
       throw new Error(`Release candidate artifact hash or size mismatch: ${entry.filename}`);
     }
+    assertCanonicalPackedPaths(packedEntries(path));
+    assertPackedPackageIdentity(path, entry.name, entry.version);
   }
   assertExactTarballs(artifactDir, filenames);
   const contract = manifest.packages.find(({ workspace }) => workspace === "contracts/trust-registry");
   if (contract === undefined) throw new Error("Release contract package is missing");
   const contractTarball = join(artifactDir, contract.filename);
+  if (hashPackedTarEntry(contractTarball, CONTRACT_SOURCE_ENTRY) !== manifest.contractSourceSha256
+    || hashPackedTarEntry(contractTarball, GENERATED_CONTRACT_ENTRY) !== manifest.generatedContractSha256) {
+    throw new Error("Release candidate packed contract source or generated contract hash mismatch");
+  }
   const contractInfo = packedContractInfo(contractTarball);
+  if (contractInfo["compiler-version"] !== manifest.compactCompilerVersion) {
+    throw new Error("Release candidate compiler version differs from packed contract metadata");
+  }
   const expectedHashes = verifierKeyHashes(contractTarball, contractInfo);
   const actualHashes = manifest.verifierKeySha256;
   if (actualHashes === null || typeof actualHashes !== "object" || Array.isArray(actualHashes)
@@ -232,22 +280,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     artifactDir: join(root, artifactDirectory),
     revision,
   });
-  const contract = manifest.packages.find(({ workspace }) => workspace === "contracts/trust-registry");
-  if (contract === undefined) throw new Error("Release contract package is missing");
-  const packedPaths = packedEntries(join(root, artifactDirectory, contract.filename));
-  const contractTarball = join(root, artifactDirectory, contract.filename);
-  const contractInfo = json(join(root,
-    "contracts/trust-registry/dist/managed/trust-registry/compiler/contract-info.json"));
-  assertFullPackedContract(packedPaths, contractInfo);
-  for (const [packed, source] of [
-    ["package/src/trust-registry.compact", "contracts/trust-registry/src/trust-registry.compact"],
-    ["package/dist/managed/trust-registry/contract/index.js",
-      "contracts/trust-registry/dist/managed/trust-registry/contract/index.js"],
-  ]) {
-    if (hashPackedTarEntry(contractTarball, packed) !== sha256(join(root, source))) {
-      throw new Error(`Packed contract does not match the candidate tree: ${packed}`);
-    }
-  }
+  verifyReleaseCandidateArtifacts(manifest, join(root, artifactDirectory));
   const output = join(root, "artifacts/release-candidate", revision, "manifest.json");
   mkdirSync(dirname(output), { recursive: true });
   writeFileSync(output, `${JSON.stringify(manifest, null, 2)}\n`, { flag: "w", mode: 0o600 });

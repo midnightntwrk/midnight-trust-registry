@@ -134,7 +134,7 @@ const expectHttp = async (response, status) => {
   return payload;
 };
 const adversarialMatrix = new AdversarialMatrix({ collectFailures: true });
-const expectedAdversarialCaseCount = 186;
+const expectedAdversarialCaseCount = 198;
 
 const lastActiveHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-last-active");
 const bootstrapMembership = {
@@ -311,14 +311,26 @@ const policyHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-po
 const policySecond = createMaintainerScenarioFixture("governed-demo-policy-second");
 const policyThird = createMaintainerScenarioFixture("governed-demo-policy-third");
 const historicalIssuer = createIssuerScenarioFixture("governed-demo-historical-issuer");
+const historicalVerifier = createVerifierScenarioFixture("governed-demo-historical-verifier");
+const historicalAuditor = createAuditorScenarioFixture("governed-demo-historical-auditor");
+const historicalRecognition = createRecognitionScenarioFixture("governed-demo-historical-recognition");
 const pendingPolicyIssuer = createIssuerScenarioFixture("governed-demo-pending-policy-issuer");
 const currentPolicyIssuer = createIssuerScenarioFixture("governed-demo-current-policy-issuer");
 const policyClient = new TrustRegistrySimulatorClient(policyHarness.simulator);
 policyHarness.authorizeIssuer(historicalIssuer);
+policyHarness.authorizeVerifier(historicalVerifier);
+policyHarness.authorizeAuditor(historicalAuditor);
+policyHarness.authorizeRecognition(historicalRecognition);
 const originalPolicyBundle = policyHarness.evaluateCurrentIssuerDecision(historicalIssuer);
+const originalVerifierBundle = policyHarness.evaluateCurrentVerifierDecision(historicalVerifier);
+const originalAuditorBundle = policyHarness.evaluateCurrentAuditorDecision(historicalAuditor);
+const originalRecognitionBundle = policyHarness.evaluateCurrentRecognitionDecision(historicalRecognition);
 const originalPolicySnapshot = publishSimulatorSnapshot(policyHarness, {
   label: "governed-demo-policy-replay",
   issuers: [{ fixture: historicalIssuer, label: "historical-issuer" }],
+  verifiers: [{ fixture: historicalVerifier, label: "historical-verifier" }],
+  auditors: [{ fixture: historicalAuditor, label: "historical-auditor" }],
+  recognitions: [{ fixture: historicalRecognition, label: "historical-recognition" }],
 });
 policyHarness.authorizeMaintainer(policySecond);
 policyHarness.authorizeMaintainer(policyThird);
@@ -370,16 +382,64 @@ assert.equal(policyHarness.simulator.getLedger().governanceActionCount,
   policyActionCountBeforeSignatureReplay + 1n);
 policyHarness.activateIssuer(currentPolicyIssuer, [policySecond]);
 const currentPolicyBundle = policyHarness.evaluateCurrentIssuerDecision(currentPolicyIssuer);
+const recognitionReplay = createRecognitionScenarioFixture("governed-demo-recognition-policy-replay");
+const recognitionProposal = policyHarness.prepareRecognitionProposalAction(recognitionReplay);
+const recognitionProposalEvidence = policyHarness.signRecognitionProposalEvidence(recognitionProposal);
+const recognitionProposalCount = policyHarness.simulator.getLedger().governanceActionCount;
+adversarialMatrix.expectThrown(() => policyHarness.executeRecognitionProposalWithSignatures(
+  recognitionReplay,
+  [signCompact(policySecond, recognitionProposal, policyHarness, formerPolicyCommitment),
+    signCompact(policyThird, recognitionProposal, policyHarness, formerPolicyCommitment)],
+  recognitionProposalEvidence,
+  recognitionProposal,
+), {
+  id: "compact-recognition-proposal-old-policy-signature-replay",
+  invariant: "A recognition proposal with a current payload cannot reuse former-policy maintainer signatures",
+  boundary: "compact", messagePattern: /Invalid Jubjub Schnorr signature/u,
+  category: "old-policy-signature-rejected",
+});
+assert.equal(policyHarness.simulator.getLedger().governanceActionCount, recognitionProposalCount);
+policyHarness.executeRecognitionProposalWithSignatures(
+  recognitionReplay,
+  [signCompact(policySecond, recognitionProposal, policyHarness),
+    signCompact(policyThird, recognitionProposal, policyHarness)],
+  recognitionProposalEvidence,
+  recognitionProposal,
+);
+const recognitionApproval = policyHarness.prepareRecognitionDecisionAction(recognitionReplay, "approve");
+const recognitionApprovalCount = policyHarness.simulator.getLedger().governanceActionCount;
+adversarialMatrix.expectThrown(() => policyHarness.executeRecognitionDecisionWithSignatures(
+  recognitionReplay, "approve",
+  [signCompact(policySecond, recognitionApproval, policyHarness, formerPolicyCommitment),
+    signCompact(policyThird, recognitionApproval, policyHarness, formerPolicyCommitment)],
+), {
+  id: "compact-recognition-approval-old-policy-signature-replay",
+  invariant: "A recognition approval with a current payload cannot reuse former-policy maintainer signatures",
+  boundary: "compact", messagePattern: /Invalid Jubjub Schnorr signature/u,
+  category: "old-policy-signature-rejected",
+});
+assert.equal(policyHarness.simulator.getLedger().governanceActionCount, recognitionApprovalCount);
+policyHarness.executeRecognitionDecisionWithSignatures(recognitionReplay, "approve", [
+  signCompact(policySecond, recognitionApproval, policyHarness),
+  signCompact(policyThird, recognitionApproval, policyHarness),
+]);
 const historicalPolicyBundle = policyHarness.buildIssuerHistoricalEvidence(historicalIssuer);
 assert.equal(originalPolicyBundle.policy.version, historicalPolicyBundle.policy.version);
 assert.notEqual(historicalPolicyBundle.policy.version, currentPolicyBundle.policy.version);
+assert.notEqual(originalVerifierBundle.policy.version, currentPolicyBundle.policy.version);
 policyHarness.revokeIssuer(historicalIssuer, [policySecond]);
+policyHarness.revokeVerifier(historicalVerifier, [policySecond]);
+policyHarness.revokeAuditor(historicalAuditor, [policySecond]);
+policyHarness.revokeRecognition(historicalRecognition, [policySecond]);
 const revisedPolicySnapshot = publishSimulatorSnapshot(policyHarness, {
   label: "governed-demo-policy-replay",
   issuers: [
     { fixture: historicalIssuer, label: "historical-issuer" },
     { fixture: currentPolicyIssuer, label: "current-issuer" },
   ],
+  verifiers: [{ fixture: historicalVerifier, label: "historical-verifier" }],
+  auditors: [{ fixture: historicalAuditor, label: "historical-auditor" }],
+  recognitions: [{ fixture: historicalRecognition, label: "historical-recognition" }],
 }, originalPolicySnapshot);
 // This listener serves the isolated policy harness's archived snapshot, not the later mutable demo server.
 const policyServer = createTrustRegistryApiServer({
@@ -439,6 +499,109 @@ try {
     invariant: "TRQP retains the old issuer policy and epoch after a threshold revision",
     boundary: "adapter", trusted: historicalDecision.trustedAtTime,
   });
+  const oldVerifierEvidence = originalPolicySnapshot.verifierEntries[0]?.evidence;
+  assert.ok(oldVerifierEvidence?.authorization);
+  assert.ok(revisedPolicySnapshot.evidenceArchive.some((bundle) =>
+    bundle.authorization?.authorizationId === oldVerifierEvidence.authorization.authorizationId
+      && bundle.epoch.epochId === oldVerifierEvidence.epoch.epochId));
+  const historicalVerifierEntry = revisedPolicySnapshot.verifierEntries.find((entry) =>
+    entry.authorization.authorizationId === historicalVerifier.authorizationId);
+  assert.equal(historicalVerifierEntry?.authorization.status, "revoked");
+  const verifierInstant = new Date(Date.parse(oldVerifierEvidence.epoch.validFrom) + 1).toISOString();
+  assert.ok(Date.parse(verifierInstant) < Date.parse(historicalVerifierEntry.evidence.epoch.validFrom));
+  const verifierResponse = await fetch(`http://127.0.0.1:${address.port}/v1/authorizations/evaluate/evidence`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      role: "verifier",
+      subjectDid: historicalVerifier.subjectDid,
+      resourceId: historicalVerifier.scopeResourceId,
+      at: verifierInstant,
+    }),
+  });
+  const historicalVerifierDecision = await expectHttp(verifierResponse, 200);
+  assert.equal(historicalVerifierDecision.bundle.epoch.epochId, oldVerifierEvidence.epoch.epochId);
+  assert.equal(historicalVerifierDecision.bundle.policy.version, oldVerifierEvidence.policy.version);
+  adversarialMatrix.expectDecision(historicalVerifierDecision, {
+    id: "verifier-historical-api-after-threshold-change",
+    invariant: "A threshold revision and later revocation retain the verifier decision at its original epoch",
+    boundary: "api", trusted: true, statusAtTime: "active",
+  });
+  const verifierTrqpResponse = await fetch(`http://127.0.0.1:${address.port}/v1/trqp/authorizations/evidence`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      entity_id: historicalVerifier.subjectDid,
+      authority_id: revisedPolicySnapshot.registry.registryDid,
+      action: "verify",
+      resource: historicalVerifier.scopeResourceId,
+      context: { time: verifierInstant },
+    }),
+  });
+  const historicalVerifierTrqpDecision = await expectHttp(verifierTrqpResponse, 200);
+  assert.equal(historicalVerifierTrqpDecision.bundle.epoch.epochId, oldVerifierEvidence.epoch.epochId);
+  assert.equal(historicalVerifierTrqpDecision.bundle.policy.version, oldVerifierEvidence.policy.version);
+  adversarialMatrix.expectDecision(historicalVerifierTrqpDecision, {
+    id: "verifier-historical-trqp-after-threshold-change",
+    invariant: "TRQP retains the old verifier policy and epoch after a threshold revision",
+    boundary: "adapter", trusted: historicalVerifierDecision.trustedAtTime,
+  });
+  const auditorAt = new Date(Date.parse(originalAuditorBundle.epoch.validFrom) + 1).toISOString();
+  const auditorDecision = await expectHttp(await fetch(
+    `http://127.0.0.1:${address.port}/v1/authorizations/evaluate/evidence`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ role: "auditor", subjectDid: historicalAuditor.subjectDid,
+        resourceId: historicalAuditor.scopeResourceId, at: auditorAt }),
+    },
+  ), 200);
+  assert.equal(auditorDecision.bundle.epoch.epochId, originalAuditorBundle.epoch.epochId);
+  assert.equal(auditorDecision.bundle.policy.version, originalAuditorBundle.policy.version);
+  assert.notEqual(auditorDecision.bundle.policy.version, revisedPolicySnapshot.policy.version);
+  adversarialMatrix.expectDecision(auditorDecision, {
+    id: "auditor-historical-api-after-threshold-change",
+    invariant: "The former auditor policy and epoch remain queryable after threshold revision and revocation",
+    boundary: "api", trusted: true, statusAtTime: "active",
+  });
+  const recognitionAt = new Date(Date.parse(originalRecognitionBundle.epoch.validFrom) + 1).toISOString();
+  const recognitionSelection = {
+    recognizedAuthorityDid: historicalRecognition.recognizedAuthorityDid,
+    recognizedRegistryId: historicalRecognition.recognizedRegistryId,
+    scopeResourceType: historicalRecognition.scopeResourceType,
+    scopeResourceId: historicalRecognition.scopeResourceId,
+    at: recognitionAt,
+  };
+  const recognitionDecision = await expectHttp(await fetch(
+    `http://127.0.0.1:${address.port}/v1/recognitions/evaluate/evidence`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify(recognitionSelection),
+    },
+  ), 200);
+  assert.equal(recognitionDecision.bundle.epoch.epochId, originalRecognitionBundle.epoch.epochId);
+  assert.equal(recognitionDecision.bundle.policy.version, originalRecognitionBundle.policy.version);
+  assert.notEqual(recognitionDecision.bundle.policy.version, revisedPolicySnapshot.policy.version);
+  adversarialMatrix.expectDecision(recognitionDecision, {
+    id: "recognition-historical-api-after-threshold-change",
+    invariant: "The former recognition policy and epoch remain queryable after threshold revision and revocation",
+    boundary: "api", trusted: true, statusAtTime: "active",
+  });
+  const recognitionTrqpDecision = await expectHttp(await fetch(
+    `http://127.0.0.1:${address.port}/v1/trqp/recognitions/evidence`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ entity_id: historicalRecognition.recognizedAuthorityDid,
+        authority_id: policyHarness.registryDid,
+        action: historicalRecognition.scopeResourceType,
+        resource: historicalRecognition.scopeResourceId,
+        context: { time: recognitionAt,
+          recognized_registry_id: historicalRecognition.recognizedRegistryId } }),
+    },
+  ), 200);
+  assert.equal(recognitionTrqpDecision.bundle.epoch.epochId, originalRecognitionBundle.epoch.epochId);
+  assert.equal(recognitionTrqpDecision.bundle.policy.version, originalRecognitionBundle.policy.version);
+  adversarialMatrix.expectDecision(recognitionTrqpDecision, {
+    id: "recognition-historical-trqp-after-threshold-change",
+    invariant: "TRQP retains the former recognition policy and epoch after threshold revision",
+    boundary: "adapter", trusted: true, recognition: true,
+  });
 } finally {
   await new Promise((resolve, reject) => policyServer.close((error) => error ? reject(error) : resolve()));
 }
@@ -448,6 +611,43 @@ adversarialMatrix.expectVerified(() => policyClient.verifyIssuerAuthorizationBun
   id: "issuer-history-survives-threshold-change",
   invariant: "Old issuer authorization remains verifiable under its original policy snapshot",
   boundary: "client",
+});
+adversarialMatrix.expectVerified(() => policyClient.verifyVerifierAuthorizationBundle(
+  originalVerifierBundle, {},
+), {
+  id: "verifier-history-survives-threshold-change",
+  invariant: "Old verifier authorization remains verifiable under its original policy snapshot",
+  boundary: "client",
+});
+adversarialMatrix.expectVerified(() => policyClient.verifyAuditorAuthorizationBundle(
+  originalAuditorBundle, {},
+), {
+  id: "auditor-history-survives-threshold-change",
+  invariant: "Old auditor authorization remains verifiable under its original policy snapshot",
+  boundary: "client",
+});
+adversarialMatrix.expectVerified(() => policyClient.verifyRecognitionBundle(
+  originalRecognitionBundle, {},
+), {
+  id: "recognition-history-survives-threshold-change",
+  invariant: "Old recognition remains verifiable under its original policy snapshot",
+  boundary: "client",
+});
+adversarialMatrix.expectThrown(() => policyClient.verifyAuditorAuthorizationBundle(
+  { ...originalAuditorBundle, policy: { ...originalAuditorBundle.policy, version: "v9" } }, {},
+), {
+  id: "auditor-uncommitted-policy-version",
+  invariant: "An auditor cannot substitute an uncommitted policy version after threshold revision",
+  boundary: "client", messagePattern: /not committed to the ledger/iu,
+  category: "uncommitted-policy-version-rejected",
+});
+adversarialMatrix.expectThrown(() => policyClient.verifyRecognitionBundle(
+  { ...originalRecognitionBundle, policy: { ...originalRecognitionBundle.policy, version: "v9" } }, {},
+), {
+  id: "recognition-uncommitted-policy-version",
+  invariant: "A recognition cannot substitute an uncommitted policy version after threshold revision",
+  boundary: "client", messagePattern: /not committed to the ledger/iu,
+  category: "uncommitted-policy-version-rejected",
 });
 adversarialMatrix.expectVerified(() => policyClient.verifyIssuerAuthorizationBundle(
   currentPolicyBundle, {},

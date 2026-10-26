@@ -55,6 +55,10 @@ export type TrustRegistryApiSourceMode = "snapshot" | "workspace" | "memory" | "
 
 export type TrustRegistryApiStateSource = {
   readonly mode: TrustRegistryApiSourceMode;
+  /** Address validated by a local finalized reader, including read-only sources. */
+  readonly localProposalContractAddress?: string;
+  /** Local-ledger mode must read proposal evidence through this deployment-bound reader. */
+  readonly readFinalizedProposalLedger?: import("./compact-proposal-observation.js").FinalizedProposalLedgerReader;
   loadSnapshot(): Promise<TrustRegistryOperatorSnapshot>;
 };
 

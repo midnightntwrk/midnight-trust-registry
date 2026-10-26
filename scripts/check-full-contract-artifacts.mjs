@@ -26,6 +26,11 @@ export const checkFullContractArtifacts = (root = repoRoot) => {
   for (const file of required) {
     if (!files.includes(file)) throw new Error(`Full contract artifact is missing ${file}`);
   }
+  const source = readFileSync(path.join(root, "contracts/trust-registry/src/trust-registry.compact"));
+  const packagedSource = readFileSync(path.join(dist, "trust-registry.compact"));
+  if (!source.equals(packagedSource)) {
+    throw new Error("Full contract artifact Compact source differs from the current source");
+  }
   const info = JSON.parse(readFileSync(path.join(root, "contracts/trust-registry", required[2]), "utf8"));
   const missing = missingFullContractArtifacts(files, managedDirectory, proofCircuitNames(info));
   if (missing.length > 0) throw new Error(`Full contract artifacts are incomplete: ${missing.join(" and ")}`);

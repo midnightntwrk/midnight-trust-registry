@@ -15,8 +15,9 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    policy, and exact OCI digests. The chart fixes `CFG_PRESET=dev`; observe the
    resulting local genesis on the target cluster and approve its hash during
    first-run setup before signing the API plan. The chart cannot substitute a
-   different genesis or self-approve the observed one. Build and verify the v4 install
-   bundle. Do not use the dummy digests in `tests/fixture-values.yaml`.
+   different genesis or self-approve the observed one. Build and verify the v6 install
+   bundle from the exact approved source. Do not use the dummy digests in
+   `tests/fixture-values.yaml`.
 2. During online installation, map each approved archive hash and image ID to
    its private-registry digest after pushing the exact image bytes. Have the
    release reviewer approve that mapping. Preload each resulting
@@ -39,10 +40,15 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
 
    ```sh
    node scripts/check-helm-image-mapping.mjs \
-     <v4-bundle> <admin-image/manifest.json> <applicant-image/manifest.json> \
+     <v6-bundle> \
      <approved-values.yaml> <mapping.json> <mapping.sig> \
      <reviewer-keyring> <REVIEWER_FINGERPRINT>
    ```
+
+   A legacy v4 bundle needs two additional arguments immediately after
+   `<v4-bundle>`: `<admin-image/manifest.json>` and
+   `<applicant-image/manifest.json>`. Do not pass separate portal manifests for
+   v5 or v6; their portal archives are pinned inside the install bundle.
 
    The receipt is a JSON object with `format: "tr-helm-image-mapping-v1"`,
    the bundle's `sourceRevision` and `inventorySha256`, the SHA-256 of the
@@ -51,7 +57,7 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    `applicant`. Each image entry has `role`, the chart's exact `reference`,
    the approved `archiveSha256`, its local `imageId`, and the archive's
    `configId`. The verifier hashes
-   the v4 bundle and both portal archives, checks those identities against
+   the v6 bundle and its bundled portal archives, checks those identities against
    the one values file supplied to this command, and verifies the reviewer's
    signature over the mapping. The registry digest is linked to the archive
    **only by that independent human approval**, not cryptographically by this
@@ -102,14 +108,25 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    eligible arm64 node inventory from the intended cluster and have an
    independent reviewer approve the complete set. Record the cluster identity
    and inventory evidence in `clusterReference` and `reviewedReference`.
+   For live workload observation, render the exact reviewed values, namespace,
+   and release name to a retained YAML file. Review it and record its SHA-256
+   in a v2 scope before signing; do not change the render afterward:
+
+   ```sh
+   helm template tr-rc charts/trust-registry-standalone -n trust-registry \
+     -f <approved-values.yaml> > <approved-render.yaml>
+   shasum -a 256 <approved-render.yaml>
+   ```
+
    Sign the exact JSON bytes of an approved scope with a detached OpenPGP
    signature. This example describes the schema, not actual cluster evidence:
 
    ```json
    {
-     "format": "tr-helm-approved-node-scope-v1",
+     "format": "tr-helm-approved-node-scope-v2",
      "sourceRevision": "<40-character source SHA>",
      "mappingSha256": "<SHA-256 of exact signed mapping.json bytes>",
+     "renderedManifestSha256": "<SHA-256 of exact reviewed Helm YAML bytes>",
      "namespace": "trust-registry",
      "releaseName": "tr-rc",
      "eligibleNodeSelection": "kubernetes.io/arch=arm64",
@@ -128,10 +145,11 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
 
    Place the private node receipts in a dedicated directory named exactly
    `node-<Kubernetes node name>.json`. Put the mapping preflight input paths
-   in `preflight-paths.json` with fields `bundleRoot`, `adminManifest`,
-   `applicantManifest`, `valuesPath`, `receiptPath`, `signaturePath`,
-   `keyringPath`, and `signerFingerprint`, all pointing to the same approved
-   install materials. Run:
+   in `preflight-paths.json` with fields `bundleRoot`, `valuesPath`,
+   `receiptPath`, `signaturePath`, `keyringPath`, and `signerFingerprint`, all
+   pointing to the same approved v6 install materials. For a legacy v4 bundle,
+   also provide `adminManifest` and `applicantManifest`; omit both for v5/v6.
+   Run:
 
    ```sh
    node scripts/check-helm-cri-fleet.mjs \
@@ -157,36 +175,90 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    name must be independently matched to the actual Helm install invocation;
    this checker does not observe the cluster release.
    After installation, use an explicitly selected, reviewed kubeconfig and
-   context for a read-only Kubernetes workload observation:
+   context for a non-mutating Kubernetes workload observation. The observer
+   needs `list` on nodes, Deployments, ReplicaSets, and Pods, and `get` on
+   both API Secrets and the API Pod,
+   plus `create` on `pods/exec` to run a fixed, read-only hash probe in the API
+   container. Limit Secret `get` to the two names with RBAC `resourceNames`;
+   restrict these grants to the approved release and evidence operator.
+   `pods/exec` cannot practically be limited to a stable Deployment Pod name
+   across rollouts and can reach other Pods in the namespace. Treat this as
+   privileged operator access, not a read-only Kubernetes RBAC verb:
 
    ```sh
    node scripts/observe-helm-runtime.mjs \
      <preflight-paths.json> <approved-node-scope.json> <scope.sig> \
      <scope-reviewer-keyring> <SCOPE_REVIEWER_FINGERPRINT> \
-     <receipts-directory> <absolute-kubeconfig> <kube-context>
+     <receipts-directory> <absolute-kubeconfig> <kube-context> \
+     <approved-render.yaml> <api-plan.json> <api-plan.sig> \
+     <api-plan-reviewer-keyring> <API_PLAN_REVIEWER_FINGERPRINT>
    ```
 
-   This first repeats the signed fleet check, then reads the arm64 Node list
+   This first repeats the signed fleet check, verifies the exact-byte,
+   detached-signed v2 API plan, and checks its install binding fields.
+   Its source revision, install-inventory digest,
+   release-manifest digest, and validity window must match the exact verified
+   bundle and signed Helm image mapping before any Kubernetes observation.
+   The chart's external API approval and reviewer-keyring Secrets must be
+   `immutable: true` and not created after the API Pod (at timestamp precision).
+   The observer reads both
+   Secrets through the selected Kubernetes API, checks their identities and
+   creation times, and compares their exact data with the reviewed plan,
+   signature, inventory, manifest, snapshot, and public keyring. It then
+   hashes the copied files in the running API container and re-reads the Pod
+   identity to reject a concurrent rollout. It does not print Secret data.
+   The output records the signed plan, signature and keyring digests, both
+   Secret identities, runtime file hashes, signer fingerprint, and observed
+   API image ID and reference. Current `immutable: true` status does not
+   establish that a Secret was immutable when the Pod started; the runtime
+   file readback reports byte equality from inside the API container at
+   observation time. A compromised container could falsify the probe. Neither
+   check continuously binds the process to the plan. The API independently
+   verifies the full plan at startup and on reads.
+   The observer then reads the arm64 Node list
    and this release's Deployments, ReplicaSets, and Pods from the selected
    Kubernetes API. It fails if the live arm64 node names differ from the
    approved scope, any expected labelled workload is absent or unready, a Pod is not
    owned through the expected ReplicaSet and Deployment, or a running image
    reference, image ID, or pull policy differs from the approved mapping, or
-   an ephemeral debug container is present. Capture the
-   output and the raw Kubernetes API responses through an access-controlled
-   evidence channel, along with the kubeconfig trust anchor, context, cluster
+   an ephemeral debug container is present. It also rejects live Deployment
+   Pod specs that differ from the exact signed Helm render. A v1 node scope
+   remains valid for fleet receipt checks but is rejected by this live observer.
+   Capture the observer output and non-Secret Kubernetes responses through an
+   access-controlled evidence channel. Retain Secret metadata and digests,
+   not raw Secret responses: they contain private snapshot and approval data.
+   Retain the
+   kubeconfig trust anchor, context, cluster
    identity, RBAC grants, time, and Helm revision. Review kubeconfig `exec`
    plugins and the inherited proxy environment before running: `kubectl` may
    execute credential plugins and use a configured proxy. The command does not
    authenticate the reviewer-approved `clusterReference` against the API,
-   prove image bytes executed from the CRI store, verify PVC contents,
+   prove image bytes executed from the CRI store, prove a running process has
+   not changed after observation, verify PVC contents,
    inspect unrelated or unlabelled workloads, measure runtime egress, or
-   exercise the local ledger or actor journeys. It does not compare commands,
-   arguments, environment, security context, host networking, or volumes
-   against the rendered chart; an independently captured rendered-manifest
-   versus live-resource diff remains necessary. The two API queries are not
-   one atomic snapshot; a separate, authenticated evidence capture is still
-   needed for release review.
+   exercise the local ledger or actor journeys. A later rollout, image-store
+   replacement, or plan rotation requires a fresh observation. It compares security-relevant
+   Pod specs across each Deployment, owned ReplicaSet, and running Pod,
+   including commands, arguments, environment, mounts, volumes, probes,
+   security context, and host networking. It requires disabled service-account
+   automount, no host namespaces or hostPath volumes, RuntimeDefault seccomp,
+   and dropped container capabilities without additions. API and portal root
+   filesystems must remain read-only. It compares these Pod-spec fields with
+   the signed rendered Deployment templates, selectors, template labels, and
+   template annotations. It allows only the matching Kubernetes-generated
+   `pod-template-hash` label in ReplicaSet/Pod labels and normalizes documented
+   container, service-account, priority, and 300-second eviction defaults.
+   ReplicaSet and Pod annotations must match the signed Deployment template;
+   admission-added annotations fail closed until explicitly reviewed. Other
+   Pod/container fields fail closed on drift, except the running Pod's node
+   assignment and separately checked ephemeral containers. A real-cluster
+   check is still required to validate API-server defaulting (including
+   resource quantities, probe fields,
+   and projected volume modes); synthetic tests do not establish it.
+   It does **not** compare live Services, NetworkPolicies, PVCs, or unrelated
+   workloads with the render. The Kubernetes queries and in-container probe
+   are not one atomic snapshot; separate authenticated evidence capture is
+   still needed for release review.
    A passing synthetic test is not live qualification evidence.
 3. Provide existing PVCs for node chain history, indexer data, and the
    18-file pinned proof-parameter set. The proof PVC is mounted read-only.
@@ -207,7 +279,9 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    credentials in Helm values, a ConfigMap, the image, or logs. A Kubernetes
    Secret object remains in cluster storage; enforce at-rest encryption and
    narrowly scoped RBAC separately. Native Secrets have a size limit, so
-   large snapshots need a separately reviewed delivery mechanism.
+   large snapshots need a separately reviewed delivery mechanism. The five
+   approval files share one Kubernetes Secret's approximately 1 MiB data
+   limit; the probe's per-file bounds do not enlarge that limit.
 5. Provide a public local beneficiary key, reviewer fingerprint, and real
    digest-pinned image references in a private values file. Install the
    `bootstrap` phase first, observe its genesis, complete the first-run
@@ -226,17 +300,30 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
 The current chart does not execute the first-run wizard or approve governance;
 the operator must carry its signed receipts across the phase transition.
 Before the signed API plan's `notAfter`, obtain renewed independent approval,
-replace the approval Secret, and roll the API pod. An expired plan fails closed;
-Helm does not renew or revoke it.
+replace the approval Secret, and roll the API pod. The plan also pins the exact
+finalized governance count and snapshot digest. After any governed mutation,
+the API readiness check fails closed until a new snapshot and sequence map are
+independently reviewed, a replacement plan is detached-signed, the approval
+Secret is replaced, and the API pod is rolled. Merely updating a projected
+Secret does not rerun the init container that copies approved bytes into the
+private volume. An expired or stale plan fails closed; Helm does not renew or
+revoke it. This manual rotation has not been qualified in a live local actor
+journey.
 
 The API init container idempotently copies projected Secret symlinks into a
 private memory-backed volume as UID 1000 with mode 0600; the reviewer keyring
 directory becomes 0700. This is required because the API refuses symlinked
 approval files. The API then starts in signed, read-only local-ledger mode
-with explicit `--cluster-bind`. It has no unsafe demo mutation flag, no
-wildcard CORS, and no public Service. The admin and applicant portals serve
-static files only. Browser/API routing and TLS require a separately reviewed
-same-origin ingress design; they are **not** provided by this chart.
+with explicit `--cluster-bind` and `--serve-portals`. The API image must
+contain both portal asset sets under `/app/portals`; it refuses to start if
+either entry point is missing. For private applicant journeys, `/admin/`,
+`/applicant/`, and `/v1/` must all reach this API Service through one reviewed
+HTTPS origin. Do not route either portal path to the separate static portal
+Services: those remain internal-only packaging surfaces and cannot host the
+same-origin private evidence API. The API has no unsafe demo mutation flag,
+wildcard CORS, or public Service. The chart supplies neither Ingress nor TLS;
+review and test that routing, browser policy, and egress controls on the
+actual cluster.
 
 ## Isolation and operations
 
@@ -251,6 +338,11 @@ Namespace RBAC must prevent untrusted users from assigning those labels.
 The DNS selectors are configurable because CNI/CoreDNS labels differ by
 cluster. No rule grants public-IP egress. Port-forward, host networking,
 node-local agents, and CNI behavior require real-cluster verification.
+The API ingress rule admits only same-namespace pods labelled as an actor or
+operator. A controller in another namespace cannot reach the API without a
+separately reviewed narrow policy; do not broaden this rule merely to make
+an ingress smoke test pass. The same-origin browser route also needs a
+reviewed TLS termination point and a real egress-denied actor test.
 
 No workload receives a service-account token. The API and portals run as
 non-root with read-only root filesystems. Node, indexer, and prover images
@@ -264,6 +356,11 @@ Upgrades and rollbacks must preserve the PVCs and replayable approval
 evidence. Never silently rotate genesis, maintenance keys, contract address,
 or image digests through `helm upgrade`. Take a consistent backup, test
 restore in an isolated namespace, and repeat finalized readback after restart.
+The API Deployment uses `Recreate` to avoid mixed approved source revisions;
+upgrades therefore incur a planned outage. Before an upgrade, verify the new
+API image supports `--serve-portals`, and update its exact image pin and signed
+plan together in a maintenance window. A Helm rollback does not automatically
+restore the previous plan or its validity window.
 
 ## Release gates still open
 

@@ -188,6 +188,60 @@ test("issuer-historical-trqp-after-threshold-change", async (context) => {
     harness.evaluateCurrentIssuerDecision(currentIssuer).policy.version);
 });
 
+const startHistoricalVerifierThresholdApi = async (context, label) => {
+  const { harness, issuer, base, refresh } = await startIssuerApi(context, label);
+  const verifier = createVerifierScenarioFixture(`${label}-verifier`);
+  harness.authorizeVerifier(verifier);
+  const old = harness.evaluateCurrentVerifierDecision(verifier);
+  const oldAt = new Date(Date.parse(old.epoch.validFrom) + 1).toISOString();
+  refresh({ label, issuers: [{ fixture: issuer, label: "issuer" }],
+    verifiers: [{ fixture: verifier, label: "historical-verifier" }] });
+  const second = createMaintainerScenarioFixture(`${label}-second`);
+  const third = createMaintainerScenarioFixture(`${label}-third`);
+  harness.authorizeMaintainer(second);
+  harness.authorizeMaintainer(third);
+  harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+  harness.revokeVerifier(verifier, [second]);
+  refresh({ label, issuers: [{ fixture: issuer, label: "issuer" }],
+    verifiers: [{ fixture: verifier, label: "historical-verifier" }] });
+  return { harness, verifier, base, old, oldAt };
+};
+
+test("verifier-historical-api-after-threshold-change", async (context) => {
+  const { harness, verifier, base, old, oldAt } =
+    await startHistoricalVerifierThresholdApi(context, "isolated-verifier-history-api");
+  const response = await fetch(`${base}/v1/authorizations/evaluate/evidence`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ role: "verifier", subjectDid: verifier.subjectDid,
+      resourceId: verifier.scopeResourceId, at: oldAt }),
+  });
+  assert.equal(response.status, 200);
+  const decision = await response.json();
+  assert.equal(decision.trustedAtTime, true);
+  assert.equal(decision.statusAtTime, "active");
+  assert.equal(decision.bundle.epoch.epochId, old.epoch.epochId);
+  assert.equal(decision.bundle.policy.version, old.policy.version);
+  assert.notEqual(decision.bundle.policy.version, harness.policyRecord.version);
+});
+
+test("verifier-historical-trqp-after-threshold-change", async (context) => {
+  const { harness, verifier, base, old, oldAt } =
+    await startHistoricalVerifierThresholdApi(context, "isolated-verifier-history-trqp");
+  const response = await fetch(`${base}/v1/trqp/authorizations/evidence`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ entity_id: verifier.subjectDid,
+      authority_id: harness.registryRecord.registryDid,
+      action: "verify", resource: verifier.scopeResourceId,
+      context: { time: oldAt } }),
+  });
+  assert.equal(response.status, 200);
+  const answer = await response.json();
+  assert.equal(answer.authorized, true);
+  assert.equal(answer.bundle.epoch.epochId, old.epoch.epochId);
+  assert.equal(answer.bundle.policy.version, old.policy.version);
+  assert.notEqual(answer.bundle.policy.version, harness.policyRecord.version);
+});
+
 test("issuer-suspended-api", async (context) => {
   const { harness, issuer, evaluate, transition } = await startIssuerApi(context, "isolated-suspended-api");
   const active = harness.evaluateCurrentIssuerDecision(issuer);

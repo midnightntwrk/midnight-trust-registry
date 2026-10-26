@@ -69,7 +69,7 @@ function fixture(local = false) {
 }
 
 describe("checkpointed deployment action reader", () => {
-  it("decodes real Compact ledger state at the selected finalized block", async () => {
+  realVerifierKeyIt("decodes real Compact ledger state at the selected finalized block", async () => {
     const { simulator, reader, queryContractState } = fixture();
     const actionState = await reader.readCurrentFinalizedActionState(`0x${address}`);
     expect(queryContractState).toHaveBeenCalledWith(address, { type: "blockHash", blockHash });
@@ -82,6 +82,14 @@ describe("checkpointed deployment action reader", () => {
       governancePolicyCommitment: bytes32Hex(simulator.getLedger().governancePolicyCommitment),
       governanceActionSequence: simulator.getLedger().governanceActionCount,
     });
+    const contractState = new ContractState();
+    contractState.data = simulator.circuitContext.currentQueryContext.state;
+    const operation = new ContractOperation();
+    operation.verifierKey = readFileSync(verifierKeyPath);
+    contractState.setOperation(verifierCircuit, operation);
+    contractState.maintenanceAuthority = new ContractMaintenanceAuthority(
+      [signatureVerifyingKey(sampleSigningKey())], 1, 0n);
+    queryContractState.mockResolvedValue(ContractState.deserialize(contractState.serialize()) as never);
     const finalizedLedger = await reader.readCurrentFinalizedLedger(`0x${address}`);
     expect(finalizedLedger).toMatchObject({
       networkId: "preprod",
@@ -91,6 +99,9 @@ describe("checkpointed deployment action reader", () => {
     if (finalizedLedger === null) throw new Error("Expected a finalized ledger");
     expect(finalizedLedger.ledger.governanceActionCount).toBe(simulator.getLedger().governanceActionCount);
     expect(bytes32Hex(finalizedLedger.ledger.registryId)).toBe(bytes32Hex(simulator.getLedger().registryId));
+    expect(finalizedLedger.verifierKeySha256).toEqual({
+      [verifierCircuit]: createHash("sha256").update(operation.verifierKey).digest("hex"),
+    });
     await expect(prepareFinalizedDeploymentActionDigest({
       networkId: "preprod",
       contractAddress: `0x${address}`,
@@ -146,6 +157,34 @@ describe("checkpointed deployment action reader", () => {
       [verifierCircuit]: createHash("sha256").update(verifierKey).digest("hex"),
     });
     expect(observed?.maintenanceAuthority).toEqual({
+      committee: [`0x${maintenanceKey}`], threshold: 1, counter: 0n,
+    });
+    queryContractState.mockResolvedValueOnce(ContractState.deserialize(contractState.serialize()) as never);
+    const ledgerView = await reader.readCurrentFinalizedLedger(`0x${address}`);
+    expect(queryContractState).toHaveBeenCalledTimes(2);
+    expect(ledgerView?.verifierKeySha256).toEqual(observed?.verifierKeySha256);
+    expect(ledgerView?.maintenanceAuthority).toEqual(observed?.maintenanceAuthority);
+  });
+
+  realVerifierKeyIt("returns the local ledger and deployment image from one undeployed checkpoint", async () => {
+    const { simulator, reader, queryContractState } = fixture(true);
+    const verifierKey = readFileSync(verifierKeyPath);
+    const operation = new ContractOperation();
+    operation.verifierKey = verifierKey;
+    const state = new ContractState();
+    state.data = simulator.circuitContext.currentQueryContext.state;
+    state.setOperation(verifierCircuit, operation);
+    const maintenanceKey = signatureVerifyingKey(sampleSigningKey());
+    state.maintenanceAuthority = new ContractMaintenanceAuthority([maintenanceKey], 1, 0n);
+    queryContractState.mockResolvedValueOnce(ContractState.deserialize(state.serialize()) as never);
+    const view = await reader.readCurrentFinalizedLedger(`0x${address}`);
+    expect(queryContractState).toHaveBeenCalledTimes(1);
+    expect(view?.networkId).toBe("undeployed");
+    expect(view?.ledger.governanceActionCount).toBe(simulator.getLedger().governanceActionCount);
+    expect(view?.verifierKeySha256).toEqual({
+      [verifierCircuit]: createHash("sha256").update(verifierKey).digest("hex"),
+    });
+    expect(view?.maintenanceAuthority).toEqual({
       committee: [`0x${maintenanceKey}`], threshold: 1, counter: 0n,
     });
   });

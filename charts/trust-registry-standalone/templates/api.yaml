@@ -83,6 +83,7 @@ spec:
             - --host
             - 0.0.0.0
             - --cluster-bind
+            - --serve-portals
           ports:
             - name: http
               containerPort: 4400
@@ -119,11 +120,11 @@ spec:
         - name: approval-input
           secret:
             secretName: {{ .Values.secrets.apiApprovalName | quote }}
-            defaultMode: 0440
+            defaultMode: 288
         - name: keyring-input
           secret:
             secretName: {{ .Values.secrets.apiKeyringName | quote }}
-            defaultMode: 0440
+            defaultMode: 288
         - name: approval-runtime
           emptyDir:
             medium: Memory

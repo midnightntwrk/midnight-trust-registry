@@ -161,11 +161,13 @@ export const createAdminConsoleApp = (
   const storage = options.storage ?? window.localStorage;
   const fetchImpl = options.fetchImpl ?? window.fetch.bind(window);
   const confirm = options.confirm ?? window.confirm.bind(window);
+  const sameOriginApi = initialUrl.pathname.startsWith("/admin/");
   const queryBase = initialUrl.searchParams.get("apiBase");
   const rememberedBase = storage.getItem(STORAGE_KEY);
 
   const state: AppState = {
-    apiBase: normalizeApiBaseUrl(queryBase ?? rememberedBase ?? "http://127.0.0.1:4400"),
+    apiBase: sameOriginApi ? initialUrl.origin
+      : normalizeApiBaseUrl(queryBase ?? rememberedBase ?? "http://127.0.0.1:4400"),
     board: undefined,
     cards: [],
     epochLabel: "",
@@ -643,6 +645,7 @@ export const createAdminConsoleApp = (
   const bindEvents = () => {
     root.querySelector<HTMLFormElement>("[data-api-base-form]")?.addEventListener("submit", (event) => {
       event.preventDefault();
+      if (sameOriginApi) return;
       const form = event.currentTarget as HTMLFormElement | null;
       if (form === null) {
         return;
@@ -927,10 +930,10 @@ export const createAdminConsoleApp = (
             <form data-api-base-form>
               <label>
                 API base URL
-                <input class="input mono" type="url" name="apiBase" value="${escapeHtml(state.apiBase)}" />
+                <input class="input mono" type="url" name="apiBase" value="${escapeHtml(state.apiBase)}"${sameOriginApi ? " disabled" : ""} />
               </label>
               <div class="actions">
-                <button class="button" type="submit"${state.loading || state.governedBusy ? " disabled" : ""}>Connect</button>
+                <button class="button" type="submit"${sameOriginApi || state.loading || state.governedBusy ? " disabled" : ""}>Connect</button>
                 <button class="button secondary" type="button" data-refresh${state.loading || state.governedBusy ? " disabled" : ""}>Refresh</button>
               </div>
             </form>

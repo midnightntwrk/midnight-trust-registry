@@ -21,6 +21,7 @@ import {
 } from "@midnight-ntwrk/trust-registry-integration";
 
 import {
+  assertCompletePolicyRevisionHistory,
   assertLocalLedgerEvidenceMatchesSnapshot,
   assertLocalLedgerProjectionMatchesSnapshot,
 } from "../local-ledger-projection.js";
@@ -29,6 +30,33 @@ import { createTrustRegistryApiServer } from "../server.js";
 
 const sequenceToTimestamp = (sequence: bigint): string =>
   new Date(Date.parse("2026-05-20T00:00:00Z") + Number(sequence) * 60_000).toISOString();
+
+const revisionMap = <K, V>(entries: [K, V][], keyOf: (key: K) => string) => {
+  const values = new Map(entries.map(([key, value]) => [keyOf(key), value]));
+  return {
+    isEmpty: () => values.size === 0,
+    size: () => BigInt(values.size),
+    member: (key: K) => values.has(keyOf(key)),
+    lookup: (key: K): V => {
+      const value = values.get(keyOf(key));
+      if (value === undefined) throw new Error("Missing policy revision fixture key");
+      return value;
+    },
+    [Symbol.iterator]: () => entries[Symbol.iterator](),
+  };
+};
+
+const policyHistory = (versions: [bigint, Uint8Array, bigint][]) => ({
+  governancePolicyVersion: 3n,
+  governanceActionCount: 5n,
+  governancePolicyCommitmentsByVersion: revisionMap(
+    versions.map(([version, commitment]) => [version, commitment]), String),
+  governancePolicyVersionsByCommitment: revisionMap(
+    versions.map(([version, commitment]) => [commitment, version]),
+    (key: Uint8Array) => Buffer.from(key).toString("hex")),
+  governancePolicyEffectiveFromByVersion: revisionMap(
+    versions.map(([version, , effectiveFrom]) => [version, effectiveFrom]), String),
+});
 
 const fixture = () => {
   const harness = new LocalTrustRegistryIntegrationHarness("api-ledger-coverage");
@@ -76,6 +104,28 @@ const fixture = () => {
 };
 
 describe("finalized Compact projection coverage", () => {
+  it("requires a contiguous and ordered policy revision history", () => {
+    const first = new Uint8Array(32).fill(1);
+    const second = new Uint8Array(32).fill(2);
+    const third = new Uint8Array(32).fill(3);
+    const valid = policyHistory([[1n, first, 0n], [2n, second, 2n], [3n, third, 4n]]);
+    expect(() => assertCompletePolicyRevisionHistory(valid)).not.toThrow();
+    expect(() => assertCompletePolicyRevisionHistory(policyHistory([
+      [1n, first, 0n], [3n, third, 4n], [4n, second, 5n],
+    ]))).toThrow(/incomplete/u);
+    expect(() => assertCompletePolicyRevisionHistory(policyHistory([
+      [1n, first, 0n], [2n, second, 2n], [3n, third, 2n],
+    ]))).toThrow(/inconsistent/u);
+    expect(() => assertCompletePolicyRevisionHistory(policyHistory([
+      [1n, first, 0n], [2n, second, 2n], [3n, third, 6n],
+    ]))).toThrow(/inconsistent/u);
+    expect(() => assertCompletePolicyRevisionHistory({ ...valid,
+      governancePolicyVersionsByCommitment: revisionMap([
+        [first, 1n], [second, 3n], [third, 2n],
+      ], (key: Uint8Array) => Buffer.from(key).toString("hex")),
+    })).toThrow(/inconsistent/u);
+  });
+
   it("matches all current ledger maps and rejects omitted or forged entries", () => {
     const { snapshot, ledger } = fixture();
     expect(() => assertLocalLedgerProjectionMatchesSnapshot(snapshot, ledger)).not.toThrow();
@@ -173,6 +223,83 @@ describe("finalized Compact projection coverage", () => {
 });
 
 describe("local ledger-bound API source", () => {
+  it("exposes proposal readback only from the same snapshot-bound finalized view", async () => {
+    const { snapshot, ledger, contractAddress } = fixture();
+    const directory = await mkdtemp(join(tmpdir(), "tr-local-proposal-readback-"));
+    let server: ReturnType<typeof createTrustRegistryApiServer> | undefined;
+    try {
+      const snapshotPath = join(directory, "snapshot.json");
+      await writeSnapshotToFile(snapshotPath, snapshot);
+      const address = `0x${Buffer.from(contractAddress).toString("hex")}`;
+      let view = { networkId: "undeployed", contractAddress: address,
+        finalizedBlockHash: `0x${"a".repeat(64)}`, ledger,
+        verifierKeySha256: {}, maintenanceAuthority: { committee: [], threshold: 0, counter: 0n } };
+      const source = createLocalLedgerBoundSource({
+        snapshotPath,
+        expectedSnapshotSha256: createHash("sha256").update(await readFile(snapshotPath)).digest("hex"),
+        contractAddress: address,
+        reader: { async readCurrentFinalizedLedger() { return view; } },
+        sequenceToTimestamp,
+      });
+      expect(source.localProposalContractAddress).toBe(address.toLowerCase());
+      await expect(source.readFinalizedProposalLedger()).resolves.toBe(ledger);
+      server = createTrustRegistryApiServer({ source,
+        readFinalizedProposalLedger: source.readFinalizedProposalLedger });
+      await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+      const bound = server.address();
+      if (bound === null || typeof bound === "string") throw new Error("Expected local HTTP listener");
+      const url = `http://127.0.0.1:${bound.port}/v1/governed/issuer/absent/proposal/evidence`;
+      expect((await fetch(url)).status).toBe(404);
+      view = { ...view, ledger: { ...ledger, governancePolicyCommitment: new Uint8Array(32).fill(7) } };
+      await expect(source.readFinalizedProposalLedger()).rejects.toThrow(/Finalized local Trust Registry state is unavailable/u);
+      expect((await fetch(url)).status).toBe(503);
+      view = { ...view, ledger, finalizedBlockHash: `0x${"0".repeat(64)}` };
+      await expect(source.readFinalizedProposalLedger()).rejects.toThrow(/Finalized local Trust Registry state is unavailable/u);
+    } finally {
+      if (server?.listening) {
+        await new Promise<void>((resolve, reject) => server!.close((error) => error ? reject(error) : resolve()));
+      }
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects unjournaled governed ports before a local listener is created", () => {
+    type Options = Parameters<typeof createTrustRegistryApiServer>[0];
+    const source: Options["source"] = { mode: "local-ledger", async loadSnapshot() {
+      throw new Error("No deployed ledger is available");
+    } };
+    const issuerPort = {} as NonNullable<Options["governedIssuerProposals"]>;
+    const recognitionPort = {} as NonNullable<Options["governedRecognitionProposals"]>;
+    const journal = {} as NonNullable<Options["proposalSubmissionJournal"]>;
+    const admission = {} as NonNullable<Options["proposalAdmission"]>;
+    const finalizedReader = {} as NonNullable<Options["readFinalizedProposalLedger"]>;
+    expect(() => createTrustRegistryApiServer({ source, allowUnsafeDemoMutations: true }))
+      .toThrow(/forbids demo mutations/u);
+    expect(() => createTrustRegistryApiServer({ source,
+      governedMembershipActions: {} as NonNullable<Options["governedMembershipActions"]> }))
+      .toThrow(/durable submission adapter/u);
+    expect(() => createTrustRegistryApiServer({ source,
+      governedEpochPublication: {} as NonNullable<Options["governedEpochPublication"]> }))
+      .toThrow(/durable submission adapter/u);
+    expect(() => createTrustRegistryApiServer({ source,
+      governedPolicyActions: {} as NonNullable<Options["governedPolicyActions"]> }))
+      .toThrow(/durable submission adapter/u);
+    expect(() => createTrustRegistryApiServer({ source, governedIssuerProposals: issuerPort }))
+      .toThrow(/durable submission and finalized observation with admission/u);
+    expect(() => createTrustRegistryApiServer({ source, governedIssuerProposals: issuerPort,
+      proposalSubmissionJournal: journal, proposalAdmission: admission }))
+      .toThrow(/durable submission and finalized observation with admission/u);
+    expect(() => createTrustRegistryApiServer({ source, governedIssuerProposals: issuerPort,
+      proposalSubmissionJournal: journal, readFinalizedProposalLedger: finalizedReader }))
+      .toThrow(/durable submission and finalized observation with admission/u);
+    expect(() => createTrustRegistryApiServer({ source, governedRecognitionProposals: recognitionPort,
+      proposalSubmissionJournal: journal, readFinalizedProposalLedger: finalizedReader }))
+      .toThrow(/durable submission and finalized observation with admission/u);
+    expect(() => createTrustRegistryApiServer({ source, governedIssuerProposals: issuerPort,
+      proposalSubmissionJournal: journal, proposalAdmission: admission,
+      readFinalizedProposalLedger: finalizedReader })).not.toThrow();
+  });
+
   it("re-reads the finalized view for every HTTP query and fails closed", async () => {
     const { snapshot, ledger, contractAddress } = fixture();
     const directory = await mkdtemp(join(tmpdir(), "tr-local-ledger-api-"));
@@ -183,9 +310,12 @@ describe("local ledger-bound API source", () => {
       contractAddress: address,
       finalizedBlockHash: `0x${"a".repeat(64)}`,
       ledger,
+      verifierKeySha256: {},
+      maintenanceAuthority: { committee: [], threshold: 0, counter: 0n },
     };
     let readCount = 0;
     let available = true;
+    let readError: Error | undefined;
     let server: ReturnType<typeof createTrustRegistryApiServer> | undefined;
     try {
       await writeSnapshotToFile(snapshotPath, snapshot);
@@ -194,7 +324,11 @@ describe("local ledger-bound API source", () => {
         snapshotPath,
         expectedSnapshotSha256,
         contractAddress: address,
-        reader: { async readCurrentFinalizedLedger() { readCount += 1; return available ? view : null; } },
+        reader: { async readCurrentFinalizedLedger() {
+          readCount += 1;
+          if (readError !== undefined) throw readError;
+          return available ? view : null;
+        } },
         sequenceToTimestamp,
       });
       const localServer = createTrustRegistryApiServer({ source });
@@ -205,11 +339,54 @@ describe("local ledger-bound API source", () => {
       const url = `http://127.0.0.1:${bound.port}`;
       const healthy = await fetch(`${url}/health`);
       expect(healthy.status).toBe(200);
+      expect(healthy.headers.get("cache-control")).toBe("no-store");
       expect(await healthy.json()).toMatchObject({ status: "ok", sourceMode: "local-ledger" });
+      expect(readCount).toBe(1);
+      const malformedRequest = await fetch(`${url}/v1/trqp/authorizations/query`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{invalid",
+      });
+      expect(malformedRequest.status).toBe(400);
+      expect(readCount).toBe(1);
+      const issuer = snapshot.issuerEntries[0]!.authorization;
+      const recognition = snapshot.recognitionEntries[0]!.recognition;
+      const authorizationEvaluation = { role: "issuer", subjectDid: issuer.subjectDid,
+        resourceId: issuer.resourceId, at: issuer.activeFrom };
+      const recognitionEvaluation = { recognizedAuthorityDid: recognition.recognizedAuthorityDid,
+        scopeResourceId: recognition.scope.resourceId, at: recognition.effectiveFrom };
+      const authorizationTrqp = { entity_id: issuer.subjectDid,
+        authority_id: snapshot.registry.registryDid, action: "issue", resource: issuer.resourceId };
+      const recognitionTrqp = { entity_id: recognition.recognizedAuthorityDid,
+        authority_id: snapshot.registry.registryDid, action: recognition.scope.resourceType,
+        resource: recognition.scope.resourceId };
+      for (const [path, body] of [
+        ["/v1/authorizations/evaluate", authorizationEvaluation],
+        ["/v1/authorizations/evaluate/evidence", authorizationEvaluation],
+        ["/v1/recognitions/evaluate", recognitionEvaluation],
+        ["/v1/recognitions/evaluate/evidence", recognitionEvaluation],
+        ["/v1/trqp/authorizations/query", authorizationTrqp],
+        ["/v1/trqp/authorizations/evidence", authorizationTrqp],
+        ["/v1/trqp/recognitions/query", recognitionTrqp],
+        ["/v1/trqp/recognitions/evidence", recognitionTrqp],
+      ] as const) {
+        const response = await fetch(`${url}${path}`, { method: "POST",
+          headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+        expect(response.status, path).toBe(501);
+        expect(response.headers.get("cache-control")).toBe("no-store");
+        expect(await response.json()).toMatchObject({ status: 501,
+          type: expect.stringMatching(/historical-decisions-out-of-scope$/u) });
+      }
       expect(readCount).toBe(1);
       const raw = await readFile(snapshotPath, "utf8");
       await writeFile(snapshotPath, raw.replace("api-ledger-coverage", "forged-registry-label"));
-      expect((await fetch(`${url}/health`)).status).not.toBe(200);
+      const mismatched = await fetch(`${url}/health`);
+      expect(mismatched.status).toBe(503);
+      expect(mismatched.headers.get("cache-control")).toBe("no-store");
+      expect(await mismatched.json()).toMatchObject({
+        status: 503,
+        type: expect.stringMatching(/local-ledger-unavailable$/u),
+      });
       await writeFile(snapshotPath, raw);
       const actualPath = join(directory, "actual-snapshot.json");
       await rename(snapshotPath, actualPath);
@@ -230,6 +407,25 @@ describe("local ledger-bound API source", () => {
       available = false;
       expect((await fetch(`${url}/health`)).status).not.toBe(200);
       expect(readCount).toBe(8);
+      readError = new Error("private provider path /run/secrets/local-ledger");
+      const unavailable = await fetch(`${url}/v1/registry`);
+      expect(unavailable.status).toBe(503);
+      const problem = await unavailable.json();
+      expect(problem).toMatchObject({ status: 503, title: "local ledger unavailable" });
+      expect(problem).not.toHaveProperty("detail");
+      expect(JSON.stringify(problem)).not.toContain("/run/secrets/local-ledger");
+      expect(readCount).toBe(9);
+      const trqp = await fetch(`${url}/v1/trqp/authorizations/query`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ entity_id: "did:example:issuer", authority_id: snapshot.registry.registryDid,
+          action: "issue", resource: "credential-family" }),
+      });
+      expect(trqp.status).toBe(501);
+      expect(trqp.headers.get("cache-control")).toBe("no-store");
+      expect(await trqp.json()).toMatchObject({ status: 501,
+        title: "historical decisions are outside the local 0.1.0 profile" });
+      expect(readCount).toBe(9);
     } finally {
       const localServer = server;
       if (localServer !== undefined && localServer.listening) {

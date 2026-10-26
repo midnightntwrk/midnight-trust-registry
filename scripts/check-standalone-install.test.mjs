@@ -44,6 +44,7 @@ async function apiImageArchive(root, labelRevision = revision, repoTags = null, 
     Labels: { "org.opencontainers.image.revision": labelRevision }, User: "1000:1000",
     WorkingDir: "/app", Entrypoint: ["node", "/app/bin/trust-registry-api.mjs"],
     ...(options.env ? { Env: options.env } : {}),
+    ...(options.volumes ? { Volumes: options.volumes } : {}),
   } });
   const configId = sha(config);
   const image = JSON.stringify({ schemaVersion: 2, config: { digest: `sha256:${configId}` }, layers: [] });
@@ -64,11 +65,13 @@ async function apiImageArchive(root, labelRevision = revision, repoTags = null, 
   const archive = join(root, "images/api.image.tar");
   execFileSync("tar", ["-cf", archive, "-C", source, "index.json", "manifest.json", "blobs"]);
   const archiveSha256 = sha(await readFile(archive));
-  const manifest = { format: "tr-api-runtime-image-v1", sourceRevision: revision,
+  const manifest = { format: options.portals ? "tr-api-runtime-image-v2" : "tr-api-runtime-image-v1",
+    sourceRevision: revision,
     approvedSignerFingerprint: "A".repeat(40), platform: "linux/arm64",
     baseImage: `example.test/base@sha256:${"b".repeat(64)}`,
     lockfileSha256: "c".repeat(64), dockerfileSha256: "d".repeat(64),
-    payload: { fileCount: 1, sha256: "e".repeat(64) }, imageId,
+    payload: { fileCount: 1, sha256: "e".repeat(64) },
+    ...(options.portals ? { portals: options.portals } : {}), imageId,
     archiveName: "api.image.tar", archiveSha256 };
   const manifestBytes = JSON.stringify(manifest);
   await writeFile(join(root, "images/api.manifest.json"), manifestBytes);
@@ -83,6 +86,7 @@ async function staticImageArchive(root, role, options = {}) {
     Labels: { "org.opencontainers.image.revision": options.labelRevision ?? revision },
     User: "1000:1000", WorkingDir: "/app",
     Env: options.env ?? [`TR_STATIC_ROLE=${role}`],
+    ...(options.volumes ? { Volumes: options.volumes } : {}),
     Cmd: ["node", "/app/entrypoint.mjs", "--host", "0.0.0.0", "--port", "4173"],
   } });
   const configId = sha(config);
@@ -104,7 +108,10 @@ async function staticImageArchive(root, role, options = {}) {
   const archive = join(root, `images/${role}.image.tar`);
   execFileSync("tar", ["-cf", archive, "-C", source, "index.json", "manifest.json", "blobs"]);
   const archiveSha256 = sha(await readFile(archive));
-  const assets = [{ path: "index.html", size: 1, sha256: "f".repeat(64) }];
+  const assets = [
+    { path: "index.html", size: 1, sha256: "f".repeat(64) },
+    { path: "index.js", size: 1, sha256: "e".repeat(64) },
+  ];
   const manifest = { format: "tr-static-runtime-image-v1", role, sourceRevision: revision,
     approvedSignerFingerprint: "A".repeat(40), platform: "linux/arm64",
     baseImage: `example.test/base@sha256:${"b".repeat(64)}`,
@@ -137,7 +144,8 @@ async function fixture() {
   }
   const inventory = {
     format: "tr-standalone-install-v2", sourceRevision: revision,
-    packageManifest: "release.json", artifactDirectory: "artifacts", images,
+    packageManifest: "release.json", packageManifestSha256: sha(await readFile(join(root, "release.json"))),
+    artifactDirectory: "artifacts", images,
     proofParameters: { directory: "proof-params", files: proofFiles },
   };
   await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
@@ -155,6 +163,7 @@ test("verifies pinned packages, images, and all 18 proof parameters", async () =
       verified = true;
     });
     assert.equal(verified, true);
+    assert.equal(result.packageManifestSha256, sha(await readFile(join(root, "release.json"))));
     assert.deepEqual(result.imageRoles, ["indexer", "node", "proof-server"]);
     assert.equal(result.images.length, 3);
     assert.ok(result.images.every((image) => image.configId === `sha256:${configDigest}`));
@@ -180,6 +189,15 @@ test("v3 install pins complete runtime Compose bytes", async () => {
     const result = await verifyStandaloneInstallBundle(root, () => {});
     assert.equal(result.runtimeComposeSha256, sha(compose));
     assert.equal(result.runtimeOfflineComposeSha256, sha(offlineCompose));
+    const originalManifest = await readFile(join(root, "release.json"));
+    await writeFile(join(root, "release.json"), JSON.stringify({ sourceRevision: revision, packages: [], changed: true }));
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /release manifest bytes disagree/u);
+    await writeFile(join(root, "release.json"), originalManifest);
+    delete inventory.packageManifestSha256;
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /release manifest bytes disagree/u);
+    inventory.packageManifestSha256 = sha(originalManifest);
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
     inventory.images[0].reference = reference("indexer");
     await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
     await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /image inventory disagrees/u);
@@ -217,6 +235,14 @@ test("v4 binds an API archive to the exact install source and runtime config", a
     const verified = await verifyStandaloneInstallBundle(root, () => {});
     assert.equal(verified.apiRuntime.imageId, inventory.apiRuntime.imageId);
     assert.equal(verified.apiRuntime.platform, "linux/arm64");
+    inventory.apiRuntime = await apiImageArchive(root, revision, null, { portals: {
+      admin: { fileCount: 2, sha256: "a".repeat(64) },
+      applicant: { fileCount: 2, sha256: "b".repeat(64) },
+    } });
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await verifyStandaloneInstallBundle(root, () => {});
+    inventory.apiRuntime = await apiImageArchive(root);
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
 
     const apiManifestPath = join(root, "images/api.manifest.json");
     const original = await readFile(apiManifestPath);
@@ -256,6 +282,7 @@ test("v4 binds an API archive to the exact install source and runtime config", a
       { outerName: "tr-standalone/node:sha-fake" },
       { extraPlatform: true },
       { env: ["NODE_OPTIONS=--import=data:text/javascript,throw%20Error('injected')"] },
+      { volumes: { "/app/portals": {} } },
     ]) {
       const changed = await apiImageArchive(root, revision, null, options);
       const changedManifest = JSON.parse(await readFile(apiManifestPath));
@@ -310,6 +337,7 @@ test("v5 binds both portal OCI archives to the exact install source and roles", 
     for (const options of [
       { env: ["TR_STATIC_ROLE=admin", "TR_STATIC_ROLE=applicant"] },
       { env: ["TR_STATIC_ROLE=admin", "NODE_OPTIONS=--import=/tmp/evil.mjs"] },
+      { volumes: { "/app/public": {} } },
       { extraPlatform: true },
     ]) {
       inventory.portalRuntimes.admin = await staticImageArchive(root, "admin", options);
@@ -350,6 +378,39 @@ test("v6 pins the installation relay script beside the complete runtime", async 
     inventory.installRelay.imageRole = "indexer";
     await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
     await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /relay pin is missing/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("v2 API portal asset pins must match both static portal manifests", async () => {
+  const { root, inventory } = await fixture();
+  try {
+    const compose = Buffer.from(`name: \${TR_STACK_NAME:-tr-standalone-local-smoke}\nservices:\n  node:\n    image: ${reference("node")}\n  indexer:\n    image: ${reference("indexer")}\n  proof-server:\n    image: ${reference("proof-server")}\n`);
+    const offlineCompose = Buffer.from("services: {}\n");
+    await writeFile(join(root, "compose.yml"), compose);
+    await writeFile(join(root, "compose.offline.yml"), offlineCompose);
+    inventory.format = "tr-standalone-install-v5";
+    inventory.runtimeCompose = { path: "compose.yml", sha256: sha(compose),
+      offlinePath: "compose.offline.yml", offlineSha256: sha(offlineCompose) };
+    inventory.portalRuntimes = {
+      admin: await staticImageArchive(root, "admin"),
+      applicant: await staticImageArchive(root, "applicant"),
+    };
+    const portals = {};
+    for (const role of ["admin", "applicant"]) {
+      const manifest = JSON.parse(await readFile(join(root, `images/${role}.manifest.json`), "utf8"));
+      portals[role] = { fileCount: manifest.assets.length, sha256: manifest.assetsSha256 };
+    }
+    inventory.apiRuntime = await apiImageArchive(root, revision, null, { portals });
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await verifyStandaloneInstallBundle(root, () => {});
+    inventory.apiRuntime = await apiImageArchive(root, revision, null, { portals: {
+      ...portals, applicant: { ...portals.applicant, sha256: "0".repeat(64) },
+    } });
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}),
+      /applicant API portal assets disagree/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -51,6 +51,19 @@ test("covers every approved node with one matching CRI receipt", async () => {
   assert.deepEqual(result.receipts.map((entry) => entry.nodeName), ["worker-1", "worker-2"]);
 });
 
+test("requires an exact rendered-manifest digest for v2 live scopes", async () => {
+  const observed = await receipts();
+  const approved = { ...scope, format: "tr-helm-approved-node-scope-v2",
+    renderedManifestSha256: "a".repeat(64) };
+  const bytes = Buffer.from(`${JSON.stringify(approved)}\n`);
+  assert.equal(checkHelmCriFleet(mappingBytes, preflight, bytes, observed).scopeSha256,
+    sha256(bytes));
+  for (const bad of [undefined, "A".repeat(64), "a".repeat(63), 123]) {
+    assert.throws(() => validateApprovedNodeScope({ ...approved,
+      renderedManifestSha256: bad }, mappingBytes), /scope/u);
+  }
+});
+
 test("rejects missing, extra, duplicate, or mismatched node observations", async () => {
   const observed = await receipts();
   observed.delete("worker-2");

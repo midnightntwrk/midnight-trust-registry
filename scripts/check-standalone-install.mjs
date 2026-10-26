@@ -82,7 +82,7 @@ function verifiedArchiveBlob(archive, digest) {
 
 /** Checks the saved API image identity without Docker or a registry. */
 export function installedApiImageIdFromArchive(archive, manifest, sourceRevision) {
-  if (manifest?.format !== "tr-api-runtime-image-v1"
+  if (!["tr-api-runtime-image-v1", "tr-api-runtime-image-v2"].includes(manifest?.format)
     || manifest.sourceRevision !== sourceRevision
     || !REVISION.test(manifest.sourceRevision)
     || !FINGERPRINT.test(manifest.approvedSignerFingerprint)
@@ -97,6 +97,16 @@ export function installedApiImageIdFromArchive(archive, manifest, sourceRevision
     || manifest.archiveName !== "api.image.tar"
     || !SHA256.test(manifest.archiveSha256)) {
     throw new Error("API image manifest is malformed or disagrees with install source");
+  }
+  if (manifest.format === "tr-api-runtime-image-v2"
+    && (Object.keys(manifest.portals ?? {}).sort().join("\0") !== "admin\0applicant"
+      || ["admin", "applicant"].some((role) => {
+        const portal = manifest.portals[role];
+        return !Number.isSafeInteger(portal?.fileCount) || portal.fileCount < 2
+          || !SHA256.test(portal?.sha256)
+          || Object.keys(portal).sort().join("\0") !== "fileCount\0sha256";
+      }))) {
+    throw new Error("API image portal manifest is malformed");
   }
   let index;
   try {
@@ -148,7 +158,7 @@ export function installedApiImageIdFromArchive(archive, manifest, sourceRevision
     || config.config?.WorkingDir !== "/app"
     || JSON.stringify(config.config?.Entrypoint) !== JSON.stringify(["node", "/app/bin/trust-registry-api.mjs"])
     || config.config?.Cmd != null || config.config?.Healthcheck != null
-    || config.config?.OnBuild != null
+    || config.config?.OnBuild != null || config.config?.Volumes != null
     || !Array.isArray(environment) || environment.some((entry) => typeof entry !== "string"
       || /^(?:NODE_OPTIONS|NODE_PATH|LD_PRELOAD|LD_LIBRARY_PATH)=/u.test(entry))) {
     throw new Error("API archive runtime config disagrees with the approved source or entrypoint");
@@ -263,9 +273,14 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
   if (new Set(inventory.images.map((image) => image.archive)).size !== inventory.images.length) {
     throw new Error("Each container role requires a distinct pinned archive");
   }
-  const packageManifest = JSON.parse(await readFile(
-    await regularBundleFile(root, inventory.packageManifest), "utf8",
-  ));
+  const packageManifestBytes = await readFile(await regularBundleFile(root, inventory.packageManifest));
+  const packageManifestSha256 = createHash("sha256").update(packageManifestBytes).digest("hex");
+  if (inventory.format !== "tr-standalone-install-v2"
+    && (!SHA256.test(inventory.packageManifestSha256 ?? "")
+      || packageManifestSha256 !== inventory.packageManifestSha256)) {
+    throw new Error("Standalone release manifest bytes disagree with the install pin");
+  }
+  const packageManifest = JSON.parse(packageManifestBytes.toString("utf8"));
   if (packageManifest.sourceRevision !== inventory.sourceRevision) {
     throw new Error("Standalone install source revision disagrees with the package manifest");
   }
@@ -289,6 +304,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
       acceptedIds: [...new Set([configId, `sha256:${image.reference.split("@sha256:")[1]}`])] });
   }
   let apiRuntime = null;
+  let apiManifest = null;
   if (["tr-standalone-install-v4", "tr-standalone-install-v5",
     "tr-standalone-install-v6"].includes(inventory.format)) {
     if (inventory.apiRuntime?.manifest !== "images/api.manifest.json"
@@ -303,7 +319,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
       || await sha256(archivePath) !== inventory.apiRuntime.archiveSha256) {
       throw new Error("Standalone API image bytes disagree with the install pin");
     }
-    const apiManifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    apiManifest = JSON.parse(await readFile(manifestPath, "utf8"));
     if (apiManifest.archiveSha256 !== inventory.apiRuntime.archiveSha256) {
       throw new Error("Standalone API image archive disagrees with its build manifest");
     }
@@ -331,6 +347,11 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
       }
       const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
       validateStaticImageManifest(manifest, role, inventory.sourceRevision, pin.archiveSha256);
+      if (apiManifest?.format === "tr-api-runtime-image-v2"
+        && (apiManifest.portals[role].fileCount !== manifest.assets.length
+          || apiManifest.portals[role].sha256 !== manifest.assetsSha256)) {
+        throw new Error(`${role} API portal assets disagree with pinned static portal image`);
+      }
       const identity = staticImageIdentityFromArchive(archivePath, role,
         inventory.sourceRevision, true);
       if (manifest.imageId !== identity.topDigest) {
@@ -378,6 +399,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
   return {
     sourceRevision: inventory.sourceRevision,
     inventorySha256,
+    packageManifestSha256,
     packageCount: packageManifest.packages?.length,
     imageRoles,
     proofParameterCount: parameterFiles.length,

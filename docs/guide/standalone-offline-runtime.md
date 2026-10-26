@@ -118,8 +118,15 @@ first build each with `scripts/build-static-runtime-image.mjs` from the same
 source SHA, then run:
 
 ```sh
+node scripts/build-standalone-install.mjs --preflight --api-image-dir <absolute-api-image-output-directory> --admin-image-dir <absolute-admin-image-output-directory> --applicant-image-dir <absolute-applicant-image-output-directory>
 node scripts/build-standalone-install.mjs --api-image-dir <absolute-api-image-output-directory> --admin-image-dir <absolute-admin-image-output-directory> --applicant-image-dir <absolute-applicant-image-output-directory>
 ```
+
+The read-only preflight checks the signed clean source, complete contract and
+proof-parameter inputs, exact-source API and portal manifests, pinned local
+image digests, and unused destination before any bundle directory is created.
+It does not build images or prove that a later copy/save cannot fail; recheck
+the completed bundle and running deployment separately.
 
 The all-or-nothing portal options write a v6 inventory with six image
 archives. Bundle verification checks each portal's OCI index, runtime role,
@@ -132,17 +139,21 @@ loader nor the wizard starts the portals or establishes an offline actor
 journey. The approved installer plan must still bind the six running image
 identities and qualify the deployed API and portals with egress denied.
 
-After loading the v6 images, run
-`node scripts/check-standalone-static-assets.mjs <verified-v6-bundle>` on the
+After loading the v5/v6 images, run
+`node scripts/check-standalone-static-assets.mjs <verified-v5-or-v6-bundle>` on the
 same Docker host. It creates disposable, network-disabled containers without
-starting them, copies each image's `/app/public` tree, and compares every
-regular file, size, and hash against the verified portal manifest. It rejects
-extra files and links, including a linked public root. The readback accepts
+starting them, reads a bounded tar stream from each portal image's
+`/app/public` tree and the API image's `/app/portals` tree without extracting
+onto the host filesystem, and compares every regular file, size, and hash
+against the verified portal manifests. It rejects extra files, directories
+not implied by the manifests, links, case-colliding paths, unsupported tar
+headers, and image-declared volumes. File modes and ownership are not compared.
+The readback accepts
 the verified OCI index ID or config ID from the local Docker image store.
 Retain the reported image IDs and inventory hash as
-install readback evidence. This check requires a locally loaded image; it is
-not an offline browser journey, a process-level egress test, or proof of image
-build provenance.
+install readback evidence. This check requires locally loaded exact images;
+it is not an offline browser journey, a process-level egress test, proof of
+image build provenance, or qualification of a newer source revision.
 
 The verifier checks that the API archive's OCI image ID, Linux architecture,
 non-root entrypoint, and source-revision label match the builder manifest and
@@ -157,7 +168,15 @@ name or tag annotation. The loader snapshots one checked archive at a time to
 a private temporary directory, rehashes it before Docker reads it, and
 accepts the checked OCI or config ID reported by the daemon. Ensure the
 temporary filesystem can hold the largest image archive. A v3 bundle remains a ledger-stack
-bundle only; neither format starts the API or proves that it can query a live
+bundle only and cannot back a signed local-ledger API plan. The API requires a
+v4-v6 inventory with an API image pin and checks that its embedded release
+manifest digest and path identify the same signed manifest bytes as the plan.
+The v2 signed API plan must also pin the complete release-manifest verifier-key
+catalog and the approved maintenance committee, threshold, and counter. Each
+API query checks those values from the same finalized contract-state read as
+the Compact ledger projection. Any verifier-key or authority change requires
+manual review, a new signed plan, and an API restart.
+Archive verification alone does not start the API or prove that it can query a live
 local ledger. Matching source labels and hashes do not independently prove
 image build provenance; the release operator must approve the exact archive
 digest and retain the signed build evidence.
@@ -179,6 +198,10 @@ or cluster qualification is implied by this CLI option.
 
 The builder creates a **new** ignored `artifacts/standalone-install/<source SHA>/`
 directory; it does not overwrite an existing bundle or rebuild Compact keys.
+The full-artifact preflight requires the packaged Compact source bytes to match
+the current source. That comparison catches a stale source copy but does not
+prove that the compiler outputs or proving keys came from those bytes;
+independently review the build provenance before release approval.
 It packs ten packages, copies the 18 local proof-parameter files, exports the
 three digest-pinned Compose images, copies and hashes both runtime Compose
 files, writes the release and install manifests,
@@ -190,11 +213,23 @@ candidate bytes.
 
 Run `node scripts/check-standalone-install.mjs <bundle-directory>` before
 disconnecting and after transfer. It verifies the package manifest against
-the packed contract and hashes each image archive and all 18 required proof
+the packed contract, including the manifest's Compact-source and generated
+contract hashes against the corresponding tarball bytes and its declared
+compiler version against packed contract metadata, and hashes each
+image archive and all 18 required proof
 parameter files without network access. A missing, extra, linked, or altered
 parameter file fails the check. The proof server verifies downloaded parameter
 contents during online installation; keep the checked cache as a read-only
 runtime input, not as an unpinned writable container layer.
+Every package tarball must use canonical `package/` paths; aliases, dot segments,
+and duplicate normalized paths are rejected so the checked entries cannot be
+shadowed by another top-level archive prefix during installation. Its packed
+`package/package.json` name and version must match the release workspace.
+The manifest-backed package smoke rehashes private temporary copies before
+passing them to `npm install`, so changes to the original staging paths after
+verification cannot change what that smoke installs. Keep the original bundle
+under operator-controlled custody; this check does not prevent a process with
+the same filesystem privileges from altering its private temporary files.
 The v3 verifier also checks both Compose files and requires the base Compose
 image references to match the archived image inventory. V2 bundles remain
 verifiable as historical smoke artifacts but cannot prepare a new wizard stack.
@@ -311,6 +346,15 @@ plan's node and indexer URLs; a post-submission mismatch is an unknown outcome
 that must be reconciled, never retried blindly. The proof-server endpoint is
 still supplied by the operator's provider configuration and needs separate
 review. Remove the relay before any offline-runtime qualification.
+For a current setup, deployment reconciliation, verifier-key insertion and
+reconciliation, committee preparation/submission/reconciliation, and recovery
+approval recheck that same verified direct mapping or relay before using the
+ledger; results are not recorded if access changes during readback. If the
+temporary relay was removed, restore the **same verified** relay and ports for
+those operations, then remove it again before testing egress-denied runtime.
+Legacy read-only maintenance reconciliation remains forensic only and cannot
+qualify a release. It does not recheck the current endpoint mapping, so a
+legacy `observed` status is not authenticated deployment or release evidence.
 A config-only render and a healthy new node do
 not prove a local contract deployment, finalized readback, denied egress for
 other processes, or release qualification. Review the new genesis and repeat
@@ -629,7 +673,10 @@ genesis hash independently, then sign the exact pin and source reference.
 `draft-genesis` accepts a JSON object with exactly `reviewerFingerprint`,
 `reviewedReference`, and a human-supplied ISO `approvedAt` timestamp.
 `draft-committee` accepts those fields plus
-`maintenancePolicy` and `custodians` in the approval shapes below. Both commands
+`maintenancePolicy`, `custodians`, and the absolute `deploymentPlanPath` in the
+approval shapes below. Prepare the final staged deployment plan and provider
+module before drafting the roster; the wizard hashes the exact plan bytes and
+binds its provider-module digest into the roster. Both commands
 derive the source, install, and genesis binding from the private setup record;
 they create mode-0600 `*.unsigned.json` files in that directory without
 overwriting an earlier draft. The printed state is
@@ -639,6 +686,22 @@ including the approval time, then sign the **exact bytes** of the draft they
 accept. The operator passes that
 same file and detached signature to `approve-genesis` or `approve-committee`.
 The wizard does not create reviewer authority, private keys, or signatures.
+Every signed genesis, committee, deployment-binding, and no-journal recovery
+decision requires a canonical UTC ISO approval time and an independently
+reviewed non-`demo:` reference; alternate time spellings and synthetic demo
+references are rejected before signature verification.
+Signed approval JSON must be either compact JSON (`JSON.stringify(value)`)
+or the wizard's two-space-indented draft with one trailing newline. The wizard
+rejects alternate serialization and duplicate keys before verifying the
+signature; reviewers should sign the exact generated draft bytes whenever a
+draft command is available.
+
+New setups require an install bundle with verified runtime Compose and offline
+Compose pins (v3 or later); a historical v2 bundle cannot initialize a new
+deployment. Existing v2 records cannot draft or accept genesis approval or
+reserve a deployment, even if they contain a setup ID; recreate them from a
+current bundle and observe a verified stack. Historical test
+fixtures are not standalone deployment evidence.
 
 The wizard verifies staged bytes, checks that the pin and deployment plan
 match the installed source and observed genesis, and requires a detached
@@ -647,6 +710,8 @@ reviewer signature before deployment. The signed JSON has exactly these fields:
 ```json
 {
   "format": "tr-local-genesis-approval-v1",
+  "setupId": "<random setup ID from setup-record.json>",
+  "stackProject": "<prepared Compose project from setup-record.json>",
   "sourceRevision": "<signed source SHA from setup-record.json>",
   "installInventorySha256": "<inventory hash from setup-record.json>",
   "networkId": "undeployed",
@@ -658,6 +723,13 @@ reviewer signature before deployment. The signed JSON has exactly these fields:
   "approvedAt": "<ISO-8601 time after setup initialization>"
 }
 ```
+
+The `setupId` and `stackProject` bind this signature to one private first-run
+setup and its isolated ledger stack; an approval drafted for another setup
+cannot be reused. Sign a newly generated draft for a new installation rather
+than copying an earlier approval document. The wizard rechecks the live
+direct-loopback topology after genesis preflight, and topology plus exact
+indexer endpoints immediately before submitting a deployment.
 
 The reviewer compares the candidate genesis to independently obtained
 chain-spec evidence, signs the exact JSON bytes on a separate trusted system,
@@ -676,6 +748,20 @@ gpg --local-user REVIEWER_SIGNING_KEY_FINGERPRINT --armor --detach-sign \
   --output genesis-approval.sig genesis-approval.unsigned.json
 gpg --verify genesis-approval.sig genesis-approval.unsigned.json
 ```
+
+The verifier accepts a signing subkey only when GnuPG reports the pinned
+primary-key fingerprint and the `GOODSIG` key ID or fingerprint matches the
+actual signer.
+It requires a detached binary-document signature using SHA-256, SHA-384, or
+SHA-512; ASCII armoring of that detached signature is accepted. It rejects an
+expired or revoked signing key or signature. A `KEYEXPIRED` status alone does
+not cause rejection; an expired signing key is rejected through `EXPKEYSIG`.
+The operator must refresh the approved public-key export or keyring before
+verification, because an old export cannot reveal a later revocation. The signature's
+creation time must be at or after the draft's `approvedAt` time; set that
+timestamp immediately before signing on a clock-synchronized trusted system.
+GnuPG signature time is signer-controlled metadata, not an independent trusted
+timestamp or proof that the review occurred.
 
 The `reviewedReference` in the draft must identify the independently reviewed
 chain specification or reproducible genesis evidence and its immutable digest
@@ -710,10 +796,12 @@ after genesis approval. Its exact JSON shape is:
 
 ```json
 {
-  "format": "tr-local-committee-approval-v1",
+  "format": "tr-local-committee-approval-v2",
   "sourceRevision": "<signed source SHA from setup-record.json>",
   "installInventorySha256": "<inventory hash from setup-record.json>",
   "genesisApprovalSha256": "<signed genesis document hash from setup-record.json>",
+  "deploymentPlanSha256": "<SHA-256 of the exact reviewed deployment plan bytes>",
+  "providerModuleSha256": "<provider-module hash from the reviewed plan>",
   "networkId": "undeployed",
   "expectedGenesisHash": "0x<approved 64-character genesis hash>",
   "reviewerFingerprint": "<40-character uppercase governance signing-key fingerprint>",
@@ -739,7 +827,15 @@ a threshold of at least two, and distinct custody roles matched in key order. Th
 genesis, the setup host verifies the detached signature against an
 operator-pinned reviewer public key; the release owner must separately verify
 the governance reviewer's authority and custody evidence. A recorded roster
-does not submit or verify a contract maintenance transition. The wizard shows
+is required **before deployment reservation**: deferring it stops the wizard
+before `DEPLOY ONCE`, so a finalized contract cannot strand the setup under
+the bootstrap maintenance key. It does not submit or verify a contract
+maintenance transition. The approved plan bytes cannot be changed after this
+signature: the wizard compares their digest before reserving deployment, and
+the deployer checks the provider-module bytes against the hash inside that
+plan before importing it. Review the provider module as privileged code.
+Historical v1 rosters do not authorize new deployments; they can only be
+read during forensic reconciliation of an earlier attempt. The wizard shows
 `roster-signature-verified-deployment-binding-pending` until the governance
 reviewer signs a second approval for the actual deployment. That approval has
 exactly this JSON shape:
@@ -1202,19 +1298,22 @@ topology. It requires the same source revision, observer and install inventory,
 genesis, and historical finalized block hash, with a different project,
 network, and three container identities. Destination finality must advance
 beyond the source checkpoint. The source snapshot and destination result are
-private, atomically published one-write files. Verification also binds the
-source snapshot to the source setup record. The result distinguishes
-pre-deployment or unbound smoke from matching valid staged-bootstrap setup
-records, but neither
-classification independently reads contract state. Preserve the files on any failure instead of recapturing
+private, atomically published one-write files. Source capture requires a
+setup-recorded staged-bootstrap deployment receipt no later than its finalized
+checkpoint, with node-reported block hash at the receipt height matching the
+recorded receipt hash. Pre-deployment smoke cannot consume that source slot. Verification
+binds both snapshots to their own private setup records. A fresh restore
+destination may have no deployment receipt in its setup record, so the result
+remains `pre-deployment-or-unbound-smoke` until separate contract and wallet
+readback is supplied. This consistency check does not independently read
+contract state. Preserve the files on any failure instead of recapturing
 or resetting volumes.
 
 This is only **distinct-project ledger continuity**. The script cannot prove
 that a backup was made, transferred to another host, or held under approved
 custody. It does not read contract state, wallet keys, API data, or transaction
 journals; these require separate post-restore evidence. Running its tests
-with injected snapshots is not local deployment or restore evidence. A
-pre-deployment run is development smoke only and does not advance the RC gate.
+with injected snapshots is not local deployment or restore evidence.
 
 ## Acceptance Test Before Claiming Support
 
@@ -1228,7 +1327,19 @@ pre-deployment run is development smoke only and does not advance the RC gate.
 3. Run issuer, verifier, auditor, maintainer, and recognition actor journeys
    through the self-hosted API and browser surfaces. Test wallet funding,
    proofs, DID resolution, status checks, finalized evidence, and TRQP
-   projection with no public endpoint calls. Reject stale, substituted, or
+   metadata projection with no public endpoint calls. The local 0.1.0 profile
+   supports current decisions only: historical authorization, recognition, and
+   TRQP decision/evidence routes must return the explicit out-of-scope problem.
+   After each governed mutation, drain the API, authenticate finalized readback,
+   independently review the replacement snapshot and complete sequence map,
+   detach-sign a new plan, use `trust-registry-api check-local-ledger-plan`
+   against the complete new signed set without a listener, switch to that
+   immutable versioned plan/snapshot set, and restart. The preflight is a
+   consistency check, not independent finality proof. Verify startup,
+   `/health`, and current actor reads before
+   reopening traffic. A failed rotation leaves the API unavailable; do not
+   restart with a stale plan or a fixture source. Capture this sequence as live
+   offline evidence, not as a simulator test. Reject stale, substituted, or
    unavailable trust data rather than silently treating it as valid.
 4. Restart node, indexer, prover, and API independently. Verify persistent
    keys, wallet state, ledger, receipts, and historical evidence survive.

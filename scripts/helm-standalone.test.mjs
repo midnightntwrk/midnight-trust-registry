@@ -74,8 +74,11 @@ test("renders six private digest-pinned runtime workloads without embedded crede
   assert.equal(pod.volumes.find((volume) => volume.name === "approval-runtime").emptyDir.medium, "Memory");
   assert.deepEqual(pod.volumes.filter((volume) => volume.secret).map((volume) => volume.secret.secretName).sort(),
     ["api-approval", "reviewer-keyring"].sort());
+  assert.deepEqual(pod.volumes.filter((volume) => volume.secret)
+    .map((volume) => volume.secret.defaultMode), [288, 288]);
   const main = pod.containers[0];
   assert.ok(main.args.includes("--cluster-bind"));
+  assert.ok(main.args.includes("--serve-portals"));
   assert.ok(!main.args.includes("--unsafe-demo-mutations"));
   assert.equal(main.securityContext.readOnlyRootFilesystem, true);
   assert.equal(main.startupProbe.timeoutSeconds, 20);

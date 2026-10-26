@@ -64,6 +64,8 @@ export type FinalizedRegistryLedgerView = {
   finalizedBlockHash: string;
   contractAddress: string;
   ledger: Ledger;
+  verifierKeySha256: Readonly<Record<string, string>>;
+  maintenanceAuthority: FinalizedRegistryDeploymentImage["maintenanceAuthority"];
 };
 
 export class FinalizedDeploymentImageInvalidError extends Error {
@@ -196,6 +198,7 @@ function createDeploymentActionReader(input: {
         finalizedBlockHash: observed.actionState.finalizedBlockHash,
         contractAddress: observed.actionState.contractAddress,
         ledger: observed.ledger,
+        ...deploymentImage(observed.contractState),
       };
     },
     async readCurrentFinalizedActionState(contractAddress): Promise<FinalizedDeploymentActionState | null> {

@@ -12,6 +12,7 @@ import {
   packageManifestCatalog,
 } from "./trust-registry-workspace-catalog.mjs";
 import { verifyReleaseCandidateArtifacts } from "./release-candidate-manifest.mjs";
+import { snapshotReleaseTarballs } from "./snapshot-release-tarballs.mjs";
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -99,12 +100,13 @@ const ensureArtifacts = (artifactsPath) => {
 const { artifactsDir, manifest, actorJourney, vcConsumer } = parseArgs();
 const resolvedArtifactsDir = path.resolve(repoRoot, artifactsDir);
 let tarballPaths;
+let candidateManifest;
 if (manifest !== undefined) {
   if (typeof manifest !== "string" || manifest.length === 0) {
     throw new Error("--manifest requires a file path");
   }
-  const candidate = JSON.parse(fs.readFileSync(path.resolve(repoRoot, manifest), "utf8"));
-  tarballPaths = verifyReleaseCandidateArtifacts(candidate, resolvedArtifactsDir);
+  candidateManifest = JSON.parse(fs.readFileSync(path.resolve(repoRoot, manifest), "utf8"));
+  tarballPaths = verifyReleaseCandidateArtifacts(candidateManifest, resolvedArtifactsDir);
 } else {
   fs.mkdirSync(resolvedArtifactsDir, { recursive: true });
   ensureArtifacts(resolvedArtifactsDir);
@@ -123,6 +125,10 @@ if (tarballPaths.length !== artifactWorkspaces.length) {
 const smokeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "trust-registry-pack-smoke-"));
 
 try {
+  if (candidateManifest !== undefined) {
+    tarballPaths = snapshotReleaseTarballs(candidateManifest, resolvedArtifactsDir,
+      path.join(smokeRoot, "verified-packages"));
+  }
   fs.writeFileSync(
     path.join(smokeRoot, "package.json"),
     `${JSON.stringify({ name: "trust-registry-pack-smoke", private: true, type: "module" }, null, 2)}\n`,

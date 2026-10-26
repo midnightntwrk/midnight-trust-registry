@@ -10,12 +10,23 @@ import {
   loadApprovedLocalLedgerRuntimePlan,
 } from "./local-ledger-runtime.js";
 import { createTrustRegistryApiServer } from "./server.js";
+import { createPortalStaticHandler } from "./portal-static.js";
+import type { FinalizedProposalLedgerReader } from "./compact-proposal-observation.js";
 
 const HELP_TEXT = `Usage:
   trust-registry-api serve (--snapshot PATH | --workspace PATH | --local-ledger-plan PATH) [--host HOST] [--port PORT]
     [--local-ledger-signature PATH --local-ledger-keyring DIRECTORY --local-ledger-reviewer FINGERPRINT]
     [--cluster-bind]
+    [--serve-portals]
     [--unsafe-demo-mutations]
+  trust-registry-api check-local-ledger-plan --local-ledger-plan PATH --local-ledger-signature PATH
+    --local-ledger-keyring DIRECTORY --local-ledger-reviewer FINGERPRINT
+
+Snapshot and workspace modes are fixture-only and require a loopback host.
+Cluster binding requires signed local-ledger mode; it is not release qualification.
+--serve-portals serves packaged admin/applicant assets from the API origin.
+The plan check performs signed-pin and finalized snapshot readback without a listener.
+It is not independent finality proof or release qualification.
 
 Examples:
   trust-registry-api serve --snapshot ./tmp/demo-snapshot.json
@@ -25,6 +36,7 @@ Examples:
 `;
 
 export type TrustRegistryApiCliOptions = {
+  command: "serve" | "check-local-ledger-plan";
   host: string;
   port: number;
   snapshotPath?: string;
@@ -34,6 +46,7 @@ export type TrustRegistryApiCliOptions = {
   localLedgerKeyringDirectory?: string;
   localLedgerReviewerFingerprint?: string;
   clusterBind?: boolean;
+  servePortals?: boolean;
   unsafeDemoMutations?: boolean;
 };
 
@@ -45,11 +58,12 @@ export const parseTrustRegistryApiCliArgs = (
   if (command === "--help" || command === "-h" || command === "help") {
     throw new Error(HELP_TEXT);
   }
-  if (command !== "serve") {
+  if (command !== "serve" && command !== "check-local-ledger-plan") {
     throw new Error(`unknown command: ${command}\n\n${HELP_TEXT}`);
   }
 
   const options: TrustRegistryApiCliOptions = {
+    command,
     host: "127.0.0.1",
     port: 4400,
   };
@@ -114,6 +128,9 @@ export const parseTrustRegistryApiCliArgs = (
       case "--cluster-bind":
         options.clusterBind = true;
         break;
+      case "--serve-portals":
+        options.servePortals = true;
+        break;
       case "--help":
       case "-h":
         throw new Error(HELP_TEXT);
@@ -135,6 +152,14 @@ export const parseTrustRegistryApiCliArgs = (
     : localEvidence.some((value) => value !== undefined)) {
     throw new Error("Local-ledger mode requires complete reviewer evidence and forbids demo mutations");
   }
+  if (command === "check-local-ledger-plan") {
+    const allowed = new Set(["--local-ledger-plan", "--local-ledger-signature",
+      "--local-ledger-keyring", "--local-ledger-reviewer"]);
+    if (options.localLedgerPlanPath === undefined || [...seen].some((arg) => !allowed.has(arg))) {
+      throw new Error("Plan preflight accepts only complete signed local-ledger evidence");
+    }
+    return options;
+  }
   if (!Number.isInteger(options.port) || options.port < 1 || options.port > 65535) {
     throw new Error(`invalid port: ${String(options.port)}\n\n${HELP_TEXT}`);
   }
@@ -144,6 +169,9 @@ export const parseTrustRegistryApiCliArgs = (
   if (options.clusterBind === true
     && (options.localLedgerPlanPath === undefined || options.host !== "0.0.0.0")) {
     throw new Error("--cluster-bind requires signed local-ledger mode on 0.0.0.0");
+  }
+  if (options.servePortals === true && options.localLedgerPlanPath === undefined) {
+    throw new Error("--serve-portals requires signed local-ledger mode");
   }
   if (options.localLedgerPlanPath !== undefined
     && options.clusterBind !== true && !["127.0.0.1", "::1"].includes(options.host)) {
@@ -155,6 +183,10 @@ export const parseTrustRegistryApiCliArgs = (
   ) {
     throw new Error("--unsafe-demo-mutations requires a loopback host");
   }
+  if (options.localLedgerPlanPath === undefined
+    && !["127.0.0.1", "::1"].includes(options.host)) {
+    throw new Error("Fixture-backed API modes require a loopback host");
+  }
 
   return options;
 };
@@ -163,6 +195,23 @@ export const runTrustRegistryApiCli = async (
   argv: readonly string[] = process.argv.slice(2),
 ): Promise<void> => {
   const options = parseTrustRegistryApiCliArgs(argv);
+  if (options.command === "check-local-ledger-plan") {
+    const plan = await loadApprovedLocalLedgerRuntimePlan({
+      planPath: options.localLedgerPlanPath!,
+      signaturePath: options.localLedgerSignaturePath!,
+      keyringDirectory: options.localLedgerKeyringDirectory!,
+      reviewerFingerprint: options.localLedgerReviewerFingerprint!,
+      requireApiRuntimePin: true,
+    });
+    const source = await createApprovedLocalLedgerRuntimeSource(plan);
+    await source.loadSnapshot();
+    process.stdout.write(`Signed local plan and finalized snapshot match (${plan.sourceRevision}); not release qualification.\n`);
+    return;
+  }
+  const portalHandler = options.servePortals === true
+    ? await createPortalStaticHandler("/app/portals")
+    : undefined;
+  let readFinalizedProposalLedger: FinalizedProposalLedgerReader | undefined;
   const source = options.localLedgerPlanPath !== undefined
     ? await (async () => {
       const plan = await loadApprovedLocalLedgerRuntimePlan({
@@ -177,6 +226,7 @@ export const runTrustRegistryApiCli = async (
       }
       const localSource = await createApprovedLocalLedgerRuntimeSource(plan);
       await localSource.loadSnapshot();
+      readFinalizedProposalLedger = localSource.readFinalizedProposalLedger;
       return localSource;
     })()
     : options.snapshotPath !== undefined
@@ -185,6 +235,8 @@ export const runTrustRegistryApiCli = async (
 
   const server = createTrustRegistryApiServer({
     source,
+    ...(readFinalizedProposalLedger === undefined ? {} : { readFinalizedProposalLedger }),
+    ...(portalHandler === undefined ? {} : { nonApiGetHandler: portalHandler }),
     ...(options.clusterBind === true ? { corsPolicy: "none" as const } : {}),
     ...(options.unsafeDemoMutations === undefined ? {} : { allowUnsafeDemoMutations: options.unsafeDemoMutations }),
   });

@@ -31,11 +31,27 @@ isolation. `docker save` by image ID produces an untagged archive; after
 `docker load`, tag the verified image ID in the private registry and pin the
 resulting registry digest. Test the exact platform and image bytes before release.
 
-The current portals default to a loopback API URL in the browser and let the
-operator select another local API URL; ingress/TLS and browser-origin policy
-remain deployment responsibilities. A separate API image builder and signed
-local-ledger CLI path now exist, but the portal images, API image, and Helm
-template do not satisfy #218 or #219 by themselves. Actual local-ledger
+The separate portal images default to a loopback API URL in the browser and
+let the operator select another local API URL. For private applicant journeys,
+use the API image's opt-in `--serve-portals` mode instead: its builder stages
+both portal builds in `/app/portals`, and the API serves `/admin/` and
+`/applicant/` from the API origin. The install inventory pins the complete OCI
+archive. New API image manifests record the embedded admin and applicant
+asset-set hashes; the v5/v6 install verifier checks them against the separately
+pinned static portal manifests. Older v1 API manifests remain readable but
+provide no cross-image asset-set check. Manifest agreement does not
+independently verify API image layer contents. This is packaging and route
+evidence, not a verified offline deployment; ingress/TLS, browser-origin policy,
+and independent verification of packaged portal bytes remain deployment
+responsibilities. The CLI does not yet wire live private-evidence and proposal
+submission ports into local-ledger API mode, so the private applicant and governed flows
+are not qualified by same-origin routing alone. Read-only proposal-evidence
+queries do use the same pinned, snapshot-bound finalized ledger reader as
+other local API queries; this does not enable proposal submission. Readback
+fails closed after governance state advances beyond the signed snapshot until
+the operator approves a refreshed snapshot and runtime plan.
+The portal images, API image, and Helm template do not satisfy #218 or #219 by
+themselves. Actual local-ledger
 readback, offline actor journeys, API and wallet continuity, cluster
 network-policy enforcement, restore, and independent security review remain
 release gates.
