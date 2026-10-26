@@ -626,9 +626,13 @@ contractMaintenanceSigningKey, stop? }`. It owns the funded local wallet and
 all opaque Midnight.js provider endpoints; no wallet seed, signing key, or
 mnemonic belongs in the plan or CLI output. The module is privileged code, not
 a data file: review its transitive imports, approve its SHA-256, install it
-read-only, and enforce process-level egress controls. A file hash checked
-before dynamic import does not eliminate a replacement race on writable
-storage. Use a pre-provisioned private journal directory and retain it with
+read-only, and enforce process-level egress controls. The runner reads a
+no-follow regular-file descriptor and rechecks its bytes and inode immediately
+before import, including for maintenance and verifier-key insertion. This
+rejects replacements during network preflight, but does **not** make a writable
+module tree immutable, bind transitive imports, or eliminate the final
+check-to-import race. Issue #233 remains a local-RC security gate; do not use
+this recheck as release qualification. Use a pre-provisioned private journal directory and retain it with
 the receipt and ledger evidence. The CLI checks the manifest source, module
 hash, endpoint allowlist, and live genesis/finalized-head preflight before
 loading the provider. The deployment helper checks installed verifier-key

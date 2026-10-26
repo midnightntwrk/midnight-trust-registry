@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import { lstat, readFile } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
-import { pathToFileURL, fileURLToPath } from "node:url";
+import { fileURLToPath } from "node:url";
 
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import {
@@ -16,6 +16,7 @@ import {
 } from "@midnight-ntwrk/trust-registry-integration";
 
 import { checkLocalLedgerPreflight } from "./local-ledger-preflight.mjs";
+import { loadRecheckedApprovedProvider, readApprovedProviderIdentity } from "./approved-provider-identity.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
 const REVISION = /^[0-9a-f]{40}$/u;
@@ -73,10 +74,7 @@ async function loadApprovedMaterial(plan, dependencies, approval, factoryName) {
     || manifest.sourceRevision !== plan.sourceRevision) {
     throw new Error("Approved source SHA disagrees with the release manifest");
   }
-  const moduleBytes = await regularFile(plan.providerModulePath);
-  if (createHash("sha256").update(moduleBytes).digest("hex") !== plan.providerModuleSha256) {
-    throw new Error("Provider module bytes disagree with the approved SHA-256");
-  }
+  const providerIdentity = await readApprovedProviderIdentity(plan.providerModulePath, plan.providerModuleSha256);
   setNetworkId(getLocalNetworkProfile().networkId);
   await (dependencies.validateEndpoints ?? createLocalNetworkDeploymentActionReader)(plan.network);
   await (dependencies.observe ?? checkLocalLedgerPreflight)({
@@ -87,9 +85,8 @@ async function loadApprovedMaterial(plan, dependencies, approval, factoryName) {
     expectedGenesisHash: plan.network.expectedGenesisHash,
     allowedHosts: plan.network.allowedHosts,
   });
-  const module = await (dependencies.loadProvider ?? ((path) => import(pathToFileURL(path).href)))(
-    plan.providerModulePath,
-  );
+  const module = await loadRecheckedApprovedProvider(plan.providerModulePath,
+    plan.providerModuleSha256, providerIdentity, dependencies.loadProvider);
   if (typeof module[factoryName] !== "function") {
     throw new Error(`Approved provider module must export ${factoryName}`);
   }

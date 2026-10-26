@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -159,6 +159,34 @@ test("preflight failure never imports the provider or enters the journal", async
     observe: async () => { throw new Error("genesis mismatch"); },
     loadProvider: async () => { loaded = true; },
   }), /genesis mismatch/u);
+  assert.equal(loaded, false);
+});
+
+test("deployment rejects a same-byte provider replacement during network preflight", async () => {
+  const path = join(root, "replace-deployment-provider.mjs");
+  const replacement = join(root, "deployment-replacement.mjs");
+  await writeFile(path, moduleSource);
+  await writeFile(replacement, moduleSource);
+  let loaded = false;
+  await assert.rejects(runLocalDeployment({ ...plan, providerModulePath: path }, {
+    validateEndpoints: async () => {},
+    observe: async () => { await rename(replacement, path); },
+    loadProvider: async () => { loaded = true; },
+  }), /path or inode changed/u);
+  assert.equal(loaded, false);
+});
+
+test("maintenance rejects a same-byte provider replacement during network preflight", async () => {
+  const path = join(root, "replace-maintenance-provider.mjs");
+  const replacement = join(root, "maintenance-replacement.mjs");
+  await writeFile(path, moduleSource);
+  await writeFile(replacement, moduleSource);
+  let loaded = false;
+  await assert.rejects(loadApprovedMaintenanceMaterial({ ...plan, providerModulePath: path }, {
+    validateEndpoints: async () => {},
+    observe: async () => { await rename(replacement, path); },
+    loadProvider: async () => { loaded = true; },
+  }), /path or inode changed/u);
   assert.equal(loaded, false);
 });
 
