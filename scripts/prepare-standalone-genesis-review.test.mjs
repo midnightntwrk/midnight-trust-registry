@@ -38,6 +38,10 @@ function fixture(bundle) {
 test("packet labels self-reported values and independent approval requirements", () => {
   const { record, candidate, pin, verified } = fixture("/private/bundle");
   const evidence = validateGenesisReviewEvidence(record, candidate, pin, verified);
+  assert.equal(validateGenesisReviewEvidence(record, candidate, pin, {
+    ...verified, images: [{ role: "node",
+      reference: `registry.example:5000/node:stable@sha256:${"f".repeat(64)}` }],
+  }).nodeImage, `registry.example:5000/node:stable@sha256:${"f".repeat(64)}`);
   const packet = renderGenesisReviewPacket(evidence, "1".repeat(64), "2".repeat(64));
   assert.match(packet, /UNTRUSTED/u);
   assert.match(packet, /controlled independently of this running node/u);

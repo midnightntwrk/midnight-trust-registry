@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import { getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
 
-import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
+import { STANDALONE_IMAGE_REFERENCE, verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { regularBytes } from "./standalone-setup-wizard.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
@@ -40,7 +40,7 @@ export function validateGenesisReviewEvidence(record, candidate, pin, verified) 
   }
   const nodeImage = verified.images.find((image) => image.role === "node");
   if (!nodeImage || typeof nodeImage.reference !== "string"
-    || !/^[a-z0-9./_-]+@sha256:[0-9a-f]{64}$/u.test(nodeImage.reference)) {
+    || !STANDALONE_IMAGE_REFERENCE.test(nodeImage.reference)) {
     throw new Error("Review packet requires the pinned node image identity");
   }
   if (!exactFields(candidate, ["format", "sourceRevision", "installInventorySha256",
