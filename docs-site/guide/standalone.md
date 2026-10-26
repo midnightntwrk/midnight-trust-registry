@@ -134,8 +134,39 @@ names cases `L01`-`S01`: issuer/verifier/auditor grants, maintainer and
 recognition actions, DID and live VC-status checks, negative authorization
 cases, egress-denied actor work, restart and distinct-project restore, and
 independent human security review. Record each as `pass`, `fail`, or `not-run`
-with raw receipts. `pnpm check:standalone-acceptance-evidence "$EVIDENCE_DIR" "$SOURCE_SHA"`
-checks inventory integrity, not whether the claims or finality are true.
+with raw receipts. After deployment and the signed API plan exist, run the
+opt-in read-only API observation against the same setup and verified bundle:
+
+```sh
+pnpm observe:standalone-current-query "$SETUP" "$INSTALL"
+pnpm observe:standalone-api-restart "$SETUP" "$INSTALL"
+```
+
+Save both JSON reports and raw egress logs privately. The first command
+checks live current issuer, verifier, auditor, and recognition reads with
+API-container TCP/DNS canary denial. The second restarts only the API and
+requires the same signed plan and selected state afterward. Neither command
+submits an actor transaction, authenticates node finality independently,
+tests host/browser egress, or restores a ledger backup.
+
+Initialize an acceptance inventory with the reviewed genesis, contract,
+source, install inventory, and signed-plan hashes, then attach distinct raw
+receipts to each case as described in the operator acceptance record:
+
+```sh
+EVIDENCE_DIR=/absolute/private/acceptance
+mkdir -m 700 "$EVIDENCE_DIR"
+node scripts/check-standalone-acceptance-evidence.mjs init \
+  "$EVIDENCE_DIR" "$SOURCE_SHA" "$INVENTORY_SHA256" \
+  "$SIGNED_PLAN_SHA256" "$GENESIS_HASH" "$CONTRACT_ADDRESS"
+pnpm check:standalone-acceptance-evidence "$EVIDENCE_DIR" "$SOURCE_SHA"
+```
+
+The checker exits 2 while cases are not marked `pass`, 1 for invalid or
+source-mismatched evidence, and 0 only for a complete hash-consistent
+inventory. It does not verify whether a receipt, finality claim, or human
+verdict is true. Do not mark write-dependent cases as passed from the
+read-only probes.
 
 The release remains blocked until those cases pass for one exact source and
 bundle, with a non-author human security verdict. The current read-only API
