@@ -1,4 +1,4 @@
-name: Milestone Light
+name: Milestone Build, Package, and Test
 
 on:
   pull_request:
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   light:
-    name: Milestone Light
+    name: Milestone Build, Package, and Test
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:

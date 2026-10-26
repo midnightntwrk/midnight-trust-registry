@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPOSITORY = "midnightntwrk/midnight-trust-registry";
-const REQUIRED_CHECKS = ["Milestone Light", "scan", "Typecheck, Audit, and Packaging Baseline"];
+const REQUIRED_CHECKS = ["Milestone Build, Package, and Test", "scan", "Typecheck, Audit, and Packaging Baseline"];
 const SHA = /^[0-9a-f]{40}$/u;
 
 function fail(message) {
