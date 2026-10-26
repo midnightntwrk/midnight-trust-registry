@@ -2154,6 +2154,12 @@ export async function standaloneSetupStatus(directory) {
   return {
     format: FORMAT,
     sourceRevision: record.sourceRevision,
+    installInventorySha256: record.install.inventorySha256,
+    stackProject: record.stack?.project ?? null,
+    stackNetworkId: record.stack?.observation?.topology?.networkId ?? null,
+    approvedGenesisHash: record.ledgerObservation?.expectedGenesisHash ?? null,
+    deployedContractAddress: record.deployment?.state === "observed"
+      ? record.deployment.result?.receipt?.contractAddress ?? null : null,
     install: "verified-staged-bytes-only",
     stackConfiguration: record.stack?.observation ? "observed-ledger-bridge-only"
       : record.stack ? "prepared-runtime-unobserved" : "pending",

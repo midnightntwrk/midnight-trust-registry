@@ -113,7 +113,9 @@ results.
    verdict. Save its JSON in a private evidence file and inspect it before
    attaching it to a case. Missing gates exit 2 without touching the API;
    invalid bundles or probe failures exit 1. Exit 0 proves only this read-only
-   slice, not release qualification.
+   slice, not release qualification. Set `TR_STACK_NAME` to the wizard's
+   approved project; the command also matches its inventory, Docker network,
+   approved genesis, and deployed contract to the running signed API plan.
 
    ```sh
    pnpm observe:standalone-qualification \

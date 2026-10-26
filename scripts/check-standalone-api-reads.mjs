@@ -49,6 +49,10 @@ function checkedCurrentReadReport(stdout) {
     || report.apiOrigin !== "http://127.0.0.1:4400"
     || !/^[0-9a-f]{40}$/u.test(report.planSourceRevision ?? "")
     || !/^[0-9a-f]{64}$/u.test(report.planSha256 ?? "")
+    || !/^0x[0-9a-f]{64}$/u.test(report.planContractAddress ?? "")
+    || /^0x0{64}$/u.test(report.planContractAddress)
+    || !/^0x[0-9a-f]{64}$/u.test(report.planExpectedGenesisHash ?? "")
+    || /^0x0{64}$/u.test(report.planExpectedGenesisHash)
     || !/^[0-9a-f]{64}$/u.test(report.selectedStateSha256 ?? "")
     || !canonicalTimestamp(report.observedAt)
     || !canonicalTimestamp(report.planNotAfter)
@@ -106,6 +110,8 @@ export async function probeStandaloneApiCurrentReads(bundle, env = process.env, 
     apiRestartCount: before.apiRestartCount,
     networkId: before.networkId,
     planSha256: current.planSha256,
+    planContractAddress: current.planContractAddress,
+    planExpectedGenesisHash: current.planExpectedGenesisHash,
     planNotAfter: current.planNotAfter,
     observedAt: current.observedAt,
     registryId: current.registryId,

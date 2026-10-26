@@ -17,6 +17,10 @@ function checkedRead(report, sourceRevision) {
     || report.releaseQualified !== false || report.sourceRevision !== sourceRevision
     || report.routeReadback !== "same-container-signed-plan-current-only"
     || !SHA256.test(report.planSha256 ?? "")
+    || !BLOCK_HASH.test(report.planContractAddress ?? "")
+    || /^0x0{64}$/u.test(report.planContractAddress)
+    || !BLOCK_HASH.test(report.planExpectedGenesisHash ?? "")
+    || /^0x0{64}$/u.test(report.planExpectedGenesisHash)
     || !SHA256.test(report.selectedStateSha256 ?? "")
     || !BLOCK_HASH.test(report.sourceFinalizedBlockHash ?? "")
     || /^0x0{64}$/u.test(report.sourceFinalizedBlockHash)
@@ -68,6 +72,8 @@ export async function observeStandaloneCurrentQueryJourney(setupDirectory, bundl
     || second.apiRestartCount !== first.apiRestartCount
     || second.networkId !== first.networkId
     || second.planSha256 !== first.planSha256
+    || second.planContractAddress !== first.planContractAddress
+    || second.planExpectedGenesisHash !== first.planExpectedGenesisHash
     || second.selectedStateSha256 !== first.selectedStateSha256
     || second.registryId !== first.registryId
     || second.currentEpochId !== first.currentEpochId
@@ -81,6 +87,8 @@ export async function observeStandaloneCurrentQueryJourney(setupDirectory, bundl
     apiContainerId: first.apiContainerId,
     networkId: first.networkId,
     planSha256: first.planSha256,
+    planContractAddress: first.planContractAddress,
+    planExpectedGenesisHash: first.planExpectedGenesisHash,
     selectedStateSha256: first.selectedStateSha256,
     registryId: first.registryId,
     currentEpochId: first.currentEpochId,

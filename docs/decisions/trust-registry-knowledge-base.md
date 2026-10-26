@@ -2364,3 +2364,13 @@ operator, but it does not provide a published VC-owned live status-authority
 adapter for the Trust Registry RC. Do not copy the sibling's private source
 into this repository or count existing simulator, portal, or API tests as
 deployed offline DID/VC/status actor-journey evidence.
+
+The standalone qualification observer must not combine a wizard setup with
+an API runtime merely because both use the same source commit. The verified
+install inventory, wizard project and observed Docker network, independently
+approved genesis, and deployed contract address must match the running API's
+signed plan and readback. An opt-in API restart must retain the same container,
+network, plan, and selected state. These are cross-run identity checks, not
+independent authentication of node/indexer finality or proof of a governed
+actor write. The combined observer remains `releaseQualified: false` and
+stops before API probes when wizard ledger prerequisites are missing.

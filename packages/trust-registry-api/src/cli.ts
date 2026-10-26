@@ -421,7 +421,9 @@ export const runTrustRegistryApiCli = async (
     const result = await observeLocalApiCurrentReads({ source, apiOrigin: options.apiOrigin!,
       expectedPlanSha256: planSha256 });
     process.stdout.write(`${JSON.stringify({ ...result, planSourceRevision: plan.sourceRevision,
-      planSha256, planNotAfter: plan.notAfter }, null, 2)}\n`);
+      planSha256, planNotAfter: plan.notAfter,
+      planContractAddress: plan.contractAddress,
+      planExpectedGenesisHash: plan.expectedGenesisHash }, null, 2)}\n`);
     return;
   }
   if (options.command === "observe-local-proposal") {

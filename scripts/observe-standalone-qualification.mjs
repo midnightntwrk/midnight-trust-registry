@@ -27,6 +27,9 @@ export async function observeStandaloneQualification(setupDirectory, bundle, sou
     throw new Error("Install bundle source does not match the selected candidate");
   }
   const status = await setupStatus(setupDirectory);
+  if (status.installInventorySha256 !== install.inventorySha256) {
+    throw new Error("Setup install inventory differs from the verified candidate bundle");
+  }
   const prerequisites = assessStandaloneJourneyPrerequisites(status, sourceRevision);
   const report = {
     format: "tr-standalone-qualification-observation-v1",
@@ -43,19 +46,30 @@ export async function observeStandaloneQualification(setupDirectory, bundle, sou
     releaseQualified: false,
   };
   if (!prerequisites.ledgerPrerequisitesObserved) return report;
+  if (typeof env.TR_STACK_NAME !== "string" || status.stackProject !== env.TR_STACK_NAME
+    || !SHA256.test(status.stackNetworkId ?? "")
+    || !/^0x[0-9a-f]{64}$/u.test(status.approvedGenesisHash ?? "")
+    || !/^0x[0-9a-f]{64}$/u.test(status.deployedContractAddress ?? "")) {
+    throw new Error("Approved setup project, network, genesis, or deployment identity is incomplete");
+  }
 
   const query = dependencies.query ?? observeStandaloneCurrentQueryJourney;
   report.currentQuery = await query(setupDirectory, bundle, env);
   if (report.currentQuery?.format !== "tr-standalone-current-query-journey-v2"
     || report.currentQuery.sourceRevision !== sourceRevision
+    || report.currentQuery.networkId !== status.stackNetworkId
+    || report.currentQuery.planContractAddress !== status.deployedContractAddress
+    || report.currentQuery.planExpectedGenesisHash !== status.approvedGenesisHash
     || report.currentQuery.releaseQualified !== false) {
-    throw new Error("Current-query observer returned an incompatible result");
+    throw new Error("Current-query observer disagrees with the approved setup deployment");
   }
   if (apiRestart) {
     const restart = dependencies.restart ?? observeStandaloneApiRestart;
     report.apiRestart = await restart(setupDirectory, bundle, env);
     if (report.apiRestart?.format !== "tr-standalone-api-restart-observation-v1"
       || report.apiRestart.sourceRevision !== sourceRevision
+      || report.apiRestart.apiContainerId !== report.currentQuery.apiContainerId
+      || report.apiRestart.networkId !== report.currentQuery.networkId
       || report.apiRestart.planSha256 !== report.currentQuery.planSha256
       || report.apiRestart.selectedStateSha256 !== report.currentQuery.selectedStateSha256
       || report.apiRestart.releaseQualified !== false) {

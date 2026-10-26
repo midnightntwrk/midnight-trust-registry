@@ -51,6 +51,7 @@ SOURCE_SHA=replace-with-approved-40-character-commit
 INSTALL=/absolute/verified/standalone-install/$SOURCE_SHA
 SETUP=/absolute/private/standalone-setup
 PROJECT=tr-standalone-local-my-run
+export TR_STACK_NAME="$PROJECT"
 git verify-commit "$SOURCE_SHA"
 shasum -a 256 "$INSTALL/install-inventory.json"
 # Compare the signer fingerprint and inventory digest with independently
@@ -205,7 +206,10 @@ probing the API while wizard ledger prerequisites are missing, and exits 1 on
 invalid bundle or probe failure. Save JSON reports and raw egress logs
 privately. With prerequisites present, it checks live current issuer,
 verifier, auditor, and recognition reads with API-container TCP/DNS canary
-denial. The opt-in flag restarts only the API and requires the same signed
+denial. It also requires this setup's inventory, Docker network, approved
+genesis, and deployed contract to match the running API's signed plan. Use
+the `TR_STACK_NAME` of the approved wizard setup, not another local project.
+The opt-in flag restarts only the API and requires the same signed
 plan and selected state afterward. Neither invocation
 submits an actor transaction, authenticates node finality independently,
 tests host/browser egress, or restores a ledger backup.

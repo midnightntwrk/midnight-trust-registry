@@ -752,6 +752,10 @@ test("wizard records only selected ledger-bridge topology and egress observation
   assert.equal(result.state, "observed-ledger-bridge-only");
   const status = await standaloneSetupStatus(f.directory);
   assert.equal(status.stackConfiguration, "observed-ledger-bridge-only");
+  assert.equal(status.stackProject, project);
+  assert.equal(status.stackNetworkId, ledgerNetworkId);
+  assert.match(status.installInventorySha256, /^[0-9a-f]{64}$/u);
+  assert.equal(status.deployedContractAddress, null);
   assert.equal(status.localLedger, "pending");
   assert.equal(status.deployment, "pending");
   assert.equal(status.offlineJourneys, "pending");

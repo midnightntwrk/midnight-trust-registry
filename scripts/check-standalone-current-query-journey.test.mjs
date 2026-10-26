@@ -25,6 +25,8 @@ const read = {
   releaseQualified: false,
   routeReadback: "same-container-signed-plan-current-only",
   planSha256: "b".repeat(64),
+  planContractAddress: `0x${"a".repeat(64)}`,
+  planExpectedGenesisHash: `0x${"f".repeat(64)}`,
   selectedStateSha256: "e".repeat(64),
   sourceFinalizedBlockHash: `0x${"c".repeat(64)}`,
   registryId: "registry-1",
@@ -65,6 +67,8 @@ test("combines two live current reads around the API egress probe without releas
   assert.equal(reads, 2);
   assert.equal(result.format, "tr-standalone-current-query-journey-v2");
   assert.equal(result.selectedStateSha256, read.selectedStateSha256);
+  assert.equal(result.planContractAddress, read.planContractAddress);
+  assert.equal(result.planExpectedGenesisHash, read.planExpectedGenesisHash);
   assert.deepEqual(result.resolvedLookups, roles);
   assert.equal(result.actorJourneys, "not-run");
   assert.equal(result.independentFinality, "not-verified");
@@ -93,6 +97,8 @@ test("rejects egress denial without positive controls", async () => {
 
 test("rejects a swapped signed plan, selected state, or API container between reads", async () => {
   for (const mutation of [{ planSha256: "e".repeat(64) },
+    { planContractAddress: `0x${"e".repeat(64)}` },
+    { planExpectedGenesisHash: `0x${"d".repeat(64)}` },
     { selectedStateSha256: "f".repeat(64) }, { apiContainerId: "f".repeat(64) }]) {
     let reads = 0;
     await assert.rejects(observeStandaloneCurrentQueryJourney("/setup", "/bundle", {},
