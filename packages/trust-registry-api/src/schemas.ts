@@ -56,6 +56,7 @@ export const TrustRegistryApiProblemDetailsSchema = z.object({
 export const TrustRegistryApiHealthResponseSchema = z.object({
   status: z.literal("ok"),
   sourceMode: z.enum(["snapshot", "workspace", "memory", "local-ledger"]),
+  configuredGovernedProposalRoles: z.array(z.enum(["issuer", "verifier", "auditor", "maintainer", "recognition"])),
   generatedAt: TimestampSchema,
   registryId: NonEmptyStringSchema,
   localPlanSha256: z.string().regex(/^[0-9a-f]{64}$/u).optional(),

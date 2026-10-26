@@ -410,6 +410,7 @@ describe("trust registry api", () => {
       expect(healthResponse.status).toBe(200);
       const health = await healthResponse.json();
       expect(health.sourceMode).toBe("workspace");
+      expect(health.configuredGovernedProposalRoles).toEqual([]);
 
       const listResponse = await fetch(
         `${server.url}/v1/authorizations/issuer?status=active`,

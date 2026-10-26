@@ -687,7 +687,8 @@ describe("local ledger-bound API source", () => {
       const healthy = await fetch(`${url}/health`);
       expect(healthy.status).toBe(200);
       expect(healthy.headers.get("cache-control")).toBe("no-store");
-      expect(await healthy.json()).toMatchObject({ status: "ok", sourceMode: "local-ledger" });
+      expect(await healthy.json()).toMatchObject({ status: "ok", sourceMode: "local-ledger",
+        configuredGovernedProposalRoles: [] });
       expect(readCount).toBe(1);
       const malformedRequest = await fetch(`${url}/v1/trqp/authorizations/query`, {
         method: "POST",

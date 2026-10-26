@@ -17,6 +17,8 @@ results.
 The current signed local API CLI is read-only: it does not configure the
 production applicant/VP intake, accepted-application admission, governed
 proposal ports, or submitting provider. Governed proposal writes return 503.
+`GET /health` reports `configuredGovernedProposalRoles: []` for this CLI; a
+healthy current-read response is not a write-capability or release verdict.
 The operator steps below are the **acceptance procedure**, not a claim that
 they can all run today. The implementation sequence is in
 [Standalone Governed Actor Path](../plans/standalone-governed-actor-path.md).

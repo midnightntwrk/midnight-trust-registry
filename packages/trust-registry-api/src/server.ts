@@ -829,6 +829,13 @@ export const createTrustRegistryApiServer = (
     || options.governedVerifierProposals !== undefined
     || options.governedAuditorProposals !== undefined
     || options.governedMaintainerProposals !== undefined;
+  const configuredGovernedProposalRoles = ([
+    ["issuer", options.governedIssuerProposals],
+    ["verifier", options.governedVerifierProposals],
+    ["auditor", options.governedAuditorProposals],
+    ["maintainer", options.governedMaintainerProposals],
+    ["recognition", options.governedRecognitionProposals],
+  ] as const).filter(([, port]) => port !== undefined).map(([role]) => role);
   if (options.source.mode === "local-ledger") {
     const sourceAddress = options.source.localProposalContractAddress;
     const approvedAddress = options.source.localDeploymentBinding?.contractAddress;
@@ -1159,6 +1166,7 @@ export const createTrustRegistryApiServer = (
           TrustRegistryApiHealthResponseSchema.parse({
             status: "ok",
             sourceMode: options.source.mode,
+            configuredGovernedProposalRoles,
             generatedAt: summary.generatedAt,
             registryId: summary.registryId,
             ...(options.localPlanSha256 === undefined ? {} : { localPlanSha256: options.localPlanSha256 }),

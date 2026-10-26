@@ -17,8 +17,11 @@ readiness. The standalone current-query observer is intentionally read-only.
 
 The integration package has a `submitLocalIssuerProposalCall` path with
 Compact preflight, provider-identity comparison, and a one-attempt durable
-journal. Its existing tests use injected readers/providers. It is not wired
-to the signed production API plan and does not prove a deployed actor journey.
+journal, plus a pinned local submission-provider prototype. Its existing
+tests use injected readers/providers. None of these is wired to the signed
+production API plan, and they do not prove a deployed actor journey.
+`GET /health` lists configured proposal-port roles; port presence is a
+configuration observation, not an authenticated write or release verdict.
 
 ## Implementation order
 
