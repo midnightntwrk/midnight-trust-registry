@@ -295,6 +295,26 @@ describe("approved local-ledger API runtime", () => {
       const input = { planPath, signaturePath, keyringDirectory: verifier,
         reviewerFingerprint: fingerprint! };
       expect((await loadApprovedLocalLedgerRuntimePlan(input)).sourceRevision).toBe(sourceRevision);
+      const fakeBin = join(root, "fake-bin");
+      const pathMarker = join(root, "ambient-gpg-invoked");
+      await mkdir(fakeBin);
+      await writeFile(join(fakeBin, "gpg"),
+        `#!/bin/sh\nprintf called > '${pathMarker}'\nexit 0\n`, { mode: 0o700 });
+      const ambient = Object.fromEntries(["PATH", "GNUPGHOME", "GPG_AGENT_INFO", "GPG_TTY"]
+        .map((key) => [key, process.env[key]]));
+      try {
+        process.env.PATH = `${fakeBin}:${ambient.PATH ?? ""}`;
+        process.env.GNUPGHOME = join(root, "untrusted-home");
+        process.env.GPG_AGENT_INFO = "untrusted-agent";
+        process.env.GPG_TTY = "/dev/null";
+        expect((await loadApprovedLocalLedgerRuntimePlan(input)).sourceRevision).toBe(sourceRevision);
+        await expect(readFile(pathMarker)).rejects.toMatchObject({ code: "ENOENT" });
+      } finally {
+        for (const [key, value] of Object.entries(ambient)) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+      }
       expect(await loadApprovedLocalLedgerRuntimePlanWithDigest(input)).toEqual({
         plan: candidate,
         planSha256: sha256(await readFile(planPath)),
