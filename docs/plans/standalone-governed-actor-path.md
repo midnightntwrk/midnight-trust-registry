@@ -121,3 +121,10 @@ current Compact ledger commitment. It returns a separate signing-review digest
 covering the active policy, verifier key, action payload, sequence, and
 threshold. The caller must still authenticate finality, time, and live VC
 status before asking anyone to sign.
+The issuer SDK handoff now separates side-effect-free submission preflight
+from execution after an externally owned journal reservation. The original
+standalone helper still owns its own journal, but a future API port must use
+the after-reservation form because the HTTP server already reserves before
+calling `execute`. Both forms recheck the finalized ledger and provider
+identity; neither by itself proves that the provider code is pinned or that
+SDK finalization is independently authenticated.

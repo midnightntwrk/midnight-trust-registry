@@ -83,6 +83,19 @@ export type LocalIssuerProposalJournal = {
   ): Promise<{ eventHash: string }>;
 };
 
+export type LocalIssuerProposalSubmissionInput = {
+  call: LocalIssuerProposalCall;
+  expectedGenesisHash: string;
+  readFinalizedLedger: (contractAddress: string) => Promise<{
+    contractAddress: string; genesisHash: string; ledger: Ledger;
+  }>;
+  providers: ContractProviders<RegistryContract>;
+  /** Must authenticate the node/indexer and submitter transports used by these exact providers. */
+  readSubmissionProviderIdentity: (providers: ContractProviders<RegistryContract>) => Promise<{
+    contractAddress: string; genesisHash: string;
+  }>;
+};
+
 const bytes32 = (value: Uint8Array, label: string): Uint8Array => {
   if (!(value instanceof Uint8Array) || value.length !== 32) {
     throw new Error(`${label} must be 32 bytes`);
@@ -92,6 +105,12 @@ const bytes32 = (value: Uint8Array, label: string): Uint8Array => {
 
 const same = (left: Uint8Array, right: Uint8Array): boolean => Buffer.from(left).equals(right);
 const isZero = (value: Uint8Array): boolean => value.every((byte) => byte === 0);
+
+const assertPinnedGenesisHash = (value: string): void => {
+  if (!/^0x[0-9a-f]{64}$/u.test(value) || /^0x0{64}$/u.test(value)) {
+    throw new Error("Local issuer call requires a pinned nonzero genesis hash");
+  }
+};
 
 /** The caller must authenticate this finalized ledger independently of the submitting SDK provider. */
 export function prepareUnsignedLocalIssuerProposalCall(
@@ -242,27 +261,12 @@ export function prepareLocalIssuerProposalCall(input: LocalIssuerProposalCall, l
   };
 }
 
-/** The journal reserves before SDK submission; SDK finalization is not independent readback. */
-export async function submitLocalIssuerProposalCall(input: {
-  call: LocalIssuerProposalCall;
-  expectedGenesisHash: string;
-  readFinalizedLedger: (contractAddress: string) => Promise<{
-    contractAddress: string; genesisHash: string; ledger: Ledger;
-  }>;
-  providers: ContractProviders<RegistryContract>;
-  /** Must authenticate the node/indexer and submitter transports used by these exact providers. */
-  readSubmissionProviderIdentity: (providers: ContractProviders<RegistryContract>) => Promise<{
-    contractAddress: string; genesisHash: string;
-  }>;
-  journal: LocalIssuerProposalJournal;
-}): Promise<{ eventHash: string }> {
-  if (!/^0x[0-9a-f]{64}$/u.test(input.expectedGenesisHash)
-    || /^0x0{64}$/u.test(input.expectedGenesisHash)) {
-    throw new Error("Local issuer call requires a pinned nonzero genesis hash");
-  }
-  await input.journal.assertDeploymentBinding(
-    input.call.registryId, input.call.contractAddress, input.expectedGenesisHash,
-  );
+/** No transaction or journal mutation occurs during this preflight. */
+export async function preflightLocalIssuerProposalSubmission(input: LocalIssuerProposalSubmissionInput): Promise<{
+  prepared: LocalIssuerProposalCallContext;
+  compiledContract: ReturnType<typeof compiledStagedVerifierKeyContract>;
+}> {
+  assertPinnedGenesisHash(input.expectedGenesisHash);
   const finalized = await input.readFinalizedLedger(input.call.contractAddress);
   if (finalized.contractAddress !== input.call.contractAddress) {
     throw new Error("Finalized issuer ledger read belongs to a different contract address");
@@ -277,35 +281,62 @@ export async function submitLocalIssuerProposalCall(input: {
   }
   const prepared = prepareLocalIssuerProposalCall(input.call, finalized.ledger);
   const compiledContract = compiledStagedVerifierKeyContract("proposeIssuerAuthorization");
+  return { prepared, compiledContract };
+}
+
+const submitPreparedLocalIssuerProposal = async (
+  input: LocalIssuerProposalSubmissionInput,
+  prepared: LocalIssuerProposalCallContext,
+  compiledContract: ReturnType<typeof compiledStagedVerifierKeyContract>,
+): Promise<{ eventHash: string }> => {
+  const result = await submitCallTx(input.providers, {
+    compiledContract,
+    contractAddress: input.call.contractAddress.slice(2),
+    privateStateId: "trustRegistryPrivateState",
+    circuitId: "proposeIssuerAuthorization",
+    args: [
+      prepared.authorizationBundle,
+      input.call.authorizationId,
+      input.call.subjectDidCommitment,
+      input.call.resourceType,
+      input.call.resourceId,
+      input.call.policyId,
+      input.call.statusPolicyBindingCommitment,
+      input.call.trustLevel,
+      input.call.evidenceHash,
+      input.call.evidenceVerifierAuthorizationId,
+      input.call.evidenceVerifierKeyIdCommitment,
+      input.call.evidenceVerifierSignature,
+    ],
+  });
+  const eventHash = bytes32(result.private.result, "Finalized issuer proposal event hash");
+  if (!result.public.txId) throw new Error("Finalized issuer proposal lacks a transaction ID");
+  if (!same(eventHash, prepared.expectedEventHash)) {
+    throw new Error("Submitted issuer proposal event hash differs from the prepared action");
+  }
+  return { eventHash: `0x${Buffer.from(eventHash).toString("hex")}` };
+};
+
+/** The caller must already own a durable reservation; this function never retries an ambiguous submit. */
+export async function executeLocalIssuerProposalAfterReservation(
+  input: LocalIssuerProposalSubmissionInput,
+): Promise<{ eventHash: string }> {
+  const { prepared, compiledContract } = await preflightLocalIssuerProposalSubmission(input);
+  return submitPreparedLocalIssuerProposal(input, prepared, compiledContract);
+}
+
+/** The journal reserves before SDK submission; SDK finalization is not independent readback. */
+export async function submitLocalIssuerProposalCall(
+  input: LocalIssuerProposalSubmissionInput & { journal: LocalIssuerProposalJournal },
+): Promise<{ eventHash: string }> {
+  assertPinnedGenesisHash(input.expectedGenesisHash);
+  await input.journal.assertDeploymentBinding(
+    input.call.registryId, input.call.contractAddress, input.expectedGenesisHash,
+  );
+  const { prepared, compiledContract } = await preflightLocalIssuerProposalSubmission(input);
   return input.journal.executeOnce("issuer", input.call.authorizationLabel,
-    `0x${Buffer.from(input.call.evidenceHash).toString("hex")}`, async () => {
-      const result = await submitCallTx(input.providers, {
-        compiledContract,
-        contractAddress: input.call.contractAddress.slice(2),
-        privateStateId: "trustRegistryPrivateState",
-        circuitId: "proposeIssuerAuthorization",
-        args: [
-          prepared.authorizationBundle,
-          input.call.authorizationId,
-          input.call.subjectDidCommitment,
-          input.call.resourceType,
-          input.call.resourceId,
-          input.call.policyId,
-          input.call.statusPolicyBindingCommitment,
-          input.call.trustLevel,
-          input.call.evidenceHash,
-          input.call.evidenceVerifierAuthorizationId,
-          input.call.evidenceVerifierKeyIdCommitment,
-          input.call.evidenceVerifierSignature,
-        ],
-      });
-      const eventHash = bytes32(result.private.result, "Finalized issuer proposal event hash");
-      if (!result.public.txId) throw new Error("Finalized issuer proposal lacks a transaction ID");
-      if (!same(eventHash, prepared.expectedEventHash)) {
-        throw new Error("Submitted issuer proposal event hash differs from the prepared action");
-      }
-      return { eventHash: `0x${Buffer.from(eventHash).toString("hex")}` };
-    }, {
+    `0x${Buffer.from(input.call.evidenceHash).toString("hex")}`,
+    () => submitPreparedLocalIssuerProposal(input, prepared, compiledContract), {
       actionSequence: prepared.actionSequence.toString(),
       actionKind: `0x${Buffer.from(prepared.actionKind).toString("hex")}`,
       actionPayloadHash: `0x${Buffer.from(prepared.actionPayloadHash).toString("hex")}`,

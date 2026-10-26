@@ -18,6 +18,8 @@ import {
 } from "@midnight-ntwrk/trust-registry-contract";
 
 import {
+  executeLocalIssuerProposalAfterReservation,
+  preflightLocalIssuerProposalSubmission,
   prepareLocalIssuerProposalCall,
   prepareUnsignedLocalIssuerProposalCall,
   submitLocalIssuerProposalCall,
@@ -123,6 +125,25 @@ beforeEach(() => {
 });
 
 describe("local issuer proposal circuit call", () => {
+  it("preflights without broadcast and submits once after an external reservation", async () => {
+    const { call, ledger } = fixture();
+    const input = {
+      call, expectedGenesisHash: genesisHash,
+      readFinalizedLedger: async (address: string) => ({ contractAddress: address, genesisHash, ledger }),
+      providers: {} as Parameters<typeof executeLocalIssuerProposalAfterReservation>[0]["providers"],
+      readSubmissionProviderIdentity,
+    };
+    const { prepared } = await preflightLocalIssuerProposalSubmission(input);
+    expect(mocks.submitCallTx).not.toHaveBeenCalled();
+    mocks.submitCallTx.mockResolvedValueOnce({
+      private: { result: prepared.expectedEventHash }, public: { txId: "tx-external-reservation" },
+    });
+    await expect(executeLocalIssuerProposalAfterReservation(input)).resolves.toEqual({
+      eventHash: `0x${Buffer.from(prepared.expectedEventHash).toString("hex")}`,
+    });
+    expect(mocks.submitCallTx).toHaveBeenCalledOnce();
+  });
+
   it("prepares the exact unsigned signing context from current ledger state", () => {
     const { call, ledger } = fixture();
     const unsigned = prepareUnsignedLocalIssuerProposalCall(call, ledger);
