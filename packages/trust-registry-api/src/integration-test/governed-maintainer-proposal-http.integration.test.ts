@@ -130,7 +130,8 @@ describe("Compact-backed maintainer proposals over HTTP", () => {
         post("submit", { evidence, prepared: context, signers: votes, evidenceVerifierSignature: proof });
       expect((await submit(prepared, encoded, [signers[0]!])).status).toBe(403);
       const wrong = signMaintainerProposalEvidenceFromSeed(second.seed,
-        bytes(prepared.registryId), bytes(prepared.evidenceVerifierKeyIdCommitment), bytes(prepared.actionPayloadHash));
+        bytes(prepared.registryId), bytes(prepared.networkIdCommitment), bytes(prepared.contractAddress),
+        bytes(prepared.evidenceVerifierKeyIdCommitment), bytes(prepared.actionPayloadHash));
       expect((await submit(prepared,
         `0x${Buffer.from(encodeJubjubSignature(wrong)).toString("hex")}`)).status).toBe(403);
       expect((await submit(prepared, "0x00")).status).toBe(400);

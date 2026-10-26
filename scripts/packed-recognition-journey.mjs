@@ -181,6 +181,7 @@ assert.equal(hex(harness.simulator.getRecognitionProposalEvidence(
 ).evidenceCommitment), verified.evidenceCommitment);
 const proposalSnapshot = await resolveCompactProposalEvidenceSnapshot(
   async () => harness.simulator.getLedger(), harness.registryId, "recognition", recognition.recognitionId,
+  Buffer.from(harness.simulator.contractAddress, "hex"),
 );
 assert.equal(proposalSnapshot?.evidenceCommitment, verified.evidenceCommitment);
 assert.equal(proposalSnapshot?.eventHash, hex(proposalEventHash));
@@ -188,6 +189,7 @@ assert.equal(proposalSnapshot?.signatureVerified, true);
 assert.match(proposalSnapshot.boundActionPayloadHash, /^0x[0-9a-f]{64}$/u);
 await assert.rejects(resolveCompactProposalEvidenceSnapshot(
   async () => harness.simulator.getLedger(), "registry:other", "recognition", recognition.recognitionId,
+  Buffer.from(harness.simulator.contractAddress, "hex"),
 ), /different trust registry/u);
 const recognitionAccreditationPort = {
   challengeStore: new InMemoryApplicationChallengeStore(),
@@ -206,6 +208,7 @@ const recognitionAccreditationPort = {
 };
 const api = createTrustRegistryApiServer({
   source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "packed-recognition" }) },
+  proposalContractAddress: Buffer.from(harness.simulator.contractAddress, "hex"),
   readFinalizedProposalLedger: async () => harness.simulator.getLedger(),
   recognitionAccreditation: recognitionAccreditationPort,
 });

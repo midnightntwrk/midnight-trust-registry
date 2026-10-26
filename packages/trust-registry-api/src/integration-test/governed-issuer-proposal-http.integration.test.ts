@@ -270,7 +270,8 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       })).status).toBe(403);
       expect((await submit(prepared, [first])).status).toBe(403);
       const wrongVerifierSignature = signIssuerProposalEvidenceFromSeed(
-        second.seed, bytes(prepared.registryId), bytes(prepared.evidenceVerifierKeyIdCommitment),
+        second.seed, bytes(prepared.registryId), bytes(prepared.networkIdCommitment),
+        bytes(prepared.contractAddress), bytes(prepared.evidenceVerifierKeyIdCommitment),
         bytes(prepared.actionPayloadHash),
       );
       expect((await post("submit", {

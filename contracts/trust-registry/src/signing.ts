@@ -205,11 +205,15 @@ export const computeIssuerEvidenceBoundProposalPayloadHash = (
 
 export const issuerProposalEvidenceSignatureDigest = (
   registryId: Uint8Array,
+  networkIdCommitment: Uint8Array,
+  contractAddress: Uint8Array,
   evidenceVerifierKeyIdCommitment: Uint8Array,
   boundPayloadHash: Uint8Array,
 ): TrustRegistryActionDigest =>
   pureCircuits.issuerProposalEvidenceSignatureDigest(
     require32Bytes(registryId, "Registry id"),
+    require32Bytes(networkIdCommitment, "Deployment network"),
+    require32Bytes(contractAddress, "Contract address"),
     require32Bytes(evidenceVerifierKeyIdCommitment, "Evidence verifier key id commitment"),
     require32Bytes(boundPayloadHash, "Bound issuer proposal payload hash"),
   ) as TrustRegistryActionDigest;
@@ -217,19 +221,23 @@ export const issuerProposalEvidenceSignatureDigest = (
 export const signIssuerProposalEvidenceFromSeed = (
   seed: Uint8Array,
   registryId: Uint8Array,
+  networkIdCommitment: Uint8Array,
+  contractAddress: Uint8Array,
   evidenceVerifierKeyIdCommitment: Uint8Array,
   boundPayloadHash: Uint8Array,
 ): TrustRegistryJubjubSignature =>
   signJubjubDigestFromSeed(
     require32Bytes(seed, "Evidence verifier seed"),
     issuerProposalEvidenceSignatureDigest(
-      registryId, evidenceVerifierKeyIdCommitment, boundPayloadHash,
+      registryId, networkIdCommitment, contractAddress, evidenceVerifierKeyIdCommitment, boundPayloadHash,
     ),
   );
 
 export const verifyIssuerProposalEvidenceSignature = (
   publicKey: JubjubPoint,
   registryId: Uint8Array,
+  networkIdCommitment: Uint8Array,
+  contractAddress: Uint8Array,
   evidenceVerifierKeyIdCommitment: Uint8Array,
   boundPayloadHash: Uint8Array,
   signature: TrustRegistryJubjubSignature,
@@ -239,7 +247,7 @@ export const verifyIssuerProposalEvidenceSignature = (
     return verifyJubjubDigest(
       publicKey,
       issuerProposalEvidenceSignatureDigest(
-        registryId, evidenceVerifierKeyIdCommitment, boundPayloadHash,
+        registryId, networkIdCommitment, contractAddress, evidenceVerifierKeyIdCommitment, boundPayloadHash,
       ),
       signature,
     );
@@ -265,11 +273,15 @@ export const computeRecognitionEvidenceBoundProposalPayloadHash = (
 
 export const recognitionProposalEvidenceSignatureDigest = (
   registryId: Uint8Array,
+  networkIdCommitment: Uint8Array,
+  contractAddress: Uint8Array,
   evidenceVerifierKeyIdCommitment: Uint8Array,
   boundPayloadHash: Uint8Array,
 ): TrustRegistryActionDigest =>
   pureCircuits.recognitionProposalEvidenceSignatureDigest(
     require32Bytes(registryId, "Registry id"),
+    require32Bytes(networkIdCommitment, "Deployment network"),
+    require32Bytes(contractAddress, "Contract address"),
     require32Bytes(evidenceVerifierKeyIdCommitment, "Evidence verifier key id commitment"),
     require32Bytes(boundPayloadHash, "Bound recognition proposal payload hash"),
   ) as TrustRegistryActionDigest;
@@ -277,19 +289,23 @@ export const recognitionProposalEvidenceSignatureDigest = (
 export const signRecognitionProposalEvidenceFromSeed = (
   seed: Uint8Array,
   registryId: Uint8Array,
+  networkIdCommitment: Uint8Array,
+  contractAddress: Uint8Array,
   evidenceVerifierKeyIdCommitment: Uint8Array,
   boundPayloadHash: Uint8Array,
 ): TrustRegistryJubjubSignature =>
   signJubjubDigestFromSeed(
     require32Bytes(seed, "Evidence verifier seed"),
     recognitionProposalEvidenceSignatureDigest(
-      registryId, evidenceVerifierKeyIdCommitment, boundPayloadHash,
+      registryId, networkIdCommitment, contractAddress, evidenceVerifierKeyIdCommitment, boundPayloadHash,
     ),
   );
 
 export const verifyRecognitionProposalEvidenceSignature = (
   publicKey: JubjubPoint,
   registryId: Uint8Array,
+  networkIdCommitment: Uint8Array,
+  contractAddress: Uint8Array,
   evidenceVerifierKeyIdCommitment: Uint8Array,
   boundPayloadHash: Uint8Array,
   signature: TrustRegistryJubjubSignature,
@@ -299,7 +315,7 @@ export const verifyRecognitionProposalEvidenceSignature = (
     return verifyJubjubDigest(
       publicKey,
       recognitionProposalEvidenceSignatureDigest(
-        registryId, evidenceVerifierKeyIdCommitment, boundPayloadHash,
+        registryId, networkIdCommitment, contractAddress, evidenceVerifierKeyIdCommitment, boundPayloadHash,
       ),
       signature,
     );
@@ -325,11 +341,15 @@ export const computeVerifierEvidenceBoundProposalPayloadHash = (
 
 export const verifierProposalEvidenceSignatureDigest = (
   registryId: Uint8Array,
+  networkIdCommitment: Uint8Array,
+  contractAddress: Uint8Array,
   evidenceVerifierKeyIdCommitment: Uint8Array,
   boundPayloadHash: Uint8Array,
 ): TrustRegistryActionDigest =>
   pureCircuits.verifierProposalEvidenceSignatureDigest(
     require32Bytes(registryId, "Registry id"),
+    require32Bytes(networkIdCommitment, "Deployment network"),
+    require32Bytes(contractAddress, "Contract address"),
     require32Bytes(evidenceVerifierKeyIdCommitment, "Evidence verifier key id commitment"),
     require32Bytes(boundPayloadHash, "Bound verifier proposal payload hash"),
   ) as TrustRegistryActionDigest;
@@ -337,19 +357,23 @@ export const verifierProposalEvidenceSignatureDigest = (
 export const signVerifierProposalEvidenceFromSeed = (
   seed: Uint8Array,
   registryId: Uint8Array,
+  networkIdCommitment: Uint8Array,
+  contractAddress: Uint8Array,
   evidenceVerifierKeyIdCommitment: Uint8Array,
   boundPayloadHash: Uint8Array,
 ): TrustRegistryJubjubSignature =>
   signJubjubDigestFromSeed(
     require32Bytes(seed, "Evidence verifier seed"),
     verifierProposalEvidenceSignatureDigest(
-      registryId, evidenceVerifierKeyIdCommitment, boundPayloadHash,
+      registryId, networkIdCommitment, contractAddress, evidenceVerifierKeyIdCommitment, boundPayloadHash,
     ),
   );
 
 export const verifyVerifierProposalEvidenceSignature = (
   publicKey: JubjubPoint,
   registryId: Uint8Array,
+  networkIdCommitment: Uint8Array,
+  contractAddress: Uint8Array,
   evidenceVerifierKeyIdCommitment: Uint8Array,
   boundPayloadHash: Uint8Array,
   signature: TrustRegistryJubjubSignature,
@@ -359,7 +383,7 @@ export const verifyVerifierProposalEvidenceSignature = (
     return verifyJubjubDigest(
       publicKey,
       verifierProposalEvidenceSignatureDigest(
-        registryId, evidenceVerifierKeyIdCommitment, boundPayloadHash,
+        registryId, networkIdCommitment, contractAddress, evidenceVerifierKeyIdCommitment, boundPayloadHash,
       ),
       signature,
     );
@@ -385,11 +409,15 @@ export const computeAuditorEvidenceBoundProposalPayloadHash = (
 
 export const auditorProposalEvidenceSignatureDigest = (
   registryId: Uint8Array,
+  networkIdCommitment: Uint8Array,
+  contractAddress: Uint8Array,
   evidenceVerifierKeyIdCommitment: Uint8Array,
   boundPayloadHash: Uint8Array,
 ): TrustRegistryActionDigest =>
   pureCircuits.auditorProposalEvidenceSignatureDigest(
     require32Bytes(registryId, "Registry id"),
+    require32Bytes(networkIdCommitment, "Deployment network"),
+    require32Bytes(contractAddress, "Contract address"),
     require32Bytes(evidenceVerifierKeyIdCommitment, "Evidence verifier key id commitment"),
     require32Bytes(boundPayloadHash, "Bound auditor proposal payload hash"),
   ) as TrustRegistryActionDigest;
@@ -397,19 +425,23 @@ export const auditorProposalEvidenceSignatureDigest = (
 export const signAuditorProposalEvidenceFromSeed = (
   seed: Uint8Array,
   registryId: Uint8Array,
+  networkIdCommitment: Uint8Array,
+  contractAddress: Uint8Array,
   evidenceVerifierKeyIdCommitment: Uint8Array,
   boundPayloadHash: Uint8Array,
 ): TrustRegistryJubjubSignature =>
   signJubjubDigestFromSeed(
     require32Bytes(seed, "Evidence verifier seed"),
     auditorProposalEvidenceSignatureDigest(
-      registryId, evidenceVerifierKeyIdCommitment, boundPayloadHash,
+      registryId, networkIdCommitment, contractAddress, evidenceVerifierKeyIdCommitment, boundPayloadHash,
     ),
   );
 
 export const verifyAuditorProposalEvidenceSignature = (
   publicKey: JubjubPoint,
   registryId: Uint8Array,
+  networkIdCommitment: Uint8Array,
+  contractAddress: Uint8Array,
   evidenceVerifierKeyIdCommitment: Uint8Array,
   boundPayloadHash: Uint8Array,
   signature: TrustRegistryJubjubSignature,
@@ -419,7 +451,7 @@ export const verifyAuditorProposalEvidenceSignature = (
     return verifyJubjubDigest(
       publicKey,
       auditorProposalEvidenceSignatureDigest(
-        registryId, evidenceVerifierKeyIdCommitment, boundPayloadHash,
+        registryId, networkIdCommitment, contractAddress, evidenceVerifierKeyIdCommitment, boundPayloadHash,
       ),
       signature,
     );
@@ -445,11 +477,15 @@ export const computeMaintainerEvidenceBoundProposalPayloadHash = (
 
 export const maintainerProposalEvidenceSignatureDigest = (
   registryId: Uint8Array,
+  networkIdCommitment: Uint8Array,
+  contractAddress: Uint8Array,
   evidenceVerifierKeyIdCommitment: Uint8Array,
   boundPayloadHash: Uint8Array,
 ): TrustRegistryActionDigest =>
   pureCircuits.maintainerProposalEvidenceSignatureDigest(
     require32Bytes(registryId, "Registry id"),
+    require32Bytes(networkIdCommitment, "Deployment network"),
+    require32Bytes(contractAddress, "Contract address"),
     require32Bytes(evidenceVerifierKeyIdCommitment, "Evidence verifier key id commitment"),
     require32Bytes(boundPayloadHash, "Bound maintainer proposal payload hash"),
   ) as TrustRegistryActionDigest;
@@ -457,19 +493,23 @@ export const maintainerProposalEvidenceSignatureDigest = (
 export const signMaintainerProposalEvidenceFromSeed = (
   seed: Uint8Array,
   registryId: Uint8Array,
+  networkIdCommitment: Uint8Array,
+  contractAddress: Uint8Array,
   evidenceVerifierKeyIdCommitment: Uint8Array,
   boundPayloadHash: Uint8Array,
 ): TrustRegistryJubjubSignature =>
   signJubjubDigestFromSeed(
     require32Bytes(seed, "Evidence verifier seed"),
     maintainerProposalEvidenceSignatureDigest(
-      registryId, evidenceVerifierKeyIdCommitment, boundPayloadHash,
+      registryId, networkIdCommitment, contractAddress, evidenceVerifierKeyIdCommitment, boundPayloadHash,
     ),
   );
 
 export const verifyMaintainerProposalEvidenceSignature = (
   publicKey: JubjubPoint,
   registryId: Uint8Array,
+  networkIdCommitment: Uint8Array,
+  contractAddress: Uint8Array,
   evidenceVerifierKeyIdCommitment: Uint8Array,
   boundPayloadHash: Uint8Array,
   signature: TrustRegistryJubjubSignature,
@@ -479,7 +519,7 @@ export const verifyMaintainerProposalEvidenceSignature = (
     return verifyJubjubDigest(
       publicKey,
       maintainerProposalEvidenceSignatureDigest(
-        registryId, evidenceVerifierKeyIdCommitment, boundPayloadHash,
+        registryId, networkIdCommitment, contractAddress, evidenceVerifierKeyIdCommitment, boundPayloadHash,
       ),
       signature,
     );
