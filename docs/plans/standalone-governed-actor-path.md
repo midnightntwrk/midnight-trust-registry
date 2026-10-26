@@ -88,7 +88,10 @@ Until these checks run against one reviewed candidate, issue #219 stays open,
 The first code increment for step 3 is `bindAcceptedLocalIssuerProposalTerms`.
 It checks one captured pending/accepted application pair, exact submitted
 evidence, the approved local network/genesis/contract, and a canonical trust
-level and status-policy binding. It emits a review digest and status-policy
+level and status-policy binding. It also rejects an application whose policy
+ID, version, or registry differs from the caller's authenticated current-ledger
+selection. The caller must supply that selection; the binder does not
+authenticate finality. It emits a review digest and status-policy
 commitment only. The digest covers the exact accepted evidence submission,
 including its signature and receipt, plus the pending application record,
 rather than only the envelope commitment.

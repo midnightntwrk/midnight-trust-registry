@@ -84,6 +84,11 @@ const localPlan = {
   contractAddress: `0x${"7".repeat(64)}`,
   expectedGenesisHash: `0x${"8".repeat(64)}`,
 } as const;
+const currentPolicy = {
+  registryId: binding.registryId,
+  policyId: binding.policyId,
+  version: binding.policyVersion,
+} as const;
 const localTerms = {
   format: "tr-local-issuer-proposal-terms-v1",
   ...localPlan,
@@ -106,7 +111,8 @@ const localTerms = {
 describe("local issuer proposal terms", () => {
   const bind = (overrides: Partial<Parameters<typeof bindAcceptedLocalIssuerProposalTerms>[0]> = {}) =>
     bindAcceptedLocalIssuerProposalTerms({
-      terms: localTerms, pending, accepted, submittedEvidence: evidence, plan: localPlan, ...overrides,
+      terms: localTerms, pending, accepted, submittedEvidence: evidence,
+      plan: localPlan, currentPolicy, ...overrides,
     });
 
   it("binds reviewer-visible terms to one accepted application and local deployment", () => {
@@ -131,6 +137,9 @@ describe("local issuer proposal terms", () => {
         issuerAuthorizationId: "authorization:issuer:other" } },
     ]) expect(() => bind({ terms })).toThrow();
     expect(() => bind({ plan: { ...localPlan, networkId: "preview" as never } })).toThrow();
+    expect(() => bind({ currentPolicy: { ...currentPolicy, registryId: "registry:other" } })).toThrow();
+    expect(() => bind({ currentPolicy: { ...currentPolicy, policyId: "policy:other" } })).toThrow();
+    expect(() => bind({ currentPolicy: { ...currentPolicy, version: "v2" } })).toThrow();
     expect(() => bind({ pending: { ...pending, status: "archived",
       archiveEventHash: `0x${"9".repeat(64)}` } })).toThrow();
     expect(() => bind({ accepted: { ...accepted, evidence: { ...evidence,

@@ -53,6 +53,8 @@ export function bindAcceptedLocalIssuerProposalTerms(input: {
   accepted: AcceptedApplicationEvidence | null;
   submittedEvidence: ApplicationEvidenceSubmission;
   plan: Pick<LocalLedgerRuntimePlan, "networkId" | "contractAddress" | "expectedGenesisHash">;
+  /** Must come from the independently authenticated current-ledger selection. */
+  currentPolicy: { registryId: string; policyId: string; version: string };
 }): {
   terms: LocalIssuerProposalTerms;
   reviewBindingSha256: string;
@@ -69,6 +71,9 @@ export function bindAcceptedLocalIssuerProposalTerms(input: {
     || terms.expectedGenesisHash !== input.plan.expectedGenesisHash
     || terms.applicationId !== pending.binding.applicationId
     || terms.evidenceCommitment !== accepted.evidence.commitment
+    || input.currentPolicy.registryId !== pending.binding.registryId
+    || input.currentPolicy.policyId !== pending.binding.policyId
+    || input.currentPolicy.version !== pending.binding.policyVersion
     || terms.statusPolicyBinding.trustRegistryId !== pending.binding.registryId
     || terms.statusPolicyBinding.issuerAuthorizationId !== pending.authorizationId) {
     throw new Error("Issuer proposal terms do not bind the accepted application and approved local deployment");
@@ -76,7 +81,7 @@ export function bindAcceptedLocalIssuerProposalTerms(input: {
   return {
     terms,
     reviewBindingSha256: sha256Hex(`tr:local-issuer-review-binding:v1\0${canonicalizeJson({
-      terms, pendingApplication: pending,
+      terms, currentPolicy: input.currentPolicy, pendingApplication: pending,
       acceptedEvidence: accepted.evidence, acceptedReceipt: accepted.receipt,
     })}`),
     statusPolicyBindingCommitment: computeIssuerStatusPolicyBindingCommitment(terms.statusPolicyBinding),
