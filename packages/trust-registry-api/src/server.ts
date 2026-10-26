@@ -258,6 +258,8 @@ export type TrustRegistryApiServerOptions = {
   readDecisionEvidence?: (role: "issuer" | "verifier", authorizationId: string) => Promise<unknown | null>;
   /** Optional read-only proposal audit source; this server does not establish ledger finality. */
   readFinalizedProposalLedger?: FinalizedProposalLedgerReader;
+  /** Independently pinned deployment address for verifier-attestation replay protection. */
+  proposalContractAddress?: Uint8Array;
   proposalAdmission?: ProposalAdmissionPort;
   /** Required for a durable VP/accreditation-to-Compact handoff; persist before submission. */
   proposalSubmissionJournal?: ProposalSubmissionJournal;
@@ -1006,11 +1008,15 @@ export const createTrustRegistryApiServer = (
 
   const readLocalFinalizedProposal = async (role: ProposalRole, authorizationId: string) => {
     const reader = options.source.readFinalizedProposalLedger;
-    if (options.source.mode !== "local-ledger" || reader === undefined) {
+    const address = options.source.localDeploymentBinding?.contractAddress;
+    if (options.source.mode !== "local-ledger" || reader === undefined
+      || address === undefined || !/^0x[0-9a-fA-F]{64}$/u.test(address)) {
       throw new Error("Deployment-bound finalized proposal reader is unavailable");
     }
     const snapshot = await options.source.loadSnapshot();
-    return resolveCompactProposalEvidenceSnapshot(reader, snapshot.registry.registryId, role, authorizationId);
+    return resolveCompactProposalEvidenceSnapshot(
+      reader, snapshot.registry.registryId, role, authorizationId, Buffer.from(address.slice(2), "hex"),
+    );
   };
 
   const requireValidProposalSigners = (
@@ -1175,7 +1181,13 @@ export const createTrustRegistryApiServer = (
         }
         const proposalReader = options.source.mode === "local-ledger"
           ? options.source.readFinalizedProposalLedger : options.readFinalizedProposalLedger;
-        if (proposalReader === undefined) {
+        const pinnedAddress = options.source.mode === "local-ledger"
+          ? options.source.localDeploymentBinding?.contractAddress : undefined;
+        const proposalContractAddress = options.source.mode === "local-ledger"
+          ? pinnedAddress !== undefined && /^0x[0-9a-fA-F]{64}$/u.test(pinnedAddress)
+            ? Buffer.from(pinnedAddress.slice(2), "hex") : undefined
+          : options.proposalContractAddress;
+        if (proposalReader === undefined || proposalContractAddress === undefined) {
           throw jsonProblem(problemBaseUri, "proposal-evidence-unavailable", 503,
             "proposal evidence unavailable");
         }
@@ -1184,6 +1196,7 @@ export const createTrustRegistryApiServer = (
           const registry = await loadRegistryRecord(options.source);
           snapshot = await resolveCompactProposalEvidenceSnapshot(
             proposalReader, registry.registryId, role as ProposalRole, segments[3]!,
+            proposalContractAddress,
           );
         } catch {
           throw jsonProblem(problemBaseUri, "proposal-evidence-unavailable", 503,

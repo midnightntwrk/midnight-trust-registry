@@ -265,6 +265,7 @@ test("issuer-unauthorized-evidence-verifier-api", async (context) => {
   const compactPrepared = fixture.harness.prepareIssuerProposalAction(fixture.target, fixture.evidence);
   const outsider = createMaintainerScenarioFixture("isolated-issuer-unauthorized-verifier-key");
   const wrong = signIssuerProposalEvidenceFromSeed(outsider.seed, compactPrepared.registryId,
+    compactPrepared.networkIdCommitment, compactPrepared.contractAddress,
     compactPrepared.evidenceVerifierKeyIdCommitment, compactPrepared.actionPayloadHash);
   const submit = (verifierSignature) => fixture.post(`${fixture.endpoint}/submit`, {
     evidence: fixture.evidence, prepared, signers,

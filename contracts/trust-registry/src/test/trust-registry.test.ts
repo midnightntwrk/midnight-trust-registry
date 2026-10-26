@@ -305,7 +305,8 @@ const issuerProposalProof = (
     verifierAuthorizationId: verifier.authorizationId,
     verifierKeyIdCommitment: verifier.keyId,
     evidenceSignature: signIssuerProposalEvidenceFromSeed(
-      verifier.seed, registryId, verifier.keyId, payloadHash,
+      verifier.seed, registryId, FIXTURE_NETWORK_ID_COMMITMENT,
+      encodeContractAddress(simulator.contractAddress), verifier.keyId, payloadHash,
     ),
   };
 };
@@ -339,7 +340,8 @@ const recognitionProposalProof = (
     verifierAuthorizationId: verifier.authorizationId,
     verifierKeyIdCommitment: verifier.keyId,
     evidenceSignature: signRecognitionProposalEvidenceFromSeed(
-      verifier.seed, registryId, verifier.keyId, payloadHash,
+      verifier.seed, registryId, FIXTURE_NETWORK_ID_COMMITMENT,
+      encodeContractAddress(simulator.contractAddress), verifier.keyId, payloadHash,
     ),
   };
 };
@@ -371,7 +373,8 @@ const verifierProposalProof = (
     verifierAuthorizationId: verifier.authorizationId,
     verifierKeyIdCommitment: verifier.keyId,
     evidenceSignature: signVerifierProposalEvidenceFromSeed(
-      verifier.seed, registryId, verifier.keyId, payloadHash,
+      verifier.seed, registryId, FIXTURE_NETWORK_ID_COMMITMENT,
+      encodeContractAddress(simulator.contractAddress), verifier.keyId, payloadHash,
     ),
   };
 };
@@ -603,7 +606,8 @@ const auditorProposalProof = (
     verifierAuthorizationId: verifier.authorizationId,
     verifierKeyIdCommitment: verifier.keyId,
     evidenceSignature: signAuditorProposalEvidenceFromSeed(
-      verifier.seed, registryId, verifier.keyId, payloadHash,
+      verifier.seed, registryId, FIXTURE_NETWORK_ID_COMMITMENT,
+      encodeContractAddress(simulator.contractAddress), verifier.keyId, payloadHash,
     ),
   };
 };
@@ -698,7 +702,8 @@ const maintainerProposalProof = (
     verifierAuthorizationId: verifier.authorizationId,
     verifierKeyIdCommitment: verifier.keyId,
     evidenceSignature: signMaintainerProposalEvidenceFromSeed(
-      verifier.seed, registryId, verifier.keyId, payloadHash,
+      verifier.seed, registryId, FIXTURE_NETWORK_ID_COMMITMENT,
+      encodeContractAddress(simulator.contractAddress), verifier.keyId, payloadHash,
     ),
   };
 };
@@ -1392,6 +1397,7 @@ describe("trust registry contract", () => {
     expect(() => propose(proof.verifierKeyIdCommitment,
       signAuditorProposalEvidenceFromSeed(
         new Uint8Array(32).fill(97), registryId,
+        FIXTURE_NETWORK_ID_COMMITMENT, encodeContractAddress(simulator.contractAddress),
         proof.verifierKeyIdCommitment, proof.payloadHash,
       ))).toThrow(/invalid jubjub schnorr signature/i);
     expect(simulator.getLedger().maintainerMembershipCount).toBe(1n);
@@ -4809,7 +4815,8 @@ describe("trust registry contract", () => {
       .toThrow(/key id does not match/i);
     expect(() => propose(proof.verifierKeyIdCommitment,
       signVerifierProposalEvidenceFromSeed(
-        new Uint8Array(32).fill(97), registryId, proof.verifierKeyIdCommitment, proof.payloadHash,
+        new Uint8Array(32).fill(97), registryId, FIXTURE_NETWORK_ID_COMMITMENT,
+        encodeContractAddress(simulator.contractAddress), proof.verifierKeyIdCommitment, proof.payloadHash,
       ))).toThrow(/invalid jubjub schnorr signature/i);
     expect(simulator.getLedger().auditorAuthorizationCount).toBe(0n);
     const eventHash = propose(proof.verifierKeyIdCommitment, proof.evidenceSignature);

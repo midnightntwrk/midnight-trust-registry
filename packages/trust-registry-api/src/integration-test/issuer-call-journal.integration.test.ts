@@ -101,7 +101,8 @@ function fixture(): { call: LocalIssuerProposalCall; ledger: TrustRegistryContra
     policyId, statusPolicyBindingCommitment, trustLevel, evidenceHash,
     evidenceVerifierAuthorizationId, evidenceVerifierKeyIdCommitment,
     evidenceVerifierSignature: signIssuerProposalEvidenceFromSeed(
-      verifierSeed, registryId, evidenceVerifierKeyIdCommitment, actionPayloadHash,
+      verifierSeed, registryId, networkId, Buffer.from(contractAddress.slice(2), "hex"),
+      evidenceVerifierKeyIdCommitment, actionPayloadHash,
     ),
     signers: [{
       keyId, publicKey: deriveJubjubPublicKeyFromSeed(maintainerSeed),
