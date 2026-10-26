@@ -1604,7 +1604,10 @@ journal is the cross-restart authority: its reservation must be durable
 *before* the provider broadcasts. A failed journal write stops submission;
 restarting the API or provider must reopen the same bound journal and keep an
 ambiguous reservation blocked. Synthetic HTTP and journal tests exercise this
-ordering and restart behavior, but do not prove a real local-ledger restart or
+ordering. The light-lane process-restart test forks a fresh API-side journal
+and provider callback for each attempt; a lost response and lagging finalized
+read never permit a second broadcast, and a failed journal write prevents the
+first one. These tests do not prove a real local-ledger restart or
 non-inclusion. Preserve the original journal and its binding sidecar across
 service restart and backup/restore.
 
