@@ -2021,6 +2021,113 @@ export async function approveStandaloneCommitteeRecovery(
   });
 }
 
+export function buildStandaloneApiApprovalChain(record, releaseManifestSha256) {
+  const approval = (entry, label) => {
+    if (!entry || !FINGERPRINT.test(entry.reviewerFingerprint ?? "")) {
+      throw new Error(`${label} reviewer approval is missing`);
+    }
+    const decode = (encoded, expected, kind) => {
+      if (typeof encoded !== "string" || encoded.length === 0 || encoded.length > 90_000) {
+        throw new Error(`${label} ${kind} is missing or oversized`);
+      }
+      const bytes = Buffer.from(encoded, "base64");
+      if (bytes.toString("base64") !== encoded || sha256(bytes) !== expected) {
+        throw new Error(`${label} ${kind} differs from the recorded digest`);
+      }
+      return bytes;
+    };
+    const document = decode(entry.documentBase64, entry.documentSha256, "document");
+    decode(entry.signatureBase64, entry.signatureSha256, "signature");
+    const parsed = parseCanonicalSignedJson(document, label);
+    if (parsed.reviewerFingerprint !== entry.reviewerFingerprint) {
+      throw new Error(`${label} reviewer fingerprint differs from signed bytes`);
+    }
+    return {
+      documentBase64: entry.documentBase64,
+      documentSha256: entry.documentSha256,
+      signatureBase64: entry.signatureBase64,
+      signatureSha256: entry.signatureSha256,
+      reviewerFingerprint: entry.reviewerFingerprint,
+      parsed,
+    };
+  };
+  const genesis = approval(record.genesisApproval, "Genesis");
+  const committee = approval(record.committeeApproval, "Committee");
+  const deployment = approval(record.committeeDeploymentApproval, "Deployment");
+  const receipt = record.deployment?.result?.receipt;
+  const attempt = record.maintenanceAttempt;
+  const observed = attempt?.reconciliation;
+  if (record.deployment?.state !== "observed" || !validLocalDeploymentReceipt(receipt)
+    || attempt?.state !== "observed" || attempt.alert || observed?.status !== "observed"
+    || typeof attempt.txId !== "string" || !attempt.txId
+    || observed.txId !== attempt.txId || !HASH.test(observed.finalizedBlockHash ?? "")
+    || /^0x0{64}$/u.test(observed.finalizedBlockHash)
+    || !SHA256.test(attempt.updateSha256 ?? "")
+    || attempt.committeeDeploymentApprovalSha256 !== deployment.documentSha256
+    || !SHA256.test(releaseManifestSha256 ?? "")) {
+    throw new Error("Finalized deployment and unambiguous maintenance readback are required");
+  }
+  if (genesis.parsed.format !== "tr-local-genesis-approval-v1"
+    || committee.parsed.format !== "tr-local-committee-approval-v2"
+    || deployment.parsed.format !== "tr-local-committee-deployment-approval-v1"
+    || genesis.parsed.sourceRevision !== record.sourceRevision
+    || committee.parsed.sourceRevision !== record.sourceRevision
+    || deployment.parsed.sourceRevision !== record.sourceRevision
+    || genesis.parsed.installInventorySha256 !== record.install?.inventorySha256
+    || committee.parsed.installInventorySha256 !== record.install?.inventorySha256
+    || committee.parsed.genesisApprovalSha256 !== genesis.documentSha256
+    || committee.parsed.networkId !== genesis.parsed.networkId
+    || committee.parsed.expectedGenesisHash !== genesis.parsed.expectedGenesisHash
+    || committee.parsed.reviewerFingerprint !== deployment.reviewerFingerprint
+    || deployment.parsed.committeeApprovalSha256 !== committee.documentSha256
+    || deployment.parsed.deploymentPlanSha256 !== committee.parsed.deploymentPlanSha256
+    || deployment.parsed.expectedGenesisHash !== genesis.parsed.expectedGenesisHash
+    || deployment.parsed.releaseManifestSha256 !== releaseManifestSha256
+    || receipt.networkId !== genesis.parsed.networkId
+    || !["networkId", "contractAddress", "blockHash", "blockHeight", "txId"]
+      .every((key) => deployment.parsed.deploymentReceipt?.[key] === receipt[key])) {
+    throw new Error("Signed approval chain disagrees with the observed install or deployment");
+  }
+  const publicApproval = ({ parsed, ...evidence }) => evidence;
+  return {
+    format: "tr-local-api-approval-chain-v1",
+    sourceRevision: record.sourceRevision,
+    installInventorySha256: record.install.inventorySha256,
+    releaseManifestSha256,
+    networkId: genesis.parsed.networkId,
+    expectedGenesisHash: genesis.parsed.expectedGenesisHash,
+    contractAddress: receipt.contractAddress,
+    genesisApproval: publicApproval(genesis),
+    committeeApproval: publicApproval(committee),
+    committeeDeploymentApproval: publicApproval(deployment),
+    maintenanceReadback: {
+      committeeDeploymentApprovalSha256: deployment.documentSha256,
+      updateSha256: attempt.updateSha256,
+      txId: attempt.txId,
+      finalizedBlockHash: observed.finalizedBlockHash,
+      status: "observed",
+    },
+  };
+}
+
+export async function exportStandaloneApiApprovalChain(directory) {
+  return withLock(directory, async (root) => {
+    const { record } = await readRecord(root);
+    const inventory = await regularBytes(join(record.install.bundle, "install-inventory.json"));
+    if (sha256(inventory) !== record.install.inventorySha256) {
+      throw new Error("Installed inventory changed since reviewer approval");
+    }
+    const verified = await verifyStandaloneInstallBundle(record.install.bundle);
+    requireVerifiedInventoryBytes(verified, inventory, record.install.inventorySha256,
+      "Installed inventory changed since reviewer approval");
+    const manifest = await verifiedPackageManifestBytes(record.install.bundle, inventory, verified);
+    const chain = buildStandaloneApiApprovalChain(record, sha256(manifest));
+    const output = join(root, "api-approval-chain.json");
+    await writePrivateSnapshot(output, Buffer.from(`${JSON.stringify(chain, null, 2)}\n`));
+    return { path: output, sha256: sha256(await regularBytes(output, { privateFile: true })) };
+  });
+}
+
 export async function standaloneSetupStatus(directory) {
   const { root, record } = await readRecord(directory);
   let restartObservation;
@@ -2160,7 +2267,7 @@ export async function runStandaloneSetupInteractive(
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [command, directory, input, signature, keyring, fingerprint, extra, more] = process.argv.slice(2);
-  if (!directory || !["run", "init", "prepare-stack", "observe-stack", "collect-genesis-candidate", "draft-genesis-pin", "observe", "draft-genesis", "approve-genesis", "draft-committee", "approve-committee", "approve-committee-deployment", "deploy", "reconcile-deploy", "insert-key", "reconcile-key", "prepare-committee", "submit-committee", "reconcile-committee", "approve-committee-recovery", "check-helm-bootstrap", "status"].includes(command)) {
+  if (!directory || !["run", "init", "prepare-stack", "observe-stack", "collect-genesis-candidate", "draft-genesis-pin", "observe", "draft-genesis", "approve-genesis", "draft-committee", "approve-committee", "approve-committee-deployment", "deploy", "reconcile-deploy", "insert-key", "reconcile-key", "prepare-committee", "submit-committee", "reconcile-committee", "approve-committee-recovery", "check-helm-bootstrap", "export-api-approval-chain", "status"].includes(command)) {
     throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|prepare-stack|observe-stack|collect-genesis-candidate|draft-genesis-pin|observe|draft-genesis|approve-genesis|draft-committee|approve-committee|approve-committee-deployment|deploy|reconcile-deploy|insert-key|reconcile-key|prepare-committee|submit-committee|reconcile-committee|approve-committee-recovery|check-helm-bootstrap|status> <private-setup-dir> [inputs]");
   }
   if (command === "run") await runStandaloneSetupInteractive(directory);
@@ -2238,5 +2345,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     })));
   }
   else if (command === "status") console.log(JSON.stringify(await standaloneSetupStatus(directory), null, 2));
+  else if (command === "export-api-approval-chain") {
+    console.log(JSON.stringify(await exportStandaloneApiApprovalChain(directory)));
+  }
   else throw new Error(`Missing input path for ${command}`);
 }

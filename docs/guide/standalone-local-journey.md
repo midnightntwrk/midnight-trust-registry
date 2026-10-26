@@ -67,7 +67,22 @@ results.
 5. **Transition authority.** Bind the approved roster to the finalized
    deployment, collect the threshold signatures, submit once, and reconcile
    finalized maintenance readback. A bootstrap-only or development-smoke
-   authority is not qualified.
+   authority is not qualified. Once the wizard reports an unambiguous observed
+   transition, export its restricted approval-chain handoff:
+
+   ```sh
+   node scripts/standalone-setup-wizard.mjs export-api-approval-chain /absolute/private/setup
+   ```
+
+   The command creates a mode-0600, non-overwriting
+   `api-approval-chain.json` in that private directory. It retains the three
+   signed approval documents, signatures, and a minimal observed maintenance
+   receipt, but omits wallet material, provider configuration, and the full
+   setup record. Store its printed SHA-256 with the operator evidence. This is
+   an **export, not API-side verification**: the API still needs to verify all
+   detached signatures and bind the plan to these exact bytes (#234). The
+   command fails on pending, conflicting, or incomplete readback. It does
+   not establish independent finality or qualify a release.
 6. **Start the local API and portals from pinned images.** Sign the API's
    immutable current-state plan, verify it with `trust-registry-api
    check-local-ledger-plan`, initialize the bound proposal journal, and start
