@@ -241,6 +241,7 @@ describe("local ledger-bound API source", () => {
         reader: { async readCurrentFinalizedLedger() { return view; } },
         sequenceToTimestamp,
       });
+      expect(source.localProposalContractAddress).toBe(address.toLowerCase());
       await expect(source.readFinalizedProposalLedger()).resolves.toBe(ledger);
       server = createTrustRegistryApiServer({ source,
         readFinalizedProposalLedger: source.readFinalizedProposalLedger });
