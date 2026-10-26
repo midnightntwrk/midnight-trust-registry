@@ -1,4 +1,4 @@
-import { lstatSync, readdirSync } from "node:fs";
+import { lstatSync, readlinkSync, readdirSync, realpathSync } from "node:fs";
 import { registerHooks } from "node:module";
 import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,6 +40,7 @@ export function assertImmutableProviderTree(rootPath, options = {}) {
 
   let files = 0;
   let directories = 0;
+  let links = 0;
   const pending = [root];
   while (pending.length > 0) {
     const directory = pending.pop();
@@ -55,11 +56,22 @@ export function assertImmutableProviderTree(rootPath, options = {}) {
       }
       const path = join(directory, name);
       const entry = lstatSync(path);
-      if (entry.isSymbolicLink() || entry.uid !== trustedUid
-        || (entry.mode & 0o022) !== 0) {
+      if (entry.uid !== trustedUid) {
         throw new Error(`Provider tree contains a mutable or linked entry: ${path}`);
       }
-      if (entry.isDirectory()) {
+      if (entry.isSymbolicLink()) {
+        // A link's mode is not its replacement authority; the scanned parent
+        // controls replacement, and the resolved in-tree target is scanned too.
+        const target = readlinkSync(path);
+        const lexical = resolve(directory, target);
+        if (isAbsolute(target) || !within(root, lexical)
+          || !within(root, realpathSync(path))) {
+          throw new Error(`Provider link escapes the approved code tree: ${path}`);
+        }
+        links += 1;
+      } else if ((entry.mode & 0o022) !== 0) {
+        throw new Error(`Provider tree contains a mutable or linked entry: ${path}`);
+      } else if (entry.isDirectory()) {
         pending.push(path);
       } else if (entry.isFile() && entry.nlink === 1) {
         files += 1;
@@ -69,7 +81,7 @@ export function assertImmutableProviderTree(rootPath, options = {}) {
     }
   }
   if (files === 0) throw new Error("Provider code tree has no files");
-  return { root, files, directories };
+  return { root, files, directories, links };
 }
 
 /** A missing root is a hard stop for the real CLI, not an implicit dev waiver. */

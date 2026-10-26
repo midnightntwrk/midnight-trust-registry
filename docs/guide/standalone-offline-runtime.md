@@ -638,8 +638,9 @@ maintenance, and verifier-key insertion CLIs now require
 containing the approved provider, wizard/CLI scripts, and all package code,
 and to run as a non-root user. The tree may
 have ordinary root-write permissions but no group/other write permission;
-it is effectively read-only to that process. The check rejects symlinks,
-hard links, group/other-writable descendants, and untrusted ancestors before network
+it is effectively read-only to that process. The check permits only root-owned
+relative symlinks whose literal and resolved targets remain inside the tree;
+it rejects escaping links, hard links, group/other-writable descendants, and untrusted ancestors before network
 preflight; test-injected provider factories do not exercise that CLI gate.
 Root and administrative updates are inside the trusted computing base: a
 compromised root account or root-managed update during deployment can still
@@ -659,8 +660,8 @@ node "$TR_IMMUTABLE_PROVIDER_ROOT/scripts/local-ledger-deploy.mjs" /absolute/pri
 
 The preloader rejects file imports outside the tree and non-file imports other
 than Node built-ins, including dynamic ESM and CommonJS imports. A normal
-developer checkout with pnpm symlinks is intentionally not a qualified
-immutable install; do not remove the preload or substitute a writable checkout
+developer checkout is intentionally not a qualified immutable install even if
+its pnpm links are internal; do not remove the preload or substitute a writable checkout
 to make it run. This confines ordinary module resolution; it is **not** a
 sandbox for malicious code already present in the approved tree. The runner
 reads a no-follow regular-file descriptor and

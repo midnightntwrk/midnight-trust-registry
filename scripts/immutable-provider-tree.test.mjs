@@ -9,7 +9,7 @@ import { pathToFileURL } from "node:url";
 import { assertApprovedProviderTree, assertImmutableProviderTree } from "./immutable-provider-tree.mjs";
 
 async function fixture(run) {
-  const boundary = await mkdtemp(join(tmpdir(), "tr-provider-tree-"));
+  const boundary = await realpath(await mkdtemp(join(tmpdir(), "tr-provider-tree-")));
   const root = join(boundary, "provider");
   const nested = join(root, "node_modules");
   await mkdir(nested, { recursive: true });
@@ -69,16 +69,38 @@ test("rejects a writable code root, dependency and ancestor", () => fixture(asyn
   await chmod(boundary, 0o700);
 }));
 
-test("rejects symlinks, hard links and non-regular entries", () => fixture(async ({ root, check }) => {
+test("allows internal relative links but rejects escapes and hard links", () => fixture(async ({ boundary, root, check }) => {
   await chmod(root, 0o755);
-  await symlink(join(root, "entry.mjs"), join(root, "alias.mjs"));
+  await symlink("entry.mjs", join(root, "alias.mjs"));
+  await symlink("node_modules", join(root, "package-link"));
   await chmod(root, 0o555);
-  assert.throws(check, /mutable or linked entry/u);
+  assert.equal(check().links, 2);
+  await chmod(root, 0o755);
+  await rm(join(root, "alias.mjs"));
+  await rm(join(root, "package-link"));
+  await writeFile(join(boundary, "outside.mjs"), "export default 1;\n");
+  await symlink("../outside.mjs", join(root, "alias.mjs"));
+  await chmod(root, 0o555);
+  assert.throws(check, /link escapes the approved code tree/u);
   await chmod(root, 0o755);
   await rm(join(root, "alias.mjs"));
   await link(join(root, "entry.mjs"), join(root, "alias.mjs"));
   await chmod(root, 0o555);
   assert.throws(check, /hard-linked entry/u);
+}));
+
+test("internal links cannot hide writable file or directory targets", () => fixture(async ({ root, nested, check }) => {
+  await chmod(root, 0o755);
+  await symlink("entry.mjs", join(root, "file-link"));
+  await symlink("node_modules", join(root, "directory-link"));
+  await chmod(root, 0o555);
+  assert.equal(check().links, 2);
+
+  await chmod(join(root, "entry.mjs"), 0o664);
+  assert.throws(check, /mutable or linked entry/u);
+  await chmod(join(root, "entry.mjs"), 0o444);
+  await chmod(nested, 0o775);
+  assert.throws(check, /mutable or linked entry/u);
 }));
 
 test("rejects a provider root selected through a linked ancestor", () => fixture(async ({ boundary, root }) => {
