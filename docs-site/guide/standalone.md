@@ -34,8 +34,9 @@ proof parameters, generated keys, and private approval evidence.
    Verify it with `node scripts/check-standalone-install.mjs "$INSTALL"` and
    record its source SHA and inventory SHA-256. A bundle from another source
    revision is a stop condition.
-2. Choose a new mode-0700 private setup directory, unused loopback ports, and
-   a unique `tr-standalone-local-*` Docker project. Run `init` and
+2. Choose a nonexistent setup path under an existing private parent directory,
+   unused loopback ports, and a unique `tr-standalone-local-*` Docker project.
+   The wizard creates the mode-0700 setup directory. Run `init` and
    `prepare-stack` as shown below. Review the resulting Compose configuration
    and private `stack.env`; do not publish its indexer credentials.
 3. Load the six archives without pulling, set the three local image tags
@@ -46,7 +47,6 @@ proof parameters, generated keys, and private approval evidence.
 INSTALL=/absolute/verified/standalone-install/SOURCE_SHA
 SETUP=/absolute/private/standalone-setup
 PROJECT=tr-standalone-local-my-run
-mkdir -m 700 "$SETUP"
 node scripts/check-standalone-install.mjs "$INSTALL"
 node scripts/standalone-setup-wizard.mjs init "$SETUP" "$INSTALL"
 node scripts/standalone-setup-wizard.mjs prepare-stack "$SETUP" "$PROJECT" 39944 38088 36300
