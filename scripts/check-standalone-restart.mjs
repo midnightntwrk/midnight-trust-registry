@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { observeStandaloneTopology, standaloneStackConfig } from "./check-standalone-topology.mjs";
+import { getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
 
 const run = promisify(execFile);
 const SHA256 = /^[0-9a-f]{64}$/u;
@@ -28,7 +29,7 @@ function sha256(bytes) {
 
 export function deploymentMarkerFromRecord(record) {
   const receipt = record.deployment?.result?.receipt;
-  const validReceipt = receipt?.networkId === "undeployed"
+  const validReceipt = receipt?.networkId === getLocalNetworkProfile().networkId
     && HASH.test(receipt.contractAddress ?? "") && !ZERO_HASH.test(receipt.contractAddress)
     && HASH.test(receipt.blockHash ?? "") && !ZERO_HASH.test(receipt.blockHash)
     && typeof receipt.txId === "string" && receipt.txId.length > 0
@@ -119,17 +120,27 @@ async function writeEvidence(path, value) {
   }
 }
 
-function parsePreparedEnv(bytes) {
+export function parsePreparedEnv(bytes, profile = undefined) {
   const lines = bytes.toString("utf8").trimEnd().split("\n");
   const entries = lines.map((line) => {
     const separator = line.indexOf("=");
     if (separator < 1) throw new Error("Prepared stack environment is malformed");
     return [line.slice(0, separator), line.slice(separator + 1)];
   });
-  if (entries.length !== 8 || new Set(entries.map(([name]) => name)).size !== 8) {
+  const expectedNames = ["TR_STACK_NAME", "COMPOSE_PROJECT_NAME", "TR_NODE_PORT",
+    "TR_INDEXER_PORT", "TR_PROOF_PORT", "TR_PROOF_PARAMS_DIR",
+    "TR_INDEXER_PASSWORD", "TR_INDEXER_SECRET"];
+  if (profile) expectedNames.push("TR_NETWORK_ID");
+  if (entries.length !== expectedNames.length
+    || new Set(entries.map(([name]) => name)).size !== expectedNames.length
+    || entries.some(([name]) => !expectedNames.includes(name))) {
     throw new Error("Prepared stack environment has unexpected entries");
   }
-  return Object.fromEntries(entries);
+  const env = Object.fromEntries(entries);
+  if (profile && env.TR_NETWORK_ID !== profile.networkId) {
+    throw new Error("Prepared stack network profile differs from the selected profile");
+  }
+  return env;
 }
 
 async function readContext(root, dependencies) {
@@ -155,7 +166,11 @@ async function readContext(root, dependencies) {
     || !Array.isArray(verified.images) || verified.images.length !== SERVICES.length) {
     throw new Error("Running stack no longer matches the verified install bundle");
   }
-  const env = parsePreparedEnv(envBytes);
+  if (record.networkProfile !== undefined
+    && JSON.stringify(record.networkProfile) !== JSON.stringify(getLocalNetworkProfile())) {
+    throw new Error("Prepared stack network profile differs from standalone");
+  }
+  const env = parsePreparedEnv(envBytes, record.networkProfile);
   const config = standaloneStackConfig(env);
   if (config.project !== record.stack.project
     || JSON.stringify(config.ports) !== JSON.stringify(record.stack.ports)

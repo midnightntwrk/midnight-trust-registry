@@ -4,12 +4,14 @@ import { link, mkdtemp, mkdir, readFile, realpath, rm, symlink, unlink, writeFil
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
 
 import {
   captureStandaloneRestartBaseline,
   compareStandaloneRestartSnapshots,
   deploymentMarkerFromRecord,
   observeStandaloneRestartSnapshot,
+  parsePreparedEnv,
   readStandaloneRestartEvidence,
   verifyStandaloneRestart,
 } from "./check-standalone-restart.mjs";
@@ -20,6 +22,23 @@ const beforeHash = `0x${"2".repeat(64)}`;
 const afterHash = `0x${"3".repeat(64)}`;
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const services = ["node", "indexer", "proof-server"];
+const localProfile = getLocalNetworkProfile();
+
+test("prepared environment accepts only the selected profile's exact fields", () => {
+  const legacy = ["TR_STACK_NAME=tr-standalone-local-test", "COMPOSE_PROJECT_NAME=tr-standalone-local-test",
+    "TR_NODE_PORT=39944", "TR_INDEXER_PORT=38088", "TR_PROOF_PORT=36300",
+    "TR_PROOF_PARAMS_DIR=\"/tmp/proof-params\"", "TR_INDEXER_PASSWORD=secret",
+    "TR_INDEXER_SECRET=secret"].join("\n") + "\n";
+  assert.equal(parsePreparedEnv(Buffer.from(legacy)).TR_STACK_NAME, "tr-standalone-local-test");
+  const current = `${legacy}TR_NETWORK_ID=${localProfile.networkId}\n`;
+  assert.equal(parsePreparedEnv(Buffer.from(current), localProfile).TR_NETWORK_ID, localProfile.networkId);
+  assert.throws(() => parsePreparedEnv(Buffer.from(current)), /unexpected entries/u);
+  assert.throws(() => parsePreparedEnv(Buffer.from(legacy), localProfile), /unexpected entries/u);
+  assert.throws(() => parsePreparedEnv(Buffer.from(current.replace(localProfile.networkId, "preview")), localProfile),
+    /network profile differs/u);
+  assert.throws(() => parsePreparedEnv(Buffer.from(`${current}TR_UNEXPECTED=1\n`), localProfile),
+    /unexpected entries/u);
+});
 
 test("restart evidence refuses symlink and hard-linked private inputs", async () => {
   const root = await mkdtemp(join(tmpdir(), "tr-restart-private-"));
@@ -43,13 +62,16 @@ test("restart evidence refuses symlink and hard-linked private inputs", async ()
 });
 
 test("deployment marker requires a valid reconciled staged-bootstrap receipt", () => {
-  const receipt = { networkId: "undeployed", contractAddress: `0x${"4".repeat(64)}`,
+  const receipt = { networkId: localProfile.networkId, contractAddress: `0x${"4".repeat(64)}`,
     blockHash: `0x${"5".repeat(64)}`, txId: "local-tx", blockHeight: 12 };
   const record = { deployment: { state: "observed", result: {
     receipt, readbackStatus: "staged-bootstrap-pending" } } };
   assert.deepEqual(deploymentMarkerFromRecord(record), { state: "observed",
     contractAddress: receipt.contractAddress, readbackStatus: "staged-bootstrap-pending",
     validReceipt: true });
+  assert.equal(deploymentMarkerFromRecord({ deployment: { state: "observed", result: {
+    receipt: { ...receipt, networkId: "preview" }, readbackStatus: "staged-bootstrap-pending",
+  } } }).validReceipt, false);
   assert.equal(deploymentMarkerFromRecord({ deployment: { state: "observed", result: {
     receipt: { ...receipt, contractAddress: `0x${"0".repeat(64)}` },
     readbackStatus: "staged-bootstrap-pending" } } }).validReceipt, false);
@@ -176,6 +198,7 @@ test("captures private immutable baseline and verifies a restarted local ledger 
     `TR_STACK_NAME=${project}`,
     `COMPOSE_PROJECT_NAME=${project}`,
     "TR_NODE_PORT=49944", "TR_INDEXER_PORT=48088", "TR_PROOF_PORT=46300",
+    `TR_NETWORK_ID=${localProfile.networkId}`,
     `TR_PROOF_PARAMS_DIR=${JSON.stringify(join(canonicalBundle, "proof-params"))}`,
     `TR_INDEXER_PASSWORD=${"a".repeat(48)}`,
     `TR_INDEXER_SECRET=${"b".repeat(64)}`,
@@ -183,6 +206,7 @@ test("captures private immutable baseline and verifies a restarted local ledger 
   ].join("\n"));
   const record = {
     sourceRevision: revision,
+    networkProfile: localProfile,
     install: { bundle: canonicalBundle, inventorySha256: digest(inventory) },
     stack: { project, ports: { node: "49944", indexer: "48088", "proof-server": "46300" },
       envFileSha256: digest(env), composeSha256: composeHash, offlineComposeSha256: offlineHash,
