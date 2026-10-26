@@ -24,6 +24,7 @@ const Reservation = z.strictObject({
   networkId: z.string().min(1).max(128),
   contractAddress: Hex32,
   finalizedBlockHash: Hex32,
+  approvedFinalizedBlockHash: Hex32.optional(),
   currentAuthorityCounter: z.string().regex(/^\d+$/u),
   nextAuthorityCounter: z.string().regex(/^\d+$/u),
   committeeVerifyingKeys: z.array(Hex32).min(3).max(128),
@@ -81,13 +82,17 @@ export class FileMaintenanceTransitionJournal {
     return reservation === null ? null : { reservation, submitted };
   }
 
-  async executeOnce(plan: PreparedCommitteeTransition, submit: () => Promise<string>): Promise<string> {
+  async executeOnce(
+    plan: PreparedCommitteeTransition, submit: () => Promise<string>,
+    approvedFinalizedBlockHash = plan.finalizedBlockHash,
+  ): Promise<string> {
     if (await this.inspect() !== null) throw new MaintenanceTransitionAlreadyReservedError();
     const reservation = Reservation.parse({
       version: 1,
       networkId: plan.networkId,
       contractAddress: plan.contractAddress,
       finalizedBlockHash: plan.finalizedBlockHash,
+      approvedFinalizedBlockHash,
       currentAuthorityCounter: plan.currentAuthorityCounter.toString(),
       nextAuthorityCounter: plan.nextAuthorityCounter.toString(),
       committeeVerifyingKeys: [...plan.committeeVerifyingKeys],
@@ -192,8 +197,20 @@ export async function submitLocalNetworkCommitteeTransition(input: {
   signature: Signature;
   journal: FileMaintenanceTransitionJournal;
   providers: ContractProviders<RegistryContract>;
+  approvedUpdateSha256: string;
+  approvedFinalizedBlockHash: string;
 }): Promise<string> {
+  if (!/^[0-9a-f]{64}$/u.test(input.approvedUpdateSha256)
+    || !/^0x[0-9a-f]{64}$/u.test(input.approvedFinalizedBlockHash)
+    || /^0x0{64}$/u.test(input.approvedFinalizedBlockHash)) {
+    throw new Error("Approved local maintenance signing pins are invalid");
+  }
   const plan = await prepareLocalNetworkCommitteeTransition(input.approval);
+  if (createHash("sha256").update(plan.dataToSign).digest("hex") !== input.approvedUpdateSha256) {
+    throw new Error("Fresh local maintenance plan disagrees with the approved signing request");
+  }
   const tx = plan.authorize(input.signature);
-  return input.journal.executeOnce(plan, () => submitTxAsync(input.providers, { unprovenTx: tx }));
+  return input.journal.executeOnce(
+    plan, () => submitTxAsync(input.providers, { unprovenTx: tx }), input.approvedFinalizedBlockHash,
+  );
 }

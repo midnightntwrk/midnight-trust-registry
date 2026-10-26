@@ -23,6 +23,8 @@ export * from "./public-network-deployment-action-reader.js";
 export * from "./local-network-deployment-action-reader.js";
 export * from "./public-network-deployment.js";
 export * from "./deployment-attempt-journal.js";
+export * from "./local-verifier-key-install.js";
+export * from "./local-staged-deployment-reconciliation.js";
 export { prepareLocalNetworkCommitteeTransition, preparePublicNetworkCommitteeTransition } from "./public-maintenance-transition.js";
 export type {
   CommitteeTransitionApproval,

@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { TrustRegistryContract, trustRegistryWitnesses } from "@midnight-ntwrk/trust-registry-contract";
 
-import { verifyInstalledVerifierKeyAssets } from "../verifier-asset-preflight.js";
+import { readPinnedInstalledVerifierKey, verifyInstalledVerifierKeyAssets } from "../verifier-asset-preflight.js";
 
 const directories: string[] = [];
 const circuitNames = Object.keys(new TrustRegistryContract.Contract(trustRegistryWitnesses).provableCircuits);
@@ -33,6 +33,19 @@ afterEach(async () => {
 });
 
 describe("installed verifier-key preflight", () => {
+  it("reads only catalog-pinned bytes for a selected insertion", async () => {
+    const directory = await assets();
+    const name = circuitNames[0]!;
+    await expect(readPinnedInstalledVerifierKey(manifest, name, directory))
+      .resolves.toEqual(new Uint8Array(contents(name)));
+    await expect(readPinnedInstalledVerifierKey(manifest, "notInCatalog", directory))
+      .rejects.toThrow(/not in the release catalog/u);
+    const file = join(directory, "keys", `${name}.verifier`);
+    await rm(file);
+    await symlink(join(directory, "keys", `${circuitNames[1]!}.verifier`), file);
+    await expect(readPinnedInstalledVerifierKey(manifest, name, directory)).rejects.toThrow();
+  });
+
   it("accepts only the exact installed inventory and bytes", async () => {
     const directory = await assets();
     await expect(verifyInstalledVerifierKeyAssets(manifest, directory)).resolves.toBeUndefined();

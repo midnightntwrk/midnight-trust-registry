@@ -9,6 +9,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- prepare a private first-run standalone Compose environment from a verified
+  install bundle and record explicit ledger-bridge topology/egress observations
+  without advancing deployment or release approvals
+- document a nonconflicting, selected-project installation relay for concurrent
+  local stacks; it must be removed before offline runtime qualification
+- retain pre-genesis stack observation history and stop interactive setup when
+  local stack preparation is deferred
+- require a prepared stack's live observation before its genesis pin can be
+  recorded, including through the explicit wizard command
+- derive private unsigned genesis and release-committee approval drafts from
+  observed setup pins and public reviewer inputs without auto-approving them
+- require live stack observation for v3 genesis paths, recheck bundled Compose
+  bytes, and require reviewer-supplied approval time in unsigned drafts
+- pin both base and offline Compose bytes in v3 install bundles; new wizard
+  stacks require those verified bytes and matching archived image references
+- verify wizard-prepared indexer credentials and proof-cache bind source against
+  running containers without persisting secrets; reject extra mounts and
+  elevated container privileges
+- allow a separate named local qualification Compose project with distinct
+  loopback ports and volumes, while topology and egress checks verify the
+  selected project and reject public or unexpected port bindings
+- require a second, detached governance approval that binds the release
+  maintenance roster to the staged deployment receipt, contract address,
+  reserved plan, and pinned release manifest after finalized bootstrap readback
+  and before preparing the
+  committee transition; missing or ambiguous receipts remain blocked, while
+  pre-existing attempts retain read-only reconciliation without retrospective
+  approval
+- add a read-only local deployment-attempt scanner that pins indexed block
+  ancestry to the approved genesis and a captured finalized node head, reports
+  public deployment candidates and pending-extrinsic count, and never treats
+  an empty scan as recovery approval
+- require signed governance approval before retrying a local maintenance
+  transition after a crash with no journal; bind the decision to the expired
+  attempt and an independently reviewed finalized checkpoint, retain the
+  recovered attempt in history, and block retry if later reconciliation
+  contradicts the absence finding. Intent expiry is not part of the signed
+  maintenance update, so the original signature remains sensitive until the
+  bootstrap authority counter advances
 - expose a production canonical maintainer-bundle builder and use it in the
   simulator; duplicate IDs now fail before Compact execution with a specific
   error, while direct Compact callers still face strict signer ordering.

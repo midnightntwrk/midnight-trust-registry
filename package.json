@@ -35,8 +35,9 @@
     "published-artifacts:smoke": "node scripts/smoke-published-artifacts.mjs",
     "test:artifact-workspaces": "node --test scripts/artifact-workspaces.test.mjs scripts/release-candidate-manifest.test.mjs scripts/check-standalone-install.test.mjs scripts/build-standalone-install.test.mjs scripts/load-standalone-install-images.test.mjs",
     "artifacts:standalone-install": "node scripts/build-standalone-install.mjs",
-    "test:local-ledger-preflight": "node --test scripts/local-ledger-preflight.test.mjs scripts/local-ledger-deploy.test.mjs",
-    "test:standalone-topology": "node --test scripts/check-standalone-topology.test.mjs",
+    "test:local-ledger-preflight": "node --test scripts/local-ledger-preflight.test.mjs scripts/local-ledger-deploy.test.mjs scripts/local-ledger-insert-verifier-key.test.mjs scripts/standalone-setup-wizard.test.mjs scripts/local-smoke-provider.test.mjs scripts/scan-local-deployment-attempt.test.mjs scripts/check-standalone-restart.test.mjs",
+    "test:standalone-topology": "node --test scripts/check-standalone-topology.test.mjs scripts/check-standalone-egress.test.mjs",
+    "check:standalone-egress": "node scripts/check-standalone-egress.mjs",
     "test:demo-smoke-scripts": "node --test scripts/actor-evidence-report.test.mjs scripts/adversarial-admission-api.test.mjs scripts/adversarial-api.test.mjs scripts/adversarial-case-report.test.mjs scripts/adversarial-compact.test.mjs scripts/adversarial-governance-api.test.mjs scripts/adversarial-matrix.test.mjs scripts/adversarial-policy-api.test.mjs scripts/adversarial-proposal-api.test.mjs scripts/adversarial-proposals.test.mjs scripts/adversarial-recognition-intake.test.mjs scripts/adversarial-recognition.test.mjs scripts/adversarial-temporal.test.mjs scripts/adversarial-trqp.test.mjs scripts/adversarial-vp-api.test.mjs scripts/demo-smoke-assets.test.mjs scripts/demo-smoke-process.test.mjs scripts/serve-static.test.mjs",
     "adversarial:report": "node scripts/adversarial-case-report.mjs",
     "check:adversarial-parity": "node scripts/check-adversarial-parity.mjs",
@@ -86,6 +87,11 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.29.0",
+    "@midnight-ntwrk/midnight-js-http-client-proof-provider": "4.1.1",
+    "@midnight-ntwrk/midnight-js-indexer-public-data-provider": "4.1.1",
+    "@midnight-ntwrk/midnight-js-node-zk-config-provider": "4.1.1",
+    "@midnight-ntwrk/midnight-js-protocol": "4.1.1",
+    "@midnight-ntwrk/testkit-js": "4.1.1",
     "@midnight-ntwrk/trust-registry-admin-console": "workspace:*",
     "@midnight-ntwrk/trust-registry-api": "workspace:*",
     "@midnight-ntwrk/trust-registry-applicant-portal": "workspace:*",
@@ -104,9 +110,11 @@
     "eslint": "^9.29.0",
     "eslint-config-prettier": "^10.1.5",
     "js-yaml": "4.3.2",
+    "pino": "10.3.1",
     "semver": "^7.8.1",
     "turbo": "^2.10.13",
     "typescript": "^5.8.3",
-    "vitest": "^4.1.12"
+    "vitest": "^4.1.12",
+    "ws": "8.21.0"
   }
 }

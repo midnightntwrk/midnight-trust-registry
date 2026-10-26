@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import { lstat, readFile, readdir, realpath } from "node:fs/promises";
 import { isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import yaml from "js-yaml";
 
 import { verifyReleaseCandidateArtifacts } from "./release-candidate-manifest.mjs";
 
@@ -13,6 +14,21 @@ const SHA256 = /^[0-9a-f]{64}$/u;
 const REVISION = /^[0-9a-f]{40}$/u;
 const ROLES = ["node", "indexer", "proof-server"];
 const IMAGE = /^[a-z0-9][a-z0-9./_:-]*@sha256:[0-9a-f]{64}$/u;
+
+export function pinnedStandaloneImages(composeSource) {
+  const compose = yaml.load(composeSource);
+  if (compose?.name !== "${TR_STACK_NAME:-tr-standalone-local-smoke}"
+    || Object.keys(compose?.services ?? {}).sort().join("\0") !== [...ROLES].sort().join("\0")) {
+    throw new Error("Standalone Compose must name the dedicated project and exactly three services");
+  }
+  return ROLES.map((role) => {
+    const reference = compose.services[role]?.image;
+    if (typeof reference !== "string" || !IMAGE.test(reference)) {
+      throw new Error(`Standalone image is not digest pinned: ${role}`);
+    }
+    return { role, reference };
+  });
+}
 export const STANDALONE_PROOF_PARAMETER_PATHS = Object.freeze([
   ...[10, 11, 12, 13, 14, 15].map((k) => `bls_midnight_2p${k}`),
   ...["spend.prover", "spend.verifier", "spend.bzkir"].map((name) => `dust/9/${name}`),
@@ -109,7 +125,7 @@ async function regularFiles(directory, prefix = "") {
 export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages = verifyReleaseCandidateArtifacts) {
   const root = await realpath(resolve(bundleRoot));
   const inventory = JSON.parse(await readFile(await regularBundleFile(root, "install-inventory.json"), "utf8"));
-  if (inventory?.format !== "tr-standalone-install-v2"
+  if (!["tr-standalone-install-v2", "tr-standalone-install-v3"].includes(inventory?.format)
     || !REVISION.test(inventory.sourceRevision)
     || typeof inventory.packageManifest !== "string"
     || typeof inventory.artifactDirectory !== "string"
@@ -118,6 +134,29 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
     || typeof inventory.proofParameters?.directory !== "string"
     || !Array.isArray(inventory.proofParameters?.files)) {
     throw new Error("Standalone install inventory format or required roles are invalid");
+  }
+  let runtimeComposeSha256 = null;
+  let runtimeOfflineComposeSha256 = null;
+  if (inventory.format === "tr-standalone-install-v3") {
+    if (inventory.runtimeCompose?.path !== "compose.yml"
+      || !SHA256.test(inventory.runtimeCompose.sha256)
+      || inventory.runtimeCompose.offlinePath !== "compose.offline.yml"
+      || !SHA256.test(inventory.runtimeCompose.offlineSha256)) {
+      throw new Error("Standalone runtime Compose pin is missing or malformed");
+    }
+    const composeFile = await regularBundleFile(root, inventory.runtimeCompose.path);
+    const offlineComposeFile = await regularBundleFile(root, inventory.runtimeCompose.offlinePath);
+    if (await sha256(composeFile) !== inventory.runtimeCompose.sha256
+      || await sha256(offlineComposeFile) !== inventory.runtimeCompose.offlineSha256) {
+      throw new Error("Standalone runtime Compose bytes disagree with the install pin");
+    }
+    const pinnedImages = pinnedStandaloneImages(await readFile(composeFile, "utf8"));
+    if (pinnedImages.some(({ role, reference }) => !inventory.images.some((image) =>
+      image?.role === role && image.reference === reference))) {
+      throw new Error("Standalone image inventory disagrees with the runtime Compose pin");
+    }
+    runtimeComposeSha256 = inventory.runtimeCompose.sha256;
+    runtimeOfflineComposeSha256 = inventory.runtimeCompose.offlineSha256;
   }
   const imageRoles = inventory.images.map((image) => image?.role).sort();
   if (imageRoles.join("\0") !== [...ROLES].sort().join("\0")) {
@@ -138,6 +177,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
     throw new Error("Artifact directory escapes the install bundle");
   }
   verifyPackages(packageManifest, artifactRoot);
+  const verifiedImages = [];
   for (const image of inventory.images) {
     if (!IMAGE.test(image.reference) || !SHA256.test(image.archiveSha256)) {
       throw new Error(`Unpinned or invalid container image: ${image.role}`);
@@ -146,7 +186,9 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
     if (await sha256(archive) !== image.archiveSha256) {
       throw new Error(`Container archive hash mismatch: ${image.role}`);
     }
-    installedImageIdFromArchive(archive, image.reference);
+    const configId = installedImageIdFromArchive(archive, image.reference);
+    verifiedImages.push({ role: image.role, reference: image.reference,
+      acceptedIds: [...new Set([configId, `sha256:${image.reference.split("@sha256:")[1]}`])] });
   }
   const proofDirectory = bundlePath(root, inventory.proofParameters.directory);
   if (!(await lstat(proofDirectory)).isDirectory()) {
@@ -174,6 +216,9 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
     packageCount: packageManifest.packages?.length,
     imageRoles,
     proofParameterCount: parameterFiles.length,
+    runtimeComposeSha256,
+    runtimeOfflineComposeSha256,
+    images: verifiedImages,
   };
 }
 

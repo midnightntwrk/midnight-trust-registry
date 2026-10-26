@@ -37,10 +37,16 @@ placeholder with approved exact values:
 
 ```json
 {
-  "format": "tr-standalone-install-v2",
+  "format": "tr-standalone-install-v3",
   "sourceRevision": "<40-character signed source SHA>",
-  "packageManifest": "release-candidate-manifest.json",
-  "artifactDirectory": "artifacts/npm",
+  "packageManifest": "release-manifest.json",
+  "artifactDirectory": "packages",
+  "runtimeCompose": {
+    "path": "compose.yml",
+    "sha256": "<sha256>",
+    "offlinePath": "compose.offline.yml",
+    "offlineSha256": "<sha256>"
+  },
   "images": [
     { "role": "node", "reference": "registry.example/node@sha256:<digest>", "archive": "images/node.tar", "archiveSha256": "<archive sha256>" },
     { "role": "indexer", "reference": "registry.example/indexer@sha256:<digest>", "archive": "images/indexer.tar", "archiveSha256": "<archive sha256>" },
@@ -77,7 +83,8 @@ contract artifacts already present, run `pnpm run artifacts:standalone-install`.
 The builder creates a **new** ignored `artifacts/standalone-install/<source SHA>/`
 directory; it does not overwrite an existing bundle or rebuild Compact keys.
 It packs ten packages, copies the 18 local proof-parameter files, exports the
-three digest-pinned Compose images, writes the release and install manifests,
+three digest-pinned Compose images, copies and hashes both runtime Compose
+files, writes the release and install manifests,
 and runs the read-only bundle verifier. Retain the resulting directory and
 hashes as candidate bytes for operator approval. If the command fails, the
 partial directory is retained for inspection; use a new signed source commit
@@ -91,6 +98,9 @@ parameter files without network access. A missing, extra, linked, or altered
 parameter file fails the check. The proof server verifies downloaded parameter
 contents during online installation; keep the checked cache as a read-only
 runtime input, not as an unpinned writable container layer.
+The v3 verifier also checks both Compose files and requires the base Compose
+image references to match the archived image inventory. V2 bundles remain
+verifiable as historical smoke artifacts but cannot prepare a new wizard stack.
 The verifier also checks each tagless OCI archive's internal manifest digest
 against the approved image reference and its arm64 config bytes. It does not
 establish who approved the reference or prove origin from the registry;
@@ -102,10 +112,10 @@ It rechecks the bundle, loads archives without pulling, verifies each Docker
 image ID against the archived config bytes, and creates source-SHA-scoped
 local tags. Reject a tag already bound to different bytes. Set
 `TR_NODE_IMAGE`, `TR_INDEXER_IMAGE`, and `TR_PROOF_SERVER_IMAGE` to the returned
-tags. Then use both `deploy/standalone/compose.yml` and
-`deploy/standalone/compose.offline.yml` with `docker compose -f
-deploy/standalone/compose.yml -f deploy/standalone/compose.offline.yml up
---pull never -d --wait`; the overlay sets `pull_policy: never` for every image. Do this
+tags. Then use **both verified bundle copies**, not mutable checkout files,
+with `docker compose -f <verified-bundle>/compose.yml -f
+<verified-bundle>/compose.offline.yml up --pull never -d --wait`; the overlay
+sets `pull_policy: never` for every image. Do this
 on a separate clean host or daemon and capture load output, image IDs, restart
 logs, and denied-egress evidence. A load against this development host, where
 the upstream images are already present, does **not** prove clean offline
@@ -113,6 +123,16 @@ installation. Include pinned runtime,
 browser, DID/VC/status, Compose, and toolchain dependencies in the operator
 install record; this three-image inventory alone is not a complete install or
 qualification result.
+
+With the selected `TR_STACK_NAME` and loopback ports exported, run
+`node scripts/check-standalone-topology.mjs <verified-bundle-directory>`
+against the running ledger bridge. Bundle-aware observation matches each
+container's image ID to the checked archive and requires Docker Compose's
+recorded config-file paths to point into that bundle. Source-scoped local tags
+are accepted only when all three services use the verified two-file offline
+overlay. Running the check without a bundle is a historical digest-reference
+smoke check, not pinned-install evidence. Neither form proves a clean-host
+install, packet-level egress denial, actor journeys, or release qualification.
 
 ## Offline Runtime Boundary
 
@@ -138,6 +158,44 @@ wallet, DID/VC/status authority, or egress-denial harness and does not close
 any release gate by itself. The node chain belongs under `/node/chain`; the
 indexer SQLite state belongs under `/data`. Validate both named volumes across
 restarts before using them for restore evidence.
+
+To prepare an independent qualification instance without resetting an
+ambiguous smoke ledger, choose a new `tr-standalone-local-*` project and three
+distinct unused loopback ports. Compose's `-p` option isolates the node and
+indexer volumes; do not copy or reuse the old setup directory, wallet state,
+genesis approval, or deployment journal. For example, with a new private env
+file containing the required secrets and pinned proof-parameter path:
+
+```sh
+export TR_STACK_NAME=tr-standalone-local-qualification
+export COMPOSE_PROJECT_NAME="$TR_STACK_NAME"
+export TR_NODE_PORT=39944 TR_INDEXER_PORT=38088 TR_PROOF_PORT=36300
+docker compose --env-file <new-private-env-file> -p "$TR_STACK_NAME" \
+  -f deploy/standalone/compose.yml config -q
+# Start only after reviewing the project name, ports, and distinct volume names:
+docker compose --env-file <new-private-env-file> -p "$TR_STACK_NAME" \
+  -f deploy/standalone/compose.yml up -d --wait
+node scripts/check-standalone-topology.mjs
+pnpm run check:standalone-egress
+```
+
+Keep `TR_STACK_NAME` and the port variables exported in the shell for Compose
+and both checks; putting them only in the private env file is insufficient for
+the checks. `COMPOSE_PROJECT_NAME` and the explicit `-p` provide the same
+selected project even if one override is accidentally omitted. The checks
+reject a mismatch between `COMPOSE_PROJECT_NAME` and `TR_STACK_NAME`. Empty project
+or port variables fail closed in the checks. The checks reject an unexpected project,
+public or extra port binding, wrong loopback port, extra network attachment,
+missing or extra mount, or elevated container privilege. Wizard-driven
+`observe-stack` also compares the running indexer's three storage passwords
+and secret and the proof server's bind source against the prepared private
+`stack.env`; its observation records only a match flag, never secret values.
+A direct topology check without that private input cannot attest the match.
+A config-only render and a healthy new node do
+not prove a local contract deployment, finalized readback, denied egress for
+other processes, or release qualification. Review the new genesis and repeat
+the first-run approvals for that instance. Never use `down -v` on either
+project while its history is evidence.
 
 The local Midnight network uses network ID `undeployed`, not `preprod`. The
 dedicated smoke stack keeps node RPC, indexer, and proof-server services on
@@ -262,6 +320,79 @@ private journal and finalized local chain, then obtain a human recovery
 decision. The accompanying unit tests mock providers and do not constitute
 local deployment or offline qualification evidence.
 
+The full constructor may exceed the local Ledger transaction block limit when
+all release verifier keys are embedded at once. For a separately approved,
+new installation only, the operator may change the plan format to
+`tr-local-staged-deployment-plan-v1` and add
+`"initialVerifierKeyName": "authorizeMaintainerAuditEvent"` (or another
+approved name in the pinned release catalog). This is an explicit alternative,
+not an automatic fallback from a failed full attempt. The staged plan uses a
+distinct one-attempt intent hash, still verifies the complete installed key
+catalog before reservation, and deploys exactly the chosen initial verifier
+key. A successful finalized readback reports `staged-bootstrap-pending`, **not**
+release qualification. The remaining keys must be installed in individually
+journaled maintenance transactions, read back after finality, and matched to
+the entire release manifest before committee transition and actor journeys.
+The bootstrap CLI and first-run wizard do not perform that completion
+automatically. Never
+use a new staged plan to bypass an unresolved reservation from an earlier
+attempt; reconcile the earlier journal and chain with a human recovery decision
+first. The development-only public genesis wallet and 1-of-3 committee remain
+unsuitable for release approval.
+
+For a staged deployment with a finalized receipt, insert one remaining key at
+a time with `node scripts/local-ledger-insert-verifier-key.mjs
+<approved-insertion-plan.json>`. Each key uses the fixed private journal path
+`verifier-<circuitName>.json` beside the deployment journal; never reuse or
+rename a prior insertion journal. The circuit must be the next absent name in
+sorted release-catalog order. The exact
+insertion plan contains:
+
+```json
+{
+  "format": "tr-local-verifier-key-insertion-plan-v1",
+  "sourceRevision": "<40-character approved git commit>",
+  "network": { "networkId": "undeployed", "rpcUrl": "http://127.0.0.1:<checkpoint-port>", "indexerHttpUrl": "http://127.0.0.1:<indexer-port>/api/v4/graphql", "indexerWsUrl": "ws://127.0.0.1:<indexer-port>/api/v4/graphql/ws", "expectedGenesisHash": "0x<approved hash>", "allowedHosts": ["127.0.0.1"] },
+  "releaseManifestPath": "/absolute/read-only/release-manifest.json",
+  "providerModulePath": "/absolute/read-only/approved-provider.mjs",
+  "providerModuleSha256": "<approved SHA-256 of module bytes>",
+  "deploymentJournalPath": "/absolute/private/deployment-attempt.json",
+  "journalPath": "/absolute/private/verifier-<circuitName>.json",
+  "initialVerifierKeyName": "<circuit in the staged deployment plan>",
+  "circuitName": "<next absent release-catalog circuit>"
+}
+```
+
+The CLI checks the original staged deployment approval and receipt, the local
+genesis, the entire installed key catalog, and the finalized pre-insertion
+image. It rejects changed or unexpected operations and changed bootstrap
+authority, then durably reserves this circuit's attempt before calling the
+Midnight SDK. It stores the public finalized transaction receipt and reads the
+post-insertion image. `verified` means this circuit and the previously
+installed subset match the pinned key hashes in the observed finalized image;
+it does **not** mean the full catalog, committee, or RC is qualified. If the
+readback lags, run the same plan with `--reconcile`, which never submits.
+The CLI exits nonzero for pending, absent, mismatched, or ambiguous outcomes,
+while still printing any public receipt it recovered.
+`observed-without-receipt` means a key appeared after an ambiguous submission;
+human transaction attribution and recovery approval are required. Do not
+advance to another key until the prior journal and finalized state are
+reconciled. `absent` only means a key is not yet visible after an attempt with
+no receipt; it does not prove the transaction was never submitted. A successful
+receipt with lagging readback remains `pending`. `failed-on-chain` retains the
+public transaction receipt and requires operator investigation; neither state
+authorizes deleting a journal or retrying automatically. The CLI's provider
+module remains privileged and must be pinned,
+reviewed, and run with egress controls. A verified full-key image, approved
+committee transition, actor journeys, and independent security review are
+still separate release gates. Unit tests for this CLI use injected providers
+and are not local-ledger deployment evidence.
+After the complete staged catalog is verified, committee-transition approval
+must explicitly set `stagedVerifierKeyInstallation: true`. The expected
+bootstrap authority counter is then the catalog size minus one; the full
+constructor path still requires counter zero. Insertion receipts and journals
+must be retained and reviewed before that transition. This mode is local-only.
+
 ### First-run setup wizard (initial slice)
 
 The local CLI wraps the existing install verifier, genesis preflight, and
@@ -272,70 +403,548 @@ each installation; do not reuse a prior attempt's directory:
 node scripts/standalone-setup-wizard.mjs run /absolute/private/setup-directory
 # Or run each step separately for an auditable operator session:
 node scripts/standalone-setup-wizard.mjs init /absolute/private/setup-directory /absolute/verified-install-bundle
-node scripts/standalone-setup-wizard.mjs observe /absolute/private/setup-directory /absolute/approved-genesis-pin.json
+node scripts/standalone-setup-wizard.mjs prepare-stack /absolute/private/setup-directory tr-standalone-local-qualification 39944 38088 36300
+# Review the selected project, loopback ports, and distinct volumes before starting it:
+docker compose --env-file /absolute/private/setup-directory/stack.env -p tr-standalone-local-qualification -f /absolute/verified-install-bundle/compose.yml config -q
+# After the operator starts the reviewed Compose plan, record live ledger-bridge checks:
+node scripts/standalone-setup-wizard.mjs observe-stack /absolute/private/setup-directory
+# Optional: collect the node's untrusted genesis candidate for independent review.
+node scripts/standalone-setup-wizard.mjs collect-genesis-candidate /absolute/private/setup-directory
+node scripts/standalone-setup-wizard.mjs observe /absolute/private/setup-directory /absolute/independently-reviewed-genesis-pin.json
+node scripts/standalone-setup-wizard.mjs draft-genesis /absolute/private/setup-directory /absolute/genesis-review-metadata.json
+# A human reviewer independently checks and signs the exact unsigned draft bytes.
+node scripts/standalone-setup-wizard.mjs approve-genesis /absolute/private/setup-directory /absolute/private/setup-directory/genesis-approval.unsigned.json /absolute/reviewer-approval.sig /absolute/private/reviewer-public-keyring REVIEWER_SIGNING_KEY_FINGERPRINT
+node scripts/standalone-setup-wizard.mjs draft-committee /absolute/private/setup-directory /absolute/committee-review-metadata.json
+# Governance independently reviews the public keys, custody roles, and threshold before signing.
+node scripts/standalone-setup-wizard.mjs approve-committee /absolute/private/setup-directory /absolute/private/setup-directory/committee-approval.unsigned.json /absolute/committee-approval.sig /absolute/private/governance-public-keyring GOVERNANCE_SIGNING_KEY_FINGERPRINT
 node scripts/standalone-setup-wizard.mjs deploy /absolute/private/setup-directory /absolute/approved-deployment-plan.json
+# Re-read a reserved staged deployment without submitting, if first readback lagged:
+node scripts/standalone-setup-wizard.mjs reconcile-deploy /absolute/private/setup-directory /absolute/approved-deployment-plan.json
+# After independent review of the finalized contract address and receipt:
+node scripts/standalone-setup-wizard.mjs approve-committee-deployment /absolute/private/setup-directory /absolute/committee-deployment-approval.json /absolute/committee-deployment-approval.sig /absolute/private/governance-public-keyring GOVERNANCE_SIGNING_KEY_FINGERPRINT
+# Only after a staged deployment receipt and finalized staged-bootstrap readback:
+node scripts/standalone-setup-wizard.mjs insert-key /absolute/private/setup-directory /absolute/approved-insertion-plan.json
+# Read-only recovery for that same plan; never resubmits:
+node scripts/standalone-setup-wizard.mjs reconcile-key /absolute/private/setup-directory /absolute/approved-insertion-plan.json
+# Only after every staged key has verified finalized readback:
+node scripts/standalone-setup-wizard.mjs prepare-committee /absolute/private/setup-directory /absolute/committee-transition-request.json
+# Save the prepare-committee JSON output as an exact signing-request file; sign dataToSignHex externally.
+node scripts/standalone-setup-wizard.mjs submit-committee /absolute/private/setup-directory /absolute/committee-transition-request.json /absolute/committee-signing-request.json /absolute/committee-signature.json
+# Read-only recovery; never submits or retries the maintenance transaction:
+node scripts/standalone-setup-wizard.mjs reconcile-committee /absolute/private/setup-directory /absolute/committee-transition-request.json /absolute/committee-signing-request.json
 node scripts/standalone-setup-wizard.mjs status /absolute/private/setup-directory
 ```
 
+`prepare-stack` re-verifies a v3 install bundle, requires both current Compose
+files to match its pinned bytes and its image inventory to match the base
+Compose image references, and creates a mode-0600
+`stack.env` with fresh random indexer credentials and the bundle's checked
+proof-parameter path. Its output and setup record omit the credentials. It
+does not start Compose. It refuses a project with existing containers, ledger
+network, or node/indexer volumes; the operator must still confirm that the
+loopback ports are unused before `up` and keep the Docker context unchanged.
+Export the selected project and
+port variables in the shell when running topology and egress checks; Compose's
+`--env-file` alone does not configure those separate processes. Keep the
+private file for restart and restore, and do not reuse it for another ledger.
+An older v2 bundle remains historical smoke evidence, not a new wizard setup
+input. A v3 bundle built from the chosen release source revision is still only
+candidate bytes; it does not by itself support an RC qualification claim.
+`observe-stack` checks the selected live project's topology and canary HTTPS/DNS
+egress behavior, including prepared private-input matching and unchanged
+bundled Compose bytes. For v3, it also matches the verified archive image IDs,
+source-scoped offline tags, and Docker Compose's recorded bundle paths before
+appending timestamped ledger-bridge evidence. A v3 setup record created before
+image identities were recorded cannot be upgraded in place; begin a fresh
+setup directory rather than replacing its evidence. At
+most 20 pre-genesis observations are retained; investigate drift before that
+limit instead of silently replacing earlier evidence. It refuses
+to replace evidence after genesis observation or deployment begins. In the
+interactive wizard, leaving stack preparation blank stops the session before
+the genesis-pin prompt. Once a stack is prepared, the interactive wizard also
+stops until the operator starts the reviewed stack and explicitly requests
+`observe-stack`; for v3 installs, the separate `observe` command also refuses
+a genesis pin until that stack observation exists. Legacy v2 records can still
+be observed for historical smoke, not RC qualification. This step does not approve
+genesis, attest actor egress, verify a contract readback, or qualify a release.
+
+`collect-genesis-candidate` is an optional, non-overwriting first-run aid. It
+rechecks the live v3 stack and writes `genesis-candidate.untrusted.json` in the
+private setup directory, recording the **node-reported** genesis hash,
+finalized checkpoint, install source and inventory, and observer-script hash.
+It does not create an approved pin, change `localLedger` status, or authorize
+deployment. An independent reviewer must compare the candidate with the
+pinned chain specification through a channel other than this node, approve
+the exact pin and source, and provide a detached signature and public GPG
+fingerprint. Do not treat matching this candidate as independent verification.
+The interactive `run` command offers this collection after `observe-stack`
+only when the operator types `COLLECT`; it then separately asks for an
+independently reviewed pin JSON. Leave that second prompt blank until the
+reviewer has supplied the pin. Re-running collection does not overwrite an
+existing candidate; preserve the first file and investigate any changed node
+observation in a separate evidence record.
+
+For the pinned local node image, `CFG_PRESET=dev` selects the embedded
+`/res/cfg/dev.toml`, which references
+`/res/genesis/genesis_block_undeployed.mn` and
+`/res/genesis/genesis_state_undeployed.mn`. The operator can give the reviewer
+the image digest, these file hashes, and the digest of
+`/midnight-node build-spec --dev --raw --disable-default-bootnode` output as
+reproducibility evidence. All of those values still come from the running
+image; they are **not** an independent source for the approved genesis hash.
+The reviewer must obtain the reviewed chain specification and node artifact
+provenance through a separately controlled channel, derive or verify its
+genesis hash independently, then sign the exact pin and source reference.
+
+`draft-genesis` accepts a JSON object with exactly `reviewerFingerprint`,
+`reviewedReference`, and a human-supplied ISO `approvedAt` timestamp.
+`draft-committee` accepts those fields plus
+`maintenancePolicy` and `custodians` in the approval shapes below. Both commands
+derive the source, install, and genesis binding from the private setup record;
+they create mode-0600 `*.unsigned.json` files in that directory without
+overwriting an earlier draft. The printed state is
+`unsigned-human-review-required`, not approval. Reviewers must independently
+verify the references, committee public keys, threshold, and custody records,
+including the approval time, then sign the **exact bytes** of the draft they
+accept. The operator passes that
+same file and detached signature to `approve-genesis` or `approve-committee`.
+The wizard does not create reviewer authority, private keys, or signatures.
+
 The wizard verifies staged bytes, checks that the pin and deployment plan
-match the installed source and observed genesis, and saves a mode-0600 setup
-record in a mode-0700 directory. It reserves a deployment attempt **before**
+match the installed source and observed genesis, and requires a detached
+reviewer signature before deployment. The signed JSON has exactly these fields:
+
+```json
+{
+  "format": "tr-local-genesis-approval-v1",
+  "sourceRevision": "<signed source SHA from setup-record.json>",
+  "installInventorySha256": "<inventory hash from setup-record.json>",
+  "networkId": "undeployed",
+  "pinSha256": "<candidate pin hash from setup-record.json>",
+  "expectedGenesisHash": "0x<approved 64-character genesis hash>",
+  "rpcUrl": "<observed loopback RPC URL>",
+  "reviewerFingerprint": "<40-character uppercase GPG signing-key fingerprint>",
+  "reviewedReference": "<independent chain-spec or genesis evidence reference>",
+  "approvedAt": "<ISO-8601 time after setup initialization>"
+}
+```
+
+The reviewer compares the candidate genesis to independently obtained
+chain-spec evidence, signs the exact JSON bytes on a separate trusted system,
+and sends the detached signature and public signing key to the operator.
+The operator obtains the expected fingerprint through an independently
+approved channel, imports the public key into a mode-0700 local GPG keyring,
+and runs `approve-genesis`. The wizard does not download keys or establish
+reviewer authority from a typed fingerprint: the release owner must separately
+verify the key owner and the provenance of `reviewedReference`. It checks
+the signature, signer fingerprint, source, inventory, genesis, and setup time,
+then preserves the signed bytes in the private setup record. An observation
+cannot be replaced after approval.
+
+The governance reviewer can sign a separate first-setup **release roster**
+after genesis approval. Its exact JSON shape is:
+
+```json
+{
+  "format": "tr-local-committee-approval-v1",
+  "sourceRevision": "<signed source SHA from setup-record.json>",
+  "installInventorySha256": "<inventory hash from setup-record.json>",
+  "genesisApprovalSha256": "<signed genesis document hash from setup-record.json>",
+  "networkId": "undeployed",
+  "expectedGenesisHash": "0x<approved 64-character genesis hash>",
+  "reviewerFingerprint": "<40-character uppercase governance signing-key fingerprint>",
+  "reviewedReference": "<governance decision or minutes reference>",
+  "approvedAt": "<ISO-8601 time after genesis approval>",
+  "maintenancePolicy": {
+    "mode": "committee",
+    "threshold": 2,
+    "verifyingKeys": ["0x<key-1>", "0x<key-2>", "0x<key-3>"]
+  },
+  "custodians": [
+    { "verifyingKey": "0x<key-1>", "holderRole": "maintainer-1", "custodyReference": "<custody record>" },
+    { "verifyingKey": "0x<key-2>", "holderRole": "maintainer-2", "custodyReference": "<custody record>" },
+    { "verifyingKey": "0x<key-3>", "holderRole": "maintainer-3", "custodyReference": "<custody record>" }
+  ]
+}
+```
+
+Replace all placeholders with exact approved values. The signed roster must
+contain at least three distinct canonical, Ledger-valid Schnorr public keys,
+a threshold of at least two, and distinct custody roles matched in key order. The 1-of-3 choice is
+**smoke-only** and intentionally fails this release approval step. As with
+genesis, the setup host verifies the detached signature against an
+operator-pinned reviewer public key; the release owner must separately verify
+the governance reviewer's authority and custody evidence. A recorded roster
+does not submit or verify a contract maintenance transition. The wizard shows
+`roster-signature-verified-deployment-binding-pending` until the governance
+reviewer signs a second approval for the actual deployment. That approval has
+exactly this JSON shape:
+
+```json
+{
+  "format": "tr-local-committee-deployment-approval-v1",
+  "sourceRevision": "<approved 40-character source SHA>",
+  "committeeApprovalSha256": "<signed roster document hash from setup-record.json>",
+  "deploymentPlanSha256": "<reserved staged plan hash from setup-record.json>",
+  "deploymentReceipt": {
+    "networkId": "undeployed",
+    "contractAddress": "0x<finalized contract address>",
+    "txId": "<deployment transaction ID>",
+    "blockHash": "0x<deployment block hash>",
+    "blockHeight": 1
+  },
+  "releaseManifestSha256": "<verified bundle release manifest hash>",
+  "expectedGenesisHash": "0x<approved local genesis hash>",
+  "reviewerFingerprint": "<same pinned governance reviewer fingerprint as the roster>",
+  "reviewedReference": "<independent deployment review or minutes reference>",
+  "approvedAt": "<canonical UTC ISO-8601 time after deployment reservation>"
+}
+```
+
+The reviewer independently inspects the plan, receipt, finalized on-ledger
+contract address and genesis, and pinned manifest before signing the exact
+bytes. The wizard verifies the detached signature against the pinned governance
+key, compares the receipt, source, plan, genesis, roster, and manifest against
+the preserved setup record, and retains the signed bytes privately. It
+does not re-read the chain at approval time or establish reviewer authority
+or independent inclusion by itself. A missing or ambiguous deployment receipt
+cannot receive this approval, and approval never authorizes a retry. Once
+recorded, `status` reports
+`deployment-bound-roster-signature-verified-transition-pending`; only then can
+the transition be prepared. Finalized maintenance readback and the other RC
+gates remain pending.
+If an older setup record already has a maintenance attempt, the wizard will
+not accept a retrospective deployment approval. It still permits read-only
+reconciliation of that saved attempt without the new binding; it will not
+prepare, resubmit, or automatically recover a new attempt from it. Preserve
+the original journal and obtain an operator-reviewed migration decision.
+
+`prepare-committee` is that flow's **read-only signing step**, not the
+submission. Its public request JSON has exactly these fields; the bootstrap
+and governance values must reflect the operator-approved deployment and the
+current finalized ledger, not the example values below:
+
+```json
+{
+  "format": "tr-local-committee-transition-request-v1",
+  "sourceRevision": "<approved 40-character source SHA>",
+  "bootstrapMaintenanceVerifyingKey": "0x<approved bootstrap maintenance key>",
+  "expiresAt": "<ISO-8601 time within the next ten minutes>",
+  "bootstrap": {
+    "registryId": "<approved registry ID>",
+    "registryDidCommitment": "0x<bytes32>",
+    "governancePolicyCommitment": "0x<bytes32>",
+    "maintainerId": "0x<bytes32>",
+    "maintainerDidCommitment": "0x<bytes32>",
+    "maintainerKeyId": "0x<bytes32>",
+    "maintainerPublicKey": { "x": "<decimal>", "y": "<decimal>" },
+    "maintainerThreshold": "<decimal>"
+  },
+  "governance": {
+    "policyCommitment": "0x<bytes32>",
+    "policyVersion": "<decimal>",
+    "actionSequence": "<decimal>",
+    "maintainerThreshold": "<decimal>",
+    "activeMaintainerCount": "<decimal>"
+  }
+}
+```
+
+The wizard rechecks the signed roster and deployment binding, verified install bundle and
+release manifest, original staged receipt, and every per-key `verified`
+readback. The local finality reader then checks the complete current
+verifier-key image, bootstrap authority counter, approved 2-of-3-or-stronger
+committee, and governance pins before the wizard emits `dataToSignHex` with
+the `updateSha256`, finalized block hash, roster approval hash, and deployment
+binding approval hash. The reservation also pins the latter. Preserve these
+pins with the separately signed bytes: a later local submission must reject a
+fresh plan if its update hash differs. A newer finalized head is allowed only
+when a fresh finalized readback still matches the approved full registry image
+and exact signable update; the journal retains both the originally approved
+checkpoint and the current submission checkpoint. Neither
+the request nor its output contains a private key. The signature file has
+exactly this shape:
+
+```json
+{
+  "format": "tr-local-committee-signature-v1",
+  "updateSha256": "<updateSha256 from the saved signing request>",
+  "signature": "0x<128 lowercase hex characters from an external bootstrap signer>"
+}
+```
+
+`submit-committee` re-prepares against the live finalized image, requires the
+saved signing request to match every field except the advancing finalized-head
+hash, and verifies the bootstrap signature
+before reservation, and records a one-attempt private maintenance journal
+before proving or submitting. A changed signable payload requires a new
+signing request and signature. If a caught preflight error leaves **no journal
+reservation**, the wizard records `aborted-before-journal` and permits an
+explicit new attempt; it retains the aborted record in history. A present or
+unreadable journal is **unknown**, never permission to retry.
+`reconcile-committee` uses the original
+request and signing-request hashes, journal, and finalized readback without
+submitting. A returned transaction ID is journal-attributed; it is not
+independent inclusion evidence. The wizard never marks the release qualified
+merely because this transition is observed. Keep the bootstrap key under
+approved custody; do not use the public smoke wallet or 1-of-3 smoke roster
+as a release authority.
+
+If the process exits between the wizard reservation and the journal write,
+reconciliation reports `recovery-required-no-journal`. An absent journal after
+a crash is not proof that no transaction was sent or that a record was not
+lost. The wizard will not retry this state automatically: preserve the setup
+directory, inspect the finalized chain and expiry, and obtain an independent
+human recovery decision before any new installation attempt. After the
+original signing window has expired for at least ten minutes, the approved
+governance reviewer can sign this exact decision document with their pinned
+GPG key (the same reviewer key approved for the committee roster):
+
+```json
+{
+  "format": "tr-local-maintenance-no-journal-recovery-v1",
+  "decision": "authorize-new-attempt-after-absent-journal",
+  "sourceRevision": "<source revision in setup status>",
+  "requestSha256": "<original request hash from setup status>",
+  "signingRequestSha256": "<original signing-request hash from setup status>",
+  "updateSha256": "<original update hash from setup status>",
+  "approvedFinalizedBlockHash": "<original finalized checkpoint from setup status>",
+  "recoveryFinalizedBlockHash": "<later finalized checkpoint independently inspected by the reviewer>",
+  "expiredAt": "<original request expiry in ISO-8601 UTC>",
+  "reviewerFingerprint": "<pinned governance signing fingerprint>",
+  "reviewedReference": "<bounded reference to independent finalized-chain and journal inspection>",
+  "approvedAt": "<reviewer approval time in ISO-8601 UTC>"
+}
+```
+
+Use the original request and signing-request files, not replacements, for
+approval. The reviewer must independently inspect the journal, mempool and
+finalized chain, and establish that the original intent expired in **ledger
+time** without a maintenance transition. A changed finalized head alone is
+not proof. Account for local clock skew relative to the node. The wizard
+requires a nonzero reviewer-attested later checkpoint, independently sees an
+advancing finalized head with the same signable registry image, finds no
+journal, and verifies the detached signature before recording this decision.
+It cannot prove that the reviewer-attested checkpoint is an ancestor of its
+live head; that is part of the independent review evidence:
+
+```sh
+node scripts/standalone-setup-wizard.mjs approve-committee-recovery /absolute/private/setup-directory /absolute/original-committee-transition-request.json /absolute/original-committee-signing-request.json /absolute/recovery-decision.json /absolute/recovery-decision.sig /absolute/private/governance-public-keyring GOVERNANCE_SIGNING_KEY_FINGERPRINT
+```
+
+Approval unlocks only a new attempt. Create a request with a later expiry,
+run `prepare-committee` again against the live finalized head, save its
+output without changing the checkpoint hash, and call
+`submit-committee` with the external
+bootstrap signature for the approved update. The maintenance update hash does
+**not** include the intent expiry: a later expiry does not cryptographically
+invalidate the original signature, and an old signature file remains usable
+while the bootstrap counter is unchanged. Keep that file under approved key
+custody, or securely destroy it after the committee transition finalizes.
+The safety condition for retry is the independent finding that the earlier
+intent expired on-ledger and the authority counter stayed unchanged, not a
+claim of fresh signature bytes. The recovered attempt remains in bounded
+history; the wizard never resubmits it or treats approval as evidence of a
+finalized transition. If independent inspection
+cannot rule out an unknown broadcast, retain the blocked state and escalate
+to the operator/security reviewer instead of signing the decision. Reconciliation
+history and `maintenanceTransitionAlert` retain conflicts even if later reads
+temporarily fail or show the expected authority. If a journal-recorded
+transaction ID is lost, the status reports a conflict rather than treating it
+as a harmless pre-journal abort. A broadcast ID returned during a failed
+response write is retained as `reportedTxId`, not accepted as inclusion proof.
+
+The pinned provider module must export `createLocalMaintenanceMaterial` to
+return contract providers and optional `stop()` cleanup. This factory must
+not load or create the bootstrap maintenance signing key; the signer supplies
+only the external signature file. The documented public-wallet smoke provider
+implements this keyless maintenance factory, but remains development-only.
+
+The wizard saves a mode-0600 setup record in a mode-0700 directory. It
+reserves a deployment attempt **before**
 calling the provider. If the process exits, the provider fails, or the receipt
 is unclear, do not invoke `deploy` again against that setup; inspect the
 deployment journal and finalized chain, then obtain a human recovery decision.
-The wizard does not generate or approve a genesis hash, provider module,
+If `status` reports `setupLock: present-inspect-before-removal` after an
+interruption, first establish that no wizard process is running, then inspect
+the setup record, one-attempt journal, and finalized chain. Do not remove a
+stale lock or create a new setup solely to repeat an uncertain submission.
+For staged deployment, `insert-key` also requires the original recorded
+deployment receipt and `staged-bootstrap-pending` finalized readback. It binds
+the insertion plan to the exact approved source, genesis, RPC and indexer
+endpoints, provider module hash, staged initial key, original deployment
+journal, and verified bundle manifest before making a separate one-attempt
+reservation. The insertion CLI rechecks the manifest bytes and compares the
+journal's deployment receipt with the wizard's recorded receipt before any
+submission. The underlying insertion CLI still checks the live finalized
+image and per-circuit journal. A pending, failed, or ambiguous key blocks the
+next key; use `reconcile-key` with the **same plan** for read-only observation.
+Neither command deletes a reservation or authorizes a retry. The wizard reports
+per-key states and retains any public receipt recovered from an ambiguous
+submission, but never upgrades `releaseQualified` from these observations.
+`insert-key` and `reconcile-key` exit nonzero unless the result is `verified`.
+Even a failure known to occur before submission leaves a wizard reservation
+that requires operator investigation; do not remove it or create a fresh setup
+to bypass recovery.
+If the initial staged deployment returned a receipt but its first finalized
+readback was `pending` or `unavailable`, use `reconcile-deploy` with the
+**same original plan bytes**. It rechecks the pinned source, genesis, provider
+module, bundle manifest, deployment journal, and any receipt already recorded
+by the wizard, then reads the one-key image at a genesis-pinned finalized
+checkpoint. It updates the local observation only if a complete public receipt
+is present; `staged-bootstrap-pending` means the expected one-key bootstrap
+was observed, **not** full-key or release qualification. If the journal has no
+submission receipt, reconciliation reports `unknown-no-receipt` and leaves
+the setup reserved; absence of a receipt does not prove absence of submission.
+The hash-pinned provider module may initialize or synchronize local wallet
+state while assembling the approved bootstrap material; this code path does
+not call an SDK submit method, but the provider module still requires review.
+The receipt's transaction ID, block hash, and height come from the private
+journal and are not independently proven included by the state readback;
+the reconciliation result labels this attribution explicitly. Once a
+staged-bootstrap readback is recorded or any key insertion has started,
+`reconcile-deploy` refuses to run, so a later indexer lag or installed key
+cannot downgrade the recorded bootstrap. Use `reconcile-key` for key recovery.
+The private setup record retains earlier readback observations, including
+`mismatch` and `invalid-image`, instead of overwriting that audit history with
+a later pending observation.
+If the setup record already contained a receipt but the journal no longer
+does, reconciliation fails rather than downgrading it to unknown; preserve both
+records for investigation.
+This command cannot reconcile the earlier unresolved **full-constructor**
+development attempt. Preserve its journal and seek a human recovery decision;
+do not hand-edit the record or submit a second deployment. A
+`failed-on-chain`, `mismatch`, or
+`observed-without-receipt` key also requires an explicit human recovery
+decision; it cannot be skipped to install later keys.
+The wizard does not generate or itself approve a genesis hash, provider module,
 funded wallet, committee roster, threshold, or key custody. A public local
 genesis wallet and 1-of-3 committee are permitted only for a development
-smoke, never as RC approval. Independent genesis and final committee approvals
-must be collected during first setup from the responsible humans, not inferred
-from the node's own response or a typed acknowledgement. Later wizard slices
-must bind those approvals to the evidence record and execute finalized
-maintenance readback, offline actor journeys, and recovery qualification.
+smoke, never as RC approval. Final committee approval must be collected during
+first setup from responsible humans, not inferred from a typed acknowledgement.
+Later wizard slices must execute finalized maintenance readback, offline actor
+journeys, and recovery qualification.
 `status` deliberately keeps these gates pending even if deployment returns a
 receipt; it does not produce a release-qualified verdict.
+
+For a **development-only** real-ledger deployment smoke, the repository-owned
+`scripts/local-smoke-provider.mjs` implements the provider-module interface.
+Use it only against the dedicated `undeployed` loopback stack, with the public
+local genesis wallet seed documented by `midnight-examples`. Set
+`TR_SMOKE_WALLET_SEED` to that public seed, `TR_SMOKE_STATE_DIR` to the private
+setup directory, and `TR_SMOKE_PROOF_URL` to the temporary loopback proof
+relay. The module rejects public-network IDs, non-loopback endpoints, a
+different wallet seed, and a non-private state directory. It saves a random
+bootstrap maintenance signing key as `smoke-maintenance-key` (mode 0600)
+before wallet submission. Keep that file with the one-attempt journal for
+reconciliation; do not commit, distribute, or log it. It uses an in-memory
+contract private-state provider and is **not** a production wallet/custody or
+restart/restore solution. The approved deployment plan must point to this
+module by absolute path and its exact SHA-256, and to the verified bundle's
+release manifest. The wizard binds that manifest and the plan's network to
+the observed setup before reserving the attempt. Running this smoke can
+produce local-ledger evidence only after a real receipt and finalized readback;
+the 1-of-3 transition and release approvals remain separate, open gates.
 
 The dedicated internal Docker network used in development does not expose its
 configured loopback ports to the host on the tested Docker Desktop setup.
 For an **online installation or deployment window only**, run a temporary
 fixed-destination relay using the already pinned node image, then attach that
-one container to the internal ledger network. The relay has no configurable
-upstream destinations. Its host ports are published on `127.0.0.1` only;
-`30944` forwards node RPC, `38088` forwards the indexer, and `36300` forwards
-the proof server. Use those host ports in the operator's approved endpoint
-plan and separately pin the opaque wallet provider endpoints. Stop and remove
+one container to the selected internal ledger network. The relay has no configurable
+upstream destinations. Select three unused host loopback ports distinct from
+both Compose projects' published ports; the example below uses `40944` for
+node RPC, `48088` for the indexer, and `46300` for the proof server. Use those
+host ports in the operator's approved endpoint plan and separately pin the
+opaque wallet provider endpoints. Stop and remove
 the relay before the offline runtime test; the relay has a `bridge` attachment
 and is **not** evidence of egress denial.
 
 ```sh
-docker run -d --name tr-standalone-install-relay --network bridge \
-  --publish 127.0.0.1:30944:30944 \
-  --publish 127.0.0.1:38088:38088 \
-  --publish 127.0.0.1:36300:36300 \
+export TR_STACK_NAME=tr-standalone-local-qualification
+export TR_RELAY_NAME="${TR_STACK_NAME}-install-relay"
+docker run -d --pull=never --name "$TR_RELAY_NAME" --network bridge \
+  --publish 127.0.0.1:40944:30944 \
+  --publish 127.0.0.1:48088:38088 \
+  --publish 127.0.0.1:46300:36300 \
   --mount type=bind,src="$PWD/deploy/standalone/local-install-relay.py",dst=/relay.py,readonly \
   --entrypoint /usr/bin/python3 \
   midnightntwrk/midnight-node@sha256:c3e46f8beff308b352813cd8904f6480c331504e09060abd671b8a32e1255220 \
   /relay.py
-docker network connect tr-standalone-local-smoke_ledger tr-standalone-install-relay
+docker network connect "${TR_STACK_NAME}_ledger" "$TR_RELAY_NAME"
 # Perform approved installation/deployment checks, then remove the access path.
-docker stop tr-standalone-install-relay
-docker rm tr-standalone-install-relay
-node scripts/check-standalone-topology.mjs
+docker stop "$TR_RELAY_NAME"
+docker rm "$TR_RELAY_NAME"
+env TR_STACK_NAME="$TR_STACK_NAME" TR_NODE_PORT=39944 TR_INDEXER_PORT=38088 \
+  TR_PROOF_PORT=36300 node scripts/check-standalone-topology.mjs
 ```
 
-The observed host checks returned the pinned genesis from `127.0.0.1:30944`,
-GraphQL `Query` from `127.0.0.1:38088/api/v4/graphql`, and proof-server
-version `8.1.0` from `127.0.0.1:36300/version`. These establish connectivity
-only. Do not leave the relay running during egress-denied actor journeys.
+Earlier smoke host checks returned the pinned genesis, GraphQL `Query`, and
+proof-server version `8.1.0` through the relay. Recheck the selected ports and
+endpoints for each new installation. Such checks establish connectivity only.
+Do not leave the relay running during egress-denied actor journeys.
 
-Run `node scripts/check-standalone-topology.mjs` against the dedicated
-`tr-standalone-local-smoke` project after the offline cold start. It reads
+When a local deployment attempt has a reservation but **no submitted receipt**,
+the operator can capture a read-only, node-pinned finalized-chain scan during
+that same temporary relay window:
+
+```sh
+node scripts/scan-local-deployment-attempt.mjs \
+  /absolute/private/approved-deployment-plan.json START_HEIGHT_BEFORE_RESERVATION
+```
+
+Choose a start height whose indexed timestamp precedes the reservation by a
+sufficient margin. The captured finalized head must be at least one hour after
+the reservation; this minimum does not prove that every provider process has
+stopped or every transaction lifetime has elapsed. The
+scanner reads the approved plan and original private reservation, checks their
+source revision and genesis against the live node, captures one finalized head,
+and checks every indexed block hash against a batched node hash query, along
+with the indexer's parent links. **Transaction enumeration comes only from
+the indexer**; the scanner does not decode node block extrinsics to establish
+indexer completeness. It records indexer-reported transaction count and
+contract-deployment candidates, the pending-extrinsic count, and the best and
+finalized heights at scan end so any unscanned newer blocks are visible. The
+range must contain at most 10,000
+blocks; otherwise preserve the attempt and use a separately reviewed archival
+scan. The scanner rejects an existing submitted receipt: use receipt-based
+reconciliation instead. It does not load wallet material, submit a transaction,
+modify a journal, or approve another attempt. An empty result is **not** proof
+that no transaction was ever broadcast, that a later block cannot contain it,
+or that the operator may retry. Independently inspect provider history,
+finality, mempool, and any candidate contract state before a signed recovery
+decision. Stop and remove the relay after collecting the observation.
+
+Run `node scripts/check-standalone-topology.mjs` against the selected
+`TR_STACK_NAME` project (the default is `tr-standalone-local-smoke`) after the
+offline cold start. It reads
 Docker metadata without changing containers or volumes and fails on extra
 network attachments, missing persistence mounts, a writable proof cache,
-fetch-enabled proof server, or non-digest-pinned images. Its JSON deliberately
+fetch-enabled proof server, non-loopback or unexpected published ports, or
+non-digest-pinned images. Its JSON deliberately
 reports `egressDenied: "not-verified"` and `actorJourneys: "not-run"`: an
 internal bridge is a useful precondition, not proof of denied external DNS or
 egress for the wallet, API, browser, and backup processes. Capture firewall
 logs and run real actor journeys under the release egress policy separately.
+
+The topology check also requires the network's complete attachment list to
+match the three pinned services. A temporary installation relay or another
+container attached to the ledger bridge fails the check. To test one
+outbound path with a positive control, while Docker's normal bridge can reach
+the public internet and the relay is absent, run:
+
+```sh
+pnpm run check:standalone-egress
+```
+
+This contacts the external third-party host `example.com` from a restricted
+ephemeral copy of the pinned node image on Docker's normal bridge. The same
+IP-pinned HTTPS request must then fail on the dedicated internal bridge,
+and the canary's DNS lookup must fail there as well. The control must have a
+broad outbound route; the internal probe must have no `/0` or `/1` route.
+The command changes no ledger data or service mounts. Its evidence is limited
+to this canary and the ledger bridge. It does not verify wallet, API, browser,
+backup, other host egress paths, or actor journeys, and it does not replace
+firewall logs or an offline end-to-end run.
 
 The current API's file-backed
 simulator mode may be used for demonstrations, but must be labeled fixture-only.
@@ -343,6 +952,37 @@ The genesis pin alone may not distinguish a fresh local node from one reset
 to the same chain specification: persist and verify chain state, receipts,
 and finalized history across restarts. A node without a progressing finalized
 head yields `pending`, not qualification evidence.
+
+### Ledger-bridge restart observation
+
+After recording a v3 `observe-stack` result, capture one non-overwriting
+baseline in the private setup directory. Restart the selected project's
+services **one at a time**, checking health between commands, then verify:
+
+```sh
+node scripts/check-standalone-restart.mjs capture /absolute/private/setup-directory
+docker restart <selected-project>-node-1
+# Wait for the node health check, then restart the indexer and wait for health.
+docker restart <selected-project>-indexer-1
+docker restart <selected-project>-proof-server-1
+node scripts/check-standalone-restart.mjs verify /absolute/private/setup-directory
+```
+
+The observer rechecks the verified v3 bundle, private prepared inputs, live
+container image IDs and Compose paths, and the same named volumes. Verification
+requires each service's container ID to remain stable and start time to advance, the earlier finalized block to
+retain its hash at the same height, and finality to progress afterward. It
+records the observer script hash separately from the bundle source SHA. The
+private `restart-baseline.json` and `restart-verification.json` files are
+created once with mode 0600; do not overwrite them to retry a failure. Retain
+the explicit restart command log and investigate failed or ambiguous results.
+Never use `down -v` on a ledger whose history is evidence.
+
+This is **ledger-bridge continuity only**. A pre-deployment run is a development
+smoke, not RC evidence. Even after deployment, this helper does not read back
+the contract, wallet keys, API state, browser journeys, or backup media; it
+does not exercise cross-host restore, prove independent service restarts from
+the command log alone, or close the restart/recovery release gate.
 
 ## Acceptance Test Before Claiming Support
 

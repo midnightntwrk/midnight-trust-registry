@@ -70,13 +70,15 @@ async function reconcilePinnedCommitteeTransition(
     throw new Error("Approved maintenance transition evidence pins are invalid");
   }
   validateMaintenancePolicy(approval.maintenancePolicy);
+  const expectedCounter = approval.stagedVerifierKeyInstallation
+    ? BigInt(Object.keys(approval.releaseManifest.verifierKeySha256).length - 1) : 0n;
   const authority = new ContractMaintenanceAuthority(
     approval.maintenancePolicy.verifyingKeys.map((key) => key.slice(2)),
     approval.maintenancePolicy.threshold,
-    1n,
+    expectedCounter + 1n,
   );
   const update = new MaintenanceUpdate(
-    approval.receipt.contractAddress.slice(2), [new ReplaceAuthority(authority)], 0n,
+    approval.receipt.contractAddress.slice(2), [new ReplaceAuthority(authority)], expectedCounter,
   );
   const computedUpdateSha256 = createHash("sha256").update(update.dataToSign).digest("hex");
   if (computedUpdateSha256 !== input.approvedUpdateSha256) {
@@ -87,10 +89,11 @@ async function reconcilePinnedCommitteeTransition(
   const { reservation, submitted } = entry;
   if (reservation.networkId !== approval.network.networkId
     || reservation.contractAddress !== approval.receipt.contractAddress
-    || reservation.finalizedBlockHash !== input.approvedFinalizedBlockHash
+    || (reservation.approvedFinalizedBlockHash ?? reservation.finalizedBlockHash)
+      !== input.approvedFinalizedBlockHash
     || reservation.updateSha256 !== input.approvedUpdateSha256
-    || reservation.currentAuthorityCounter !== "0"
-    || reservation.nextAuthorityCounter !== "1"
+    || reservation.currentAuthorityCounter !== expectedCounter.toString()
+    || reservation.nextAuthorityCounter !== (expectedCounter + 1n).toString()
     || reservation.expiresAt !== approval.expiresAt.toISOString()
     || reservation.threshold !== approval.maintenancePolicy.threshold
     || reservation.committeeVerifyingKeys.length !== approval.maintenancePolicy.verifyingKeys.length
@@ -106,17 +109,17 @@ async function reconcilePinnedCommitteeTransition(
   if (state.finalizedBlockHash === input.approvedFinalizedBlockHash) {
     const current = state.maintenanceAuthority;
     return { status: readback.status === "unsafe-maintenance-authority"
-      && current.counter === 0n && current.threshold === 1
+      && current.counter === expectedCounter && current.threshold === 1
       && current.committee.length === 1
       && current.committee[0] === approval.bootstrapMaintenanceVerifyingKey
       ? "stale-checkpoint" : "conflict", txId, finalizedBlockHash: state.finalizedBlockHash };
   }
-  if (readback.status === "verified" && state.maintenanceAuthority.counter === 1n) {
+  if (readback.status === "verified" && state.maintenanceAuthority.counter === expectedCounter + 1n) {
     return { status: "observed", txId, finalizedBlockHash: state.finalizedBlockHash };
   }
   const current = state.maintenanceAuthority;
   if (readback.status === "unsafe-maintenance-authority"
-    && current.counter === 0n && current.threshold === 1
+    && current.counter === expectedCounter && current.threshold === 1
     && current.committee.length === 1
     && current.committee[0] === approval.bootstrapMaintenanceVerifyingKey) {
     return { status: "unresolved", txId, finalizedBlockHash: state.finalizedBlockHash };

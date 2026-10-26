@@ -55,6 +55,7 @@ export type PublicRegistryDeploymentResult = {
 export type PublicRegistryDeploymentReadback =
   | { status: "verified"; state: FinalizedRegistryDeploymentImage }
   | { status: "unsafe-maintenance-authority"; state: FinalizedRegistryDeploymentImage }
+  | { status: "staged-bootstrap-pending"; state: FinalizedRegistryDeploymentImage }
   | { status: "pending" }
   | { status: "unavailable" }
   | { status: "invalid-image" }
@@ -141,9 +142,22 @@ export const matchesPinnedRegistryImage = (input: {
   bootstrap: PublicRegistryBootstrap;
   releaseManifest: ReleaseVerifierKeyManifest;
   governance: PublicRegistryGovernancePin;
-}, state: FinalizedRegistryDeploymentImage): boolean => {
+}, state: FinalizedRegistryDeploymentImage): boolean =>
+  matchesPinnedRegistryImageWithKeySubset(input, state, Object.keys(input.releaseManifest?.verifierKeySha256 ?? {}));
+
+/** Validates a staged image without mistaking a subset for a completed release catalog. */
+export const matchesPinnedRegistryImageWithKeySubset = (input: {
+  networkId: string;
+  receipt: PublicRegistryDeploymentReceipt;
+  bootstrap: PublicRegistryBootstrap;
+  releaseManifest: ReleaseVerifierKeyManifest;
+  governance: PublicRegistryGovernancePin;
+}, state: FinalizedRegistryDeploymentImage, installedNames: readonly string[]): boolean => {
   const { networkId, receipt, bootstrap, governance } = input;
   const catalog = verifierKeyCatalog(input.releaseManifest);
+  const names = [...installedNames].sort();
+  if (names.length === 0 || new Set(names).size !== names.length
+    || names.some((name) => !catalog.names.includes(name))) return false;
   return state.networkId === networkId
     && state.contractAddress === receipt.contractAddress
     && state.registryIdCommitment === bytes32Hex(bytes32Commitment(bootstrap.registryId))
@@ -163,12 +177,20 @@ export const matchesPinnedRegistryImage = (input: {
     && state.bootstrapMaintainer.publicKey.y === bootstrap.maintainerPublicKey.y
     && state.bootstrapMaintainer.status === MaintainerStatus.active
     && state.bootstrapMaintainer.joinedAtSequence === 0n
-    && matchesVerifierKeys(state, catalog);
+    && matchesVerifierKeys(state, { names, hashes: catalog.hashes });
 };
 
 const contractAssetsPath = resolve(
   dirname(fileURLToPath(import.meta.resolve("@midnight-ntwrk/trust-registry-contract/contract"))),
   "managed/trust-registry",
+);
+
+/** Compiles only the operation being installed, without embedding the entire key catalog. */
+export const compiledStagedVerifierKeyContract = (name: string) => CompiledContract.make(
+  "trust-registry", stagedBootstrapContract(name),
+).pipe(
+  CompiledContract.withWitnesses(trustRegistryWitnesses),
+  CompiledContract.withCompiledFileAssets(contractAssetsPath),
 );
 
 /** Deploys with a temporary single-key maintenance authority; never marks that authority release-verified. */
@@ -202,12 +224,46 @@ export async function deployLocalTrustRegistry(input: {
   });
 }
 
+/** Installs one pinned verifier key first; every other key and the committee remain release gates. */
+export async function deployLocalTrustRegistryStaged(input: {
+  network: LocalNetworkDeploymentActionReaderConfig;
+  bootstrap: PublicRegistryBootstrap;
+  releaseManifest: ReleaseVerifierKeyManifest;
+  providers: ContractProviders<RegistryContract>;
+  contractMaintenanceSigningKey: SigningKey;
+  initialVerifierKeyName: string;
+}): Promise<PublicRegistryDeploymentResult> {
+  if (input.network.networkId !== "undeployed") throw new Error("Staged deployment requires the undeployed network");
+  return deployPinnedTrustRegistry({
+    ...input,
+    checkpointSource: createLocalRpcFinalizedCheckpointSource(input.network),
+    readerFactory: () => createLocalNetworkDeploymentActionReader(input.network),
+  });
+}
+
+export function stagedBootstrapContract(initialVerifierKeyName: string):
+  new (witnesses: typeof trustRegistryWitnesses) => TrustRegistryContract.Contract<TrustRegistryPrivateState> {
+  const full = new TrustRegistryContract.Contract(trustRegistryWitnesses).provableCircuits;
+  if (!Object.hasOwn(full, initialVerifierKeyName)) {
+    throw new Error("Initial staged verifier key must name a release-catalog circuit");
+  }
+  return class StagedBootstrapContract extends TrustRegistryContract.Contract<TrustRegistryPrivateState> {
+    constructor(witnesses: typeof trustRegistryWitnesses) {
+      super(witnesses);
+      for (const name of Object.keys(this.provableCircuits)) {
+        if (name !== initialVerifierKeyName) Reflect.deleteProperty(this.provableCircuits, name);
+      }
+    }
+  };
+}
+
 async function deployPinnedTrustRegistry(input: {
   network: { networkId: string };
   bootstrap: PublicRegistryBootstrap;
   releaseManifest: ReleaseVerifierKeyManifest;
   providers: ContractProviders<RegistryContract>;
   contractMaintenanceSigningKey: SigningKey;
+  initialVerifierKeyName?: string;
   checkpointSource: TrustedFinalizedCheckpointSource;
   readerFactory: () => Promise<FinalizedRegistryBootstrapReader>;
 }): Promise<PublicRegistryDeploymentResult> {
@@ -229,6 +285,10 @@ async function deployPinnedTrustRegistry(input: {
   const maintainerDid = commitment(bootstrap.maintainerDidCommitment, "Maintainer DID");
   const maintainerKeyId = commitment(bootstrap.maintainerKeyId, "Maintainer key id");
   const catalog = verifierKeyCatalog(input.releaseManifest);
+  const initialVerifierKeyName = input.initialVerifierKeyName;
+  if (initialVerifierKeyName !== undefined && !catalog.names.includes(initialVerifierKeyName)) {
+    throw new Error("Initial staged verifier key is not present in the release manifest");
+  }
   await verifyInstalledVerifierKeyAssets(input.releaseManifest);
   const expectedAuthorityKey = `0x${signatureVerifyingKey(input.contractMaintenanceSigningKey).toLowerCase()}`;
 
@@ -239,7 +299,9 @@ async function deployPinnedTrustRegistry(input: {
   const reader = await input.readerFactory();
   const compiled = CompiledContract.make(
     "trust-registry",
-    TrustRegistryContract.Contract<TrustRegistryPrivateState>,
+    initialVerifierKeyName === undefined
+      ? TrustRegistryContract.Contract<TrustRegistryPrivateState>
+      : stagedBootstrapContract(initialVerifierKeyName),
   ).pipe(
     CompiledContract.withWitnesses(trustRegistryWitnesses),
     CompiledContract.withCompiledFileAssets(contractAssetsPath),
@@ -293,13 +355,16 @@ async function deployPinnedTrustRegistry(input: {
     && state.bootstrapMaintainer.publicKey.y === bootstrap.maintainerPublicKey.y
     && state.bootstrapMaintainer.status === MaintainerStatus.active
     && state.bootstrapMaintainer.joinedAtSequence === 0n
-    && matchesVerifierKeys(state, catalog)
+    && matchesVerifierKeys(state, initialVerifierKeyName === undefined ? catalog : {
+      names: [initialVerifierKeyName], hashes: catalog.hashes,
+    })
     && state.maintenanceAuthority.committee.length === 1
     && state.maintenanceAuthority.committee[0] === expectedAuthorityKey
     && state.maintenanceAuthority.threshold === 1
     && state.maintenanceAuthority.counter === 0n;
   return { receipt, readback: verified
-    ? { status: "unsafe-maintenance-authority", state }
+    ? { status: initialVerifierKeyName === undefined
+      ? "unsafe-maintenance-authority" : "staged-bootstrap-pending", state }
     : { status: "mismatch", state } };
 }
 

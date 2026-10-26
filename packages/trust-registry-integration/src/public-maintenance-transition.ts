@@ -37,6 +37,8 @@ export type CommitteeTransitionApproval<Network extends { networkId: string } = 
   governance: PublicRegistryGovernancePin;
   maintenancePolicy: Extract<PublicRegistryMaintenancePolicy, { mode: "committee" }>;
   bootstrapMaintenanceVerifyingKey: string;
+  /** Explicit staged-key mode; absent means the full constructor installed every key at counter zero. */
+  stagedVerifierKeyInstallation?: true;
   expiresAt: Date;
 };
 
@@ -68,6 +70,9 @@ export function prepareCommitteeTransitionFromFinalizedImage(
   if (getNetworkId() !== network.networkId || receipt.networkId !== network.networkId) {
     throw new Error("Midnight.js network does not match the approved transition network");
   }
+  if (input.stagedVerifierKeyInstallation && network.networkId !== "undeployed") {
+    throw new Error("Staged verifier-key transition is local-only");
+  }
   if (!HASH.test(receipt.contractAddress) || /^0x0{64}$/u.test(receipt.contractAddress)
     || !HASH.test(image.finalizedBlockHash) || /^0x0{64}$/u.test(image.finalizedBlockHash)) {
     throw new Error("Committee transition requires a canonical address and finalized block hash");
@@ -87,10 +92,12 @@ export function prepareCommitteeTransitionFromFinalizedImage(
     throw new Error("Finalized deployment image disagrees with approved registry or verifier-key pins");
   }
   const current = image.maintenanceAuthority;
-  if (current.counter !== 0n || current.threshold !== 1
+  const expectedCounter = input.stagedVerifierKeyInstallation
+    ? BigInt(Object.keys(input.releaseManifest.verifierKeySha256).length - 1) : 0n;
+  if (current.counter !== expectedCounter || current.threshold !== 1
     || current.committee.length !== 1
     || current.committee[0] !== input.bootstrapMaintenanceVerifyingKey) {
-    throw new Error("Finalized maintenance authority is not the approved bootstrap key at counter zero");
+    throw new Error("Finalized maintenance authority is not the approved bootstrap key at the expected counter");
   }
   const expiresAt = new Date(input.expiresAt?.getTime());
   const remainingMs = expiresAt.getTime() - Date.now();

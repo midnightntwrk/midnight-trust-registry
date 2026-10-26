@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "node:child_process";
-import { createReadStream } from "node:fs";
+import { constants as fsConstants, createReadStream } from "node:fs";
 import {
   copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync,
 } from "node:fs";
@@ -9,14 +9,12 @@ import { createHash } from "node:crypto";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import yaml from "js-yaml";
-
-import { STANDALONE_PROOF_PARAMETER_PATHS, verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
+import { STANDALONE_PROOF_PARAMETER_PATHS, pinnedStandaloneImages, verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { buildReleaseCandidateManifest } from "./release-candidate-manifest.mjs";
 
+export { pinnedStandaloneImages } from "./check-standalone-install.mjs";
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const ROLES = ["node", "indexer", "proof-server"];
-const IMAGE = /^[a-z0-9][a-z0-9./_:-]*@sha256:[0-9a-f]{64}$/u;
 
 function command(program, args, options = {}) {
   return execFileSync(program, args, {
@@ -29,21 +27,6 @@ async function sha256(path) {
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(path)) hash.update(chunk);
   return hash.digest("hex");
-}
-
-export function pinnedStandaloneImages(composeSource) {
-  const compose = yaml.load(composeSource);
-  if (compose?.name !== "tr-standalone-local-smoke"
-    || Object.keys(compose?.services ?? {}).sort().join("\0") !== [...ROLES].sort().join("\0")) {
-    throw new Error("Standalone Compose must name the dedicated project and exactly three services");
-  }
-  return ROLES.map((role) => {
-    const reference = compose.services[role]?.image;
-    if (typeof reference !== "string" || !IMAGE.test(reference)) {
-      throw new Error(`Standalone image is not digest pinned: ${role}`);
-    }
-    return { role, reference };
-  });
 }
 
 function verifiedSourceRevision() {
@@ -78,6 +61,16 @@ export async function buildStandaloneInstall(options = {}) {
     revision: sourceRevision });
   writeFileSync(join(destination, "release-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`,
     { flag: "wx", mode: 0o600 });
+  const composeSource = join(root, "deploy/standalone/compose.yml");
+  const composeTarget = join(destination, "compose.yml");
+  copyFileSync(composeSource, composeTarget, fsConstants.COPYFILE_EXCL);
+  const offlineComposeTarget = join(destination, "compose.offline.yml");
+  copyFileSync(join(root, "deploy/standalone/compose.offline.yml"), offlineComposeTarget,
+    fsConstants.COPYFILE_EXCL);
+  const runtimeCompose = {
+    path: "compose.yml", sha256: await sha256(composeTarget),
+    offlinePath: "compose.offline.yml", offlineSha256: await sha256(offlineComposeTarget),
+  };
 
   const proofDirectory = join(destination, "proof-params");
   const proofFiles = [];
@@ -91,7 +84,7 @@ export async function buildStandaloneInstall(options = {}) {
   }
 
   const images = [];
-  const pinned = pinnedStandaloneImages(readFileSync(join(root, "deploy/standalone/compose.yml"), "utf8"));
+  const pinned = pinnedStandaloneImages(readFileSync(composeTarget, "utf8"));
   mkdirSync(join(destination, "images"));
   for (const { role, reference } of pinned) {
     const digests = JSON.parse(command("docker", ["image", "inspect", reference,
@@ -107,9 +100,9 @@ export async function buildStandaloneInstall(options = {}) {
   }
 
   const inventory = {
-    format: "tr-standalone-install-v2", sourceRevision,
+    format: "tr-standalone-install-v3", sourceRevision,
     packageManifest: "release-manifest.json", artifactDirectory: "packages",
-    images, proofParameters: { directory: "proof-params", files: proofFiles },
+    runtimeCompose, images, proofParameters: { directory: "proof-params", files: proofFiles },
   };
   writeFileSync(join(destination, "install-inventory.json"), `${JSON.stringify(inventory, null, 2)}\n`,
     { flag: "wx", mode: 0o600 });

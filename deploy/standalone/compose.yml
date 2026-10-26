@@ -1,14 +1,14 @@
 # Development qualification stack, derived from midnight-examples
 # 7c8c0a0fb0cc8f8f573757185a7710b7ce06ce0d (hello-world/compose.yml).
 # Exact image bytes and provenance require separate install-inventory approval.
-name: tr-standalone-local-smoke
+name: ${TR_STACK_NAME:-tr-standalone-local-smoke}
 
 services:
   node:
     image: midnightntwrk/midnight-node@sha256:c3e46f8beff308b352813cd8904f6480c331504e09060abd671b8a32e1255220
     platform: linux/arm64
     ports:
-      - "127.0.0.1:29944:9944"
+      - "127.0.0.1:${TR_NODE_PORT:-29944}:9944"
     networks: [ledger]
     volumes:
       - node-data:/node/chain
@@ -32,7 +32,7 @@ services:
     platform: linux/arm64
     restart: on-failure
     ports:
-      - "127.0.0.1:28088:8088"
+      - "127.0.0.1:${TR_INDEXER_PORT:-28088}:8088"
     networks: [ledger]
     volumes:
       - indexer-data:/data
@@ -61,7 +61,7 @@ services:
     platform: linux/arm64
     command: [midnight-proof-server, -v]
     ports:
-      - "127.0.0.1:26300:6300"
+      - "127.0.0.1:${TR_PROOF_PORT:-26300}:6300"
     networks: [ledger]
     volumes:
       - ${TR_PROOF_PARAMS_DIR:?absolute path to pinned proof parameters required}:/.cache/midnight/zk-params:ro

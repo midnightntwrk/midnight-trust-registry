@@ -31,16 +31,16 @@ const address = `0x${"a".repeat(64)}`;
 const blockHash = `0x${"b".repeat(64)}`;
 const bootstrapKey = `0x${signatureVerifyingKey(sampleSigningKey())}`;
 const committee = Array.from({ length: 3 }, () => `0x${signatureVerifyingKey(sampleSigningKey())}`);
-const dataToSign = new MaintenanceUpdate(address.slice(2), [
-  new ReplaceAuthority(new ContractMaintenanceAuthority(committee.map((key) => key.slice(2)), 2, 1n)),
-], 0n).dataToSign;
-const updateSha256 = createHash("sha256").update(dataToSign).digest("hex");
+const updateData = (counter: bigint) => new MaintenanceUpdate(address.slice(2), [
+  new ReplaceAuthority(new ContractMaintenanceAuthority(committee.map((key) => key.slice(2)), 2, counter + 1n)),
+], counter).dataToSign;
+const updateSha256 = (counter: bigint) => createHash("sha256").update(updateData(counter)).digest("hex");
 const directories: string[] = [];
 const approval = (): CommitteeTransitionApproval => ({
   network: { networkId: "preprod" },
   receipt: { networkId: "preprod", contractAddress: address },
   bootstrap: {},
-  releaseManifest: {},
+  releaseManifest: { verifierKeySha256: { first: "a", second: "b", third: "c" } },
   governance: {},
   maintenancePolicy: { mode: "committee", verifyingKeys: committee, threshold: 2 },
   bootstrapMaintenanceVerifyingKey: bootstrapKey,
@@ -57,10 +57,10 @@ const plan = (input: CommitteeTransitionApproval | LocalCommitteeTransitionAppro
   finalizedBlockHash: blockHash,
   committeeVerifyingKeys: committee,
   threshold: 2,
-  currentAuthorityCounter: 0n,
-  nextAuthorityCounter: 1n,
+  currentAuthorityCounter: input.stagedVerifierKeyInstallation ? 2n : 0n,
+  nextAuthorityCounter: input.stagedVerifierKeyInstallation ? 3n : 1n,
   expiresAt: input.expiresAt.toISOString(),
-  dataToSign,
+  dataToSign: updateData(input.stagedVerifierKeyInstallation ? 2n : 0n),
   authorize: () => { throw new Error("not used by reconciliation tests"); },
 });
 const journal = async (
@@ -84,11 +84,13 @@ const image = (counter: bigint, keys: string[]) => ({
 });
 const reconcile = (input: CommitteeTransitionApproval, file: FileMaintenanceTransitionJournal) =>
   reconcilePublicNetworkCommitteeTransition({
-    approval: input, journal: file, approvedUpdateSha256: updateSha256, approvedFinalizedBlockHash: blockHash,
+    approval: input, journal: file, approvedUpdateSha256: updateSha256(0n), approvedFinalizedBlockHash: blockHash,
   });
 const reconcileLocal = (input: LocalCommitteeTransitionApproval, file: FileMaintenanceTransitionJournal) =>
   reconcileLocalNetworkCommitteeTransition({
-    approval: input, journal: file, approvedUpdateSha256: updateSha256, approvedFinalizedBlockHash: blockHash,
+    approval: input, journal: file,
+    approvedUpdateSha256: updateSha256(input.stagedVerifierKeyInstallation ? 2n : 0n),
+    approvedFinalizedBlockHash: blockHash,
   });
 
 beforeEach(() => {
@@ -97,6 +99,36 @@ beforeEach(() => {
 });
 
 describe("local maintenance transition reconciliation", () => {
+  it("binds the approved checkpoint separately from a newer submission head", async () => {
+    setNetworkId("undeployed");
+    const input = { ...localApproval(), stagedVerifierKeyInstallation: true as const };
+    const directory = await mkdtemp(join(tmpdir(), "tr-maintenance-reconcile-"));
+    directories.push(directory);
+    const file = new FileMaintenanceTransitionJournal(join(directory, "transition.json"));
+    await file.executeOnce({ ...plan(input), finalizedBlockHash: `0x${"c".repeat(64)}` },
+      async () => "tx-new-head", blockHash);
+    expect((await file.inspect())?.reservation.approvedFinalizedBlockHash).toBe(blockHash);
+    mocks.localReadback.mockResolvedValue({ status: "verified", state: image(3n, committee) });
+    await expect(reconcileLocal(input, file)).resolves.toMatchObject({
+      status: "observed", txId: "tx-new-head",
+    });
+  });
+
+  it("uses the staged key counter rather than assuming counter zero", async () => {
+    setNetworkId("undeployed");
+    const input = { ...localApproval(), stagedVerifierKeyInstallation: true as const };
+    const file = await journal(true, input);
+    await expect(reconcileLocalNetworkCommitteeTransition({
+      approval: input, journal: file, approvedUpdateSha256: updateSha256(0n),
+      approvedFinalizedBlockHash: blockHash,
+    })).rejects.toThrow(/disagrees/u);
+    mocks.localReadback.mockResolvedValue({ status: "verified", state: image(3n, committee) });
+    await expect(reconcileLocal(input, file)).resolves.toMatchObject({ status: "observed" });
+    mocks.localReadback.mockResolvedValue({ status: "unsafe-maintenance-authority",
+      state: image(2n, [bootstrapKey]) });
+    await expect(reconcileLocal(input, file)).resolves.toMatchObject({ status: "unresolved" });
+  });
+
   it("observes the finalized local committee without using public readback or inferring transaction provenance", async () => {
     setNetworkId("undeployed");
     const input = localApproval();
@@ -219,7 +251,7 @@ describe("public maintenance transition reconciliation", () => {
       approvedFinalizedBlockHash: blockHash,
     })).rejects.toThrow(/disagrees/u);
     await expect(reconcilePublicNetworkCommitteeTransition({
-      approval: input, journal: file, approvedUpdateSha256: updateSha256,
+      approval: input, journal: file, approvedUpdateSha256: updateSha256(0n),
       approvedFinalizedBlockHash: `0x${"9".repeat(64)}`,
     })).rejects.toThrow(/disagrees/u);
     input.receipt.contractAddress = `0x${"8".repeat(64)}`;
@@ -241,7 +273,7 @@ describe("public maintenance transition reconciliation", () => {
       approvedFinalizedBlockHash: blockHash,
     })).rejects.toThrow(/pins are invalid/u);
     await expect(reconcilePublicNetworkCommitteeTransition({
-      approval: input, journal: file, approvedUpdateSha256: updateSha256,
+      approval: input, journal: file, approvedUpdateSha256: updateSha256(0n),
       approvedFinalizedBlockHash: `0x${"0".repeat(64)}`,
     })).rejects.toThrow(/pins are invalid/u);
     input.receipt.contractAddress = `0x${"0".repeat(64)}`;

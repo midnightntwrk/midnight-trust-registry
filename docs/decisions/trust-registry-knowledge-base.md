@@ -1876,3 +1876,247 @@ review pending. This is workflow scaffolding, not live deployment evidence;
 the smoke wallet and 1-of-3 committee remain development-only. Next work is
 to bind independently approved first-setup decisions and a real provider to
 this workflow, then capture finalized deployment and offline evidence.
+
+The next local development slice adds a repository-owned, loopback-only
+provider for the documented public genesis wallet. It persists a random
+bootstrap maintenance key in the setup directory before use, but relies on
+in-memory contract private state. It is suitable only for a one-time real
+local-ledger submission smoke, not release custody, maintenance transition,
+or restart/restore evidence. The `ws` SDK dependency is pinned to a patched
+8.21 version because the initially selected 8.20 release failed the low-level
+audit gate; the workspace override also patches the indexer-provider path.
+
+The first-run wizard now refuses deployment until it records a detached GPG
+signature over the source SHA, install-inventory hash, observed genesis, and
+loopback RPC endpoint. It checks the exact signing-key fingerprint from a
+private operator-supplied public keyring and preserves signed bytes in the
+setup record. This is a signature and binding check, not a claim that the
+operator-entered fingerprint represents an independently authorized reviewer;
+the release owner must approve that trust anchor out of band. Committee
+approval, finalized maintenance readback, offline journeys, and independent
+security review remain open.
+
+The wizard also accepts a separately signed release committee roster after
+genesis approval. It uses the integration package's policy validator (three
+distinct keys minimum, threshold at least two), checks distinct custody-role
+references and Ledger key validity per key, and binds the signed document to
+the source, inventory,
+genesis, and genesis approval. A 1-of-3 smoke roster is rejected by this path.
+The recorded status is **roster signature verified, transition pending**; no local
+maintenance transaction or finalized readback has occurred. Reviewer
+authority, real key custody, transition submission, and release qualification
+remain operator and independent-review gates.
+
+### Staged local verifier-key installation boundary
+
+The first development-only local deployment attempt reserved its private
+one-attempt journal and exited after wallet synchronization without returning a
+deployment receipt. A read-only scan of finalized blocks around the
+reservation found no transactions, but that does not prove the attempt never
+reached the network. The journal and diagnostics are preserved privately;
+reconciliation and a human recovery decision are required before another
+deployment attempt. No live Trust Registry deployment is yet qualified.
+
+Unsubmitted SDK diagnostics against the dedicated local node, indexer, and
+prover found that the full 66-circuit constructor proved but failed wallet
+balancing with `exceeded block limit in transaction fee computation`. The same
+path with one verifier-key circuit proved and balanced, without submission.
+This motivates an explicit staged bootstrap, not a silent retry or evidence of
+successful deployment. The initial transaction installs one pinned verifier
+key; subsequent keys must be inserted one at a time in sorted catalog order
+with a distinct durable journal, approved signing key, and finalized key-hash
+readback. The maintenance authority counter starts at zero and advances once
+per insertion. A staged committee transition expects the exact catalog-size
+minus-one counter, while a full-constructor transition still expects zero.
+
+The repository now has a local-only staged plan, per-key insertion and
+read-only reconciliation CLI, and tests with injected providers. These tests
+exercise journal and approval boundaries but are **not** live-ledger, offline
+egress, restart, or recovery evidence. A failed or ambiguous insertion remains
+reserved; no automatic retry or journal deletion is supported. The public
+genesis wallet and 1-of-3 smoke committee remain development-only. Release
+qualification still needs an approved operator, reviewed install bytes,
+finalized deployment and every key readback, approved threshold committee,
+offline actor journeys, restart/restore, and independent security review.
+
+The first-run wizard now records the staged deployment plan's endpoint and
+provider pins, requires its finalized staged-bootstrap receipt, and permits
+one operator-invoked per-circuit insertion bound to that plan at a time. A separate
+`reconcile-key` path is read-only and preserves ambiguous journals. This is
+operator orchestration rather than local-ledger qualification evidence; the
+pending development attempt still requires independent reconciliation and a
+human recovery decision before any new submission.
+The wizard also has read-only staged-deployment reconciliation for an initial
+receipt whose finalized readback lagged. It requires the exact original plan
+bytes, original journal intent, pinned manifest and provider, and the
+genesis-pinned finalized one-key image. A journal without a receipt stays
+unknown and reserved; neither this path nor the key-insertion path retries
+or overrides an ambiguous submission. Receipt metadata is journal-attributed,
+not independent transaction-inclusion evidence, and reconciliation stops once
+the staged bootstrap or key installation has advanced. The earlier unresolved full-constructor
+development attempt remains subject to independent reconciliation and a
+human recovery decision.
+
+The dedicated offline ledger topology check now rejects *any* extra network
+attachment, including the temporary installation relay, rather than checking
+only the three Compose service containers. A live controlled egress probe on
+the dedicated stack used the same pinned node image and IP-pinned HTTPS canary
+on Docker's normal and internal bridges: the normal bridge reached the canary,
+the internal bridge returned a connection error, could not resolve that
+canary's DNS name, and had no `/0` or `/1` route. The probe contacts the
+external third-party host `example.com`; it does not prove that other
+destinations or protocols are blocked. This is canary-specific ledger-bridge
+evidence only, not proof that the wallet, API, browser, backup processes, or
+actor journeys run without egress. The API executable
+still uses a file-backed workspace; it is not yet a live Compact gateway.
+
+The staged local maintenance reconciliation had a latent counter mismatch:
+its signed-update hash was rebuilt at counter zero even when installed
+verifier keys had advanced the authority counter. The corrected read-only
+path derives both the old and next counter from the pinned manifest catalog;
+the staged regression now uses the actual counter-bound bytes. The first-run
+wizard can also prepare, but not submit, the local maintenance transition
+after signed roster approval and verified readback for every staged key.
+It returns the exact SDK data-to-sign and finalized image pin. These are
+mocked-provider/unit checks until a real deployment, external bootstrap
+signature, one-attempt submission, and finalized committee readback occur.
+The local maintenance submission API now requires the independently retained
+SHA-256 of those signable bytes and the finalized checkpoint hash. It re-reads
+the current image and rejects a changed signable update before authorizing
+the signature or reserving a one-attempt journal. The approved checkpoint is
+retained separately from the fresh submission head. This guard does not itself
+qualify the local deployment.
+
+The first-run wizard now accepts a detached raw Ledger bootstrap signature
+over the exact saved signing request, then reserves a private one-attempt
+maintenance journal before using the approved provider module. Its separate
+reconciliation step is read-only and retains ambiguous attempts instead of
+retrying. A submitted transaction is not a finalized committee readback, and
+an observed maintenance authority alone is not independent transaction
+inclusion or a release qualification. The unresolved full-constructor local
+attempt is untouched.
+
+The maintenance provider factory is separate from deployment material and
+does not load or create the bootstrap signing key; only the external signature
+is passed into the handoff.
+
+The approved finalized checkpoint is preserved separately from the current
+submission checkpoint because the local chain continues finalizing blocks
+during external signing and wallet synchronization. A fresh finalized full
+image and unchanged maintenance update are required before reservation.
+Caught preflight failures with no journal are recorded as aborted and may be
+explicitly retried; an unreadable or present journal remains ambiguous. A
+process crash before the journal write is different: an absent journal alone
+does not prove non-submission, so the wizard reports
+`recovery-required-no-journal` and requires independent human recovery. The
+wizard retains bounded reconciliation history, protects observed and conflict
+states from later weak reads, and surfaces a separate alert for a new conflict
+after an observed transition.
+The journal-presence flag distinguishes a lost journal after an unknown
+submission from the pre-journal crash window. A returned transaction ID that
+could not be durably written is retained as reported evidence, not accepted as
+finalized inclusion.
+
+The pre-journal crash window now has a narrow manual recovery path. Only an
+independently signed governance decision can unlock a second attempt, after
+the original intent's expiry plus a grace period, absent journal and
+transaction attribution, and a fresh finalized readback of the unchanged
+bootstrap authority. The reviewer attests to a later finalized checkpoint and
+their independent journal/mempool/chain inspection; the wizard also observes
+an advancing head but cannot prove the reviewer's checkpoint is its ancestor.
+The next saved signing request must be distinct and cannot reuse the abandoned
+checkpoint. Reconciliation that contradicts the absence finding changes the
+state to conflict rather than silently undoing approval. The maintenance
+signature authenticates `MaintenanceUpdate.dataToSign`, not transaction intent
+expiry: a new intent window does not invalidate the old signature. Keep the
+signature file under bootstrap custody until the authority counter advances.
+This workflow does not qualify a real local deployment or replace the human
+security and operator gates.
+
+A separate read-only scanner now makes no-receipt deployment investigation
+repeatable. It accepts only an approved local loopback plan and matching
+private reservation, captures the node's finalized head, verifies the node
+genesis and every parent-linked indexed block hash against the node, and
+reports indexer-listed transactions and contract-deployment candidates, node
+head gaps, and pending-extrinsic count. Node hashes anchor the indexed block
+chain, but the node does not independently attest to the indexer's transaction
+enumeration. It refuses a submitted receipt and never authorizes retry. An empty
+finalized range is useful evidence but does not rule out provider ambiguity,
+later inclusion, or a candidate contract outside the observed range; an
+independent operator must still decide recovery.
+
+The standalone Compose profile can now be run under an explicit second
+`tr-standalone-local-*` project with distinct loopback ports. This creates
+separate named node/indexer volumes and avoids resetting the preserved
+ambiguous smoke ledger. The topology verifier checks the selected project,
+internal-only bridge, expected services and persistence, pinned images, and
+exact loopback-only port bindings; the egress probe targets that same project.
+The new genesis and first-run approvals remain independent. A rendered Compose
+plan or healthy containers do not count as deployment, offline actor-journey,
+or restore evidence.
+
+The first-run wizard now prepares a private Compose environment from a
+re-verified install bundle. It binds the selected project and loopback ports,
+checks the current Compose image pins and the absence of existing project
+containers, network, and persistent volumes, and generates fresh indexer credentials
+without printing them or storing them in the public setup record. This is
+configuration preparation only: an operator still checks that the project and
+ports are unused, starts the stack, approves the independently observed
+genesis, and collects actual finalized deployment and offline-journey evidence.
+The explicit observation step records live topology and canary egress checks
+for that selected ledger bridge without implying that the full actor stack is
+offline or that a contract has been deployed.
+Repeated pre-genesis checks retain timestamped history instead of overwriting
+earlier evidence; further stack observations are refused once ledger observation
+or deployment begins. Deferring stack preparation in the interactive wizard
+stops before a genesis pin can be recorded out of order.
+After preparation, both interactive and explicit genesis observation require
+the selected stack to have a recorded live topology and ledger-bridge egress
+observation first. The wizard never starts that stack implicitly.
+This ordering is mandatory for v3 install bundles; the explicit genesis command
+continues to read historical v2 smoke records without upgrading them to RC
+evidence. Stack observation rechecks the verified bundle's Compose bytes, not
+the mutable checkout copies, and refuses a 21st pre-genesis observation.
+The first-run CLI can draft unsigned genesis and release-committee approval
+documents from observed setup pins plus public reviewer/custody metadata. It
+rejects a smoke-only 1-of-3 roster and writes private, non-overwriting draft
+files; independent review and detached human signatures still determine
+authority, and drafting never advances the approval state.
+The draft approval time is supplied as public reviewer metadata and is part
+of the exact bytes later signed; the machine does not invent an approval time.
+The wizard can collect a private, non-overwriting genesis **candidate** from
+the verified live ledger bridge. It labels the hash as node-reported and
+does not record a pin or approval; independent chain-spec review and detached
+human signature remain required before deployment.
+New wizard stacks require a v3 install bundle pinning both base and offline
+Compose bytes as well as archived image references. V2 bundles remain readable
+for historical smoke evidence only; the runtime operator must use the verified
+bundle copies, not mutable checkout files.
+Wizard-driven stack observation matches the running indexer credentials and
+proof-cache bind source against the prepared private environment without
+recording secret values. For v3, it additionally matches running image IDs
+to the checked archives and Docker Compose's recorded config-file paths to
+the verified bundle; source-scoped offline tags require all three services
+and the two-file overlay. It also rejects extra mounts and privileged services.
+These are ledger-bridge observations, not proof of a clean-host install,
+packet-level egress denial, full actor journeys, or contract deployment.
+The separate restart observer captures an immutable private baseline and
+compares service start times, persistent volume creation times, the same
+historical finalized block hash, and later finality after operator-controlled
+restarts. It also binds the observer script hash. A pre-deployment smoke does
+not establish contract, wallet, API, actor, or cross-host restore continuity;
+those remain separate RC gates.
+The host access relay is installation-only and must attach to the selected
+project with distinct loopback host ports; the original smoke relay recipe
+cannot be reused unchanged for a concurrent qualification project.
+
+The first-run release committee roster is approved before deployment and
+therefore cannot itself name the actual contract. A separate detached
+governance approval after staged finalized readback now binds the roster hash,
+reserved deployment-plan hash, exact receipt and contract address, genesis,
+and verified release-manifest hash. The wizard requires this signed binding
+before preparing or submitting the threshold-maintenance handoff and rechecks
+it against the preserved setup state. The same pinned governance reviewer
+signs both approvals. It is not a substitute for independent receipt review,
+finalized maintenance readback, offline actor journeys, or human security
+approval; an ambiguous no-receipt attempt cannot pass this gate.

@@ -23,3 +23,4 @@ overrides:
   "brace-expansion@<5.0.12": 5.0.12
   "nanoid@<3.3.18": 3.3.18
   "source-map-js@<1.2.2": 1.2.2
+  "ws@>=8.0.0 <8.21.0": 8.21.0
