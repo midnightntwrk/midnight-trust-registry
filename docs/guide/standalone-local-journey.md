@@ -59,7 +59,14 @@ results.
    have the reviewer sign the exact generated approval draft. Review and sign
    the maintenance roster separately. Do not use the demo-reference script,
    a node-reported hash alone, or an AI-generated signature as approval.
-4. **Deploy and reconcile once.** Use wizard `deploy` with the signed plan;
+4. **Deploy and reconcile once.** Install the approved provider and CLI in a
+   root-owned code tree that the non-root operator cannot change. Set
+   `TR_IMMUTABLE_PROVIDER_ROOT` and preload
+   `scripts/approved-provider-preload.mjs` as described in the
+   [local deployment operator CLI](standalone-offline-runtime.md#local-deployment-operator-cli).
+   Keep every relative dependency link and its resolved target inside the
+   approved tree; a writable development checkout is not a substitute. Use
+   wizard `deploy` with the signed plan;
    if the result is ambiguous, use `reconcile-deploy`, never an unreviewed
    second submission. Capture the transaction ID, finalized checkpoint,
    contract address, constructor state, maintenance authority, and every

@@ -110,6 +110,37 @@ retry the read-only check; investigate any other failure before retrying. A
 passing simultaneous restart remains pre-deployment smoke, not the separate
 service-restart and backup-restore acceptance case `R01`.
 
+## Stop before contract deployment
+
+`observe-stack`, `collect-genesis-candidate`, and the restart observer are the
+end of the unattended path. Before running `deploy`, a human must compare the
+candidate against an independently reviewed chain specification and sign the
+exact wizard genesis approval bytes. Governance must separately approve the
+release committee's public keys, threshold, and custody roles. The wizard
+status makes these missing gates visible without submitting a transaction:
+
+```sh
+node scripts/standalone-setup-wizard.mjs status "$SETUP"
+node scripts/check-standalone-journey-prerequisites.mjs "$SETUP" "$SOURCE_SHA"
+```
+
+The second command exits 2 until its recorded ledger prerequisites are met.
+Even exit 0 is not a full E2E pass: it does not verify the complete key
+inventory, authenticated finality, a signed API plan, actor actions, or
+host/browser egress denial. A setup created from an older source SHA cannot
+qualify a newer candidate. Preserve its evidence, but start a fresh
+source-matched setup rather than changing the recorded SHA.
+
+The real deployment and verifier-key CLIs require an approved, root-owned
+code tree with no untrusted write access, plus the import-boundary preloader.
+Relative pnpm links are allowed only when both their literal and resolved
+targets stay inside that tree; a normal writable developer checkout is not an
+installed provider. Follow the
+[provider execution procedure](https://github.com/midnightntwrk/midnight-trust-registry/blob/milestone-0.1.0/docs/guide/standalone-offline-runtime.md#local-deployment-operator-cli)
+only after the signed approvals exist. The current tests exercise this guard,
+but a root-owned exact-source install and real SDK-backed deployment have not
+yet been qualified. Do not bypass the guard to make the run proceed.
+
 If ending the smoke run rather than continuing to human approval and
 deployment, stop **only** this project. Preserve its volumes and evidence.
 When resuming, start it again with the same verified bundle, image tags, and
