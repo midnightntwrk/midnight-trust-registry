@@ -215,8 +215,15 @@ mkdir -m 700 "$EVIDENCE_DIR"
 node scripts/check-standalone-acceptance-evidence.mjs init \
   "$EVIDENCE_DIR" "$SOURCE_SHA" "$INVENTORY_SHA256" \
   "$SIGNED_PLAN_SHA256" "$GENESIS_HASH" "$CONTRACT_ADDRESS"
+# After saving a redacted raw receipt under $EVIDENCE_DIR/L01/deploy.log:
+node scripts/check-standalone-acceptance-evidence.mjs attach \
+  "$EVIDENCE_DIR" "$SOURCE_SHA" L01 L01/deploy.log
 pnpm check:standalone-acceptance-evidence "$EVIDENCE_DIR" "$SOURCE_SHA"
 ```
+
+Attaching a file hashes it but deliberately leaves the case `not-run` until
+an operator assesses the receipt and changes its verdict. Preserve the raw
+file and do not reuse it for a different case.
 
 The checker exits 2 while cases are not marked `pass`, 1 for invalid or
 source-mismatched evidence, and 0 only for a complete hash-consistent

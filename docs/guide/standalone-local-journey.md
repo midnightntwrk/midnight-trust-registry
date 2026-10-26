@@ -218,10 +218,19 @@ node scripts/check-standalone-acceptance-evidence.mjs init \
 ```
 
 For each case in `acceptance.json`, set `status` to `pass`, `fail`, or
-`not-run`. Put its redacted raw command output/receipts under that private
-directory and list each unique relative file as
-`{"path":"L01/deploy.log","sha256":"<actual lowercase sha256>"}` in the
-case's `evidence` array. A `pass` must have at least one file. Record the
+`not-run` **only after reviewing the underlying run**. Put its redacted raw
+command output/receipts under that private directory. Attach each file with
+the helper, which hashes it and updates the case inventory atomically while
+leaving its status unchanged:
+
+```sh
+node scripts/check-standalone-acceptance-evidence.mjs attach \
+  /absolute/private/acceptance "$SOURCE_SHA" L01 L01/deploy.log
+```
+
+Use a different relative file for each case. If `.acceptance.lock` exists,
+check whether an evidence writer is active before removing a stale lock; do
+not start a competing writer. A `pass` must have at least one file. Record the
 command, UTC time, checkpoint, operator decision, and relevant transaction or
 journal identifier **in the retained file**; the checker does not infer these
 facts. Do not include seeds, private keys, or credentials. Keep each raw file

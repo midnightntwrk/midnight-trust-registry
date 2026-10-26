@@ -7,7 +7,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { checkStandaloneAcceptanceEvidence } from "./check-standalone-acceptance-evidence.mjs";
+import { attachStandaloneAcceptanceEvidence, checkStandaloneAcceptanceEvidence } from "./check-standalone-acceptance-evidence.mjs";
 
 const CASES = ["L01", "L02", "A01", "A02", "A03", "A04", "N01", "O01", "R01", "S01"];
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -97,6 +97,53 @@ test("CLI initializes a private manifest, reports pending cases and rejects a li
     await rename(join(root, "acceptance.json"), join(root, "saved.json"));
     await symlink(join(root, "saved.json"), join(root, "acceptance.json"));
     assert.equal(run(root, candidate.sourceRevision).status, 1);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("attaches raw evidence without changing an operator verdict or claiming qualification", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-acceptance-attach-"));
+  const script = fileURLToPath(new URL("./check-standalone-acceptance-evidence.mjs", import.meta.url));
+  try {
+    const candidate = manifest();
+    await writeFile(join(root, "acceptance.json"), `${JSON.stringify(candidate)}\n`, { mode: 0o600 });
+    await mkdir(join(root, "L01"));
+    await writeFile(join(root, "L01/deploy.log"), "operator raw receipt\n");
+    const result = spawnSync(process.execPath, [script, "attach", root, candidate.sourceRevision,
+      "L01", "L01/deploy.log"], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    const report = JSON.parse(result.stdout);
+    assert.equal(report.status, "not-run");
+    assert.equal(report.releaseQualified, false);
+    const updated = JSON.parse(await readFile(join(root, "acceptance.json"), "utf8"));
+    assert.deepEqual(updated.cases.L01.evidence, [{ path: "L01/deploy.log", sha256: sha("operator raw receipt\n") }]);
+    assert.equal(updated.cases.L01.status, "not-run");
+    assert.equal((await checkStandaloneAcceptanceEvidence(root, updated)).completeInventory, false);
+    await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
+      "A01", "L01/deploy.log"), /already attached/u);
+    await assert.rejects(attachStandaloneAcceptanceEvidence(root, "f".repeat(40),
+      "A01", "L01/deploy.log"), /differs from the selected candidate/u);
+    await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
+      "A01", "../outside.log"), /relative path/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects an attached symlink and an active evidence writer lock", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-acceptance-attach-"));
+  try {
+    const candidate = manifest();
+    await writeFile(join(root, "acceptance.json"), `${JSON.stringify(candidate)}\n`, { mode: 0o600 });
+    await writeFile(join(root, "raw.log"), "private receipt\n");
+    await symlink("raw.log", join(root, "linked.log"));
+    await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
+      "L01", "linked.log"));
+    await mkdir(join(root, ".acceptance.lock"));
+    await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
+      "L01", "raw.log"), { code: "EEXIST" });
+    assert.deepEqual(JSON.parse(await readFile(join(root, "acceptance.json"), "utf8")), candidate);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

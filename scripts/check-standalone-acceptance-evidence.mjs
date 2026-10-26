@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, open, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, rename, rmdir, unlink, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -86,6 +86,53 @@ async function readAcceptanceManifest(root) {
   }
 }
 
+/** Attaches bytes already captured by the operator; it never marks a case passed. */
+export async function attachStandaloneAcceptanceEvidence(root, expectedSourceRevision, caseId, path) {
+  if (!CASES.includes(caseId)) throw new Error("Unknown standalone acceptance case");
+  const lock = join(root, ".acceptance.lock");
+  await mkdir(lock, { mode: 0o700 });
+  let temporary;
+  try {
+    const manifestPath = join(root, "acceptance.json");
+    const before = await lstat(manifestPath);
+    const manifest = await readAcceptanceManifest(root);
+    await checkStandaloneAcceptanceEvidence(root, manifest, expectedSourceRevision);
+    if (Object.values(manifest.cases).some((entry) => entry.evidence.some((item) => item.path === path))) {
+      throw new Error("Evidence path is already attached to an acceptance case");
+    }
+    if (manifest.cases[caseId].evidence.length >= 32) {
+      throw new Error("Acceptance case has reached its evidence limit");
+    }
+    const item = { path, sha256: await digestEvidence(root, path) };
+    manifest.cases[caseId].evidence.push(item);
+    await checkStandaloneAcceptanceEvidence(root, manifest, expectedSourceRevision);
+    const unchanged = await lstat(manifestPath);
+    if (unchanged.dev !== before.dev || unchanged.ino !== before.ino
+      || unchanged.size !== before.size || unchanged.mtimeMs !== before.mtimeMs
+      || unchanged.ctimeMs !== before.ctimeMs) {
+      throw new Error("Acceptance manifest changed during evidence attachment");
+    }
+    const temporaryPath = join(root, `.acceptance-${randomUUID()}.tmp`);
+    const file = await open(temporaryPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
+    temporary = temporaryPath;
+    try {
+      await file.writeFile(`${JSON.stringify(manifest, null, 2)}\n`);
+      await file.sync();
+    } finally {
+      await file.close();
+    }
+    await rename(temporary, manifestPath);
+    temporary = undefined;
+    const directory = await open(root, constants.O_RDONLY);
+    try { await directory.sync(); } finally { await directory.close(); }
+    return { format: "tr-standalone-acceptance-attachment-v1", caseId, item,
+      status: manifest.cases[caseId].status, releaseQualified: false };
+  } finally {
+    if (temporary !== undefined) await unlink(temporary);
+    await rmdir(lock);
+  }
+}
+
 /** Checks the inventory, not the truth of a receipt, finality, or a human verdict. */
 export async function checkStandaloneAcceptanceEvidence(root, manifest, expectedSourceRevision = null) {
   if (expectedSourceRevision !== null && !REVISION.test(expectedSourceRevision)) {
@@ -141,10 +188,12 @@ export async function checkStandaloneAcceptanceEvidence(root, manifest, expected
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const initialize = process.argv[2] === "init";
-    if ((initialize && process.argv.length !== 9) || (!initialize && process.argv.length !== 4)) {
-      throw new Error("Usage: check-standalone-acceptance-evidence.mjs init <absolute-private-evidence-dir> <source-revision> <inventory-sha256> <signed-plan-sha256> <genesis-hash> <contract-address> | check-standalone-acceptance-evidence.mjs <absolute-private-evidence-dir> <candidate-source-revision>");
+    const attach = process.argv[2] === "attach";
+    if ((initialize && process.argv.length !== 9) || (attach && process.argv.length !== 7)
+      || (!initialize && !attach && process.argv.length !== 4)) {
+      throw new Error("Usage: check-standalone-acceptance-evidence.mjs init <absolute-private-evidence-dir> <source-revision> <inventory-sha256> <signed-plan-sha256> <genesis-hash> <contract-address> | attach <absolute-private-evidence-dir> <candidate-source-revision> <case-id> <relative-evidence-path> | <absolute-private-evidence-dir> <candidate-source-revision>");
     }
-    const directory = process.argv[initialize ? 3 : 2];
+    const directory = process.argv[initialize || attach ? 3 : 2];
     if (!isAbsolute(directory)) throw new Error("Evidence root must be an absolute path");
     const root = resolve(directory);
     const stat = await lstat(root);
@@ -160,6 +209,11 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       await writeFile(join(root, "acceptance.json"), `${JSON.stringify(draft, null, 2)}\n`,
         { flag: "wx", mode: 0o600 });
       console.log(join(root, "acceptance.json"));
+      process.exit(0);
+    }
+    if (attach) {
+      console.log(JSON.stringify(await attachStandaloneAcceptanceEvidence(
+        root, process.argv[4], process.argv[5], process.argv[6]), null, 2));
       process.exit(0);
     }
     const manifest = await readAcceptanceManifest(root);
