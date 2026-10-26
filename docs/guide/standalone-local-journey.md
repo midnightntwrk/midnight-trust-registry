@@ -14,6 +14,13 @@ a deployed, finalized standalone contract. A passing `./run.sh --light`,
 evidence. Do not promote draft PR #198 or label 0.1.0 release-ready on those
 results.
 
+The current signed local API CLI is read-only: it does not configure the
+production applicant/VP intake, accepted-application admission, governed
+proposal ports, or submitting provider. Governed proposal writes return 503.
+The operator steps below are the **acceptance procedure**, not a claim that
+they can all run today. The implementation sequence is in
+[Standalone Governed Actor Path](../plans/standalone-governed-actor-path.md).
+
 ## What the operator needs
 
 - A dedicated local Midnight node, indexer, proof server, funded local wallet,
