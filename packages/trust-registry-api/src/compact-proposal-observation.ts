@@ -103,6 +103,7 @@ export async function resolveCompactProposalEvidenceSnapshot(
   expectedRegistryId: string,
   role: ProposalRole,
   authorizationId: string,
+  expectedContractAddress: Uint8Array,
 ): Promise<CompactProposalEvidenceSnapshot | null> {
   if (expectedRegistryId.length === 0 || expectedRegistryId.length > 256
     || authorizationId.length === 0 || authorizationId.length > 256) {
@@ -110,6 +111,9 @@ export async function resolveCompactProposalEvidenceSnapshot(
   }
   if (!["issuer", "verifier", "auditor", "maintainer", "recognition"].includes(role)) {
     throw new RangeError("Invalid proposal role");
+  }
+  if (expectedContractAddress.length !== 32 || expectedContractAddress.every((byte) => byte === 0)) {
+    throw new RangeError("Expected contract address must be a nonzero 32-byte value");
   }
   const ledger = await readFinalizedLedger();
   if (hex(ledger.registryId) !== sha256Hex(expectedRegistryId)) {
@@ -183,7 +187,8 @@ export async function resolveCompactProposalEvidenceSnapshot(
       : role === "auditor" ? verifyAuditorProposalEvidenceSignature
         : role === "maintainer" ? verifyMaintainerProposalEvidenceSignature
           : verifyRecognitionProposalEvidenceSignature;
-  if (!verify(key.publicKey, ledger.registryId, proposal.evidenceVerifierKeyIdCommitment,
+  if (!verify(key.publicKey, ledger.registryId, ledger.deploymentNetworkIdCommitment,
+    expectedContractAddress, proposal.evidenceVerifierKeyIdCommitment,
     boundActionPayloadHash, {
       announcement: proposal.verifierSignatureAnnouncement,
       response: proposal.verifierSignatureResponse,

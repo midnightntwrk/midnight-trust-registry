@@ -242,6 +242,8 @@ export type TrustRegistryApiServerOptions = {
   readDecisionEvidence?: (role: "issuer" | "verifier", authorizationId: string) => Promise<unknown | null>;
   /** Optional read-only proposal audit source; this server does not establish ledger finality. */
   readFinalizedProposalLedger?: FinalizedProposalLedgerReader;
+  /** Independently pinned deployment address for verifier-attestation replay protection. */
+  proposalContractAddress?: Uint8Array;
   proposalAdmission?: ProposalAdmissionPort;
   /** Required for a durable VP/accreditation-to-Compact handoff; persist before submission. */
   proposalSubmissionJournal?: ProposalSubmissionJournal;
@@ -983,7 +985,7 @@ export const createTrustRegistryApiServer = (
           }
           await authorizeRecognitionRequest(segments[3]!, request);
         }
-        if (options.readFinalizedProposalLedger === undefined) {
+        if (options.readFinalizedProposalLedger === undefined || options.proposalContractAddress === undefined) {
           throw jsonProblem(problemBaseUri, "proposal-evidence-unavailable", 503,
             "proposal evidence unavailable");
         }
@@ -992,6 +994,7 @@ export const createTrustRegistryApiServer = (
           const registry = await loadRegistryRecord(options.source);
           snapshot = await resolveCompactProposalEvidenceSnapshot(
             options.readFinalizedProposalLedger, registry.registryId, role as ProposalRole, segments[3]!,
+            options.proposalContractAddress,
           );
         } catch {
           throw jsonProblem(problemBaseUri, "proposal-evidence-unavailable", 503,

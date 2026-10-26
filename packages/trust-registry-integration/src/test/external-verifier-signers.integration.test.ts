@@ -80,6 +80,7 @@ describe("externally signed Compact verifier governance", () => {
       verifier, evidence, [firstProposalSigner, secondProposalSigner],
       signVerifierProposalEvidenceFromSeed(
         outsider.seed, proposal.registryId,
+        proposal.networkIdCommitment, proposal.contractAddress,
         proposal.evidenceVerifierKeyIdCommitment, proposal.actionPayloadHash,
       ),
     )).toThrow();

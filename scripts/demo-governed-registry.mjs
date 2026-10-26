@@ -1154,7 +1154,8 @@ const assertValidProposalVerifierSignature = (role, prepared, signature) => {
   }[role];
   assert.ok(verify, `Unknown proposal role: ${role}`);
   assert.equal(verify(
-    verifierKey.publicKey, prepared.registryId, prepared.evidenceVerifierKeyIdCommitment,
+    verifierKey.publicKey, prepared.registryId, prepared.networkIdCommitment, prepared.contractAddress,
+    prepared.evidenceVerifierKeyIdCommitment,
     prepared.actionPayloadHash, signature,
   ), true, `${role} substituted evidence-verifier signature must be valid`);
 };
@@ -1715,6 +1716,8 @@ try {
   const wrongVerifierSignature = signIssuerProposalEvidenceFromSeed(
     second.seed,
     fromHex(proposalPrepared.registryId),
+    fromHex(proposalPrepared.networkIdCommitment),
+    fromHex(proposalPrepared.contractAddress),
     fromHex(proposalPrepared.evidenceVerifierKeyIdCommitment),
     fromHex(proposalPrepared.actionPayloadHash),
   );

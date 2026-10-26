@@ -66,6 +66,8 @@ describe("externally signed Compact issuer governance", () => {
     const verifierSignature = signIssuerProposalEvidenceFromSeed(
       verifierSeed,
       proposal.registryId,
+      proposal.networkIdCommitment,
+      proposal.contractAddress,
       proposal.evidenceVerifierKeyIdCommitment,
       proposal.actionPayloadHash,
     );
@@ -78,6 +80,7 @@ describe("externally signed Compact issuer governance", () => {
       issuer, evidence, proposalSigners,
       signIssuerProposalEvidenceFromSeed(
         new Uint8Array(32).fill(99), proposal.registryId,
+        proposal.networkIdCommitment, proposal.contractAddress,
         proposal.evidenceVerifierKeyIdCommitment, proposal.actionPayloadHash,
       ),
     )).toThrow();
