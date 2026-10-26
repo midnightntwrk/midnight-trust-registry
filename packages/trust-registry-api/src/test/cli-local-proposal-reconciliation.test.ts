@@ -71,6 +71,7 @@ describe("signed local proposal reconciliation CLI", () => {
     expect(mocks.loadPlan).toHaveBeenCalledWith(expect.objectContaining({ requireApiRuntimePin: true }));
     expect(mocks.resolveProposal).toHaveBeenCalledWith(
       expect.any(Function), "registry:local", "issuer", authorizationId,
+      Buffer.from("a".repeat(64), "hex"),
     );
     expect(await journal.read("issuer", authorizationId)).toMatchObject({ state: "observed", eventHash });
     expect(JSON.parse(output.join(""))).toMatchObject({
