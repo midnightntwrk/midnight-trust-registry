@@ -126,30 +126,14 @@ export const assertDecisionEpochPublicationSignatures = (
     if (!sameBytes32(authorized.keyIdCommitment, bytes32Commitment(signer.keyId))) {
       throw new Error("Epoch publication signer DID method does not match its ledger key commitment");
     }
-    requirePrimeOrderKey(authorized.publicKey);
-    const signature = decodeCanonicalJubjubSignatureHex(signer.signature);
-    if (!verifyDeploymentBoundMaintainerAction(
-      authorized.publicKey,
-      context.registryIdCommitment,
-      context.networkIdCommitment,
-      context.contractAddress,
-      policyCommitment,
-      PUBLISH,
-      payload,
-      BigInt(epoch.publicationSequence),
-      signature,
-    )) {
-      throw new Error("Epoch publication maintainer signature is invalid");
+    if (signerKeyIds.length > 0
+      && compareMaintainerKeyIds(signerKeyIds[signerKeyIds.length - 1]!, authorized.keyIdCommitment) >= 0) {
+      throw new Error("Epoch publication signer keys must be sorted");
     }
     signerKeyIds.push(authorized.keyIdCommitment);
   }
   if (!sameBytes32(signerKeyIds[0]!, context.firstSignerKeyIdCommitment)) {
     throw new Error("Epoch publication first signer does not match the accepted record");
-  }
-  for (let index = 1; index < signerKeyIds.length; index += 1) {
-    if (compareMaintainerKeyIds(signerKeyIds[index - 1]!, signerKeyIds[index]!) >= 0) {
-      throw new Error("Epoch publication signer keys must be sorted");
-    }
   }
   const [first, second = ZERO, third = ZERO, fourth = ZERO, fifth = ZERO] = signerKeyIds;
   const signerSetHash = pureCircuits.maintainerSignerSetHash(
@@ -167,5 +151,23 @@ export const assertDecisionEpochPublicationSignatures = (
   );
   if (bytes32Hex(computedEventHash) !== publicationEventHash) {
     throw new Error("Epoch publication signer set does not match the accepted event");
+  }
+  for (const signer of epoch.quorum.signatures) {
+    const publicKey = active.get(signer.keyId)!.publicKey;
+    requirePrimeOrderKey(publicKey);
+    const signature = decodeCanonicalJubjubSignatureHex(signer.signature);
+    if (!verifyDeploymentBoundMaintainerAction(
+      publicKey,
+      context.registryIdCommitment,
+      context.networkIdCommitment,
+      context.contractAddress,
+      policyCommitment,
+      PUBLISH,
+      payload,
+      BigInt(epoch.publicationSequence),
+      signature,
+    )) {
+      throw new Error("Epoch publication maintainer signature is invalid");
+    }
   }
 };

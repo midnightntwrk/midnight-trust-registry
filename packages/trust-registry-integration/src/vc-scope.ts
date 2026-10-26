@@ -10,6 +10,13 @@ import {
 
 const bytes32 = (hash: string): Uint8Array => Uint8Array.from(Buffer.from(hash.slice(2), "hex"));
 
+/** A family or definition grant cannot be narrowed into schema signer authority. */
+export const assertVcIssuerSchemaGrant = (resourceType: string): void => {
+  if (resourceType !== "schema") {
+    throw new Error("VC issuer signer authorization requires an exact schema grant");
+  }
+};
+
 export const issuerSchemaRefFromRegistryScope = (
   scope: Extract<AuthorizationScope, { role: "issuer" }>,
 ): SchemaRef => {

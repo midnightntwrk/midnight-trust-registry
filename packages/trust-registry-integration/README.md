@@ -19,14 +19,18 @@ Current coverage:
   an explicit contract-maintenance signing key, network-configured RPC/indexer
   endpoints, and an independently approved genesis hash. It deploys with the
   registry constructor inputs and returns only the public receipt. A separate
-  pinned finalized readback can be `verified`, `pending`, `unavailable`, or
-  `mismatch`; only `verified` matches the constructor commitments, bootstrap
-  maintainer record and thresholds, and initialization sequence. Preserve a
-  receipt and inspect rather than
-  redeploying on any other status. The contract-maintenance key is distinct
-  from registry governance quorum keys. This local adapter has not deployed
-  to a public network, does not hold a wallet, and does not make the indexer a
-  cryptographic source of state truth. Issue #200 remains open.
+  pinned finalized constructor readback returns `unsafe-maintenance-authority`
+  when it matches: the SDK initially installs a single-key authority with
+  verifier-key replacement power. Preserve the receipt and inspect rather
+  than redeploying on `pending`, `unavailable`, `invalid-image`, or `mismatch`.
+  `readPostDeploymentPublicTrustRegistry` can report `verified` only after
+  finalized readback matches an explicit immutable or multi-party committee
+  policy, an independently pinned governance image, and every release-manifest
+  verifier-key hash. It does not execute that transition or approve custody.
+  The maintenance key is distinct from registry governance quorum keys. This
+  local adapter has not deployed to a public network, does not hold a wallet,
+  and does not make the indexer a cryptographic source of state truth. #200
+  and #213 remain open.
 - `createRpcFinalizedCheckpointSource` checks a configured public network's
   node RPC genesis against an independently approved pin, then reads its
   finalized head. `createCheckpointedDeploymentActionReader` queries the
@@ -148,6 +152,10 @@ Current coverage:
   metadata outside the signed authorization leaf and must not be treated as
   authenticated status-policy evidence. The VC scope is derived from the
   verified registry scope, never supplied as a separate caller-selected hash.
+  An issuer VC signer candidate requires an active grant for the exact `schema`
+  resource; a credential-family, schema-version, definition, or status-method
+  grant is not implicitly delegated to that schema. Withdrawal of the selected
+  schema grant prevents a new active descriptor.
   Issuer package and schema IDs are SHA-256 of respectively
   `tr:vc-schema-package:v1:` plus the exact family ID and
   `tr:vc-schema-id:v1:` plus the exact schema ID. Only `major.minor.0` with

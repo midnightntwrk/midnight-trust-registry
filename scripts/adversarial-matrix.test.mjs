@@ -45,6 +45,7 @@ test("records checked problem types and scrubbed client rejection categories", a
   });
   assert.deepEqual(matrix.report(), {
     format: "tr-adversarial-matrix-v1",
+    summary: { total: 5, passed: 5, failed: 0 },
     cases: [
       {
         id: "insufficient-quorum",
@@ -52,6 +53,7 @@ test("records checked problem types and scrubbed client rejection categories", a
         boundary: "api",
         expected: "http:403/governed-action-rejected",
         observed: "http:403/governed-action-rejected",
+        status: "passed",
       },
       {
         id: "wrong-registry",
@@ -59,6 +61,7 @@ test("records checked problem types and scrubbed client rejection categories", a
         boundary: "client",
         expected: "registry-mismatch",
         observed: "matched:Error",
+        status: "passed",
       },
       {
         id: "wrong-trqp-scope",
@@ -66,6 +69,7 @@ test("records checked problem types and scrubbed client rejection categories", a
         boundary: "adapter",
         expected: "trqp:404/not-found",
         observed: "trqp:404/not-found",
+        status: "passed",
       },
       {
         id: "invalid-evidence-preflight",
@@ -73,6 +77,7 @@ test("records checked problem types and scrubbed client rejection categories", a
         boundary: "integration",
         expected: "evidence-commitment-rejected",
         observed: "matched:Error",
+        status: "passed",
       },
       {
         id: "historical-issuer-trust",
@@ -80,6 +85,7 @@ test("records checked problem types and scrubbed client rejection categories", a
         boundary: "client",
         expected: "accepted",
         observed: "accepted",
+        status: "passed",
       },
     ],
   });
@@ -91,6 +97,32 @@ test("records checked problem types and scrubbed client rejection categories", a
     messagePattern: /again/u,
     category: "registry-mismatch",
   }), /Duplicate adversarial case/u);
+});
+
+test("collects independent case failures without leaking response details", async () => {
+  const matrix = new AdversarialMatrix({ collectFailures: true });
+  await matrix.expectHttp({
+    status: 503,
+    json: async () => ({ type: "https://example.test/problems/internal-error", detail: "private data" }),
+  }, {
+    id: "first-failure", invariant: "The API must reject with the expected problem", boundary: "api",
+    status: 403, problemType: "forbidden",
+  });
+  matrix.expectThrown(() => { throw new Error("private signer material"); }, {
+    id: "second-failure", invariant: "The signer must be rejected", boundary: "compact",
+    messagePattern: /inactive signer/u, category: "inactive-signer",
+  });
+  matrix.expectVerified(() => ({ trusted: true }), {
+    id: "later-success", invariant: "A valid decision still runs", boundary: "client",
+  });
+  assert.deepEqual(matrix.report().summary, { total: 3, passed: 1, failed: 2 });
+  assert.deepEqual(matrix.report().cases.map(({ id, status, reason }) => [id, status, reason]), [
+    ["first-failure", "failed", "http-assertion-failed"],
+    ["second-failure", "failed", "rejection-assertion-failed"],
+    ["later-success", "passed", undefined],
+  ]);
+  assert.equal(JSON.stringify(matrix.report()).includes("private"), false);
+  assert.throws(() => matrix.assertAllPassed(), /first-failure, second-failure/u);
 });
 
 test("fails closed when an API changes its rejection category", async () => {
@@ -120,6 +152,25 @@ test("does not record an unmatched or absent thrown rejection", () => {
   assert.throws(() => matrix.expectThrown(() => { throw new Error("wrong policy"); }, expected));
   assert.throws(() => matrix.expectThrown(() => {}, expected));
   assert.deepEqual(matrix.report().cases, []);
+});
+
+test("records async rejections without leaking errors and rejects missing failures", async () => {
+  const matrix = new AdversarialMatrix({ collectFailures: true });
+  const expected = {
+    invariant: "Recognition intake must reject invalid signed evidence",
+    boundary: "integration",
+    messagePattern: /signature is invalid/u,
+    category: "recognition-signature-mismatch",
+  };
+  await matrix.expectRejected(async () => { throw new Error("signature is invalid for secret assertion"); }, {
+    ...expected, id: "async-rejection",
+  });
+  await matrix.expectRejected(async () => {}, { ...expected, id: "async-missing-rejection" });
+  assert.deepEqual(matrix.report().cases.map(({ id, status, reason }) => [id, status, reason]), [
+    ["async-rejection", "passed", undefined],
+    ["async-missing-rejection", "failed", "rejection-assertion-failed"],
+  ]);
+  assert.equal(JSON.stringify(matrix.report()).includes("secret"), false);
 });
 
 test("does not record a rejected historical verification", () => {

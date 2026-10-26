@@ -1,4 +1,5 @@
 export * from "./did-resolution.js";
+export * from "./evidence-verifier-did-key.js";
 export * from "./application-vp-verifier.js";
 export * from "./application-status-attestation.js";
 export * from "./application-status-http.js";

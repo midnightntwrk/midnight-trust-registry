@@ -15,18 +15,49 @@ import {
   JUBJUB_ORDER,
   signApplicationEvidenceCommitmentFromSeed,
   signDeploymentBoundMaintainerActionFromSeed,
+  signIssuerProposalEvidenceFromSeed,
+  signAuditorProposalEvidenceFromSeed,
+  signMaintainerProposalEvidenceFromSeed,
+  signRecognitionProposalEvidenceFromSeed,
   signVerifierProposalEvidenceFromSeed,
   verifyApplicationEvidenceCommitmentSignature,
+  verifyAuditorProposalEvidenceSignature,
   verifyDeploymentBoundMaintainerAction,
   verifyIssuerProposalEvidenceSignature,
+  verifyMaintainerProposalEvidenceSignature,
+  verifyRecognitionProposalEvidenceSignature,
   verifyVerifierProposalEvidenceSignature,
 } from "../signing.js";
 
 const seed = new Uint8Array(32).fill(41);
 const commitment = Uint8Array.from({ length: 32 }, (_, index) => index);
 const keyIdCommitment = new Uint8Array(32).fill(7);
+const deploymentNetwork = new Uint8Array(32).fill(21);
+const deploymentAddress = new Uint8Array(32).fill(22);
 
 describe("application evidence commitment signing", () => {
+  it("rejects proposal evidence replay across deployments for every role", () => {
+    const registryId = new Uint8Array(32).fill(31);
+    const network = new Uint8Array(32).fill(32);
+    const address = new Uint8Array(32).fill(33);
+    const payload = new Uint8Array(32).fill(34);
+    const publicKey = deriveJubjubPublicKeyFromSeed(seed);
+    for (const [sign, verify] of [
+      [signIssuerProposalEvidenceFromSeed, verifyIssuerProposalEvidenceSignature],
+      [signVerifierProposalEvidenceFromSeed, verifyVerifierProposalEvidenceSignature],
+      [signAuditorProposalEvidenceFromSeed, verifyAuditorProposalEvidenceSignature],
+      [signMaintainerProposalEvidenceFromSeed, verifyMaintainerProposalEvidenceSignature],
+      [signRecognitionProposalEvidenceFromSeed, verifyRecognitionProposalEvidenceSignature],
+    ] as const) {
+      const signature = sign(seed, registryId, network, address, keyIdCommitment, payload);
+      expect(verify(publicKey, registryId, network, address, keyIdCommitment, payload, signature)).toBe(true);
+      expect(verify(publicKey, registryId, new Uint8Array(32).fill(35), address,
+        keyIdCommitment, payload, signature)).toBe(false);
+      expect(verify(publicKey, registryId, network, new Uint8Array(32).fill(36),
+        keyIdCommitment, payload, signature)).toBe(false);
+    }
+  });
+
   it("separates governed signatures across deployments and networks", () => {
     const registryId = new Uint8Array(32).fill(1);
     const network = new Uint8Array(32).fill(2);
@@ -115,23 +146,33 @@ describe("application evidence commitment signing", () => {
     const bound = computeVerifierEvidenceBoundProposalPayloadHash(
       basePayloadHash, authorizationId, keyIdCommitment, policyCommitment, 1n,
     );
-    const signature = signVerifierProposalEvidenceFromSeed(seed, registryId, keyIdCommitment, bound);
+    const signature = signVerifierProposalEvidenceFromSeed(
+      seed, registryId, deploymentNetwork, deploymentAddress, keyIdCommitment, bound,
+    );
     const publicKey = deriveJubjubPublicKeyFromSeed(seed);
-    expect(verifyVerifierProposalEvidenceSignature(publicKey, registryId, keyIdCommitment, bound, signature)).toBe(true);
-    expect(verifyVerifierProposalEvidenceSignature(publicKey, registryId, keyIdCommitment,
+    expect(verifyVerifierProposalEvidenceSignature(
+      publicKey, registryId, deploymentNetwork, deploymentAddress, keyIdCommitment, bound, signature,
+    )).toBe(true);
+    expect(verifyVerifierProposalEvidenceSignature(
+      publicKey, registryId, new Uint8Array(32).fill(23), deploymentAddress, keyIdCommitment, bound, signature,
+    )).toBe(false);
+    expect(verifyVerifierProposalEvidenceSignature(
+      publicKey, registryId, deploymentNetwork, new Uint8Array(32).fill(24), keyIdCommitment, bound, signature,
+    )).toBe(false);
+    expect(verifyVerifierProposalEvidenceSignature(publicKey, registryId, deploymentNetwork, deploymentAddress, keyIdCommitment,
       computeVerifierEvidenceBoundProposalPayloadHash(
         new Uint8Array(32).fill(5), authorizationId, keyIdCommitment, policyCommitment, 1n,
       ), signature)).toBe(false);
-    expect(verifyVerifierProposalEvidenceSignature(publicKey, registryId, keyIdCommitment,
+    expect(verifyVerifierProposalEvidenceSignature(publicKey, registryId, deploymentNetwork, deploymentAddress, keyIdCommitment,
       computeVerifierEvidenceBoundProposalPayloadHash(
         basePayloadHash, authorizationId, keyIdCommitment, policyCommitment, 2n,
       ), signature)).toBe(false);
     expect(verifyVerifierProposalEvidenceSignature(publicKey, new Uint8Array(32).fill(9),
-      keyIdCommitment, bound, signature)).toBe(false);
-    expect(verifyVerifierProposalEvidenceSignature(publicKey, registryId,
+      deploymentNetwork, deploymentAddress, keyIdCommitment, bound, signature)).toBe(false);
+    expect(verifyVerifierProposalEvidenceSignature(publicKey, registryId, deploymentNetwork, deploymentAddress,
       new Uint8Array(32).fill(8), bound, signature)).toBe(false);
-    expect(verifyIssuerProposalEvidenceSignature(publicKey, registryId, keyIdCommitment, bound, signature)).toBe(false);
-    expect(verifyVerifierProposalEvidenceSignature(publicKey, registryId, keyIdCommitment,
+    expect(verifyIssuerProposalEvidenceSignature(publicKey, registryId, deploymentNetwork, deploymentAddress, keyIdCommitment, bound, signature)).toBe(false);
+    expect(verifyVerifierProposalEvidenceSignature(publicKey, registryId, deploymentNetwork, deploymentAddress, keyIdCommitment,
       bound, { ...signature, response: signature.response + JUBJUB_ORDER })).toBe(false);
   });
 
@@ -167,6 +208,7 @@ describe("application evidence commitment signing", () => {
     const encoded = `0x${Buffer.from(encodeJubjubSignature(signature)).toString("hex")}`;
 
     expect(decodeCanonicalJubjubSignatureHex(encoded)).toEqual(signature);
+    expect(() => decodeCanonicalJubjubSignatureHex(null as unknown as string)).toThrow(/encoding is invalid/);
     for (const malformed of [
       encoded.slice(0, -1),
       encoded.toUpperCase(),
@@ -190,6 +232,14 @@ describe("application evidence commitment signing", () => {
       response: signature.response,
     })).toString("hex")}`;
     expect(() => decodeCanonicalJubjubSignatureHex(identityAnnouncement)).toThrow(/encoding is invalid/);
+    const lowOrderAnnouncement = `0x${Buffer.from(encodeJubjubSignature({
+      announcement: {
+        x: 0n,
+        y: 52435875175126190479447740508185965837690552500527637822603658699938581184512n,
+      },
+      response: signature.response,
+    })).toString("hex")}`;
+    expect(() => decodeCanonicalJubjubSignatureHex(lowOrderAnnouncement)).toThrow(/encoding is invalid/);
   });
 
   it("fails closed for malformed structured maintainer signatures", () => {
@@ -231,5 +281,21 @@ describe("application evidence commitment signing", () => {
     expect(verifyApplicationEvidenceCommitmentSignature(
       identity, keyIdCommitment, commitment, forged,
     )).toBe(false);
+    const registryId = new Uint8Array(32).fill(1);
+    const lowOrder = {
+      x: 0n,
+      y: 52435875175126190479447740508185965837690552500527637822603658699938581184512n,
+    };
+    for (const verify of [
+      verifyIssuerProposalEvidenceSignature,
+      verifyVerifierProposalEvidenceSignature,
+      verifyAuditorProposalEvidenceSignature,
+      verifyMaintainerProposalEvidenceSignature,
+      verifyRecognitionProposalEvidenceSignature,
+    ]) {
+      expect(verify(identity, registryId, deploymentNetwork, deploymentAddress, keyIdCommitment, commitment, forged)).toBe(false);
+      expect(verify(lowOrder, registryId, deploymentNetwork, deploymentAddress, keyIdCommitment, commitment, forged)).toBe(false);
+      expect(verify({ x: 3n, y: 5n }, registryId, deploymentNetwork, deploymentAddress, keyIdCommitment, commitment, forged)).toBe(false);
+    }
   });
 });

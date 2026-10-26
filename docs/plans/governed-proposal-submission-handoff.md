@@ -33,16 +33,57 @@ authenticated Midnight finality reader, durable admission storage, and an
 operator procedure for definitively rejected attempts. The simulator reader
 is a fixture, not a network-finality source.
 
-Tests must cover response loss, process restart, concurrent writers, matching
-and conflicting finalized observations, unavailable readers, all four
-proposal role keys, and absence of raw presentation/signatures in the file.
-Recognition proposals use a separate accreditation/admission workflow and
-are not covered by this journal. The adapter is not wired into the packaged
-CLI, which has no network-finality source.
+Tests cover response loss, process restart, concurrent writers, matching and
+conflicting finalized observations, unavailable readers, all five proposal
+role keys, and absence of raw presentation/signatures in the file. Recognition
+proposals have a separate accreditation/admission workflow but use the same
+journal at the Compact submission boundary. The adapter is not wired into the
+packaged CLI, which has no network-finality source.
 
-The file adapter is capped at 10,000 attempts and 4 MiB. Capacity exhaustion
-returns a typed 503 before submission, including when the eventual event hash
-of any outstanding reservation would exceed the byte limit. A future
-production host must define an audited rotation/export procedure that
-preserves unresolved reservations and observed history; this reference
-implementation does not auto-evict them. Follow-up #193 tracks that work.
+## Local rotation and capacity
+
+The writable segment is capped at 10,000 attempts and 4 MiB. Capacity
+exhaustion returns a typed 503 before submission, including when the eventual
+event hash of any outstanding reservation would exceed the byte limit.
+`inspectCapacity()` exposes only counts and byte limits; it does not expose
+authorization IDs or evidence commitments. An operator should alert before
+either writable limit or the 64-archive limit is reached.
+
+Under the journal lock, `rotateObserved(readFinalized)` rechecks every
+`observed` attempt against the supplied independently authenticated finalized
+reader. A missing or conflicting observation stops rotation without changing
+the journal. It then copies only those attempts to a write-once segment and
+keeps every `reserved` or `submitted` attempt in a new writable segment. It
+syncs the segments before atomically replacing the manifest. A crash before
+the manifest replacement leaves unreferenced files,
+not a new authorization to submit. A crash afterward uses the committed
+manifest; missing, altered, duplicate, or non-observed archived records fail
+closed. Every lookup and write searches archived IDs as well as the writable
+segment, so rotation does not permit replay. Operators must not delete a
+referenced segment, manifest, or lock file to make capacity available. A
+lagging `not-observed` read never justifies clearing a reservation.
+
+Local operator procedure:
+
+1. Quiesce submissions and preserve a byte-for-byte private backup of the
+   manifest, every referenced segment, and any unresolved original journal.
+2. Check `inspectCapacity()` and reconcile pending attempts against an
+   independently authenticated finalized reader. Do not retry absent records.
+3. Call `rotateObserved(readFinalized)` under the same journal path, then reopen the journal
+   and confirm that archived IDs remain non-submittable and pending IDs retain
+   their previous state. Resume submissions only after that check passes.
+4. If startup fails, stop submissions and restore the complete backup set;
+   never create a blank journal at the same path. Inspect unreferenced segment
+   files only while quiesced, and remove one only after verifying that no
+   committed manifest references it and a backup retains it.
+
+This is a local trusted-storage protocol, not a production distributed lock or
+an authenticated network-finality proof. Segment SHA-256 hashes detect
+accidental corruption but a party able to rewrite the manifest can rewrite its
+hashes. Multi-host use requires one shared filesystem with verified atomic
+exclusive-create, rename, and directory durability semantics, or a separate
+transactional coordinator. A production host must provide independently
+authenticated finalized reads, an approved archive export/recovery procedure,
+and a documented operator authorization for definitively rejected attempts
+before enabling this adapter. #193 remains open for those gates and full
+integration qualification.

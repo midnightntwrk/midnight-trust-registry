@@ -305,7 +305,8 @@ const issuerProposalProof = (
     verifierAuthorizationId: verifier.authorizationId,
     verifierKeyIdCommitment: verifier.keyId,
     evidenceSignature: signIssuerProposalEvidenceFromSeed(
-      verifier.seed, registryId, verifier.keyId, payloadHash,
+      verifier.seed, registryId, FIXTURE_NETWORK_ID_COMMITMENT,
+      encodeContractAddress(simulator.contractAddress), verifier.keyId, payloadHash,
     ),
   };
 };
@@ -339,7 +340,8 @@ const recognitionProposalProof = (
     verifierAuthorizationId: verifier.authorizationId,
     verifierKeyIdCommitment: verifier.keyId,
     evidenceSignature: signRecognitionProposalEvidenceFromSeed(
-      verifier.seed, registryId, verifier.keyId, payloadHash,
+      verifier.seed, registryId, FIXTURE_NETWORK_ID_COMMITMENT,
+      encodeContractAddress(simulator.contractAddress), verifier.keyId, payloadHash,
     ),
   };
 };
@@ -371,7 +373,8 @@ const verifierProposalProof = (
     verifierAuthorizationId: verifier.authorizationId,
     verifierKeyIdCommitment: verifier.keyId,
     evidenceSignature: signVerifierProposalEvidenceFromSeed(
-      verifier.seed, registryId, verifier.keyId, payloadHash,
+      verifier.seed, registryId, FIXTURE_NETWORK_ID_COMMITMENT,
+      encodeContractAddress(simulator.contractAddress), verifier.keyId, payloadHash,
     ),
   };
 };
@@ -603,7 +606,8 @@ const auditorProposalProof = (
     verifierAuthorizationId: verifier.authorizationId,
     verifierKeyIdCommitment: verifier.keyId,
     evidenceSignature: signAuditorProposalEvidenceFromSeed(
-      verifier.seed, registryId, verifier.keyId, payloadHash,
+      verifier.seed, registryId, FIXTURE_NETWORK_ID_COMMITMENT,
+      encodeContractAddress(simulator.contractAddress), verifier.keyId, payloadHash,
     ),
   };
 };
@@ -698,7 +702,8 @@ const maintainerProposalProof = (
     verifierAuthorizationId: verifier.authorizationId,
     verifierKeyIdCommitment: verifier.keyId,
     evidenceSignature: signMaintainerProposalEvidenceFromSeed(
-      verifier.seed, registryId, verifier.keyId, payloadHash,
+      verifier.seed, registryId, FIXTURE_NETWORK_ID_COMMITMENT,
+      encodeContractAddress(simulator.contractAddress), verifier.keyId, payloadHash,
     ),
   };
 };
@@ -1350,6 +1355,7 @@ describe("trust registry contract", () => {
     expect(() => propose(proof.verifierKeyIdCommitment,
       signAuditorProposalEvidenceFromSeed(
         new Uint8Array(32).fill(97), registryId,
+        FIXTURE_NETWORK_ID_COMMITMENT, encodeContractAddress(simulator.contractAddress),
         proof.verifierKeyIdCommitment, proof.payloadHash,
       ))).toThrow(/invalid jubjub schnorr signature/i);
     expect(simulator.getLedger().maintainerMembershipCount).toBe(1n);
@@ -2303,6 +2309,18 @@ describe("trust registry contract", () => {
       },
       auditPayload,
     )).toThrow(/Maintainer signer keys must be sorted/);
+    expect(() => simulator.contract.impureCircuits.authorizeMaintainerAuditEvent(
+      simulator.circuitContext,
+      {
+        signerCount: 2n,
+        signer1: auditSigners[0]!,
+        signer2: auditSigners[0]!,
+        signer3: emptySigner,
+        signer4: emptySigner,
+        signer5: emptySigner,
+      },
+      auditPayload,
+    )).toThrow(/Maintainer signer keys must be sorted/);
     expect(simulator.getLedger().governanceActionCount).toBe(auditSequence);
 
     const issuer = createIssuerAuthorizationFixture("quorum");
@@ -2547,7 +2565,7 @@ describe("trust registry contract", () => {
     );
   }, 20_000);
 
-  it("rejects duplicate maintainer signers in quorum execution", () => {
+  it("rejects duplicate maintainer signers before quorum execution", () => {
     const registry = createInitializedRegistryFixture(17);
     const {
       simulator,
@@ -2707,7 +2725,49 @@ describe("trust registry contract", () => {
         issuerProof.evidenceSignature,
         [duplicateBootstrapAuthorizer],
       ),
-    ).toThrow(/must be sorted/i);
+    ).toThrow(/duplicate key ID/u);
+    expect(simulator.getLedger().governanceActionCount).toBe(proposeIssuerSequence);
+  });
+
+  it("does not count two maintainer IDs controlled by one public key as a quorum", () => {
+    const registry = createInitializedRegistryFixture(21);
+    const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
+    const duplicateKeyMaintainer = {
+      ...createMaintainerMembershipFixture("shared-key", 22),
+      publicKey: bootstrapPublicKey,
+      seed: bootstrapMaintainer.seed,
+    };
+    activateAdditionalMaintainer(registry, duplicateKeyMaintainer);
+    activateAdditionalMaintainer(registry, createMaintainerMembershipFixture("independent-key", 23));
+
+    const nextPolicy = labelToBytes32("policy:shared-key:v2");
+    const policyPayload = computeUpdateMaintainerThresholdPolicyPayloadHash(
+      simulator.getLedger().governancePolicyCommitment, nextPolicy, 2n, 2n, 1n, 1n,
+    );
+    simulator.updateMaintainerThresholdPolicy(
+      bootstrapMaintainer.keyId,
+      bootstrapPublicKey,
+      signFixtureDeploymentBoundActionFromSeed(simulator,
+        bootstrapMaintainer.seed, registryId, simulator.getLedger().governancePolicyCommitment,
+        UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND, policyPayload,
+        simulator.getLedger().governanceActionCount),
+      nextPolicy, 2n, 2n, 1n, 1n,
+    );
+
+    const payload = labelToBytes32("audit:shared-maintainer-key");
+    const sequence = simulator.getLedger().governanceActionCount;
+    const signature = signFixtureDeploymentBoundActionFromSeed(simulator,
+      bootstrapMaintainer.seed, registryId, simulator.getLedger().governancePolicyCommitment,
+      GENERIC_AUDIT_ACTION_KIND, payload, sequence,
+    );
+    const duplicateSigner = createMaintainerCoAuthorizer(
+      duplicateKeyMaintainer, simulator, registryId, GENERIC_AUDIT_ACTION_KIND,
+      payload, sequence,
+    );
+    expect(() => simulator.authorizeMaintainerAuditEvent(
+      bootstrapMaintainer.keyId, bootstrapPublicKey, signature, payload, [duplicateSigner],
+    )).toThrow(/public keys must be distinct/u);
+    expect(simulator.getLedger().governanceActionCount).toBe(sequence);
   });
 
   it("bootstraps before any maintainer action and rejects tampered authorization", () => {
@@ -4713,7 +4773,8 @@ describe("trust registry contract", () => {
       .toThrow(/key id does not match/i);
     expect(() => propose(proof.verifierKeyIdCommitment,
       signVerifierProposalEvidenceFromSeed(
-        new Uint8Array(32).fill(97), registryId, proof.verifierKeyIdCommitment, proof.payloadHash,
+        new Uint8Array(32).fill(97), registryId, FIXTURE_NETWORK_ID_COMMITMENT,
+        encodeContractAddress(simulator.contractAddress), proof.verifierKeyIdCommitment, proof.payloadHash,
       ))).toThrow(/invalid jubjub schnorr signature/i);
     expect(simulator.getLedger().auditorAuthorizationCount).toBe(0n);
     const eventHash = propose(proof.verifierKeyIdCommitment, proof.evidenceSignature);

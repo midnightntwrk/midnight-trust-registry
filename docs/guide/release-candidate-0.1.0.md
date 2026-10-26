@@ -38,8 +38,18 @@ signed/DCO source SHA and attach results from that exact tree for:
 5. Exact-head CI results, independent review, release owner sign-off, and a
    recorded recovery/rollback decision.
 
-The manifest lists artifact bytes and source inputs. A matching tarball digest
-does not by itself prove that every generated file was built from the recorded
+The manifest lists artifact bytes and source inputs, plus a sorted
+`verifierKeySha256` mapping from every proof-circuit name in generated Compact
+metadata to the SHA-256 of its packed `keys/<circuit>.verifier` bytes. Generation
+rejects missing, extra, renamed, or source-mismatched keys. Manifest-backed
+smoke verifies the complete mapping against the packed contract before
+installing packages. A host-invoked deployment adapter now compares the
+finalized on-chain verifier-key catalog with this mapping and confirms its
+initial single-key maintenance authority at the same checkpoint. This is not
+an independent public-network readback or approval of that authority model;
+#213 remains blocking. The manifest alone cannot certify the deployed code.
+A matching tarball digest does not by itself prove that every
+generated file was built from the recorded
 source revision: run the full build and pack on the clean, signed candidate
 tree before producing the manifest. The manifest does not authenticate its own
 distribution channel or prove any test, review, or network claim.
@@ -57,8 +67,11 @@ workspace snapshot, HTTP `202`, nor a received evidence bundle is finality.
 No funded public deployment or independent network qualification has been
 performed. The deployment and checkpoint adapters are configurable, but they
 do not supply a wallet, node-finality proof, or operator approval. The current
-local status source is fixture-backed; the VC status-registry package is not
-yet a consumable published dependency. The registry never stores raw VCs,
+local status source is fixture-backed. The VC status-registry package exists
+only as a private reference-tier prototype and explicitly requires its
+authenticated-authority, accepted-root/non-membership, and trusted-time gates
+for supported status profiles; it is not a consumable published dependency or
+an approved #90 adapter. The registry never stores raw VCs,
 VPs, holder identifiers, or presentation activity.
 
 Native non-Midnight DID methods, secp256k1/P-256/Ed25519 verification inside

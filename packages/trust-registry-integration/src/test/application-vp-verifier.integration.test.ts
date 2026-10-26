@@ -270,6 +270,43 @@ describe("published VC proof and DID application verifier port", () => {
     );
   });
 
+  it("binds VP evidence to the selected assertion key when the DID has two methods", async () => {
+    const { input } = await fixture();
+    const did = createMidnightDid("vp-evidence-verifier");
+    const firstSeed = new Uint8Array(32).fill(41);
+    const secondSeed = new Uint8Array(32).fill(42);
+    const first = { id: "assertion-1", publicKey: deriveJubjubPublicKeyFromSeed(firstSeed) };
+    const second = { id: "assertion-2", publicKey: deriveJubjubPublicKeyFromSeed(secondSeed) };
+    const resolver = createMidnightDidResolver([
+      createMidnightDidLedgerFixture(did, { schnorrJubjubAssertionMethods: [first, second] }),
+    ]);
+    const signer = {
+      did,
+      keyId: `${did}#assertion-2`,
+      publicKey: second.publicKey,
+      signCommitment: (keyId: Uint8Array, commitment: Uint8Array) =>
+        signApplicationEvidenceCommitmentFromSeed(secondSeed, keyId, commitment),
+    };
+    const ports = await createApplicationVpIntakePorts({ resolver, family: input.family, signer });
+    const commitment = sha256Hex("selected-assertion-method");
+    const signature = await ports.signEvidence(commitment);
+    expect(ports.verifyEvidenceSignature(commitment, signature, {
+      did, keyIds: [signer.keyId], algorithms: ["jubjub-schnorr"],
+    })).toBe(true);
+    expect(ports.verifyEvidenceSignature(commitment, signature, {
+      did, keyIds: [`${did}#assertion-1`], algorithms: ["jubjub-schnorr"],
+    })).toBe(false);
+    expect(ports.verifyEvidenceSignature(commitment, {
+      ...signature, keyId: `${did}#assertion-1`,
+    }, { did, keyIds: [signer.keyId], algorithms: ["jubjub-schnorr"] })).toBe(false);
+
+    const retired = createMidnightDidResolver([
+      createMidnightDidLedgerFixture(did, { schnorrJubjubAssertionMethods: [first], version: 2n }),
+    ]);
+    vi.spyOn(resolver, "resolveResult").mockImplementation((resolvedDid) => retired.resolveResult(resolvedDid));
+    await expect(ports.signEvidence(commitment)).rejects.toThrow(/Verification method is absent/u);
+  });
+
   it("adapts proof-observed bindings for challenge intake rather than echoing expected inputs", async () => {
     const { input, family } = await fixture();
     const binding = ApplicationChallengeBindingSchema.parse({

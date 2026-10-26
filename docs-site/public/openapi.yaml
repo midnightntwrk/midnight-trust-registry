@@ -214,6 +214,50 @@ components:
         prepared: { type: object, description: Exact current atomic-recovery prepare response }
         signers: { $ref: '#/components/schemas/GovernedSigners/properties/signers' }
       additionalProperties: false
+    EvidenceVerifierKeyStatusAction:
+      type: object
+      required: [authorizationId, reasonHash]
+      properties:
+        authorizationId: { type: string, pattern: '^0x[0-9a-f]{64}$' }
+        reasonHash: { type: string, pattern: '^0x[0-9a-f]{64}$' }
+      additionalProperties: false
+    EvidenceVerifierKeyRotationAction:
+      type: object
+      required: [authorizationId, reasonHash, newAuthorizationId, newKeyIdCommitment, newPublicKey]
+      properties:
+        authorizationId: { type: string, pattern: '^0x[0-9a-f]{64}$' }
+        reasonHash: { type: string, pattern: '^0x[0-9a-f]{64}$' }
+        newAuthorizationId: { type: string, pattern: '^0x[0-9a-f]{64}$' }
+        newKeyIdCommitment: { type: string, pattern: '^0x[0-9a-f]{64}$' }
+        newPublicKey:
+          type: object
+          required: [x, y]
+          properties:
+            x: { type: string, pattern: '^(0|[1-9][0-9]*)$' }
+            y: { type: string, pattern: '^(0|[1-9][0-9]*)$' }
+          additionalProperties: false
+      additionalProperties: false
+    EvidenceVerifierKeyStatusSubmission:
+      type: object
+      required: [authorizationId, reasonHash, prepared, signers]
+      properties:
+        authorizationId: { type: string, pattern: '^0x[0-9a-f]{64}$' }
+        reasonHash: { type: string, pattern: '^0x[0-9a-f]{64}$' }
+        prepared: { type: object, description: Exact current lifecycle prepare response }
+        signers: { $ref: '#/components/schemas/GovernedSigners/properties/signers' }
+      additionalProperties: false
+    EvidenceVerifierKeyRotationSubmission:
+      type: object
+      required: [authorizationId, reasonHash, newAuthorizationId, newKeyIdCommitment, newPublicKey, prepared, signers]
+      properties:
+        authorizationId: { type: string, pattern: '^0x[0-9a-f]{64}$' }
+        reasonHash: { type: string, pattern: '^0x[0-9a-f]{64}$' }
+        newAuthorizationId: { type: string, pattern: '^0x[0-9a-f]{64}$' }
+        newKeyIdCommitment: { type: string, pattern: '^0x[0-9a-f]{64}$' }
+        newPublicKey: { $ref: '#/components/schemas/EvidenceVerifierKeyRotationAction/properties/newPublicKey' }
+        prepared: { type: object, description: Exact current lifecycle prepare response }
+        signers: { $ref: '#/components/schemas/GovernedSigners/properties/signers' }
+      additionalProperties: false
     RecognitionProposalRecovery:
       type: object
       required: [receiptId, evidenceCommitment]
@@ -577,6 +621,55 @@ paths:
     post:
       tags: [Governed]
       summary: Submit signed evidence-verifier key registration
+      responses: *governedResponses
+  /v1/governed/policy/evidence-verifier/rotate/prepare:
+    post:
+      tags: [Governed]
+      summary: Prepare governed verifier-key rotation with replacement method and public key
+      description: An injected authorized port must authenticate replacement DID-key ownership; without it the route returns 503.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/EvidenceVerifierKeyRotationAction' } } }
+      responses: *governedResponses
+  /v1/governed/policy/evidence-verifier/rotate/submit:
+    post:
+      tags: [Governed]
+      summary: Submit external maintainer signatures for verifier-key rotation
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/EvidenceVerifierKeyRotationSubmission' } } }
+      responses: *governedResponses
+  /v1/governed/policy/evidence-verifier/suspend/prepare:
+    post:
+      tags: [Governed]
+      summary: Prepare governed evidence-verifier key suspension
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/EvidenceVerifierKeyStatusAction' } } }
+      responses: *governedResponses
+  /v1/governed/policy/evidence-verifier/suspend/submit:
+    post:
+      tags: [Governed]
+      summary: Submit external maintainer signatures for evidence-verifier key suspension
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/EvidenceVerifierKeyStatusSubmission' } } }
+      responses: *governedResponses
+  /v1/governed/policy/evidence-verifier/revoke/prepare:
+    post:
+      tags: [Governed]
+      summary: Prepare governed evidence-verifier key revocation
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/EvidenceVerifierKeyStatusAction' } } }
+      responses: *governedResponses
+  /v1/governed/policy/evidence-verifier/revoke/submit:
+    post:
+      tags: [Governed]
+      summary: Submit external maintainer signatures for evidence-verifier key revocation
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/EvidenceVerifierKeyStatusSubmission' } } }
       responses: *governedResponses
   /v1/governed/epochs/prepare:
     post:

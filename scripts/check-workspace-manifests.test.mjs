@@ -28,6 +28,18 @@ test("manifest lint works before packages are installed", () => {
     }
     assert.equal(existsSync(join(root, "node_modules")), false);
     assert.equal(checkWorkspaceManifests(root), true);
+    const buildOrderPath = join(root, "package.json");
+    const buildOrder = JSON.parse(readFileSync(buildOrderPath, "utf8"));
+    buildOrder.scripts["ci:lint"] += " && pnpm run test:demo-smoke-scripts";
+    writeFileSync(buildOrderPath, JSON.stringify(buildOrder));
+    assert.throws(() => checkWorkspaceManifests(root), /dist-dependent adversarial smoke/u);
+    copyFileSync(join(source, "package.json"), buildOrderPath);
+    const missingBuild = JSON.parse(readFileSync(buildOrderPath, "utf8"));
+    missingBuild.scripts["ci:build:light"] = missingBuild.scripts["ci:build:light"]
+      .replace("pnpm run build:light && ", "");
+    writeFileSync(buildOrderPath, JSON.stringify(missingBuild));
+    assert.throws(() => checkWorkspaceManifests(root), /dist-dependent adversarial smoke/u);
+    copyFileSync(join(source, "package.json"), buildOrderPath);
     const rootPackagePath = join(root, "package.json");
     const rootPackage = JSON.parse(readFileSync(rootPackagePath, "utf8"));
     delete rootPackage.devDependencies["@midnight-ntwrk/trust-registry-contract"];

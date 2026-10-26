@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 
-import { createOperatorWorkspace, MAX_CONSUMED_MUTATION_NONCES } from "@midnight-ntwrk/trust-registry-cli";
+import { createOperatorWorkspace, MAX_CONSUMED_MUTATION_NONCES, MAX_CONSUMED_MUTATION_NONCES_PER_ACTOR } from "@midnight-ntwrk/trust-registry-cli";
 import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
@@ -20,12 +20,14 @@ import {
 } from "@midnight-ntwrk/trust-registry-integration";
 import { describe, expect, it } from "vitest";
 
-import { MutationIntentActorRejectedError, MutationNonceAlreadyUsedError, MutationNonceCapacityExceededError, transitionSignedMutationState } from "../signed-mutation-state.js";
+import { MutationActorNonceCapacityExceededError, MutationIntentActorRejectedError, MutationNonceAlreadyUsedError, MutationNonceCapacityExceededError, MutationNonceClockRollbackError, transitionSignedMutationState } from "../signed-mutation-state.js";
 import { computeOperatorWorkspaceCommitment } from "../workspace-commitment.js";
 
 const workspace = createOperatorWorkspace({ label: "signed-transition" });
 const fixture = createIssuerScenarioFixture("example");
 const actorDid = fixture.subjectDid;
+const actorKey = sha256Hex(JSON.stringify(["tr:mutation:actor:v1", workspace.snapshot.registry.registryId, actorDid]));
+const otherActorKey = sha256Hex("unrelated-actor");
 const seed = new Uint8Array(32).fill(47);
 const operation = { operation: "submit" as const, target: "issuer" as const, label: "example" };
 const now = new Date("2026-10-10T00:01:00.000Z");
@@ -66,7 +68,8 @@ describe("pure signed mutation state transition", () => {
     const next = await transitionSignedMutationState(initial, intent, signatureFor(intent), operation, now, resolver);
     expect(next.workspace.operations).toHaveLength(1);
     const nonceKey = sha256Hex(JSON.stringify(["tr:mutation:nonce:v2", intent.registryId, actorDid, intent.nonce]));
-    expect(next.consumedNonces).toEqual({ [nonceKey]: intent.expiresAt });
+    expect(next.consumedNonces).toEqual({ [nonceKey]: { actorKey, expiresAt: intent.expiresAt } });
+    expect(next.workspace.mutationNonceClock).toBe(now.toISOString());
     expect(initial.workspace.operations).toHaveLength(0);
     expect(Object.keys(initial.consumedNonces)).toHaveLength(0);
 
@@ -94,20 +97,21 @@ describe("pure signed mutation state transition", () => {
     const initial = {
       workspace,
       consumedNonces: {
-        [expiredKey]: "2026-10-10T00:01:00.000Z",
-        [liveKey]: "2026-10-10T00:02:00.000Z",
+        [expiredKey]: { actorKey, expiresAt: "2026-10-10T00:01:00.000Z" },
+        [liveKey]: { actorKey: otherActorKey, expiresAt: "2026-10-10T00:02:00.000Z" },
       },
     };
     const next = await transitionSignedMutationState(initial, intent, signatureFor(intent), operation, now, resolver);
     expect(next.consumedNonces[expiredKey]).toBeUndefined();
-    expect(next.consumedNonces[liveKey]).toBe("2026-10-10T00:02:00.000Z");
+    expect(next.consumedNonces[liveKey]).toEqual({ actorKey: otherActorKey, expiresAt: "2026-10-10T00:02:00.000Z" });
     expect(Object.keys(next.consumedNonces)).toHaveLength(2);
     expect(Object.keys(initial.consumedNonces)).toHaveLength(2);
   });
 
   it("fails closed at the live-window cap without evicting a valid nonce", async () => {
     const live = Object.fromEntries(Array.from({ length: MAX_CONSUMED_MUTATION_NONCES }, (_, index) => [
-      `0x${index.toString(16).padStart(64, "0")}`, "2026-10-10T00:02:00.000Z",
+      `0x${index.toString(16).padStart(64, "0")}`,
+      { actorKey: sha256Hex(`actor:${index}`), expiresAt: "2026-10-10T00:02:00.000Z" },
     ]));
     const initial = { workspace, consumedNonces: live };
     await expect(transitionSignedMutationState(initial, intent, signatureFor(intent), operation, now, resolver))
@@ -116,9 +120,43 @@ describe("pure signed mutation state transition", () => {
     expect(initial.workspace.operations).toHaveLength(0);
   });
 
+  it("limits one actor without blocking another actor at the same live-window size", async () => {
+    const entries = (key: string) => Object.fromEntries(Array.from(
+      { length: MAX_CONSUMED_MUTATION_NONCES_PER_ACTOR }, (_, index) => [
+        `0x${index.toString(16).padStart(64, "0")}`,
+        { actorKey: key, expiresAt: "2026-10-10T00:02:00.000Z" },
+      ],
+    ));
+    await expect(transitionSignedMutationState(
+      { workspace, consumedNonces: entries(actorKey) }, intent, signatureFor(intent), operation, now, resolver,
+    )).rejects.toBeInstanceOf(MutationActorNonceCapacityExceededError);
+    const unrelated = await transitionSignedMutationState(
+      { workspace, consumedNonces: entries(otherActorKey) }, intent, signatureFor(intent), operation, now, resolver,
+    );
+    expect(Object.keys(unrelated.consumedNonces)).toHaveLength(MAX_CONSUMED_MUTATION_NONCES_PER_ACTOR + 1);
+    expect(unrelated.consumedNonces[sha256Hex(JSON.stringify([
+      "tr:mutation:nonce:v2", intent.registryId, actorDid, intent.nonce,
+    ]))]?.actorKey).toBe(actorKey);
+  });
+
+  it("fails closed when the clock moves behind a persisted nonce transition", async () => {
+    const highWater = "2026-10-10T00:01:30.000Z";
+    const state = { workspace: { ...workspace, mutationNonceClock: highWater }, consumedNonces: {} };
+    await expect(transitionSignedMutationState(
+      state, intent, signatureFor(intent), operation, now, resolver,
+    )).rejects.toBeInstanceOf(MutationNonceClockRollbackError);
+    const recoveredIntent = {
+      ...intent, expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(state.workspace),
+    };
+    const recovered = await transitionSignedMutationState(
+      state, recoveredIntent, signatureFor(recoveredIntent), operation, new Date(highWater), resolver,
+    );
+    expect(recovered.workspace.mutationNonceClock).toBe(highWater);
+  });
+
   it("checks a replay by key without scanning the retained window", async () => {
     const nonceKey = sha256Hex(JSON.stringify(["tr:mutation:nonce:v2", intent.registryId, actorDid, intent.nonce]));
-    const live = new Proxy({ [nonceKey]: intent.expiresAt }, {
+    const live = new Proxy({ [nonceKey]: { actorKey, expiresAt: intent.expiresAt } }, {
       ownKeys: () => { throw new Error("nonce lookup scanned all entries"); },
     });
     await expect(transitionSignedMutationState(

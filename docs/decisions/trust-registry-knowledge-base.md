@@ -1,7 +1,7 @@
 # Trust Registry Knowledge Base
 
 Status: working knowledge snapshot
-Updated: 2026-10-15
+Updated: 2026-10-19
 
 ## Purpose
 
@@ -11,6 +11,56 @@ This document is the repo-local execution snapshot for
 It records the current code surface, validation baseline, dependency posture,
 backlog posture, and the next implementation direction. It is intentionally
 shorter-lived and more action-oriented than the normative specification.
+
+## October 19 2026 Local Journal Recovery Checkpoint
+
+- The unpublished `codex/trust-registry-proposal-journal-recovery` branch adds
+  operator-triggered rotation for the private proposal journal. Observed
+  attempts move to bounded, digest-checked segments; reserved and submitted
+  attempts remain writable, and all historical role/authorization IDs remain
+  non-submittable. Capacity metrics expose counts and projected receipt bytes
+  without exposing proposal evidence. Focused tests cover restart, lost
+  responses, corrupt archives, concurrent writers, and byte-boundary refusal.
+- Rotation now requires a caller-supplied independently finalized reader to
+  recheck every observed row before a manifest change. An absent, conflicting,
+  or unavailable read stops rotation without dropping the attempt. This is a
+  local trusted-storage protocol, not a distributed lock or a network-finality
+  implementation. Issue #193 stays open for cross-host coordination,
+  authenticated recovery/export, and full integration qualification. Public
+  deployment and 0.1.0 promotion remain separately gated by #200/#213 and
+  the concrete VC status-authority dependency in #90.
+- The stacked local #67 preflight work retains accepted application evidence
+  for each of the four applicant roles only after a successful Compact
+  proposal. Before preparing approval or activation signatures, the simulator
+  harness rechecks the current evidence policy and the proposal commitment.
+  A governed verifier-key rotation retires the old fixture key: pending
+  applications cannot prepare approval signatures, while fresh applications
+  use the replacement key across all four roles. The fixture verifier also
+  checks the governed key status and policy at signature admission, so
+  suspended or revoked keys fail before proposal or decision signing. This
+  closes the reported stale-policy signing-preparation gap in the simulator,
+  but does not substitute for production DID/key authority or finalized-ledger reads.
+- The next local #67 slice adds strict prepare/submit HTTP requests for
+  evidence-verifier key rotation, suspension, and revocation. The submitted
+  context must match a fresh Compact preparation before external maintainer
+  signatures are admitted. The injected port remains responsible for
+  replacement DID-key authentication and authorized finalized-ledger reads;
+  the Compact-backed integration test uses the simulator port only. This is
+  not a public-network authority adapter and does not close #67.
+- A further local #67 adapter checks the active Compact evidence-verifier
+  record against one resolved Midnight DID assertion method, including the
+  expected network, DID/method commitments, prime-order public key, and DID
+  version floor. Rotation tests reject the old DID method, accept the new one,
+  and reject a suspended registry key. Callers still need a trusted finalized
+  DID reader and must invoke the check at both prepare and submit; this local
+  adapter is not proof of public-network finality.
+- The local #67 `createDidBoundEvidenceVerifierPolicyPort` wrapper now uses a
+  trusted candidate reader and DID resolver to check registration and rotation
+  at both prepare and execution, including the exact Compact payload hash.
+  Compact-backed tests cover a valid rotation, post-prepare DID-key change,
+  and mismatched replacement. The host must still supply independently
+  finalized DID/registry reads and serialize the final check with execution;
+  the wrapper alone is not a public-network authority adapter.
 
 ## October 15 2026 Delivery Checkpoint
 
@@ -1428,6 +1478,14 @@ rejected. This is reference gateway replay retention, not an on-chain nonce
 store or public-network throughput guarantee. Fake-clock, restart, concurrent
 HTTP, schema-capacity, and keyed-lookup tests belong to this slice; keep it
 local until a coherent functional stack is ready for review.
+The later local #202 hardening uses workspace format 3. It records actor-key
+hashes with expiry, caps each actor at 512 live nonces while retaining the
+10,000-entry global limit, and persists a nonce-clock high-water mark. A
+backward host clock fails closed instead of reviving pruned intents. Formats 1
+and 2 are explicitly rejected; operators must rebuild pre-release snapshots
+from trusted source data rather than deleting nonce history or moving the
+high-water mark backward. Cross-actor saturation and clock rollback have
+pure-state and HTTP tests; this remains a local reference-gateway guarantee.
 The same local integration-light run exposed a governed-demo temporal-dead-zone
 error: an early threshold-removal adversarial case implicitly used the later
 main `harness`. Passing `lastActiveHarness` explicitly restores the intended
@@ -1479,7 +1537,7 @@ network, RPC/indexer endpoints, and approved genesis pin are configurable for
 Preview, Preprod, and Mainnet; no live wallet or deployment is bundled. It
 checks the configured SDK network and pinned node genesis before submission,
 then keeps only the public deployment receipt. Finalized readback can be
-verified, pending, unavailable, or mismatched; any non-verified result retains
+verified, pending, unavailable, invalid, or mismatched; any non-verified result retains
 the receipt for read-only investigation rather than inviting redeployment.
 Initialization is governance action count one, not zero. Five focused adapter
 tests and the local 20/20 light gate passed. The host providers and indexer
@@ -1490,6 +1548,18 @@ all initial thresholds, active maintainer count, and the maintainer's
 identity, key, active status, and joining sequence to that comparison;
 the action-signing reader remains narrower by design. The preceding
 `c0a483d` sidecar passed full `./run.sh integration` with 65 proof circuits.
+
+The local #213 continuation requires a complete V2 release-manifest
+verifier-key catalog before deployment, reads operation verifier-key hashes
+and maintenance authority alongside the constructor ledger at one finalized
+checkpoint, and withholds `verified` for missing, extra, or substituted keys
+or a replaced initial authority. These checks are local adapter hardening,
+not an approved public authority model or independent finality proof.
+The full-integration reader test serializes and deserializes a real generated
+verifier key through `ContractState` before comparing its SHA-256 with the
+finalized-image readback. A malformed operation catalog reports
+`invalid-image`, not transient `unavailable`; missing and extra valid
+operations report `mismatch`.
 
 ## 2026-10-17: local decision-evidence continuation
 
@@ -1645,3 +1715,21 @@ active-key lookup. Other adversarial-matrix role/boundary gaps remain in the
 coverage map. Local light, focused integration, demo, and audit results are
 recorded in the #60 delivery PR; they do not substitute for final-head full proving or
 authenticated public-network finality.
+
+Issue #216's local runner extraction is stacked above release qualification,
+not merged into a release candidate. The governed-demo matrix now records
+per-case `passed`/`failed` status, a redacted failure reason, and aggregate
+counts; it fails the process if the checked demo count differs from 186 or if
+any recorded case fails. All 186 named cases now have independent Node test
+fixtures across Compact/integration/client, public HTTP, and TRQP boundaries.
+The full 186-case demo remains; unrelated top-level setup assertions can still
+abort it. The local strict parity checker executes both surfaces and reports
+186 matching IDs with none missing. It rejects duplicate or unknown extracted
+IDs and runs in the light gate. Matching IDs do not alone prove equivalent
+boundary or invariant coverage.
+
+The recognition-intake matrix now records six composed assertion/accreditation
+rejections, including a signature invalidated by a changed resolved Midnight
+DID assertion key. Each isolated case preserves a fresh challenge and then
+accepts the original valid proofs. These are local fixture-backed checks, not
+independent external accreditation or public-network finality evidence.

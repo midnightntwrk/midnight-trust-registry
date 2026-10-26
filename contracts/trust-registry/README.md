@@ -69,6 +69,13 @@ after a policy revision. Verify the signature against the publication
 commitment; use `policyRoot` to interpret the epoch's historical window. The
 full approving quorum is bound into the governance-event chain through the
 signer-set hash.
+Production callers can use `buildCanonicalMaintainerAuthorizationBundle` from
+`./signing` to order 1-5 signed authorizers by Compact's little-endian key-ID
+rule and pad unused slots. It rejects duplicate and zero key IDs; it does not
+verify signatures or choose the transaction submitter. The simulator calls the
+same builder. The client checks key-ID uniqueness, ordering, and the accepted
+signer-set/event hash before expensive Schnorr verification, but still verifies
+every signature for accepted input.
 
 The exported `./testing` helper `labelToBytes32` is for fixtures: labels at
 most 32 UTF-8 bytes retain Compact's zero-padded representation, while longer

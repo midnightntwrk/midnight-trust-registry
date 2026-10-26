@@ -517,17 +517,23 @@ export pure circuit issuerEvidenceBoundProposalPayloadHash(
 
 export pure circuit issuerProposalEvidenceSignatureDigest(
   registryIdValue: Bytes<32>,
+  networkIdCommitment: Bytes<32>,
+  contractAddress: Bytes<32>,
   evidenceVerifierKeyIdCommitment: Bytes<32>,
   boundPayloadHash: Bytes<32>
 ): Vector<4, Field> {
   assert(registryIdValue != pad(32, ""), "Registry id must be set");
+  assert(networkIdCommitment != pad(32, ""), "Deployment network must be set");
+  assert(contractAddress != pad(32, ""), "Contract address must be set");
   assert(evidenceVerifierKeyIdCommitment != pad(32, ""), "Evidence verifier key id must be set");
   assert(boundPayloadHash != pad(32, ""), "Bound issuer proposal payload hash must be set");
   return [
-    transientHash<Bytes<32>>(pad(32, "tr:issuer:evidence:sig:v1")),
+    transientHash<Bytes<32>>(pad(32, "tr:issuer:evidence:sig:v2")),
     transientHash<Bytes<32>>(registryIdValue),
     transientHash<Bytes<32>>(evidenceVerifierKeyIdCommitment),
-    transientHash<Bytes<32>>(boundPayloadHash)
+    transientHash<Bytes<32>>(persistentHash<Vector<4, Bytes<32>>>([
+      pad(32, "tr:evidence:deployment:v1"), networkIdCommitment, contractAddress, boundPayloadHash
+    ]))
   ];
 }
 
@@ -555,17 +561,23 @@ export pure circuit verifierEvidenceBoundProposalPayloadHash(
 
 export pure circuit verifierProposalEvidenceSignatureDigest(
   registryIdValue: Bytes<32>,
+  networkIdCommitment: Bytes<32>,
+  contractAddress: Bytes<32>,
   evidenceVerifierKeyIdCommitment: Bytes<32>,
   boundPayloadHash: Bytes<32>
 ): Vector<4, Field> {
   assert(registryIdValue != pad(32, ""), "Registry id must be set");
+  assert(networkIdCommitment != pad(32, ""), "Deployment network must be set");
+  assert(contractAddress != pad(32, ""), "Contract address must be set");
   assert(evidenceVerifierKeyIdCommitment != pad(32, ""), "Evidence verifier key id must be set");
   assert(boundPayloadHash != pad(32, ""), "Bound verifier proposal payload hash must be set");
   return [
-    transientHash<Bytes<32>>(pad(32, "tr:verifier:evidence:sig:v1")),
+    transientHash<Bytes<32>>(pad(32, "tr:verifier:evidence:sig:v2")),
     transientHash<Bytes<32>>(registryIdValue),
     transientHash<Bytes<32>>(evidenceVerifierKeyIdCommitment),
-    transientHash<Bytes<32>>(boundPayloadHash)
+    transientHash<Bytes<32>>(persistentHash<Vector<4, Bytes<32>>>([
+      pad(32, "tr:evidence:deployment:v1"), networkIdCommitment, contractAddress, boundPayloadHash
+    ]))
   ];
 }
 
@@ -593,17 +605,23 @@ export pure circuit auditorEvidenceBoundProposalPayloadHash(
 
 export pure circuit auditorProposalEvidenceSignatureDigest(
   registryIdValue: Bytes<32>,
+  networkIdCommitment: Bytes<32>,
+  contractAddress: Bytes<32>,
   evidenceVerifierKeyIdCommitment: Bytes<32>,
   boundPayloadHash: Bytes<32>
 ): Vector<4, Field> {
   assert(registryIdValue != pad(32, ""), "Registry id must be set");
+  assert(networkIdCommitment != pad(32, ""), "Deployment network must be set");
+  assert(contractAddress != pad(32, ""), "Contract address must be set");
   assert(evidenceVerifierKeyIdCommitment != pad(32, ""), "Evidence verifier key id must be set");
   assert(boundPayloadHash != pad(32, ""), "Bound auditor proposal payload hash must be set");
   return [
-    transientHash<Bytes<32>>(pad(32, "tr:auditor:evidence:sig:v1")),
+    transientHash<Bytes<32>>(pad(32, "tr:auditor:evidence:sig:v2")),
     transientHash<Bytes<32>>(registryIdValue),
     transientHash<Bytes<32>>(evidenceVerifierKeyIdCommitment),
-    transientHash<Bytes<32>>(boundPayloadHash)
+    transientHash<Bytes<32>>(persistentHash<Vector<4, Bytes<32>>>([
+      pad(32, "tr:evidence:deployment:v1"), networkIdCommitment, contractAddress, boundPayloadHash
+    ]))
   ];
 }
 
@@ -631,17 +649,23 @@ export pure circuit maintainerEvidenceBoundProposalPayloadHash(
 
 export pure circuit maintainerProposalEvidenceSignatureDigest(
   registryIdValue: Bytes<32>,
+  networkIdCommitment: Bytes<32>,
+  contractAddress: Bytes<32>,
   evidenceVerifierKeyIdCommitment: Bytes<32>,
   boundPayloadHash: Bytes<32>
 ): Vector<4, Field> {
   assert(registryIdValue != pad(32, ""), "Registry id must be set");
+  assert(networkIdCommitment != pad(32, ""), "Deployment network must be set");
+  assert(contractAddress != pad(32, ""), "Contract address must be set");
   assert(evidenceVerifierKeyIdCommitment != pad(32, ""), "Evidence verifier key id must be set");
   assert(boundPayloadHash != pad(32, ""), "Bound maintainer proposal payload hash must be set");
   return [
-    transientHash<Bytes<32>>(pad(32, "tr:maintainer:evidence:sig:v1")),
+    transientHash<Bytes<32>>(pad(32, "tr:maintainer:evidence:sig:v2")),
     transientHash<Bytes<32>>(registryIdValue),
     transientHash<Bytes<32>>(evidenceVerifierKeyIdCommitment),
-    transientHash<Bytes<32>>(boundPayloadHash)
+    transientHash<Bytes<32>>(persistentHash<Vector<4, Bytes<32>>>([
+      pad(32, "tr:evidence:deployment:v1"), networkIdCommitment, contractAddress, boundPayloadHash
+    ]))
   ];
 }
 
@@ -669,17 +693,23 @@ export pure circuit recognitionEvidenceBoundProposalPayloadHash(
 
 export pure circuit recognitionProposalEvidenceSignatureDigest(
   registryIdValue: Bytes<32>,
+  networkIdCommitment: Bytes<32>,
+  contractAddress: Bytes<32>,
   evidenceVerifierKeyIdCommitment: Bytes<32>,
   boundPayloadHash: Bytes<32>
 ): Vector<4, Field> {
   assert(registryIdValue != pad(32, ""), "Registry id must be set");
+  assert(networkIdCommitment != pad(32, ""), "Deployment network must be set");
+  assert(contractAddress != pad(32, ""), "Contract address must be set");
   assert(evidenceVerifierKeyIdCommitment != pad(32, ""), "Evidence verifier key id must be set");
   assert(boundPayloadHash != pad(32, ""), "Bound recognition proposal payload hash must be set");
   return [
-    transientHash<Bytes<32>>(pad(32, "tr:recognition:evidence:sig:v1")),
+    transientHash<Bytes<32>>(pad(32, "tr:recognition:evidence:sig:v2")),
     transientHash<Bytes<32>>(registryIdValue),
     transientHash<Bytes<32>>(evidenceVerifierKeyIdCommitment),
-    transientHash<Bytes<32>>(boundPayloadHash)
+    transientHash<Bytes<32>>(persistentHash<Vector<4, Bytes<32>>>([
+      pad(32, "tr:evidence:deployment:v1"), networkIdCommitment, contractAddress, boundPayloadHash
+    ]))
   ];
 }
 
@@ -2080,6 +2110,17 @@ circuit verifyAuthorizedMaintainerSigner(
   return disclosedMaintainerKeyId;
 }
 
+pure circuit assertDistinctMaintainerSignerPublicKeys(
+  left: JubjubPoint,
+  right: JubjubPoint
+): [] {
+  assert(
+    jubjubPointX(left) != jubjubPointX(right)
+      || jubjubPointY(left) != jubjubPointY(right),
+    "Maintainer signer public keys must be distinct"
+  );
+}
+
 circuit finalizeAuthorizedMaintainerAction(
   actionSequence: Uint<64>,
   actionKind: Bytes<32>,
@@ -2239,6 +2280,10 @@ circuit performAuthorizedMaintainerAction(
     signerKeyIdLess(signer1KeyId, signer2KeyId),
     "Maintainer signer keys must be sorted"
   );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer1.publicKey,
+    authorizationBundle.signer2.publicKey
+  );
   if (disclosedSignerCount == 2) {
     return finalizeAuthorizedMaintainerAction(
       actionSequence,
@@ -2260,6 +2305,14 @@ circuit performAuthorizedMaintainerAction(
   assert(
     signerKeyIdLess(signer2KeyId, signer3KeyId),
     "Maintainer signer keys must be sorted"
+  );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer1.publicKey,
+    authorizationBundle.signer3.publicKey
+  );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer2.publicKey,
+    authorizationBundle.signer3.publicKey
   );
   if (disclosedSignerCount == 3) {
     return finalizeAuthorizedMaintainerAction(
@@ -2283,6 +2336,18 @@ circuit performAuthorizedMaintainerAction(
     signerKeyIdLess(signer3KeyId, signer4KeyId),
     "Maintainer signer keys must be sorted"
   );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer1.publicKey,
+    authorizationBundle.signer4.publicKey
+  );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer2.publicKey,
+    authorizationBundle.signer4.publicKey
+  );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer3.publicKey,
+    authorizationBundle.signer4.publicKey
+  );
   if (disclosedSignerCount == 4) {
     return finalizeAuthorizedMaintainerAction(
       actionSequence,
@@ -2304,6 +2369,22 @@ circuit performAuthorizedMaintainerAction(
   assert(
     signerKeyIdLess(signer4KeyId, signer5KeyId),
     "Maintainer signer keys must be sorted"
+  );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer1.publicKey,
+    authorizationBundle.signer5.publicKey
+  );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer2.publicKey,
+    authorizationBundle.signer5.publicKey
+  );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer3.publicKey,
+    authorizationBundle.signer5.publicKey
+  );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer4.publicKey,
+    authorizationBundle.signer5.publicKey
   );
   if (disclosedSignerCount == 5) {
     return finalizeAuthorizedMaintainerAction(
@@ -2798,6 +2879,8 @@ export circuit proposeMaintainerMembership(
   Schnorr_schnorrVerifyDigest(
     maintainerProposalEvidenceSignatureDigest(
       registryId,
+      deploymentNetworkIdCommitment,
+      kernel.self().bytes,
       disclosedEvidenceVerifierKeyIdCommitment,
       actionPayloadHash
     ),
@@ -3461,6 +3544,8 @@ export circuit proposeIssuerAuthorization(
   Schnorr_schnorrVerifyDigest(
     issuerProposalEvidenceSignatureDigest(
       registryId,
+      deploymentNetworkIdCommitment,
+      kernel.self().bytes,
       disclosedEvidenceVerifierKeyIdCommitment,
       actionPayloadHash
     ),
@@ -4571,6 +4656,8 @@ export circuit proposeVerifierAuthorization(
   Schnorr_schnorrVerifyDigest(
     verifierProposalEvidenceSignatureDigest(
       registryId,
+      deploymentNetworkIdCommitment,
+      kernel.self().bytes,
       disclosedEvidenceVerifierKeyIdCommitment,
       actionPayloadHash
     ),
@@ -5087,6 +5174,8 @@ export circuit proposeAuditorAuthorization(
   Schnorr_schnorrVerifyDigest(
     auditorProposalEvidenceSignatureDigest(
       registryId,
+      deploymentNetworkIdCommitment,
+      kernel.self().bytes,
       disclosedEvidenceVerifierKeyIdCommitment,
       actionPayloadHash
     ),
@@ -5624,6 +5713,8 @@ export circuit proposeRecognition(
   Schnorr_schnorrVerifyDigest(
     recognitionProposalEvidenceSignatureDigest(
       registryId,
+      deploymentNetworkIdCommitment,
+      kernel.self().bytes,
       disclosedEvidenceVerifierKeyIdCommitment,
       actionPayloadHash
     ),

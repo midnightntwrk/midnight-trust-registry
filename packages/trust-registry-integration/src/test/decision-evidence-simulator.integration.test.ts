@@ -26,6 +26,7 @@ import {
 } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import {
   AuthorizationStatus,
+  IssuerResourceType,
   VcAuthorityKeyStatus,
 } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import {
@@ -100,7 +101,7 @@ describe("simulator-backed VC decision evidence composition", () => {
   it("matches an active issuer, complete publication quorum, and resolved Midnight DID method", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("vc-decision-composition");
     const coMaintainer = createMaintainerScenarioFixture("vc-decision-co-maintainer");
-    const issuer = createIssuerScenarioFixture("vc-decision-issuer");
+    const issuer = createIssuerScenarioFixture("vc-decision-issuer", IssuerResourceType.schema);
     harness.authorizeMaintainer(coMaintainer);
     harness.authorizeMaintainer(createMaintainerScenarioFixture("vc-decision-third-maintainer"));
     harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
@@ -1366,6 +1367,27 @@ describe("simulator-backed VC decision evidence composition", () => {
         },
       },
     })).toThrow(/current grant mismatch/u);
+    await expect(issueVcSignerAuthorizationFromTrustedDecision({
+      evidence,
+      selection: context.selection,
+      readers: {
+        ...readers,
+        readCurrentFinalizedRegistryDecision: async () => ({
+          ...context,
+          decisionPoint: {
+            ...context.decisionPoint,
+            currentGrant: {
+              ...context.decisionPoint.currentGrant,
+              lifecycleEventRoot: hex(suspended.lifecycleEventHash),
+              status: "suspended",
+            },
+          },
+        }),
+      },
+      method: binding,
+      anchor: authorityAnchor,
+      signer: async () => { throw new Error("Withdrawn schema reached authority key custody"); },
+    })).rejects.toThrow(/current grant mismatch/u);
 
     harness.suspendVcAuthorityKey(authorityKeyIdCommitment, bytes32Commitment("vc-authority:suspension-reason"));
     expect(harness.simulator.getVcAuthorityKey(authorityKeyIdCommitment).status).toBe(VcAuthorityKeyStatus.suspended);

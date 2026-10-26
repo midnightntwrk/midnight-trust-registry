@@ -325,7 +325,7 @@ describe("trust registry admin console model", () => {
   it("renders mutation outcomes into operator-facing flash text", () => {
     expect(describeMutation({
       sourceMode: "workspace",
-      workspaceVersion: "2",
+      workspaceVersion: "3",
       workspaceUpdatedAt: "2026-05-23T04:00:00Z",
       snapshotGeneratedAt: "2026-05-23T04:00:00Z",
       currentEpochId: "epoch:002",

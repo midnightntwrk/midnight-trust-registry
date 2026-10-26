@@ -9,7 +9,7 @@ import {
   signDeploymentBoundMaintainerActionFromSeed,
 } from "@midnight-ntwrk/trust-registry-contract";
 import { createMaintainerFixture } from "@midnight-ntwrk/trust-registry-contract/testing";
-import { AuthorizationStatus } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+import { AuthorizationStatus, EvidenceVerifierKeyStatus } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
 import {
   bytes32Commitment,
@@ -22,6 +22,7 @@ import {
 
 import {
   GovernedPolicyActionRejectedError,
+  serializeGovernedPolicyAction,
   type GovernedPolicyActionPort,
   type PreparedGovernedPolicyAction,
 } from "../governed-policy-actions.js";
@@ -125,6 +126,7 @@ describe("Compact-backed policy revision over HTTP", () => {
       const post = (path: string, body: unknown) => fetch(`${base}/${path}`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
       });
+      expect((await post("evidence-verifier/rotate/prepare", {})).status).toBe(503);
       expect((await post("thresholds/prepare", {
         thresholds: { ...thresholds, default: "03" },
       })).status).toBe(400);
@@ -196,6 +198,110 @@ describe("Compact-backed policy revision over HTTP", () => {
       expect(() => harness.proposeIssuer(issuer, [second])).toThrow();
       harness.proposeIssuer(issuer, [second, third]);
       expect(harness.simulator.getLedger().governanceActionCount).toBe(before + 3n);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  }, 120_000);
+
+  it("requires external signatures and fresh contexts for evidence-verifier key lifecycle", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("key-lifecycle-http");
+    const bootstrap = createMaintainerFixture("bootstrap", 17);
+    bootstrap.keyId = bytes32Commitment(`${harness.maintainerDid}#key-1`);
+    const outsider = createMaintainerScenarioFixture("key-lifecycle-outsider");
+    const label = { rotate: "replacement", suspend: "incident", revoke: "compromise" } as const;
+    const port: GovernedPolicyActionPort = {
+      async prepareThresholds() { throw new GovernedPolicyActionRejectedError(); },
+      async executeThresholds() { throw new GovernedPolicyActionRejectedError(); },
+      async prepareEvidenceVerifier() { throw new GovernedPolicyActionRejectedError(); },
+      async executeEvidenceVerifier() { throw new GovernedPolicyActionRejectedError(); },
+      async prepareEvidenceVerifierTransition(input) {
+        try {
+          return input.action === "rotate"
+            ? harness.prepareEvidenceVerifierRotationAction(label.rotate)
+            : harness.prepareEvidenceVerifierStatusAction(input.action, label[input.action]);
+        } catch {
+          throw new GovernedPolicyActionRejectedError();
+        }
+      },
+      async executeEvidenceVerifierTransition(input, signers) {
+        try {
+          const eventHash = input.action === "rotate"
+            ? harness.executeEvidenceVerifierRotationWithSignatures(label.rotate, signers)
+            : harness.executeEvidenceVerifierStatusWithSignatures(input.action, label[input.action], signers);
+          return { eventHash: hex(eventHash) };
+        } catch {
+          throw new GovernedPolicyActionRejectedError();
+        }
+      },
+    };
+    const server = createTrustRegistryApiServer({
+      source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness, {
+        label: "key-lifecycle-http",
+      }) },
+      governedPolicyActions: port,
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("API listener unavailable");
+      const base = `http://127.0.0.1:${address.port}/v1/governed/policy/evidence-verifier`;
+      const post = (path: string, body: unknown) => fetch(`${base}/${path}`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+      });
+      const planned = harness.prepareEvidenceVerifierRotationAction(label.rotate);
+      const rotation = {
+        authorizationId: hex(planned.authorizationId),
+        reasonHash: hex(planned.reasonHash),
+        newAuthorizationId: hex(planned.newAuthorizationId!),
+        newKeyIdCommitment: hex(planned.newKeyIdCommitment!),
+        newPublicKey: {
+          x: planned.newPublicKey!.x.toString(), y: planned.newPublicKey!.y.toString(),
+        },
+      };
+      expect((await post("rotate/prepare", { ...rotation, privateSeed: "forbidden" })).status).toBe(400);
+      expect((await post("rotate/prepare", { ...rotation, newPublicKey: {
+        ...rotation.newPublicKey, x: "01",
+      } })).status).toBe(400);
+      expect((await post("rotate/prepare", {
+        ...rotation, newKeyIdCommitment: hex(bytes32Commitment("wrong-key")),
+      })).status).toBe(502);
+      const preparedResponse = await post("rotate/prepare", rotation);
+      expect(preparedResponse.status).toBe(200);
+      expect(preparedResponse.headers.get("cache-control")).toBe("no-store");
+      const prepared = await preparedResponse.json() as PreparedGovernedPolicyAction;
+      expect(prepared).toEqual(serializeGovernedPolicyAction(planned));
+      const vote = signPrepared(bootstrap, prepared);
+      const submit = (action: string, input: object, context: PreparedGovernedPolicyAction, signers: unknown[]) =>
+        post(`${action}/submit`, { ...input, prepared: context, signers });
+      const before = harness.simulator.getLedger().governanceActionCount;
+      expect((await submit("rotate", rotation, { ...prepared, reasonHash: hex(new Uint8Array(32)) }, [vote]))
+        .status).toBe(409);
+      expect((await submit("rotate", rotation, prepared, [signPrepared(outsider, prepared)])).status).toBe(403);
+      expect((await submit("rotate", rotation, prepared, [{ ...vote, signature: "0x01" }])).status).toBe(400);
+      expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
+      const rotated = await submit("rotate", rotation, prepared, [vote]);
+      expect(rotated.status).toBe(202);
+      expect((await rotated.json()).eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
+      expect(harness.simulator.getEvidenceVerifierKey(planned.authorizationId).status)
+        .toBe(EvidenceVerifierKeyStatus.retired);
+      expect(harness.simulator.getEvidenceVerifierKey(planned.newAuthorizationId!).status)
+        .toBe(EvidenceVerifierKeyStatus.active);
+      expect((await submit("rotate", rotation, prepared, [vote])).status).toBe(409);
+
+      for (const action of ["suspend", "revoke"] as const) {
+        const plan = harness.prepareEvidenceVerifierStatusAction(action, label[action]);
+        const input = { authorizationId: hex(plan.authorizationId), reasonHash: hex(plan.reasonHash) };
+        const response = await post(`${action}/prepare`, input);
+        expect(response.status).toBe(200);
+        const context = await response.json() as PreparedGovernedPolicyAction;
+        expect(context).toEqual(serializeGovernedPolicyAction(plan));
+        const result = await submit(action, input, context, [signPrepared(bootstrap, context)]);
+        expect(result.status).toBe(202);
+        expect((await result.json()).eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
+        expect(harness.simulator.getEvidenceVerifierKey(plan.authorizationId).status)
+          .toBe(action === "suspend" ? EvidenceVerifierKeyStatus.suspended : EvidenceVerifierKeyStatus.revoked);
+        expect((await submit(action, input, context, [signPrepared(bootstrap, context)])).status).toBe(409);
+      }
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }

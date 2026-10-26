@@ -10,9 +10,16 @@ import {
   createVerifierScenarioFixture,
 } from "../fixtures.js";
 import { vcAuthorityDomainCommitment } from "../vc-signer-authorization.js";
-import { issuerSchemaRefFromRegistryScope, vcScopeCommitmentFromRegistryScope } from "../vc-scope.js";
+import { assertVcIssuerSchemaGrant, issuerSchemaRefFromRegistryScope, vcScopeCommitmentFromRegistryScope } from "../vc-scope.js";
 
 describe("registry-to-VC scope mapping", () => {
+  it("does not promote a broader or unrelated issuer resource grant into schema authority", () => {
+    expect(() => assertVcIssuerSchemaGrant("schema")).not.toThrow();
+    for (const resourceType of ["credential-family", "schema-version", "credential-definition", "status-method-requirement"]) {
+      expect(() => assertVcIssuerSchemaGrant(resourceType)).toThrow(/exact schema grant/u);
+    }
+  });
+
   it("derives the exact VC issuer schema from the governed registry identifiers", () => {
     const scope = createIssuerScenarioFixture("vc-scope").authorizationScope;
     const schema = issuerSchemaRefFromRegistryScope(scope);

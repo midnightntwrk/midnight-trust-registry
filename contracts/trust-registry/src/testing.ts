@@ -20,7 +20,6 @@ import {
   type IssuerAuthorizationRecord,
   type IssuerProposalEvidenceRecord,
   type MaintainerAuthorizationBundle,
-  type MaintainerAuthorizationSigner,
   type MaintainerMembershipRecord,
   type MaintainerProposalEvidenceRecord,
   type RecognitionRecord,
@@ -36,7 +35,7 @@ import {
   type TrustRegistryPrivateState,
   trustRegistryWitnesses,
 } from "./witnesses.js";
-import { compareMaintainerKeyIds } from "./signing.js";
+import { buildCanonicalMaintainerAuthorizationBundle } from "./signing.js";
 
 export const labelToBytes32 = (label: string): Uint8Array => {
   if (label.includes("\0")) throw new Error("Fixture labels must not contain NUL bytes");
@@ -140,57 +139,20 @@ export class TrustRegistrySimulator {
     return ledger(this.circuitContext.currentQueryContext.state);
   }
 
-  private emptyMaintainerAuthorizationSigner(): MaintainerAuthorizationSigner {
-    return {
-      keyId: new Uint8Array(32),
-      publicKey: { x: 0n, y: 0n },
-      signature: {
-        announcement: { x: 0n, y: 0n },
-        response: 0n,
-      },
-    };
-  }
-
   private buildMaintainerAuthorizationBundle(
     maintainerKeyId: Uint8Array,
     maintainerPublicKey: JubjubPoint,
     signature: { announcement: JubjubPoint; response: bigint },
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
   ): MaintainerAuthorizationBundle {
-    const signers = [
+    return buildCanonicalMaintainerAuthorizationBundle([
       {
         keyId: maintainerKeyId,
         publicKey: maintainerPublicKey,
         signature,
       },
       ...coAuthorizers,
-    ].sort((left, right) => compareMaintainerKeyIds(left.keyId, right.keyId));
-    if (signers.length === 0) {
-      throw new Error("at least one maintainer authorizer is required");
-    }
-    if (signers.length > 5) {
-      throw new Error("maintainer authorization bundles support at most 5 signers");
-    }
-    const paddedSigners = [...signers];
-    while (paddedSigners.length < 5) {
-      paddedSigners.push(this.emptyMaintainerAuthorizationSigner());
-    }
-    const [signer1, signer2, signer3, signer4, signer5] = paddedSigners as [
-      MaintainerAuthorizationSigner,
-      MaintainerAuthorizationSigner,
-      MaintainerAuthorizationSigner,
-      MaintainerAuthorizationSigner,
-      MaintainerAuthorizationSigner,
-    ];
-
-    return {
-      signerCount: BigInt(signers.length),
-      signer1,
-      signer2,
-      signer3,
-      signer4,
-      signer5,
-    };
+    ]);
   }
 
   private executeCircuit<T>(

@@ -18,7 +18,7 @@ import {
   sha256Hex,
   type DecisionEvidenceSelection,
 } from "@midnight-ntwrk/trust-registry-domain";
-import { vcScopeCommitmentFromRegistryScope } from "./vc-scope.js";
+import { assertVcIssuerSchemaGrant, vcScopeCommitmentFromRegistryScope } from "./vc-scope.js";
 
 const bytes32FromHex = (value: string, label: string): Uint8Array => {
   if (!/^0x[0-9a-f]{64}$/u.test(value)) throw new Error(`${label} must be a canonical 32-byte hash`);
@@ -47,6 +47,7 @@ const createDescriptorFromTrustedCandidate = (
   method: MidnightDIDMethodBinding,
   expectedState: "active" | "suspended" | "revoked",
 ) => {
+  if (candidate.role === "issuer") assertVcIssuerSchemaGrant(candidate.resourceType);
   const vcScopeCommitment = vcScopeCommitmentFromRegistryScope(candidate.scope);
   const didId = parseMidnightDID(parseMidnightDIDString(candidate.subjectDid)).id;
   const fragment = candidate.didMethod.methodId.slice(candidate.subjectDid.length);

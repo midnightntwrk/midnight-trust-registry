@@ -24,6 +24,7 @@ import {
 import {
   createTrustRegistryApiServer,
   InMemoryApplicationChallengeStore,
+  RecognitionAccreditationAuthorizationDeniedError,
   RecognitionAuthorityChallengeService,
   resolveCompactProposalEvidenceSnapshot,
 } from "@midnight-ntwrk/trust-registry-api";
@@ -180,6 +181,7 @@ assert.equal(hex(harness.simulator.getRecognitionProposalEvidence(
 ).evidenceCommitment), verified.evidenceCommitment);
 const proposalSnapshot = await resolveCompactProposalEvidenceSnapshot(
   async () => harness.simulator.getLedger(), harness.registryId, "recognition", recognition.recognitionId,
+  Buffer.from(harness.simulator.contractAddress, "hex"),
 );
 assert.equal(proposalSnapshot?.evidenceCommitment, verified.evidenceCommitment);
 assert.equal(proposalSnapshot?.eventHash, hex(proposalEventHash));
@@ -187,24 +189,49 @@ assert.equal(proposalSnapshot?.signatureVerified, true);
 assert.match(proposalSnapshot.boundActionPayloadHash, /^0x[0-9a-f]{64}$/u);
 await assert.rejects(resolveCompactProposalEvidenceSnapshot(
   async () => harness.simulator.getLedger(), "registry:other", "recognition", recognition.recognitionId,
+  Buffer.from(harness.simulator.contractAddress, "hex"),
 ), /different trust registry/u);
+const recognitionAccreditationPort = {
+  challengeStore: new InMemoryApplicationChallengeStore(),
+  authorizeRequest: async (_recognitionId, request) => {
+    if (request.headers.authorization !== "Bearer packed-recognition-fixture") {
+      throw new RecognitionAccreditationAuthorizationDeniedError();
+    }
+  },
+  resolveCurrentContext: async (recognitionId) => recognitionId === recognition.recognitionId ? {
+    binding,
+    governancePolicy: harness.policyRecord,
+    activePolicyCommitment: hex(harness.simulator.getLedger().governancePolicyCommitment),
+    resolver: accreditation.input.resolver,
+    statusSource: accreditation.input.statusSource,
+  } : null,
+};
 const api = createTrustRegistryApiServer({
   source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "packed-recognition" }) },
+  proposalContractAddress: Buffer.from(harness.simulator.contractAddress, "hex"),
   readFinalizedProposalLedger: async () => harness.simulator.getLedger(),
+  recognitionAccreditation: recognitionAccreditationPort,
 });
 try {
   await new Promise((resolve) => api.listen(0, "127.0.0.1", resolve));
   const address = api.address();
   if (address === null || typeof address === "string") throw new Error("TCP address unavailable");
   const endpoint = `http://127.0.0.1:${address.port}/v1/governed/recognition/`;
-  const response = await fetch(`${endpoint}${encodeURIComponent(recognition.recognitionId)}/proposal/evidence`);
+  const evidenceUrl = `${endpoint}${encodeURIComponent(recognition.recognitionId)}/proposal/evidence`;
+  const unauthorized = await fetch(evidenceUrl);
+  assert.equal(unauthorized.status, 403);
+  assert.match((await unauthorized.json()).type, /recognition-accreditation-forbidden$/u);
+  const authorization = { authorization: "Bearer packed-recognition-fixture" };
+  const response = await fetch(evidenceUrl, { headers: authorization });
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("cache-control"), "no-store");
   const observed = await response.json();
   assert.equal(observed.evidenceCommitment, proposalSnapshot.evidenceCommitment);
   assert.equal(observed.eventHash, proposalSnapshot.eventHash);
   assert.equal(observed.signatureVerified, true);
-  const absent = await fetch(`${endpoint}${encodeURIComponent("recognition:absent")}/proposal/evidence`);
+  const absent = await fetch(`${endpoint}${encodeURIComponent("recognition:absent")}/proposal/evidence`, {
+    headers: authorization,
+  });
   assert.equal(absent.status, 404);
   assert.match((await absent.json()).type, /proposal-evidence-not-found$/u);
 } finally {
@@ -220,9 +247,26 @@ try {
   const response = await fetch(`http://127.0.0.1:${address.port}/v1/governed/recognition/`
     + `${encodeURIComponent(recognition.recognitionId)}/proposal/evidence`);
   assert.equal(response.status, 503);
-  assert.match((await response.json()).type, /proposal-evidence-unavailable$/u);
+  assert.match((await response.json()).type, /recognition-accreditation-unavailable$/u);
 } finally {
   await new Promise((resolve, reject) => unavailableApi.close((error) => error ? reject(error) : resolve()));
+}
+const missingLedgerApi = createTrustRegistryApiServer({
+  source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "packed-recognition" }) },
+  recognitionAccreditation: recognitionAccreditationPort,
+});
+try {
+  await new Promise((resolve) => missingLedgerApi.listen(0, "127.0.0.1", resolve));
+  const address = missingLedgerApi.address();
+  if (address === null || typeof address === "string") throw new Error("TCP address unavailable");
+  const response = await fetch(`http://127.0.0.1:${address.port}/v1/governed/recognition/`
+    + `${encodeURIComponent(recognition.recognitionId)}/proposal/evidence`, {
+    headers: { authorization: "Bearer packed-recognition-fixture" },
+  });
+  assert.equal(response.status, 503);
+  assert.match((await response.json()).type, /proposal-evidence-unavailable$/u);
+} finally {
+  await new Promise((resolve, reject) => missingLedgerApi.close((error) => error ? reject(error) : resolve()));
 }
 harness.approveRecognition(recognition);
 harness.activateRecognition(recognition);
@@ -253,6 +297,7 @@ process.stdout.write(`${JSON.stringify({
   expectedRejections: [
     "wrong-external-registry", "substituted-authority-assertion", "inactive-accreditation-status",
     "replayed-challenge", "insufficient-maintainer-quorum", "wrong-recognition-registry",
-    "suspended-current-decision", "missing-proposal-evidence:404", "unavailable-ledger-reader:503",
+    "suspended-current-decision", "unauthorized-proposal-evidence:403", "missing-proposal-evidence:404",
+    "unavailable-accreditation-port:503", "unavailable-ledger-reader:503",
   ],
 }, null, 2)}\n`);

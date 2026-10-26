@@ -75,6 +75,28 @@ describe("Midnight DID mutation-intent signatures", () => {
     expect(await verifyMutationIntentDidSignature(intent, signature, { resolveResult: async () => null })).toBe(false);
   });
 
+  it("selects the signed DID method among two authentication keys and rejects a retired method", async () => {
+    const secondSeed = new Uint8Array(32).fill(74);
+    const first = { id: "assertion-1", publicKey: deriveJubjubPublicKeyFromSeed(seed) };
+    const second = { id: "assertion-2", publicKey: deriveJubjubPublicKeyFromSeed(secondSeed) };
+    const twoKeys = createMidnightDidResolver([
+      createMidnightDidLedgerFixture(did, { schnorrJubjubAuthenticationMethods: [first, second] }),
+    ]);
+    const secondIntent = { ...intent, actorKeyId: `${did}#assertion-2` };
+    expect(await verifyMutationIntentDidSignature(intent, signatureFor(intent), twoKeys)).toBe(true);
+    expect(await verifyMutationIntentDidSignature(secondIntent, signatureFor(secondIntent, secondSeed), twoKeys)).toBe(true);
+    expect(await verifyMutationIntentDidSignature(secondIntent, signatureFor(secondIntent, seed), twoKeys)).toBe(false);
+    expect(await verifyMutationIntentDidSignature(secondIntent, {
+      ...signatureFor(intent), keyId: secondIntent.actorKeyId,
+    }, twoKeys)).toBe(false);
+
+    const rotated = createMidnightDidResolver([
+      createMidnightDidLedgerFixture(did, { schnorrJubjubAuthenticationMethods: [second], version: 2n }),
+    ]);
+    expect(await verifyMutationIntentDidSignature(intent, signatureFor(intent), rotated)).toBe(false);
+    expect(await verifyMutationIntentDidSignature(secondIntent, signatureFor(secondIntent, secondSeed), rotated)).toBe(true);
+  });
+
   it("rejects a forged identity-key signature that requires no secret key", async () => {
     const nonce = 7n;
     const forgedSignature = {

@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -191,6 +192,171 @@ describe("private governed proposal submission journal", () => {
       return { eventHash };
     })).rejects.toBeInstanceOf(ProposalSubmissionCapacityError);
     expect(executed).toBe(false);
+    expect(await journal.read("verifier", authorizationId)).toBeNull();
+  });
+
+  it("rotates observed history without freeing an authorization for resubmission", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    await journal.executeOnce("issuer", authorizationId, evidenceCommitment, async () => ({ eventHash }));
+    await journal.reconcile("issuer", authorizationId, async () => ({ eventHash, evidenceCommitment }));
+    await expect(journal.executeOnce("issuer", "unknown-outcome", evidenceCommitment, async () => {
+      throw new Error("response lost");
+    })).rejects.toBeInstanceOf(ProposalSubmissionOutcomeUnknownError);
+
+    expect(await journal.rotateObserved(async () => ({ eventHash, evidenceCommitment })))
+      .toEqual({ archived: 1, pending: 1 });
+    const reopened = new FileProposalSubmissionJournal(path);
+    expect(await reopened.inspectCapacity()).toMatchObject({
+      activeEntries: 1, pendingEntries: 1, archivedEntries: 1, archiveCount: 1,
+      maxActiveEntries: 10_000, maxActiveBytes: 4 * 1024 * 1024, maxArchives: 64,
+    });
+    expect(await reopened.read("issuer", authorizationId)).toMatchObject({ state: "observed", eventHash });
+    expect(await reopened.read("issuer", "unknown-outcome")).toMatchObject({ state: "reserved", eventHash: null });
+    let executions = 0;
+    await expect(reopened.executeOnce("issuer", authorizationId, evidenceCommitment, async () => {
+      executions += 1;
+      return { eventHash };
+    })).rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
+    await expect(reopened.executeOnce("issuer", "unknown-outcome", evidenceCommitment, async () => {
+      executions += 1;
+      return { eventHash };
+    })).rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
+    expect(executions).toBe(0);
+    expect(await reopened.reconcile("issuer", "unknown-outcome",
+      async () => ({ eventHash: otherEventHash, evidenceCommitment })))
+      .toMatchObject({ state: "observed", eventHash: otherEventHash });
+    expect(await reopened.rotateObserved(async () => ({ eventHash: otherEventHash, evidenceCommitment })))
+      .toEqual({ archived: 1, pending: 0 });
+    expect(await reopened.read("issuer", "unknown-outcome")).toMatchObject({ state: "observed" });
+    expect(await reopened.inspectCapacity()).toMatchObject({
+      activeEntries: 0, pendingEntries: 0, archivedEntries: 2, archiveCount: 2,
+    });
+  });
+
+  it("requires matching finalized evidence for every row before changing the journal", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    await journal.executeOnce("issuer", authorizationId, evidenceCommitment, async () => ({ eventHash }));
+    await journal.reconcile("issuer", authorizationId, async () => ({ eventHash, evidenceCommitment }));
+    const before = await readFile(path, "utf8");
+    await expect(journal.rotateObserved(async () => null))
+      .rejects.toBeInstanceOf(ProposalSubmissionConflictError);
+    await expect(journal.rotateObserved(async () => ({ eventHash: otherEventHash, evidenceCommitment })))
+      .rejects.toBeInstanceOf(ProposalSubmissionConflictError);
+    await expect(journal.rotateObserved(async () => {
+      throw new Error("finality reader unavailable");
+    })).rejects.toThrow("finality reader unavailable");
+    expect(await readFile(path, "utf8")).toBe(before);
+    expect(await journal.inspectCapacity()).toMatchObject({ activeEntries: 1, archiveCount: 0 });
+    let readRole: string | undefined;
+    let readId: string | undefined;
+    await journal.rotateObserved(async (role, id) => {
+      readRole = role;
+      readId = id;
+      return { eventHash, evidenceCommitment };
+    });
+    expect([readRole, readId]).toEqual(["issuer", authorizationId]);
+  });
+
+  it("crosses the entry limit only after durable rotation and still rejects archived duplicates", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    await writeFile(path, JSON.stringify({ version: 1, attempts: Array.from({ length: 10_000 }, (_, index) => ({
+      role: "issuer", authorizationId: `existing:${index}`, evidenceCommitment,
+      state: "observed", eventHash,
+    })) }), { mode: 0o600 });
+    let executions = 0;
+    await expect(journal.executeOnce("verifier", authorizationId, evidenceCommitment, async () => {
+      executions += 1;
+      return { eventHash };
+    })).rejects.toBeInstanceOf(ProposalSubmissionCapacityError);
+    expect(executions).toBe(0);
+    expect(await journal.rotateObserved(async () => ({ eventHash, evidenceCommitment })))
+      .toEqual({ archived: 10_000, pending: 0 });
+    expect(await journal.executeOnce("verifier", authorizationId, evidenceCommitment, async () => {
+      executions += 1;
+      return { eventHash };
+    })).toEqual({ eventHash });
+    await expect(journal.executeOnce("issuer", "existing:0", evidenceCommitment, async () => {
+      executions += 1;
+      return { eventHash };
+    })).rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
+    expect(executions).toBe(1);
+  });
+
+  it("ignores an uncommitted segment and fails closed on a missing or altered committed archive", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    await journal.executeOnce("issuer", authorizationId, evidenceCommitment, async () => ({ eventHash }));
+    await journal.reconcile("issuer", authorizationId, async () => ({ eventHash, evidenceCommitment }));
+    await writeFile(join(directory, "journal.json.00000000-0000-0000-0000-000000000000.segment"),
+      "orphaned before manifest commit", { mode: 0o600 });
+    expect(await journal.read("issuer", authorizationId)).toMatchObject({ state: "observed" });
+    await journal.rotateObserved(async () => ({ eventHash, evidenceCommitment }));
+    const manifest = JSON.parse(await readFile(path, "utf8")) as {
+      archives: Array<{ file: string }>;
+    };
+    const archivePath = join(directory, manifest.archives[0]!.file);
+    await writeFile(archivePath, "tampered", { mode: 0o600 });
+    let executed = false;
+    await expect(journal.executeOnce("verifier", authorizationId, evidenceCommitment, async () => {
+      executed = true;
+      return { eventHash };
+    })).rejects.toBeInstanceOf(InvalidProposalSubmissionJournalError);
+    expect(executed).toBe(false);
+    await rm(archivePath);
+    await expect(journal.read("issuer", authorizationId)).rejects.toBeInstanceOf(InvalidProposalSubmissionJournalError);
+    expect((await readdir(directory)).some((name) => name.endsWith(".segment"))).toBe(true);
+  });
+
+  it("allows one concurrent submission after rotation", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    await journal.executeOnce("issuer", authorizationId, evidenceCommitment, async () => ({ eventHash }));
+    await journal.reconcile("issuer", authorizationId, async () => ({ eventHash, evidenceCommitment }));
+    await journal.rotateObserved(async () => ({ eventHash, evidenceCommitment }));
+    const left = new FileProposalSubmissionJournal(path);
+    const right = new FileProposalSubmissionJournal(path);
+    let executions = 0;
+    const run = (writer: FileProposalSubmissionJournal) => writer.executeOnce(
+      "auditor", "concurrent-after-rotation", evidenceCommitment, async () => {
+        executions += 1;
+        return { eventHash };
+      },
+    );
+    expect((await Promise.allSettled([run(left), run(right)]))
+      .map((result) => result.status).sort()).toEqual(["fulfilled", "rejected"]);
+    expect(executions).toBe(1);
+  });
+
+  it("denies concurrent submissions at the rotated segment byte boundary", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    await journal.executeOnce("issuer", authorizationId, evidenceCommitment, async () => ({ eventHash }));
+    await journal.reconcile("issuer", authorizationId, async () => ({ eventHash, evidenceCommitment }));
+    await journal.rotateObserved(async () => ({ eventHash, evidenceCommitment }));
+    const manifest = JSON.parse(await readFile(path, "utf8")) as {
+      active: { file: string; sha256: string };
+    };
+    const active = JSON.stringify({ version: 1, attempts: Array.from({ length: 9_500 }, (_, index) => ({
+      role: "issuer", authorizationId: `existing:${index}:${"x".repeat(198 + (index < 129 ? 44 : 0))}`,
+      evidenceCommitment, state: index === 0 ? "reserved" : "observed",
+      eventHash: index === 0 ? null : eventHash,
+    })) });
+    expect(Buffer.byteLength(active)).toBeLessThan(4 * 1024 * 1024);
+    await writeFile(join(directory, manifest.active.file), active, { mode: 0o600 });
+    manifest.active.sha256 = createHash("sha256").update(active).digest("hex");
+    await writeFile(path, JSON.stringify(manifest), { mode: 0o600 });
+    let executions = 0;
+    const run = (writer: FileProposalSubmissionJournal) => writer.executeOnce(
+      "verifier", authorizationId, evidenceCommitment, async () => {
+        executions += 1;
+        return { eventHash };
+      },
+    );
+    const results = await Promise.allSettled([
+      run(new FileProposalSubmissionJournal(path)), run(new FileProposalSubmissionJournal(path)),
+    ]);
+    expect(results.map((result) => result.status)).toEqual(["rejected", "rejected"]);
+    for (const result of results) {
+      if (result.status === "rejected") expect(result.reason).toBeInstanceOf(ProposalSubmissionCapacityError);
+    }
+    expect(executions).toBe(0);
     expect(await journal.read("verifier", authorizationId)).toBeNull();
   });
 });

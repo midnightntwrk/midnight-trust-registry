@@ -4,6 +4,7 @@ import { z, ZodError } from "zod";
 
 import { DecisionEvidenceSchema, SignedPendingApplicationSchema } from "@midnight-ntwrk/trust-registry-domain";
 import { encodeCompactActionKind } from "@midnight-ntwrk/trust-registry-contract";
+import { EvidenceVerifierDidResolutionUnavailableError } from "@midnight-ntwrk/trust-registry-integration";
 
 import {
   TrustRegistryTrqpAdapter,
@@ -60,16 +61,23 @@ import {
 } from "./governed-epoch-publication.js";
 import {
   GovernedEvidenceVerifierPrepareRequestSchema,
+  GovernedEvidenceVerifierRotationPrepareRequestSchema,
+  GovernedEvidenceVerifierRotationSubmitRequestSchema,
+  GovernedEvidenceVerifierStatusPrepareRequestSchema,
+  GovernedEvidenceVerifierStatusSubmitRequestSchema,
   GovernedEvidenceVerifierSubmitRequestSchema,
   GovernedMaintainerRecoveryPrepareRequestSchema,
   GovernedMaintainerRecoverySubmitRequestSchema,
   GovernedPolicyActionReceiptSchema,
   GovernedPolicyActionRejectedError,
+  PreparedGovernedEvidenceVerifierRotationSchema,
+  PreparedGovernedEvidenceVerifierStatusSchema,
   GovernedThresholdPrepareRequestSchema,
   GovernedThresholdSubmitRequestSchema,
   sameGovernedPolicyAction,
   serializeGovernedPolicyAction,
   type GovernedPolicyActionPort,
+  type GovernedEvidenceVerifierTransitionInput,
 } from "./governed-policy-actions.js";
 import {
   decodeIssuerEvidenceVerifierSignature,
@@ -162,7 +170,7 @@ import {
   type ProposalSubmissionJournal,
 } from "./proposal-submission-journal.js";
 import { MutationIntentOperationMismatchError } from "./mutation-intent-preflight.js";
-import { MutationIntentActorRejectedError, MutationNonceAlreadyUsedError, MutationNonceCapacityExceededError } from "./signed-mutation-state.js";
+import { MutationActorNonceCapacityExceededError, MutationIntentActorRejectedError, MutationNonceAlreadyUsedError, MutationNonceCapacityExceededError, MutationNonceClockRollbackError } from "./signed-mutation-state.js";
 import { computeOperatorWorkspaceCommitment } from "./workspace-commitment.js";
 import {
   TrustRegistryApiApplicationActionSchema,
@@ -199,6 +207,11 @@ import {
 
 const DEFAULT_PROBLEM_BASE = "https://midnight.network/problems/trust-registry-api";
 const RECOVER_MAINTAINER_ACTION_KIND = `0x${Buffer.from(encodeCompactActionKind("tr:maintainer:recover")).toString("hex")}`;
+const EVIDENCE_VERIFIER_ACTION_KINDS = {
+  rotate: `0x${Buffer.from(encodeCompactActionKind("tr:evidence-verifier:rotate")).toString("hex")}`,
+  suspend: `0x${Buffer.from(encodeCompactActionKind("tr:evidence-verifier:suspend")).toString("hex")}`,
+  revoke: `0x${Buffer.from(encodeCompactActionKind("tr:evidence-verifier:revoke")).toString("hex")}`,
+} as const;
 const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
 
 class HttpProblem extends Error {
@@ -229,6 +242,8 @@ export type TrustRegistryApiServerOptions = {
   readDecisionEvidence?: (role: "issuer" | "verifier", authorizationId: string) => Promise<unknown | null>;
   /** Optional read-only proposal audit source; this server does not establish ledger finality. */
   readFinalizedProposalLedger?: FinalizedProposalLedgerReader;
+  /** Independently pinned deployment address for verifier-attestation replay protection. */
+  proposalContractAddress?: Uint8Array;
   proposalAdmission?: ProposalAdmissionPort;
   /** Required for a durable VP/accreditation-to-Compact handoff; persist before submission. */
   proposalSubmissionJournal?: ProposalSubmissionJournal;
@@ -559,8 +574,14 @@ const mapMutationError = (
   if (error instanceof MutationNonceAlreadyUsedError) {
     throw jsonProblem(problemBaseUri, "mutation-replay", 409, "mutation replay", error.message);
   }
+  if (error instanceof MutationActorNonceCapacityExceededError) {
+    throw jsonProblem(problemBaseUri, "mutation-actor-nonce-capacity", 429, "actor mutation nonce capacity exceeded", error.message);
+  }
   if (error instanceof MutationNonceCapacityExceededError) {
     throw jsonProblem(problemBaseUri, "mutation-nonce-capacity", 503, "mutation nonce capacity exceeded", error.message);
+  }
+  if (error instanceof MutationNonceClockRollbackError) {
+    throw jsonProblem(problemBaseUri, "mutation-nonce-clock-rollback", 503, "mutation nonce clock moved backwards", error.message);
   }
   if (error instanceof WorkspaceMutationLockedError) {
     throw jsonProblem(problemBaseUri, "workspace-locked", 409, "workspace locked", error.message);
@@ -647,6 +668,10 @@ const requireGovernedPolicyActions = (
 };
 
 const mapGovernedPolicyError = (error: unknown, problemBaseUri: string): never => {
+  if (error instanceof EvidenceVerifierDidResolutionUnavailableError) {
+    throw jsonProblem(problemBaseUri, "evidence-verifier-did-unavailable", 503,
+      "evidence verifier DID resolution unavailable");
+  }
   if (error instanceof GovernedPolicyActionRejectedError) {
     throw jsonProblem(problemBaseUri, "governed-policy-rejected", 403,
       "governed policy action rejected");
@@ -960,7 +985,7 @@ export const createTrustRegistryApiServer = (
           }
           await authorizeRecognitionRequest(segments[3]!, request);
         }
-        if (options.readFinalizedProposalLedger === undefined) {
+        if (options.readFinalizedProposalLedger === undefined || options.proposalContractAddress === undefined) {
           throw jsonProblem(problemBaseUri, "proposal-evidence-unavailable", 503,
             "proposal evidence unavailable");
         }
@@ -969,6 +994,7 @@ export const createTrustRegistryApiServer = (
           const registry = await loadRegistryRecord(options.source);
           snapshot = await resolveCompactProposalEvidenceSnapshot(
             options.readFinalizedProposalLedger, registry.registryId, role as ProposalRole, segments[3]!,
+            options.proposalContractAddress,
           );
         } catch {
           throw jsonProblem(problemBaseUri, "proposal-evidence-unavailable", 503,
@@ -1575,6 +1601,102 @@ export const createTrustRegistryApiServer = (
           return;
         } catch (error) {
           return mapGovernedMaintainerProposalError(error, problemBaseUri);
+        }
+      }
+
+      if (
+        method === "POST"
+        && segments.length === 6
+        && segments[0] === "v1"
+        && segments[1] === "governed"
+        && segments[2] === "policy"
+        && segments[3] === "evidence-verifier"
+        && (segments[4] === "rotate" || segments[4] === "suspend" || segments[4] === "revoke")
+        && (segments[5] === "prepare" || segments[5] === "submit")
+      ) {
+        const port = requireGovernedPolicyActions(options, problemBaseUri);
+        if (port.prepareEvidenceVerifierTransition === undefined
+          || port.executeEvidenceVerifierTransition === undefined) {
+          throw jsonProblem(problemBaseUri, "governed-key-lifecycle-unavailable", 503,
+            "governed key lifecycle unavailable", "An authorized evidence-verifier lifecycle port is not configured.");
+        }
+        const action = segments[4] as "rotate" | "suspend" | "revoke";
+        const rotating = action === "rotate";
+        const preparing = segments[5] === "prepare";
+        const body = await parseJsonBody(request, (value) => rotating
+          ? (preparing ? GovernedEvidenceVerifierRotationPrepareRequestSchema
+            : GovernedEvidenceVerifierRotationSubmitRequestSchema).parse(value)
+          : (preparing ? GovernedEvidenceVerifierStatusPrepareRequestSchema
+            : GovernedEvidenceVerifierStatusSubmitRequestSchema).parse(value), problemBaseUri);
+        const statusInput = { authorizationId: body.authorizationId, reasonHash: body.reasonHash };
+        const input: GovernedEvidenceVerifierTransitionInput = rotating
+          ? { action, ...GovernedEvidenceVerifierRotationPrepareRequestSchema.parse({
+            ...statusInput,
+            newAuthorizationId: "newAuthorizationId" in body ? body.newAuthorizationId : undefined,
+            newKeyIdCommitment: "newKeyIdCommitment" in body ? body.newKeyIdCommitment : undefined,
+            newPublicKey: "newPublicKey" in body ? body.newPublicKey : undefined,
+          }) }
+          : { action, ...statusInput };
+        let signerContext;
+        let current;
+        try {
+          signerContext = await port.prepareEvidenceVerifierTransition(input);
+          const serialized = serializeGovernedPolicyAction(signerContext);
+          current = rotating
+            ? PreparedGovernedEvidenceVerifierRotationSchema.parse(serialized)
+            : PreparedGovernedEvidenceVerifierStatusSchema.parse(serialized);
+        } catch (error) {
+          if (!preparing && error instanceof GovernedPolicyActionRejectedError) {
+            throw jsonProblem(problemBaseUri, "stale-governed-policy", 409,
+              "stale governed policy action", "The signed context no longer matches current ledger state.");
+          }
+          return mapGovernedPolicyError(error, problemBaseUri);
+        }
+        if (current.authorizationId !== input.authorizationId
+          || current.reasonHash !== input.reasonHash
+          || current.actionKind !== EVIDENCE_VERIFIER_ACTION_KINDS[action]
+          || current.previousLifecycleEventHash === undefined
+          || (input.action === "rotate" && (current.newAuthorizationId !== input.newAuthorizationId
+            || current.newKeyIdCommitment !== input.newKeyIdCommitment
+            || current.newPublicKey?.x !== input.newPublicKey.x
+            || current.newPublicKey?.y !== input.newPublicKey.y))
+          || (input.action !== "rotate" && (current.newAuthorizationId !== undefined
+            || current.newKeyIdCommitment !== undefined || current.newPublicKey !== undefined))) {
+          if (!preparing) {
+            throw jsonProblem(problemBaseUri, "stale-governed-policy", 409,
+              "stale governed policy action", "The key action no longer targets current ledger state.");
+          }
+          throw jsonProblem(problemBaseUri, "governed-policy-context-mismatch", 502,
+            "governed policy context mismatch", "The lifecycle port returned a context for another key action.");
+        }
+        response.setHeader("cache-control", "no-store");
+        if (preparing) {
+          writeJson(response, 200, current);
+          return;
+        }
+        const submitted = rotating
+          ? GovernedEvidenceVerifierRotationSubmitRequestSchema.parse(body)
+          : GovernedEvidenceVerifierStatusSubmitRequestSchema.parse(body);
+        if (!sameGovernedPolicyAction(current, submitted.prepared)) {
+          throw jsonProblem(problemBaseUri, "stale-governed-policy", 409,
+            "stale governed policy action", "The signed context no longer matches current ledger state.");
+        }
+        let signers;
+        try {
+          signers = decodeGovernedMembershipSigners(submitted);
+        } catch {
+          throw jsonProblem(problemBaseUri, "invalid-governed-signature", 400,
+            "invalid governed signature");
+        }
+        requireValidProposalSigners(signerContext, signers);
+        try {
+          const receipt = GovernedPolicyActionReceiptSchema.parse(
+            await port.executeEvidenceVerifierTransition(input, signers),
+          );
+          writeJson(response, 202, receipt);
+          return;
+        } catch (error) {
+          return mapGovernedPolicyError(error, problemBaseUri);
         }
       }
 

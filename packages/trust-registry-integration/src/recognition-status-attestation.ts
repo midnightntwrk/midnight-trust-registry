@@ -2,8 +2,7 @@ import { Buffer } from "node:buffer";
 
 import { resolveMidnightDIDMethodBinding } from "@midnight-ntwrk/credential-did-midnight";
 import { parseMidnightDIDString, type MidnightDIDResolverInterface } from "@midnight-ntwrk/midnight-did";
-import { verifyJubjubDigest, type JubjubDigest } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
-import { decodeCanonicalJubjubSignatureHex } from "@midnight-ntwrk/trust-registry-contract";
+import type { JubjubDigest } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import {
   SignedRecognitionStatusAttestationSchema,
   recognitionStatusAttestationCommitment,
@@ -15,6 +14,7 @@ import {
 } from "@midnight-ntwrk/trust-registry-domain";
 
 import type { RecognitionAccreditationStatusSource, RecognitionStatusDecision } from "./recognition-accreditation-vp.js";
+import { verifyDidJubjubSignature } from "./did-signature-verification.js";
 
 const MAX_AGE_MS = 5 * 60_000;
 const MAX_FUTURE_SKEW_MS = 60_000;
@@ -89,10 +89,10 @@ export function createAttestedRecognitionStatusSource(input: {
         verificationMethodId: statement.statusAuthorityMethodId,
         relationship: "assertionMethod",
       });
-      if (!verifyJubjubDigest(
+      if (!verifyDidJubjubSignature(
         method.publicKey,
         recognitionStatusAttestationDigest(statement, signed.proof.verificationMethodId),
-        decodeCanonicalJubjubSignatureHex(signed.proof.signature),
+        signed.proof.signature,
       )) {
         throw new Error("Recognition status attestation signature is invalid");
       }

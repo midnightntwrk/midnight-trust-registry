@@ -100,8 +100,8 @@ const loadWorkspaceJson = async (
   const raw = await readFile(workspacePath, "utf8");
   const parsed: unknown = JSON.parse(raw);
   if (parsed !== null && typeof parsed === "object" && "workspaceVersion" in parsed
-    && parsed.workspaceVersion === "1") {
-    throw new Error("Workspace version 1 is unsupported; recreate the pre-release workspace before mutation");
+    && (parsed.workspaceVersion === "1" || parsed.workspaceVersion === "2")) {
+    throw new Error(`Workspace version ${parsed.workspaceVersion} is unsupported; recreate the pre-release workspace before mutation`);
   }
   return TrustRegistryOperatorWorkspaceSchema.parse(parsed);
 };
@@ -640,11 +640,12 @@ export const createOperatorWorkspace = (
   const snapshot = buildSnapshotFromTrackedFixtures(label, 0, harness, trackedFixtures);
 
   return TrustRegistryOperatorWorkspaceSchema.parse({
-    workspaceVersion: "2",
+    workspaceVersion: "3",
     updatedAt: snapshot.generatedAt,
     registryLabel: label,
     operations: [],
     consumedMutationNonces: {},
+    mutationNonceClock: null,
     snapshot,
   });
 };
@@ -672,11 +673,12 @@ export const applyWorkspaceOperation = (
   ));
 
   return TrustRegistryOperatorWorkspaceSchema.parse({
-    workspaceVersion: "2",
+    workspaceVersion: "3",
     updatedAt: snapshot.generatedAt,
     registryLabel: workspace.registryLabel,
     operations,
     consumedMutationNonces: workspace.consumedMutationNonces,
+    mutationNonceClock: workspace.mutationNonceClock,
     snapshot,
   });
 };

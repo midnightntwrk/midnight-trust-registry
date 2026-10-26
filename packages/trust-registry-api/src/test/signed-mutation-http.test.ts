@@ -10,6 +10,7 @@ import {
   createOperatorWorkspace,
   applyWorkspaceOperation,
   MAX_CONSUMED_MUTATION_NONCES,
+  MAX_CONSUMED_MUTATION_NONCES_PER_ACTOR,
   loadWorkspaceFromFile,
   resolveWorkspaceOperationRecord,
   writeWorkspaceToFile,
@@ -19,6 +20,7 @@ import {
 import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
+  JUBJUB_ORDER,
   signJubjubPayloadFromSeed,
 } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import {
@@ -228,6 +230,31 @@ describe("DID-signed HTTP mutation journey", () => {
     } });
     expect(wrongSignature.status).toBe(401);
     expect((await loadWorkspaceFromFile(workspacePath)).operations).toHaveLength(0);
+    const validSignature = signedSubmit.signature.value;
+    const signedPoint = signJubjubPayloadFromSeed(applicantSeed, mutationIntentDigestBytes(applicantIntent));
+    const encoded = (signature: typeof signedPoint) =>
+      `0x${Buffer.from(encodeJubjubSignature(signature)).toString("hex")}`;
+    const malformedSignatures = [
+      { value: validSignature.slice(0, -1), status: 400 },
+      { value: validSignature.toUpperCase(), status: 400 },
+      { value: `${validSignature.slice(0, -1)}g`, status: 400 },
+      { value: encoded({ ...signedPoint, response: signedPoint.response + JUBJUB_ORDER }), status: 401 },
+      { value: encoded({ ...signedPoint, announcement: { x: 3n, y: 5n } }), status: 401 },
+      { value: encoded({ ...signedPoint, announcement: { x: 0n, y: 1n } }), status: 401 },
+    ];
+    for (const { value, status } of malformedSignatures) {
+      const response = await post({ ...signedSubmit, signature: { ...signedSubmit.signature, value } });
+      expect(response.status).toBe(status);
+      if (status === 401) expect((await response.json()).type).toMatch(/signed-intent-rejected/u);
+      const unchanged = await loadWorkspaceFromFile(workspacePath);
+      expect(unchanged.operations).toHaveLength(0);
+      expect(Object.keys(unchanged.consumedMutationNonces)).toHaveLength(0);
+    }
+    const wrongKey = await post({ ...signedSubmit, signature: {
+      ...signedSubmit.signature, keyId: `${wrongApplicantDid}#assertion-1`,
+    } });
+    expect(wrongKey.status).toBe(401);
+    expect((await loadWorkspaceFromFile(workspacePath)).operations).toHaveLength(0);
     const wrongActorIntent = buildIntent(initial, submit, wrongApplicantDid, "applicant", "34");
     expect((await post({ intent: wrongActorIntent, signature: signatureFor(wrongActorIntent, applicantSeed), operation: submit })).status).toBe(403);
     expect((await loadWorkspaceFromFile(workspacePath)).operations).toHaveLength(0);
@@ -325,7 +352,9 @@ describe("DID-signed HTTP mutation journey", () => {
     const expiredKey = sha256Hex("expired-signed-intent");
     const initial = {
       ...createOperatorWorkspace({ label: "signed-pruning" }),
-      consumedMutationNonces: { [expiredKey]: "2026-10-10T00:00:59.999Z" },
+      consumedMutationNonces: { [expiredKey]: {
+        actorKey: sha256Hex("expired-actor"), expiresAt: "2026-10-10T00:00:59.999Z",
+      } },
     };
     await writeWorkspaceToFile(workspacePath, initial);
     const resolver = createMidnightDidResolver([createMidnightDidLedgerFixture(fixture.subjectDid, {
@@ -355,7 +384,8 @@ describe("DID-signed HTTP mutation journey", () => {
       ...createOperatorWorkspace({ label: "signed-capacity" }),
       consumedMutationNonces: Object.fromEntries(
         Array.from({ length: MAX_CONSUMED_MUTATION_NONCES }, (_, index) => [
-          `0x${index.toString(16).padStart(64, "0")}`, "2026-10-10T00:05:00.000Z",
+          `0x${index.toString(16).padStart(64, "0")}`,
+          { actorKey: sha256Hex(`actor:${index}`), expiresAt: "2026-10-10T00:05:00.000Z" },
         ]),
       ),
     };
@@ -379,6 +409,90 @@ describe("DID-signed HTTP mutation journey", () => {
     const stored = await loadWorkspaceFromFile(workspacePath);
     expect(stored.operations).toHaveLength(0);
     expect(Object.keys(stored.consumedMutationNonces)).toHaveLength(MAX_CONSUMED_MUTATION_NONCES);
+  }, 20_000);
+
+  it("returns an actor-scoped capacity problem before one caller can exhaust the global window", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "tr-signed-actor-capacity-"));
+    const workspacePath = join(tempDir, "workspace.json");
+    const initialWorkspace = createOperatorWorkspace({ label: "signed-actor-capacity" });
+    const actorKey = sha256Hex(JSON.stringify([
+      "tr:mutation:actor:v1", initialWorkspace.snapshot.registry.registryId, fixture.subjectDid,
+    ]));
+    const initial = {
+      ...initialWorkspace,
+      consumedMutationNonces: Object.fromEntries(Array.from(
+        { length: MAX_CONSUMED_MUTATION_NONCES_PER_ACTOR }, (_, index) => [
+          `0x${index.toString(16).padStart(64, "0")}`,
+          { actorKey, expiresAt: "2026-10-10T00:05:00.000Z" },
+        ],
+      )),
+    };
+    await writeWorkspaceToFile(workspacePath, initial);
+    const resolver = createMidnightDidResolver([createMidnightDidLedgerFixture(fixture.subjectDid, {
+      verificationMethodId: "assertion-1",
+      schnorrJubjubPublicKey: deriveJubjubPublicKeyFromSeed(applicantSeed),
+    })]);
+    server = createTrustRegistryApiServer({
+      source: createWorkspaceFileSource(workspacePath), clock: () => now, mutationDidResolver: resolver,
+    });
+    const url = await listen(server);
+    const operation = { operation: "submit", target: "issuer", label: "signed-http" } as const;
+    const intent = buildIntent(initial, operation, fixture.subjectDid, "applicant", "62");
+    const response = await fetch(`${url}/v1/mutations`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ intent, signature: signatureFor(intent, applicantSeed), operation }),
+    });
+    expect(response.status).toBe(429);
+    expect((await response.json()).type).toMatch(/mutation-actor-nonce-capacity/u);
+    const stored = await loadWorkspaceFromFile(workspacePath);
+    expect(stored.operations).toHaveLength(0);
+    expect(Object.keys(stored.consumedMutationNonces)).toHaveLength(MAX_CONSUMED_MUTATION_NONCES_PER_ACTOR);
+
+    const unrelatedEntries = Object.fromEntries(Object.entries(initial.consumedMutationNonces)
+      .map(([key, entry]) => [key, { ...entry, actorKey: sha256Hex("unrelated-actor") }]));
+    const unrelatedWorkspace = { ...initial, consumedMutationNonces: unrelatedEntries };
+    await writeWorkspaceToFile(workspacePath, unrelatedWorkspace);
+    const crossActorIntent = buildIntent(unrelatedWorkspace, operation, fixture.subjectDid, "applicant", "63");
+    const crossActorResponse = await fetch(`${url}/v1/mutations`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        intent: crossActorIntent, signature: signatureFor(crossActorIntent, applicantSeed), operation,
+      }),
+    });
+    expect(crossActorResponse.status).toBe(201);
+    expect(Object.keys((await loadWorkspaceFromFile(workspacePath)).consumedMutationNonces))
+      .toHaveLength(MAX_CONSUMED_MUTATION_NONCES_PER_ACTOR + 1);
+  }, 20_000);
+
+  it("rejects backward clock movement without pruning or consuming a nonce", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "tr-signed-clock-"));
+    const workspacePath = join(tempDir, "workspace.json");
+    const highWater = "2026-10-10T00:01:30.000Z";
+    const initial = {
+      ...createOperatorWorkspace({ label: "signed-clock" }), mutationNonceClock: highWater,
+    };
+    await writeWorkspaceToFile(workspacePath, initial);
+    const resolver = createMidnightDidResolver([createMidnightDidLedgerFixture(fixture.subjectDid, {
+      verificationMethodId: "assertion-1",
+      schnorrJubjubPublicKey: deriveJubjubPublicKeyFromSeed(applicantSeed),
+    })]);
+    let clockTime = now;
+    server = createTrustRegistryApiServer({
+      source: createWorkspaceFileSource(workspacePath), clock: () => clockTime, mutationDidResolver: resolver,
+    });
+    const url = await listen(server);
+    const operation = { operation: "submit", target: "issuer", label: "signed-http" } as const;
+    const intent = buildIntent(initial, operation, fixture.subjectDid, "applicant", "64");
+    const post = () => fetch(`${url}/v1/mutations`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ intent, signature: signatureFor(intent, applicantSeed), operation }),
+    });
+    const rejected = await post();
+    expect(rejected.status).toBe(503);
+    expect((await rejected.json()).type).toMatch(/mutation-nonce-clock-rollback/u);
+    expect((await loadWorkspaceFromFile(workspacePath)).operations).toHaveLength(0);
+    clockTime = highWater;
+    expect((await post()).status).toBe(201);
   }, 20_000);
 
   it("accepts exact verifier, auditor, and recognition scopes without promoting recognition to membership", async () => {

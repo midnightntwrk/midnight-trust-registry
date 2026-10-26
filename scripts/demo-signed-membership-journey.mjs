@@ -170,11 +170,12 @@ const governedResource = { type: profile.resourceType, id: resourceId };
 const applicationId = createScopedIdentifier("application", role, profile.id);
 let snapshot = publishSimulatorSnapshot(harness, { label });
 const workspaceForSnapshot = () => TrustRegistryOperatorWorkspaceSchema.parse({
-  workspaceVersion: "2",
+  workspaceVersion: "3",
   updatedAt: snapshot.generatedAt,
   registryLabel: label,
   operations: [],
   consumedMutationNonces: {},
+  mutationNonceClock: null,
   snapshot,
 });
 

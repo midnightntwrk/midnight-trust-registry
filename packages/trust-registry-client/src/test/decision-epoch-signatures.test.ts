@@ -191,6 +191,39 @@ describe("decision epoch publication signatures", () => {
     })).toThrow(/signer keys must be sorted/u);
   });
 
+  it("rejects noncanonical signer IDs before decoding or verifying signatures", () => {
+    const { epoch, accepted, context, publicationEventHash } = fixture();
+    const reversed = [...epoch.quorum.signatures].reverse();
+    const invalidEncoding = `0x${"0".repeat(reversed[0]!.signature.length - 2)}`;
+    reversed[0] = { ...reversed[0]!, signature: invalidEncoding };
+    expect(() => assertDecisionEpochPublicationSignatures({
+      ...epoch, quorum: { ...epoch.quorum, signatures: reversed },
+    }, publicationEventHash, accepted, context)).toThrow(/signer keys must be sorted/u);
+
+    const repeated = { ...epoch.quorum.signatures[0]!, signature: invalidEncoding };
+    expect(() => assertDecisionEpochPublicationSignatures({
+      ...epoch, quorum: { ...epoch.quorum, signatures: [repeated, repeated] },
+    }, publicationEventHash, accepted, context)).toThrow(/distinct active maintainer/u);
+  });
+
+  it("checks first-signer and accepted event commitments before Schnorr verification", () => {
+    const { epoch, accepted, context, publicationEventHash } = fixture();
+    const signatures = epoch.quorum.signatures.map((signer) => ({
+      ...signer, signature: `0x${"0".repeat(signer.signature.length - 2)}`,
+    }));
+    const invalid = { ...epoch, quorum: { ...epoch.quorum, signatures } };
+    expect(() => assertDecisionEpochPublicationSignatures(invalid, publicationEventHash, accepted, {
+      ...context,
+      firstSignerKeyIdCommitment: context.activeMaintainersAtPublication[1]!.keyIdCommitment,
+    })).toThrow(/first signer/u);
+    expect(() => assertDecisionEpochPublicationSignatures(invalid, A, {
+      ...accepted, publicationEventHash: A,
+    }, context)).toThrow(/signer set does not match the accepted event/u);
+    expect(() => assertDecisionEpochPublicationSignatures(
+      invalid, publicationEventHash, accepted, context,
+    )).toThrow(/signature encoding is invalid/u);
+  });
+
   it("rejects changed publication preimages, threshold, first signer, and event", () => {
     const { epoch, accepted, context, publicationEventHash } = fixture();
     for (const changed of [

@@ -7,7 +7,7 @@ import { TrustRegistryEvidenceBundleSchema } from "@midnight-ntwrk/trust-registr
 
 import { runCli } from "../cli.js";
 import { createDemoSnapshot } from "../demo-snapshot.js";
-import { MAX_CONSUMED_MUTATION_NONCES, TrustRegistryOperatorSnapshotSchema, TrustRegistryOperatorWorkspaceSchema } from "../model.js";
+import { MAX_CONSUMED_MUTATION_NONCES, MAX_CONSUMED_MUTATION_NONCES_PER_ACTOR, TrustRegistryOperatorSnapshotSchema, TrustRegistryOperatorWorkspaceSchema } from "../model.js";
 import { loadSnapshotFromFile } from "../snapshot.js";
 import {
   applyWorkspaceOperation,
@@ -35,23 +35,37 @@ const captureCli = async (argv: readonly string[]) => {
 };
 
 describe("trust registry operator CLI", () => {
-  it("validates bounded version-2 mutation nonce history", () => {
+  it("validates bounded version-3 actor nonce history and clock", () => {
     const workspace = createOperatorWorkspace({ label: "nonce-schema" });
     const expiry = "2026-10-10T00:05:00.000Z";
+    const actorKey = `0x${"11".repeat(32)}`;
+    const entry = { actorKey, expiresAt: expiry };
     expect(TrustRegistryOperatorWorkspaceSchema.safeParse({
-      ...workspace, consumedMutationNonces: { invalid: expiry },
+      ...workspace, consumedMutationNonces: { invalid: entry },
     }).success).toBe(false);
     expect(TrustRegistryOperatorWorkspaceSchema.safeParse({
-      ...workspace, consumedMutationNonces: { [`0x${"11".repeat(32)}`]: "not-a-date" },
+      ...workspace, consumedMutationNonces: { [actorKey]: { actorKey, expiresAt: "not-a-date" } },
     }).success).toBe(false);
     expect(TrustRegistryOperatorWorkspaceSchema.safeParse({
       ...workspace, consumedMutationNonces: undefined,
     }).success).toBe(false);
     const full = Object.fromEntries(Array.from({ length: MAX_CONSUMED_MUTATION_NONCES + 1 }, (_, index) => [
-      `0x${index.toString(16).padStart(64, "0")}`, expiry,
+      `0x${index.toString(16).padStart(64, "0")}`,
+      { actorKey: `0x${index.toString(16).padStart(64, "0")}`, expiresAt: expiry },
     ]));
     expect(TrustRegistryOperatorWorkspaceSchema.safeParse({
       ...workspace, consumedMutationNonces: full,
+    }).success).toBe(false);
+    const saturated = Object.fromEntries(Array.from(
+      { length: MAX_CONSUMED_MUTATION_NONCES_PER_ACTOR + 1 }, (_, index) => [
+        `0x${index.toString(16).padStart(64, "0")}`, entry,
+      ],
+    ));
+    expect(TrustRegistryOperatorWorkspaceSchema.safeParse({
+      ...workspace, consumedMutationNonces: saturated,
+    }).success).toBe(false);
+    expect(TrustRegistryOperatorWorkspaceSchema.safeParse({
+      ...workspace, mutationNonceClock: "2026-10-10T00:01:00Z",
     }).success).toBe(false);
   }, CLI_TEST_TIMEOUT_MS);
 
@@ -561,6 +575,9 @@ describe("trust registry operator CLI", () => {
     stored.workspaceVersion = "1";
     await writeFile(workspacePath, JSON.stringify(stored));
     await expect(loadWorkspaceFromFile(workspacePath)).rejects.toThrow(/Workspace version 1 is unsupported/u);
+    stored.workspaceVersion = "2";
+    await writeFile(workspacePath, JSON.stringify(stored));
+    await expect(loadWorkspaceFromFile(workspacePath)).rejects.toThrow(/Workspace version 2 is unsupported/u);
     await writeWorkspaceToFile(workspacePath, createOperatorWorkspace({ label: "shared-lock" }));
 
     await writeFile(`${workspacePath}.lock`, "other writer", { flag: "wx" });

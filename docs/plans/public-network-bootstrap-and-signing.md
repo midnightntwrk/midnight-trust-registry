@@ -90,17 +90,30 @@ maintenance key authorizes Midnight contract maintenance; it is **not** a
 Trust Registry governance quorum key. The adapter never returns private
 deployment transaction data or manages wallet/key custody.
 
-The returned public receipt is retained even if the finalized readback is
-`pending` (indexer lag), `unavailable` (read error), or `mismatch` (observed
-ledger disagrees). Only `verified` means the observed registry ID, deployment
-network commitment, active policy, and initialization action count of one
-match the supplied constructor inputs at a pinned finalized block. A non-
-verified result must be investigated with read-only inspection using the
-receipt, **not** retried as a fresh deployment. This is still not public-
-network qualification: no funded deployment was performed, the host providers
-and RPC/indexer are trusted, and a readback from one indexer is not a
-cryptographic proof of canonical state. Issue #200 remains open until an
-operator-approved live deployment and independent finality/replay checks.
+The returned public receipt is retained even if finalized readback is
+`pending` (indexer lag), `unavailable` (read error), `invalid-image`
+(malformed operation catalog), or `mismatch` (well-formed observed image
+disagrees). The host must supply the V2 release manifest's complete
+per-circuit verifier-key SHA-256 catalog. A matching constructor image returns
+`unsafe-maintenance-authority`, **not** `verified`: the SDK installs a
+single-key maintenance authority that can replace verifier keys without a
+Trust Registry governance quorum. Preserve the receipt and investigate any
+nonmatching or unavailable image read-only; never retry it as a fresh deployment.
+
+After an operator-approved maintenance transition, use
+`readPostDeploymentPublicTrustRegistry` with an independently pinned governance
+image and an explicit immutable or multi-party committee policy. `verified`
+then requires the finalized authority, governance fields, bootstrap record,
+and every verifier-key hash to match those pins. A committee policy requires
+at least three distinct keys and a threshold of at least two, aligned with a
+multi-party governance pin; the immutable policy requires an empty committee
+and threshold one, so the required signatures exceed available members. A
+zero threshold is unsafe, not immutable. The helper does not perform the transition or approve key
+custody. Its readback is still not public-network qualification: no funded
+deployment was performed, the host providers and RPC/indexer are trusted, and
+one indexer is not a cryptographic proof of canonical state. #200 and #213
+remain open until an operator chooses the authority model, executes and
+independently reviews a supported-target deployment and finalized transition.
 The bootstrap-specific read also compares the registry DID commitment, policy
 version, all three initial thresholds, active maintainer count, and the
 bootstrap maintainer's ID, DID, key ID, public key, active status, and joined

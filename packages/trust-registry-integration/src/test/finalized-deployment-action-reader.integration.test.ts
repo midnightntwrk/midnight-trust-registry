@@ -1,4 +1,16 @@
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it, vi } from "vitest";
+import {
+  ContractMaintenanceAuthority,
+  ContractOperation,
+  ContractState,
+  sampleSigningKey,
+  signatureVerifyingKey,
+} from "@midnight-ntwrk/compact-runtime";
 import type { PublicDataProvider } from "@midnight-ntwrk/midnight-js-types";
 import {
   bytes32Hex,
@@ -20,6 +32,13 @@ const address = "a".repeat(64);
 const registryId = "registry:midnight:qualification";
 const policy = bytes32Commitment("policy:qualification");
 const bootstrapMaintainerKeyId = bytes32Commitment("maintainer:qualification#key-1");
+const verifierCircuit = "authorizeMaintainerAuditEvent";
+const verifierKeyPath = process.env.TR_TEST_VERIFIER_KEY_FILE ?? resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  `../../../../contracts/trust-registry/dist/managed/trust-registry/keys/${verifierCircuit}.verifier`,
+);
+const realVerifierKeyIt = process.env.TR_TEST_VERIFIER_KEY_FILE || existsSync(verifierKeyPath)
+  ? it : it.skip;
 
 function fixture() {
   const seed = new Uint8Array(32).fill(13);
@@ -101,6 +120,29 @@ describe("checkpointed deployment action reader", () => {
     });
     expect((await reader.readCurrentFinalizedBootstrapState(`0x${address}`, bytes32Commitment("other-key")))
       ?.bootstrapMaintainer).toBeNull();
+  });
+
+  realVerifierKeyIt("hashes real verifier-key bytes after ContractState serialization at one checkpoint", async () => {
+    const { simulator, reader, queryContractState } = fixture();
+    const verifierKey = readFileSync(verifierKeyPath);
+    const operation = new ContractOperation();
+    operation.verifierKey = verifierKey;
+    const contractState = new ContractState();
+    contractState.data = simulator.circuitContext.currentQueryContext.state;
+    contractState.setOperation(verifierCircuit, operation);
+    const maintenanceKey = signatureVerifyingKey(sampleSigningKey());
+    contractState.maintenanceAuthority = new ContractMaintenanceAuthority([maintenanceKey], 1, 0n);
+    queryContractState.mockResolvedValueOnce(ContractState.deserialize(contractState.serialize()) as never);
+
+    const observed = await reader.readCurrentFinalizedDeploymentImage(`0x${address}`, bootstrapMaintainerKeyId);
+    expect(queryContractState).toHaveBeenCalledTimes(1);
+    expect(observed?.finalizedBlockHash).toBe(`0x${blockHash}`);
+    expect(observed?.verifierKeySha256).toEqual({
+      [verifierCircuit]: createHash("sha256").update(verifierKey).digest("hex"),
+    });
+    expect(observed?.maintenanceAuthority).toEqual({
+      committee: [`0x${maintenanceKey}`], threshold: 1, counter: 0n,
+    });
   });
 
   it("fails closed when the checkpoint is absent or malformed", async () => {

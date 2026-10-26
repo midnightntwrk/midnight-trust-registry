@@ -113,7 +113,7 @@ The `applicationEvidenceCommitment` is `SHA-256` over the RFC 8785 JSON
 Canonicalization Scheme representation of the envelope. The evidence verifier
 signs this commitment with a policy-authorized assertion key for off-chain
 intake. The signature and key reference need not be included in the commitment
-itself. For issuer, verifier, auditor, and maintainer proposals, the evidence verifier separately signs the governed
+itself. For issuer, verifier, auditor, maintainer, and recognition proposals, the evidence verifier separately signs the governed
 proposal payload bound to the evidence commitment, registered verifier key,
 and active policy snapshot. This second signature is checked in Compact; an
 intake signature alone cannot authorize a proposal.
@@ -133,13 +133,28 @@ role-separated `verifierEvidenceBoundProposalPayloadHash` and
 `auditorEvidenceBoundProposalPayloadHash` and
 `auditorProposalEvidenceSignatureDigest`; the maintainer proposal uses
 `maintainerEvidenceBoundProposalPayloadHash` and
-`maintainerProposalEvidenceSignatureDigest`. Each pair binds the complete
+`maintainerProposalEvidenceSignatureDigest`; recognition has its own role-separated pair. Each pair binds the complete
 role-specific authorization payload, evidence-verifier authorization and key
-identifiers, registry identifier, and active policy commitment and version. The contract verifies
+identifiers, registry identifier, and active policy commitment and version. The
+proposal-evidence signature transcript is version 2: it additionally commits to
+the sealed deployment network identifier and the actual `kernel.self()` contract
+address. The signer must receive those values from the deployment being
+attested, not infer them from the registry name or a node-reported default.
+The domain-separated deployment tuple is hashed with the policy-bound payload
+before Schnorr signing. A signature for one deployment is invalid on another
+even when both use the same registry ID and verifier key. The contract verifies
 this distinct digest against the active registered JubJub key. The intake
 signature value is the DID package's 96-byte encoding rendered as lowercase,
 `0x`-prefixed hex, with a response scalar below the JubJub group order and
 canonical field coordinates. Other encodings are not accepted by this profile.
+
+This is a pre-release breaking transcript change. Existing v1 proposal-evidence
+signatures must be re-collected for a v2 deployment; they cannot be migrated by
+copying the old signature. Final maintainer authorization remains a separate
+deployment-bound quorum check and does not substitute for the evidence
+verifier's deployment-specific attestation. Historical projections verify the
+recorded signature against an independently pinned deployment address and the
+ledger's sealed network commitment; without a pinned address they fail closed.
 
 The reference status-authority HTTP adapter sends only status-registry ID,
 status-handle commitment, credential-body root, and challenge hash to an
@@ -285,6 +300,25 @@ registered under the new policy through
 fresh external signatures. Both actions recheck current ledger state; the
 second action is not automatically signed or atomic with the first. Until it
 succeeds, new application evidence is not authorized by the revised policy.
+Governed evidence-verifier key rotation, suspension, and revocation use
+`POST /v1/governed/policy/evidence-verifier/{rotate,suspend,revoke}/{prepare,submit}`.
+Rotation requests carry the old authorization ID, reason commitment, new
+authorization and key-ID commitments, and JubJub public key. A configured
+port MUST authenticate the replacement assertion method under the verifier
+DID and verify current ledger state; the API only validates the wire shape,
+compares the port's exact action context to the request, and checks external
+maintainer signatures. It returns 503 without that port. A stale submit MUST
+NOT be forwarded as a second Compact action. The local simulator port is not
+a production DID-key authority or finalized-ledger reader.
+The integration package exposes `verifyEvidenceVerifierDidKeyBinding` for
+that port's preflight: it resolves one current Midnight DID state, requires a
+native assertion method on the expected network, and compares its prime-order
+JubJub point and the SHA-256 DID and absolute-method commitments with the
+registered Compact key. The same check MUST be repeated against an
+independently finalized DID state immediately before execution; the returned
+DID version can be used as a minimum-version guard. This adapter does not
+itself establish DID or registry finality, authorize a maintainer vote, or
+replace Compact's active-key and policy checks.
 Private file adapters persist pending records, spent nonces,
 challenge hashes, and accepted redacted evidence across store restarts, but
 the two files and Compact ledger have no shared transaction. An optional
