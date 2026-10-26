@@ -105,3 +105,8 @@ canonical terms, and local-ledger mode refuses either request without them.
 The port receives the terms for repeated binding at prepare, preflight, and
 execute time. This is request plumbing, not an installed write adapter: the
 signed local API CLI still configures no issuer proposal port.
+The binder now derives the unsigned Compact issuer fields from the accepted
+envelope and exact terms. It intentionally cannot fill the active policy
+commitment, registered evidence-verifier key, signatures, or authenticated
+finalized action sequence; a real writer must obtain and recheck those from
+the current ledger before it signs or broadcasts.

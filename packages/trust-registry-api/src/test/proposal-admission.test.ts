@@ -6,6 +6,8 @@ import {
   type ApplicationChallengeBinding,
   type ApplicationEvidenceSubmission,
 } from "@midnight-ntwrk/trust-registry-domain";
+import { bytes32Commitment } from "@midnight-ntwrk/trust-registry-client";
+import { TrustRegistryContract } from "@midnight-ntwrk/trust-registry-contract";
 import { describe, expect, it } from "vitest";
 
 import { createTrustRegistryApiServer } from "../server.js";
@@ -121,6 +123,19 @@ describe("local issuer proposal terms", () => {
     expect(result.statusPolicyBindingCommitment).toBe(
       computeIssuerStatusPolicyBindingCommitment(localTerms.statusPolicyBinding));
     expect(result.terms).toEqual(localTerms);
+    expect(result.unsignedFields).toEqual({
+      networkId: "undeployed",
+      registryId: binding.registryId,
+      contractAddress: localPlan.contractAddress,
+      authorizationLabel: pending.authorizationId,
+      authorizationId: bytes32Commitment(pending.authorizationId),
+      subjectDidCommitment: bytes32Commitment(binding.subjectDid),
+      resourceType: TrustRegistryContract.IssuerResourceType.credentialFamily,
+      resourceId: bytes32Commitment(binding.governedResource.id),
+      statusPolicyBindingCommitment: Buffer.from(result.statusPolicyBindingCommitment.slice(2), "hex"),
+      trustLevel: bytes32Commitment(localTerms.trustLevel),
+      evidenceHash: Buffer.from(evidence.commitment.slice(2), "hex"),
+    });
     const differentlySigned = { ...evidence, signature: { ...evidence.signature, value: "alternate-signature" } };
     expect(bind({ submittedEvidence: differentlySigned, accepted: { ...accepted,
       evidence: differentlySigned } }).reviewBindingSha256).not.toBe(result.reviewBindingSha256);
