@@ -635,7 +635,8 @@ a data file: review its transitive imports, approve its SHA-256, install it
 read-only, and enforce process-level egress controls. The real deployment,
 maintenance, and verifier-key insertion CLIs now require
 `TR_IMMUTABLE_PROVIDER_ROOT` to name an absolute, root-owned code tree
-containing the approved provider and to run as a non-root user. The tree may
+containing the approved provider, wizard/CLI scripts, and all package code,
+and to run as a non-root user. The tree may
 have ordinary root-write permissions but no group/other write permission;
 it is effectively read-only to that process. The check rejects symlinks,
 hard links, group/other-writable descendants, and untrusted ancestors before network
@@ -645,14 +646,32 @@ compromised root account or root-managed update during deployment can still
 replace code. Freeze the installed code tree for the run and retain the
 installer's source and image hashes; this check is not protection from root.
 Paths that traverse symlinked ancestors are intentionally rejected rather
-than canonicalized into an alternate approval path.
-The runner reads a no-follow regular-file descriptor and rechecks its bytes and inode immediately
-before import, including for maintenance and verifier-key insertion. This
-rejects replacements during network preflight, but the tree check does not
-prove that every resolved transitive import stays inside the approved tree.
-Nor does it eliminate the final check-to-import race outside the immutable
-tree's operating-system boundary. Issue #233 remains a
-local-RC security gate. Do not use this partial hardening as release
+than canonicalized into an alternate approval path. Preload the resolver
+**before** the wizard or CLI entry point so static ESM and CommonJS dependencies
+cannot resolve outside that tree. A missing preload is rejected by the real
+provider loader:
+
+```sh
+export TR_IMMUTABLE_PROVIDER_ROOT=/absolute/root-owned/trust-registry-install
+export NODE_OPTIONS="--import=$TR_IMMUTABLE_PROVIDER_ROOT/scripts/approved-provider-preload.mjs"
+node "$TR_IMMUTABLE_PROVIDER_ROOT/scripts/local-ledger-deploy.mjs" /absolute/private/approved-plan.json
+```
+
+The preloader rejects file imports outside the tree and non-file imports other
+than Node built-ins, including dynamic ESM and CommonJS imports. A normal
+developer checkout with pnpm symlinks is intentionally not a qualified
+immutable install; do not remove the preload or substitute a writable checkout
+to make it run. This confines ordinary module resolution; it is **not** a
+sandbox for malicious code already present in the approved tree. The runner
+reads a no-follow regular-file descriptor and
+rechecks its bytes and inode immediately before import, including for
+maintenance and verifier-key insertion. This rejects replacements during
+network preflight; the preloaded resolver confines subsequent imports.
+Neither check protects against a compromised root account, an unreviewed
+administrative update, or arbitrary code already running before the
+preloader. A source-matched root-owned installation and real SDK-backed run
+have not yet been demonstrated, so issue #233 remains a local-RC security
+gate. Do not use this unqualified hardening as release
 qualification. Use a pre-provisioned private journal directory and retain it with
 the receipt and ledger evidence. The CLI checks the manifest source, module
 hash, endpoint allowlist, and live genesis/finalized-head preflight before
@@ -768,6 +787,10 @@ node scripts/standalone-setup-wizard.mjs approve-genesis /absolute/private/setup
 node scripts/standalone-setup-wizard.mjs draft-committee /absolute/private/setup-directory /absolute/committee-review-metadata.json
 # Governance independently reviews the public keys, custody roles, and threshold before signing.
 node scripts/standalone-setup-wizard.mjs approve-committee /absolute/private/setup-directory /absolute/private/setup-directory/committee-approval.unsigned.json /absolute/committee-approval.sig /absolute/private/governance-public-keyring GOVERNANCE_SIGNING_KEY_FINGERPRINT
+# Provider-backed commands must run from the reviewed, root-owned installation.
+export TR_IMMUTABLE_PROVIDER_ROOT=/absolute/root-owned/trust-registry-install
+export NODE_OPTIONS="--import=$TR_IMMUTABLE_PROVIDER_ROOT/scripts/approved-provider-preload.mjs"
+cd "$TR_IMMUTABLE_PROVIDER_ROOT"
 node scripts/standalone-setup-wizard.mjs deploy /absolute/private/setup-directory /absolute/approved-deployment-plan.json
 # Re-read a reserved staged deployment without submitting, if first readback lagged:
 node scripts/standalone-setup-wizard.mjs reconcile-deploy /absolute/private/setup-directory /absolute/approved-deployment-plan.json

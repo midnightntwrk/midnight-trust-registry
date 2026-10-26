@@ -1,7 +1,10 @@
 import { lstatSync, readdirSync } from "node:fs";
+import { registerHooks } from "node:module";
 import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const MAX_ENTRIES = 500_000;
+const IMPORT_BOUNDARY = Symbol.for("tr.approved-provider-import-boundary");
 
 function within(root, path) {
   const remainder = relative(root, path);
@@ -84,4 +87,38 @@ export function assertApprovedProviderTree(providerPath, rootPath, options = {})
     throw new Error("Approved provider module is outside the immutable code root");
   }
   return assertImmutableProviderTree(root, options);
+}
+
+/** Register before loading the CLI entry point so ESM and CJS dependencies are covered. */
+export function registerApprovedProviderImportBoundary(rootPath) {
+  if (!isAbsolute(rootPath)) throw new Error("Approved import root must be absolute");
+  const root = resolve(rootPath);
+  const checkUrl = (url) => {
+    if (url.startsWith("node:")) return;
+    if (!url.startsWith("file:")) {
+      throw new Error(`Module import is outside the approved code tree: ${url}`);
+    }
+    if (!within(root, fileURLToPath(url))) {
+      throw new Error(`Module import is outside the approved code tree: ${url}`);
+    }
+  };
+  const hooks = registerHooks({
+    resolve(specifier, context, nextResolve) {
+      const result = nextResolve(specifier, context);
+      checkUrl(result.url);
+      return result;
+    },
+    load(url, context, nextLoad) {
+      checkUrl(url);
+      return nextLoad(url, context);
+    },
+  });
+  globalThis[IMPORT_BOUNDARY] = root;
+  return hooks;
+}
+
+export function assertApprovedProviderImportBoundary(rootPath) {
+  if (!isAbsolute(rootPath) || globalThis[IMPORT_BOUNDARY] !== resolve(rootPath)) {
+    throw new Error("Real provider loading requires the approved import preloader");
+  }
 }

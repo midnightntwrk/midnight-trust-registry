@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
-import { chmod, link, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { chmod, link, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 
 import { assertApprovedProviderTree, assertImmutableProviderTree } from "./immutable-provider-tree.mjs";
 
@@ -86,3 +88,62 @@ test("rejects a provider root selected through a linked ancestor", () => fixture
     boundary, trustedUid: process.getuid(),
   }), /trusted directory/u);
 }));
+
+test("preloaded hooks confine ESM, CommonJS, and dynamic imports to the code tree", async () => {
+  const boundary = await realpath(await mkdtemp(join(tmpdir(), "tr-provider-hooks-")));
+  const root = join(boundary, "provider");
+  await mkdir(root);
+  const helper = new URL("./immutable-provider-tree.mjs", import.meta.url).href;
+  const bootstrap = `import assert from "node:assert/strict";
+import { assertApprovedProviderImportBoundary, registerApprovedProviderImportBoundary } from ${JSON.stringify(helper)};
+import { pathToFileURL } from "node:url";
+const [root, entry] = process.argv.slice(1);
+assert.throws(() => assertApprovedProviderImportBoundary(root), /requires the approved import preloader/);
+registerApprovedProviderImportBoundary(root);
+assert.doesNotThrow(() => assertApprovedProviderImportBoundary(root));
+await import(pathToFileURL(entry).href);`;
+  const run = (entry) => spawnSync(process.execPath,
+    ["--input-type=module", "-e", bootstrap, root, entry], { encoding: "utf8" });
+  try {
+    await writeFile(join(root, "inside.mjs"), "export const value = 'inside';\n");
+    await writeFile(join(root, "entry.mjs"),
+      "import { value } from './inside.mjs'; console.log(value);\n");
+    const valid = run(join(root, "entry.mjs"));
+    assert.equal(valid.status, 0, valid.stderr);
+    assert.match(valid.stdout, /inside/u);
+
+    await writeFile(join(boundary, "outside.mjs"), "export const value = 'outside';\n");
+    await writeFile(join(root, "entry.mjs"),
+      "await import('../outside.mjs');\n");
+    const dynamic = run(join(root, "entry.mjs"));
+    assert.notEqual(dynamic.status, 0);
+    assert.match(dynamic.stderr, /outside the approved code tree/u);
+
+    await writeFile(join(boundary, "outside.cjs"), "module.exports = 'outside';\n");
+    await writeFile(join(root, "entry.cjs"),
+      "require('../outside.cjs');\n");
+    const commonJs = run(join(root, "entry.cjs"));
+    assert.notEqual(commonJs.status, 0);
+    assert.match(commonJs.stderr, /outside the approved code tree/u);
+
+    await writeFile(join(root, "entry.mjs"),
+      "import { createRequire } from 'node:module'; createRequire(import.meta.url)('../outside.cjs');\n");
+    const createdRequire = run(join(root, "entry.mjs"));
+    assert.notEqual(createdRequire.status, 0);
+    assert.match(createdRequire.stderr, /outside the approved code tree/u);
+
+    await writeFile(join(root, "entry.mjs"),
+      `import Module from 'node:module'; Module._load(${JSON.stringify(join(boundary, "outside.cjs"))}, undefined, false);\n`);
+    const lowLevelRequire = run(join(root, "entry.mjs"));
+    assert.notEqual(lowLevelRequire.status, 0);
+    assert.match(lowLevelRequire.stderr, /outside the approved code tree/u);
+
+    await writeFile(join(root, "entry.mjs"),
+      "await import('data:text/javascript,export default 1');\n");
+    const dataUrl = run(join(root, "entry.mjs"));
+    assert.notEqual(dataUrl.status, 0);
+    assert.match(dataUrl.stderr, /outside the approved code tree/u);
+  } finally {
+    await rm(boundary, { recursive: true, force: true });
+  }
+});
