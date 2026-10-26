@@ -47,6 +47,7 @@ export function assertImmutableProviderTree(rootPath, options = {}) {
   const pending = [root];
   while (pending.length > 0) {
     const directory = pending.pop();
+    if (directory === undefined) throw new Error("Provider tree traversal lost a directory");
     const stat = lstatSync(directory);
     if (!stat.isDirectory() || stat.isSymbolicLink() || stat.uid !== trustedUid
       || (stat.mode & 0o022) !== 0) {

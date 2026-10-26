@@ -141,6 +141,21 @@ only after the signed approvals exist. The current tests exercise this guard,
 but a root-owned exact-source install and real SDK-backed deployment have not
 yet been qualified. Do not bypass the guard to make the run proceed.
 
+The source checkout can prepare a private, user-owned code stage from the
+matching verified bundle without copying ignored wallet or setup files:
+
+```sh
+mkdir -m 700 /absolute/private/provider-stages
+node scripts/stage-provider-runtime.mjs "$INSTALL" \
+  /absolute/private/provider-stages/"$SOURCE_SHA"
+```
+
+This requires a clean signed `HEAD` equal to the bundle source SHA. Its output
+is **not** the root-owned installation or approval. Review the reported source
+signer and inventory digest independently before an operator installs the
+bytes under trusted root-owned ancestors. Never run the provider from the
+user-owned stage or include private keys in it.
+
 If ending the smoke run rather than continuing to human approval and
 deployment, stop **only** this project. Preserve its volumes and evidence.
 When resuming, start it again with the same verified bundle, image tags, and

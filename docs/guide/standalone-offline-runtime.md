@@ -668,6 +668,33 @@ reads a no-follow regular-file descriptor and
 rechecks its bytes and inode immediately before import, including for
 maintenance and verifier-key insertion. This rejects replacements during
 network preflight; the preloaded resolver confines subsequent imports.
+
+To prepare the code tree without copying ignored wallet, setup, or genesis
+evidence from a developer checkout, use a **new private staging directory**:
+
+```sh
+mkdir -m 700 /absolute/private/provider-stages
+node scripts/stage-provider-runtime.mjs \
+  /absolute/verified/standalone-install/SOURCE_SHA \
+  /absolute/private/provider-stages/SOURCE_SHA
+```
+
+The command requires a clean GPG-signed `HEAD` matching the fully verified
+bundle. It rejects linked/non-regular Git entries before extraction, archives
+only committed source, installs locked dependencies with lifecycle scripts
+disabled and package files copied instead of hard-linked from the pnpm store,
+then overlays the bundle's verified package tarballs. This order uses the
+source workspace manifests for the frozen install; packed manifests can
+rewrite `workspace:*` dependencies. It refuses an existing
+destination and retains a partial stage for inspection on failure. The
+`provider-stage.json` report is **not an approval**: its source signer and
+inventory digest still need independent review. The result is owned by the
+current user and is not valid as `TR_IMMUTABLE_PROVIDER_ROOT`. An operator must
+transfer the reviewed bytes into a new root-owned installation beneath trusted
+ancestors, prevent untrusted updates, and run the real CLI as a non-root user
+with the import preloader. This host has not yet demonstrated that transfer or
+a real SDK-backed submission; issue #233 remains open. Never put wallet seeds,
+signatures, private approval records, or backup material into the code tree.
 Neither check protects against a compromised root account, an unreviewed
 administrative update, or arbitrary code already running before the
 preloader. A source-matched root-owned installation and real SDK-backed run

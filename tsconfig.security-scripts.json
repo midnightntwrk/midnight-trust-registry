@@ -20,6 +20,7 @@
     "scripts/check-standalone-restart.mjs",
     "scripts/local-ledger-deploy.mjs",
     "scripts/local-ledger-insert-verifier-key.mjs",
+    "scripts/stage-provider-runtime.mjs",
     "scripts/standalone-setup-wizard.mjs",
     "scripts/static-runtime-archive.mjs",
     "scripts/verify-helm-mapping-signature.mjs"

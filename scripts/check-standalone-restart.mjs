@@ -120,6 +120,7 @@ async function writeEvidence(path, value) {
   }
 }
 
+/** @param {Buffer} bytes @param {{networkId: string} | undefined} [profile] */
 export function parsePreparedEnv(bytes, profile = undefined) {
   const lines = bytes.toString("utf8").trimEnd().split("\n");
   const entries = lines.map((line) => {
