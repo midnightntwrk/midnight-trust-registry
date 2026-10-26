@@ -734,7 +734,7 @@ export async function verifyDetachedReviewerSignature(
     keybox = await open(keyboxPath,
       constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   } catch (error) {
-    if (error.code === "ENOENT") {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
       throw new Error("Reviewer keyring needs pubring.kbx; export and import the public key into a pre-created private directory");
     }
     throw error;
@@ -1795,12 +1795,13 @@ export async function submitStandaloneCommitteeTransition(
     } catch (error) {
       let journalReserved = true;
       try { journalReserved = await journal.inspect() !== null; } catch { /* An unreadable journal is unknown. */ }
+      const reportedTxId = error && typeof error === "object" && "txId" in error
+        && typeof error.txId === "string" ? error.txId : undefined;
       record.maintenanceAttempt = { ...record.maintenanceAttempt,
         state: journalReserved ? "unknown" : "aborted-before-journal",
         journalReserved,
-        ...(journalReserved && typeof error?.txId === "string"
-          && error.txId.length > 0 && error.txId.length <= 512
-          ? { reportedTxId: error.txId } : {}) };
+        ...(journalReserved && reportedTxId && reportedTxId.length <= 512
+          ? { reportedTxId } : {}) };
       await writeRecord(root, record);
       if (!journalReserved) {
         throw new Error("Maintenance preflight stopped before journal reservation; inspect setup and prepare again");
@@ -2148,7 +2149,7 @@ export async function standaloneSetupStatus(directory) {
     await lstat(join(root, ".setup.lock"));
     lockPresent = true;
   } catch (error) {
-    if (error.code !== "ENOENT") throw error;
+    if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
   }
   return {
     format: FORMAT,
@@ -2184,7 +2185,7 @@ export async function runStandaloneSetupInteractive(
     try {
       ({ record } = await readRecord(directory));
     } catch (error) {
-      if (error.code !== "ENOENT") throw error;
+      if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
       const bundle = await io.question("Verified install bundle directory: ");
       record = await initializeStandaloneSetup(directory, bundle);
     }

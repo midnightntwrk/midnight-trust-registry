@@ -8,7 +8,10 @@
     "checkJs": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "strict": false
+    "strict": true,
+    "noImplicitAny": false,
+    "exactOptionalPropertyTypes": false,
+    "noUncheckedIndexedAccess": false
   },
   "files": [
     "scripts/approved-provider-identity.mjs",

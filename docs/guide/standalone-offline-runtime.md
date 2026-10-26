@@ -1654,9 +1654,10 @@ after the workspace packages are built. The gate caught previously implicit
 standalone wizard, deployment, maintenance, restart, Helm, and install tests
 remain the behavioral authority for malformed or missing fields.
 
-This is checked JavaScript with `strict: false`, **not** a claim that the
-dynamic setup record, external provider callbacks, or parsed network JSON are
-fully typed. Trust Registry maintainers own the remaining migration under
+This is checked JavaScript with strict null and catch-variable checks, but
+`noImplicitAny` remains off. It is **not** a claim that the dynamic setup
+record, external provider callbacks, or parsed network JSON are fully typed.
+Trust Registry maintainers own the remaining migration under
 [#229](https://github.com/midnightntwrk/midnight-trust-registry/issues/229):
 move pure approval/plan decisions into typed packages, define explicit
 schemas for all untrusted records, and add strict types at the shell/IO

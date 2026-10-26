@@ -364,12 +364,12 @@ export async function readStandaloneRestartEvidence(directory, expected) {
   try {
     baselineBytes = await privateFile(join(root, BASELINE), 1024 * 1024);
   } catch (error) {
-    if (error.code !== "ENOENT") throw error;
+    if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
   }
   try {
     verificationBytes = await privateFile(join(root, VERIFICATION), 1024 * 1024);
   } catch (error) {
-    if (error.code !== "ENOENT") throw error;
+    if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
   }
   if (!baselineBytes && !verificationBytes) return { status: "pending" };
   if (!baselineBytes) throw new Error("Restart verification exists without its baseline");
