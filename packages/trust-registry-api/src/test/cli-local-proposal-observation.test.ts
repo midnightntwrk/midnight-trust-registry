@@ -53,6 +53,7 @@ describe("signed local proposal observation CLI", () => {
     }));
     expect(mocks.resolveProposal).toHaveBeenCalledWith(
       expect.any(Function), "registry:local", "issuer", "issuer:local:1",
+      Buffer.from("a".repeat(64), "hex"),
     );
     expect(mocks.createServer).not.toHaveBeenCalled();
     expect(JSON.parse(output.join(""))).toMatchObject({

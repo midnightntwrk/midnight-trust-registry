@@ -196,6 +196,7 @@ export function createLocalLedgerBoundSource(input: {
   };
   return {
     mode: "local-ledger",
+    localProposalContractAddress: address,
     async loadSnapshot() {
       return (await readBoundState()).snapshot;
     },

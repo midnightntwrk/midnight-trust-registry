@@ -549,6 +549,7 @@ describe("local ledger-bound API source", () => {
         reader: { async readCurrentFinalizedLedger() { return view; } },
         sequenceToTimestamp,
       });
+      expect(source.localProposalContractAddress).toBe(address.toLowerCase());
       await expect(source.readFinalizedProposalLedger()).resolves.toBe(ledger);
       const current = await source.loadCurrentLedgerSelection!();
       expect(current.authorizationIds.issuer).toEqual(new Set(snapshot.issuerEntries.map(
@@ -619,6 +620,9 @@ describe("local ledger-bound API source", () => {
     const boundSource: Options["source"] = { ...sourceWithReader, localDeploymentBinding: {
       contractAddress: `0x${"a".repeat(64)}`, expectedGenesisHash: `0x${"b".repeat(64)}`,
     } };
+    expect(() => createTrustRegistryApiServer({ source: { ...boundSource,
+      localProposalContractAddress: `0x${"c".repeat(64)}` } }))
+      .toThrow(/reader and approved deployment addresses differ/u);
     const boundJournal = { assertDeploymentBinding: async () => {},
       executeOnce: async () => ({ eventHash: `0x${"c".repeat(64)}` }),
       reconcile: async () => { throw new Error("unused"); },

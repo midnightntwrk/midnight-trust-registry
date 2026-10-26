@@ -830,6 +830,12 @@ export const createTrustRegistryApiServer = (
     || options.governedAuditorProposals !== undefined
     || options.governedMaintainerProposals !== undefined;
   if (options.source.mode === "local-ledger") {
+    const sourceAddress = options.source.localProposalContractAddress;
+    const approvedAddress = options.source.localDeploymentBinding?.contractAddress;
+    if (sourceAddress !== undefined && approvedAddress !== undefined
+      && sourceAddress.toLowerCase() !== approvedAddress.toLowerCase()) {
+      throw new Error("Local proposal reader and approved deployment addresses differ");
+    }
     if (options.allowUnsafeDemoMutations === true) {
       throw new Error("Local-ledger mode forbids demo mutations");
     }
@@ -1182,7 +1188,8 @@ export const createTrustRegistryApiServer = (
         const proposalReader = options.source.mode === "local-ledger"
           ? options.source.readFinalizedProposalLedger : options.readFinalizedProposalLedger;
         const pinnedAddress = options.source.mode === "local-ledger"
-          ? options.source.localDeploymentBinding?.contractAddress : undefined;
+          ? options.source.localDeploymentBinding?.contractAddress
+            ?? options.source.localProposalContractAddress : undefined;
         const proposalContractAddress = options.source.mode === "local-ledger"
           ? pinnedAddress !== undefined && /^0x[0-9a-fA-F]{64}$/u.test(pinnedAddress)
             ? Buffer.from(pinnedAddress.slice(2), "hex") : undefined
