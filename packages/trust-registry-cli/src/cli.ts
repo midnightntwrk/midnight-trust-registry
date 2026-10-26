@@ -625,16 +625,14 @@ const runInspectDeployment = async (argv: readonly string[], io: CliIo): Promise
     },
     strict: true,
   });
-  const networkId = requireStringOption(parsed.values.network, "--network");
-  if (networkId !== "preview" && networkId !== "preprod" && networkId !== "mainnet") {
-    throw new Error("--network must be preview, preprod, or mainnet");
-  }
   const address = requireStringOption(parsed.values.address, "--address");
-  const { createPublicNetworkDeploymentActionReader } = await import(
+  const { createPublicNetworkDeploymentActionReader, getNetworkProfile } = await import(
     "@midnight-ntwrk/trust-registry-integration"
   );
+  const profile = getNetworkProfile(requireStringOption(parsed.values.network, "--network"));
+  if (profile.kind !== "public") throw new Error("inspect-deployment requires a public network profile");
   const reader = await createPublicNetworkDeploymentActionReader({
-    networkId,
+    networkId: profile.networkId,
     rpcUrl: requireStringOption(process.env.TR_RPC_URL, "TR_RPC_URL"),
     indexerHttpUrl: requireStringOption(process.env.TR_INDEXER_HTTP_URL, "TR_INDEXER_HTTP_URL"),
     indexerWsUrl: requireStringOption(process.env.TR_INDEXER_WS_URL, "TR_INDEXER_WS_URL"),

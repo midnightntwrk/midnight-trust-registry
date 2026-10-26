@@ -45,6 +45,7 @@ export type LocalIssuerProposalCall = {
 };
 
 export type LocalIssuerProposalCallContext = {
+  actionKind: Uint8Array;
   actionPayloadHash: Uint8Array;
   actionSequence: bigint;
   expectedEventHash: Uint8Array;
@@ -58,6 +59,7 @@ export type LocalIssuerProposalJournal = {
   executeOnce(
     role: "issuer", authorizationId: string, evidenceCommitment: string,
     execute: () => Promise<{ eventHash: string }>,
+    reservationContext: { actionSequence: string; actionKind: string; actionPayloadHash: string },
   ): Promise<{ eventHash: string }>;
 };
 
@@ -184,6 +186,7 @@ export function prepareLocalIssuerProposalCall(input: LocalIssuerProposalCall, l
     authorizationBundle.signer4.keyId, authorizationBundle.signer5.keyId,
   );
   return {
+    actionKind,
     actionPayloadHash,
     actionSequence,
     expectedEventHash: TrustRegistryContract.pureCircuits.governanceEventHash(
@@ -228,10 +231,11 @@ export async function submitLocalIssuerProposalCall(input: {
     throw new Error("Issuer submission providers do not match the pinned deployment");
   }
   const prepared = prepareLocalIssuerProposalCall(input.call, finalized.ledger);
+  const compiledContract = compiledStagedVerifierKeyContract("proposeIssuerAuthorization");
   return input.journal.executeOnce("issuer", input.call.authorizationLabel,
     `0x${Buffer.from(input.call.evidenceHash).toString("hex")}`, async () => {
       const result = await submitCallTx(input.providers, {
-        compiledContract: compiledStagedVerifierKeyContract("proposeIssuerAuthorization"),
+        compiledContract,
         contractAddress: input.call.contractAddress.slice(2),
         privateStateId: "trustRegistryPrivateState",
         circuitId: "proposeIssuerAuthorization",
@@ -256,5 +260,9 @@ export async function submitLocalIssuerProposalCall(input: {
         throw new Error("Submitted issuer proposal event hash differs from the prepared action");
       }
       return { eventHash: `0x${Buffer.from(eventHash).toString("hex")}` };
+    }, {
+      actionSequence: prepared.actionSequence.toString(),
+      actionKind: `0x${Buffer.from(prepared.actionKind).toString("hex")}`,
+      actionPayloadHash: `0x${Buffer.from(prepared.actionPayloadHash).toString("hex")}`,
     });
 }

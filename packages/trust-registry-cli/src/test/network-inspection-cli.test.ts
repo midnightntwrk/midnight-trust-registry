@@ -69,6 +69,11 @@ describe("read-only deployment inspection CLI", () => {
   });
 
   it("requires explicit network pins and refuses unavailable deployment state", async () => {
+    const local = await capture(["inspect-deployment", "--network", "standalone", "--address", address]);
+    expect(local.code).toBe(1);
+    expect(local.stderr).toContain("requires a public network profile");
+    expect(mocks.createReader).not.toHaveBeenCalled();
+
     const absent = await capture(["inspect-deployment", "--network", "preview", "--address", address]);
     expect(absent.code).toBe(1);
     expect(absent.stderr).toContain("TR_RPC_URL is required");

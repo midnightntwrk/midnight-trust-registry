@@ -239,7 +239,7 @@ describe("isolated local Trust Registry deployment", () => {
     await expect(deployLocal({ rpcUrl: "ws://node:9944" }))
       .rejects.toThrow(/allowlist/u);
     await expect(deployLocal({ networkId: "preprod" as never }))
-      .rejects.toThrow(/undeployed network/u);
+      .rejects.toThrow(/standalone network profile/u);
     setNetworkId("preprod");
     await expect(deployLocal()).rejects.toThrow(/network does not match/u);
     await expect(deploy({ networkId: "undeployed" as never }))
@@ -272,7 +272,7 @@ describe("isolated local Trust Registry deployment", () => {
     observedAuthorityCounter = 1n;
     expect((await readback()).status).toBe("verified");
     setNetworkId("preprod");
-    await expect(readback()).rejects.toThrow(/undeployed network/u);
+    await expect(readback()).rejects.toThrow(/standalone network profile/u);
     await expect(readPostDeploymentPublicTrustRegistry({
       network: { ...network, networkId: "preprod" },
       receipt: deployed.receipt,

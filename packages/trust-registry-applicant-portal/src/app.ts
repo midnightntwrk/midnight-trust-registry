@@ -1,7 +1,7 @@
 import { TrustRegistryApplicantPortalApiError, TrustRegistryApplicantPortalClient, isCurrentlyActive, normalizeApiBaseUrl } from "./api.js";
 import { TARGET_OPTIONS, describeSubmission, toInspectionCards, type PortalSubmissionTarget, type PublicInspection } from "./model.js";
-import { TrustRegistryApiEvaluateRecognitionRequestSchema } from "@midnight-ntwrk/trust-registry-api/browser-schemas";
-import type { ApplicationChallengeBinding, ApplicationVpHttpIssueResult, ApplicationVpHttpSubmissionResult, RecognitionAdmissionReceipt, TrustRegistryApiAuthorizationEvidenceEvaluationResponse, TrustRegistryApiEvaluateAuthorizationRequest, TrustRegistryApiEvaluateRecognitionRequest, TrustRegistryApiMutationContext, TrustRegistryApiRecognitionEvidenceEvaluationResponse, TrustRegistryApiSignedMutationRequest } from "@midnight-ntwrk/trust-registry-api";
+import { TrustRegistryApiEvaluateRecognitionRequestSchema, TrustRegistryApiResolveRecognitionRequestSchema } from "@midnight-ntwrk/trust-registry-api/browser-schemas";
+import type { ApplicationChallengeBinding, ApplicationVpHttpIssueResult, ApplicationVpHttpSubmissionResult, RecognitionAdmissionReceipt, TrustRegistryApiAuthorizationEvidenceEvaluationResponse, TrustRegistryApiAuthorizationListResponse, TrustRegistryApiEvaluateAuthorizationRequest, TrustRegistryApiEvaluateRecognitionRequest, TrustRegistryApiMutationContext, TrustRegistryApiRecognitionEvidenceEvaluationResponse, TrustRegistryApiRecognitionListResponse, TrustRegistryApiResolveAuthorizationRequest, TrustRegistryApiResolveRecognitionRequest, TrustRegistryApiSignedMutationRequest } from "@midnight-ntwrk/trust-registry-api";
 import { canonicalizeAuthorizationScope, computeAuthorizationScopeCommitment, type PendingApplicationPayload } from "@midnight-ntwrk/trust-registry-domain/browser";
 import { prepareAuditorApplication, signPreparedAuditorApplication, type AuditorApplicationDraft, type PreparedAuditorApplication } from "./auditor-application.js";
 import { prepareIssuerApplication, prepareMaintainerApplication, prepareVerifierApplication, signPreparedMembershipApplication, type IssuerApplicationDraft, type MaintainerApplicationDraft, type PreparedMembershipApplication, type VerifierApplicationDraft } from "./membership-application.js";
@@ -30,6 +30,14 @@ type AppState = {
   memberDraft: { role: "issuer"; draft: IssuerApplicationDraft } | { role: "verifier"; draft: VerifierApplicationDraft } | { role: "maintainer"; draft: MaintainerApplicationDraft } | undefined;
   memberPreparationBusy: boolean;
   preparedMember: PreparedMembershipApplication | undefined;
+  currentAuthorizationQuery: TrustRegistryApiResolveAuthorizationRequest | undefined;
+  currentAuthorizationResult: TrustRegistryApiAuthorizationListResponse["entries"][number] | undefined;
+  currentAuthorizationBusy: boolean;
+  currentAuthorizationError: string | undefined;
+  currentRecognitionQuery: TrustRegistryApiResolveRecognitionRequest | undefined;
+  currentRecognitionResult: TrustRegistryApiRecognitionListResponse["entries"][number] | undefined;
+  currentRecognitionBusy: boolean;
+  currentRecognitionError: string | undefined;
   historicalQuery: TrustRegistryApiEvaluateAuthorizationRequest | undefined;
   historicalResult: TrustRegistryApiAuthorizationEvidenceEvaluationResponse | undefined;
   historicalBusy: boolean;
@@ -239,6 +247,14 @@ export const createApplicantPortalApp = (
     memberDraft: undefined,
     memberPreparationBusy: false,
     preparedMember: undefined,
+    currentAuthorizationQuery: undefined,
+    currentAuthorizationResult: undefined,
+    currentAuthorizationBusy: false,
+    currentAuthorizationError: undefined,
+    currentRecognitionQuery: undefined,
+    currentRecognitionResult: undefined,
+    currentRecognitionBusy: false,
+    currentRecognitionError: undefined,
     historicalQuery: undefined,
     historicalResult: undefined,
     historicalBusy: false,
@@ -260,6 +276,9 @@ export const createApplicantPortalApp = (
   let memberPreparationRequestId = 0;
   let historicalRequestId = 0;
   let historicalRecognitionRequestId = 0;
+  let currentAuthorizationRequestId = 0;
+  let currentRecognitionRequestId = 0;
+  let inspectionRequestId = 0;
   let recognitionRequestId = 0;
 
   const setState = (next: Partial<AppState>) => {
@@ -627,21 +646,90 @@ export const createApplicantPortalApp = (
   };
 
   const refreshInspection = async (flash?: string) => {
-    setState({ loading: true, error: undefined, ...(flash === undefined ? {} : { flash }) });
+    const requestId = ++inspectionRequestId;
+    const apiBase = state.apiBase;
+    currentAuthorizationRequestId += 1;
+    currentRecognitionRequestId += 1;
+    setState({ loading: true, error: undefined, inspection: undefined,
+      currentAuthorizationBusy: false, currentAuthorizationResult: undefined, currentAuthorizationError: undefined,
+      currentRecognitionBusy: false, currentRecognitionResult: undefined, currentRecognitionError: undefined,
+      ...(flash === undefined ? {} : { flash }) });
     try {
       const inspection = await client().loadPublicInspection();
+      if (requestId !== inspectionRequestId || apiBase !== state.apiBase) return;
       setState({
         error: undefined,
         inspection,
         loading: false,
       });
     } catch (error) {
+      if (requestId !== inspectionRequestId || apiBase !== state.apiBase) return;
       setState({
         error: formatApiError(error),
         flash: undefined,
         inspection: undefined,
         loading: false,
       });
+    }
+  };
+
+  const loadCurrentAuthorization = async (query: TrustRegistryApiResolveAuthorizationRequest) => {
+    if (state.currentAuthorizationBusy || state.inspection?.sourceMode !== "local-ledger") return;
+    const requestId = ++currentAuthorizationRequestId;
+    const apiBase = state.apiBase;
+    setState({ currentAuthorizationQuery: query, currentAuthorizationBusy: true,
+      currentAuthorizationResult: undefined, currentAuthorizationError: undefined });
+    try {
+      const result = await client().loadCurrentAuthorization(query, state.inspection!);
+      if (requestId !== currentAuthorizationRequestId || apiBase !== state.apiBase) return;
+      if (result?.authorization?.role !== query.role
+        || result.authorization.subjectDid !== query.subjectDid
+        || result.authorization.resourceId !== query.resourceId
+        || (query.resourceType !== undefined && result.authorization.resourceType !== query.resourceType)
+        || (query.trustLevel !== undefined && result.authorization.trustLevel !== query.trustLevel)
+        || typeof result.label !== "string" || typeof result.authorization.status !== "string") {
+        throw new Error("Current authorization response does not match the requested scope.");
+      }
+      setState({ currentAuthorizationResult: result });
+    } catch (error) {
+      if (requestId === currentAuthorizationRequestId && apiBase === state.apiBase) {
+        setState({ currentAuthorizationError: formatApiError(error) });
+      }
+    } finally {
+      if (requestId === currentAuthorizationRequestId && apiBase === state.apiBase) {
+        setState({ currentAuthorizationBusy: false });
+      }
+    }
+  };
+
+  const loadCurrentRecognition = async (query: TrustRegistryApiResolveRecognitionRequest) => {
+    if (state.currentRecognitionBusy || state.inspection?.sourceMode !== "local-ledger") return;
+    const requestId = ++currentRecognitionRequestId;
+    const apiBase = state.apiBase;
+    setState({ currentRecognitionQuery: query, currentRecognitionBusy: true,
+      currentRecognitionResult: undefined, currentRecognitionError: undefined });
+    try {
+      const result = await client().loadCurrentRecognition(query, state.inspection!);
+      if (requestId !== currentRecognitionRequestId || apiBase !== state.apiBase) return;
+      const recognition = result?.recognition;
+      if (recognition?.recognizedAuthorityDid !== query.recognizedAuthorityDid
+        || recognition.recognizedRegistryId !== query.recognizedRegistryId
+        || recognition.scope?.resourceType !== query.scopeResourceType
+        || recognition.scope.resourceId !== query.scopeResourceId
+        || !sameRecognitionContext(recognition.scope.context, query.scopeContext)
+        || (query.trustLevel !== undefined && recognition.trustLevel !== query.trustLevel)
+        || typeof result.label !== "string" || typeof recognition.status !== "string") {
+        throw new Error("Current recognition response does not match the requested scope.");
+      }
+      setState({ currentRecognitionResult: result });
+    } catch (error) {
+      if (requestId === currentRecognitionRequestId && apiBase === state.apiBase) {
+        setState({ currentRecognitionError: formatApiError(error) });
+      }
+    } finally {
+      if (requestId === currentRecognitionRequestId && apiBase === state.apiBase) {
+        setState({ currentRecognitionBusy: false });
+      }
     }
   };
 
@@ -813,8 +901,10 @@ export const createApplicantPortalApp = (
       memberPreparationRequestId += 1;
       historicalRequestId += 1;
       historicalRecognitionRequestId += 1;
+      currentAuthorizationRequestId += 1;
+      currentRecognitionRequestId += 1;
       recognitionRequestId += 1;
-      setState({ apiBase, signedBusy: false, signedContext: undefined, pendingApplication: undefined, auditorStatus: undefined, auditorStatusBusy: false, auditorDraft: undefined, preparedAuditor: undefined, auditorPreparationBusy: false, memberDraft: undefined, preparedMember: undefined, memberPreparationBusy: false, historicalBusy: false, historicalResult: undefined, historicalError: undefined, historicalRecognitionBusy: false, historicalRecognitionResult: undefined, historicalRecognitionError: undefined, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined,
+      setState({ apiBase, inspection: undefined, signedBusy: false, signedContext: undefined, pendingApplication: undefined, auditorStatus: undefined, auditorStatusBusy: false, auditorDraft: undefined, preparedAuditor: undefined, auditorPreparationBusy: false, memberDraft: undefined, preparedMember: undefined, memberPreparationBusy: false, currentAuthorizationBusy: false, currentAuthorizationResult: undefined, currentAuthorizationError: undefined, currentRecognitionBusy: false, currentRecognitionResult: undefined, currentRecognitionError: undefined, historicalBusy: false, historicalResult: undefined, historicalError: undefined, historicalRecognitionBusy: false, historicalRecognitionResult: undefined, historicalRecognitionError: undefined, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined,
         recognitionId: "", recognitionChallenge: undefined, recognitionAdmission: undefined,
         recognitionRecoveryBusy: false, recognitionRecoveryMessage: undefined });
       void refreshInspection();
@@ -822,6 +912,41 @@ export const createApplicantPortalApp = (
 
     root.querySelector<HTMLButtonElement>("[data-refresh]")?.addEventListener("click", () => {
       void refreshInspection();
+    });
+
+    root.querySelector<HTMLFormElement>("[data-current-authorization]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const form = event.currentTarget as HTMLFormElement;
+      const field = (name: string) => form.querySelector<HTMLInputElement>(`[name='${name}']`)?.value.trim() ?? "";
+      const role = form.querySelector<HTMLSelectElement>("[name='role']")?.value;
+      if (role !== "issuer" && role !== "verifier" && role !== "auditor") return;
+      void loadCurrentAuthorization({ role, subjectDid: field("subjectDid"), resourceId: field("resourceId") });
+    });
+
+    root.querySelector<HTMLFormElement>("[data-current-recognition]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const form = event.currentTarget as HTMLFormElement;
+      const field = (name: string) => form.querySelector<HTMLInputElement>(`[name='${name}']`)?.value.trim() ?? "";
+      try {
+        const scopeContext = parseRecognitionContext(
+          form.querySelector<HTMLTextAreaElement>("[name='scopeContext']")?.value ?? "",
+        );
+        const recognizedRegistryId = field("recognizedRegistryId");
+        const scopeResourceType = field("scopeResourceType");
+        if (recognizedRegistryId === "" || scopeResourceType === "") {
+          throw new Error("Recognition lookup requires registry ID and scope resource type.");
+        }
+        const query = TrustRegistryApiResolveRecognitionRequestSchema.parse({
+          recognizedAuthorityDid: field("recognizedAuthorityDid"),
+          recognizedRegistryId,
+          scopeResourceType,
+          scopeResourceId: field("scopeResourceId"),
+          ...(scopeContext === undefined ? {} : { scopeContext }),
+        });
+        void loadCurrentRecognition(query);
+      } catch (error) {
+        setState({ currentRecognitionResult: undefined, currentRecognitionError: formatApiError(error) });
+      }
     });
 
     root.querySelector<HTMLFormElement>("[data-historical-authorization]")?.addEventListener("submit", (event) => {
@@ -1059,13 +1184,16 @@ export const createApplicantPortalApp = (
   const renderInspectionLane = (
     title: string,
     cards: readonly ReturnType<typeof toInspectionCards>[number][],
+    unavailable: boolean,
   ): string => `
     <section class="lane">
       <div class="lane-header">
         <h2>${escapeHtml(title)}</h2>
-        <span>${cards.length.toString()} active</span>
+        <span>${unavailable ? "unavailable" : `${cards.length.toString()} active`}</span>
       </div>
-      ${cards.length === 0
+      ${unavailable
+        ? `<div class="empty-state"><p>Current list unavailable. Do not infer trust from this lane.</p></div>`
+        : cards.length === 0
         ? `<div class="empty-state"><p>No active entries in this lane yet.</p></div>`
         : cards.map((card) => `
           <article class="card">
@@ -1107,7 +1235,9 @@ export const createApplicantPortalApp = (
         <section class="hero">
           <p class="eyebrow">Public Trust Entry</p>
           <h1>Trust Registry Applicant Portal</h1>
-          <p>Inspect active trust records and submit local demo applications. Pending membership applicants can present challenge-bound evidence through an authenticated same-origin host.</p>
+          <p>${state.inspection?.sourceMode === "local-ledger"
+            ? "Query exact current trust scopes and submit pending membership evidence through an authenticated same-origin host. A browser response is not independent finality proof."
+            : "Inspect active trust records and submit local demo applications. Pending membership applicants can present challenge-bound evidence through an authenticated same-origin host."}</p>
           <div class="toolbar">
             <form class="panel" data-api-base-form>
               <label class="label">
@@ -1122,10 +1252,10 @@ export const createApplicantPortalApp = (
             <div class="panel metrics">
               <div class="metric"><span>Registry</span><strong>${escapeHtml(state.inspection?.summary.registryLabel ?? "Unavailable")}</strong></div>
               <div class="metric"><span>Current epoch</span><strong class="mono">${escapeHtml(state.inspection?.summary.currentEpochId ?? "n/a")}</strong></div>
-              <div class="metric"><span>Active issuers</span><strong>${(state.inspection?.activeIssuers.length ?? 0).toString()}</strong></div>
-              <div class="metric"><span>Active verifiers</span><strong>${(state.inspection?.activeVerifiers.length ?? 0).toString()}</strong></div>
-              <div class="metric"><span>Active auditors</span><strong>${state.inspection?.warnings?.length ? "n/a" : (state.inspection?.activeAuditors.length ?? 0).toString()}</strong></div>
-              <div class="metric"><span>Recognitions</span><strong>${(state.inspection?.activeRecognitions.length ?? 0).toString()}</strong></div>
+              <div class="metric"><span>Active issuers</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("issuer") ? "n/a" : state.inspection.activeIssuers.length.toString()}</strong></div>
+              <div class="metric"><span>Active verifiers</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("verifier") ? "n/a" : state.inspection.activeVerifiers.length.toString()}</strong></div>
+              <div class="metric"><span>Active auditors</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("auditor") ? "n/a" : state.inspection.activeAuditors.length.toString()}</strong></div>
+              <div class="metric"><span>Recognitions</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("recognition") ? "n/a" : state.inspection.activeRecognitions.length.toString()}</strong></div>
             </div>
           </div>
           ${state.error === undefined ? "" : `<div class="alert error">${escapeHtml(state.error)}</div>`}
@@ -1133,6 +1263,42 @@ export const createApplicantPortalApp = (
           ${state.flash === undefined ? "" : `<div class="alert success">${escapeHtml(state.flash)}</div>`}
         </section>
         <section class="content">
+          ${state.inspection?.sourceMode === "local-ledger" ? `
+          <section class="form-panel">
+            <h2>Current authorization lookup</h2>
+            <p>Query an exact DID, role, and governed resource from the current local-ledger view. This is an unverified API claim; independently verify finalized registry state before relying on it.</p>
+            <form data-current-authorization>
+              <label class="label">Role<select class="select" name="role">
+                ${(["issuer", "verifier", "auditor"] as const).map((role) => `<option value="${role}"${state.currentAuthorizationQuery?.role === role ? " selected" : ""}>${role}</option>`).join("")}
+              </select></label>
+              <label class="label">Subject DID<input class="input mono" name="subjectDid" value="${escapeHtml(state.currentAuthorizationQuery?.subjectDid ?? "")}" required /></label>
+              <label class="label">Governed resource ID<input class="input mono" name="resourceId" value="${escapeHtml(state.currentAuthorizationQuery?.resourceId ?? "")}" required /></label>
+              <button class="button secondary" type="submit"${state.currentAuthorizationBusy ? " disabled" : ""}>Look up current authorization</button>
+            </form>
+            ${state.currentAuthorizationError === undefined ? "" : `<div class="alert error">${escapeHtml(state.currentAuthorizationError)}</div>`}
+            ${state.currentAuthorizationResult === undefined ? "" : `<div class="panel" data-current-authorization-result>
+              <p><strong>Unverified current API claim:</strong> ${escapeHtml(state.currentAuthorizationResult.authorization.status)}.</p>
+              <details><summary>Inspect returned authorization</summary><pre class="mono">${escapeHtml(JSON.stringify(state.currentAuthorizationResult, null, 2))}</pre></details>
+            </div>`}
+          </section>
+          <section class="form-panel">
+            <h2>Current recognition lookup</h2>
+            <p>Query an exact external authority and scope from the current local-ledger view. Recognition does not grant local membership. Independently verify finalized registry state before relying on this API claim.</p>
+            <form data-current-recognition>
+              <label class="label">Recognized authority DID<input class="input mono" name="recognizedAuthorityDid" value="${escapeHtml(state.currentRecognitionQuery?.recognizedAuthorityDid ?? "")}" required /></label>
+              <label class="label">Recognized registry ID<input class="input mono" name="recognizedRegistryId" value="${escapeHtml(state.currentRecognitionQuery?.recognizedRegistryId ?? "")}" required /></label>
+              <label class="label">Scope resource type<input class="input mono" name="scopeResourceType" value="${escapeHtml(state.currentRecognitionQuery?.scopeResourceType ?? "")}" required /></label>
+              <label class="label">Scope resource ID<input class="input mono" name="scopeResourceId" value="${escapeHtml(state.currentRecognitionQuery?.scopeResourceId ?? "")}" required /></label>
+              <label class="label">Scope context JSON, if any<textarea class="input mono" name="scopeContext" rows="3" spellcheck="false">${escapeHtml(state.currentRecognitionQuery?.scopeContext === undefined ? "" : JSON.stringify(state.currentRecognitionQuery.scopeContext, null, 2))}</textarea></label>
+              <button class="button secondary" type="submit"${state.currentRecognitionBusy ? " disabled" : ""}>Look up current recognition</button>
+            </form>
+            ${state.currentRecognitionError === undefined ? "" : `<div class="alert error">${escapeHtml(state.currentRecognitionError)}</div>`}
+            ${state.currentRecognitionResult === undefined ? "" : `<div class="panel" data-current-recognition-result>
+              <p><strong>Unverified current API claim:</strong> ${escapeHtml(state.currentRecognitionResult.recognition.status)}.</p>
+              <details><summary>Inspect returned recognition</summary><pre class="mono">${escapeHtml(JSON.stringify(state.currentRecognitionResult, null, 2))}</pre></details>
+            </div>`}
+          </section>
+          ` : state.inspection === undefined ? `<div class="alert error">Registry mode is unavailable; inspection controls are disabled.</div>` : `
           <section class="form-panel">
             <h2>Historical authorization evidence</h2>
             <p>Look up the exact DID, role, governed resource, and timestamp. The API response is a historical claim, not proof of current trust. Verify its bundle against independent finalized registry history before relying on it.</p>
@@ -1198,6 +1364,7 @@ export const createApplicantPortalApp = (
             </label>
             <button class="button" type="submit"${state.submitting ? " disabled" : ""}>Submit application</button>
           </form>
+          `}
           <section class="form-panel">
             <h2>Issuer membership request</h2>
             <p>Bind one exact credential family, schema/version, definition, status method, and governed resource type before signing with the applicant DID key.</p>
@@ -1385,10 +1552,10 @@ export const createApplicantPortalApp = (
             `}
           </section>
           <div class="lanes">
-            ${renderInspectionLane("Active issuers", issuerCards)}
-            ${renderInspectionLane("Active verifiers", verifierCards)}
-            ${renderInspectionLane("Active auditors", auditorCards)}
-            ${renderInspectionLane("Active recognitions", recognitionCards)}
+            ${renderInspectionLane("Active issuers", issuerCards, state.inspection === undefined || state.inspection.unavailableLists?.includes("issuer") === true)}
+            ${renderInspectionLane("Active verifiers", verifierCards, state.inspection === undefined || state.inspection.unavailableLists?.includes("verifier") === true)}
+            ${renderInspectionLane("Active auditors", auditorCards, state.inspection === undefined || state.inspection.unavailableLists?.includes("auditor") === true)}
+            ${renderInspectionLane("Active recognitions", recognitionCards, state.inspection === undefined || state.inspection.unavailableLists?.includes("recognition") === true)}
           </div>
         </section>
       </main>

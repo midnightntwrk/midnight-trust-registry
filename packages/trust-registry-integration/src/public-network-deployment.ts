@@ -19,6 +19,7 @@ import {
   createLocalNetworkDeploymentActionReader,
   type LocalNetworkDeploymentActionReaderConfig,
 } from "./local-network-deployment-action-reader.js";
+import { getLocalNetworkProfile } from "./network-profiles.js";
 import { createLocalRpcFinalizedCheckpointSource, createRpcFinalizedCheckpointSource } from "./rpc-finalized-checkpoint.js";
 import {
   createPublicNetworkDeploymentActionReader,
@@ -216,7 +217,9 @@ export async function deployLocalTrustRegistry(input: {
   providers: ContractProviders<RegistryContract>;
   contractMaintenanceSigningKey: SigningKey;
 }): Promise<PublicRegistryDeploymentResult> {
-  if (input.network.networkId !== "undeployed") throw new Error("Local deployment requires the undeployed network");
+  if (input.network.networkId !== getLocalNetworkProfile().networkId) {
+    throw new Error("Local deployment requires the standalone network profile");
+  }
   return deployPinnedTrustRegistry({
     ...input,
     checkpointSource: createLocalRpcFinalizedCheckpointSource(input.network),
@@ -233,7 +236,9 @@ export async function deployLocalTrustRegistryStaged(input: {
   contractMaintenanceSigningKey: SigningKey;
   initialVerifierKeyName: string;
 }): Promise<PublicRegistryDeploymentResult> {
-  if (input.network.networkId !== "undeployed") throw new Error("Staged deployment requires the undeployed network");
+  if (input.network.networkId !== getLocalNetworkProfile().networkId) {
+    throw new Error("Staged deployment requires the standalone network profile");
+  }
   return deployPinnedTrustRegistry({
     ...input,
     checkpointSource: createLocalRpcFinalizedCheckpointSource(input.network),
@@ -383,7 +388,7 @@ export async function readPostDeploymentPublicTrustRegistry(input: {
   });
 }
 
-/** Rechecks the local committee only at a genesis-pinned `undeployed` finalized checkpoint. */
+/** Rechecks the local committee only at a genesis-pinned standalone finalized checkpoint. */
 export async function readPostDeploymentLocalTrustRegistry(input: {
   network: LocalNetworkDeploymentActionReaderConfig;
   receipt: PublicRegistryDeploymentReceipt;
@@ -392,8 +397,9 @@ export async function readPostDeploymentLocalTrustRegistry(input: {
   governance: PublicRegistryGovernancePin;
   maintenancePolicy: PublicRegistryMaintenancePolicy;
 }): Promise<PublicRegistryDeploymentReadback> {
-  if (input.network.networkId !== "undeployed" || getNetworkId() !== "undeployed") {
-    throw new Error("Local post-deployment readback requires the undeployed network");
+  const localNetworkId = getLocalNetworkProfile().networkId;
+  if (input.network.networkId !== localNetworkId || getNetworkId() !== localNetworkId) {
+    throw new Error("Local post-deployment readback requires the standalone network profile");
   }
   return readPostDeploymentPinnedTrustRegistry({
     ...input,

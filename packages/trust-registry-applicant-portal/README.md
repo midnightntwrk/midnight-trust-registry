@@ -6,6 +6,15 @@ Current scope:
 
 - submit issuer, verifier, or recognition applications through the existing API
 - inspect current active issuer, verifier, auditor, and recognition records
+- in confirmed local-ledger mode, replace incomplete active-list displays with
+  explicit unavailable states and offer exact current authorization and
+  recognition lookups. The portal checks health first and does not call list
+  routes in this mode; each exact lookup requires the same signed-plan digest,
+  registry, and stable reported checkpoint around the response. The returned
+  record is still an unverified API claim, not
+  independent finalized-state evidence. Historical export, workspace-signed
+  submission, and label-only demo controls are hidden in this mode; the local
+  0.1.0 profile supports current decisions only.
 - export an exact DID/role/governed-resource authorization claim at a supplied
   RFC3339 timestamp. The portal labels its status and bundle as an unverified
   API claim; a relying party must use an independently authenticated historical
@@ -45,6 +54,7 @@ Current scope:
   issuer or verifier `submit` envelope. This local workspace flow is separate
   from the governed VP application and Compact quorum approval path. The
   browser clears pasted envelopes after submission and does not retain keys.
+  This fixture-only control is not shown against a local-ledger API.
 - do not offer label-only auditor submission. The demo API's unsigned mutation
   route is not a governed admission boundary and must not be publicly exposed.
 - keep the first portal slice static and local-first instead of adding a second

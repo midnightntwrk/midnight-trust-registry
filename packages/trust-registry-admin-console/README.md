@@ -5,6 +5,14 @@ Local admin review console for `midnight-trust-registry`.
 Current scope:
 
 - inspect registry summary and epoch metadata from the API
+- in current-only local-ledger mode, show the summary and require an exact
+  issuer/verifier/auditor authorization or recognition ID for a current record;
+  never fall back to the unavailable list or historical routes. The UI checks
+  that the API plan and reported checkpoint stay stable during each lookup,
+  but this API claim is not independent proof of finalized ledger state
+- hide governance and fixture controls if API health cannot confirm a mode;
+  refreshing the board invalidates any previously loaded workspace signing
+  context, including one whose response is still in flight
 - review issuer, verifier, auditor, and recognition records grouped by lifecycle status
 - prepare policy-bound Compact approval and activation contexts for issuer,
   verifier, auditor, and recognition cards; paste externally produced public
@@ -24,7 +32,8 @@ Current scope:
   workspace path is not a Compact quorum action and does not establish network
   finality. The page clears the pasted envelope and never handles private keys
 - retain separate local fixture mutation and epoch controls for the deliberately
-  unsafe workspace demo, not for public or production governance
+  unsafe workspace demo, not for public or production governance; hide these
+  controls and the signed workspace mutation panel in local-ledger mode
 - keep the first UI slice static and local-first instead of introducing a
   separate frontend build service
 

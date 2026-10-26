@@ -58,6 +58,8 @@ export const TrustRegistryApiHealthResponseSchema = z.object({
   sourceMode: z.enum(["snapshot", "workspace", "memory", "local-ledger"]),
   generatedAt: TimestampSchema,
   registryId: NonEmptyStringSchema,
+  localPlanSha256: z.string().regex(/^[0-9a-f]{64}$/u).optional(),
+  finalizedBlockHash: z.string().regex(/^0x[0-9a-f]{64}$/u).optional(),
 });
 
 export const TrustRegistryApiSummarySchema = z.object({

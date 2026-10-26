@@ -45,6 +45,9 @@ type AppState = {
   governedPrepared: PreparedGovernedMembershipAction | undefined;
   governedSignersJson: string;
   loading: boolean;
+  lookupBusy: boolean;
+  lookupId: string;
+  lookupTarget: ReviewCard["target"];
   publishing: boolean;
   signedBusy: boolean;
   signedContext: TrustRegistryApiMutationContext | undefined;
@@ -179,6 +182,9 @@ export const createAdminConsoleApp = (
     governedPrepared: undefined,
     governedSignersJson: "",
     loading: false,
+    lookupBusy: false,
+    lookupId: "",
+    lookupTarget: "issuer",
     publishing: false,
     signedBusy: false,
     signedContext: undefined,
@@ -213,7 +219,7 @@ export const createAdminConsoleApp = (
     new TrustRegistryAdminConsoleClient(state.apiBase, fetchImpl);
 
   const loadSignedContext = async () => {
-    if (state.signedBusy) return;
+    if (state.signedBusy || state.board === undefined || state.board.sourceMode === "local-ledger") return;
     const requestId = ++signedContextRequestId;
     setState({ signedBusy: true, signedContext: undefined, error: undefined, flash: undefined });
     try {
@@ -227,7 +233,8 @@ export const createAdminConsoleApp = (
   };
 
   const submitSignedAction = async (raw: string) => {
-    if (state.signedBusy || state.signedContext === undefined) return;
+    if (state.signedBusy || state.signedContext === undefined
+      || state.board === undefined || state.board.sourceMode === "local-ledger") return;
     const host = currentHost();
     let candidate: unknown;
     try {
@@ -281,11 +288,17 @@ export const createAdminConsoleApp = (
   const refreshBoard = async (flash?: string) => {
     const host = currentHost();
     const requestId = ++boardRequestId;
-    setState({ loading: true, error: undefined, ...(flash === undefined ? {} : { flash }) });
+    ++signedContextRequestId;
+    setState({ loading: true, signedBusy: false, signedContext: undefined,
+      error: undefined, ...(flash === undefined ? {} : { flash }) });
     try {
-      const board = await getClient().loadReviewBoard();
+      const client = getClient();
+      const board = await client.loadReviewBoard();
       if (!isCurrentHost(host) || requestId !== boardRequestId) return;
-      const cards = buildReviewCards(board);
+      const cards = board.sourceMode === "local-ledger" && state.lookupId.trim().length > 0
+        ? [await client.loadCurrentReviewCard(state.lookupTarget, state.lookupId.trim(), board)]
+        : buildReviewCards(board);
+      if (!isCurrentHost(host) || requestId !== boardRequestId) return;
       const nextSelectedKey = state.selectedKey !== undefined
         && cards.some((card) => card.key === state.selectedKey)
         ? state.selectedKey
@@ -326,10 +339,34 @@ export const createAdminConsoleApp = (
     }
   };
 
+  const lookupCurrentRecord = async () => {
+    const board = state.board;
+    if (board?.sourceMode !== "local-ledger" || state.loading || state.lookupBusy || state.governedBusy) return;
+    const id = state.lookupId.trim();
+    const target = state.lookupTarget;
+    if (id.length === 0) {
+      setState({ error: "Enter the exact current authorization or recognition ID." });
+      return;
+    }
+    const host = currentHost();
+    const requestId = ++boardRequestId;
+    setState({ lookupBusy: true, error: undefined, flash: undefined, cards: [], selectedKey: undefined });
+    try {
+      const card = await getClient().loadCurrentReviewCard(target, id, board);
+      if (!isCurrentHost(host) || requestId !== boardRequestId) return;
+      setState({ lookupBusy: false, cards: [card], selectedKey: card.key,
+        governedAction: undefined, governedKey: undefined, governedPrepared: undefined });
+    } catch (error) {
+      if (!isCurrentHost(host) || requestId !== boardRequestId) return;
+      setState({ lookupBusy: false, error: formatApiError(error) });
+    }
+  };
+
   const runAction = async (
     action: TrustRegistryApiApplicationAction,
   ) => {
-    if (state.loading || state.publishing || state.governedBusy) return;
+    if (state.loading || state.publishing || state.governedBusy
+      || state.board === undefined || state.board.sourceMode === "local-ledger") return;
     const host = currentHost();
     const card = selectedCard();
     if (card === undefined) {
@@ -359,7 +396,8 @@ export const createAdminConsoleApp = (
   };
 
   const publishEpoch = async (label: string) => {
-    if (state.loading || state.publishing || state.governedBusy) return;
+    if (state.loading || state.publishing || state.governedBusy
+      || state.board === undefined || state.board.sourceMode === "local-ledger") return;
     const host = currentHost();
     setState({ publishing: true, error: undefined, flash: undefined });
     try {
@@ -387,7 +425,7 @@ export const createAdminConsoleApp = (
   };
 
   const prepareGoverned = async (action: GovernedMembershipAction) => {
-    if (state.loading || state.publishing || state.governedBusy) return;
+    if (state.loading || state.publishing || state.governedBusy || state.board === undefined) return;
     const host = currentHost();
     const card = selectedCard();
     if (card === undefined || !getReviewActions(card.status).includes(action)) return;
@@ -404,7 +442,7 @@ export const createAdminConsoleApp = (
   };
 
   const submitGoverned = async () => {
-    if (state.loading || state.publishing || state.governedBusy) return;
+    if (state.loading || state.publishing || state.governedBusy || state.board === undefined) return;
     const host = currentHost();
     const card = selectedCard();
     if (card === undefined) return;
@@ -446,7 +484,7 @@ export const createAdminConsoleApp = (
   };
 
   const preparePolicyAction = async (phase: "thresholds" | "evidence-verifier") => {
-    if (state.loading || state.publishing || state.governedBusy) return;
+    if (state.loading || state.publishing || state.governedBusy || state.board === undefined) return;
     const host = currentHost();
     const thresholds = { ...state.policyThresholds };
     if (phase === "thresholds" && Object.values(thresholds).some((value) =>
@@ -471,7 +509,7 @@ export const createAdminConsoleApp = (
 
   const submitPolicyAction = async () => {
     if (state.loading || state.publishing || state.governedBusy
-      || state.policyPrepared === undefined || state.policyPhase === undefined) return;
+      || state.board === undefined || state.policyPrepared === undefined || state.policyPhase === undefined) return;
     const host = currentHost();
     const prepared = state.policyPrepared;
     const phase = state.policyPhase;
@@ -516,7 +554,7 @@ export const createAdminConsoleApp = (
   };
 
   const prepareProposal = async () => {
-    if (state.loading || state.publishing || state.governedBusy) return;
+    if (state.loading || state.publishing || state.governedBusy || state.board === undefined) return;
     const host = currentHost();
     const role = state.proposalRole;
     const id = state.proposalAuthorizationId.trim();
@@ -553,7 +591,8 @@ export const createAdminConsoleApp = (
   };
 
   const submitProposal = async () => {
-    if (state.loading || state.publishing || state.governedBusy || state.proposalPrepared === undefined) return;
+    if (state.loading || state.publishing || state.governedBusy || state.board === undefined
+      || state.proposalPrepared === undefined) return;
     const host = currentHost();
     const role = state.proposalRole;
     const id = state.proposalAuthorizationId.trim();
@@ -609,7 +648,7 @@ export const createAdminConsoleApp = (
   };
 
   const resolveProposal = async () => {
-    if (state.loading || state.publishing || state.governedBusy) return;
+    if (state.loading || state.publishing || state.governedBusy || state.board === undefined) return;
     const host = currentHost();
     const role = state.proposalRole;
     const id = state.proposalAuthorizationId.trim();
@@ -666,7 +705,8 @@ export const createAdminConsoleApp = (
       const pastedEnvelope = root.querySelector<HTMLTextAreaElement>("[data-signed-submit] [name='signedEnvelope']");
       if (pastedEnvelope !== null) pastedEnvelope.value = "";
       setState({ apiBase, board: undefined, cards: [], selectedKey: undefined,
-        loading: false, publishing: false, signedBusy: false, signedContext: undefined,
+        loading: false, lookupBusy: false, lookupId: "", lookupTarget: "issuer",
+        publishing: false, signedBusy: false, signedContext: undefined,
         epochLabel: "", proposalAuthorizationId: "", proposalEvidenceJson: "",
         governedBusy: false, governedAction: undefined, governedKey: undefined,
         governedPrepared: undefined, governedSignersJson: "",
@@ -680,6 +720,28 @@ export const createAdminConsoleApp = (
     root.querySelector<HTMLButtonElement>("[data-refresh]")?.addEventListener("click", () => {
       if (state.governedBusy) return;
       void refreshBoard();
+    });
+    root.querySelector<HTMLSelectElement>("[data-current-target]")?.addEventListener("change", (event) => {
+      if (state.lookupBusy) ++boardRequestId;
+      setState({ lookupTarget: (event.currentTarget as HTMLSelectElement).value as ReviewCard["target"],
+        lookupBusy: false, cards: [], selectedKey: undefined, governedPrepared: undefined });
+    });
+    root.querySelector<HTMLInputElement>("[data-current-id]")?.addEventListener("input", (event) => {
+      if (state.lookupBusy) ++boardRequestId;
+      state.lookupId = (event.currentTarget as HTMLInputElement).value;
+      state.lookupBusy = false;
+      state.cards = [];
+      state.selectedKey = undefined;
+      state.governedPrepared = undefined;
+      root.querySelector("[data-local-current-result]")?.replaceChildren();
+      const detail = root.querySelector(".detail-panel");
+      if (detail !== null) detail.textContent = "Lookup changed; submit the exact ID again.";
+      const submit = root.querySelector<HTMLButtonElement>("[data-current-lookup] button[type='submit']");
+      if (submit !== null) submit.disabled = state.loading || state.governedBusy;
+    });
+    root.querySelector<HTMLFormElement>("[data-current-lookup]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      void lookupCurrentRecord();
     });
 
     root.querySelector<HTMLButtonElement>("[data-signed-context]")?.addEventListener("click", () => {
@@ -901,14 +963,16 @@ export const createAdminConsoleApp = (
             `}
           </section>
         `}
-        <p class="eyebrow">Local fixture controls</p>
-        <div class="actions">
-          ${getReviewActions(card.status).map((action) => `
-            <button class="button${action === "archive" ? " ghost" : ""}" data-action="${escapeHtml(action)}"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>
-              ${escapeHtml(action)}
-            </button>
-          `).join("") || "<p>No maintainer actions available for this lifecycle state.</p>"}
-        </div>
+        ${state.board?.sourceMode === "local-ledger" ? "" : `
+          <p class="eyebrow">Local fixture controls</p>
+          <div class="actions">
+            ${getReviewActions(card.status).map((action) => `
+              <button class="button${action === "archive" ? " ghost" : ""}" data-action="${escapeHtml(action)}"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>
+                ${escapeHtml(action)}
+              </button>
+            `).join("") || "<p>No maintainer actions available for this lifecycle state.</p>"}
+          </div>
+        `}
       </aside>
     `;
   };
@@ -937,19 +1001,38 @@ export const createAdminConsoleApp = (
                 <button class="button secondary" type="button" data-refresh${state.loading || state.governedBusy ? " disabled" : ""}>Refresh</button>
               </div>
             </form>
-            <form class="epoch-panel" data-epoch-form>
+            ${state.board !== undefined && state.board.sourceMode !== "local-ledger" ? `<form class="epoch-panel" data-epoch-form>
               <label>
                 Publish epoch label
                 <input class="input" data-epoch-label type="text" value="${escapeHtml(state.epochLabel)}" placeholder="optional operator label" />
               </label>
               <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Publish epoch</button>
-            </form>
+            </form>` : ""}
           </div>
           ${state.error === undefined ? "" : `<div class="alert error">${escapeHtml(state.error)}</div>`}
           ${state.flash === undefined ? "" : `<div class="alert success">${escapeHtml(state.flash)}</div>`}
           ${state.board === undefined ? "" : renderMetrics(state.board)}
         </section>
-        <section class="proposal-panel governed-panel">
+        ${state.board?.sourceMode === "local-ledger" ? `
+          <section class="proposal-panel governed-panel">
+            <p class="eyebrow">Current local ledger</p>
+            <h2>Look up one exact record</h2>
+            <p>Lists and historical routes are unavailable. An API response is not independent proof of ledger finality; verify the finalized contract state before relying on it.</p>
+            <form data-current-lookup>
+              <label>Record type
+                <select class="input" data-current-target>
+                  ${(["issuer", "verifier", "auditor", "recognition"] as const).map((target) =>
+                    `<option value="${target}"${state.lookupTarget === target ? " selected" : ""}>${target}</option>`).join("")}
+                </select>
+              </label>
+              <label>Exact current record ID
+                <input class="input mono" data-current-id value="${escapeHtml(state.lookupId)}" autocomplete="off" maxlength="256" />
+              </label>
+              <button class="button secondary" type="submit"${state.loading || state.lookupBusy || state.governedBusy ? " disabled" : ""}>Look up current record</button>
+            </form>
+          </section>
+        ` : ""}
+        ${state.board !== undefined && state.board.sourceMode !== "local-ledger" ? `<section class="proposal-panel governed-panel">
           <div>
             <p class="eyebrow">Signed workspace action</p>
             <h2>Submit an external maintainer intent</h2>
@@ -963,8 +1046,8 @@ export const createAdminConsoleApp = (
             </label>
             <button class="button" type="submit"${state.signedBusy || state.signedContext === undefined ? " disabled" : ""}>Submit signed action</button>
           </form>
-        </section>
-        <section class="proposal-panel governed-panel">
+        </section>` : ""}
+        ${state.board === undefined ? "" : `<section class="proposal-panel governed-panel">
           <div>
             <p class="eyebrow">Membership application</p>
             <h2>Submit a governed proposal</h2>
@@ -999,8 +1082,8 @@ export const createAdminConsoleApp = (
               <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Submit signed proposal</button>
             </form>
           `}
-        </section>
-        <section class="proposal-panel governed-panel">
+        </section>`}
+        ${state.board === undefined ? "" : `<section class="proposal-panel governed-panel">
           <div>
             <p class="eyebrow">Governance policy</p>
             <h2>Revise maintainer quorum</h2>
@@ -1028,11 +1111,13 @@ export const createAdminConsoleApp = (
               <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Submit signed ${state.policyPhase === "thresholds" ? "revision" : "registration"}</button>
             </form>
           `}
-        </section>
+        </section>`}
         <section class="workspace">
-          <div class="board">
+          ${state.board?.sourceMode === "local-ledger" ? `<div class="board" data-local-current-result>
+            ${state.cards.map(renderCard).join("")}
+          </div>` : `<div class="board">
             ${REVIEW_STATUSES.map((status) => renderColumn(status, groupedCards[status])).join("")}
-          </div>
+          </div>`}
           ${renderDetailPanel()}
         </section>
       </main>

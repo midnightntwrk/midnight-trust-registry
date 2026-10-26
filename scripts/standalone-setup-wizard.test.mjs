@@ -316,6 +316,21 @@ test("Helm bootstrap handoff binds the signed mapping to a fresh wizard install"
   }), /install inventory changed/);
 });
 
+test("standalone setup binds its profile and Compose network environment", async (t) => {
+  const f = await fixture();
+  t.after(() => rm(join(f.directory, ".."), { recursive: true, force: true }));
+  const recordPath = join(f.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  assert.deepEqual(record.networkProfile, {
+    id: "standalone", networkId: "undeployed", kind: "self-hosted-local",
+    genesisPinPolicy: "per-installation",
+  });
+  assert.match(await readFile(join(f.directory, "stack.env"), "utf8"), /^TR_NETWORK_ID=undeployed$/mu);
+  record.networkProfile.networkId = "preprod";
+  await writeFile(recordPath, JSON.stringify(record), { mode: 0o600 });
+  await assert.rejects(standaloneSetupStatus(f.directory), /profile changed/u);
+});
+
 test("Helm bootstrap handoff rejects evidence from a Compose setup", async (t) => {
   const f = await fixture();
   t.after(() => rm(join(f.directory, ".."), { recursive: true, force: true }));

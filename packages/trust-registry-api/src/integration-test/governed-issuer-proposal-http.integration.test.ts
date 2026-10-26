@@ -29,6 +29,12 @@ import {
 } from "../governed-issuer-proposals.js";
 import { resolveCompactProposalObservation } from "../compact-proposal-observation.js";
 import { FileProposalSubmissionJournal } from "../proposal-submission-journal.js";
+import {
+  assertCurrentProposalQuorum,
+  InvalidProposalQuorumError,
+  StaleProposalQuorumContextError,
+} from "../governed-proposal-quorum-preflight.js";
+import { decodeGovernedMembershipSigners } from "../governed-membership-actions.js";
 import { createTrustRegistryApiServer } from "../server.js";
 
 const bytes = (value: string): Uint8Array => Buffer.from(value.slice(2), "hex");
@@ -57,7 +63,7 @@ const signPrepared = (
 };
 
 describe("Compact-backed issuer proposals over HTTP", () => {
-  it("does not resubmit after a lost Compact response and reconciles a finalized observation", async () => {
+  it("rejects a known-invalid quorum before a real journal reservation and reconciles an uncertain response", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("issuer-journal-http");
     const second = createMaintainerScenarioFixture("issuer-journal-second");
     const third = createMaintainerScenarioFixture("issuer-journal-third");
@@ -89,12 +95,24 @@ describe("Compact-backed issuer proposals over HTTP", () => {
     const directory = await mkdtemp(join(tmpdir(), "tr-issuer-journal-http-"));
     const journalPath = join(directory, "journal.json");
     const journal = new FileProposalSubmissionJournal(journalPath);
+    const contractAddress = `0x${harness.simulator.contractAddress}`;
+    const genesisHash = `0x${"a".repeat(64)}`;
+    await journal.bindDeployment(harness.registryId, contractAddress, genesisHash);
+    const operatorSnapshot = publishSimulatorSnapshot(harness, { label: "synthetic-local-journal" });
     let finalizedLedger = harness.simulator.getLedger();
+    let finalizedLedgerAvailable = true;
     let eventHash: string | undefined;
     let executions = 0;
     let preflights = 0;
     const server = createTrustRegistryApiServer({
-      source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "journal" }) },
+      source: {
+        mode: "local-ledger", localDeploymentBinding: { contractAddress, expectedGenesisHash: genesisHash },
+        loadSnapshot: async () => operatorSnapshot,
+        readFinalizedProposalLedger: async () => {
+          if (!finalizedLedgerAvailable) throw new Error("finalized ledger unavailable");
+          return finalizedLedger;
+        },
+      },
       proposalAdmission: {
         resolvePendingApplication: async () => ({
           authorizationId: issuer.authorizationId, binding, status: "pending", createdAt: "2026-05-20T00:00:00.000Z",
@@ -149,6 +167,16 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       const verifierSignature = harness.signIssuerProposalEvidence(harness.prepareIssuerProposalAction(issuer, evidence));
       const request = { evidence, prepared, signers: [signPrepared(harness, second, prepared), signPrepared(harness, third, prepared)],
         evidenceVerifierSignature: `0x${Buffer.from(encodeJubjubSignature(verifierSignature)).toString("hex")}` };
+      const preparedContext = harness.prepareIssuerProposalAction(issuer, evidence);
+      const decodedSigners = decodeGovernedMembershipSigners(request);
+      await expect(assertCurrentProposalQuorum(async () => finalizedLedger, preparedContext, decodedSigners))
+        .resolves.toBeUndefined();
+      await expect(assertCurrentProposalQuorum(async () => finalizedLedger,
+        { ...preparedContext, actionSequence: preparedContext.actionSequence + 1n }, decodedSigners))
+        .rejects.toBeInstanceOf(StaleProposalQuorumContextError);
+      await expect(assertCurrentProposalQuorum(async () => finalizedLedger, preparedContext,
+        [{ ...decodedSigners[0]!, keyId: Buffer.alloc(32, 0xff) }, decodedSigners[1]!]))
+        .rejects.toBeInstanceOf(InvalidProposalQuorumError);
       const wrongSequence = { ...prepared, actionSequence: (BigInt(prepared.actionSequence) + 1n).toString() };
       const forged = await post("submit", { ...request, signers: [signPrepared(harness, second, wrongSequence), request.signers[1]] });
       expect(forged.status).toBe(403);
@@ -160,9 +188,17 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       expect(await journal.read("issuer", issuer.authorizationId)).toBeNull();
       const insufficient = await post("submit", { ...request, signers: [request.signers[0]] });
       expect(insufficient.status).toBe(403);
-      expect(preflights).toBe(1);
+      expect((await insufficient.json()).type).toMatch(/invalid-governed-signature$/u);
+      expect(preflights).toBe(0);
       expect(await journal.read("issuer", issuer.authorizationId)).toBeNull();
       expect(executions).toBe(0);
+      finalizedLedgerAvailable = false;
+      const unavailable = await post("submit", request);
+      expect(unavailable.status).toBe(503);
+      expect((await unavailable.json()).type).toMatch(/governed-proposal-preflight-unavailable$/u);
+      expect(preflights).toBe(0);
+      expect(await journal.read("issuer", issuer.authorizationId)).toBeNull();
+      finalizedLedgerAvailable = true;
       const wrongVerifierSignature = signIssuerProposalEvidenceFromSeed(
         second.seed, bytes(prepared.registryId), bytes(prepared.networkIdCommitment),
         bytes(prepared.contractAddress), bytes(prepared.evidenceVerifierKeyIdCommitment),
@@ -172,11 +208,17 @@ describe("Compact-backed issuer proposals over HTTP", () => {
         evidenceVerifierSignature: `0x${Buffer.from(encodeJubjubSignature(wrongVerifierSignature)).toString("hex")}` });
       expect(wrongVerifier.status).toBe(403);
       expect((await wrongVerifier.json()).detail).toBe("invalid-evidence");
-      expect(preflights).toBe(2);
+      expect(preflights).toBe(1);
       expect(executions).toBe(0);
       expect(await journal.read("issuer", issuer.authorizationId)).toBeNull();
+      expect(harness.simulator.getLedger().governanceActionCount).toBe(BigInt(prepared.actionSequence));
       await expect(journal.executeOnce("verifier", "private-blocking-authorization", evidence.commitment,
-        async () => { throw new Error("response lost after submission"); })).rejects.toThrow();
+        async () => { throw new Error("response lost after submission"); }, {
+          actionSequence: prepared.actionSequence,
+          actionKind: prepared.actionKind,
+          actionPayloadHash: prepared.actionPayloadHash,
+        })).rejects.toThrow();
+      expect(harness.simulator.getLedger().governanceActionCount).toBe(BigInt(prepared.actionSequence));
       const blocked = await post("submit", request);
       expect(blocked.status).toBe(409);
       const blockedProblem = await blocked.json() as { type: string; detail: string };
@@ -184,10 +226,13 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       expect(JSON.stringify(blockedProblem)).not.toContain("private-blocking-authorization");
       expect(JSON.stringify(blockedProblem)).not.toContain("verifier");
       expect(executions).toBe(0);
+      expect(harness.simulator.getLedger().governanceActionCount).toBe(BigInt(prepared.actionSequence));
       await journal.reconcile("verifier", "private-blocking-authorization",
         async () => ({ eventHash: `0x${"99".repeat(32)}`, evidenceCommitment: evidence.commitment }));
+      const refreshedPrepared = await (await post("prepare", { evidence })).json() as PreparedGovernedIssuerProposal;
+      expect(refreshedPrepared, "proposal context changed before issuer execution").toEqual(prepared);
       const uncertain = await post("submit", request);
-      expect(uncertain.status).toBe(503);
+      expect(uncertain.status, JSON.stringify(await uncertain.clone().json())).toBe(503);
       expect((await uncertain.json()).type).toMatch(/proposal-submission-uncertain$/u);
       expect(await journal.read("issuer", issuer.authorizationId)).toMatchObject({
         state: "reserved", eventHash: null,

@@ -31,6 +31,8 @@ import { createTrustRegistryApiServer } from "../server.js";
 import {
   CurrentLedgerSelectionAmbiguousError,
   CurrentLedgerSelectionUnavailableError,
+  getAuthorizationEntryById,
+  getRecognitionEntryById,
   resolveAuthorizationEntry,
   resolveRecognitionEntry,
   type TrustRegistryApiStateSource,
@@ -112,6 +114,28 @@ const fixture = () => {
 };
 
 describe("finalized Compact projection coverage", () => {
+  it("does not serve file-backed lists as complete local-ledger projections", async () => {
+    const { snapshot } = fixture();
+    const source: TrustRegistryApiStateSource = {
+      mode: "local-ledger",
+      async loadSnapshot() { return snapshot; },
+    };
+    const server = createTrustRegistryApiServer({ source });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("Expected local HTTP listener");
+      for (const path of ["/v1/authorizations/issuer", "/v1/recognitions"]) {
+        const response = await fetch(`http://127.0.0.1:${address.port}${path}`);
+        expect(response.status).toBe(503);
+        expect((await response.json()).type).toMatch(/local-list-projection-unavailable$/u);
+      }
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) =>
+        error ? reject(error) : resolve()));
+    }
+  });
+
   it("resolves local current records by finalized selection, not lifecycle timestamps", async () => {
     const { snapshot } = fixture();
     const currentIssuer = snapshot.issuerEntries[1]!;
@@ -134,6 +158,7 @@ describe("finalized Compact projection coverage", () => {
     };
     const selection = {
       snapshot: candidate,
+      finalizedBlockHash: `0x${"a".repeat(64)}`,
       authorizationIds: { issuer: new Set([currentIssuer.authorization.authorizationId]),
         verifier: new Set<string>(), auditor: new Set<string>() },
       recognitionIds: new Set([currentRecognition.recognition.recognitionId]),
@@ -152,9 +177,23 @@ describe("finalized Compact projection coverage", () => {
     };
     expect(await resolveAuthorizationEntry(source, issuerRequest)).toEqual(currentIssuer);
     expect(await resolveRecognitionEntry(source, recognitionRequest)).toEqual(currentRecognition);
+    expect(await getAuthorizationEntryById(source, "issuer", olderIssuer.authorization.authorizationId)).toBeNull();
+    expect(await getAuthorizationEntryById(source, "issuer", currentIssuer.authorization.authorizationId))
+      .toEqual(currentIssuer);
+    expect(await getRecognitionEntryById(source, olderRecognition.recognition.recognitionId)).toBeNull();
+    expect(await getRecognitionEntryById(source, currentRecognition.recognition.recognitionId))
+      .toEqual(currentRecognition);
     await expect(resolveAuthorizationEntry({ mode: "local-ledger", async loadSnapshot() {
       return candidate;
     } }, issuerRequest)).rejects.toBeInstanceOf(CurrentLedgerSelectionUnavailableError);
+    await expect(getAuthorizationEntryById({ mode: "local-ledger", async loadSnapshot() {
+      return candidate;
+    } }, "issuer", currentIssuer.authorization.authorizationId))
+      .rejects.toBeInstanceOf(CurrentLedgerSelectionUnavailableError);
+    await expect(getRecognitionEntryById({ mode: "local-ledger", async loadSnapshot() {
+      return candidate;
+    } }, currentRecognition.recognition.recognitionId))
+      .rejects.toBeInstanceOf(CurrentLedgerSelectionUnavailableError);
     const ambiguous: TrustRegistryApiStateSource = { ...source,
       async loadCurrentLedgerSelection() { return { ...selection, authorizationIds: {
         ...selection.authorizationIds,
@@ -446,6 +485,52 @@ describe("local ledger-bound API source", () => {
     }
   });
 
+  it("retries a null finalized read but latches a provider error", async () => {
+    const { snapshot, ledger, contractAddress } = fixture();
+    const directory = await mkdtemp(join(tmpdir(), "tr-local-reader-retry-"));
+    try {
+      const snapshotPath = join(directory, "snapshot.json");
+      await writeSnapshotToFile(snapshotPath, snapshot);
+      const raw = await readFile(snapshotPath);
+      const address = `0x${Buffer.from(contractAddress).toString("hex")}`;
+      const view = { networkId: "undeployed", contractAddress: address,
+        finalizedBlockHash: `0x${"a".repeat(64)}`, ledger,
+        verifierKeySha256: {}, maintenanceAuthority: { committee: [], threshold: 0, counter: 0n } };
+      let calls = 0;
+      let failure: "null" | "throw" | null = "null";
+      const source = createLocalLedgerBoundSource({
+        snapshotPath,
+        expectedSnapshotSha256: createHash("sha256").update(raw).digest("hex"),
+        contractAddress: address,
+        reader: { async readCurrentFinalizedLedger() {
+          calls += 1;
+          if (failure === "null") return null;
+          if (failure === "throw") throw new Error("private provider endpoint");
+          return view;
+        } },
+        sequenceToTimestamp,
+      });
+      await expect(source.loadSnapshot()).rejects.toThrow(/Finalized local Trust Registry state is unavailable/u);
+      failure = null;
+      await expect(source.loadSnapshot()).rejects.toThrow(/Finalized local Trust Registry state is unavailable/u);
+      expect(calls).toBe(1);
+      await new Promise((resolve) => setTimeout(resolve, 1_050));
+      await expect(source.loadSnapshot()).resolves.toBeDefined();
+      expect(calls).toBe(2);
+
+      failure = "throw";
+      await expect(source.loadSnapshot()).rejects.toThrow(/Finalized local Trust Registry state is unavailable/u);
+      failure = null;
+      await expect(source.loadSnapshot()).rejects.toThrow(/Finalized local Trust Registry state is unavailable/u);
+      expect(calls).toBe(3);
+      await new Promise((resolve) => setTimeout(resolve, 1_050));
+      await expect(source.loadSnapshot()).rejects.toThrow(/Finalized local Trust Registry state is unavailable/u);
+      expect(calls).toBe(3);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("exposes proposal readback only from the same snapshot-bound finalized view", async () => {
     const { snapshot, ledger, contractAddress } = fixture();
     const directory = await mkdtemp(join(tmpdir(), "tr-local-proposal-readback-"));
@@ -665,6 +750,23 @@ describe("local ledger-bound API source", () => {
       expect((await fetch(`${url}/health`)).status).toBe(503);
       expect(readCount).toBe(callsAfterMismatch);
       await expect(restartedSource().loadSnapshot()).resolves.toBeDefined();
+      await expect(restartedSource().loadCurrentLedgerSelection()).resolves.toMatchObject({
+        finalizedBlockHash: view.finalizedBlockHash,
+      });
+      const duplicateKeySnapshot = raw.replace(/^\{\n/u, '{\n  "registry": null,\n');
+      expect(duplicateKeySnapshot).not.toBe(raw);
+      await writeFile(snapshotPath, duplicateKeySnapshot);
+      const duplicateKeySource = createLocalLedgerBoundSource({
+        snapshotPath,
+        expectedSnapshotSha256: createHash("sha256").update(duplicateKeySnapshot).digest("hex"),
+        contractAddress: address,
+        reader: { async readCurrentFinalizedLedger() { return view; } },
+        sequenceToTimestamp,
+      });
+      await expect(duplicateKeySource.loadSnapshot()).rejects.toMatchObject({
+        cause: { message: "Pinned local snapshot must use the CLI canonical JSON format" },
+      });
+      await writeFile(snapshotPath, raw);
       const actualPath = join(directory, "actual-snapshot.json");
       await rename(snapshotPath, actualPath);
       await symlink(actualPath, snapshotPath);

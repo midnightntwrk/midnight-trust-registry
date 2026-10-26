@@ -22,11 +22,13 @@ import type {
   TrustRegistryApiProblemDetails,
   TrustRegistryApiRecognitionListResponse,
   TrustRegistryApiSummary,
+  TrustRegistryApiHealthResponse,
   TrustRegistryApiMutationContext,
   TrustRegistryApiSignedMutationRequest,
 } from "@midnight-ntwrk/trust-registry-api";
 
-import type { ReviewBoard } from "./model.js";
+import { toAuthorizationReviewCard, toRecognitionReviewCard,
+  type ReviewBoard, type ReviewCard, type ReviewTarget } from "./model.js";
 
 type FetchLike = typeof fetch;
 export type GovernedProposalRole = Exclude<GovernedMembershipRole, "recognition">;
@@ -80,6 +82,23 @@ export class TrustRegistryAdminConsoleClient {
   }
 
   async loadReviewBoard(): Promise<ReviewBoard> {
+    const health = await this.request<TrustRegistryApiHealthResponse>("/health", { cache: "no-store" });
+    if (health.status !== "ok" || !["snapshot", "workspace", "memory", "local-ledger"].includes(health.sourceMode)) {
+      throw new Error("Admin API health did not identify a supported source mode");
+    }
+    if (health.sourceMode === "local-ledger") {
+      const planSha256 = health.localPlanSha256;
+      if (typeof planSha256 !== "string" || !/^[0-9a-f]{64}$/u.test(planSha256)
+        || !/^0x[0-9a-f]{64}$/u.test(health.finalizedBlockHash ?? "")) {
+        throw new Error("Local admin API health lacks its approved plan or finalized checkpoint");
+      }
+      const summary = await this.request<TrustRegistryApiSummary>("/v1/registry/summary", { cache: "no-store" });
+      if (summary.registryId !== health.registryId) {
+        throw new Error("Local admin summary differs from the signed-plan registry");
+      }
+      return { sourceMode: "local-ledger", localPlanSha256: planSha256,
+        summary, issuers: [], verifiers: [], auditors: [], recognitions: [] };
+    }
     const [summary, issuers, verifiers, auditors, recognitions] = await Promise.all([
       this.request<TrustRegistryApiSummary>("/v1/registry/summary"),
       this.request<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/issuer"),
@@ -89,12 +108,55 @@ export class TrustRegistryAdminConsoleClient {
     ]);
 
     return {
+      sourceMode: health.sourceMode,
       summary,
       issuers: issuers.entries,
       verifiers: verifiers.entries,
       auditors: auditors.entries,
       recognitions: recognitions.entries,
     };
+  }
+
+  async loadCurrentReviewCard(target: ReviewTarget, id: string, board: ReviewBoard): Promise<ReviewCard> {
+    if (board.sourceMode !== "local-ledger" || id.trim().length === 0 || id.length > 256) {
+      throw new Error("Exact-ID admin lookup requires the current local-ledger board");
+    }
+    const health = await this.request<TrustRegistryApiHealthResponse>("/health", { cache: "no-store" });
+    if (health.status !== "ok" || health.sourceMode !== "local-ledger"
+      || health.registryId !== board.summary.registryId
+      || health.localPlanSha256 !== board.localPlanSha256
+      || !/^0x[0-9a-f]{64}$/u.test(health.finalizedBlockHash ?? "")) {
+      throw new Error("Local admin API plan or registry changed before the exact-ID lookup");
+    }
+    const path = target === "recognition"
+      ? `/v1/recognitions/${encodeURIComponent(id)}`
+      : `/v1/authorizations/${encodeURIComponent(target)}/${encodeURIComponent(id)}`;
+    const entry = target === "recognition"
+      ? await this.request<TrustRegistryApiRecognitionListResponse["entries"][number]>(path, { cache: "no-store" })
+      : await this.request<TrustRegistryApiAuthorizationListResponse["entries"][number]>(path, { cache: "no-store" });
+    const after = await this.request<TrustRegistryApiHealthResponse>("/health", { cache: "no-store" });
+    if (after.status !== "ok" || after.sourceMode !== "local-ledger"
+      || after.registryId !== health.registryId
+      || after.localPlanSha256 !== health.localPlanSha256
+      || after.finalizedBlockHash !== health.finalizedBlockHash
+      || after.generatedAt !== health.generatedAt) {
+      throw new Error("Local admin API checkpoint changed during the exact-ID lookup");
+    }
+    if (target === "recognition") {
+      const recognition = entry as TrustRegistryApiRecognitionListResponse["entries"][number];
+      if (recognition.recognition.registryId !== board.summary.registryId
+        || recognition.recognition.recognitionId !== id) {
+        throw new Error("Local recognition lookup returned a mismatched record");
+      }
+      return toRecognitionReviewCard(recognition);
+    }
+    const authorization = entry as TrustRegistryApiAuthorizationListResponse["entries"][number];
+    if (authorization.authorization.registryId !== board.summary.registryId
+      || authorization.authorization.authorizationId !== id
+      || authorization.authorization.role !== target) {
+      throw new Error("Local authorization lookup returned a mismatched record");
+    }
+    return toAuthorizationReviewCard(target, authorization);
   }
 
   async mutate(

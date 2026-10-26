@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { link, mkdir, open, rename, rm } from "node:fs/promises";
+import { link, lstat, mkdir, open, readdir, rename, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -60,6 +60,10 @@ const DeploymentBindingSchema = z.strictObject({
   expectedGenesisHash: Bytes32Schema,
   contractAddress: Bytes32Schema,
 });
+type DeploymentBinding = z.infer<typeof DeploymentBindingSchema>;
+const sameDeploymentBinding = (left: DeploymentBinding, right: DeploymentBinding): boolean =>
+  left.registryId === right.registryId && left.contractAddress === right.contractAddress
+  && left.expectedGenesisHash === right.expectedGenesisHash;
 
 export type GovernedProposalSubmissionRole = z.infer<typeof ProposalRoleSchema>;
 export type ProposalReservationContext = z.infer<typeof ReservationContextSchema>;
@@ -123,6 +127,13 @@ export class ProposalSubmissionConflictError extends Error {
   }
 }
 
+export class ProposalSubmissionContextRequiredError extends Error {
+  constructor() {
+    super("Deployment-bound proposal reservations require the prepared action context");
+    this.name = "ProposalSubmissionContextRequiredError";
+  }
+}
+
 export class ProposalSubmissionCapacityError extends Error {
   constructor() {
     super("Proposal submission journal capacity is exhausted; operator rotation is required");
@@ -159,6 +170,7 @@ export interface ProposalSubmissionJournal {
 /** Private single-host file adapter. Never delete a reserved attempt on an ambiguous execution error. */
 export class FileProposalSubmissionJournal implements ProposalSubmissionJournal {
   private readonly path: string;
+  private expectedDeploymentBinding: DeploymentBinding | null = null;
 
   constructor(path: string) {
     if (path.length === 0) throw new RangeError("Proposal submission journal path is invalid");
@@ -173,9 +185,12 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
     });
     await this.withWrite(async () => {
       const current = await this.readBinding();
+      if (this.expectedDeploymentBinding !== null
+        && (current === null || !sameDeploymentBinding(this.expectedDeploymentBinding, current))) {
+        throw new ProposalSubmissionConflictError();
+      }
       if (current !== null) {
-        if (current.registryId !== binding.registryId || current.contractAddress !== binding.contractAddress
-          || current.expectedGenesisHash !== binding.expectedGenesisHash) {
+        if (!sameDeploymentBinding(current, binding)) {
           throw new ProposalSubmissionConflictError();
         }
         await this.requireExisting();
@@ -209,6 +224,7 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
         await directory.close();
       }
     });
+    this.expectedDeploymentBinding = binding;
   }
 
   async assertDeploymentBinding(
@@ -219,10 +235,13 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
       networkId: "undeployed", contractAddress, expectedGenesisHash,
     });
     const current = await this.readBinding();
-    if (current === null || current.registryId !== expected.registryId
-      || current.contractAddress !== expected.contractAddress
-      || current.expectedGenesisHash !== expected.expectedGenesisHash) throw new ProposalSubmissionConflictError();
+    if (current === null || !sameDeploymentBinding(current, expected)
+      || (this.expectedDeploymentBinding !== null
+        && !sameDeploymentBinding(this.expectedDeploymentBinding, expected))) {
+      throw new ProposalSubmissionConflictError();
+    }
     await this.requireExisting();
+    this.expectedDeploymentBinding = expected;
   }
 
   async requireExisting(): Promise<void> {
@@ -251,6 +270,14 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
     const key = this.parseKey(role, authorizationId, evidenceCommitment);
     const context = reservationContext === undefined ? undefined : ReservationContextSchema.parse(reservationContext);
     await this.withWrite(async () => {
+      const binding = await this.readBinding();
+      if (this.expectedDeploymentBinding !== null
+        && (binding === null || !sameDeploymentBinding(binding, this.expectedDeploymentBinding))) {
+        throw new ProposalSubmissionConflictError();
+      }
+      if (context === undefined && binding !== null) {
+        throw new ProposalSubmissionContextRequiredError();
+      }
       const storage = await this.readStorage();
       const existing = [...storage.active.attempts, ...storage.archived].find((attempt) => attempt.role === key.role
         && attempt.authorizationId === key.authorizationId);
@@ -447,7 +474,12 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
 
   private async readStorage(): Promise<JournalStorage> {
     const raw = await this.readPrivateFile(this.path, MAX_FILE_BYTES);
-    if (raw === null) return { manifest: null, active: emptyState(), archived: [] };
+    if (raw === null) {
+      if (this.expectedDeploymentBinding !== null || await this.readBinding() !== null) {
+        throw new InvalidProposalSubmissionJournalError();
+      }
+      return { manifest: null, active: emptyState(), archived: [] };
+    }
     let parsed: unknown;
     try {
       parsed = JSON.parse(raw);
@@ -486,23 +518,56 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
   private async readPrivateFile(path: string, maxBytes: number): Promise<string | null> {
     let handle;
     try {
-      handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+      handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       if ((error as NodeJS.ErrnoException).code === "ELOOP") throw new InvalidProposalSubmissionJournalError();
       throw error;
     }
     try {
-      const info = await handle.stat();
-      if (!info.isFile() || (info.mode & 0o077) !== 0 || info.size > maxBytes) {
+      const before = await handle.stat({ bigint: true });
+      if (!before.isFile() || (before.mode & 0o077n) !== 0n
+        || (before.nlink !== 1n && !(path === `${this.path}.binding` && before.nlink === 2n
+          && await this.hasCrashLinkedBindingTemp(path, before.dev, before.ino)))
+        || before.size > BigInt(maxBytes)
+        || (typeof process.getuid === "function"
+          && before.uid !== BigInt(process.getuid()) && before.uid !== 0n)) {
         throw new InvalidProposalSubmissionJournalError();
       }
-      const raw = await handle.readFile({ encoding: "utf8" });
-      if (Buffer.byteLength(raw, "utf8") > maxBytes) throw new InvalidProposalSubmissionJournalError();
-      return raw;
+      const bytes = Buffer.alloc(Number(before.size));
+      let count = 0;
+      while (count < bytes.length) {
+        const result = await handle.read(bytes, count, bytes.length - count, count);
+        if (result.bytesRead === 0) break;
+        count += result.bytesRead;
+      }
+      const after = await handle.stat({ bigint: true });
+      if (count !== bytes.length || after.size !== before.size || after.dev !== before.dev
+        || after.ino !== before.ino || after.nlink !== before.nlink || after.mode !== before.mode
+        || after.uid !== before.uid || after.mtimeNs !== before.mtimeNs
+        || after.ctimeNs !== before.ctimeNs) {
+        throw new InvalidProposalSubmissionJournalError();
+      }
+      return bytes.toString("utf8");
     } finally {
       await handle.close();
     }
+  }
+
+  private async hasCrashLinkedBindingTemp(path: string, dev: bigint, ino: bigint): Promise<boolean> {
+    const prefix = `${basename(path)}.`;
+    for (const name of await readdir(dirname(path))) {
+      if (!name.startsWith(prefix) || !name.endsWith(".tmp")
+        || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u
+          .test(name.slice(prefix.length, -4))) continue;
+      try {
+        const companion = await lstat(join(dirname(path), name), { bigint: true });
+        if (companion.isFile() && companion.dev === dev && companion.ino === ino) return true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
+    return false;
   }
 
   private async readSegment(segment: z.infer<typeof SegmentSchema>): Promise<JournalState> {

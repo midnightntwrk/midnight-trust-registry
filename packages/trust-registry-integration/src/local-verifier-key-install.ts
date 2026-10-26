@@ -385,6 +385,8 @@ export async function submitLocalVerifierKeyInsertion(input: {
   if (before === null) throw new Error("Finalized staged image is unavailable");
   const plan = planLocalVerifierKeyInsertion(input, before);
   const key = await readPinnedInstalledVerifierKey(input.releaseManifest, input.circuitName);
+  const compiledContract = compiledStagedVerifierKeyContract(input.circuitName);
+  const verifierKey = createVerifierKey(key);
   const expectedKey = input.bootstrapMaintenanceVerifyingKey.slice(2);
   if (signatureVerifyingKey(input.contractMaintenanceSigningKey).toLowerCase() !== expectedKey) {
     throw new Error("Insertion signing key disagrees with the pinned bootstrap authority");
@@ -409,10 +411,10 @@ export async function submitLocalVerifierKeyInsertion(input: {
     throw new Error("Provider state disagrees with the finalized key absence or maintenance counter");
   }
   const finalized = await input.journal.executeOnce(plan, () => submitInsertVerifierKeyTx(
-    input.providers, compiledStagedVerifierKeyContract(input.circuitName),
+    input.providers, compiledContract,
     address,
     input.circuitName as Parameters<typeof submitInsertVerifierKeyTx<RegistryContract>>[3],
-    createVerifierKey(key),
+    verifierKey,
   ));
   let after: FinalizedRegistryDeploymentImage | null;
   try {

@@ -75,7 +75,10 @@ Before any submission, initialize an empty private journal with
 arguments, and an absolute `--submission-journal` path. The binding pins the
 reviewed genesis, registry ID, and contract address; legacy nonempty unbound
 journals cannot be assigned a deployment retrospectively. Keep its `.binding`
-sidecar in every private byte-for-byte journal backup. After installing the
+sidecar in every private byte-for-byte journal backup. New reservations in a
+deployment-bound journal require the prepared action sequence, kind, and
+payload hash; existing context-free entries remain readable but cannot gain
+recovery context retroactively. After installing the
 manually re-signed post-mutation plan and making that backup, an operator can run
 `trust-registry-api reconcile-local-proposal` with the four signed-plan
 arguments, exact `--role`/`--authorization-id`, and an absolute
@@ -109,6 +112,14 @@ signed install plan and implement this callback against authenticated provider
 transports; echoing the expected values is not verification. Its tests mock
 the SDK, reader, and identity callback. A production API port, real local
 transaction, and authenticated finality remain unproven.
+The helper passes the prepared action sequence, kind, and payload hash to the
+private journal with its reservation, matching the API-created attempt schema.
+It resolves the local compiled circuit before reservation, so a missing
+compiled artifact is a known pre-broadcast failure rather than an ambiguous
+attempt. Any SDK/provider error after reservation remains unknown; the
+stored context is audit metadata, not permission to abandon or retry. #220
+still requires independently authenticated invalidation evidence and an
+operator-reviewed durable recovery decision.
 The API integration suite additionally runs this helper against the real
 private file journal: it verifies a single submitted receipt, fail-closed
 genesis checks before reservation, and no second SDK submission after an
@@ -163,9 +174,12 @@ accepts the signed local runtime plan and a deployment-bound private journal.
 It compares one reserved attempt with one pinned finalized ledger view. It
 reports a review candidate only when the stored signed action sequence is
 strictly below the finalized governance action count and the proposal record
-is absent in that same view. The report binds the registry ID, contract address,
+is absent in that same view. A recorded action kind that is not the Compact
+proposal kind for the attempt's role now fails report generation; a
+well-formed but cross-role context cannot become a review candidate. The v2
+report binds the registry ID, contract address,
 signed-plan expected genesis and source-revision pins (not independently
-attested by this report), original action tuple,
+attested by this report), the exact approved plan SHA-256, original action tuple,
 canonical digest of the read journal entry, private journal deployment-binding
 digest, and checkpoint hash. A later recovery implementation
 must recheck that entry digest under the journal lock before any decision.
@@ -176,6 +190,14 @@ authenticated non-inclusion, an approval signature, a recovery decision, or
 a journal mutation. A compromised or incomplete indexer can still lie about
 absence; #220 remains open until that trust boundary, audited release record,
 replay prevention, recovery tests, and independent security review are done.
+The Compact simulator regression exercises the sequence-invalidated premise:
+after a different authorized action advances `governanceActionCount`, the
+original signed issuer proposal fails, leaves its proposal record absent, and
+does not advance the count. A freshly signed proposal for that same ID succeeds.
+Sequence advancement therefore invalidates the old signature, not every
+future authorization of that ID. An audited journal tombstone and independent
+finalized-state authentication remain required before releasing a reservation.
+This simulator test is not local-ledger finality evidence.
 The report includes private authorization identifiers and commitments; do not
 paste it into shared logs or public review comments.
 Direct journal writers that omit context receive the same fail-closed legacy
@@ -190,15 +212,21 @@ Journaled membership proposal ports now require a side-effect-free submission
 preflight before reservation. The issuer, verifier, auditor, and maintainer
 simulator-backed HTTP tests use the private file journal and confirm that
 insufficient quorum and a wrong evidence-verifier signature leave no entry.
+For a deployment-bound journal, the API now also reads the supplied finalized
+ledger before any of the five governed proposal reservations. It rejects stale
+policy/sequence, insufficient action-scoped quorum, duplicate or unregistered
+maintainer IDs, and inactive or mismatched maintainer keys. Reader failure
+fails closed without reserving. The synthetic local-ledger issuer test uses a
+real private journal to check this ordering and the finalized resolve path.
 The tests attribute both rejections to preflight and assert zero execution;
 they do not cover every invalid maintainer-membership or key-state case.
 These tests use simulator state and do not qualify a deployed port. A real
-local port must check current quorum, evidence-verifier key status, and
-known-invalid maintainer state there, then still let
-Compact recheck at execution; the callback contract alone is not evidence
-that its implementation is complete. Any failure after reservation remains
-ambiguous, including a missed deterministic pre-broadcast rejection. #220
-still requires audited recovery for those retained reservations.
+local port must supply authenticated finalized state and check the
+evidence-verifier key status there, then still let Compact recheck at execution;
+the callback contract alone is not evidence that its implementation is
+complete. Any failure after reservation remains ambiguous, including a missed
+deterministic pre-broadcast rejection. #220 still requires audited recovery
+for those retained reservations.
 The separate indexer genesis probe does not authenticate every SDK indexer
 request or prevent DNS rebinding/redirects. Do not wire this adapter into
 the API write port or count mocked-provider tests as release evidence until

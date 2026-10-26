@@ -32,10 +32,30 @@ Midnight transaction; the fixture uses deterministic local time and finality.
 `tr-adversarial-case-report-v1` JSON object to stdout. Its sorted case results
 include a stable pass/fail reason code; a failing case does not stop later
 cases. The command exits nonzero on a failed case or a count other than 198.
+On a clean committed checkout, `node scripts/adversarial-case-report.mjs --archive`
+also writes the full report once to a mode-0600 file under private ignored
+`artifacts/adversarial-reports/`, named for the current source commit. It
+prints the archive path, SHA-256, source revision, and pass/fail summary;
+it refuses to overwrite an earlier run for that commit. The v2 archive also
+requires exact case-ID parity with the governed demo and preserves its
+invariant, boundary, expected, and observed categories beside the isolated
+outcomes. These are two distinct test sources; the demo metadata is not an
+assertion that every isolated case exercised every boundary. The archive is
+test evidence, not a deployed-ledger or release-qualification result.
 `pnpm run check:adversarial-parity -- --require-full` additionally compares
 those isolated case IDs with the governed demo's machine-readable matrix.
 The demo remains useful as one sequential actor journey, but its independent
 case report is the regression gate when an earlier journey step fails.
+
+At signed local source `bbb2c456a93aa035ac482d67f945e8cddf6dfb7c`, the
+private archive `artifacts/adversarial-reports/cases-bbb2c456a93aa035ac482d67f945e8cddf6dfb7c.json`
+recorded 198/198 isolated passes and 198 governed-demo case IDs, with report
+SHA-256 `4dc5ccfecd389c26c234673fd5178e2f3ada32efea14718bd2ae090870c8280b`.
+This is an intermediate local source, not the final RC revision or a deployed
+ledger result. The Compact proposal circuit accepts a signed evidence hash but
+has no trusted time input; the expired-evidence cases currently reject at
+intake/preflight, not as a submitted Compact expiry check. Do not attribute
+that boundary to Compact or close #60 without reconciling its tracker scope.
 
 The governed demo also emits `actorReport` in
 `tr-actor-evidence-report-v1` format. It records one active decision for each

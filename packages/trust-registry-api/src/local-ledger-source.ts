@@ -19,6 +19,7 @@ const FINALIZED_HASH = /^0x[0-9a-f]{64}$/u;
 const SNAPSHOT_SHA256 = /^[0-9a-f]{64}$/u;
 const MAX_SNAPSHOT_BYTES = 64 * 1024 * 1024;
 const DEFAULT_READ_TIMEOUT_MS = 15_000;
+const FINALIZED_READ_RETRY_DELAY_MS = 1_000;
 const hex = (value: Uint8Array): string => `0x${Buffer.from(value).toString("hex")}`;
 
 function selectedIds<T>(entries: readonly T[], idOf: (entry: T) => string,
@@ -38,9 +39,11 @@ function selectedIds<T>(entries: readonly T[], idOf: (entry: T) => string,
 
 function currentSelection(snapshot: TrustRegistryApiCurrentLedgerSelection["snapshot"],
   ledger: Ledger,
+  finalizedBlockHash: string,
 ): TrustRegistryApiCurrentLedgerSelection {
   return {
     snapshot,
+    finalizedBlockHash,
     authorizationIds: {
       issuer: selectedIds(snapshot.issuerEntries, (entry) => entry.authorization.authorizationId,
         ledger.currentIssuerAuthorizationIdsByScopeKey),
@@ -58,6 +61,12 @@ export class LocalLedgerSourceUnavailableError extends Error {
   constructor(cause: unknown) {
     super("Finalized local Trust Registry state is unavailable", { cause });
     this.name = "LocalLedgerSourceUnavailableError";
+  }
+}
+
+class FinalizedReadNotReadyError extends Error {
+  constructor() {
+    super("Finalized local ledger checkpoint is not yet readable");
   }
 }
 
@@ -121,7 +130,7 @@ export function createLocalLedgerBoundSource(input: {
   const readVerifiedState = async () => {
     try {
       const view = await input.reader.readCurrentFinalizedLedger(address);
-      if (view === null) throw new Error("Finalized local Trust Registry ledger is unavailable");
+      if (view === null) throw new FinalizedReadNotReadyError();
       if (view.networkId !== "undeployed" || view.contractAddress.toLowerCase() !== address
         || !FINALIZED_HASH.test(view.finalizedBlockHash.toLowerCase())
         || /^0x0{64}$/u.test(view.finalizedBlockHash.toLowerCase())) {
@@ -131,7 +140,12 @@ export function createLocalLedgerBoundSource(input: {
       if (createHash("sha256").update(raw).digest("hex") !== expectedSnapshotSha256) {
         throw new Error("Candidate snapshot differs from the approved SHA-256 digest");
       }
-      const snapshot = TrustRegistryOperatorSnapshotSchema.parse(JSON.parse(raw.toString("utf8")));
+      const snapshotJson = raw.toString("utf8");
+      const parsed: unknown = JSON.parse(snapshotJson);
+      if (snapshotJson !== `${JSON.stringify(parsed, null, 2)}\n`) {
+        throw new Error("Pinned local snapshot must use the CLI canonical JSON format");
+      }
+      const snapshot = TrustRegistryOperatorSnapshotSchema.parse(parsed);
       assertLocalLedgerEvidenceMatchesSnapshot({
         snapshot,
         ledger: view.ledger,
@@ -139,12 +153,14 @@ export function createLocalLedgerBoundSource(input: {
         contractAddress: addressBytes,
         sequenceToTimestamp: input.sequenceToTimestamp,
       });
-      return { snapshot, ledger: view.ledger, selection: currentSelection(snapshot, view.ledger) };
+      return { snapshot, ledger: view.ledger,
+        selection: currentSelection(snapshot, view.ledger, view.finalizedBlockHash.toLowerCase()) };
     } catch (cause) {
       throw new LocalLedgerSourceUnavailableError(cause);
     }
   };
   let requiresRestart = false;
+  let retryNotBefore = 0;
   let pendingRead: ReturnType<typeof readVerifiedState> | undefined;
   const readBoundState = () => {
     if (requiresRestart) {
@@ -152,6 +168,10 @@ export function createLocalLedgerBoundSource(input: {
         new Error("Local finalized read failed; operator restart is required")));
     }
     if (pendingRead) return pendingRead;
+    if (Date.now() < retryNotBefore) {
+      return Promise.reject(new LocalLedgerSourceUnavailableError(
+        new Error("Finalized reader retry is cooling down")));
+    }
     let timer: ReturnType<typeof setTimeout> | undefined;
     const deadline = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => {
@@ -161,7 +181,12 @@ export function createLocalLedgerBoundSource(input: {
       }, readTimeoutMs);
     });
     pendingRead = Promise.race([readVerifiedState(), deadline]).catch((error: unknown) => {
-      requiresRestart = true;
+      if (error instanceof LocalLedgerSourceUnavailableError
+        && error.cause instanceof FinalizedReadNotReadyError) {
+        retryNotBefore = Date.now() + FINALIZED_READ_RETRY_DELAY_MS;
+      } else {
+        requiresRestart = true;
+      }
       throw error;
     }).finally(() => {
       if (timer) clearTimeout(timer);

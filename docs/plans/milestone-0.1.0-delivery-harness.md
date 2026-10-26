@@ -102,6 +102,25 @@ job is not green. No GitHub branch-protection or CODEOWNERS approval is required
 for this milestone branch. Issue #84 tracks a faster fail-closed Quality lane,
 not removal of the CI gate. Do not weaken `develop` or `main` protection.
 
+Before a milestone PR merge, record the completed review in a private JSON file
+with `format: "tr-milestone-current-head-review-v1"`,
+`repository: "midnightntwrk/midnight-trust-registry"`, the numeric `pullRequest`,
+the exact `headSha`, `verdict: "no-blockers"`, a named `reviewer`, an ISO-8601
+`reviewedAt`, and a nonempty `evidenceReference` to the full review and finding
+dispositions. Run `node scripts/check-milestone-merge-gates.mjs PR_NUMBER
+/absolute/path/to/review-record.json` immediately before merging. The read-only
+preflight checks the open, non-draft, mergeable PR and stable base/head; all
+reported exact-head check runs and commit statuses; GitHub-verified OpenPGP
+signatures and matching DCO trailers on every PR commit; and the review record's
+exact head. Its fixture tests run in the light CI lane.
+
+The record is **not** a cryptographic review attestation. The operator must
+inspect the referenced review, its unresolved findings, and the live PR again
+at merge time; a passing preflight is point-in-time evidence, not merge
+authority. A post-merge review cannot retroactively satisfy a missing
+pre-merge review, as happened on #197. This safeguard applies to future PRs
+and does not repair that historical process gap.
+
 ## Boundaries
 
 This is deliberately smaller than the `factory` harness: no custom Pi runtime,

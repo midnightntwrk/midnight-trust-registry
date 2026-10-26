@@ -51,6 +51,37 @@ claiming those issues closed; this plan does not silently close them.
 remains open outside the 0.1.0 milestone as an optional Helm deployment path.
 Its cluster qualification is not a dependency of #45.
 
+## Ambiguous Proposal Recovery Gate (#220)
+
+The real-journal issuer HTTP test, using a simulator-backed finalized reader,
+now rejects an insufficient maintainer quorum before reservation. That closes
+one deterministic pre-broadcast failure path, not recovery of a genuinely
+ambiguous submission.
+The read-only recovery candidate marks a reserved proposal for review only
+when the finalized governance counter has advanced beyond its signed sequence
+and the proposal record appears absent in the same view. The current indexer
+state read has no machine-verifiable absence proof, so the report cannot
+authorize a journal release, retry, or replacement journal.
+
+Before #220 can close, the approved recovery policy and implementation must:
+
+- Authenticate the advanced counter and record absence against one finalized
+  checkpoint, or require a separately approved signed invalidation proof;
+  indexer-null, elapsed time, and a second unbound read are insufficient.
+- Preserve a durable no-replay tombstone and the original attempt, signer
+  context, evidence commitment, decision, and checkpoint under the journal's
+  single-host lock. Recheck the attempt digest at the mutation point; do not
+  let a direct journal writer substitute an unsigned sequence context.
+- Reject a subsequent proposal if node restart or restore rolls the chain
+  behind an accepted release checkpoint. A matching genesis hash alone does
+  not prove continuity, and a released original ID must never become reusable.
+- Exercise delayed inclusion, conflicting observations, reader outage,
+  crash/restart, rollback, tampered decisions, capacity, and cross-process
+  races; obtain independent security review before enabling release.
+
+Until these conditions have evidence, the global reservation remains
+fail-closed even when a candidate report suggests sequence invalidation.
+
 ## Use-Case Ownership
 
 The lead issue owns a positive and rule-specific negative case. The security

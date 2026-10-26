@@ -1,0 +1,48 @@
+# Optional post-approval runtime. Do not enable during first-run ledger checks.
+services:
+  api:
+    profiles: [runtime]
+    image: ${TR_API_IMAGE:?verified locally loaded API image required}
+    pull_policy: never
+    user: "${TR_API_UID:?approval file owner UID required}:${TR_API_GID:?approval file owner GID required}"
+    read_only: true
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    expose: [4400]
+    networks: [ledger]
+    depends_on:
+      node:
+        condition: service_healthy
+      indexer:
+        condition: service_healthy
+    volumes:
+      - type: bind
+        source: ${TR_API_APPROVAL_DIR:?private approved runtime directory required}
+        target: /run/trust-registry
+        read_only: true
+        bind:
+          create_host_path: false
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=32m
+    command:
+      - serve
+      - --local-ledger-plan
+      - /run/trust-registry/api-plan.json
+      - --local-ledger-signature
+      - /run/trust-registry/api-plan.sig
+      - --local-ledger-keyring
+      - /run/trust-registry/reviewer-keyring
+      - --local-ledger-reviewer
+      - ${TR_API_REVIEWER_FINGERPRINT:?approved reviewer fingerprint required}
+      - --host
+      - 0.0.0.0
+      - --cluster-bind
+      - --serve-portals
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:4400/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 20s
+      timeout: 5s
+      retries: 12
+      start_period: 20s

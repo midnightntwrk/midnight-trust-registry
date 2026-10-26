@@ -13,10 +13,16 @@ applicant. An authorized evidence verifier checks a challenge-bound Midnight
 VC/VP fixture off-ledger and signs a redacted application commitment. A
 policy-bound quorum of maintainers proposes, approves, and activates an exact
 issuer, verifier, auditor, or maintainer grant. An epoch commits the resulting
-state, and a relying party verifies current and historical scoped evidence.
+state, and a relying party verifies current scoped evidence against a finalized
+local-ledger readback. Historical authorization and recognition decisions are
+out of scope for this candidate and must fail closed rather than use fixture
+history.
 The applicant portal, admin console, local API, and TRQP projection participate
 in the signed actor journeys. Recognition of an external authority remains a
 separate, scoped governance decision, not implicit membership.
+Kubernetes and Helm are optional installation paths, not acceptance criteria
+for this candidate; a non-Kubernetes standalone deployment can qualify with
+the same live-ledger, offline-runtime, recovery, and security evidence.
 
 The contract uses JubJub Schnorr signatures for governed actions and commits
 registry identity, policy, network, scope, signer, and epoch evidence to
@@ -42,8 +48,11 @@ signed/DCO source SHA and attach results from that exact tree for:
 6. Online installation from pinned packages and image digests, followed by
    issuer, verifier, auditor, maintainer, and recognition journeys with
    external egress denied for all runtime processes and containers.
-7. Independent restart, backup/restore, ambiguous-outcome recovery, and
-   historical-evidence checks on the same pinned local chain.
+7. Independent restart, backup/restore, and ambiguous-outcome recovery checks
+   on the same pinned local chain. After each governed mutation, the old
+   current-state plan must reject queries until an operator reviews and signs
+   a new snapshot/plan set and restarts the API; historical decision routes
+   must remain explicitly unavailable.
 8. Exact-head CI results, independent security review, release owner sign-off,
    and a recorded recovery/rollback decision. Simulator and mocked-provider
    tests satisfy none of the live local deployment gates above.

@@ -22,6 +22,7 @@ import {
   submitLocalIssuerProposalCall,
   type LocalIssuerProposalCall,
 } from "../local-issuer-proposal-call.js";
+import { compiledStagedVerifierKeyContract } from "../public-network-deployment.js";
 
 const mocks = vi.hoisted(() => ({ submitCallTx: vi.fn(), compiledContract: { circuit: "issuer" } }));
 vi.mock("@midnight-ntwrk/midnight-js-contracts", async (importOriginal) => ({
@@ -132,11 +133,17 @@ describe("local issuer proposal circuit call", () => {
     });
     const journal = { assertDeploymentBinding: vi.fn(async () => {}), executeOnce: vi.fn(async (
       role: "issuer", id: string, commitment: string, execute: () => Promise<{ eventHash: string }>,
+      reservationContext: { actionSequence: string; actionKind: string; actionPayloadHash: string },
     ) => {
       expect([role, id, commitment]).toEqual([
         "issuer", authorizationLabel, `0x${Buffer.from(call.evidenceHash).toString("hex")}`,
       ]);
       expect(mocks.submitCallTx).not.toHaveBeenCalled();
+      expect(reservationContext).toEqual({
+        actionSequence: "3",
+        actionKind: `0x${Buffer.from(encodeCompactActionKind("tr:issuer:propose")).toString("hex")}`,
+        actionPayloadHash: `0x${Buffer.from(prepared.actionPayloadHash).toString("hex")}`,
+      });
       return execute();
     }) };
     await expect(submitLocalIssuerProposalCall({
@@ -154,6 +161,22 @@ describe("local issuer proposal circuit call", () => {
         call.trustLevel, call.evidenceHash, call.evidenceVerifierAuthorizationId,
         call.evidenceVerifierKeyIdCommitment, call.evidenceVerifierSignature],
     }));
+  });
+
+  it("rejects missing local compiled contract before a journal reservation", async () => {
+    const { call, ledger } = fixture();
+    vi.mocked(compiledStagedVerifierKeyContract).mockImplementationOnce(() => {
+      throw new Error("compiled issuer circuit unavailable");
+    });
+    const journal = { assertDeploymentBinding: vi.fn(async () => {}), executeOnce: vi.fn() };
+    await expect(submitLocalIssuerProposalCall({
+      call, expectedGenesisHash: genesisHash,
+      readFinalizedLedger: async (address) => ({ contractAddress: address, genesisHash, ledger }),
+      providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"],
+      readSubmissionProviderIdentity, journal,
+    })).rejects.toThrow(/compiled issuer circuit unavailable/u);
+    expect(journal.executeOnce).not.toHaveBeenCalled();
+    expect(mocks.submitCallTx).not.toHaveBeenCalled();
   });
 
   it("rejects stale governance, substituted evidence, and mismatched IDs before reservation", () => {

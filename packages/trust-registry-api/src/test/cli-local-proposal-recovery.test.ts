@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -11,6 +11,9 @@ const mocks = vi.hoisted(() => ({
   assertImage: vi.fn(),
   assertCount: vi.fn(),
   assess: vi.fn(),
+  draftDecision: vi.fn(),
+  loadDecision: vi.fn(),
+  digestCandidate: vi.fn(),
 }));
 
 vi.mock("@midnight-ntwrk/trust-registry-integration", async (importOriginal) => ({
@@ -19,12 +22,17 @@ vi.mock("@midnight-ntwrk/trust-registry-integration", async (importOriginal) => 
 }));
 vi.mock("../local-ledger-runtime.js", () => ({
   assertLocalApiImageSourceRevision: vi.fn(),
-  loadApprovedLocalLedgerRuntimePlan: mocks.loadPlan,
+  loadApprovedLocalLedgerRuntimePlanWithDigest: mocks.loadPlan,
   createApprovedLocalLedgerRuntimeSource: mocks.createSource,
   assertApprovedDeploymentImage: mocks.assertImage,
   assertApprovedPlanCoversGovernanceCount: mocks.assertCount,
 }));
 vi.mock("../proposal-recovery-candidate.js", () => ({ assessProposalRecoveryCandidate: mocks.assess }));
+vi.mock("../proposal-recovery-decision.js", () => ({
+  draftProposalRecoveryDecision: mocks.draftDecision,
+  loadApprovedProposalRecoveryDecision: mocks.loadDecision,
+  proposalRecoveryCandidateDigest: mocks.digestCandidate,
+}));
 vi.mock("../server.js", () => ({ createTrustRegistryApiServer: vi.fn() }));
 
 import { runTrustRegistryApiCli } from "../cli.js";
@@ -67,14 +75,15 @@ beforeEach(async () => {
     return true;
   });
   const plan = { contractAddress, expectedGenesisHash: genesisHash, sourceRevision: "f".repeat(40) };
-  mocks.loadPlan.mockResolvedValue(plan);
+  mocks.loadPlan.mockResolvedValue({ plan, planSha256: "7".repeat(64) });
   mocks.createSource.mockResolvedValue({ loadSnapshot: async () => ({ registry: { registryId } }) });
   const view = { networkId: "undeployed", contractAddress,
     finalizedBlockHash: `0x${"f".repeat(64)}`, ledger: { governanceActionCount: 3n } };
   mocks.createReader.mockResolvedValue({ readCurrentFinalizedLedger: async () => view });
-  mocks.assess.mockResolvedValue({ format: "tr-local-proposal-recovery-candidate-v1",
+  mocks.assess.mockResolvedValue({ format: "tr-local-proposal-recovery-candidate-v2",
     reason: "sequence-invalidated-record-absent", reviewCandidate: true,
     retryPermitted: false, releaseQualified: false });
+  mocks.digestCandidate.mockReturnValue("9".repeat(64));
 });
 
 afterEach(async () => {
@@ -94,6 +103,7 @@ describe("read-only local proposal recovery inspection CLI", () => {
     expect(mocks.assess).toHaveBeenCalledWith(expect.objectContaining({
       attempt: expect.objectContaining({ state: "reserved", authorizationId }),
       registryId, contractAddress, planExpectedGenesisHash: genesisHash,
+      approvedPlanSha256: "7".repeat(64),
       journalBindingDigest: expect.stringMatching(/^0x[0-9a-f]{64}$/u),
       planSourceRevision: "f".repeat(40),
     }));
@@ -121,5 +131,51 @@ describe("read-only local proposal recovery inspection CLI", () => {
     await expect(runTrustRegistryApiCli(args())).rejects.toThrow(/conflict/iu);
     expect(mocks.createReader).not.toHaveBeenCalled();
     expect(output).toEqual([]);
+  });
+
+  it("drafts exact bytes for external review without changing a reserved journal", async () => {
+    await reserve();
+    const before = await readFile(path);
+    const filesBefore = await readdir(directory);
+    mocks.draftDecision.mockResolvedValue('{"reviewOnly":true}\n');
+    await runTrustRegistryApiCli(["draft-local-proposal-recovery-decision", ...args().slice(1),
+      "--finality-evidence", join(directory, "finality.json"),
+      "--evidence-reference", "private-review-1"]);
+    expect(mocks.draftDecision).toHaveBeenCalledWith(expect.objectContaining({
+      finalityEvidencePath: join(directory, "finality.json"),
+      evidenceReference: "private-review-1", reviewerFingerprint: "A".repeat(40),
+    }));
+    expect(output.join("")).toBe('{"reviewOnly":true}\n');
+    expect(await readFile(path)).toEqual(before);
+    expect(await readdir(directory)).toEqual(filesBefore);
+  });
+
+  it("verifies a detached decision against a fresh candidate but never releases the reservation", async () => {
+    const journal = await reserve();
+    const before = await readFile(path);
+    const filesBefore = await readdir(directory);
+    mocks.loadDecision.mockResolvedValue({ decision: { reviewerFingerprint: "A".repeat(40),
+      evidenceReference: "private-review-1", finalityEvidenceSha256: "6".repeat(64),
+      draftedAt: "2026-10-24T00:00:00.000Z" }, decisionSha256: "8".repeat(64),
+    finalityAuthenticated: false, releaseQualified: false, retryPermitted: false });
+    await runTrustRegistryApiCli(["verify-local-proposal-recovery-decision", ...args().slice(1),
+      "--finality-evidence", join(directory, "finality.json"),
+      "--recovery-decision", join(directory, "decision.json"),
+      "--recovery-signature", join(directory, "decision.sig")]);
+    expect(mocks.loadDecision).toHaveBeenCalledWith(expect.objectContaining({
+      decisionPath: join(directory, "decision.json"),
+      signaturePath: join(directory, "decision.sig"),
+      finalityEvidencePath: join(directory, "finality.json"),
+      keyringDirectory: "/run/keyring", reviewerFingerprint: "A".repeat(40),
+      candidate: expect.objectContaining({ reviewCandidate: true }),
+    }));
+    expect(JSON.parse(output.join(""))).toMatchObject({
+      format: "tr-local-proposal-recovery-verification-v1",
+      finalityEvidenceSha256: "6".repeat(64), draftedAt: "2026-10-24T00:00:00.000Z",
+      finalityAuthenticated: false, releaseQualified: false, retryPermitted: false,
+    });
+    expect(await readFile(path)).toEqual(before);
+    expect(await readdir(directory)).toEqual(filesBefore);
+    expect(await journal.read("issuer", authorizationId)).toMatchObject({ state: "reserved" });
   });
 });

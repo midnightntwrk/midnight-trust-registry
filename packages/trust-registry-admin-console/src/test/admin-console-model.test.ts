@@ -79,6 +79,7 @@ const recognitionEvidence = (): RecognitionEntry["evidence"] =>
   } as unknown as RecognitionEntry["evidence"]);
 
 const board: ReviewBoard = {
+  sourceMode: "workspace",
   summary: {
     snapshotVersion: "1",
     generatedAt: "2026-05-23T04:00:00Z",
@@ -237,6 +238,7 @@ describe("trust registry admin console model", () => {
   it("loads auditor rows separately and preserves structured mutation errors", async () => {
     const paths: string[] = [];
     const responses = new Map<string, unknown>([
+      ["/health", { status: "ok", sourceMode: "workspace", registryId: board.summary.registryId }],
       ["/v1/registry/summary", board.summary],
       ["/v1/authorizations/issuer", { entries: board.issuers }],
       ["/v1/authorizations/verifier", { entries: board.verifiers }],
@@ -258,6 +260,55 @@ describe("trust registry admin console model", () => {
     await expect(client.mutate("auditor", "auth:auditor:compliance:v1", "suspend"))
       .rejects.toThrow(/maintainer quorum required/);
     expect(paths.at(-1)).toBe("/v1/applications/auditor/auth%3Aauditor%3Acompliance%3Av1/suspend");
+  });
+  it("uses exact current IDs and never requests lists in local-ledger mode", async () => {
+    const paths: string[] = [];
+    const health = { status: "ok", sourceMode: "local-ledger", registryId: board.summary.registryId,
+      localPlanSha256: "a".repeat(64), finalizedBlockHash: `0x${"b".repeat(64)}`,
+      generatedAt: "2026-10-25T00:00:00Z" };
+    const entry = board.issuers[0]!;
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+      const path = new URL(String(input)).pathname;
+      paths.push(path);
+      if (path === "/health") return Response.json(health);
+      if (path === "/v1/registry/summary") return Response.json(board.summary);
+      if (path === "/v1/authorizations/issuer/auth%3Aissuer%3Adegree%3Av1") return Response.json(entry);
+      return Response.json({ status: 503, detail: "lists unavailable" }, { status: 503 });
+    });
+    const client = new TrustRegistryAdminConsoleClient("http://127.0.0.1:4400", fetchImpl as typeof fetch);
+    const loaded = await client.loadReviewBoard();
+    expect(loaded.sourceMode).toBe("local-ledger");
+    expect(loaded.issuers).toEqual([]);
+    const card = await client.loadCurrentReviewCard("issuer", entry.authorization.authorizationId, loaded);
+    expect(card.id).toBe(entry.authorization.authorizationId);
+    expect(paths).toEqual(["/health", "/v1/registry/summary", "/health",
+      "/v1/authorizations/issuer/auth%3Aissuer%3Adegree%3Av1", "/health"]);
+  });
+  it("rejects a changed local checkpoint or mismatched exact-ID response", async () => {
+    let checkpoint = `0x${"b".repeat(64)}`;
+    const health = () => ({ status: "ok", sourceMode: "local-ledger", registryId: board.summary.registryId,
+      localPlanSha256: "a".repeat(64), finalizedBlockHash: checkpoint,
+      generatedAt: "2026-10-25T00:00:00Z" });
+    const entry = board.issuers[0]!;
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/health") return Response.json(health());
+      if (path === "/v1/registry/summary") return Response.json(board.summary);
+      checkpoint = `0x${"c".repeat(64)}`;
+      return Response.json(entry);
+    });
+    const client = new TrustRegistryAdminConsoleClient("http://127.0.0.1:4400", fetchImpl as typeof fetch);
+    const loaded = await client.loadReviewBoard();
+    await expect(client.loadCurrentReviewCard("issuer", entry.authorization.authorizationId, loaded))
+      .rejects.toThrow(/checkpoint changed/);
+    checkpoint = `0x${"b".repeat(64)}`;
+    fetchImpl.mockImplementation(async (input: RequestInfo | URL): Promise<Response> => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/health") return Response.json(health());
+      return Response.json({ ...entry, authorization: { ...entry.authorization, authorizationId: "wrong" } });
+    });
+    await expect(client.loadCurrentReviewCard("issuer", entry.authorization.authorizationId, loaded))
+      .rejects.toThrow(/mismatched record/);
   });
   it("derives conservative maintainer actions from lifecycle state", () => {
     expect(getReviewActions("proposed")).toEqual(["approve", "archive"]);

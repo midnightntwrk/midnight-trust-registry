@@ -151,6 +151,37 @@ describe("API CLI binding", () => {
     ]) expect(() => parseTrustRegistryApiCliArgs(args)).toThrow();
   });
 
+  it("drafts and verifies recovery decisions only with exact private evidence paths", () => {
+    const base = [...localArgs.slice(1), "--role", "issuer",
+      "--authorization-id", "issuer:local:1",
+      "--submission-journal", "/run/trust-registry/proposals.json",
+      "--finality-evidence", "/run/trust-registry/finality.json"];
+    const draft = ["draft-local-proposal-recovery-decision", ...base,
+      "--evidence-reference", "review:local-1"];
+    const verify = ["verify-local-proposal-recovery-decision", ...base,
+      "--recovery-decision", "/run/trust-registry/decision.json",
+      "--recovery-signature", "/run/trust-registry/decision.sig"];
+    expect(parseTrustRegistryApiCliArgs(draft)).toMatchObject({
+      command: "draft-local-proposal-recovery-decision", evidenceReference: "review:local-1",
+      finalityEvidencePath: "/run/trust-registry/finality.json",
+    });
+    expect(parseTrustRegistryApiCliArgs(verify)).toMatchObject({
+      command: "verify-local-proposal-recovery-decision",
+      recoveryDecisionPath: "/run/trust-registry/decision.json",
+      recoverySignaturePath: "/run/trust-registry/decision.sig",
+    });
+    for (const args of [
+      draft.slice(0, -2),
+      [...draft.slice(0, -1), "review\nspoof"],
+      [...draft.slice(0, -1), "demo:unsafe"],
+      [...draft, "--recovery-signature", "/tmp/unexpected.sig"],
+      [...draft, "--snapshot", "fixture.json"],
+      verify.slice(0, -2),
+      [...verify.slice(0, -1), "relative.sig"],
+      [...verify, "--evidence-reference", "unexpected"],
+    ]) expect(() => parseTrustRegistryApiCliArgs(args)).toThrow();
+  });
+
   it("initializes only an absolute-path journal from complete signed evidence", () => {
     const initialization = ["init-local-proposal-journal", ...localArgs.slice(1),
       "--submission-journal", "/run/trust-registry/proposals.json"];

@@ -33,6 +33,9 @@ export type PublicInspection = {
   activeRecognitions: readonly PublicRecognitionEntry[];
   activeVerifiers: readonly PublicVerifierEntry[];
   summary: TrustRegistryApiSummary;
+  sourceMode?: "snapshot" | "workspace" | "memory" | "local-ledger";
+  localPlanSha256?: string;
+  unavailableLists?: readonly ("issuer" | "verifier" | "auditor" | "recognition")[];
   warnings?: readonly string[];
 };
 

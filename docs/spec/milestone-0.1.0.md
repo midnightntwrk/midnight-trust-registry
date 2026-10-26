@@ -119,8 +119,11 @@ consider an audit request, never permission to release data.
    policy version. Activation is a separate governed transition. Only an
    `active` grant passes authorization queries.
 6. A later suspend, revoke, archive, or policy replacement appends an event.
-   Historical decisions remain addressable with their original policy and
-   signer/key state. The operator publishes a new epoch for a new public view.
+   The operator publishes a new epoch for a new public view. Historical event
+   commitments remain in ledger state, but this current-only release does not
+   expose historical decision routes or infer a past answer from current maps.
+   A later profile must authenticate the original policy and signer/key state
+   before making historical decisions addressable.
 
 The 0.1.0 reference fixture bootstraps three maintainer DIDs and uses a
 2-of-3 threshold for ordinary, membership, emergency, and archival action

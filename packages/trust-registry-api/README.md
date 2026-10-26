@@ -37,6 +37,9 @@ authenticates each finalized checkpoint against an independently approved
 genesis, an independently approved SHA-256 digest of the exact snapshot file
 (covering snapshot-only metadata), and a trusted mapping from Compact governance
 sequences to timestamps.
+The pinned snapshot must use the CLI writer's two-space-indented JSON with a
+final newline. A digest matching noncanonical bytes, including duplicate JSON
+keys, is not sufficient for admission.
 It re-reads and verifies the entire candidate snapshot for each request and
 fails closed if the view is missing or mismatched, or the file differs from its
 approved digest or the finalized Compact projection. The CLI constructs these
@@ -165,8 +168,18 @@ response, independently authenticate finality, or qualify the release.
 For a read-only current-route check against a running loopback listener, run
 `trust-registry-api observe-local-ledger-api` with the same four signed-plan
 arguments and `--api-origin http://127.0.0.1:4400`. It compares registry,
-current epoch, all bounded issuer/verifier/auditor/recognition records,
-not-found behavior, and historical-route rejection with the signed source.
+current epoch, bounded current issuer/verifier/auditor/recognition by-ID records,
+stale-ID and not-found behavior, and historical-route rejection with the signed source.
+If distinct current grants share the public resolver's lookup fields, the
+resolver must return `409 ambiguous-current-scope`; the probe verifies that
+fail-closed response and still checks each selected grant by ID. The report's
+`resolvedLookups` and `ambiguousLookups` count successful `200` and fail-closed
+`409` lookup attempts separately. An all-ambiguous role has zero successful
+resolves; these counts may repeat the same scope and are not unique-grant totals.
+Local-ledger list routes return `503 local-list-projection-unavailable` until a
+complete, authenticated finalized checkpoint-bound projection exists. Superseded
+by-ID records return 404 in this current-only profile; fixture mode retains its
+existing all-record behavior.
 Its JSON report has `releaseQualified: false`: it does not attest the API
 process or image, independently authenticate finality, perform actor mutations,
 or prove browser, DID/VC/status, egress-denied, or recovery behavior.

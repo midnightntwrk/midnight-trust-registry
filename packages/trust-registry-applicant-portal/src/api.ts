@@ -4,6 +4,9 @@ import type {
   TrustRegistryApiAuthorizationEvidenceEvaluationResponse,
   TrustRegistryApiEvaluateAuthorizationRequest,
   TrustRegistryApiEvaluateRecognitionRequest,
+  TrustRegistryApiHealthResponse,
+  TrustRegistryApiResolveAuthorizationRequest,
+  TrustRegistryApiResolveRecognitionRequest,
   TrustRegistryApiProblemDetails,
   TrustRegistryApiRecognitionListResponse,
   TrustRegistryApiRecognitionEvidenceEvaluationResponse,
@@ -33,19 +36,62 @@ export const isCurrentlyActive = (
     && activeFrom <= nowMs && nowMs <= effectiveUntil;
 };
 
-const isRenderableAuditorList = (value: unknown): value is TrustRegistryApiAuthorizationListResponse => {
-  if (value === null || typeof value !== "object" || !("entries" in value) || !Array.isArray(value.entries)) {
+const isRenderableAuthorizationList = (
+  value: unknown,
+  role: "issuer" | "verifier" | "auditor",
+): value is TrustRegistryApiAuthorizationListResponse => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)
+    || !("entries" in value) || !Array.isArray(value.entries)
+    || ("role" in value && value.role !== role)
+    || ("total" in value && value.total !== value.entries.length)) {
     return false;
   }
+  const ids = new Set<string>();
   return value.entries.every((entry: unknown) => {
     if (entry === null || typeof entry !== "object" || !("authorization" in entry)) return false;
     const authorization = entry.authorization;
     if (authorization === null || typeof authorization !== "object") return false;
     const fields = ["authorizationId", "role", "status", "resourceType", "resourceId", "trustLevel", "subjectDid", "activeFrom"];
+    if (!("authorizationId" in authorization) || typeof authorization.authorizationId !== "string"
+      || ids.has(authorization.authorizationId)) return false;
+    ids.add(authorization.authorizationId);
     return "label" in entry && typeof entry.label === "string"
       && fields.every((field) => field in authorization && typeof authorization[field as keyof typeof authorization] === "string")
+      && "role" in authorization && authorization.role === role
+      && "status" in authorization && authorization.status === "active"
+      && "activeFrom" in authorization && Number.isFinite(Date.parse(String(authorization.activeFrom)))
       && (!("effectiveUntil" in authorization) || authorization.effectiveUntil === undefined
-        || typeof authorization.effectiveUntil === "string");
+        || typeof authorization.effectiveUntil === "string"
+          && Number.isFinite(Date.parse(authorization.effectiveUntil)));
+  });
+};
+
+const isRenderableRecognitionList = (value: unknown): value is TrustRegistryApiRecognitionListResponse => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)
+    || !("entries" in value) || !Array.isArray(value.entries)
+    || ("total" in value && value.total !== value.entries.length)) {
+    return false;
+  }
+  const ids = new Set<string>();
+  return value.entries.every((entry: unknown) => {
+    if (entry === null || typeof entry !== "object" || !("recognition" in entry)
+      || entry.recognition === null || typeof entry.recognition !== "object") return false;
+    const recognition = entry.recognition;
+    if (!("recognitionId" in recognition) || typeof recognition.recognitionId !== "string"
+      || ids.has(recognition.recognitionId)) return false;
+    ids.add(recognition.recognitionId);
+    return "label" in entry && typeof entry.label === "string"
+      && "status" in recognition && recognition.status === "active"
+      && "recognizedAuthorityDid" in recognition && typeof recognition.recognizedAuthorityDid === "string"
+      && "trustLevel" in recognition && typeof recognition.trustLevel === "string"
+      && "scope" in recognition && recognition.scope !== null && typeof recognition.scope === "object"
+      && "resourceType" in recognition.scope && typeof recognition.scope.resourceType === "string"
+      && "resourceId" in recognition.scope && typeof recognition.scope.resourceId === "string"
+      && "effectiveFrom" in recognition && typeof recognition.effectiveFrom === "string"
+      && Number.isFinite(Date.parse(recognition.effectiveFrom))
+      && (!("effectiveUntil" in recognition) || recognition.effectiveUntil === undefined
+        || typeof recognition.effectiveUntil === "string"
+          && Number.isFinite(Date.parse(recognition.effectiveUntil)));
   });
 };
 
@@ -56,6 +102,42 @@ export class TrustRegistryApplicantPortalApiError extends Error {
     super(problem.detail ?? problem.title ?? "trust-registry api error");
   }
 }
+
+const isUnavailableLocalList = (error: unknown): boolean =>
+  error instanceof TrustRegistryApplicantPortalApiError
+    && error.problem.status === 503
+    && error.problem.type?.endsWith("/local-list-projection-unavailable") === true;
+
+const listWarning = (role: string): string =>
+  `Current ${role} list is unavailable; no trust decision can be inferred.`;
+
+type LocalHealth = TrustRegistryApiHealthResponse & {
+  sourceMode: "local-ledger";
+  localPlanSha256: string;
+  finalizedBlockHash: string;
+  generatedAt: string;
+};
+
+const requireLocalHealth = (health: TrustRegistryApiHealthResponse, expected?: PublicInspection): LocalHealth => {
+  if (health.status !== "ok" || health.sourceMode !== "local-ledger"
+    || typeof health.registryId !== "string" || health.registryId.length === 0
+    || !/^[0-9a-f]{64}$/u.test(health.localPlanSha256 ?? "")
+    || !/^0x[0-9a-f]{64}$/u.test(health.finalizedBlockHash ?? "")
+    || typeof health.generatedAt !== "string"
+    || (expected !== undefined && (expected.sourceMode !== "local-ledger"
+      || expected.summary.registryId !== health.registryId
+      || expected.localPlanSha256 !== health.localPlanSha256))) {
+    throw new Error("Local API health lacks a stable approved plan or finalized checkpoint.");
+  }
+  return health as LocalHealth;
+};
+
+const sameLocalCheckpoint = (before: TrustRegistryApiHealthResponse, after: TrustRegistryApiHealthResponse): boolean =>
+  after.status === "ok" && after.sourceMode === "local-ledger"
+  && after.registryId === before.registryId
+  && after.localPlanSha256 === before.localPlanSha256
+  && after.finalizedBlockHash === before.finalizedBlockHash
+  && after.generatedAt === before.generatedAt;
 
 export const normalizeApiBaseUrl = (
   value: string,
@@ -146,33 +228,117 @@ export class TrustRegistryApplicantPortalClient {
   }
 
   async loadPublicInspection(): Promise<PublicInspection> {
+    const health = await this.request<TrustRegistryApiHealthResponse>("/health", { cache: "no-store" });
+    if (health.sourceMode === "local-ledger") {
+      const localHealth = requireLocalHealth(health);
+      const summary = await this.request<TrustRegistryApiSummary>("/v1/registry/summary", { cache: "no-store" });
+      const after = await this.request<TrustRegistryApiHealthResponse>("/health", { cache: "no-store" });
+      if (summary.registryId !== health.registryId || !sameLocalCheckpoint(health, after)) {
+        throw new Error("Local API health and registry summary do not match one checkpoint.");
+      }
+      const unavailableLists = ["issuer", "verifier", "auditor", "recognition"] as const;
+      return { summary, sourceMode: "local-ledger", localPlanSha256: localHealth.localPlanSha256,
+        activeAuditors: [], activeIssuers: [], activeVerifiers: [], activeRecognitions: [],
+        unavailableLists, warnings: unavailableLists.map(listWarning) };
+    }
+    let localProjectionGated = false;
+    const localList = async <T>(path: string): Promise<T | null> => {
+      try {
+        return await this.request<T>(path);
+      } catch (error) {
+        if (isUnavailableLocalList(error)) {
+          localProjectionGated = true;
+          return null;
+        }
+        throw error;
+      }
+    };
     const [summary, activeIssuers, activeVerifiers, auditorResult, activeRecognitions] =
       await Promise.all([
         this.request<TrustRegistryApiSummary>("/v1/registry/summary"),
-        this.request<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/issuer?status=active"),
-        this.request<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/verifier?status=active"),
-        this.request<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/auditor?status=active")
+        localList<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/issuer?status=active"),
+        localList<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/verifier?status=active"),
+        localList<TrustRegistryApiAuthorizationListResponse>("/v1/authorizations/auditor?status=active")
           .then((value) => ({ value, failed: false as const }))
           .catch(() => ({ failed: true as const })),
-        this.request<TrustRegistryApiRecognitionListResponse>("/v1/recognitions?status=active"),
+        localList<TrustRegistryApiRecognitionListResponse>("/v1/recognitions?status=active"),
       ]);
 
     const nowMs = Date.now();
-    const auditorEntries = auditorResult.failed || !isRenderableAuditorList(auditorResult.value)
+    const auditorEntries = auditorResult.failed || !isRenderableAuthorizationList(auditorResult.value, "auditor")
       ? null : auditorResult.value.entries;
+    if (activeIssuers !== null && !isRenderableAuthorizationList(activeIssuers, "issuer")) {
+      throw new Error("Issuer list response was invalid.");
+    }
+    if (activeVerifiers !== null && !isRenderableAuthorizationList(activeVerifiers, "verifier")) {
+      throw new Error("Verifier list response was invalid.");
+    }
+    if (activeRecognitions !== null && !isRenderableRecognitionList(activeRecognitions)) {
+      throw new Error("Recognition list response was invalid.");
+    }
+    const unavailableLists = [
+      ...(activeIssuers === null ? ["issuer" as const] : []),
+      ...(activeVerifiers === null ? ["verifier" as const] : []),
+      ...(auditorEntries === null ? ["auditor" as const] : []),
+      ...(activeRecognitions === null ? ["recognition" as const] : []),
+    ];
+    if (localProjectionGated) {
+      throw new Error("Local list projection gate requires a confirmed local-ledger API mode.");
+    }
     return {
       summary,
       activeAuditors: auditorEntries?.filter((entry) =>
         entry?.authorization?.role === "auditor"
           && isCurrentlyActive(entry.authorization, entry.authorization.activeFrom, nowMs)) ?? [],
-      activeIssuers: activeIssuers.entries.filter((entry) =>
-        entry.authorization?.role === "issuer" && isCurrentlyActive(entry.authorization, entry.authorization.activeFrom, nowMs)),
-      activeVerifiers: activeVerifiers.entries.filter((entry) =>
-        entry.authorization?.role === "verifier" && isCurrentlyActive(entry.authorization, entry.authorization.activeFrom, nowMs)),
-      activeRecognitions: activeRecognitions.entries.filter((entry) =>
-        isCurrentlyActive(entry.recognition, entry.recognition?.effectiveFrom, nowMs)),
-      ...(auditorEntries === null ? { warnings: ["Auditor records are temporarily unavailable."] } : {}),
+      activeIssuers: activeIssuers?.entries.filter((entry) =>
+        entry.authorization?.role === "issuer" && isCurrentlyActive(entry.authorization, entry.authorization.activeFrom, nowMs)) ?? [],
+      activeVerifiers: activeVerifiers?.entries.filter((entry) =>
+        entry.authorization?.role === "verifier" && isCurrentlyActive(entry.authorization, entry.authorization.activeFrom, nowMs)) ?? [],
+      activeRecognitions: activeRecognitions?.entries.filter((entry) =>
+        isCurrentlyActive(entry.recognition, entry.recognition?.effectiveFrom, nowMs)) ?? [],
+      ...(unavailableLists.length === 0 ? {} : {
+        unavailableLists,
+        warnings: unavailableLists.map(listWarning),
+      }),
     };
+  }
+
+  async loadCurrentAuthorization(
+    request: TrustRegistryApiResolveAuthorizationRequest,
+    inspection: PublicInspection,
+  ): Promise<TrustRegistryApiAuthorizationListResponse["entries"][number]> {
+    const before = requireLocalHealth(await this.request<TrustRegistryApiHealthResponse>("/health", { cache: "no-store" }), inspection);
+    const entry = await this.request<TrustRegistryApiAuthorizationListResponse["entries"][number]>("/v1/authorizations/resolve", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+      cache: "no-store",
+    });
+    const after = await this.request<TrustRegistryApiHealthResponse>("/health", { cache: "no-store" });
+    if (!sameLocalCheckpoint(before, after)
+      || entry?.authorization?.registryId !== inspection.summary.registryId) {
+      throw new Error("Local authorization response changed checkpoint or registry.");
+    }
+    return entry;
+  }
+
+  async loadCurrentRecognition(
+    request: TrustRegistryApiResolveRecognitionRequest,
+    inspection: PublicInspection,
+  ): Promise<TrustRegistryApiRecognitionListResponse["entries"][number]> {
+    const before = requireLocalHealth(await this.request<TrustRegistryApiHealthResponse>("/health", { cache: "no-store" }), inspection);
+    const entry = await this.request<TrustRegistryApiRecognitionListResponse["entries"][number]>("/v1/recognitions/resolve", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+      cache: "no-store",
+    });
+    const after = await this.request<TrustRegistryApiHealthResponse>("/health", { cache: "no-store" });
+    if (!sameLocalCheckpoint(before, after)
+      || entry?.recognition?.registryId !== inspection.summary.registryId) {
+      throw new Error("Local recognition response changed checkpoint or registry.");
+    }
+    return entry;
   }
 
   async submitApplication(

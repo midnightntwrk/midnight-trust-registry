@@ -13,7 +13,7 @@ import { promisify } from "node:util";
 import {
   FileMaintenanceTransitionJournal, prepareLocalNetworkCommitteeTransition,
   reconcileLocalNetworkCommitteeTransition, submitLocalNetworkCommitteeTransition,
-  validateMaintenancePolicy,
+  getLocalNetworkProfile, validateMaintenancePolicy,
   VerifierKeyInsertionOutcomeUnknownError,
 } from "@midnight-ntwrk/trust-registry-integration";
 import { ContractMaintenanceAuthority } from "@midnight-ntwrk/midnight-js-protocol/ledger";
@@ -36,6 +36,7 @@ import {
 } from "./local-ledger-insert-verifier-key.mjs";
 
 const FORMAT = "tr-standalone-setup-v1";
+const STANDALONE_PROFILE = getLocalNetworkProfile();
 const RECORD = "setup-record.json";
 const FINGERPRINT = /^[A-F0-9]{40}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
@@ -45,7 +46,7 @@ const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const execFileAsync = promisify(execFile);
 const composePath = resolve(dirname(fileURLToPath(import.meta.url)), "../deploy/standalone/compose.yml");
 const offlineComposePath = resolve(dirname(fileURLToPath(import.meta.url)), "../deploy/standalone/compose.offline.yml");
-const validLocalDeploymentReceipt = (receipt) => receipt?.networkId === "undeployed"
+const validLocalDeploymentReceipt = (receipt) => receipt?.networkId === STANDALONE_PROFILE.networkId
   && HASH.test(receipt.contractAddress) && !/^0x0{64}$/u.test(receipt.contractAddress)
   && HASH.test(receipt.blockHash) && !/^0x0{64}$/u.test(receipt.blockHash)
   && typeof receipt.txId === "string" && receipt.txId.length > 0
@@ -126,6 +127,10 @@ async function readRecord(directory) {
   if (record?.format !== FORMAT || typeof record?.sourceRevision !== "string") {
     throw new Error("Invalid standalone setup record");
   }
+  if (record.networkProfile !== undefined
+    && JSON.stringify(record.networkProfile) !== JSON.stringify(STANDALONE_PROFILE)) {
+    throw new Error("Standalone network profile changed since setup initialization");
+  }
   return { root, record };
 }
 
@@ -199,6 +204,7 @@ export async function initializeStandaloneSetup(directory, bundleDirectory, depe
   const record = {
     format: FORMAT,
     setupId: randomUUID(),
+    networkProfile: STANDALONE_PROFILE,
     sourceRevision: verified.sourceRevision,
     createdAt: new Date().toISOString(),
     install: { bundle, inventorySha256: verified.inventorySha256, verified },
@@ -329,6 +335,7 @@ export async function prepareStandaloneStack(directory, requested, dependencies 
       `TR_NODE_PORT=${config.ports.node}`,
       `TR_INDEXER_PORT=${config.ports.indexer}`,
       `TR_PROOF_PORT=${config.ports["proof-server"]}`,
+      `TR_NETWORK_ID=${STANDALONE_PROFILE.networkId}`,
       `TR_PROOF_PARAMS_DIR=${JSON.stringify(proofDirectory)}`,
       `TR_INDEXER_PASSWORD=${randomBytes(24).toString("hex")}`,
       `TR_INDEXER_SECRET=${randomBytes(32).toString("hex")}`,
@@ -379,12 +386,14 @@ async function preparedStandaloneTopology(root, record) {
     const lines = envBytes.toString("utf8").trimEnd().split("\n");
     const entries = lines.map((line) => line.split("=", 2));
     const selected = Object.fromEntries(entries);
-    if (entries.length !== 8 || Object.keys(selected).length !== 8
+    const expectedEnvCount = record.networkProfile ? 9 : 8;
+    if (entries.length !== expectedEnvCount || Object.keys(selected).length !== expectedEnvCount
       || selected.TR_STACK_NAME !== config.project
       || selected.COMPOSE_PROJECT_NAME !== config.project
       || selected.TR_NODE_PORT !== config.ports.node
       || selected.TR_INDEXER_PORT !== config.ports.indexer
-      || selected.TR_PROOF_PORT !== config.ports["proof-server"]) {
+      || selected.TR_PROOF_PORT !== config.ports["proof-server"]
+      || (record.networkProfile && selected.TR_NETWORK_ID !== STANDALONE_PROFILE.networkId)) {
       throw new Error("Prepared stack environment disagrees with the setup record");
     }
     let proofParamsDir;
@@ -492,7 +501,7 @@ export async function collectStandaloneGenesisCandidate(directory, dependencies 
       sourceRevision: record.sourceRevision,
       installInventorySha256: record.install.inventorySha256,
       project: record.stack.project,
-      networkId: "undeployed",
+      networkId: STANDALONE_PROFILE.networkId,
       nodeReportedGenesisHash: snapshot.genesisHash,
       nodeReportedFinalizedBlockHash: snapshot.finalizedHash,
       nodeReportedFinalizedHeight: snapshot.finalizedHeight,
@@ -527,7 +536,7 @@ export async function draftStandaloneGenesisPin(directory, dependencies = {}) {
       || candidate.status !== "untrusted-node-observation-independent-review-required"
       || candidate.sourceRevision !== record.sourceRevision
       || candidate.installInventorySha256 !== record.install.inventorySha256
-      || candidate.project !== record.stack.project || candidate.networkId !== "undeployed"
+      || candidate.project !== record.stack.project || candidate.networkId !== STANDALONE_PROFILE.networkId
       || !HASH.test(candidate.nodeReportedGenesisHash)
       || /^0x0{64}$/u.test(candidate.nodeReportedGenesisHash)
       || !HASH.test(candidate.nodeReportedFinalizedBlockHash)
@@ -576,7 +585,7 @@ export async function draftStandaloneGenesisPin(directory, dependencies = {}) {
     }
     const pin = {
       format: "tr-local-ledger-pin-v1",
-      networkId: "undeployed",
+      networkId: STANDALONE_PROFILE.networkId,
       sourceRevision: record.sourceRevision,
       rpcUrl: `http://127.0.0.1:${rpcPort}`,
       expectedGenesisHash: candidate.nodeReportedGenesisHash,
@@ -821,7 +830,7 @@ export async function draftStandaloneGenesisApproval(directory, proposal) {
       stackProject: record.stack?.project ?? null,
       sourceRevision: record.sourceRevision,
       installInventorySha256: record.install.inventorySha256,
-      networkId: "undeployed",
+      networkId: STANDALONE_PROFILE.networkId,
       pinSha256: record.ledgerObservation.pinSha256,
       expectedGenesisHash: record.ledgerObservation.expectedGenesisHash,
       rpcUrl: record.ledgerObservation.rpcUrl,
@@ -904,7 +913,7 @@ export async function draftStandaloneCommitteeApproval(directory, proposal) {
       genesisApprovalSha256: record.genesisApproval.documentSha256,
       deploymentPlanSha256: sha256(planBytes),
       providerModuleSha256: plan.providerModuleSha256,
-      networkId: "undeployed",
+      networkId: STANDALONE_PROFILE.networkId,
       expectedGenesisHash: record.ledgerObservation.expectedGenesisHash,
       reviewerFingerprint: proposal.reviewerFingerprint,
       reviewedReference: proposal.reviewedReference,
@@ -973,7 +982,7 @@ export async function approveStandaloneGenesis(
       || !record.setupId || approval.setupId !== record.setupId
       || approval.stackProject !== (record.stack?.project ?? null)
       || approval.installInventorySha256 !== record.install.inventorySha256
-      || approval.networkId !== "undeployed"
+      || approval.networkId !== STANDALONE_PROFILE.networkId
       || approval.pinSha256 !== record.ledgerObservation.pinSha256
       || approval.expectedGenesisHash !== record.ledgerObservation.expectedGenesisHash
       || !HASH.test(approval.expectedGenesisHash)
@@ -1028,7 +1037,7 @@ export async function approveStandaloneCommittee(
       || approval.sourceRevision !== record.sourceRevision
       || approval.installInventorySha256 !== record.install.inventorySha256
       || approval.genesisApprovalSha256 !== record.genesisApproval.documentSha256
-      || approval.networkId !== "undeployed"
+      || approval.networkId !== STANDALONE_PROFILE.networkId
       || approval.expectedGenesisHash !== record.ledgerObservation.expectedGenesisHash
       || approval.reviewerFingerprint !== expectedFingerprint
       || !canonicalReviewerMetadata(approval,
@@ -1492,7 +1501,7 @@ function readStoredCommitteeApproval(record, legacyReadOnly = false) {
       || !SHA256.test(signedApproval.providerModuleSha256)
       || signedApproval.deploymentPlanSha256 !== record.committeeApproval.deploymentPlanSha256
       || signedApproval.providerModuleSha256 !== record.committeeApproval.providerModuleSha256))
-    || signedApproval.networkId !== "undeployed"
+    || signedApproval.networkId !== STANDALONE_PROFILE.networkId
     || signedApproval.sourceRevision !== record.sourceRevision
     || signedApproval.installInventorySha256 !== record.install.inventorySha256
     || signedApproval.genesisApprovalSha256 !== record.genesisApproval.documentSha256
@@ -1636,11 +1645,11 @@ async function approvedStandaloneCommitteeTransition(root, record, requestPath, 
     );
     await requireCurrentApprovedAccess(root, record, verified,
       { network: approval.network }, dependencies);
-    setNetworkId("undeployed");
+    setNetworkId(STANDALONE_PROFILE.networkId);
     const prepared = await (dependencies.prepareTransition ?? prepareLocalNetworkCommitteeTransition)(approval);
     await requireCurrentApprovedAccess(root, record, verified,
       { network: approval.network }, dependencies);
-    if (prepared.networkId !== "undeployed" || prepared.contractAddress !== approval.receipt.contractAddress
+    if (prepared.networkId !== STANDALONE_PROFILE.networkId || prepared.contractAddress !== approval.receipt.contractAddress
       || !HASH.test(prepared.finalizedBlockHash) || /^0x0{64}$/u.test(prepared.finalizedBlockHash)
       || prepared.currentAuthorityCounter !== BigInt(catalog.length - 1)
       || prepared.nextAuthorityCounter !== BigInt(catalog.length)
@@ -1850,7 +1859,7 @@ export async function reconcileStandaloneCommitteeTransition(
       await requireCurrentApprovedAccess(root, record, verified,
         { network: approval.network }, dependencies);
     }
-    setNetworkId("undeployed");
+    setNetworkId(STANDALONE_PROFILE.networkId);
     const result = await (dependencies.reconcile ?? reconcileLocalNetworkCommitteeTransition)({
       approval,
       journal: new FileMaintenanceTransitionJournal(attempt.journalPath),
@@ -1958,12 +1967,12 @@ export async function approveStandaloneCommitteeRecovery(
     }
     await requireCurrentApprovedAccess(root, record, verified,
       { network: approval.network }, dependencies);
-    setNetworkId("undeployed");
+    setNetworkId(STANDALONE_PROFILE.networkId);
     const freshApproval = { ...approval, expiresAt: new Date(now + 5 * 60_000) };
     const fresh = await (dependencies.prepareTransition ?? prepareLocalNetworkCommitteeTransition)(freshApproval);
     await requireCurrentApprovedAccess(root, record, verified,
       { network: approval.network }, dependencies);
-    if (fresh.networkId !== "undeployed" || fresh.contractAddress !== approval.receipt.contractAddress
+    if (fresh.networkId !== STANDALONE_PROFILE.networkId || fresh.contractAddress !== approval.receipt.contractAddress
       || !HASH.test(fresh.finalizedBlockHash) || /^0x0{64}$/u.test(fresh.finalizedBlockHash)
       || fresh.finalizedBlockHash === attempt.finalizedBlockHash
       || fresh.currentAuthorityCounter !== BigInt(catalog.length - 1)

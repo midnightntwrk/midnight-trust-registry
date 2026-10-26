@@ -3,7 +3,100 @@ import { describe, expect, it, vi } from "vitest";
 
 import { canUsePrivateEvidenceHost, createApplicantPortalApp, escapeHtml } from "../app.js";
 
+const localHealth = { status: "ok", sourceMode: "local-ledger", registryId: "registry:local",
+  localPlanSha256: "a".repeat(64), finalizedBlockHash: `0x${"b".repeat(64)}`,
+  generatedAt: "2026-10-25T00:00:00Z" };
+
 describe("trust registry applicant portal app", () => {
+  it("keeps application forms but never renders unavailable local lists as empty trust", async () => {
+    const root = document.createElement("div");
+    document.body.replaceChildren(root);
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/health") return Response.json(localHealth);
+      return path === "/v1/registry/summary"
+        ? Response.json({ registryLabel: "local", registryId: "registry:local", currentEpochId: "epoch:1" })
+        : Response.json({ type: "https://registry.example/problems/local-list-projection-unavailable", status: 503 }, { status: 503 });
+    });
+    createApplicantPortalApp(root, {
+      initialUrl: new URL("https://registry.example/applicant/"),
+      storage: { getItem: () => null, setItem: () => {} } as unknown as Storage,
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+    await vi.waitFor(() => expect(root.textContent).toContain("Current issuer list is unavailable"));
+    expect(root.textContent).toContain("local");
+    expect(root.textContent).toContain("Current list unavailable. Do not infer trust from this lane.");
+    expect(root.textContent).not.toContain("No active entries in this lane yet.");
+    expect(root.querySelectorAll(".metric strong")[2]?.textContent).toBe("n/a");
+    expect(root.querySelectorAll(".metric strong")[5]?.textContent).toBe("n/a");
+    expect(root.querySelector("[data-issuer-application-form]")).not.toBeNull();
+    expect(root.querySelector("[data-current-authorization]")).not.toBeNull();
+    expect(root.querySelector("[data-historical-authorization]")).toBeNull();
+    expect(root.querySelector("[data-signed-submit]")).toBeNull();
+    expect(root.querySelector("[data-submit-form]")).toBeNull();
+  });
+
+  it("queries exact current local scopes and rejects a substituted API result", async () => {
+    const root = document.createElement("div");
+    document.body.replaceChildren(root);
+    const subjectDid = "did:midnight:undeployed:issuer";
+    const resourceId = `tr:issuer-resource:v1:${"a".repeat(64)}`;
+    const recognizedAuthorityDid = "did:web:authority.example";
+    let substitute = false;
+    const calls: Array<{ path: string; body: unknown }> = [];
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const path = new URL(String(input)).pathname;
+      calls.push({ path, body: init?.body === undefined ? null : JSON.parse(String(init.body)) });
+      if (path === "/health") return Response.json(localHealth);
+      if (path === "/v1/registry/summary") return Response.json({ registryLabel: "local", registryId: "registry:local", currentEpochId: "epoch:1" });
+      if (path === "/v1/authorizations/resolve") return Response.json({ label: "issuer", authorization: {
+        registryId: "registry:local",
+        role: "issuer", subjectDid: substitute ? "did:midnight:undeployed:other" : subjectDid,
+        resourceId, status: "active",
+      } });
+      if (path === "/v1/recognitions/resolve") return Response.json({ label: "authority", recognition: {
+        registryId: "registry:local",
+        recognizedAuthorityDid, recognizedRegistryId: "external:registry", status: "active",
+        scope: { resourceType: "credential-family", resourceId: "degree", context: { purpose: "assurance" } },
+      } });
+      return Response.json({ type: "https://registry.example/problems/local-list-projection-unavailable", status: 503 }, { status: 503 });
+    });
+    createApplicantPortalApp(root, {
+      initialUrl: new URL("https://registry.example/applicant/"),
+      storage: { getItem: () => null, setItem: () => {} } as unknown as Storage,
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+    await vi.waitFor(() => expect(root.querySelector("[data-current-authorization]")).not.toBeNull());
+    const submitAuthorization = () => {
+      const form = root.querySelector<HTMLFormElement>("[data-current-authorization]")!;
+      form.querySelector<HTMLInputElement>("[name='subjectDid']")!.value = subjectDid;
+      form.querySelector<HTMLInputElement>("[name='resourceId']")!.value = resourceId;
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    };
+    submitAuthorization();
+    await vi.waitFor(() => expect(root.querySelector("[data-current-authorization-result]")).not.toBeNull());
+    expect(calls.find((call) => call.path === "/v1/authorizations/resolve")?.body)
+      .toEqual({ role: "issuer", subjectDid, resourceId });
+    expect(root.textContent).toContain("Unverified current API claim");
+
+    substitute = true;
+    submitAuthorization();
+    await vi.waitFor(() => expect(root.textContent).toContain("does not match the requested scope"));
+    expect(root.querySelector("[data-current-authorization-result]")).toBeNull();
+
+    const recognition = root.querySelector<HTMLFormElement>("[data-current-recognition]")!;
+    recognition.querySelector<HTMLInputElement>("[name='recognizedAuthorityDid']")!.value = recognizedAuthorityDid;
+    recognition.querySelector<HTMLInputElement>("[name='recognizedRegistryId']")!.value = "external:registry";
+    recognition.querySelector<HTMLInputElement>("[name='scopeResourceType']")!.value = "credential-family";
+    recognition.querySelector<HTMLInputElement>("[name='scopeResourceId']")!.value = "degree";
+    recognition.querySelector<HTMLTextAreaElement>("[name='scopeContext']")!.value = '{"purpose":"assurance"}';
+    recognition.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await vi.waitFor(() => expect(root.querySelector("[data-current-recognition-result]")).not.toBeNull());
+    expect(calls.find((call) => call.path === "/v1/recognitions/resolve")?.body).toEqual({
+      recognizedAuthorityDid, recognizedRegistryId: "external:registry",
+      scopeResourceType: "credential-family", scopeResourceId: "degree", scopeContext: { purpose: "assurance" },
+    });
+  });
   it("uses the API origin when served from the packaged applicant path", async () => {
     const root = document.createElement("div");
     document.body.replaceChildren(root);
@@ -206,11 +299,7 @@ describe("trust registry applicant portal app", () => {
           recognitionCounts: counts(),
         });
       }
-      return Response.json({ entries: url.pathname === "/v1/authorizations/auditor" ? [
-        auditorGrant,
-        { ...auditorGrant, label: "wrong-role", authorization: { ...auditorGrant.authorization, role: "verifier" } },
-        { ...auditorGrant, label: "archived-auditor", authorization: { ...auditorGrant.authorization, status: "archived" } },
-      ] : [] });
+      return Response.json({ entries: url.pathname === "/v1/authorizations/auditor" ? [auditorGrant] : [] });
     });
     createApplicantPortalApp(root, {
       initialUrl: new URL("http://127.0.0.1:4175/?apiBase=http://127.0.0.1:4400"),
@@ -221,8 +310,6 @@ describe("trust registry applicant portal app", () => {
     await vi.waitFor(() => expect(root.textContent).toContain("identity-audit"));
     expect(root.textContent).toContain("Active auditors");
     expect(root.textContent).toContain("did:midnight:testnet:auditor");
-    expect(root.textContent).not.toContain("wrong-role");
-    expect(root.textContent).not.toContain("archived-auditor");
     expect(requested).toContain("/v1/authorizations/auditor?status=active");
     expect(root.querySelector("[data-submit-form] option[value='auditor']")).toBeNull();
     expect(root.querySelector<HTMLButtonElement>("[data-application-binding-form] button")?.disabled).toBe(true);

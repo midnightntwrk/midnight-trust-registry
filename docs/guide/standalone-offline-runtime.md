@@ -136,8 +136,137 @@ source-scoped admin and applicant tags without a registry pull. A v5/v6 Helm
 mapping reads these portal identities from the verified bundle rather than
 separate portal manifests. This is install-byte evidence only: neither the
 loader nor the wizard starts the portals or establishes an offline actor
-journey. The approved installer plan must still bind the six running image
-identities and qualify the deployed API and portals with egress denied.
+journey. The approved installer plan must still bind every image selected for
+runtime and qualify the deployed API and any separate portal workloads with
+egress denied.
+
+A new v4-v6 API-bearing bundle also pins `compose.api.yml` as
+`runtimeCompose.apiPath` and `runtimeCompose.apiSha256`. The read-only verifier
+checks the exact overlay bytes; existing v6 bundles without that optional pin
+remain verifiable but cannot use a bundle-pinned API overlay. This overlay is
+omitted entirely from first-run Compose commands; its `runtime` profile is a
+second guard, not a substitute for omitting the file. Compose interpolates
+required API inputs even when that profile is inactive. The first-run wizard
+therefore still starts and observes only node, indexer, and proof server.
+Do not put `compose.api.yml` in a default `COMPOSE_FILE` during installation.
+**Do not pass this overlay or enable the API profile before approved genesis,
+deployment, maintenance transition, and a
+detached-reviewer-signed v2 local API plan.** The approval directory must
+contain the signed plan, signature, reviewed public keyring, pinned snapshot,
+install inventory, and release manifest at the paths named by the signed plan.
+It is bind-mounted read-only; the selected UID/GID must own or be allowed to
+read those private inputs. The operator supplies the exact locally loaded API
+tag and the reviewer fingerprint. The overlay uses the
+internal ledger network, no registry pull, a read-only filesystem, dropped
+capabilities, and the packaged API's source-revision check. It serves the
+packaged admin and applicant static assets from the API origin; it does not
+start the separate portal images.
+
+The API port is exposed **inside the internal ledger network only**. Docker
+Desktop did not make a host-published port on an internal-only network
+reachable in a disposable probe, so this overlay makes no host/browser
+ingress claim. An actor runner attached to that network can reach `api:4400`.
+A separately reviewed ingress path is needed for host browsers; adding an
+ordinary external Docker network would create an egress path and is not
+equivalent to the offline requirement. The overlay itself is not an offline
+actor-journey or ingress qualification.
+
+The CLI `serve` mode used here wires finalized current reads, not durable
+governed submission ports, application intake, or a proposal journal. This is
+therefore a **read-only local API profile**; write-dependent actor journeys
+remain blocked until a separately reviewed mutation adapter and durable
+recovery state are installed. The approval directory is read-only by design.
+The operator-selected UID/GID must also be able to read the image's packaged
+API and portal files. A disposable check of the source-matched API image as
+UID 501/GID 20 read `/app/source-revision`, both portal entrypoints, and the
+API CLI; repeat that check for each final image and runtime UID/GID.
+
+The existing three-service topology and restart observers are **ledger-bridge
+checks**, not full-runtime observers. Do not interpret their passing
+before the API profile starts as deployed API, offline actor, or recovery
+evidence. A post-deployment observer must verify the API container identity,
+approval mounts, source revision, finalized reads, runtime egress, and actor
+journeys before the local 0.1.0 RC gate can close. Kubernetes and Helm are
+optional alternative deployment paths, not prerequisites.
+
+Once a **new exact-source bundle pins `compose.api.yml`** and the human-signed
+plan has been independently approved, the operator can run the read-only API
+topology observer with `TR_STACK_NAME`, `TR_API_APPROVAL_DIR`, `TR_API_UID`,
+`TR_API_GID`, and `TR_API_REVIEWER_FINGERPRINT` set to the same values used for
+the API Compose start:
+
+```sh
+node scripts/check-standalone-api-runtime.mjs <verified-install-bundle>
+```
+
+It rejects a different local API image or process environment, command,
+operator-supplied reviewer fingerprint, approval mount, published port, extra
+network attachment, or weakened API container security settings. For the
+three ledger services it checks image identity, health when configured, and
+network membership; their separate topology and egress observers remain
+required. The fingerprint comparison is to the operator's input, not an
+independent reading of the signed plan. Its output deliberately keeps
+finalized readback, egress denial, actor journeys, and release qualification
+**unverified**. It does not read or
+approve the signed plan, prove that the mounted files are unchanged, or replace
+the signed-plan preflight and live finalized-query tests. Do not run it against
+the older b15 bundle: that bundle predates the API overlay pin.
+
+After that topology check succeeds on a genuinely deployed, approved API,
+the operator may run a same-container current-read probe with the same
+environment and verified bundle:
+
+```sh
+node scripts/check-standalone-api-reads.mjs <verified-install-bundle>
+```
+
+The host-side probe checks the API container before and after using `docker
+exec` to run the **packaged** `observe-local-ledger-api` CLI against
+`127.0.0.1:4400` inside that container. It requires the signed plan's source
+revision to match the verified bundle revision while separately checking the
+running image ID. The report records the SHA-256 of the exact plan bytes the
+packaged CLI verified, its expiry, the current-read observation time, and
+the source's finalized checkpoint hash. The running API exposes its checkpoint
+hash on `/health`; the probe rejects a different API hash or a changed source
+checkpoint during the HTTP reads. Matching hashes do not independently prove
+that every route used one checkpoint or that finality was authenticated.
+The host-side probe preserves the source checkpoint hash in its output and
+rejects older in-container reports that omit it.
+The reader reports the latest finalized block, so normal block production can
+change the hash during this multi-route probe and cause a safe failure. Repeat
+the entire probe against a stable finalized view; never combine partial reads
+from different attempts or treat a transient failure as qualification. Prove
+the probe is usable under the deployed local chain's normal block cadence
+before relying on it for the RC.
+The running local-ledger server also exposes the digest of its startup-verified
+plan on `/health`; the packaged observer rejects a different digest. This
+binds the readback to the plan held by that server process even if a different
+validly signed plan is later placed in the host approval directory.
+It rejects a replaced or restarted container, changed network, expired
+observation, or source mismatch. This is route-level current-read evidence
+only. The API and probe share the same signed-plan loader and node/indexer
+trust boundary; matching plan digests do not make those inputs independent.
+Neither supplies independently authenticated finality, governed writes,
+offline actor journeys, or release approval. No host port is opened.
+
+On an approved and running four-service API stack, an operator can also test
+the API container's outbound route against a disposable canary on Docker's
+ordinary bridge, without depending on public Internet availability:
+
+```sh
+node scripts/check-standalone-api-egress.mjs <verified-install-bundle>
+```
+
+Use the same `TR_STACK_NAME`, `TR_API_APPROVAL_DIR`, `TR_API_UID`, `TR_API_GID`,
+and `TR_API_REVIEWER_FINGERPRINT` as for the topology observer. The probe
+requires the verified bundle and pinned running API image, confirms a
+same-image positive control can reach the temporary TCP and DNS/UDP canary,
+checks the running API's route table and denial of both canary routes, and
+rechecks API identity afterward. It removes only its own temporary bridge
+canary. This is two local canary routes, not proof that Docker's embedded DNS
+cannot recurse to external names, comprehensive protocol egress enforcement,
+a browser journey, or release qualification. Never run it against an unsigned
+pre-deployment ledger bridge or interpret mocked probe tests as runtime evidence.
 
 After loading the v5/v6 images, run
 `node scripts/check-standalone-static-assets.mjs <verified-v5-or-v6-bundle>` on the
@@ -181,7 +310,8 @@ local ledger. Matching source labels and hashes do not independently prove
 image build provenance; the release operator must approve the exact archive
 digest and retain the signed build evidence.
 
-For an isolated cluster, the API may listen on `0.0.0.0` only with
+For an isolated container network, including the optional Compose runtime
+profile or a dedicated cluster, the API may listen on `0.0.0.0` only with
 `--cluster-bind`, a complete detached-reviewer-signed local-ledger plan, and a
 signed v4, v5, or v6 install inventory with an API archive pin. Before opening that
 listener, it checks a file at `/app/source-revision` in the container
@@ -207,8 +337,9 @@ the current source. That comparison catches a stale source copy but does not
 prove that the compiler outputs or proving keys came from those bytes;
 independently review the build provenance before release approval.
 It packs ten packages, copies the 18 local proof-parameter files, exports the
-three digest-pinned Compose images, copies and hashes both runtime Compose
-files, writes the release and install manifests,
+three digest-pinned Compose images, copies and hashes the two ledger Compose
+files and an optional API runtime overlay when an API image is included,
+writes the release and install manifests,
 and runs the read-only bundle verifier. Retain the resulting directory and
 hashes as candidate bytes for operator approval. If the command fails, the
 partial directory is retained for inspection; use a new signed source commit
@@ -368,8 +499,12 @@ other processes, or release qualification. Review the new genesis and repeat
 the first-run approvals for that instance. Never use `down -v` on either
 project while its history is evidence.
 
-The local Midnight network uses network ID `undeployed`, not `preprod`. The
-dedicated smoke stack keeps node RPC, indexer, and proof-server services on
+The [`standalone` network profile](../spec/network-profiles.md) maps the local
+Midnight network to ID `undeployed`, not `preprod`. This ID is a Midnight.js
+network selector, not a universal genesis hash or a trusted node. The wizard
+writes the profile-derived `TR_NETWORK_ID` to the isolated Compose stack; a
+different standalone installation still needs its own approved genesis pin.
+The dedicated smoke stack keeps node RPC, indexer, and proof-server services on
 its internal bridge. On Docker Desktop, that bridge does **not** publish the
 configured loopback ports to the host, even though Compose records the port
 bindings. Probe service aliases from a container on the isolated network;
@@ -516,7 +651,10 @@ a time with `node scripts/local-ledger-insert-verifier-key.mjs
 <approved-insertion-plan.json>`. Each key uses the fixed private journal path
 `verifier-<circuitName>.json` beside the deployment journal; never reuse or
 rename a prior insertion journal. The circuit must be the next absent name in
-sorted release-catalog order. The exact
+sorted release-catalog order. The helper prepares the compiled circuit and
+verifier-key object before its durable reservation; SDK or provider errors
+after reservation still have an unknown outcome and must not be retried
+blindly. The exact
 insertion plan contains:
 
 ```json
@@ -633,6 +771,10 @@ container on the same bridge using the verified node image ID, rather than
 trusting a mutable local tag or directly probing the running node. A standalone CLI
 invocation against a source-scoped offline stack must supply the same verified
 bundle: `node scripts/check-standalone-egress.mjs <verified-bundle-directory>`.
+With that verified bundle, the probe accepts Docker Desktop's unpublished
+effective host ports only when the requested bindings still match the selected
+loopback addresses and ports. It does not treat unpublished ports as working
+host ingress; the separate installation relay remains necessary for RPC access.
 A v3 setup record created before
 image identities were recorded cannot be upgraded in place; begin a fresh
 setup directory rather than replacing its evidence. At
@@ -1262,9 +1404,14 @@ node scripts/check-standalone-restart.mjs verify /absolute/private/setup-directo
 ```
 
 The observer rechecks the verified bundle, private prepared inputs, live
-container image IDs and Compose paths, and the same named volumes. Verification
-requires each service's container ID to remain stable and start time to advance, the earlier finalized block to
-retain its hash at the same height, and finality to progress afterward. It
+container image IDs and Compose paths, and the same named volumes. It reads
+private inputs through bounded no-follow file descriptors and rejects unrelated
+hard links or changed files. An evidence file left with its exact private
+temporary companion after interrupted atomic publication remains readable;
+this does not authenticate the operator's approval or the ledger checkpoint by
+itself. Verification requires each service's container ID to remain stable and
+start time to advance, the earlier finalized block to retain its hash at the
+same height, and finality to progress afterward. It
 also binds the ledger network ID and observed host-port access mode across
 both snapshots. On Docker Desktop, an unpublished requested loopback port is
 accepted for this **ledger-only** observation; it is not evidence that the host
@@ -1374,7 +1521,13 @@ with injected snapshots is not local deployment or restore evidence.
    `trust-registry-api init-local-proposal-journal`, the signed-plan options,
    and an absolute `--submission-journal` path. This binds it to the reviewed
    genesis, registry ID, and contract address; do not retrofit a nonempty
-   unbound journal. For a controlled transition, make a private byte-for-byte
+   unbound journal. A bound journal with a missing state file now fails closed
+   rather than recreating empty history; a running API also refuses removal
+   or substitution of its checked binding. Losing both files while the API
+   is stopped is still an unresolved recovery incident, not permission to
+   initialize a new journal or resubmit. Keep an independently controlled
+   backup and follow the reviewed #220 recovery policy. For a controlled
+   transition, make a private byte-for-byte
    backup of the journal, its `.binding` sidecar, and referenced segments, then run
    `trust-registry-api reconcile-local-proposal` with the signed-plan options,
    exact role/authorization ID, and `--submission-journal` absolute path.
@@ -1427,6 +1580,36 @@ documents a historical container and funding flow, but points to
 [`midnight-examples`](https://github.com/midnightntwrk/midnight-examples)
 for maintained tooling. Development genesis wallets and mnemonic examples are
 not production secrets or public-network security guidance.
+
+### Ambiguous proposal review
+
+Keep the API mutation path stopped when a proposal reservation has an unknown
+outcome. `trust-registry-api inspect-local-proposal-recovery` reads the bound
+private journal and signed local plan; a `reviewCandidate` result is an audit
+input, not proof of non-inclusion. If its action sequence appears invalidated,
+retain independently collected finality evidence in a private file. Use
+`draft-local-proposal-recovery-decision --finality-evidence ABSOLUTE_PATH
+--evidence-reference REF` with the same signed-plan, role, authorization ID,
+and journal arguments as `inspect` to produce canonical unsigned JSON. The
+reviewer must inspect the candidate and evidence, then detached-sign the exact
+saved bytes. The signed decision names the reserved action sequence, kind,
+and payload hash so the reviewer can compare the intended action with the
+private journal; the candidate digest also binds the full report. This is the
+`tr-local-proposal-recovery-decision-v2` draft format; earlier unsigned drafts
+must be regenerated and reviewed rather than reinterpreted as v2.
+`verify-local-proposal-recovery-decision` takes the same inputs
+plus `--recovery-decision` and `--recovery-signature` absolute paths. Its output
+explicitly reports `finalityAuthenticated: false`, `releaseQualified: false`,
+and `retryPermitted: false`. Neither command changes the journal or reopens
+proposal submissions. The draft timestamp is not the reviewer signing time.
+If the finalized checkpoint advances while the reviewer works, verification
+may reject the old candidate; do not weaken its exact-byte binding or treat
+the later read as non-inclusion proof. The recovery reviewer and plan reviewer
+are currently the same pinned key; #220 must settle separation of duties
+before any release path is enabled. Do not use a null indexer read, elapsed
+time, or a new journal path as recovery authority. Issue #220 remains the stop
+gate until a
+reviewed finality policy, durable tombstone, and operator recovery path exist.
 
 ## Evidence Ledger And Stop Rules
 

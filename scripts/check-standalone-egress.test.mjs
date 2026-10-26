@@ -235,6 +235,7 @@ test("standalone offline probe requires a verified v3-v6 bundle", async () => {
   }));
   assert.equal(expected.sourceRevision, sourceRevision);
   assert.equal(expected.allowOffline, true);
+  assert.equal(expected.allowUnpublishedHostPorts, true);
   assert.equal(expected.images, images);
   assert.equal(expected.composeFiles.length, 2);
   await assert.rejects(verifiedOfflineEgressTopology(".", async () => ({

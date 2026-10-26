@@ -1,7 +1,7 @@
 # Trust Registry Knowledge Base
 
 Status: working knowledge snapshot
-Updated: 2026-10-19
+Updated: 2026-10-24
 
 ## Purpose
 
@@ -11,6 +11,63 @@ This document is the repo-local execution snapshot for
 It records the current code surface, validation baseline, dependency posture,
 backlog posture, and the next implementation direction. It is intentionally
 shorter-lived and more action-oriented than the normative specification.
+
+## October 24 2026 API Egress Probe Checkpoint
+
+The unpublished local API egress probe now uses one disposable bridge canary
+for both TCP and synthetic DNS/UDP. Same-image positive controls before and
+after the running API attempt make a failed route check meaningful without
+requiring public Internet access. Its unit tests and a localhost DNS protocol
+test pass, but no approved API is running on the b17 pre-deployment stack.
+This is probe implementation, not observed offline API or actor evidence:
+Docker embedded DNS recursion, other protocols, wallet/browser paths, and
+independent finality remain unqualified. Kubernetes/Helm are optional and
+not 0.1.0 release criteria.
+
+## October 24 2026 Exact-Source b18 Staging Checkpoint
+
+- The signed `8cd1de8` source has a separately verified v6 install bundle:
+  inventory SHA-256 `10bfed0f812bb6f828d04609b40f09c33a1aa8034ad35148a801c3348ac13fa4`,
+  ten packed packages, six OCI archives, and 18 proof-parameter files.
+  Its packed API contains the current proposal-quorum preflight and recovery
+  candidate modules. This establishes install-byte integrity, not deployment.
+- The dedicated b18 node/indexer/prover bridge matched the pinned images and
+  Compose bytes and passed a bridge-limited canary egress probe. The private
+  node-reported genesis candidate and proposed pin remain untrusted; the
+  temporary install relay was removed. The b17 and b18 containers are stopped
+  with their volumes and private evidence preserved. No contract, API, or
+  portal has been deployed to b18.
+- The b18 private review packet records the source, inventory, candidate, and
+  pin digests for human review. The reviewer must independently verify the
+  chain-spec/genesis reference and detached-sign the later wizard-generated
+  approval bytes. Neither a chat approval nor this packet closes that gate.
+  #220 recovery, live finalized readback, maintenance approval, offline actor
+  journeys, restore, and independent security review remain open.
+
+## October 24 2026 Local Issuer Reservation Checkpoint
+
+- The API now checks action-scoped maintainer quorum and current registered key
+  state against its supplied finalized ledger before reserving any of the five
+  governed proposal roles. A synthetic local-ledger HTTP test proves that an
+  insufficient quorum or unavailable reader leaves the bound file journal
+  untouched, and that finalized issuer resolve accepts the verified richer
+  evidence snapshot. The supplied reader is not yet independently qualified;
+  this is not real local-ledger deployment evidence or a #220 recovery approval.
+- The local issuer SDK handoff now carries its prepared action sequence, kind,
+  and payload hash into the private one-attempt journal. A missing local
+  compiled circuit fails before journal reservation. The real file-journal
+  integration test verifies that both submitted and ambiguous attempts retain
+  context across reopen without a second SDK submission.
+- The SDK, finalized reader, and provider identity are mocked in these tests.
+  Persisted context is audit evidence, not proof of non-inclusion or authority
+  to abandon a reservation. #220 remains a local RC blocker until the
+  original action's inability to execute is independently authenticated and
+  an operator-reviewed durable decision is security-reviewed. #219 still
+  needs a real deployed API and offline actor journeys; Helm is optional.
+- New reservations in a deployment-bound proposal journal must carry the
+  prepared action sequence, kind, and payload hash. Missing context fails
+  before any journal write or SDK call. Older context-free entries remain
+  readable and blocking, not eligible for an inferred recovery decision.
 
 ## October 19 2026 Local Journal Recovery Checkpoint
 
@@ -2222,3 +2279,88 @@ actual loopback RPC port. The generated pin remains explicitly untrusted;
 the independent reviewer must still derive and approve genesis from the
 chain specification before wizard observation and detached approval signing.
 This source change is newer than the b12 install and does not requalify it.
+
+As of 2026-10-24, b17 is the latest retained verified-staged v6 development
+installation. Its inventory SHA-256
+`51bdd796170f93953ff7a08d21c999227dddeec97b4d275f0cb32d06f3457e31`
+is bound to signed source `3424799e3142520f9041f7ebbcd75a6327b67b77`.
+The dedicated node/indexer/proof bridge is running. A pre-deployment restart
+retained the finalized height-69 hash and advanced to height 77. The b17
+genesis candidate and proposed pin remain unsigned; deployment, committee
+transition, offline actor journeys, and restore remain pending. The earlier
+b16 installation provided a positive-control HTTPS canary and internal-bridge
+HTTPS/DNS denial observation, but that observation does not qualify b17 or a
+deployed runtime. These are self-attested development observations, not
+clean-host install, deployed contract, actor, or restore qualification. The
+b15/b16 private volumes and evidence remain preserved. Later local source
+changes require another exact-head bundle and review.
+
+For #220, the read-only v2 recovery report now binds the exact approved API
+plan digest and journal attempt digest, but never releases a reservation. The
+installed indexer public-data provider's `queryContractState` returns a
+deserialized contract state at a requested block hash without an accompanying
+machine-verifiable state proof. The current reader pairs that response with a
+pinned local node's finalized block hash; the pairing does not by itself
+authenticate the absence of a proposal record against a hostile or faulty
+indexer. Do not implement a journal unlock using a null read, elapsed time,
+or this candidate report alone. A separately approved non-inclusion evidence
+policy, signed operator decision, durable no-replay record, adversarial tests,
+and independent security review remain required.
+
+The local journal reader rejects unexpected hard links, non-private ownership
+or permissions, and files whose inode or metadata changes during a bounded
+read. A two-link deployment binding remains readable only when its companion
+has the exact private temporary filename and inode left between atomic link
+publication and temporary-name cleanup; other binding links still fail closed.
+This protects the stored reservation input and avoids a permanent outage after
+that crash window. It does not authenticate finalized non-inclusion or
+authorize retry, deletion, or release of an ambiguous attempt.
+
+The b17 observation above is historical. The later retained b19 install is
+source-matched to signed `f48fbb9`; its inventory SHA-256 is
+`d72798c39a414bd3caf2ab2c11cb3f2926909823f2f9054344f48e2bcbef8c14`.
+Its stopped bridge, unsigned genesis packet, and pre-deployment canary egress
+check are development evidence only. The subsequent binding crash-recovery
+fix and RC evidence correction supersede b19 as an exact-source candidate.
+Preserve its private evidence and volumes until an independently approved
+replacement packet and explicit cleanup decision exist.
+
+For #219 availability, a settled `null` from the finalized reader now denies
+the current request and permits one new read after a one-second cooldown.
+The new read must independently pass every pinned snapshot and ledger check;
+no cached or fixture state is served. Reader exceptions, invalid state,
+snapshot mismatches, and a timed-out read still latch until process restart.
+A `null` is neither proof of proposal non-inclusion nor permission to clear
+the #220 reservation gate. This is a local unit-tested behavior, not evidence
+of live indexer recovery or deployed offline runtime.
+
+The applicant portal now distinguishes current local-ledger lookups from
+fixture-only historical evidence views. In confirmed local-ledger mode it
+offers exact current authorization and recognition queries, labels their
+responses as unverified API claims, and does not expose historical controls.
+Unavailable complete-list projections render as unavailable rather than zero
+trusted members. Malformed active-list responses fail closed instead of
+populating public inspection cards. Portal unit tests, typecheck, lint, and
+dependency audit passed locally on the signed current-portal branch; these
+checks do not establish deployed local-ledger readback or offline actor
+journeys for #219. Kubernetes/Helm remain optional deployment paths, not
+0.1.0 qualification requirements.
+
+For #220, the current real-journal issuer HTTP test rejects an insufficient
+quorum before reservation, but uses a simulator-backed finalized reader.
+The reserved-attempt candidate report remains read-only: its indexer state
+has no authenticated absence proof. A future release of a reservation must
+also survive node restore without letting the original signed sequence become
+valid again, bind the signed decision to the exact journal attempt under lock,
+and prevent direct writers from substituting an unverified sequence context.
+The operator recovery-evidence policy and independent security review remain
+open; no journal release is implemented or authorized by this note.
+
+On 2026-10-24, #219 and #90 remained open. The sibling VC checkout's
+`@midnight-ntwrk/midnight-did-credentials-status-registry` manifest still
+declared `private: true`; a registry lookup for that exact package returned
+404 to this client. This does not prove the package is unavailable to every
+operator, but it does not provide a published VC-owned live status-authority
+adapter for the Trust Registry RC. Do not copy the sibling's private source
+into this repository or count existing simulator, portal, or API tests as
+deployed offline DID/VC/status actor-journey evidence.

@@ -1061,6 +1061,48 @@ describe("trust registry contract", () => {
     expect(simulator.contract.impureCircuits).not.toHaveProperty("initializeRegistry");
   });
 
+  it("invalidates an unsubmitted proposal signature after another governed action advances the sequence", () => {
+    const registry = createInitializedRegistryFixture(71);
+    const { simulator, registryId, bootstrapMaintainer, bootstrapPublicKey } = registry;
+    const issuer = createIssuerAuthorizationFixture("recovery-sequence");
+    const verifier = registerIssuerEvidenceVerifier(registry);
+    const proposal = issuerProposalProof(registry, issuer, verifier);
+    const reservedSequence = simulator.getLedger().governanceActionCount;
+    const reservedSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
+      bootstrapMaintainer.seed, registryId, simulator.getLedger().governancePolicyCommitment,
+      PROPOSE_ISSUER_ACTION_KIND, proposal.payloadHash, reservedSequence,
+    );
+
+    const auditPayload = labelToBytes32("recovery:advance-sequence");
+    const auditSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
+      bootstrapMaintainer.seed, registryId, simulator.getLedger().governancePolicyCommitment,
+      GENERIC_AUDIT_ACTION_KIND, auditPayload, reservedSequence,
+    );
+    simulator.authorizeMaintainerAuditEvent(
+      bootstrapMaintainer.keyId, bootstrapPublicKey, auditSignature, auditPayload,
+    );
+    expect(simulator.getLedger().governanceActionCount).toBe(reservedSequence + 1n);
+    expect(simulator.getLedger().issuerProposalEvidenceRecords.member(issuer.authorizationId)).toBe(false);
+
+    const propose = (signature: typeof reservedSignature) => simulator.proposeIssuerAuthorization(
+      bootstrapMaintainer.keyId, bootstrapPublicKey, signature,
+      issuer.authorizationId, issuer.subjectDidCommitment, issuer.resourceType,
+      issuer.resourceId, issuer.policyId, issuer.statusPolicyBindingCommitment,
+      issuer.trustLevel, issuer.evidenceHash, proposal.verifierAuthorizationId,
+      proposal.verifierKeyIdCommitment, proposal.evidenceSignature,
+    );
+    expect(() => propose(reservedSignature)).toThrow(/invalid jubjub schnorr signature/i);
+    expect(simulator.getLedger().governanceActionCount).toBe(reservedSequence + 1n);
+    expect(simulator.getLedger().issuerProposalEvidenceRecords.member(issuer.authorizationId)).toBe(false);
+
+    const freshSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
+      bootstrapMaintainer.seed, registryId, simulator.getLedger().governancePolicyCommitment,
+      PROPOSE_ISSUER_ACTION_KIND, proposal.payloadHash, reservedSequence + 1n,
+    );
+    propose(freshSignature);
+    expect(simulator.getLedger().issuerProposalEvidenceRecords.member(issuer.authorizationId)).toBe(true);
+  });
+
   it("governs maintainer membership through proposal, approval, activation, suspension, revocation, and archival", () => {
     const registry = createInitializedRegistryFixture(11);
     const {

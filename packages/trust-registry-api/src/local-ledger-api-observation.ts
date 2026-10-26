@@ -57,14 +57,18 @@ async function request(origin: string, path: string, expectedStatus: number,
 export async function observeLocalApiCurrentReads(input: {
   source: TrustRegistryApiStateSource;
   apiOrigin: string;
+  expectedPlanSha256?: string;
   fetchImpl?: typeof fetch;
 }): Promise<{
-  format: "tr-local-api-current-read-observation-v1";
+  format: "tr-local-api-current-read-observation-v3";
   observedAt: string;
   apiOrigin: string;
   registryId: string;
+  sourceFinalizedBlockHash: string;
   currentEpochId: string;
   counts: Record<"issuer" | "verifier" | "auditor" | "recognition", number>;
+  resolvedLookups: Record<"issuer" | "verifier" | "auditor" | "recognition", number>;
+  ambiguousLookups: Record<"issuer" | "verifier" | "auditor", number>;
   releaseQualified: false;
   scope: string;
 }> {
@@ -75,10 +79,18 @@ export async function observeLocalApiCurrentReads(input: {
   const fetchImpl = input.fetchImpl ?? fetch;
   const selection = await input.source.loadCurrentLedgerSelection();
   const { snapshot } = selection;
+  if (!/^0x[0-9a-f]{64}$/u.test(selection.finalizedBlockHash)
+    || /^0x0{64}$/u.test(selection.finalizedBlockHash)) {
+    throw new Error("Local API source lacks a finalized checkpoint hash");
+  }
   const health = await request(origin, "/health", 200, fetchImpl) as Record<string, unknown>;
   if (health.status !== "ok" || health.sourceMode !== "local-ledger"
     || health.registryId !== snapshot.registry.registryId
-    || health.generatedAt !== snapshot.generatedAt) {
+    || health.generatedAt !== snapshot.generatedAt
+    || health.finalizedBlockHash !== selection.finalizedBlockHash
+    || (input.expectedPlanSha256 !== undefined
+      && (!/^[0-9a-f]{64}$/u.test(input.expectedPlanSha256)
+        || health.localPlanSha256 !== input.expectedPlanSha256))) {
     throw new Error("Local API health does not identify the signed-plan registry source");
   }
   const summary = await request(origin, "/v1/registry/summary", 200, fetchImpl);
@@ -95,7 +107,13 @@ export async function observeLocalApiCurrentReads(input: {
   }
 
   const counts = { issuer: 0, verifier: 0, auditor: 0, recognition: 0 };
+  const resolvedLookups = { issuer: 0, verifier: 0, auditor: 0, recognition: 0 };
+  const ambiguousLookups = { issuer: 0, verifier: 0, auditor: 0 };
   for (const role of ["issuer", "verifier", "auditor"] as const) {
+    const listProblem = await request(origin, `/v1/authorizations/${role}`, 503, fetchImpl) as Record<string, unknown>;
+    if (typeof listProblem.type !== "string" || !listProblem.type.endsWith("/local-list-projection-unavailable")) {
+      throw new Error(`Local API ${role} list did not fail closed`);
+    }
     const entries = snapshot[`${role}Entries`];
     const entryIds = new Set(entries.map((entry) => entry.authorization.authorizationId));
     if ([...selection.authorizationIds[role]].some((id) => !entryIds.has(id))) {
@@ -108,8 +126,10 @@ export async function observeLocalApiCurrentReads(input: {
     }
     for (const entry of entries) {
       const id = encodeURIComponent(entry.authorization.authorizationId);
-      const observed = await request(origin, `/v1/authorizations/${role}/${id}`, 200, fetchImpl);
-      if (!isDeepStrictEqual(observed, jsonProjection(entry))) {
+      const selected = selection.authorizationIds[role].has(entry.authorization.authorizationId);
+      const observed = await request(origin, `/v1/authorizations/${role}/${id}`,
+        selected ? 200 : 404, fetchImpl);
+      if (selected && !isDeepStrictEqual(observed, jsonProjection(entry))) {
         throw new Error(`Local API ${role} record differs from signed-plan readback`);
       }
       const currentMatches = entries.filter((candidate) =>
@@ -118,23 +138,40 @@ export async function observeLocalApiCurrentReads(input: {
         && candidate.authorization.resourceId === entry.authorization.resourceId
         && candidate.authorization.resourceType === entry.authorization.resourceType
         && candidate.authorization.trustLevel === entry.authorization.trustLevel);
-      if (currentMatches.length > 1) {
-        throw new Error(`Local API ${role} finalized selection is ambiguous`);
-      }
+      let expectedStatus = 404;
+      if (currentMatches.length === 1) expectedStatus = 200;
+      if (currentMatches.length > 1) expectedStatus = 409;
       const current = await request(origin, "/v1/authorizations/resolve",
-        currentMatches.length === 0 ? 404 : 200, fetchImpl, {
+        expectedStatus, fetchImpl, {
           role, subjectDid: entry.authorization.subjectDid,
           resourceId: entry.authorization.resourceId,
           resourceType: entry.authorization.resourceType,
           trustLevel: entry.authorization.trustLevel,
         });
+      if (currentMatches.length > 1) {
+        const problem = typeof current === "object" && current !== null
+          ? current as Record<string, unknown> : null;
+        if (problem === null || Object.keys(problem).sort().join("\0") !== "status\0title\0type"
+          || typeof problem.type !== "string"
+          || !problem.type.endsWith("/ambiguous-current-scope")
+          || problem.title !== "ambiguous current scope" || problem.status !== 409) {
+          throw new Error(`Local API ${role} ambiguous resolution did not fail closed`);
+        }
+        ambiguousLookups[role] += 1;
+      }
       if (currentMatches.length === 1 && !isDeepStrictEqual(current, jsonProjection(currentMatches[0]))) {
         throw new Error(`Local API ${role} current resolution differs from finalized selection`);
       }
+      if (currentMatches.length === 1) resolvedLookups[role] += 1;
     }
     counts[role] = entries.length;
   }
   const recognitions = snapshot.recognitionEntries;
+  const recognitionListProblem = await request(origin, "/v1/recognitions", 503, fetchImpl) as Record<string, unknown>;
+  if (typeof recognitionListProblem.type !== "string"
+    || !recognitionListProblem.type.endsWith("/local-list-projection-unavailable")) {
+    throw new Error("Local API recognition list did not fail closed");
+  }
   const recognitionIds = new Set(recognitions.map((entry) => entry.recognition.recognitionId));
   if ([...selection.recognitionIds].some((id) => !recognitionIds.has(id))) {
     throw new Error("Local API recognition finalized selection references a missing snapshot entry");
@@ -146,8 +183,10 @@ export async function observeLocalApiCurrentReads(input: {
   }
   for (const entry of recognitions) {
     const id = encodeURIComponent(entry.recognition.recognitionId);
-    const observed = await request(origin, `/v1/recognitions/${id}`, 200, fetchImpl);
-    if (!isDeepStrictEqual(observed, jsonProjection(entry))) {
+    const selected = selection.recognitionIds.has(entry.recognition.recognitionId);
+    const observed = await request(origin, `/v1/recognitions/${id}`,
+      selected ? 200 : 404, fetchImpl);
+    if (selected && !isDeepStrictEqual(observed, jsonProjection(entry))) {
       throw new Error("Local API recognition differs from signed-plan readback");
     }
     const currentMatches = recognitions.filter((candidate) =>
@@ -172,6 +211,7 @@ export async function observeLocalApiCurrentReads(input: {
     if (currentMatches.length === 1 && !isDeepStrictEqual(current, jsonProjection(currentMatches[0]))) {
       throw new Error("Local API recognition current resolution differs from finalized selection");
     }
+    if (currentMatches.length === 1) resolvedLookups.recognition += 1;
   }
   counts.recognition = recognitions.length;
 
@@ -182,14 +222,21 @@ export async function observeLocalApiCurrentReads(input: {
   if (!isDeepStrictEqual(await input.source.loadCurrentLedgerSelection(), selection)) {
     throw new Error("Finalized local selection changed during API readback observation");
   }
+  const finalHealth = await request(origin, "/health", 200, fetchImpl);
+  if (!isDeepStrictEqual(finalHealth, health)) {
+    throw new Error("Local API health changed during current-read observation");
+  }
   return {
-    format: "tr-local-api-current-read-observation-v1",
+    format: "tr-local-api-current-read-observation-v3",
     observedAt: new Date().toISOString(),
     apiOrigin: origin,
     registryId: snapshot.registry.registryId,
+    sourceFinalizedBlockHash: selection.finalizedBlockHash,
     currentEpochId: snapshot.currentEpoch.epochId,
     counts,
+    resolvedLookups,
+    ambiguousLookups,
     releaseQualified: false,
-    scope: "current HTTP resolution and all-record by-ID readback only; counts include all records, not just current IDs; not mutation, browser, DID/VC/status, egress, or independent finality evidence",
+    scope: "selected by-ID readback and counted successful current HTTP resolve attempts; ambiguous lookups verify fail-closed 409 only; counts include stale snapshot records and repeated lookup scopes; checkpoint hash identifies the source view, not the API process; list and stale by-ID routes fail closed; not mutation, browser, DID/VC/status, egress, or independent finality evidence",
   };
 }

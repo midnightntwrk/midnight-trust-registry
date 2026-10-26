@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 
 import { z, ZodError } from "zod";
 
+import { buildSnapshotSummary } from "@midnight-ntwrk/trust-registry-cli";
 import { DecisionEvidenceSchema, SignedPendingApplicationSchema } from "@midnight-ntwrk/trust-registry-domain";
 import { encodeCompactActionKind } from "@midnight-ntwrk/trust-registry-contract";
 import { EvidenceVerifierDidResolutionUnavailableError } from "@midnight-ntwrk/trust-registry-integration";
@@ -118,6 +119,11 @@ import {
   type ProposalRole,
 } from "./compact-proposal-observation.js";
 import {
+  assertCurrentProposalQuorum,
+  InvalidProposalQuorumError,
+  StaleProposalQuorumContextError,
+} from "./governed-proposal-quorum-preflight.js";
+import {
   decodeVerifierEvidenceVerifierSignature,
   GovernedVerifierProposalPrepareRequestSchema,
   GovernedVerifierProposalRejectedError,
@@ -169,6 +175,7 @@ import {
   ProposalSubmissionBlockedByReservationError,
   ProposalSubmissionCapacityError,
   ProposalSubmissionConflictError,
+  ProposalSubmissionContextRequiredError,
   ProposalSubmissionOutcomeUnknownError,
   type GovernedProposalSubmissionRole,
   type ProposalSubmissionJournal,
@@ -230,6 +237,8 @@ class HttpProblem extends Error {
 
 export type TrustRegistryApiServerOptions = {
   source: TrustRegistryApiStateSource;
+  /** Digest of the signed local plan bytes verified when this server started. */
+  localPlanSha256?: string;
   corsPolicy?: "public" | "none";
   clock?: () => string;
   problemBaseUri?: string;
@@ -800,6 +809,11 @@ const performMutation = async (
 export const createTrustRegistryApiServer = (
   options: TrustRegistryApiServerOptions,
 ): Server => {
+  if (options.localPlanSha256 !== undefined
+    && (options.source.mode !== "local-ledger"
+      || !/^[0-9a-f]{64}$/u.test(options.localPlanSha256))) {
+    throw new Error("Startup plan digest requires the local-ledger source and canonical SHA-256");
+  }
   if (options.applicationVp !== undefined
     && (options.governedIssuerProposals !== undefined || options.governedVerifierProposals !== undefined
       || options.governedAuditorProposals !== undefined || options.governedMaintainerProposals !== undefined)
@@ -867,6 +881,13 @@ export const createTrustRegistryApiServer = (
       throw jsonProblem(problemBaseUri, "historical-decisions-out-of-scope", 501,
         "historical decisions are outside the local 0.1.0 profile",
         "Only current finalized authorization and recognition lookups are supported.");
+    }
+  };
+  const requireCompleteLocalListProjection = (): void => {
+    if (options.source.mode === "local-ledger") {
+      throw jsonProblem(problemBaseUri, "local-list-projection-unavailable", 503,
+        "complete local ledger list projection unavailable",
+        "Authorization and recognition lists require a complete finalized checkpoint-bound projection.");
     }
   };
   const trqpAdapter = new TrustRegistryTrqpAdapter(
@@ -939,6 +960,11 @@ export const createTrustRegistryApiServer = (
       throw jsonProblem(problemBaseUri, "proposal-submission-conflict", 409,
         "proposal submission conflicts with recorded evidence or event");
     }
+    if (error instanceof ProposalSubmissionContextRequiredError) {
+      throw jsonProblem(problemBaseUri, "proposal-submission-context-unavailable", 503,
+        "proposal submission action context unavailable",
+        "No proposal was reserved or submitted; contact the operator.");
+    }
     if (error instanceof ProposalSubmissionCapacityError) {
       throw jsonProblem(problemBaseUri, "proposal-submission-capacity", 503,
         "proposal submission journal capacity exhausted",
@@ -1009,6 +1035,32 @@ export const createTrustRegistryApiServer = (
     }
   };
 
+  const requireCurrentProposalQuorum = async (
+    context: Parameters<typeof assertCurrentProposalQuorum>[1],
+    signers: Parameters<typeof assertCurrentProposalQuorum>[2],
+  ): Promise<void> => {
+    if (options.source.mode !== "local-ledger" || options.proposalSubmissionJournal === undefined) return;
+    const reader = options.source.readFinalizedProposalLedger;
+    if (reader === undefined) {
+      throw jsonProblem(problemBaseUri, "governed-proposal-preflight-unavailable", 503,
+        "governed proposal preflight unavailable");
+    }
+    try {
+      await assertCurrentProposalQuorum(reader, context, signers);
+    } catch (error) {
+      if (error instanceof StaleProposalQuorumContextError) {
+        throw jsonProblem(problemBaseUri, "stale-governed-proposal", 409,
+          "stale governed proposal", "The signed proposal context no longer matches current ledger state.");
+      }
+      if (error instanceof InvalidProposalQuorumError) {
+        throw jsonProblem(problemBaseUri, "invalid-governed-signature", 403,
+          "invalid governed signature", "The maintainer signer set is not active for this action threshold.");
+      }
+      throw jsonProblem(problemBaseUri, "governed-proposal-preflight-unavailable", 503,
+        "governed proposal preflight unavailable");
+    }
+  };
+
   const resolveProposal = async (
     request: IncomingMessage,
     response: ServerResponse,
@@ -1047,7 +1099,9 @@ export const createTrustRegistryApiServer = (
       writeJson(response, 200, { state: "not-observed" });
       return;
     }
-    const record = GovernedProposalObservationSchema.parse(observed);
+    const record = GovernedProposalObservationSchema.parse({
+      eventHash: observed.eventHash, evidenceCommitment: observed.evidenceCommitment,
+    });
     if (record.evidenceCommitment !== body.evidence.commitment) {
       throw jsonProblem(problemBaseUri, "proposal-evidence-mismatch", 409,
         "proposal evidence mismatch", "The ledger proposal belongs to another evidence commitment.");
@@ -1092,7 +1146,13 @@ export const createTrustRegistryApiServer = (
       }
 
       if (method === "GET" && segments.length === 1 && segments[0] === "health") {
-        const summary = await loadRegistrySummary(options.source);
+        const selection = options.source.mode === "local-ledger"
+          ? await options.source.loadCurrentLedgerSelection?.() : undefined;
+        if (options.source.mode === "local-ledger" && selection === undefined) {
+          throw new CurrentLedgerSelectionUnavailableError();
+        }
+        const summary = selection === undefined
+          ? await loadRegistrySummary(options.source) : buildSnapshotSummary(selection.snapshot);
         writeJson(
           response,
           200,
@@ -1101,6 +1161,8 @@ export const createTrustRegistryApiServer = (
             sourceMode: options.source.mode,
             generatedAt: summary.generatedAt,
             registryId: summary.registryId,
+            ...(options.localPlanSha256 === undefined ? {} : { localPlanSha256: options.localPlanSha256 }),
+            ...(selection === undefined ? {} : { finalizedBlockHash: selection.finalizedBlockHash }),
           }),
         );
         return;
@@ -1392,7 +1454,9 @@ export const createTrustRegistryApiServer = (
           writeJson(response, 200, { state: "not-observed" }, false);
           return;
         }
-        const record = GovernedProposalObservationSchema.parse(observed);
+        const record = GovernedProposalObservationSchema.parse({
+          eventHash: observed.eventHash, evidenceCommitment: observed.evidenceCommitment,
+        });
         if (record.evidenceCommitment !== body.evidenceCommitment) {
           throw jsonProblem(problemBaseUri, "proposal-evidence-mismatch", 409,
             "proposal evidence mismatch", "The ledger proposal belongs to another evidence commitment.");
@@ -1459,6 +1523,7 @@ export const createTrustRegistryApiServer = (
                   "invalid governed signature");
               }
               requireValidProposalSigners(current, signers);
+              await requireCurrentProposalQuorum(current, signers);
               await port.preflightSubmission?.(
                 binding, body.evidenceCommitment, signers, evidenceVerifierSignature, current,
               );
@@ -1537,6 +1602,7 @@ export const createTrustRegistryApiServer = (
         }
         requireValidProposalSigners(signerContext, signers);
         try {
+          await requireCurrentProposalQuorum(signerContext, signers);
           await port.preflightSubmission?.(authorizationId, body.evidence, signers,
             evidenceVerifierSignature, signerContext);
           const receipt = GovernedMembershipActionReceiptSchema.parse(
@@ -1610,6 +1676,7 @@ export const createTrustRegistryApiServer = (
         }
         requireValidProposalSigners(signerContext, signers);
         try {
+          await requireCurrentProposalQuorum(signerContext, signers);
           await port.preflightSubmission?.(authorizationId, body.evidence, signers,
             evidenceVerifierSignature, signerContext);
           const receipt = GovernedMembershipActionReceiptSchema.parse(
@@ -1683,6 +1750,7 @@ export const createTrustRegistryApiServer = (
         }
         requireValidProposalSigners(signerContext, signers);
         try {
+          await requireCurrentProposalQuorum(signerContext, signers);
           await port.preflightSubmission?.(authorizationId, body.evidence, signers,
             evidenceVerifierSignature, signerContext);
           const receipt = GovernedMembershipActionReceiptSchema.parse(
@@ -1756,6 +1824,7 @@ export const createTrustRegistryApiServer = (
         }
         requireValidProposalSigners(signerContext, signers);
         try {
+          await requireCurrentProposalQuorum(signerContext, signers);
           await port.preflightSubmission?.(maintainerId, body.evidence, signers,
             evidenceVerifierSignature, signerContext);
           const receipt = GovernedMembershipActionReceiptSchema.parse(
@@ -2388,6 +2457,7 @@ export const createTrustRegistryApiServer = (
         const query = TrustRegistryApiAuthorizationListQuerySchema.parse(
           Object.fromEntries(url.searchParams),
         );
+        requireCompleteLocalListProjection();
         const entries = await listAuthorizationEntries(options.source, role, query);
         writeJson(
           response,
@@ -2535,6 +2605,7 @@ export const createTrustRegistryApiServer = (
         const query = TrustRegistryApiRecognitionListQuerySchema.parse(
           Object.fromEntries(url.searchParams),
         );
+        requireCompleteLocalListProjection();
         const entries = await listRecognitionEntries(options.source, query);
         writeJson(
           response,

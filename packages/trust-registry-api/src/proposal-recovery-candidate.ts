@@ -1,9 +1,15 @@
+import { Buffer } from "node:buffer";
+
+import { encodeCompactActionKind } from "@midnight-ntwrk/trust-registry-contract";
 import type { FinalizedRegistryLedgerView } from "@midnight-ntwrk/trust-registry-integration";
 import { resolveCompactProposalObservation } from "./compact-proposal-observation.js";
 import { proposalAttemptDigest, type ProposalSubmissionAttempt } from "./proposal-submission-journal.js";
 
 type RecoveryView = Pick<FinalizedRegistryLedgerView,
   "networkId" | "finalizedBlockHash" | "contractAddress" | "ledger">;
+
+const proposalActionKind = (role: ProposalSubmissionAttempt["role"]): string =>
+  `0x${Buffer.from(encodeCompactActionKind(`tr:${role}:propose`)).toString("hex")}`;
 
 export type ProposalRecoveryCandidateReason =
   | "matching-record"
@@ -22,14 +28,16 @@ export async function assessProposalRecoveryCandidate(input: {
   contractAddress: string;
   planExpectedGenesisHash: string;
   planSourceRevision: string;
+  approvedPlanSha256: string;
   journalBindingDigest: string;
 }): Promise<{
-  format: "tr-local-proposal-recovery-candidate-v1";
+  format: "tr-local-proposal-recovery-candidate-v2";
   networkId: "undeployed";
   registryId: string;
   contractAddress: string;
   planExpectedGenesisHash: string;
   planSourceRevision: string;
+  approvedPlanSha256: string;
   journalBindingDigest: string;
   finalizedBlockHash: string;
   role: ProposalSubmissionAttempt["role"];
@@ -55,15 +63,15 @@ export async function assessProposalRecoveryCandidate(input: {
     || !/^0x[0-9a-f]{64}$/u.test(input.planExpectedGenesisHash.toLowerCase())
     || /^0x0{64}$/u.test(input.planExpectedGenesisHash.toLowerCase())
     || !/^[0-9a-f]{40}$/u.test(input.planSourceRevision)
+    || !/^[0-9a-f]{64}$/u.test(input.approvedPlanSha256)
     || !/^0x[0-9a-f]{64}$/u.test(input.journalBindingDigest)
     || !/^0x[0-9a-f]{64}$/u.test(view.finalizedBlockHash.toLowerCase())
     || /^0x0{64}$/u.test(view.finalizedBlockHash.toLowerCase())
-    || typeof view.ledger.governanceActionCount !== "bigint") {
+    || typeof view.ledger.governanceActionCount !== "bigint"
+    || view.ledger.governanceActionCount < 0n
+    || view.ledger.governanceActionCount >= (1n << 64n)) {
     throw new Error("Recovery candidate requires the pinned finalized local ledger view");
   }
-  const observed = await resolveCompactProposalObservation(
-    async () => view.ledger, input.registryId, attempt.role, attempt.authorizationId,
-  );
   const context = attempt.reservationContext;
   const sequence = context?.actionSequence;
   if (sequence !== undefined
@@ -72,6 +80,12 @@ export async function assessProposalRecoveryCandidate(input: {
       || !/^0x[0-9a-f]{64}$/u.test(context?.actionPayloadHash ?? ""))) {
     throw new Error("Recovery reservation action sequence is invalid");
   }
+  if (context !== undefined && context.actionKind !== proposalActionKind(attempt.role)) {
+    throw new Error("Recovery reservation action kind does not match its proposal role");
+  }
+  const observed = await resolveCompactProposalObservation(
+    async () => view.ledger, input.registryId, attempt.role, attempt.authorizationId,
+  );
   const reason: ProposalRecoveryCandidateReason = observed !== null
     ? observed.evidenceCommitment !== attempt.evidenceCommitment
       || (attempt.eventHash !== null && observed.eventHash !== attempt.eventHash)
@@ -82,12 +96,13 @@ export async function assessProposalRecoveryCandidate(input: {
           : view.ledger.governanceActionCount === BigInt(sequence) ? "sequence-still-live"
             : "sequence-invalidated-record-absent";
   return {
-    format: "tr-local-proposal-recovery-candidate-v1",
+    format: "tr-local-proposal-recovery-candidate-v2",
     networkId: "undeployed",
     registryId: input.registryId,
     contractAddress: input.contractAddress.toLowerCase(),
     planExpectedGenesisHash: input.planExpectedGenesisHash.toLowerCase(),
     planSourceRevision: input.planSourceRevision,
+    approvedPlanSha256: input.approvedPlanSha256,
     journalBindingDigest: input.journalBindingDigest,
     finalizedBlockHash: view.finalizedBlockHash.toLowerCase(),
     role: attempt.role,

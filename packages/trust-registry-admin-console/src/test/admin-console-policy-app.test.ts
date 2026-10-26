@@ -18,6 +18,7 @@ describe("admin governed policy controls", () => {
     const calls: Array<{ path: string; body: unknown }> = [];
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const path = new URL(String(input)).pathname;
+      if (path === "/health") return Response.json({ status: "ok", sourceMode: "workspace", registryId: "registry:local" });
       if (path === "/v1/registry/summary") return Response.json(summary);
       if (path.startsWith("/v1/authorizations/") || path === "/v1/recognitions") {
         return Response.json({ entries: [] });

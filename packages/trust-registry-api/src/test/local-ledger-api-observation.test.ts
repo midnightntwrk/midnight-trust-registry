@@ -11,6 +11,7 @@ import type { TrustRegistryApiStateSource } from "../source.js";
 const snapshot = createDemoSnapshot({ label: "observation-route-unit" });
 const selection = {
   snapshot,
+  finalizedBlockHash: `0x${"a".repeat(64)}`,
   authorizationIds: {
     issuer: new Set([snapshot.issuerEntries[0]!.authorization.authorizationId]),
     verifier: new Set([snapshot.verifierEntries[0]!.authorization.authorizationId]),
@@ -33,12 +34,114 @@ describe("local API current-read observation (route-level only)", () => {
       const port = (server.address() as AddressInfo).port;
       const result = await observeLocalApiCurrentReads({ source, apiOrigin: `http://127.0.0.1:${port}` });
       expect(result).toMatchObject({
-        format: "tr-local-api-current-read-observation-v1",
+        format: "tr-local-api-current-read-observation-v3",
         registryId: snapshot.registry.registryId,
+        sourceFinalizedBlockHash: selection.finalizedBlockHash,
         currentEpochId: snapshot.currentEpoch.epochId,
         counts: { issuer: 2, verifier: 2, auditor: 2, recognition: 2 },
+        resolvedLookups: { issuer: 1, verifier: 1, auditor: 1, recognition: 1 },
+        ambiguousLookups: { issuer: 0, verifier: 0, auditor: 0 },
         releaseQualified: false,
       });
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("checks ambiguous current verifier scopes fail closed while reading both IDs", async () => {
+    const first = snapshot.verifierEntries[0]!;
+    const second = {
+      ...first,
+      label: snapshot.verifierEntries[1]!.label,
+      authorization: {
+        ...first.authorization,
+        authorizationId: snapshot.verifierEntries[1]!.authorization.authorizationId,
+      },
+    };
+    const ambiguousSnapshot = { ...snapshot, verifierEntries: [first, second] };
+    const ambiguousSource: TrustRegistryApiStateSource = {
+      mode: "local-ledger",
+      async loadSnapshot() { return ambiguousSnapshot; },
+      async loadCurrentLedgerSelection() {
+        return { ...selection, snapshot: ambiguousSnapshot,
+          authorizationIds: { ...selection.authorizationIds,
+            verifier: new Set([first.authorization.authorizationId, second.authorization.authorizationId]) } };
+      },
+    };
+    const server = createTrustRegistryApiServer({ source: ambiguousSource });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    try {
+      const apiOrigin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      await expect(observeLocalApiCurrentReads({ source: ambiguousSource, apiOrigin }))
+        .resolves.toMatchObject({ counts: { verifier: 2 },
+          resolvedLookups: { verifier: 0 }, ambiguousLookups: { verifier: 2 },
+          releaseQualified: false });
+      const unsafeResolution: typeof fetch = async (url, init) => {
+        const response = await fetch(url, init);
+        if (new URL(String(url)).pathname !== "/v1/authorizations/resolve"
+          || (JSON.parse(String(init?.body)) as { role: string }).role !== "verifier") return response;
+        return new Response(JSON.stringify(first), {
+          status: 200, headers: { "cache-control": "no-store" },
+        });
+      };
+      await expect(observeLocalApiCurrentReads({ source: ambiguousSource, apiOrigin,
+        fetchImpl: unsafeResolution })).rejects.toThrow(/status or cache policy/u);
+      const wrongProblem: typeof fetch = async (url, init) => {
+        const response = await fetch(url, init);
+        if (new URL(String(url)).pathname !== "/v1/authorizations/resolve"
+          || (JSON.parse(String(init?.body)) as { role: string }).role !== "verifier") return response;
+        return new Response(JSON.stringify({ type: "https://example.invalid/problems/other" }), {
+          status: 409, headers: { "cache-control": "no-store" },
+        });
+      };
+      await expect(observeLocalApiCurrentReads({ source: ambiguousSource, apiOrigin,
+        fetchImpl: wrongProblem })).rejects.toThrow(/did not fail closed/u);
+      const grantInProblem: typeof fetch = async (url, init) => {
+        const response = await fetch(url, init);
+        if (new URL(String(url)).pathname !== "/v1/authorizations/resolve"
+          || (JSON.parse(String(init?.body)) as { role: string }).role !== "verifier") return response;
+        return new Response(JSON.stringify({ ...await response.json(), authorization: first.authorization }), {
+          status: 409, headers: { "cache-control": "no-store" },
+        });
+      };
+      await expect(observeLocalApiCurrentReads({ source: ambiguousSource, apiOrigin,
+        fetchImpl: grantInProblem })).rejects.toThrow(/did not fail closed/u);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("binds current-read observation to the plan digest held by the running server", async () => {
+    const digest = "a".repeat(64);
+    expect(() => createTrustRegistryApiServer({ source: { ...source, mode: "snapshot" },
+      localPlanSha256: digest })).toThrow(/Startup plan digest/u);
+    expect(() => createTrustRegistryApiServer({ source,
+      localPlanSha256: "bad" })).toThrow(/Startup plan digest/u);
+    const server = createTrustRegistryApiServer({ source, localPlanSha256: digest });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    try {
+      const apiOrigin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      const health = await fetch(`${apiOrigin}/health`);
+      expect(await health.json()).toMatchObject({
+        localPlanSha256: digest, finalizedBlockHash: selection.finalizedBlockHash,
+      });
+      await expect(observeLocalApiCurrentReads({ source, apiOrigin,
+        expectedPlanSha256: digest })).resolves.toMatchObject({ releaseQualified: false });
+      const substitutedCheckpoint: typeof fetch = async (url, init) => {
+        const response = await fetch(url, init);
+        if (new URL(String(url)).pathname !== "/health") return response;
+        return new Response(JSON.stringify({ ...await response.json(),
+          finalizedBlockHash: `0x${"b".repeat(64)}` }), {
+          status: 200, headers: { "cache-control": "no-store" },
+        });
+      };
+      await expect(observeLocalApiCurrentReads({ source, apiOrigin,
+        expectedPlanSha256: digest, fetchImpl: substitutedCheckpoint }))
+        .rejects.toThrow(/health does not identify/u);
+      await expect(observeLocalApiCurrentReads({ source, apiOrigin,
+        expectedPlanSha256: "b".repeat(64) })).rejects.toThrow(/signed-plan registry source/u);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
@@ -116,10 +219,16 @@ describe("local API current-read observation (route-level only)", () => {
       let body: unknown;
       let status = 200;
       if (path === "/health") body = { status: "ok", sourceMode: "local-ledger",
-        registryId: snapshot.registry.registryId, generatedAt: snapshot.generatedAt };
+        registryId: snapshot.registry.registryId, generatedAt: snapshot.generatedAt,
+        finalizedBlockHash: selection.finalizedBlockHash };
       else if (path === "/v1/registry/summary") body = buildSnapshotSummary(snapshot);
       else if (path === "/v1/registry") body = snapshot.registry;
       else if (path === "/v1/epochs/current") body = snapshot.currentEpoch;
+      else if (path === "/v1/recognitions"
+        || ["issuer", "verifier", "auditor"].some((role) => path === `/v1/authorizations/${role}`)) {
+        status = 503;
+        body = { type: "https://example.invalid/problems/local-list-projection-unavailable" };
+      }
       else if (path === "/v1/authorizations/resolve") {
         const query = JSON.parse(String(init?.body)) as { role: "issuer" | "verifier" | "auditor";
           subjectDid: string };
@@ -133,17 +242,33 @@ describe("local API current-read observation (route-level only)", () => {
       else if (path.startsWith("/v1/authorizations/")) {
         const [, , , role, id] = path.split("/");
         body = role === "issuer" || role === "verifier" || role === "auditor"
-          ? snapshot[`${role}Entries`].find((entry) => entry.authorization.authorizationId === decodeURIComponent(id!))
+          ? snapshot[`${role}Entries`].find((entry) => entry.authorization.authorizationId === decodeURIComponent(id!)
+            && selection.authorizationIds[role].has(entry.authorization.authorizationId))
           : undefined;
       } else if (path.startsWith("/v1/recognitions/")) {
         const id = path.split("/").at(-1);
-        body = snapshot.recognitionEntries.find((entry) => entry.recognition.recognitionId === decodeURIComponent(id!));
+        body = snapshot.recognitionEntries.find((entry) => entry.recognition.recognitionId === decodeURIComponent(id!)
+          && selection.recognitionIds.has(entry.recognition.recognitionId));
       }
       if (body === undefined) { status = path === "/v1/epochs/resolve" ? 501 : 404; body = {}; }
       return new Response(JSON.stringify(body), { status, headers: { "cache-control": "no-store" } });
     };
     await expect(observeLocalApiCurrentReads({
       source: drifting, apiOrigin: "http://127.0.0.1:4400", fetchImpl: responding,
+    })).rejects.toThrow(/changed during API readback/u);
+
+    let checkpointReads = 0;
+    const checkpointDrift: TrustRegistryApiStateSource = {
+      ...source,
+      async loadCurrentLedgerSelection() {
+        checkpointReads += 1;
+        return checkpointReads === 1 ? selection : {
+          ...selection, finalizedBlockHash: `0x${"b".repeat(64)}`,
+        };
+      },
+    };
+    await expect(observeLocalApiCurrentReads({
+      source: checkpointDrift, apiOrigin: "http://127.0.0.1:4400", fetchImpl: responding,
     })).rejects.toThrow(/changed during API readback/u);
   });
 
@@ -219,6 +344,17 @@ describe("local API current-read observation (route-level only)", () => {
       };
       await expect(observeLocalApiCurrentReads({ source, apiOrigin: origin, fetchImpl: staleHealth }))
         .rejects.toThrow(/health does not identify/u);
+      let healthReads = 0;
+      const changedHealth: typeof fetch = async (url, init) => {
+        const response = await fetch(url, init);
+        if (new URL(String(url)).pathname !== "/health" || ++healthReads === 1) return response;
+        return new Response(JSON.stringify({ ...await response.json(),
+          generatedAt: "2020-01-01T00:00:00.000Z" }), {
+          status: 200, headers: { "cache-control": "no-store" },
+        });
+      };
+      await expect(observeLocalApiCurrentReads({ source, apiOrigin: origin,
+        fetchImpl: changedHealth })).rejects.toThrow(/health changed during/u);
       const staleSummary: typeof fetch = async (url, init) => {
         const response = await fetch(url, init);
         if (new URL(String(url)).pathname !== "/v1/registry/summary") return response;
