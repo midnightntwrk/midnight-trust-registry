@@ -59,8 +59,12 @@ results.
    have the reviewer sign the exact generated approval draft. Review and sign
    the maintenance roster separately. Do not use the demo-reference script,
    a node-reported hash alone, or an AI-generated signature as approval.
-4. **Deploy and reconcile once.** Install the approved provider and CLI in a
-   root-owned code tree that the non-root operator cannot change. Set
+4. **Deploy and reconcile once.** Stage the exact signed source and verified
+   packages with `stage-provider-runtime.mjs`; independently record its source,
+   inventory, and content digests. Transfer it to a new root-owned code tree
+   that the non-root operator cannot change, and verify the copy with
+   `verify-installed-provider-runtime.mjs` using those externally recorded
+   digests. This is an install handoff, not a deployed E2E result. Set
    `TR_IMMUTABLE_PROVIDER_ROOT` and preload
    `scripts/approved-provider-preload.mjs` as described in the
    [local deployment operator CLI](standalone-offline-runtime.md#local-deployment-operator-cli).

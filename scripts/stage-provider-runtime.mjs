@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { assertImmutableProviderTree } from "./immutable-provider-tree.mjs";
+import { providerRuntimeContent } from "./provider-runtime-content.mjs";
 import { assertCanonicalPackedPaths, packedEntries } from "./release-candidate-manifest.mjs";
 import { artifactWorkspaces } from "./trust-registry-workspace-catalog.mjs";
 
@@ -189,11 +190,14 @@ export async function stageProviderRuntime(bundleDirectory, destination, depende
       run("tar", ["-xzf", copy,
         "--strip-components=1", "-C", join(target, item.workspace)], root);
     }
+    const content = await providerRuntimeContent(target);
     const evidence = {
       format: "tr-provider-runtime-stage-v1",
       sourceRevision,
       installInventorySha256: verified.inventorySha256,
       packageCount: packages.length,
+      contentSha256: content.sha256,
+      contentEntries: content.entries,
       sourceSignature: "git-verify-commit-passed-not-independently-approved",
       ownership: "current-user-staging-only",
       releaseQualified: false,

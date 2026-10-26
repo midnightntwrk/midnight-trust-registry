@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { stageProviderRuntime } from "./stage-provider-runtime.mjs";
+import { verifyInstalledProviderRuntime } from "./verify-installed-provider-runtime.mjs";
 
 const HASH = "a".repeat(64);
 
@@ -73,10 +74,44 @@ test("stages only committed source and verified packages without promoting quali
   assert.equal(result.ownership, "current-user-staging-only");
   assert.equal(result.releaseQualified, false);
   assert.equal(result.packageCount, 1);
+  assert.match(result.contentSha256, /^[0-9a-f]{64}$/u);
   assert.match(await readFile(join(destination, "packages/demo/dist/entry.js"), "utf8"), /installed/u);
   assert.equal(JSON.parse(await readFile(join(destination, "packages/demo/package.json"), "utf8")).packed, true);
   await assert.rejects(readFile(join(destination, "private.seed")), { code: "ENOENT" });
   await assert.rejects(stageProviderRuntime(bundle, destination, dependencies), { code: "EEXIST" });
+}));
+
+test("verifies a copied install against externally reviewed stage digests", () => fixture(async ({
+  bundle, destination, parent, revision, dependencies,
+}) => {
+  const staged = await stageProviderRuntime(bundle, destination, dependencies);
+  const installed = join(parent, "installed");
+  await cp(destination, installed, { recursive: true });
+  const expected = { sourceRevision: revision, inventorySha256: HASH,
+    contentSha256: staged.contentSha256 };
+  const options = { boundary: parent, trustedUid: process.getuid() };
+  const verified = await verifyInstalledProviderRuntime(installed, expected, options);
+  assert.equal(verified.contentSha256, staged.contentSha256);
+  assert.equal(verified.releaseQualified, false);
+
+  await writeFile(join(installed, "packages/demo/dist/entry.js"), "tampered\n");
+  await assert.rejects(verifyInstalledProviderRuntime(installed, expected, options), /differs from the reviewed stage/u);
+}));
+
+test("rejects a substituted stage report even if installed files are unchanged", () => fixture(async ({
+  bundle, destination, parent, dependencies,
+}) => {
+  const staged = await stageProviderRuntime(bundle, destination, dependencies);
+  const installed = join(parent, "installed");
+  await cp(destination, installed, { recursive: true });
+  const reportPath = join(installed, "provider-stage.json");
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  report.sourceRevision = "b".repeat(40);
+  await writeFile(reportPath, JSON.stringify(report));
+  await assert.rejects(verifyInstalledProviderRuntime(installed, {
+    sourceRevision: staged.sourceRevision, inventorySha256: HASH,
+    contentSha256: staged.contentSha256,
+  }, { boundary: parent, trustedUid: process.getuid() }), /report differs/u);
 }));
 
 test("rejects source mismatch before creating a stage", () => fixture(async ({ bundle, destination,

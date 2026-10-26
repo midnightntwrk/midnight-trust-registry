@@ -688,12 +688,35 @@ source workspace manifests for the frozen install; packed manifests can
 rewrite `workspace:*` dependencies. It refuses an existing
 destination and retains a partial stage for inspection on failure. The
 `provider-stage.json` report is **not an approval**: its source signer and
-inventory digest still need independent review. The result is owned by the
-current user and is not valid as `TR_IMMUTABLE_PROVIDER_ROOT`. An operator must
-transfer the reviewed bytes into a new root-owned installation beneath trusted
-ancestors, prevent untrusted updates, and run the real CLI as a non-root user
-with the import preloader. This host has not yet demonstrated that transfer or
-a real SDK-backed submission; issue #233 remains open. Never put wallet seeds,
+inventory digest still need independent review. Record the printed
+`contentSha256`, `sourceRevision`, and `installInventorySha256` **outside** the
+stage and install tree as the reviewed handoff. The content digest includes
+every directory, regular file, and relative symlink in the staged runtime
+except `provider-stage.json`; it survives the ownership transfer but not a
+content or layout change. Do not copy the developer checkout or pnpm store
+instead.
+
+The result is owned by the current user and is not valid as
+`TR_IMMUTABLE_PROVIDER_ROOT`. A privileged operator must create a **new**
+root-owned installation beneath root-owned, non-group-writable ancestors,
+copy the reviewed stage without following links, make the code and internal
+links root-owned and non-writable to the non-root runner, then verify it:
+
+```sh
+node scripts/verify-installed-provider-runtime.mjs \
+  /absolute/root-owned/trust-registry-install \
+  "$REVIEWED_CONTENT_SHA256" "$REVIEWED_SOURCE_SHA" "$REVIEWED_INVENTORY_SHA256"
+```
+
+The three arguments must come from the independent handoff record, **not**
+from `provider-stage.json` in the installed tree. This command checks the
+root-owned tree, its source/inventory metadata, and the entire copied content
+against that record. It does not perform privileged installation, approve the
+signer or genesis, authenticate ledger finality, or run an actor journey.
+Keep the tree immutable during and after verification; a root-managed update
+requires a new handoff. Run the real CLI as a non-root user with the import
+preloader. This host has not yet demonstrated that transfer or a real
+SDK-backed submission; issue #233 remains open. Never put wallet seeds,
 signatures, private approval records, or backup material into the code tree.
 Neither check protects against a compromised root account, an unreviewed
 administrative update, or arbitrary code already running before the

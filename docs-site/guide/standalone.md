@@ -151,10 +151,20 @@ node scripts/stage-provider-runtime.mjs "$INSTALL" \
 ```
 
 This requires a clean signed `HEAD` equal to the bundle source SHA. Its output
-is **not** the root-owned installation or approval. Review the reported source
-signer and inventory digest independently before an operator installs the
-bytes under trusted root-owned ancestors. Never run the provider from the
-user-owned stage or include private keys in it.
+is **not** the root-owned installation or approval. Independently record the
+reported source, inventory, and `contentSha256` digests outside the stage.
+After a privileged operator copies the reviewed stage to a new root-owned,
+non-writable code tree, check it using those external values:
+
+```sh
+node scripts/verify-installed-provider-runtime.mjs \
+  /absolute/root-owned/trust-registry-install \
+  "$REVIEWED_CONTENT_SHA256" "$REVIEWED_SOURCE_SHA" "$REVIEWED_INVENTORY_SHA256"
+```
+
+The checker rejects changed content, layout, metadata, or untrusted ownership;
+it does not approve the signer, genesis, or deployment. Never run the provider
+from the user-owned stage or include private keys in it.
 
 If ending the smoke run rather than continuing to human approval and
 deployment, stop **only** this project. Preserve its volumes and evidence.
