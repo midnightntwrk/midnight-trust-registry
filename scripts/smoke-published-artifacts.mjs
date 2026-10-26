@@ -10,6 +10,7 @@ import {
   packageManifestCatalog,
   publishWorkspaces,
 } from "./trust-registry-workspace-catalog.mjs";
+import { verifyReleaseCandidateArtifacts } from "./release-candidate-manifest.mjs";
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -17,6 +18,7 @@ const parseArgs = () => {
   const options = {
     registry: "https://registry.npmjs.org",
     tarballDir: undefined,
+    manifestPath: undefined,
     version: undefined,
   };
   const args = process.argv.slice(2);
@@ -32,6 +34,9 @@ const parseArgs = () => {
       case "--tarball-dir":
         options.tarballDir = path.resolve(repoRoot, args[++index]);
         break;
+      case "--manifest":
+        options.manifestPath = path.resolve(repoRoot, args[++index]);
+        break;
       case "--version":
         options.version = args[++index];
         break;
@@ -44,6 +49,7 @@ const parseArgs = () => {
             "  --version <version>     Published package version to install from a registry.",
             "  --registry <url>        Registry URL. Defaults to https://registry.npmjs.org.",
             "  --tarball-dir <dir>     Use locally packed tarballs instead of a registry.",
+            "  --manifest <file>      Required for local tarballs; verifies exact package bytes.",
           ].join("\n"),
         );
         process.exit(0);
@@ -54,6 +60,9 @@ const parseArgs = () => {
 
   if (!options.version && !options.tarballDir) {
     throw new Error("Either --version or --tarball-dir is required");
+  }
+  if (Boolean(options.tarballDir) !== Boolean(options.manifestPath)) {
+    throw new Error("Local tarball smoke requires --tarball-dir and --manifest together");
   }
 
   return options;
@@ -81,31 +90,20 @@ const run = (command, args, options = {}) => {
   return result.stdout;
 };
 
-const locateTarball = (tarballDir, workspace) => {
-  const packageName = packageManifestCatalog.get(workspace)?.name;
-  if (!packageName) {
-    throw new Error(`Missing package manifest catalog entry for ${workspace}`);
-  }
-
-  const packageSlug = packageName
-    .replace(/^@/, "")
-    .replaceAll("/", "-");
-  const tarball = fs
-    .readdirSync(tarballDir)
-    .find((entry) => entry.startsWith(`${packageSlug}-`) && entry.endsWith(".tgz"));
-
-  if (!tarball) {
-    throw new Error(`Missing tarball for ${packageName} in ${tarballDir}`);
-  }
-
-  return path.join(tarballDir, tarball);
-};
-
 const installTargets = (options) => {
   if (options.tarballDir) {
-    return publishWorkspaces.map((workspace) =>
-      locateTarball(options.tarballDir, workspace)
-    );
+    const manifest = JSON.parse(fs.readFileSync(options.manifestPath, "utf8"));
+    verifyReleaseCandidateArtifacts(manifest, options.tarballDir);
+    if (options.version && manifest.packageVersion !== options.version) {
+      throw new Error("Manifest version disagrees with requested clean-consumer smoke");
+    }
+    return publishWorkspaces.map((workspace) => {
+      const entry = manifest.packages.find((candidate) => candidate.workspace === workspace);
+      if (entry?.publication !== "npm") {
+        throw new Error(`Manifest does not approve publication of ${workspace}`);
+      }
+      return path.join(options.tarballDir, entry.filename);
+    });
   }
 
   return publishWorkspaces.map((workspace) => {

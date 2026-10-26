@@ -18,6 +18,7 @@ const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]
 const parseArgs = () => {
   const options = {
     version: "",
+    check: false,
   };
   const args = process.argv.slice(2);
 
@@ -29,14 +30,17 @@ const parseArgs = () => {
       case "--version":
         options.version = args[++index] ?? "";
         break;
+      case "--check":
+        options.check = true;
+        break;
       case "--help":
         console.log(
           [
-            "Usage: node scripts/release-set-version.mjs --version <semver>",
+            "Usage: node scripts/release-set-version.mjs --version <semver> [--check]",
             "",
             "Updates the root package.json plus every workspace package.json to",
             "the same release version and rewrites internal workspace dependency",
-            "specifiers to match.",
+            "specifiers to match. --check verifies without writing files.",
           ].join("\n"),
         );
         process.exit(0);
@@ -66,7 +70,7 @@ const writeJson = (relativePath, value) => {
   );
 };
 
-const { version } = parseArgs();
+const { version, check } = parseArgs();
 const packageJsonPaths = [
   "package.json",
   ...workspaceCatalog.map(({ workspace }) => path.join(workspace, "package.json")),
@@ -77,6 +81,21 @@ const internalPackageNames = new Set(
 
 for (const relativePath of packageJsonPaths) {
   const packageJson = readJson(relativePath);
+  if (check) {
+    if (packageJson.version !== version) {
+      throw new Error(`${relativePath}: committed version differs from requested release ${version}`);
+    }
+    for (const section of dependencySections) {
+      for (const [packageName, specifier] of Object.entries(packageJson[section] ?? {})) {
+        if (internalPackageNames.has(packageName) && typeof specifier === "string"
+          && specifier.startsWith("workspace:")
+          && !["workspace:*", `workspace:${version}`].includes(specifier)) {
+          throw new Error(`${relativePath}: internal workspace dependency ${packageName} is not release-pinned`);
+        }
+      }
+    }
+    continue;
+  }
   packageJson.version = version;
 
   for (const section of dependencySections) {

@@ -33,7 +33,7 @@
     "artifacts:release-manifest": "node scripts/release-candidate-manifest.mjs",
     "packed-artifacts:smoke": "node scripts/smoke-packed-artifacts.mjs",
     "published-artifacts:smoke": "node scripts/smoke-published-artifacts.mjs",
-    "test:artifact-workspaces": "node --test scripts/artifact-workspaces.test.mjs scripts/release-candidate-manifest.test.mjs scripts/check-standalone-install.test.mjs scripts/build-standalone-install.test.mjs scripts/load-standalone-install-images.test.mjs scripts/build-api-runtime-image.test.mjs scripts/build-static-runtime-image.test.mjs scripts/check-standalone-static-assets.test.mjs",
+    "test:artifact-workspaces": "node --test scripts/artifact-workspaces.test.mjs scripts/release-candidate-manifest.test.mjs scripts/publish-workflow-gates.test.mjs scripts/check-standalone-install.test.mjs scripts/build-standalone-install.test.mjs scripts/load-standalone-install-images.test.mjs scripts/build-api-runtime-image.test.mjs scripts/build-static-runtime-image.test.mjs scripts/check-standalone-static-assets.test.mjs",
     "artifacts:standalone-install": "node scripts/build-standalone-install.mjs",
     "check:standalone-static-assets": "node scripts/check-standalone-static-assets.mjs",
     "test:local-ledger-preflight": "node --test scripts/local-ledger-preflight.test.mjs scripts/local-ledger-deploy.test.mjs scripts/local-ledger-insert-verifier-key.test.mjs scripts/standalone-setup-wizard.test.mjs scripts/local-smoke-provider.test.mjs scripts/scan-local-deployment-attempt.test.mjs scripts/check-standalone-restart.test.mjs scripts/check-standalone-restore.test.mjs scripts/check-standalone-journey-prerequisites.test.mjs",

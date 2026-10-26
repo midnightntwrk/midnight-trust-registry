@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
+import { isDeepStrictEqual } from "node:util";
 import { createHash } from "node:crypto";
 import { closeSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { artifactDirectory, artifactWorkspaces, packageManifestCatalog, publishWorkspaces } from "./trust-registry-workspace-catalog.mjs";
@@ -283,6 +284,25 @@ const run = (command, args, trim = true) => {
   return trim ? result.stdout.trim() : result.stdout;
 };
 
+function verifySignedHead(revision) {
+  if (process.env.TR_MANIFEST_GITHUB_VERIFIED_COMMIT !== "true") {
+    run("git", ["verify-commit", "HEAD"]);
+    return;
+  }
+  const repository = process.env.GITHUB_REPOSITORY;
+  if (process.env.GITHUB_ACTIONS !== "true"
+    || process.env.GITHUB_SHA !== revision
+    || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(repository ?? "")
+    || !process.env.GH_TOKEN) {
+    throw new Error("GitHub signature verification requires the exact Actions checkout and token");
+  }
+  const verification = JSON.parse(run("gh", ["api", `repos/${repository}/commits/${revision}`,
+    "--jq", ".commit.verification"]));
+  if (verification.verified !== true || verification.reason !== "valid") {
+    throw new Error("GitHub did not verify the exact release source commit signature");
+  }
+}
+
 const readPackedTarEntry = (tarball, entry) => {
   const result = spawnSync("tar", ["-xOzf", tarball, entry], { maxBuffer: 64 * 1024 * 1024 });
   if (result.status !== 0) {
@@ -295,24 +315,46 @@ const readPackedTarEntry = (tarball, entry) => {
 export const hashPackedTarEntry = (tarball, entry) => hashBytes(readPackedTarEntry(tarball, entry));
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (process.argv.length !== 2) throw new Error("Usage: node scripts/release-candidate-manifest.mjs");
+  let artifactDir = join(root, artifactDirectory);
+  let output;
+  let verifyPath;
+  for (let index = 2; index < process.argv.length; index += 1) {
+    const option = process.argv[index];
+    if (!["--artifact-dir", "--output", "--verify"].includes(option)
+      || !process.argv[index + 1]) {
+      throw new Error("Usage: release-candidate-manifest.mjs [--artifact-dir dir] [--output file | --verify file]");
+    }
+    const value = resolve(process.argv[++index]);
+    if (option === "--artifact-dir") artifactDir = value;
+    else if (option === "--output") output = value;
+    else verifyPath = value;
+  }
+  if (output && verifyPath) throw new Error("Choose manifest output or verification, not both");
   if (run("git", ["status", "--porcelain", "--untracked-files=normal"]) !== "") {
     throw new Error("Release candidate source tree must be clean");
   }
-  run("git", ["verify-commit", "HEAD"]);
+  const revision = run("git", ["rev-parse", "HEAD"]);
+  verifySignedHead(revision);
   if (!/^Signed-off-by: .+ <[^>]+>$/mu.test(run("git", ["log", "-1", "--format=%B"]))) {
     throw new Error("Release source commit must carry a DCO sign-off");
   }
   run("node", ["scripts/check-full-contract-artifacts.mjs"]);
-  const revision = run("git", ["rev-parse", "HEAD"]);
   const manifest = buildReleaseCandidateManifest({
     repoRoot: root,
-    artifactDir: join(root, artifactDirectory),
+    artifactDir,
     revision,
   });
-  verifyReleaseCandidateArtifacts(manifest, join(root, artifactDirectory));
-  const output = join(root, "artifacts/release-candidate", revision, "manifest.json");
-  mkdirSync(dirname(output), { recursive: true });
-  writeFileSync(output, `${JSON.stringify(manifest, null, 2)}\n`, { flag: "w", mode: 0o600 });
-  process.stdout.write(`Release candidate manifest: artifacts/release-candidate/${revision}/${basename(output)}\n`);
+  verifyReleaseCandidateArtifacts(manifest, artifactDir);
+  if (verifyPath) {
+    const approved = json(verifyPath);
+    if (!isDeepStrictEqual(approved, manifest)) {
+      throw new Error("Release candidate manifest differs from the exact signed source and packed bytes");
+    }
+    process.stdout.write(`Verified release candidate manifest: ${verifyPath}\n`);
+  } else {
+    const destination = output ?? join(root, "artifacts/release-candidate", revision, "manifest.json");
+    mkdirSync(dirname(destination), { recursive: true });
+    writeFileSync(destination, `${JSON.stringify(manifest, null, 2)}\n`, { flag: "w", mode: 0o600 });
+    process.stdout.write(`Release candidate manifest: ${destination}\n`);
+  }
 }
