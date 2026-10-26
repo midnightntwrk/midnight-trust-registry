@@ -204,6 +204,7 @@ type ApprovedLocalLedgerRuntimePlanInput = {
   keyringDirectory: string;
   reviewerFingerprint: string;
   requireApiRuntimePin?: boolean;
+  requireApprovalChain?: boolean;
 };
 
 export async function loadApprovedLocalLedgerRuntimePlanWithDigest(
@@ -217,6 +218,9 @@ export async function loadApprovedLocalLedgerRuntimePlanWithDigest(
     reviewerFingerprint: input.reviewerFingerprint,
   });
   const plan = validateLocalLedgerRuntimePlan(parseCanonicalApprovedPlan(planBytes));
+  if (input.requireApprovalChain === true && plan.format !== "tr-local-api-runtime-v3") {
+    throw new Error("Local-ledger runtime requires a signed v3 approval-chain plan");
+  }
   const inventoryBytes = await readBoundedLocalApprovalFile(plan.installInventoryPath, 1024 * 1024);
   const manifestBytes = await readBoundedLocalApprovalFile(plan.releaseManifestPath, 1024 * 1024);
   const digest = (bytes: Buffer): string => createHash("sha256").update(bytes).digest("hex");

@@ -91,7 +91,8 @@ results.
    The API rechecks the embedded detached signatures, signed hash links,
    custody roster, and committee before serving. Use the same approved
    governance reviewer fingerprint and private public-key keyring in the
-   CLI invocation. A v2 plan is not approval-chain evidence. Issue #234
+   CLI invocation. The local-ledger CLI rejects v2 plans; they are not
+   approval-chain evidence. Issue #234
    remains a release gate until independent finality and exact-head review
    establish that this linkage is sufficient for the deployed runtime.
    Before an operator actor run, check the wizard's ledger prerequisites:

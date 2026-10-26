@@ -368,6 +368,7 @@ const loadCurrentProposalRecoveryCandidate = async (options: TrustRegistryApiCli
     keyringDirectory: options.localLedgerKeyringDirectory!,
     reviewerFingerprint: options.localLedgerReviewerFingerprint!,
     requireApiRuntimePin: true,
+    requireApprovalChain: true,
   });
   const source = await createApprovedLocalLedgerRuntimeSource(plan);
   const snapshot = await source.loadSnapshot();
@@ -400,6 +401,7 @@ export const runTrustRegistryApiCli = async (
       keyringDirectory: options.localLedgerKeyringDirectory!,
       reviewerFingerprint: options.localLedgerReviewerFingerprint!,
       requireApiRuntimePin: true,
+      requireApprovalChain: true,
     });
     const source = await createApprovedLocalLedgerRuntimeSource(plan);
     await source.loadSnapshot();
@@ -413,6 +415,7 @@ export const runTrustRegistryApiCli = async (
       keyringDirectory: options.localLedgerKeyringDirectory!,
       reviewerFingerprint: options.localLedgerReviewerFingerprint!,
       requireApiRuntimePin: true,
+      requireApprovalChain: true,
     });
     const source = await createApprovedLocalLedgerRuntimeSource(plan);
     const result = await observeLocalApiCurrentReads({ source, apiOrigin: options.apiOrigin!,
@@ -428,6 +431,7 @@ export const runTrustRegistryApiCli = async (
       keyringDirectory: options.localLedgerKeyringDirectory!,
       reviewerFingerprint: options.localLedgerReviewerFingerprint!,
       requireApiRuntimePin: true,
+      requireApprovalChain: true,
     });
     const source = await createApprovedLocalLedgerRuntimeSource(plan);
     const snapshot = await source.loadSnapshot();
@@ -461,6 +465,7 @@ export const runTrustRegistryApiCli = async (
       keyringDirectory: options.localLedgerKeyringDirectory!,
       reviewerFingerprint: options.localLedgerReviewerFingerprint!,
       requireApiRuntimePin: true,
+      requireApprovalChain: true,
     });
     const source = await createApprovedLocalLedgerRuntimeSource(plan);
     const snapshot = await source.loadSnapshot();
@@ -533,6 +538,7 @@ export const runTrustRegistryApiCli = async (
       keyringDirectory: options.localLedgerKeyringDirectory!,
       reviewerFingerprint: options.localLedgerReviewerFingerprint!,
       requireApiRuntimePin: true,
+      requireApprovalChain: true,
     });
     const source = await createApprovedLocalLedgerRuntimeSource(plan);
     const snapshot = await source.loadSnapshot();
@@ -560,6 +566,7 @@ export const runTrustRegistryApiCli = async (
         keyringDirectory: options.localLedgerKeyringDirectory!,
         reviewerFingerprint: options.localLedgerReviewerFingerprint!,
         requireApiRuntimePin: options.clusterBind === true,
+        requireApprovalChain: true,
       });
       const { plan } = approved;
       localPlanSha256 = approved.planSha256;

@@ -70,8 +70,9 @@ committee, and deployment detached signatures, their hash links, approved
 custody roster and committee, and the recorded maintenance readback before
 starting. The out-of-band reviewer fingerprint passed to the CLI anchors the
 governance and deployment signatures; the governance-signed genesis digest
-anchors the genesis signer. A v2 plan remains readable for pre-existing local
-work, but lacks this approval-chain verification and is not local-RC evidence.
+anchors the genesis signer. A v2 plan remains parseable by the library for
+forensic compatibility, but the local-ledger CLI rejects it for preflight,
+observation, proposal operations, and server startup. It is not local-RC evidence.
 This v3 check still does not independently authenticate node/indexer finality
 or prove an offline actor journey.
 

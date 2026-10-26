@@ -316,8 +316,9 @@ and deployment approvals when the private chain file and its hash are pinned.
 The maintenance readback in that chain is a wizard-observed receipt, not an
 independently authenticated finality proof. Issue #234 remains a release gate
 until real deployed evidence, independent finality, and exact-head review
-validate the complete handoff. A readable v2 plan lacks this approval-chain
-check and is not local-RC evidence.
+validate the complete handoff. The library can still parse a v2 plan for
+forensic compatibility, but the local-ledger CLI refuses it for preflight,
+observation, proposal operations, and runtime startup.
 Archive verification alone does not start the API or prove that it can query a live
 local ledger. Matching source labels and hashes do not independently prove
 image build provenance; the release operator must approve the exact archive

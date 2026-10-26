@@ -132,10 +132,15 @@ it("verifies signed standalone approvals and rejects substitution", async () => 
     };
     const load = () => loadApprovedLocalLedgerRuntimePlan({ planPath: runtimePath,
       signaturePath: runtimeSignaturePath, keyringDirectory: verifier,
-      reviewerFingerprint: fingerprint! });
+      reviewerFingerprint: fingerprint!, requireApprovalChain: true });
     await signRuntime(runtime);
     await expect(load()).resolves.toMatchObject({ format: "tr-local-api-runtime-v3",
       contractAddress });
+    const legacy = Object.fromEntries(Object.entries(runtime)
+      .filter(([key]) => key !== "approvalChainPath" && key !== "approvalChainSha256"));
+    await signRuntime({ ...legacy, format: "tr-local-api-runtime-v2" });
+    await expect(load()).rejects.toThrow(/requires a signed v3 approval-chain plan/u);
+    await signRuntime(runtime);
     await writeFile(chainPath, `${JSON.stringify({ ...chain, contractAddress: `0x${"0".repeat(64)}` })}\n`);
     await expect(load()).rejects.toThrow(/approval-chain bytes differ/u);
     await writeFile(chainPath, chainBytes);
