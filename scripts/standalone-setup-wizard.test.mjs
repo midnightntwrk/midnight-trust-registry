@@ -2963,6 +2963,22 @@ test("detached GPG verification accepts only the pinned signing key and exact by
   await writeFile(document, '{"format":"tr-local-genesis-approval-v1"}\n');
   execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--detach-sign", "--output", signature, document]);
   await verifyDetachedReviewerSignature(document, signature, verifier, fingerprint, approvedAt);
+  const fakeBin = join(root, "fake-bin");
+  await mkdir(fakeBin);
+  const marker = join(root, "path-gpg-called");
+  await writeFile(join(fakeBin, "gpg"), `#!/bin/sh\nprintf called > '${marker}'\nexit 0\n`, { mode: 0o700 });
+  const oldPath = process.env.PATH;
+  const oldHome = process.env.GNUPGHOME;
+  try {
+    process.env.PATH = `${fakeBin}:${oldPath}`;
+    process.env.GNUPGHOME = join(root, "untrusted-home");
+    await verifyDetachedReviewerSignature(document, signature, verifier, fingerprint, approvedAt);
+    await assert.rejects(lstat(marker), { code: "ENOENT" });
+  } finally {
+    process.env.PATH = oldPath;
+    if (oldHome === undefined) delete process.env.GNUPGHOME;
+    else process.env.GNUPGHOME = oldHome;
+  }
   const armoredSignature = join(root, "approval.asc");
   execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--armor", "--detach-sign",
     "--output", armoredSignature, document]);

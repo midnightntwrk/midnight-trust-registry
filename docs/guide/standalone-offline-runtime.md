@@ -188,6 +188,10 @@ evidence. A post-deployment observer must verify the API container identity,
 approval mounts, source revision, finalized reads, runtime egress, and actor
 journeys before the local 0.1.0 RC gate can close. Kubernetes and Helm are
 optional alternative deployment paths, not prerequisites.
+An optional Helm image-mapping receipt is verified from a private snapshot of
+the supplied public keyring and detached signature using a fixed GPGV path and
+the pinned primary fingerprint. A Helm mapping signature does not replace the
+wizard's genesis or maintenance approvals and cannot qualify the local RC.
 
 Once a **new exact-source bundle pins `compose.api.yml`** and the human-signed
 plan has been independently approved, the operator can run the read-only API

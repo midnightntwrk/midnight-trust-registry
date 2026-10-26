@@ -2,7 +2,7 @@
 
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { constants } from "node:fs";
+import { constants, existsSync } from "node:fs";
 import { link, open, lstat, mkdir, mkdtemp, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
@@ -770,20 +770,23 @@ export async function verifyDetachedReviewerSignature(
   const shortTempRoot = tmpdir().length > 55 ? "/tmp" : tmpdir();
   const temporary = await mkdtemp(join(shortTempRoot, "tr-reviewer-keyring-"));
   try {
+    const gpg = ["/usr/bin/gpg", "/opt/homebrew/bin/gpg", "/usr/local/bin/gpg"].find(existsSync);
+    if (!gpg) throw new Error("A trusted GPG executable is required for reviewer approval");
+    const verificationEnv = { PATH: "/usr/bin:/bin", HOME: temporary, LC_ALL: "C" };
     const keyring = join(temporary, "pubring.kbx");
     if (armoredExport) {
       const exportPath = join(temporary, "reviewer-public.asc");
       await writeFile(exportPath, publicKeys, { flag: "wx", mode: 0o600 });
-      await execFileAsync("gpg", ["--batch", "--no-options", "--homedir", temporary,
-        "--import", exportPath], { timeout: 30_000, maxBuffer: 1024 * 1024 });
+      await execFileAsync(gpg, ["--batch", "--no-options", "--homedir", temporary,
+        "--import", exportPath], { timeout: 30_000, maxBuffer: 1024 * 1024, env: verificationEnv });
     } else {
       await writeFile(keyring, publicKeys, { flag: "wx", mode: 0o600 });
     }
-    const { stdout } = await execFileAsync("gpg", [
+    const { stdout } = await execFileAsync(gpg, [
       "--batch", "--no-options", "--no-auto-key-retrieve", "--trust-model", "always",
       "--no-default-keyring", "--homedir", temporary, "--keyring", keyring,
       "--status-fd=1", "--verify", signaturePath, documentPath,
-    ], { timeout: 30_000, maxBuffer: 1024 * 1024 });
+    ], { timeout: 30_000, maxBuffer: 1024 * 1024, env: verificationEnv });
     assertDetachedReviewerSignatureStatus(stdout, expectedFingerprint, approvedAt);
   } finally {
     await rm(temporary, { recursive: true, force: true });
