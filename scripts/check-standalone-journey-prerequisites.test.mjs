@@ -1,0 +1,49 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { assessStandaloneJourneyPrerequisites } from "./check-standalone-journey-prerequisites.mjs";
+
+const approved = {
+  sourceRevision: "a".repeat(40), releaseQualified: false,
+  setupLock: "absent", install: "verified-staged-bytes-only",
+  stackConfiguration: "observed-ledger-bridge-only",
+  localLedger: "operator-pinned-reviewer-signature-verified",
+  deployment: "observed", stagedVerifierKeys: [{ circuitName: "test", state: "verified" }],
+  maintenanceApproval: "deployment-bound-roster-signature-verified-transition-pending",
+  maintenanceTransition: "observed", maintenanceLastReadback: "observed",
+  maintenanceTransitionAlert: null,
+};
+
+test("only reports wizard ledger prerequisites, never actor or release qualification", () => {
+  const report = assessStandaloneJourneyPrerequisites(approved);
+  assert.equal(report.ledgerPrerequisitesObserved, true);
+  assert.deepEqual(report.missing, []);
+  assert.equal(report.actorJourney, "not-run");
+  assert.equal(report.completeVerifierKeyInventory, "not-verified");
+  assert.equal(report.independentFinality, "not-verified");
+  assert.equal(report.releaseQualified, false);
+});
+
+test("fails closed for missing approval, unresolved key or alert", () => {
+  const report = assessStandaloneJourneyPrerequisites({
+    ...approved, localLedger: "node-observed-not-independently-approved",
+    stagedVerifierKeys: [{ circuitName: "test", state: "pending" }],
+    maintenanceTransitionAlert: "conflict",
+  });
+  assert.equal(report.ledgerPrerequisitesObserved, false);
+  assert.deepEqual(report.missing, ["genesisApproved", "recordedKeyInsertionsReconciled", "maintenanceObserved"]);
+});
+
+test("empty key evidence and active setup lock block the journey", () => {
+  const report = assessStandaloneJourneyPrerequisites({
+    ...approved, stagedVerifierKeys: [], setupLock: "present-inspect-before-removal",
+  });
+  assert.deepEqual(report.missing, ["setupUnlocked", "recordedKeyInsertionsReconciled"]);
+});
+
+test("rejects malformed status rather than implying a clean run", () => {
+  assert.throws(() => assessStandaloneJourneyPrerequisites({ ...approved, releaseQualified: true }),
+    /Invalid standalone wizard status/u);
+  assert.throws(() => assessStandaloneJourneyPrerequisites({ ...approved, sourceRevision: "bad" }),
+    /Invalid standalone wizard status/u);
+});

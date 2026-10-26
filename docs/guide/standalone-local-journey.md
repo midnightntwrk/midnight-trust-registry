@@ -74,6 +74,16 @@ results.
    local-ledger mode. Snapshot/workspace/demo mode is not acceptable. The
    signed plan must identify the approved genesis and deployed contract;
    unresolved plan-to-deployment binding in issue #234 remains a stop gate.
+   Before an operator actor run, check the wizard's ledger prerequisites:
+
+   ```sh
+   node scripts/check-standalone-journey-prerequisites.mjs /absolute/private/setup
+   ```
+
+   Exit code 2 lists missing gates; exit code 0 means only that wizard-recorded
+   ledger prerequisites are present. It does not verify the complete
+   verifier-key inventory, signed API plan, authenticated finality, egress
+   denial, an actor action, or release readiness.
 7. **Disconnect external egress, then run the actor use case.** Keep the local
    service network and loopback available. Record issuer application and
    governed authorization, verifier and auditor decisions, maintainer action,
