@@ -3,30 +3,17 @@ import { constants, existsSync, closeSync, fstatSync, mkdtempSync, openSync, rea
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
+import { assertStrictDetachedSignatureStatus } from "@midnight-ntwrk/trust-registry-integration/reviewer-signature-status";
+
 const FINGERPRINT = /^[0-9A-F]{40}$/u;
 
 export function approvedMappingSigner(output, signerFingerprint, now = Date.now()) {
   if (!FINGERPRINT.test(signerFingerprint)) throw new Error("Invalid mapping signer fingerprint");
-  const statuses = output.split("\n").filter((line) => line.startsWith("[GNUPG:] "));
-  if (statuses.some((line) => /^\[GNUPG:\] (?:EXPKEYSIG|EXPSIG|REVKEYSIG|KEYREVOKED|KEYEXPIRED|SIGEXPIRED|BADSIG|ERRSIG|NO_PUBKEY|PLAINTEXT|PLAINTEXT_LENGTH)\b/u.test(line))) {
-    throw new Error("Helm image mapping signer key or signature is expired, revoked, or invalid");
-  }
-  const valid = statuses.filter((line) => line.startsWith("[GNUPG:] VALIDSIG "));
-  const good = statuses.filter((line) => line.startsWith("[GNUPG:] GOODSIG "));
-  const fields = valid[0]?.split(/\s+/u);
-  const signer = fields?.[2];
-  if (valid.length !== 1 || good.length !== 1 || fields?.length !== 12
-    || !FINGERPRINT.test(signer ?? "")
-    || ![signer, signer?.slice(-16)].includes(good[0]?.split(/\s+/u)[2])
-    || !Number.isSafeInteger(Number(fields?.[4])) || Number(fields?.[4]) <= 0
-    || Number(fields?.[4]) > Math.floor(now / 1000) + 300
-    || !Number.isSafeInteger(Number(fields?.[5])) || Number(fields?.[5]) < 0
-    || (Number(fields?.[5]) !== 0 && Number(fields?.[5]) <= Math.floor(now / 1000))
-    || !["8", "9", "10"].includes(fields?.[9]) || fields?.[10] !== "00") {
+  try {
+    assertStrictDetachedSignatureStatus({ output, exitStatus: 0,
+      expectedPrimaryFingerprint: signerFingerprint, now });
+  } catch {
     throw new Error("Helm image mapping has no valid detached signature");
-  }
-  if (fields[11] !== signerFingerprint) {
-    throw new Error("Helm image mapping signature is not from the approved signer");
   }
   return signerFingerprint;
 }

@@ -2,6 +2,13 @@
 
 Integration scenarios for `midnight-trust-registry`.
 
+The local-only `reviewer-signature-status` subpath is the shared strict GPG
+status policy for API plans, first-run wizard approvals, and optional Helm
+mapping approval. It checks the pinned primary key, one detached SHA-2
+signature, signing time, and revocation/expiry statuses; callers still own
+their bounded input reads, pinned public keyring, and fixed GPG execution.
+Passing this policy does not authenticate ledger finality or qualify a release.
+
 The local-only package exports its Ledger 8 consumer source as
 `@midnight-ntwrk/trust-registry-integration/fixtures/vc-authority-consumer.compact`.
 Compile it with the repository's pinned Compact compiler and the published

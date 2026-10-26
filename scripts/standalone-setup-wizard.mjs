@@ -16,6 +16,7 @@ import {
   getLocalNetworkProfile, validateMaintenancePolicy,
   VerifierKeyInsertionOutcomeUnknownError,
 } from "@midnight-ntwrk/trust-registry-integration";
+import { assertStrictDetachedSignatureStatus } from "@midnight-ntwrk/trust-registry-integration/reviewer-signature-status";
 import { ContractMaintenanceAuthority } from "@midnight-ntwrk/midnight-js-protocol/ledger";
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 
@@ -707,28 +708,11 @@ export async function observeStandaloneLedger(directory, pinPath, dependencies =
 export function assertDetachedReviewerSignatureStatus(
   output, expectedFingerprint, approvedAt, now = Date.now(),
 ) {
-  const statuses = output.split("\n").filter((line) => line.startsWith("[GNUPG:] "));
-  const valid = statuses.filter((line) => line.startsWith("[GNUPG:] VALIDSIG "));
-  const good = statuses.filter((line) => line.startsWith("[GNUPG:] GOODSIG "));
-  const fields = valid[0]?.split(/\s+/u);
-  const signerFingerprint = fields?.[2];
-  const signedAt = Number(fields?.[4]);
-  const expiresAt = Number(fields?.[5]);
-  const minimumSignedAt = typeof approvedAt === "string"
-    ? Math.floor(Date.parse(approvedAt) / 1000) : NaN;
-  const nowSeconds = Math.floor(now / 1000);
-  if (!FINGERPRINT.test(expectedFingerprint)
-    || valid.length !== 1 || good.length !== 1 || fields?.length !== 12
-    || !FINGERPRINT.test(signerFingerprint ?? "")
-    || ![signerFingerprint.slice(-16), signerFingerprint].includes(good[0]?.split(/\s+/u)[2])
-    || fields[11] !== expectedFingerprint
-    || !Number.isSafeInteger(signedAt) || signedAt <= 0
-    || !Number.isSafeInteger(expiresAt) || expiresAt < 0
-    || !Number.isSafeInteger(minimumSignedAt)
-    || signedAt < minimumSignedAt || signedAt > nowSeconds + 5 * 60
-    || (expiresAt !== 0 && expiresAt <= nowSeconds)
-    || !["8", "9", "10"].includes(fields[9]) || fields[10] !== "00"
-    || statuses.some((line) => /^\[GNUPG:\] (?:EXPSIG|EXPKEYSIG|REVKEYSIG|BADSIG|ERRSIG|KEYREVOKED|SIGEXPIRED|PLAINTEXT|PLAINTEXT_LENGTH)\b/u.test(line))) {
+  try {
+    if (typeof approvedAt !== "string") throw new Error("Approval timestamp is required");
+    assertStrictDetachedSignatureStatus({ output, exitStatus: 0,
+      expectedPrimaryFingerprint: expectedFingerprint, approvedAt, now });
+  } catch {
     throw new Error("Detached approval signature does not match the pinned reviewer key");
   }
 }

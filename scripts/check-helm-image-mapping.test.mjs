@@ -238,10 +238,10 @@ test("GPG status accepts a pinned primary and rejects ambiguous or weak signatur
   const valid = `[GNUPG:] VALIDSIG ${signer} 2026-10-20 ${signedAt} 0 4 0 22 8 00 ${primary}\n`;
   const status = `[GNUPG:] GOODSIG ${signer.slice(-16)} Reviewer\n${valid}`;
   assert.equal(approvedMappingSigner(status, primary), primary);
-  assert.throws(() => approvedMappingSigner(status, signer), /approved signer/u);
-  assert.throws(() => approvedMappingSigner(status, "C".repeat(40)), /approved signer/u);
-  assert.throws(() => approvedMappingSigner(`${status}[GNUPG:] REVKEYSIG ${signer}\n`, primary), /revoked/u);
-  assert.throws(() => approvedMappingSigner(`${status}[GNUPG:] EXPKEYSIG ${signer}\n`, primary), /expired/u);
+  assert.throws(() => approvedMappingSigner(status, signer), /valid detached signature/u);
+  assert.throws(() => approvedMappingSigner(status, "C".repeat(40)), /valid detached signature/u);
+  assert.throws(() => approvedMappingSigner(`${status}[GNUPG:] REVKEYSIG ${signer}\n`, primary), /valid detached signature/u);
+  assert.throws(() => approvedMappingSigner(`${status}[GNUPG:] EXPKEYSIG ${signer}\n`, primary), /valid detached signature/u);
   for (const invalid of [
     `${status}${valid}`,
     `${status}[GNUPG:] GOODSIG ${signer.slice(-16)} Second\n`,

@@ -2916,8 +2916,6 @@ test("reviewer signature status binds the signer and rejects weak or attached si
   assert.doesNotThrow(() => assertDetachedReviewerSignatureStatus(output, primary, approvedAt));
   assert.doesNotThrow(() => assertDetachedReviewerSignatureStatus(
     output.replace(signer.slice(-16), signer), primary, approvedAt));
-  assert.doesNotThrow(() => assertDetachedReviewerSignatureStatus(
-    `${output}[GNUPG:] KEYEXPIRED ${signedAt - 1}\n`, primary, approvedAt));
   for (const invalid of [
     valid,
     `${output}${valid}\n`,
@@ -2928,6 +2926,7 @@ test("reviewer signature status binds the signer and rejects weak or attached si
     output.replace(" 22 8 00 ", " 22 8 01 "),
     `${output}[GNUPG:] EXPKEYSIG ${signer} Reviewer\n`,
     `${output}[GNUPG:] KEYREVOKED\n`,
+    `${output}[GNUPG:] KEYEXPIRED ${signedAt - 1}\n`,
     `${output}[GNUPG:] PLAINTEXT_LENGTH 10\n`,
   ]) {
     assert.throws(() => assertDetachedReviewerSignatureStatus(invalid, primary, approvedAt), /pinned reviewer key/u);

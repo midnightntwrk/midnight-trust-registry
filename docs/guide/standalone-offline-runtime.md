@@ -924,8 +924,9 @@ primary-key fingerprint and the `GOODSIG` key ID or fingerprint matches the
 actual signer.
 It requires a detached binary-document signature using SHA-256, SHA-384, or
 SHA-512; ASCII armoring of that detached signature is accepted. It rejects an
-expired or revoked signing key or signature. A `KEYEXPIRED` status alone does
-not cause rejection; an expired signing key is rejected through `EXPKEYSIG`.
+expired or revoked signing key or signature. API, wizard, and optional Helm
+bootstrap use the same strict status policy: `KEYEXPIRED`, `EXPKEYSIG`, and
+ambiguous or multiple valid-signature statuses all fail closed.
 The operator must refresh the approved public-key export or keyring before
 verification, because an old export cannot reveal a later revocation. The signature's
 creation time must be at or after the draft's `approvedAt` time; set that
