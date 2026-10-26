@@ -81,11 +81,21 @@ directory. This is **not** a backup/restore or authenticated-finality test.
 node scripts/check-standalone-restart.mjs capture "$SETUP"
 docker compose --env-file "$SETUP/stack.env" -p "$PROJECT" \
   -f "$INSTALL/compose.yml" -f "$INSTALL/compose.offline.yml" restart
+# Restart returns before health and finality advance. Wait for all three
+# services to become healthy, then confirm a later finalized checkpoint.
+docker compose --env-file "$SETUP/stack.env" -p "$PROJECT" \
+  -f "$INSTALL/compose.yml" -f "$INSTALL/compose.offline.yml" up --pull never -d --wait
 node scripts/check-standalone-restart.mjs verify "$SETUP"
 # After observation, stop only this project. Preserve its volumes and evidence.
 docker compose --env-file "$SETUP/stack.env" -p "$PROJECT" \
   -f "$INSTALL/compose.yml" -f "$INSTALL/compose.offline.yml" stop
 ```
+
+The observer requires a **later** finalized height than the captured baseline.
+If `verify` runs before that height exists, wait for node/indexer progress and
+retry the read-only check; investigate any other failure before retrying. A
+passing simultaneous restart remains pre-deployment smoke, not the separate
+service-restart and backup-restore acceptance case `R01`.
 
 ## Continue to real end-to-end acceptance
 
