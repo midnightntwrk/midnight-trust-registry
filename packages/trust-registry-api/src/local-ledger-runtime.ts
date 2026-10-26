@@ -61,14 +61,15 @@ function validMaintenanceAuthority(value: unknown): boolean {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const authority = value as Record<string, unknown>;
   if (!exactKeys(authority, ["committee", "threshold", "counter"])
-    || !Array.isArray(authority.committee) || authority.committee.length === 0
+    || !Array.isArray(authority.committee) || authority.committee.length < 3
     || authority.committee.some((key: unknown) =>
       typeof key !== "string" || !HASH.test(key) || /^0x0{64}$/u.test(key))
     || new Set(authority.committee).size !== authority.committee.length
     || !Number.isSafeInteger(authority.threshold)
-    || (authority.threshold as number) < 1
+    || (authority.threshold as number) < 2
     || (authority.threshold as number) > authority.committee.length
-    || typeof authority.counter !== "string" || !DECIMAL.test(authority.counter)) return false;
+    || typeof authority.counter !== "string" || !DECIMAL.test(authority.counter)
+    || BigInt(authority.counter) < 1n) return false;
   return true;
 }
 
@@ -150,9 +151,12 @@ export function assertApprovedPlanCoversGovernanceCount(
 }
 
 export function assertApprovedDeploymentImage(
-  plan: Pick<LocalLedgerRuntimePlan, "verifierKeySha256" | "maintenanceAuthority">,
-  view: Pick<FinalizedRegistryLedgerView, "verifierKeySha256" | "maintenanceAuthority">,
+  plan: Pick<LocalLedgerRuntimePlan, "networkId" | "contractAddress" | "verifierKeySha256" | "maintenanceAuthority">,
+  view: Pick<FinalizedRegistryLedgerView, "networkId" | "contractAddress" | "verifierKeySha256" | "maintenanceAuthority">,
 ): void {
+  if (view.networkId !== plan.networkId || view.contractAddress !== plan.contractAddress) {
+    throw new Error("Finalized registry identity differs from the approved local plan");
+  }
   const expected = plan.verifierKeySha256;
   const observed = view.verifierKeySha256;
   if (observed === null || typeof observed !== "object" || Array.isArray(observed)

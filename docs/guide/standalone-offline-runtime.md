@@ -305,10 +305,15 @@ bundle only and cannot back a signed local-ledger API plan. The API requires a
 v4-v6 inventory with an API image pin and checks that its embedded release
 manifest digest and path identify the same signed manifest bytes as the plan.
 The v2 signed API plan must also pin the complete release-manifest verifier-key
-catalog and the approved maintenance committee, threshold, and counter. Each
-API query checks those values from the same finalized contract-state read as
+catalog and a non-bootstrap committee of at least three distinct public keys,
+threshold at least two, and a positive transition counter. Each API query
+checks the finalized network, contract address, verifier-key catalog, and
+maintenance authority against the plan from the same contract-state read as
 the Compact ledger projection. Any verifier-key or authority change requires
-manual review, a new signed plan, and an API restart.
+manual review, a new signed plan, and an API restart. These comparisons do
+**not** independently link the plan reviewer or contract to the wizard's signed
+genesis, deployment, and maintenance receipts; issue #234 remains a release
+gate, even if this API check passes.
 Archive verification alone does not start the API or prove that it can query a live
 local ledger. Matching source labels and hashes do not independently prove
 image build provenance; the release operator must approve the exact archive
