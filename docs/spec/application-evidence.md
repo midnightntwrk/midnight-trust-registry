@@ -113,7 +113,7 @@ The `applicationEvidenceCommitment` is `SHA-256` over the RFC 8785 JSON
 Canonicalization Scheme representation of the envelope. The evidence verifier
 signs this commitment with a policy-authorized assertion key for off-chain
 intake. The signature and key reference need not be included in the commitment
-itself. For issuer, verifier, auditor, and maintainer proposals, the evidence verifier separately signs the governed
+itself. For issuer, verifier, auditor, maintainer, and recognition proposals, the evidence verifier separately signs the governed
 proposal payload bound to the evidence commitment, registered verifier key,
 and active policy snapshot. This second signature is checked in Compact; an
 intake signature alone cannot authorize a proposal.
@@ -133,13 +133,28 @@ role-separated `verifierEvidenceBoundProposalPayloadHash` and
 `auditorEvidenceBoundProposalPayloadHash` and
 `auditorProposalEvidenceSignatureDigest`; the maintainer proposal uses
 `maintainerEvidenceBoundProposalPayloadHash` and
-`maintainerProposalEvidenceSignatureDigest`. Each pair binds the complete
+`maintainerProposalEvidenceSignatureDigest`; recognition has its own role-separated pair. Each pair binds the complete
 role-specific authorization payload, evidence-verifier authorization and key
-identifiers, registry identifier, and active policy commitment and version. The contract verifies
+identifiers, registry identifier, and active policy commitment and version. The
+proposal-evidence signature transcript is version 2: it additionally commits to
+the sealed deployment network identifier and the actual `kernel.self()` contract
+address. The signer must receive those values from the deployment being
+attested, not infer them from the registry name or a node-reported default.
+The domain-separated deployment tuple is hashed with the policy-bound payload
+before Schnorr signing. A signature for one deployment is invalid on another
+even when both use the same registry ID and verifier key. The contract verifies
 this distinct digest against the active registered JubJub key. The intake
 signature value is the DID package's 96-byte encoding rendered as lowercase,
 `0x`-prefixed hex, with a response scalar below the JubJub group order and
 canonical field coordinates. Other encodings are not accepted by this profile.
+
+This is a pre-release breaking transcript change. Existing v1 proposal-evidence
+signatures must be re-collected for a v2 deployment; they cannot be migrated by
+copying the old signature. Final maintainer authorization remains a separate
+deployment-bound quorum check and does not substitute for the evidence
+verifier's deployment-specific attestation. Historical projections verify the
+recorded signature against an independently pinned deployment address and the
+ledger's sealed network commitment; without a pinned address they fail closed.
 
 The reference status-authority HTTP adapter sends only status-registry ID,
 status-handle commitment, credential-body root, and challenge hash to an

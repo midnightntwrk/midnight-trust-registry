@@ -77,6 +77,7 @@ describe("externally signed Compact maintainer onboarding", () => {
       signPrepared(harness, second, proposal), signPrepared(harness, third, proposal),
     ], signMaintainerProposalEvidenceFromSeed(
       candidate.seed, proposal.registryId,
+      proposal.networkIdCommitment, proposal.contractAddress,
       proposal.evidenceVerifierKeyIdCommitment, proposal.actionPayloadHash,
     ))).toThrow();
     expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeProposal);
