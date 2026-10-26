@@ -186,6 +186,44 @@ procedure, not evidence that any deployed run has occurred. The current
 read-only query probe can support part of `A04`; it cannot satisfy `A01` to
 `A03`, `O01`, or `R01`.
 
+### Hand off one evidence bundle
+
+After deployment and the signed API plan exist, make a private directory and
+initialize an acceptance inventory with the **actual** source revision,
+install-inventory SHA-256, signed-plan SHA-256, reviewed genesis hash, and
+deployed contract address. The final two values must be lowercase `0x`-prefixed
+64-hex-character values. Do not use a node-reported genesis candidate or a
+simulator address as a substitute.
+
+```sh
+mkdir -m 700 /absolute/private/acceptance
+node scripts/check-standalone-acceptance-evidence.mjs init \
+  /absolute/private/acceptance "$SOURCE_SHA" "$INVENTORY_SHA256" \
+  "$SIGNED_PLAN_SHA256" "$GENESIS_HASH" "$CONTRACT_ADDRESS"
+```
+
+For each case in `acceptance.json`, set `status` to `pass`, `fail`, or
+`not-run`. Put its redacted raw command output/receipts under that private
+directory and list each unique relative file as
+`{"path":"L01/deploy.log","sha256":"<actual lowercase sha256>"}` in the
+case's `evidence` array. A `pass` must have at least one file. Record the
+command, UTC time, checkpoint, operator decision, and relevant transaction or
+journal identifier **in the retained file**; the checker does not infer these
+facts. Do not include seeds, private keys, or credentials. Keep each raw file
+below 32 MiB and use separate files per case.
+
+```sh
+pnpm check:standalone-acceptance-evidence /absolute/private/acceptance
+```
+
+Exit 2 means at least one case is not `pass`; exit 1 means the inventory or a
+file is invalid, missing, symlinked, or hash-mismatched. Exit 0 means only
+that all case labels are `pass` and every listed file matches its digest. The
+report **always** says `releaseQualified: false`: this command cannot verify
+receipt authenticity, ledger finality, the correctness of a human security
+verdict, or the truth of a `pass` label. A second operator must examine the
+raw evidence and independently disposition the release gates.
+
 ## Evidence verdict
 
 Use these labels consistently:
