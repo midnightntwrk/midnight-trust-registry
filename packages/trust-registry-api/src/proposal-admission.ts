@@ -35,12 +35,27 @@ export async function assertProposalAdmission(
   submittedEvidence: ApplicationEvidenceSubmission,
 ): Promise<void> {
   try {
-    const submitted = ApplicationEvidenceSubmissionSchema.parse(submittedEvidence);
-    const applicationId = submitted.envelope.applicationId;
+    const applicationId = ApplicationEvidenceSubmissionSchema.parse(submittedEvidence).envelope.applicationId;
     const [pending, accepted] = await Promise.all([
       port.resolvePendingApplication(applicationId),
       port.resolveAcceptedEvidence(applicationId),
     ]);
+    assertProposalAdmissionRecords(pending, accepted, role, authorizationId, submittedEvidence);
+  } catch {
+    throw new ProposalAdmissionRejectedError();
+  }
+}
+
+/** Verify one captured admission pair without fetching a second, potentially changed pair. */
+export function assertProposalAdmissionRecords(
+  pending: PendingApplicationRecord | null,
+  accepted: AcceptedApplicationEvidence | null,
+  role: ApplicationEvidenceRole,
+  authorizationId: string,
+  submittedEvidence: ApplicationEvidenceSubmission,
+): void {
+  try {
+    const submitted = ApplicationEvidenceSubmissionSchema.parse(submittedEvidence);
     if (pending === null || accepted === null) throw new ProposalAdmissionRejectedError();
     const binding = ApplicationChallengeBindingSchema.parse(pending.binding);
     const evidence = ApplicationEvidenceSubmissionSchema.parse(accepted.evidence);

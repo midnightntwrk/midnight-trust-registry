@@ -1,6 +1,7 @@
 import {
   computeApplicationEvidenceCommitment,
   computeAuthorizationScopeCommitment,
+  computeIssuerStatusPolicyBindingCommitment,
   issuerGovernedResourceId,
   type ApplicationChallengeBinding,
   type ApplicationEvidenceSubmission,
@@ -16,6 +17,7 @@ import {
   ProposalAdmissionRejectedError,
   type AcceptedApplicationEvidence,
 } from "../proposal-admission.js";
+import { bindAcceptedLocalIssuerProposalTerms } from "../local-issuer-proposal-terms.js";
 import type { PendingApplicationRecord } from "../pending-application-registration.js";
 
 const scope = {
@@ -76,6 +78,65 @@ const accepted: AcceptedApplicationEvidence = {
     acceptedAt: "2026-10-13T00:00:01.000Z",
   },
 };
+
+const localPlan = {
+  networkId: "undeployed",
+  contractAddress: `0x${"7".repeat(64)}`,
+  expectedGenesisHash: `0x${"8".repeat(64)}`,
+} as const;
+const localTerms = {
+  format: "tr-local-issuer-proposal-terms-v1",
+  ...localPlan,
+  applicationId: binding.applicationId,
+  authorizationId: pending.authorizationId,
+  evidenceCommitment: evidence.commitment,
+  trustLevel: "assessed",
+  statusPolicyBinding: {
+    version: "tr-issuer-status-policy-v1",
+    trustRegistryId: binding.registryId,
+    issuerAuthorizationId: pending.authorizationId,
+    statusRegistryId: `0x${"5".repeat(64)}`,
+    statusAuthorityVerificationMethod: "did:midnight:status:one#key-1",
+    statusPolicyId: "status:policy:one",
+    statusPolicyVersion: "v1",
+    statusPolicyContentCommitment: `0x${"6".repeat(64)}`,
+  },
+} as const;
+
+describe("local issuer proposal terms", () => {
+  const bind = (overrides: Partial<Parameters<typeof bindAcceptedLocalIssuerProposalTerms>[0]> = {}) =>
+    bindAcceptedLocalIssuerProposalTerms({
+      terms: localTerms, pending, accepted, submittedEvidence: evidence, plan: localPlan, ...overrides,
+    });
+
+  it("binds reviewer-visible terms to one accepted application and local deployment", () => {
+    const result = bind();
+    expect(result.reviewBindingSha256).toMatch(/^0x[0-9a-f]{64}$/u);
+    expect(result.statusPolicyBindingCommitment).toBe(
+      computeIssuerStatusPolicyBindingCommitment(localTerms.statusPolicyBinding));
+    expect(result.terms).toEqual(localTerms);
+    const differentlySigned = { ...evidence, signature: { ...evidence.signature, value: "alternate-signature" } };
+    expect(bind({ submittedEvidence: differentlySigned, accepted: { ...accepted,
+      evidence: differentlySigned } }).reviewBindingSha256).not.toBe(result.reviewBindingSha256);
+  });
+
+  it("rejects mixed evidence, deployment, status authority, and noncanonical terms", () => {
+    for (const terms of [
+      { ...localTerms, applicationId: "application:issuer:other" },
+      { ...localTerms, evidenceCommitment: `0x${"9".repeat(64)}` },
+      { ...localTerms, contractAddress: `0x${"9".repeat(64)}` },
+      { ...localTerms, expectedGenesisHash: `0x${"9".repeat(64)}` },
+      { ...localTerms, trustLevel: " assessed " },
+      { ...localTerms, statusPolicyBinding: { ...localTerms.statusPolicyBinding,
+        issuerAuthorizationId: "authorization:issuer:other" } },
+    ]) expect(() => bind({ terms })).toThrow();
+    expect(() => bind({ plan: { ...localPlan, networkId: "preview" as never } })).toThrow();
+    expect(() => bind({ pending: { ...pending, status: "archived",
+      archiveEventHash: `0x${"9".repeat(64)}` } })).toThrow();
+    expect(() => bind({ accepted: { ...accepted, evidence: { ...evidence,
+      signature: { ...evidence.signature, value: "substituted" } } } })).toThrow();
+  });
+});
 
 describe("proposal admission", () => {
   it("refuses a combined VP and proposal server without a receipt-backed admission port", () => {

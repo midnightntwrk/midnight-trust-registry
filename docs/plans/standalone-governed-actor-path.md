@@ -84,3 +84,15 @@ configuration observation, not an authenticated write or release verdict.
 
 Until these checks run against one reviewed candidate, issue #219 stays open,
 `releaseQualified` stays false, and draft promotion #198 stays draft.
+
+The first code increment for step 3 is `bindAcceptedLocalIssuerProposalTerms`.
+It checks one captured pending/accepted application pair, exact submitted
+evidence, the approved local network/genesis/contract, and a canonical trust
+level and status-policy binding. It emits a review digest and status-policy
+commitment only. The digest covers the exact accepted evidence submission,
+including its signature and receipt, plus the pending application record,
+rather than only the envelope commitment.
+It does not verify the live VC status authority, current
+ledger policy, maintainer signatures, provider identity, or finality; the
+production API does not yet call it. Those checks remain mandatory before
+any broadcast or E2E verdict.
