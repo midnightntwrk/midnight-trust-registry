@@ -1643,6 +1643,28 @@ time, or a new journal path as recovery authority. Issue #220 remains the stop
 gate until a
 reviewed finality policy, durable tombstone, and operator recovery path exist.
 
+## Security-Script Type Gate
+
+`pnpm run typecheck:security-scripts` checks the JavaScript import graph rooted
+at the first-run wizard, deployment and verifier-key runners, approved provider
+identity reader, install builder, Helm mapping verifier, restart observer, and
+static image archive reader. Root `typecheck` and `typecheck:light` run it in CI
+after the workspace packages are built. The gate caught previously implicit
+`Buffer`-to-JSON coercions; those reads now decode UTF-8 explicitly. The
+standalone wizard, deployment, maintenance, restart, Helm, and install tests
+remain the behavioral authority for malformed or missing fields.
+
+This is checked JavaScript with `strict: false`, **not** a claim that the
+dynamic setup record, external provider callbacks, or parsed network JSON are
+fully typed. Trust Registry maintainers own the remaining migration under
+[#229](https://github.com/midnightntwrk/midnight-trust-registry/issues/229):
+move pure approval/plan decisions into typed packages, define explicit
+schemas for all untrusted records, and add strict types at the shell/IO
+boundary. Other operator and observation scripts outside the listed import
+graph remain untyped until inventoried and migrated. Type checking does not
+close the provider dependency-identity gate (#233), authenticated finality,
+or independent security review (#232).
+
 ## Evidence Ledger And Stop Rules
 
 The release owner must bind every item below to one signed source SHA and one

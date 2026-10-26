@@ -21,6 +21,7 @@ const VERIFICATION = "restart-verification.json";
 const INTERRUPTED_BASELINE = /^restart-baseline\.json\.[1-9][0-9]*\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/u;
 const INTERRUPTED_VERIFICATION = /^restart-verification\.json\.[1-9][0-9]*\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/u;
 
+/** @param {string | Buffer} bytes */
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -132,7 +133,7 @@ function parsePreparedEnv(bytes) {
 }
 
 async function readContext(root, dependencies) {
-  const record = JSON.parse(await privateFile(join(root, "setup-record.json")));
+  const record = JSON.parse((await privateFile(join(root, "setup-record.json"))).toString("utf8"));
   if (!record.stack?.observation || record.stack.state !== "observed-ledger-bridge-only"
     || !SHA256.test(record.install?.inventorySha256 ?? "")
     || !SHA256.test(record.stack.envFileSha256 ?? "")
@@ -346,7 +347,7 @@ export async function captureStandaloneRestartBaseline(directory, dependencies =
 export async function verifyStandaloneRestart(directory, dependencies = {}) {
   const root = await privateDirectory(directory);
   const baselineBytes = await privateFile(join(root, BASELINE), 1024 * 1024);
-  const baseline = JSON.parse(baselineBytes);
+  const baseline = JSON.parse(baselineBytes.toString("utf8"));
   const after = await observeStandaloneRestartSnapshot(root,
     { historicalHeight: baseline.finalizedHeight, allowUnpublishedHostPorts: true }, dependencies);
   const result = compareStandaloneRestartSnapshots(baseline, after);
@@ -372,7 +373,7 @@ export async function readStandaloneRestartEvidence(directory, expected) {
   }
   if (!baselineBytes && !verificationBytes) return { status: "pending" };
   if (!baselineBytes) throw new Error("Restart verification exists without its baseline");
-  const baseline = JSON.parse(baselineBytes);
+  const baseline = JSON.parse(baselineBytes.toString("utf8"));
   if (baseline.format !== "tr-standalone-restart-snapshot-v1"
     || baseline.sourceRevision !== expected.sourceRevision
     || baseline.installInventorySha256 !== expected.installInventorySha256
@@ -380,7 +381,7 @@ export async function readStandaloneRestartEvidence(directory, expected) {
     throw new Error("Restart baseline is not bound to this setup");
   }
   if (!verificationBytes) return { status: "baseline-captured-verification-pending" };
-  const verification = JSON.parse(verificationBytes);
+  const verification = JSON.parse(verificationBytes.toString("utf8"));
   const comparison = compareStandaloneRestartSnapshots(baseline, verification.after);
   if (verification.baselineSha256 !== sha256(baselineBytes)
     || !Number.isFinite(Date.parse(verification.observedAt ?? ""))

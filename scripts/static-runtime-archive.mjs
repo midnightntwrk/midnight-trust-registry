@@ -23,7 +23,7 @@ function verifiedBlob(archive, digest) {
   if (createHash("sha256").update(bytes).digest("hex") !== digest.slice(7)) {
     throw new Error("OCI blob hash mismatch");
   }
-  return JSON.parse(bytes);
+  return JSON.parse(bytes.toString("utf8"));
 }
 
 export function staticImageIdentityFromArchive(archive, role, revision, requireOci = false) {
@@ -52,7 +52,7 @@ export function staticImageIdentityFromArchive(archive, role, revision, requireO
   if (createHash("sha256").update(configBytes).digest("hex") !== configDigest) {
     throw new Error(`${role} image archive config hash mismatch`);
   }
-  const config = JSON.parse(configBytes);
+  const config = JSON.parse(configBytes.toString("utf8"));
   const environment = config?.config?.Env;
   if (config?.os !== "linux" || config.architecture !== "arm64"
     || config.config?.Labels?.["org.opencontainers.image.revision"] !== revision

@@ -40,6 +40,7 @@ function boundedFile(path, maxBytes) {
   }
 }
 
+/** @param {Buffer} receiptBytes */
 export function verifyMappingSignature(receiptBytes, signaturePath, keyringPath, signerFingerprint) {
   if (!Buffer.isBuffer(receiptBytes) || !FINGERPRINT.test(signerFingerprint)) {
     throw new Error("Helm image mapping approval input is invalid");
