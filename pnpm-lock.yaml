@@ -47,6 +47,9 @@ importers:
       '@midnight-ntwrk/midnight-did-jubjub-schnorr':
         specifier: 0.7.0
         version: 0.7.0
+      '@midnight-ntwrk/midnight-js-network-id':
+        specifier: 4.1.1
+        version: 4.1.1
     devDependencies:
       '@eslint/js':
         specifier: ^9.29.0

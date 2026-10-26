@@ -7,17 +7,26 @@ import { bytes32Commitment, bytes32Hex } from "@midnight-ntwrk/trust-registry-cl
 import { deriveJubjubPublicKeyFromSeed, TrustRegistryContract, trustRegistryWitnesses } from "@midnight-ntwrk/trust-registry-contract";
 import { TrustRegistrySimulator } from "@midnight-ntwrk/trust-registry-contract/testing";
 
-import { deployPublicTrustRegistry, readPostDeploymentPublicTrustRegistry } from "../public-network-deployment.js";
+import {
+  deployLocalTrustRegistry,
+  deployPublicTrustRegistry,
+  readPostDeploymentLocalTrustRegistry,
+  readPostDeploymentPublicTrustRegistry,
+} from "../public-network-deployment.js";
 
 const mocks = vi.hoisted(() => ({
   deployContract: vi.fn(),
   indexerPublicDataProvider: vi.fn(),
   queryContractState: vi.fn(),
+  verifyInstalledVerifierKeyAssets: vi.fn(),
 }));
 
 vi.mock("@midnight-ntwrk/midnight-js-contracts", () => ({ deployContract: mocks.deployContract }));
 vi.mock("@midnight-ntwrk/midnight-js-indexer-public-data-provider", () => ({
   indexerPublicDataProvider: mocks.indexerPublicDataProvider,
+}));
+vi.mock("../verifier-asset-preflight.js", () => ({
+  verifyInstalledVerifierKeyAssets: mocks.verifyInstalledVerifierKeyAssets,
 }));
 
 const address = "a".repeat(64);
@@ -138,6 +147,112 @@ const deploy = (overrides: Partial<typeof network> = {}, input = bootstrap, mani
     providers: {} as never,
     contractMaintenanceSigningKey: maintenanceSigningKey,
   });
+
+const localNetwork = {
+  networkId: "undeployed" as const,
+  rpcUrl: "http://node:9944",
+  indexerHttpUrl: "http://indexer:8080/graphql",
+  indexerWsUrl: "ws://indexer:8080/graphql/ws",
+  expectedGenesisHash: genesis,
+  allowedHosts: ["node", "indexer"],
+  fetchImpl,
+};
+const deployLocal = (overrides: Partial<typeof localNetwork> = {}) => deployLocalTrustRegistry({
+  network: { ...localNetwork, ...overrides },
+  bootstrap: {
+    ...bootstrap,
+    registryDidCommitment: bytes32Commitment("did:midnight:undeployed:registry"),
+    maintainerDidCommitment: bytes32Commitment("did:midnight:undeployed:maintainer"),
+  },
+  releaseManifest,
+  providers: {} as never,
+  contractMaintenanceSigningKey: maintenanceSigningKey,
+});
+
+describe("isolated local Trust Registry deployment", () => {
+  it("rejects changed installed verifier assets before submitting", async () => {
+    setNetworkId("undeployed");
+    mocks.verifyInstalledVerifierKeyAssets.mockRejectedValueOnce(new Error("verifier mismatch"));
+    await expect(deployLocal()).rejects.toThrow(/verifier mismatch/u);
+    expect(mocks.deployContract).not.toHaveBeenCalled();
+  });
+  it("deploys with the undeployed domain and reads back finalized constructor and key hashes", async () => {
+    setNetworkId("undeployed");
+    const result = await deployLocal();
+    expect(mocks.deployContract).toHaveBeenCalledOnce();
+    expect(mocks.deployContract.mock.calls[0]?.[1].args[8]).toEqual(bytes32Commitment("undeployed"));
+    expect(result.receipt.networkId).toBe("undeployed");
+    expect(result.readback.status).toBe("unsafe-maintenance-authority");
+    if (result.readback.status === "unsafe-maintenance-authority") {
+      expect(result.readback.state.networkId).toBe("undeployed");
+      expect(result.readback.state.verifierKeySha256).toEqual(releaseManifest.verifierKeySha256);
+    }
+    expect(mocks.indexerPublicDataProvider).toHaveBeenCalledWith(
+      "http://indexer:8080/graphql", "ws://indexer:8080/graphql/ws",
+    );
+  });
+
+  it("rejects wrong genesis, unsafe endpoints, and public network relabeling before submit", async () => {
+    setNetworkId("undeployed");
+    await expect(deployLocal({ expectedGenesisHash: `0x${"d".repeat(64)}` }))
+      .rejects.toThrow(/genesis hash mismatch/u);
+    await expect(deployLocal({ rpcUrl: "http://public.example:9944" }))
+      .rejects.toThrow(/allowlist/u);
+    await expect(deployLocal({ indexerHttpUrl: "http://public.example/graphql" }))
+      .rejects.toThrow(/allowlist/u);
+    await expect(deployLocal({ indexerWsUrl: "ws://public.example/graphql/ws" }))
+      .rejects.toThrow(/allowlist/u);
+    await expect(deployLocal({ rpcUrl: "ws://node:9944" }))
+      .rejects.toThrow(/allowlist/u);
+    await expect(deployLocal({ networkId: "preprod" as never }))
+      .rejects.toThrow(/undeployed network/u);
+    setNetworkId("preprod");
+    await expect(deployLocal()).rejects.toThrow(/network does not match/u);
+    await expect(deploy({ networkId: "undeployed" as never }))
+      .rejects.toThrow(/Unsupported public Midnight network/u);
+    expect(mocks.deployContract).not.toHaveBeenCalled();
+  });
+
+  it("keeps local post-deployment readback on the local reader and rejects SDK relabeling", async () => {
+    setNetworkId("undeployed");
+    const deployed = await deployLocal();
+    const localBootstrap = {
+      ...bootstrap,
+      registryDidCommitment: bytes32Commitment("did:midnight:undeployed:registry"),
+      maintainerDidCommitment: bytes32Commitment("did:midnight:undeployed:maintainer"),
+    };
+    const readback = () => readPostDeploymentLocalTrustRegistry({
+      network: localNetwork,
+      receipt: deployed.receipt,
+      bootstrap: localBootstrap,
+      releaseManifest,
+      governance: {
+        policyCommitment: localBootstrap.governancePolicyCommitment,
+        policyVersion: 1n, actionSequence: 1n,
+        maintainerThreshold: 1n, activeMaintainerCount: 1n,
+      },
+      maintenancePolicy: { mode: "immutable" },
+    });
+    expect((await readback()).status).toBe("unsafe-maintenance-authority");
+    observedAuthorityCommittee = [];
+    observedAuthorityCounter = 1n;
+    expect((await readback()).status).toBe("verified");
+    setNetworkId("preprod");
+    await expect(readback()).rejects.toThrow(/undeployed network/u);
+    await expect(readPostDeploymentPublicTrustRegistry({
+      network: { ...network, networkId: "preprod" },
+      receipt: deployed.receipt,
+      bootstrap: localBootstrap,
+      releaseManifest,
+      governance: {
+        policyCommitment: localBootstrap.governancePolicyCommitment,
+        policyVersion: 1n, actionSequence: 1n,
+        maintainerThreshold: 1n, activeMaintainerCount: 1n,
+      },
+      maintenancePolicy: { mode: "immutable" },
+    })).rejects.toThrow(/receipt does not match/u);
+  });
+});
 
 describe("public Trust Registry deployment", () => {
   it("submits constructor-bound inputs but does not approve the initial single-key authority", async () => {

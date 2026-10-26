@@ -1733,3 +1733,146 @@ rejections, including a signature invalidated by a changed resolved Midnight
 DID assertion key. Each isolated case preserves a fresh challenge and then
 accepts the original valid proofs. These are local fixture-backed checks, not
 independent external accreditation or public-network finality evidence.
+
+## Dedicated Local Ledger Smoke, 2026-10-19
+
+The `tr-standalone-local-smoke` project pulled its three pinned Ledger 8
+images and started a dedicated node, indexer, and proof server without
+touching the sibling passport localnet. The indexer required a 64-character
+hex secret. The proof server could not fetch its verified public parameters
+on the internal bridge; it fetched them during a temporary online
+installation phase, and its 18-file cache was copied to a preserved local
+artifact directory. After removing the temporary external network, a
+recreated proof container started with that cache mounted read-only and
+parameter fetching disabled; a peer on the internal bridge returned proof
+server version `8.1.0`. This is an offline cold-start observation, not a
+successful proof or end-to-end actor journey.
+
+The node image wrote its chain under `/node/chain`, not the original `/data`
+volume mount. After stopping the dedicated node and indexer, the chain was
+copied from the stopped container into the named node volume and Compose was
+corrected to mount `/node/chain`. The recreated node reported the same genesis
+hash `0xe624f91737add2cf1a6658b3cf3a5524d633faea8c943702b435820316d9e21e`
+and still served the pre-stop finalized block
+`0xd16811b96a9f9e567b92f46d84130b0ed29edf4075e1e7fec93fc5d484f33e17`
+at height `0x76`; the indexer returned to healthy. These are local RPC and
+container observations, not an independently approved genesis, authenticated
+finality proof, contract deployment, backup restore, or release qualification.
+On the tested Docker Desktop internal bridge, configured loopback port
+bindings were not published to the host. Host-side deployment therefore
+needs a separately controlled access path; offline E2E must run with that
+egress-capable path removed and all required services inside the trust
+boundary. #198 remains draft.
+
+### Isolated node-volume restore smoke
+
+The stopped-node snapshot preserved at the ignored
+`artifacts/standalone-node-chain/` (302 MiB) was copied read-only into a new
+Docker volume, `tr-standalone-node-restore-smoke`. A separate container of
+the pinned node image `midnightntwrk/midnight-node@sha256:c3e46f8beff308b352813cd8904f6480c331504e09060abd671b8a32e1255220`
+booted that volume at `/node/chain` with `--network none`, `CFG_PRESET=dev`,
+and the same configured sidechain block beneficiary as the dedicated stack.
+No sibling passport container or live Trust Registry volume was changed.
+
+From inside the temporary container, `chain_getBlockHash(0)` returned the
+recorded genesis
+`0xe624f91737add2cf1a6658b3cf3a5524d633faea8c943702b435820316d9e21e`,
+and `chain_getBlockHash(118)` returned the recorded pre-snapshot block
+`0xd16811b96a9f9e567b92f46d84130b0ed29edf4075e1e7fec93fc5d484f33e17`.
+The restored node also answered `chain_getFinalizedHead`. The temporary node
+was then stopped; its container and volume remain for inspection. The active
+three-service dedicated stack still passed `check-standalone-topology.mjs`
+afterward. This is evidence of **same-host node-state restore and historical
+block readback only**. The checkpoint was not independently authenticated;
+there was no indexer/API/wallet restore, second-host test, contract receipt,
+conflict injection, or ambiguous-transaction recovery. The full RC
+backup/recovery gate remains open.
+
+The following commands record this run. For a repeat, substitute a **new**
+volume and container name throughout; `docker volume create` does not fail
+if a volume already exists. Never target the live
+`tr-standalone-local-smoke_node-data` volume or overwrite the preserved
+snapshot:
+
+```sh
+docker volume create tr-standalone-node-restore-smoke
+docker run --rm --network none --entrypoint /bin/sh \
+  --mount type=bind,src="$PWD/artifacts/standalone-node-chain",dst=/source,readonly \
+  --mount type=volume,src=tr-standalone-node-restore-smoke,dst=/target \
+  midnightntwrk/midnight-node@sha256:c3e46f8beff308b352813cd8904f6480c331504e09060abd671b8a32e1255220 \
+  -c 'cp -a /source/. /target/ && test -d /target/chains && test -d /target/ledger_storage'
+docker run -d --name tr-standalone-node-restore-smoke --network none \
+  --mount type=volume,src=tr-standalone-node-restore-smoke,dst=/node/chain \
+  --env CFG_PRESET=dev \
+  --env SIDECHAIN_BLOCK_BENEFICIARY=04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e \
+  midnightntwrk/midnight-node@sha256:c3e46f8beff308b352813cd8904f6480c331504e09060abd671b8a32e1255220
+docker exec tr-standalone-node-restore-smoke curl -sf -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"chain_getBlockHash","params":[118]}' \
+  http://localhost:9944
+docker stop tr-standalone-node-restore-smoke
+```
+
+### Isolated indexer-volume restore smoke
+
+On the same dedicated local stack, the active indexer reported block height
+`682` with hash
+`8b71180425ff4e750f998929cfe359fc1bffbf64e6a7062d40f1921f56ac7f9b`.
+Only `tr-standalone-local-smoke-indexer-1` was stopped while its `/data`
+volume was copied read-only to a new
+`tr-standalone-indexer-restore-smoke` volume (about 7.8 MiB). The original
+indexer was restarted and returned healthy. A separate instance of the same
+pinned indexer image booted from the copied volume, without published ports,
+on the dedicated internal ledger network. Its GraphQL query
+`block(offset: { height: 682 }) { height hash }` returned the exact recorded
+hash. The restarted active indexer returned the same historical result. The
+temporary restored indexer was stopped, and the active node/indexer/prover
+stack still passed `check-standalone-topology.mjs`. Both copied volume and
+stopped container remain for inspection.
+
+This demonstrates **same-host indexer volume restore and historical block
+readback**, not a clean-host backup/restore. The restored indexer connected to
+the still-running local node and could have resynchronized missing data; the
+test did not prove independent database completeness. No Trust Registry
+contract, API workspace, wallet state, VC status authority, backup integrity
+signature, cross-host restore, conflict injection, or ambiguous-transaction
+recovery was exercised. The full RC recovery gate remains open.
+
+### Pinned standalone install-bundle candidate
+
+From signed/DCO source `0ae03ca857f9aedb101f47c29e5e98c93b1d082e`, the
+local bundle builder packed ten packages with the preserved full 66-circuit
+contract artifacts, exported three digest-pinned arm64 image archives, and
+copied all 18 Ledger 8 proof-parameter files into a new ignored
+`artifacts/standalone-install/<source SHA>/` directory. The byte-level
+verifier passed. Subsequent archive inspection found that `docker save` of a
+digest-only image produced `RepoTags: null`; a loader that assumed Docker's
+image ID was the config digest failed on this Docker Desktop containerd
+store, where `docker load` reported the OCI manifest digest instead. The
+loader was corrected to accept only either verified digest and then create
+an explicit source-SHA-scoped local tag. On the existing daemon, all three
+archives loaded, their IDs matched verified archive metadata, and local tags
+were created. The offline Compose overlay resolved those tags and disables
+pulls. The bundle and local tags remain available for inspection.
+
+This is **candidate-byte integrity and existing-daemon load evidence**, not
+an approved software supply-chain provenance decision or a clean offline
+installation. The daemon already held the upstream images, and neither a
+fresh-host `docker load` nor a pull-disabled full-stack restart was run.
+The bundle binds the earlier source SHA above; after subsequent source
+changes, generate a new bundle from the final clean signed commit. A
+release-qualified install additionally needs pinned local DID, VC/status,
+API/browser and wallet components, an independently approved install
+manifest, and an offline restart with egress denied.
+
+### First-run setup wizard boundary
+
+The initial local setup CLI verifies the staged bundle, records a progressing
+local node observation against an operator-supplied genesis pin, and reserves
+one deployment attempt before entering the existing deployment adapter. Its
+private, resumable record refuses another attempt after reservation, including
+an unknown SDK outcome. The status report deliberately leaves independent
+genesis/committee approval, offline actor journeys, restore, and security
+review pending. This is workflow scaffolding, not live deployment evidence;
+the smoke wallet and 1-of-3 committee remain development-only. Next work is
+to bind independently approved first-setup decisions and a real provider to
+this workflow, then capture finalized deployment and offline evidence.

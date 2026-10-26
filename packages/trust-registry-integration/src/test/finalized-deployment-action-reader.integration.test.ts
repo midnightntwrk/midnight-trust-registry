@@ -25,7 +25,10 @@ import {
 } from "@midnight-ntwrk/trust-registry-contract/testing";
 
 import { bytes32Commitment } from "../fixtures.js";
-import { createCheckpointedDeploymentActionReader } from "../finalized-deployment-action-reader.js";
+import {
+  createCheckpointedDeploymentActionReader,
+  createLocalCheckpointedDeploymentActionReader,
+} from "../finalized-deployment-action-reader.js";
 
 const blockHash = "d".repeat(64);
 const address = "a".repeat(64);
@@ -40,23 +43,25 @@ const verifierKeyPath = process.env.TR_TEST_VERIFIER_KEY_FILE ?? resolve(
 const realVerifierKeyIt = process.env.TR_TEST_VERIFIER_KEY_FILE || existsSync(verifierKeyPath)
   ? it : it.skip;
 
-function fixture() {
+function fixture(local = false) {
+  const networkId = local ? "undeployed" : "preprod";
   const seed = new Uint8Array(32).fill(13);
   const simulator = new TrustRegistrySimulator({
     registryId: bytes32Commitment(registryId),
-    networkIdCommitment: bytes32Commitment("preprod"),
+    networkIdCommitment: bytes32Commitment(networkId),
     contractAddress: address,
-    registryDidCommitment: bytes32Commitment("did:midnight:preprod:qualification"),
+    registryDidCommitment: bytes32Commitment(`did:midnight:${networkId}:qualification`),
     governancePolicyCommitment: policy,
     maintainerId: bytes32Commitment("maintainer:qualification"),
-    maintainerDidCommitment: bytes32Commitment("did:midnight:preprod:maintainer"),
+    maintainerDidCommitment: bytes32Commitment(`did:midnight:${networkId}:maintainer`),
     maintainerKeyId: bootstrapMaintainerKeyId,
     maintainerPublicKey: deriveJubjubPublicKeyFromSeed(seed),
     maintainerThreshold: 1n,
   });
   const queryContractState = vi.fn(async () => ({ data: simulator.circuitContext.currentQueryContext.state }));
-  const readCurrentFinalizedCheckpoint = vi.fn(async () => ({ networkId: "preprod", blockHash }));
-  const reader = createCheckpointedDeploymentActionReader({
+  const readCurrentFinalizedCheckpoint = vi.fn(async () => ({ networkId, blockHash }));
+  const makeReader = local ? createLocalCheckpointedDeploymentActionReader : createCheckpointedDeploymentActionReader;
+  const reader = makeReader({
     publicDataProvider: { queryContractState } as unknown as Pick<PublicDataProvider, "queryContractState">,
     checkpointSource: { readCurrentFinalizedCheckpoint },
   });
@@ -160,5 +165,17 @@ describe("checkpointed deployment action reader", () => {
     const { reader, queryContractState } = fixture();
     queryContractState.mockResolvedValueOnce(null as never);
     await expect(reader.readCurrentFinalizedActionState(`0x${address}`)).resolves.toBeNull();
+  });
+
+  it("decodes a genesis-pinned local ledger without accepting a public checkpoint", async () => {
+    const { reader, simulator, readCurrentFinalizedCheckpoint, queryContractState } = fixture(true);
+    await expect(reader.readCurrentFinalizedActionState(`0x${address}`)).resolves.toMatchObject({
+      networkId: "undeployed",
+      deploymentNetworkIdCommitment: bytes32Hex(bytes32Commitment("undeployed")),
+    });
+    expect(queryContractState).toHaveBeenCalledWith(address, { type: "blockHash", blockHash });
+    expect(simulator.getLedger().initialized).toBe(true);
+    readCurrentFinalizedCheckpoint.mockResolvedValueOnce({ networkId: "preprod", blockHash });
+    await expect(reader.readCurrentFinalizedActionState(`0x${address}`)).rejects.toThrow(/malformed/u);
   });
 });

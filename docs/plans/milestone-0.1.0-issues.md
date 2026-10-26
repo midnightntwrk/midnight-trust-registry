@@ -5,6 +5,12 @@ Updated: 2026-10-05
 GitHub milestone: [Midnight Trust Registry 0.1.0](https://github.com/midnightntwrk/midnight-trust-registry/milestone/1)
 Normative scope: [0.1.0 reference profile](../spec/milestone-0.1.0.md)
 
+The first release candidate is self-hosted local/offline runtime only. The
+[standalone qualification gates](../guide/standalone-offline-runtime.md) are
+required in addition to the simulator-based functional issue plan below.
+Live Preprod qualification is deferred to a later public-network release;
+mocked-provider and simulator tests are not local deployment evidence.
+
 Issue numbers are the tracker identifiers. The order below is the dependency
 order, not a promise that every issue requires a separate PR. A PR may close
 several issues only when each definition of done has evidence. Existing closed

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { createRpcFinalizedCheckpointSource } from "../rpc-finalized-checkpoint.js";
+import {
+  createLocalRpcFinalizedCheckpointSource,
+  createRpcFinalizedCheckpointSource,
+} from "../rpc-finalized-checkpoint.js";
 
 const GENESIS = `0x${"a".repeat(64)}`;
 const FINALIZED = `0x${"b".repeat(64)}`;
@@ -15,11 +18,11 @@ function fixture(responses: readonly Response[] = [
   response({ jsonrpc: "2.0", id: 1, result: GENESIS }),
   response({ jsonrpc: "2.0", id: 1, result: FINALIZED }),
 ]) {
-  const calls: Array<{ url: string; method: string; params: unknown }> = [];
+  const calls: Array<{ url: string; method: string; params: unknown; redirect: RequestRedirect | undefined }> = [];
   let next = 0;
   const fetchImpl: typeof fetch = async (url, init) => {
     const body = JSON.parse(String(init?.body)) as { method: string; params: unknown };
-    calls.push({ url: String(url), method: body.method, params: body.params });
+    calls.push({ url: String(url), method: body.method, params: body.params, redirect: init?.redirect });
     return responses[next++] ?? response({ jsonrpc: "2.0", id: 1, result: null });
   };
   return { calls, fetchImpl };
@@ -38,8 +41,8 @@ describe("RPC finalized checkpoint source", () => {
       networkId: "preview", blockHash: FINALIZED.slice(2),
     });
     expect(calls).toEqual([
-      { url: "https://rpc.preview.midnight.network/", method: "chain_getBlockHash", params: [0] },
-      { url: "https://rpc.preview.midnight.network/", method: "chain_getFinalizedHead", params: [] },
+      { url: "https://rpc.preview.midnight.network/", method: "chain_getBlockHash", params: [0], redirect: "error" },
+      { url: "https://rpc.preview.midnight.network/", method: "chain_getFinalizedHead", params: [], redirect: "error" },
     ]);
   });
 
@@ -82,5 +85,37 @@ describe("RPC finalized checkpoint source", () => {
       fetchImpl,
     });
     await expect(source.readCurrentFinalizedCheckpoint()).rejects.toThrow();
+  });
+
+  it("pins the isolated local genesis before reading a finalized head", async () => {
+    const { calls, fetchImpl } = fixture();
+    const source = createLocalRpcFinalizedCheckpointSource({
+      rpcUrl: "http://midnight-node:9944",
+      allowedHosts: ["midnight-node", "midnight-indexer"],
+      expectedGenesisHash: GENESIS,
+      fetchImpl,
+    });
+    await expect(source.readCurrentFinalizedCheckpoint()).resolves.toEqual({
+      networkId: "undeployed", blockHash: FINALIZED.slice(2),
+    });
+    expect(calls.map((call) => call.method)).toEqual(["chain_getBlockHash", "chain_getFinalizedHead"]);
+    expect(calls.map((call) => call.redirect)).toEqual(["error", "error"]);
+    const wrong = createLocalRpcFinalizedCheckpointSource({
+      rpcUrl: "http://midnight-node:9944", allowedHosts: ["midnight-node"],
+      expectedGenesisHash: `0x${"c".repeat(64)}`, fetchImpl: fixture().fetchImpl,
+    });
+    await expect(wrong.readCurrentFinalizedCheckpoint()).rejects.toThrow(/genesis hash mismatch/u);
+  });
+
+  it("refuses an RPC redirect instead of following it outside the local allowlist", async () => {
+    const redirectedFetch: typeof fetch = async (_url, init) => {
+      expect(init?.redirect).toBe("error");
+      return new Response(null, { status: 307, headers: { location: "https://public.example/rpc" } });
+    };
+    const source = createLocalRpcFinalizedCheckpointSource({
+      rpcUrl: "http://node:9944", allowedHosts: ["node"],
+      expectedGenesisHash: GENESIS, fetchImpl: redirectedFetch,
+    });
+    await expect(source.readCurrentFinalizedCheckpoint()).rejects.toThrow(/request failed/u);
   });
 });

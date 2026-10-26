@@ -100,9 +100,20 @@ single-key maintenance authority that can replace verifier keys without a
 Trust Registry governance quorum. Preserve the receipt and investigate any
 nonmatching or unavailable image read-only; never retry it as a fresh deployment.
 
+For the first qualification deployment, the selected target is Preprod and
+the selected maintenance model is a threshold committee aligned with
+governance. The [administrator runbook](../guide/preprod-admin-qualification.md)
+records the approval inputs and stop conditions. The actual committee keys,
+threshold, and genesis pin remain unapproved. The local Ledger 8 committee
+update builder and single-host submission journal prevent blind retries but
+the read-only reconciliation helper only classifies the finalized authority
+image. These components do not supply transaction-provenance recovery,
+independent finality review, or a live Preprod transition; selection of a
+model does not close #213.
+
 After an operator-approved maintenance transition, use
 `readPostDeploymentPublicTrustRegistry` with an independently pinned governance
-image and an explicit immutable or multi-party committee policy. `verified`
+image and an explicit multi-party committee policy. `verified`
 then requires the finalized authority, governance fields, bootstrap record,
 and every verifier-key hash to match those pins. A committee policy requires
 at least three distinct keys and a threshold of at least two, aligned with a
@@ -112,8 +123,9 @@ zero threshold is unsafe, not immutable. The helper does not perform the transit
 custody. Its readback is still not public-network qualification: no funded
 deployment was performed, the host providers and RPC/indexer are trusted, and
 one indexer is not a cryptographic proof of canonical state. #200 and #213
-remain open until an operator chooses the authority model, executes and
-independently reviews a supported-target deployment and finalized transition.
+remain open until an operator approves the committee roster and threshold,
+executes, and independently reviews a supported-target deployment and
+finalized transition.
 The bootstrap-specific read also compares the registry DID commitment, policy
 version, all three initial thresholds, active maintainer count, and the
 bootstrap maintainer's ID, DID, key ID, public key, active status, and joined

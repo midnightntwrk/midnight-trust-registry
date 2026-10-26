@@ -20,7 +20,29 @@ export * from "./vc-signer-authorization.js";
 export * from "./finalized-deployment-action-reader.js";
 export * from "./rpc-finalized-checkpoint.js";
 export * from "./public-network-deployment-action-reader.js";
+export * from "./local-network-deployment-action-reader.js";
 export * from "./public-network-deployment.js";
+export * from "./deployment-attempt-journal.js";
+export { prepareLocalNetworkCommitteeTransition, preparePublicNetworkCommitteeTransition } from "./public-maintenance-transition.js";
+export type {
+  CommitteeTransitionApproval,
+  LocalCommitteeTransitionApproval,
+  PreparedCommitteeTransition,
+} from "./public-maintenance-transition.js";
+export {
+  FileMaintenanceTransitionJournal,
+  MaintenanceTransitionAlreadyReservedError,
+  MaintenanceTransitionJournalInvalidError,
+  MaintenanceTransitionOutcomeUnknownError,
+  submitLocalNetworkCommitteeTransition,
+  submitPublicNetworkCommitteeTransition,
+} from "./public-maintenance-submission.js";
+export type { MaintenanceTransitionJournalEntry } from "./public-maintenance-submission.js";
+export {
+  reconcileLocalNetworkCommitteeTransition,
+  reconcilePublicNetworkCommitteeTransition,
+} from "./public-maintenance-reconciliation.js";
+export type { MaintenanceTransitionReconciliation } from "./public-maintenance-reconciliation.js";
 export * from "./vc-scope.js";
 export * from "./vc-authority-signer.js";
 export * from "./vc-authority-registration.js";
