@@ -1,0 +1,20 @@
+# Template test data only. These digests are not real images or release approvals.
+deploymentPhase: runtime
+images:
+  node: example.invalid/node@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  indexer: example.invalid/indexer@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  proofServer: example.invalid/proof@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  api: example.invalid/api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  admin: example.invalid/admin@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  applicant: example.invalid/applicant@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+node:
+  beneficiary: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+storage:
+  nodeClaim: node-history
+  indexerClaim: indexer-history
+  proofParametersClaim: pinned-proof-parameters
+secrets:
+  indexerName: indexer-credentials
+  apiApprovalName: api-approval
+  apiKeyringName: reviewer-keyring
+  apiReviewerFingerprint: CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC

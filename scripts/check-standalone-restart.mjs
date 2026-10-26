@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
-import { lstat, open, readFile, realpath } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { link, lstat, open, readFile, realpath, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -13,12 +13,37 @@ import { observeStandaloneTopology, standaloneStackConfig } from "./check-standa
 const run = promisify(execFile);
 const SHA256 = /^[0-9a-f]{64}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
+const ZERO_HASH = /^0x0{64}$/u;
 const SERVICES = ["node", "indexer", "proof-server"];
 const BASELINE = "restart-baseline.json";
 const VERIFICATION = "restart-verification.json";
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+export function deploymentMarkerFromRecord(record) {
+  const receipt = record.deployment?.result?.receipt;
+  const validReceipt = receipt?.networkId === "undeployed"
+    && HASH.test(receipt.contractAddress ?? "") && !ZERO_HASH.test(receipt.contractAddress)
+    && HASH.test(receipt.blockHash ?? "") && !ZERO_HASH.test(receipt.blockHash)
+    && typeof receipt.txId === "string" && receipt.txId.length > 0
+    && Number.isSafeInteger(receipt.blockHeight) && receipt.blockHeight >= 0;
+  return {
+    state: record.deployment?.state ?? "pending",
+    contractAddress: validReceipt ? receipt.contractAddress : null,
+    readbackStatus: record.deployment?.result?.readbackStatus ?? null,
+    validReceipt: Boolean(validReceipt),
+  };
+}
+
+export function deploymentEvidenceLabel(marker) {
+  if (marker.state === "observed" && marker.readbackStatus === "staged-bootstrap-pending"
+    && marker.validReceipt === true && marker.contractAddress !== null) {
+    return "setup-recorded-deployment-ledger-only";
+  }
+  if (marker.state === "pending") return "pre-deployment-smoke";
+  return `deployment-state-${marker.state}-unbound`;
 }
 
 async function privateDirectory(directory) {
@@ -31,9 +56,9 @@ async function privateDirectory(directory) {
   return root;
 }
 
-async function privateFile(path) {
+async function privateFile(path, maxBytes = 16 * 1024 * 1024) {
   const stat = await lstat(path);
-  if (!stat.isFile() || (stat.mode & 0o077) !== 0
+  if (!stat.isFile() || stat.size === 0 || stat.size > maxBytes || (stat.mode & 0o077) !== 0
     || (typeof process.getuid === "function" && stat.uid !== process.getuid())) {
     throw new Error("Restart evidence input must be an owned private regular file");
   }
@@ -41,12 +66,18 @@ async function privateFile(path) {
 }
 
 async function writeEvidence(path, value) {
-  const file = await open(path, "wx", 0o600);
+  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  const file = await open(temporary, "wx", 0o600);
   try {
-    await file.writeFile(`${JSON.stringify(value, null, 2)}\n`);
-    await file.sync();
+    try {
+      await file.writeFile(`${JSON.stringify(value, null, 2)}\n`);
+      await file.sync();
+    } finally {
+      await file.close();
+    }
+    await link(temporary, path);
   } finally {
-    await file.close();
+    await unlink(temporary).catch(() => {});
   }
 }
 
@@ -70,7 +101,7 @@ async function readContext(root, dependencies) {
     || !SHA256.test(record.stack.envFileSha256 ?? "")
     || !SHA256.test(record.stack.composeSha256 ?? "")
     || !SHA256.test(record.stack.offlineComposeSha256 ?? "")) {
-    throw new Error("Restart observation requires a prepared and observed v3 stack");
+    throw new Error("Restart observation requires a prepared and observed install stack");
   }
   const bundle = await realpath(record.install.bundle);
   const inventory = await readFile(join(bundle, "install-inventory.json"));
@@ -84,7 +115,7 @@ async function readContext(root, dependencies) {
     || verified.runtimeComposeSha256 !== record.stack.composeSha256
     || verified.runtimeOfflineComposeSha256 !== record.stack.offlineComposeSha256
     || !Array.isArray(verified.images) || verified.images.length !== SERVICES.length) {
-    throw new Error("Running stack no longer matches the verified v3 install bundle");
+    throw new Error("Running stack no longer matches the verified install bundle");
   }
   const env = parsePreparedEnv(envBytes);
   const config = standaloneStackConfig(env);
@@ -141,11 +172,13 @@ export async function observeStandaloneRestartSnapshot(directory, options = {}, 
     sourceRevision: record.sourceRevision,
     images: verified.images,
     allowOffline: true,
+    allowUnpublishedHostPorts: options.allowUnpublishedHostPorts === true,
     composeFiles: [join(bundle, "compose.yml"), join(bundle, "compose.offline.yml")],
   });
   if (topology.project !== config.project || topology.preparedInputsMatched !== true
-    || topology.verifiedImageIdsMatched !== true || topology.bundleComposeFilesMatched !== true) {
-    throw new Error("Restart snapshot requires verified live v3 topology");
+    || topology.verifiedImageIdsMatched !== true || topology.bundleComposeFilesMatched !== true
+    || topology.internalNetworkOnly !== true || !topology.networkId) {
+    throw new Error("Restart snapshot requires verified live standalone topology");
   }
   const command = dependencies.command ?? run;
   const containers = Object.fromEntries(await Promise.all(SERVICES.map(async (service) =>
@@ -177,6 +210,8 @@ export async function observeStandaloneRestartSnapshot(directory, options = {}, 
     format: "tr-standalone-restart-snapshot-v1",
     observedAt: new Date().toISOString(),
     project: config.project,
+    networkId: topology.networkId,
+    hostPortAccess: topology.hostPortAccess ?? "effective-loopback",
     sourceRevision: record.sourceRevision,
     observerSha256,
     installInventorySha256: record.install.inventorySha256,
@@ -184,21 +219,46 @@ export async function observeStandaloneRestartSnapshot(directory, options = {}, 
     genesisHash, finalizedHeight, finalizedHash,
     ...(historicalHash === undefined ? {} : { historicalHash }),
     volumes, containers,
+    setupDeployment: deploymentMarkerFromRecord(record),
     scope: "ledger bridge only; contract, wallet, API, actor journeys, and restore not verified",
   };
+}
+
+export function setupDeploymentMarker(snapshot) {
+  // Older observations did not carry a setup-record marker.
+  if (snapshot.setupDeployment === undefined) return { state: "unrecorded", contractAddress: null,
+    readbackStatus: null, validReceipt: false };
+  const marker = snapshot.setupDeployment;
+  if (marker === null || typeof marker !== "object"
+    || typeof marker.state !== "string"
+    || !(marker.contractAddress === null || HASH.test(marker.contractAddress))
+    || !(marker.readbackStatus === undefined || marker.readbackStatus === null
+      || typeof marker.readbackStatus === "string")
+    || !(marker.validReceipt === undefined || typeof marker.validReceipt === "boolean")) {
+    throw new Error("Setup deployment marker is malformed");
+  }
+  return { state: marker.state, contractAddress: marker.contractAddress,
+    readbackStatus: marker.readbackStatus ?? null, validReceipt: marker.validReceipt ?? false };
 }
 
 export function compareStandaloneRestartSnapshots(before, after) {
   if (before?.format !== "tr-standalone-restart-snapshot-v1"
     || after?.format !== before.format || !HASH.test(before.genesisHash ?? "")
     || !HASH.test(before.finalizedHash ?? "")
+    || typeof before.networkId !== "string" || before.networkId.length === 0
+    || !["effective-loopback", "unpublished-install-access-required"].includes(before.hostPortAccess)
     || !Number.isSafeInteger(before.finalizedHeight) || before.finalizedHeight < 1) {
     throw new Error("Restart baseline is malformed");
   }
   for (const key of ["project", "sourceRevision", "observerSha256",
-    "installInventorySha256", "stackEnvSha256",
+    "installInventorySha256", "stackEnvSha256", "networkId", "hostPortAccess",
     "genesisHash"]) {
     if (after[key] !== before[key]) throw new Error(`Restart evidence changed ${key}`);
+  }
+  const beforeDeployment = setupDeploymentMarker(before);
+  const afterDeployment = setupDeploymentMarker(after);
+  if (JSON.stringify(beforeDeployment) !== JSON.stringify(afterDeployment)) {
+    throw new Error("Restart setup deployment record changed");
   }
   for (const role of ["node", "indexer"]) {
     if (before.volumes?.[role] !== after.volumes?.[role]) {
@@ -227,6 +287,9 @@ export function compareStandaloneRestartSnapshots(before, after) {
     beforeFinalizedHeight: before.finalizedHeight,
     afterFinalizedHeight: after.finalizedHeight,
     preservedCheckpointHash: before.finalizedHash,
+    ...(before.setupDeployment === undefined ? {} : {
+      deploymentEvidence: deploymentEvidenceLabel(beforeDeployment),
+    }),
     independentServiceRestarts: "operator-command-log-required",
     contractReadback: "not-verified",
     crossHostRestore: "not-run",
@@ -236,7 +299,8 @@ export function compareStandaloneRestartSnapshots(before, after) {
 
 export async function captureStandaloneRestartBaseline(directory, dependencies = {}) {
   const root = await privateDirectory(directory);
-  const snapshot = await observeStandaloneRestartSnapshot(root, {}, dependencies);
+  const snapshot = await observeStandaloneRestartSnapshot(root,
+    { allowUnpublishedHostPorts: true }, dependencies);
   await writeEvidence(join(root, BASELINE), snapshot);
   return { baselinePath: join(root, BASELINE), project: snapshot.project,
     finalizedHeight: snapshot.finalizedHeight, finalizedHash: snapshot.finalizedHash };
@@ -244,15 +308,54 @@ export async function captureStandaloneRestartBaseline(directory, dependencies =
 
 export async function verifyStandaloneRestart(directory, dependencies = {}) {
   const root = await privateDirectory(directory);
-  const baselineBytes = await privateFile(join(root, BASELINE));
+  const baselineBytes = await privateFile(join(root, BASELINE), 1024 * 1024);
   const baseline = JSON.parse(baselineBytes);
   const after = await observeStandaloneRestartSnapshot(root,
-    { historicalHeight: baseline.finalizedHeight }, dependencies);
+    { historicalHeight: baseline.finalizedHeight, allowUnpublishedHostPorts: true }, dependencies);
   const result = compareStandaloneRestartSnapshots(baseline, after);
   await writeEvidence(join(root, VERIFICATION), {
     ...result, observedAt: new Date().toISOString(), baselineSha256: sha256(baselineBytes), after,
   });
   return result;
+}
+
+export async function readStandaloneRestartEvidence(directory, expected) {
+  const root = await privateDirectory(directory);
+  let baselineBytes;
+  let verificationBytes;
+  try {
+    baselineBytes = await privateFile(join(root, BASELINE), 1024 * 1024);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  try {
+    verificationBytes = await privateFile(join(root, VERIFICATION), 1024 * 1024);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  if (!baselineBytes && !verificationBytes) return { status: "pending" };
+  if (!baselineBytes) throw new Error("Restart verification exists without its baseline");
+  const baseline = JSON.parse(baselineBytes);
+  if (baseline.format !== "tr-standalone-restart-snapshot-v1"
+    || baseline.sourceRevision !== expected.sourceRevision
+    || baseline.installInventorySha256 !== expected.installInventorySha256
+    || baseline.project !== expected.project) {
+    throw new Error("Restart baseline is not bound to this setup");
+  }
+  if (!verificationBytes) return { status: "baseline-captured-verification-pending" };
+  const verification = JSON.parse(verificationBytes);
+  const comparison = compareStandaloneRestartSnapshots(baseline, verification.after);
+  if (verification.baselineSha256 !== sha256(baselineBytes)
+    || !Number.isFinite(Date.parse(verification.observedAt ?? ""))
+    || Object.entries(comparison).some(([key, value]) => verification[key] !== value)) {
+    throw new Error("Restart verification does not match its baseline and readback");
+  }
+  return {
+    status: "self-attested-ledger-bridge-only",
+    deploymentEvidence: comparison.deploymentEvidence ?? "unrecorded-deployment-state-unbound",
+    beforeFinalizedHeight: comparison.beforeFinalizedHeight,
+    afterFinalizedHeight: comparison.afterFinalizedHeight,
+  };
 }
 
 if (process.argv[1] && await realpath(resolve(process.argv[1])) === fileURLToPath(import.meta.url)) {

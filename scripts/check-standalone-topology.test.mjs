@@ -32,7 +32,10 @@ const container = (service) => ({
   HostConfig: { PortBindings: { [service === "node" ? "9944/tcp"
     : service === "indexer" ? "8088/tcp" : "6300/tcp"]: [{ HostIp: "127.0.0.1",
     HostPort: service === "node" ? "29944" : service === "indexer" ? "28088" : "26300" }] } },
-  NetworkSettings: { Networks: { [ledger]: { NetworkID: "ledger-id" } } },
+  NetworkSettings: { Networks: { [ledger]: { NetworkID: "ledger-id" } },
+    Ports: { [service === "node" ? "9944/tcp"
+      : service === "indexer" ? "8088/tcp" : "6300/tcp"]: [{ HostIp: "127.0.0.1",
+      HostPort: service === "node" ? "29944" : service === "indexer" ? "28088" : "26300" }] } },
   Mounts: [service === "proof-server"
     ? { Destination: "/.cache/midnight/zk-params", Type: "bind", RW: false,
       Source: expected.proofParamsDir }
@@ -44,7 +47,7 @@ const containers = ["node", "indexer", "proof-server"].map(container);
 test("reports only topology, never offline qualification", () => {
   assert.deepEqual(checkStandaloneTopology(network, containers), {
     kind: "standalone-runtime-topology-observation",
-    project, network: ledger, services: ["indexer", "node", "proof-server"],
+    project, network: ledger, networkId: "ledger-id", services: ["indexer", "node", "proof-server"],
     internalNetworkOnly: true, proofParameterCacheReadOnly: true,
     egressDenied: "not-verified", actorJourneys: "not-run",
   });
@@ -52,6 +55,10 @@ test("reports only topology, never offline qualification", () => {
 
 test("rejects external attachment and network drift", () => {
   assert.throws(() => checkStandaloneTopology({ ...network, Internal: false }, containers), /internal IPv4/u);
+  assert.throws(() => checkStandaloneTopology({ ...network, Id: "" }, containers), /internal IPv4/u);
+  const wrongNetworkId = structuredClone(containers);
+  wrongNetworkId[0].NetworkSettings.Networks[ledger].NetworkID = "other-ledger-id";
+  assert.throws(() => checkStandaloneTopology(network, wrongNetworkId), /non-internal/u);
   const attached = structuredClone(containers);
   attached[0].NetworkSettings.Networks.bridge = { NetworkID: "outside" };
   assert.throws(() => checkStandaloneTopology(network, attached), /non-internal/u);
@@ -190,6 +197,7 @@ test("validates an alternate isolated project and distinct loopback ports", () =
     item.Config.Labels["com.docker.compose.project"] = config.project;
     item.NetworkSettings.Networks = { [config.network]: { NetworkID: network.Id } };
     Object.values(item.HostConfig.PortBindings)[0][0].HostPort = config.ports[service];
+    Object.values(item.NetworkSettings.Ports)[0][0].HostPort = config.ports[service];
     if (service !== "proof-server") {
       item.Mounts[0].Name = `${config.project}_${service === "node" ? "node-data" : "indexer-data"}`;
     }
@@ -215,7 +223,49 @@ test("rejects public or extra port bindings and mismatched private ports", () =>
   const changedPort = structuredClone(containers);
   changedPort[2].HostConfig.PortBindings["6300/tcp"][0].HostPort = "36300";
   assert.throws(() => checkStandaloneTopology(network, changedPort), /approved loopback/u);
+  const unpublished = structuredClone(containers);
+  unpublished[0].NetworkSettings.Ports["9944/tcp"] = [];
+  assert.throws(() => checkStandaloneTopology(network, unpublished), /approved loopback/u);
+  const nullBinding = structuredClone(containers);
+  nullBinding[0].NetworkSettings.Ports["9944/tcp"] = [null];
+  assert.throws(() => checkStandaloneTopology(network, nullBinding), /approved loopback/u);
+  const wrongEffectivePort = structuredClone(containers);
+  wrongEffectivePort[0].NetworkSettings.Ports["9944/tcp"][0].HostPort = "49944";
+  assert.throws(() => checkStandaloneTopology(network, wrongEffectivePort), /approved loopback/u);
+  const duplicateEffective = structuredClone(containers);
+  duplicateEffective[0].NetworkSettings.Ports["9944/tcp"].push({ HostIp: "127.0.0.1", HostPort: "29944" });
+  assert.throws(() => checkStandaloneTopology(network, duplicateEffective), /approved loopback/u);
+  const publicEffective = structuredClone(containers);
+  publicEffective[0].NetworkSettings.Ports["9944/tcp"][0].HostIp = "0.0.0.0";
+  assert.throws(() => checkStandaloneTopology(network, publicEffective), /approved loopback/u);
+  const extraEffective = structuredClone(containers);
+  extraEffective[1].NetworkSettings.Ports["9999/tcp"] = [{ HostIp: "127.0.0.1", HostPort: "39999" }];
+  assert.throws(() => checkStandaloneTopology(network, extraEffective), /approved loopback/u);
   const sharedVolume = structuredClone(containers);
   sharedVolume[0].Mounts[0].Name = "tr-standalone-local-other_node-data";
   assert.throws(() => checkStandaloneTopology(network, sharedVolume), /mount drifted/u);
+});
+
+test("records an unpublished internal bridge without treating it as host access", () => {
+  const unpublished = structuredClone(containers);
+  for (const item of unpublished) {
+    const [target] = Object.keys(item.NetworkSettings.Ports);
+    item.NetworkSettings.Ports[target] = [];
+  }
+  assert.throws(() => checkStandaloneTopology(network, unpublished), /approved loopback/u);
+  const observation = checkStandaloneTopology(network, unpublished, standaloneStackConfig({}), {
+    ...expected, allowUnpublishedHostPorts: true,
+  });
+  assert.equal(observation.hostPortAccess, "unpublished-install-access-required");
+  assert.equal(observation.egressDenied, "not-verified");
+  const partial = structuredClone(unpublished);
+  partial[0].NetworkSettings.Ports["9944/tcp"] = [{ HostIp: "127.0.0.1", HostPort: "29944" }];
+  assert.throws(() => checkStandaloneTopology(network, partial, standaloneStackConfig({}), {
+    allowUnpublishedHostPorts: true,
+  }), /host access mode is inconsistent/u);
+  const malformed = structuredClone(unpublished);
+  malformed[0].NetworkSettings.Ports["9944/tcp"] = [null];
+  assert.throws(() => checkStandaloneTopology(network, malformed, standaloneStackConfig({}), {
+    allowUnpublishedHostPorts: true,
+  }), /approved loopback/u);
 });

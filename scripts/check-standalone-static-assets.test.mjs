@@ -1,0 +1,129 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+
+import { checkStandaloneStaticAssets, verifyStaticAssetDirectory }
+  from "./check-standalone-static-assets.mjs";
+
+const sha = (value) => createHash("sha256").update(value).digest("hex");
+const sourceRevision = "a".repeat(40);
+
+test("static asset readback rejects missing, changed, extra, and linked files", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-static-assets-test-"));
+  try {
+    const contents = "<html>approved</html>";
+    const expected = [{ path: "index.html", size: Buffer.byteLength(contents), sha256: sha(contents) }];
+    await writeFile(join(root, "index.html"), contents);
+    assert.equal(await verifyStaticAssetDirectory(root, expected), 1);
+    await writeFile(join(root, "index.html"), "<html>changed</html>");
+    await assert.rejects(verifyStaticAssetDirectory(root, expected), /disagree/u);
+    await writeFile(join(root, "index.html"), contents);
+    await writeFile(join(root, "extra.js"), "alert(1)");
+    await assert.rejects(verifyStaticAssetDirectory(root, expected), /disagree/u);
+    await rm(join(root, "extra.js"));
+    await symlink("index.html", join(root, "linked.html"));
+    await assert.rejects(verifyStaticAssetDirectory(root, expected), /linked/u);
+    const linkedRoot = join(root, "linked-root");
+    await symlink(root, linkedRoot);
+    await assert.rejects(verifyStaticAssetDirectory(linkedRoot, expected), /real directory/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("v5 readback binds both loaded images to their verified asset lists without starting them", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-static-bundle-test-"));
+  try {
+    const assets = [{ path: "index.html", size: 2, sha256: sha("ok") }];
+    const portalRuntimes = {};
+    const verifiedPortals = {};
+    for (const [role, digit] of [["admin", "a"], ["applicant", "b"]]) {
+      const manifest = { assets, assetsSha256: sha(JSON.stringify(assets)) };
+      const bytes = JSON.stringify(manifest);
+      await writeFile(join(root, `${role}.json`), bytes);
+      portalRuntimes[role] = { manifest: `${role}.json`, manifestSha256: sha(bytes) };
+      verifiedPortals[role] = { imageId: `sha256:${digit.repeat(64)}`,
+        configId: `sha256:${role === "admin" ? "c".repeat(64) : "d".repeat(64)}` };
+    }
+    const inventory = Buffer.from(JSON.stringify({ portalRuntimes }));
+    await writeFile(join(root, "install-inventory.json"), inventory);
+    const containers = [];
+    const result = await checkStandaloneStaticAssets(root, {
+      verify: async () => ({ sourceRevision, inventorySha256: sha(inventory),
+        portalRuntimes: verifiedPortals }),
+      docker: (args) => {
+        if (args[0] === "image") {
+          if (args.at(-1) === verifiedPortals.admin.imageId) {
+            throw new Error("classic store has only the config ID");
+          }
+          return args.at(-1);
+        }
+        if (args[0] === "create") {
+          const id = (containers.length + 1).toString(16).padStart(64, "0");
+          containers.push(id);
+          assert.deepEqual(args.slice(0, 7), ["create", "--network", "none", "--pull",
+            "never", "--read-only", "--entrypoint"]);
+          assert.equal(args.at(-1), containers.length === 1
+            ? verifiedPortals.admin.configId : verifiedPortals.applicant.imageId);
+          return id;
+        }
+        if (args[0] === "cp") {
+          mkdirSync(args[2]);
+          writeFileSync(join(args[2], "index.html"), "ok");
+          return "";
+        }
+        if (args[0] === "rm") return "";
+        throw new Error(`Unexpected Docker command: ${args.join(" ")}`);
+      },
+    });
+    assert.equal(result.readback.admin.assetCount, 1);
+    assert.equal(result.readback.applicant.assetCount, 1);
+    assert.equal(result.offlineJourneyQualified, false);
+    assert.equal(result.runtimeStarted, false);
+    const removed = [];
+    await assert.rejects(checkStandaloneStaticAssets(root, {
+      verify: async () => ({ sourceRevision, inventorySha256: sha(inventory),
+        portalRuntimes: verifiedPortals }),
+      docker: (args) => {
+        if (args[0] === "image") return args.at(-1);
+        if (args[0] === "create") return "1".repeat(64);
+        if (args[0] === "cp") {
+          mkdirSync(args[2]);
+          writeFileSync(join(args[2], "index.html"), "no");
+          return "";
+        }
+        if (args[0] === "rm") {
+          removed.push(args.at(-1));
+          return "";
+        }
+        throw new Error(`Unexpected Docker command: ${args.join(" ")}`);
+      },
+    }), /disagree/u);
+    assert.deepEqual(removed, ["1".repeat(64)]);
+    const removedLinked = [];
+    await assert.rejects(checkStandaloneStaticAssets(root, {
+      verify: async () => ({ sourceRevision, inventorySha256: sha(inventory),
+        portalRuntimes: verifiedPortals }),
+      docker: (args) => {
+        if (args[0] === "image") return args.at(-1);
+        if (args[0] === "create") return "2".repeat(64);
+        if (args[0] === "cp") {
+          symlinkSync(root, args[2]);
+          return "";
+        }
+        if (args[0] === "rm") {
+          removedLinked.push(args.at(-1));
+          return "";
+        }
+        throw new Error(`Unexpected Docker command: ${args.join(" ")}`);
+      },
+    }), /real directory/u);
+    assert.deepEqual(removedLinked, ["2".repeat(64)]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

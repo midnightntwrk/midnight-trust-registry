@@ -41,9 +41,76 @@ function verifiedSourceRevision() {
   return command("git", ["rev-parse", "HEAD"]);
 }
 
+export function validateApiRuntimeImageInput(inputDirectory, sourceRevision) {
+  if (!isAbsolute(inputDirectory)) throw new Error("API image directory must be absolute");
+  const source = resolve(inputDirectory);
+  const manifestSource = join(source, "manifest.json");
+  const archiveSource = join(source, "api.image.tar");
+  if (!lstatSync(manifestSource).isFile() || !lstatSync(archiveSource).isFile()) {
+    throw new Error("API image input must contain regular manifest and archive files");
+  }
+  const apiManifest = JSON.parse(readFileSync(manifestSource, "utf8"));
+  if (apiManifest.sourceRevision !== sourceRevision || apiManifest.archiveName !== "api.image.tar") {
+    throw new Error("API image source revision or archive name disagrees with install source");
+  }
+  return { manifestSource, archiveSource };
+}
+
+export async function stageApiRuntimeImage(inputDirectory, destination, sourceRevision) {
+  const { manifestSource, archiveSource } = validateApiRuntimeImageInput(inputDirectory, sourceRevision);
+  const manifest = "images/api.manifest.json";
+  const archive = "images/api.image.tar";
+  copyFileSync(manifestSource, join(destination, manifest), fsConstants.COPYFILE_EXCL);
+  copyFileSync(archiveSource, join(destination, archive), fsConstants.COPYFILE_EXCL);
+  return { manifest, manifestSha256: await sha256(join(destination, manifest)),
+    archive, archiveSha256: await sha256(join(destination, archive)) };
+}
+
+export function validateStaticRuntimeImageInput(inputDirectory, role, sourceRevision) {
+  if (!isAbsolute(inputDirectory) || !["admin", "applicant"].includes(role)) {
+    throw new Error("Static image directory must be absolute and role must be approved");
+  }
+  const source = resolve(inputDirectory);
+  const manifestSource = join(source, "manifest.json");
+  const archiveSource = join(source, `${role}.image.tar`);
+  if (!lstatSync(manifestSource).isFile() || !lstatSync(archiveSource).isFile()) {
+    throw new Error(`${role} static image input must contain regular manifest and archive files`);
+  }
+  const manifest = JSON.parse(readFileSync(manifestSource, "utf8"));
+  if (manifest.role !== role || manifest.sourceRevision !== sourceRevision
+    || manifest.archiveName !== `${role}.image.tar`) {
+    throw new Error(`${role} static image source, role, or archive name disagrees with install source`);
+  }
+  return { manifestSource, archiveSource };
+}
+
+export async function stageStaticRuntimeImage(inputDirectory, destination, role, sourceRevision) {
+  const { manifestSource, archiveSource } = validateStaticRuntimeImageInput(
+    inputDirectory, role, sourceRevision);
+  const manifest = `images/${role}.manifest.json`;
+  const archive = `images/${role}.image.tar`;
+  copyFileSync(manifestSource, join(destination, manifest), fsConstants.COPYFILE_EXCL);
+  copyFileSync(archiveSource, join(destination, archive), fsConstants.COPYFILE_EXCL);
+  return { manifest, manifestSha256: await sha256(join(destination, manifest)),
+    archive, archiveSha256: await sha256(join(destination, archive)) };
+}
+
 /** Creates a fresh bundle only; failed output is retained for inspection. */
 export async function buildStandaloneInstall(options = {}) {
   const sourceRevision = verifiedSourceRevision();
+  const staticDirectories = [options.adminImageDirectory, options.applicantImageDirectory];
+  if (staticDirectories.some((directory) => directory !== undefined)
+    && (staticDirectories.some((directory) => directory === undefined)
+      || options.apiImageDirectory === undefined)) {
+    throw new Error("A v5 install requires API, admin, and applicant image directories together");
+  }
+  if (options.apiImageDirectory !== undefined) {
+    validateApiRuntimeImageInput(options.apiImageDirectory, sourceRevision);
+  }
+  if (options.adminImageDirectory !== undefined) {
+    validateStaticRuntimeImageInput(options.adminImageDirectory, "admin", sourceRevision);
+    validateStaticRuntimeImageInput(options.applicantImageDirectory, "applicant", sourceRevision);
+  }
   const outputRoot = resolve(options.outputRoot ?? join(root, "artifacts/standalone-install"));
   const proofSource = resolve(options.proofSource ?? join(root, "artifacts/standalone-proof-params"));
   if ((options.outputRoot && !isAbsolute(options.outputRoot))
@@ -99,19 +166,52 @@ export async function buildStandaloneInstall(options = {}) {
     images.push({ role, reference, archive, archiveSha256: await sha256(join(destination, archive)) });
   }
 
+  let apiRuntime;
+  if (options.apiImageDirectory !== undefined) {
+    apiRuntime = await stageApiRuntimeImage(options.apiImageDirectory, destination, sourceRevision);
+  }
+  let portalRuntimes;
+  if (options.adminImageDirectory !== undefined) {
+    portalRuntimes = {
+      admin: await stageStaticRuntimeImage(options.adminImageDirectory, destination,
+        "admin", sourceRevision),
+      applicant: await stageStaticRuntimeImage(options.applicantImageDirectory, destination,
+        "applicant", sourceRevision),
+    };
+  }
+
+  let installRelay;
+  if (portalRuntimes) {
+    const path = "install-relay.py";
+    copyFileSync(join(root, "deploy/standalone/local-install-relay.py"), join(destination, path),
+      fsConstants.COPYFILE_EXCL);
+    installRelay = { path, sha256: await sha256(join(destination, path)), imageRole: "node" };
+  }
+
   const inventory = {
-    format: "tr-standalone-install-v3", sourceRevision,
+    format: portalRuntimes ? "tr-standalone-install-v6"
+      : apiRuntime ? "tr-standalone-install-v4" : "tr-standalone-install-v3", sourceRevision,
     packageManifest: "release-manifest.json", artifactDirectory: "packages",
     runtimeCompose, images, proofParameters: { directory: "proof-params", files: proofFiles },
+    ...(apiRuntime ? { apiRuntime } : {}),
+    ...(portalRuntimes ? { portalRuntimes } : {}),
+    ...(installRelay ? { installRelay } : {}),
   };
   writeFileSync(join(destination, "install-inventory.json"), `${JSON.stringify(inventory, null, 2)}\n`,
     { flag: "wx", mode: 0o600 });
   await verifyStandaloneInstallBundle(destination);
   return { kind: "standalone-install-bundle-verification", sourceRevision, path: destination,
-    packageCount: manifest.packages.length, imageCount: images.length, proofParameterCount: proofFiles.length };
+    packageCount: manifest.packages.length,
+    imageCount: images.length + (apiRuntime ? 1 : 0) + (portalRuntimes ? 2 : 0),
+    proofParameterCount: proofFiles.length };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (process.argv.length !== 2) throw new Error("Usage: node scripts/build-standalone-install.mjs");
-  console.log(JSON.stringify(await buildStandaloneInstall()));
+  if (process.argv.length !== 2 && (process.argv.length !== 4 || process.argv[2] !== "--api-image-dir")
+    && (process.argv.length !== 8 || process.argv[2] !== "--api-image-dir"
+      || process.argv[4] !== "--admin-image-dir" || process.argv[6] !== "--applicant-image-dir")) {
+    throw new Error("Usage: node scripts/build-standalone-install.mjs [--api-image-dir <absolute-directory> [--admin-image-dir <absolute-directory> --applicant-image-dir <absolute-directory>]]");
+  }
+  console.log(JSON.stringify(await buildStandaloneInstall({ apiImageDirectory: process.argv[3],
+    adminImageDirectory: process.argv[5], applicantImageDirectory: process.argv[7] })));
 }

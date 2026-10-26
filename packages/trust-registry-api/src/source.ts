@@ -51,7 +51,7 @@ import { mutationPayloadForWorkspaceOperation, preflightMutationIntent } from ".
 import { MutationIntentActorRejectedError, transitionSignedMutationState } from "./signed-mutation-state.js";
 import type { verifyMutationIntentDidSignature } from "./mutation-intent-verifier.js";
 
-export type TrustRegistryApiSourceMode = "snapshot" | "workspace" | "memory";
+export type TrustRegistryApiSourceMode = "snapshot" | "workspace" | "memory" | "local-ledger";
 
 export type TrustRegistryApiStateSource = {
   readonly mode: TrustRegistryApiSourceMode;

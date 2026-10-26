@@ -29,6 +29,30 @@ trustworthy by itself.
    console, and applicant-portal identities. Keep wallet seeds, maintenance
    keys, API credentials, and proof inputs out of images, fixtures, and logs.
 
+The API has a separate candidate OCI builder:
+
+```sh
+node scripts/build-api-runtime-image.mjs <digest-pinned-node-base> <linux/arm64|linux/amd64> <external-new-output-directory> <signed-source-SHA> <approved-source-signing-fingerprint>
+```
+
+It exports the signed source commit, performs a frozen light build, deploys
+production-only dependencies from the shared lockfile without lifecycle
+scripts or optional native addons, removes the known published DID 0.7.0 proof payload from its isolated
+staging copy, and scans the complete payload for remaining proving artifacts.
+Volatile pnpm install metadata is omitted from the runtime. The manifest
+records the lockfile, Dockerfile, payload and archive hashes; repeat builds
+may have different OCI archive hashes even when the runtime payload matches.
+The digest-pinned base must include `/usr/bin/gpg`;
+the builder checks GPG and the API import in a read-only, network-disabled
+container before exporting. Build it while online. This is packaging evidence,
+not a running local-ledger qualification. The v4/v5 installer pins its archive;
+the first-run operator must later verify the running
+image digest, review the API plan, and verify offline operation.
+Local-ledger API mode currently binds to loopback only, so Docker port
+publishing does not expose it; a reviewed sidecar/shared-network-namespace
+topology is needed before cluster use. Plan verification also needs a writable
+`/tmp` and a GPG keyring owned by the runtime uid (1000) with mode `0700`.
+
 The staged install directory must contain `install-inventory.json`, the
 release-candidate package manifest and its ten tarballs, separate OCI image
 archives for node, indexer, and proof server, and the proof server's verified
@@ -80,6 +104,79 @@ placeholder with approved exact values:
 
 From a clean, GPG-signed and DCO-signed source commit with full generated
 contract artifacts already present, run `pnpm run artifacts:standalone-install`.
+To include a separately built API image from the **same signed source SHA**,
+run instead:
+
+```sh
+node scripts/build-standalone-install.mjs --api-image-dir <absolute-api-image-output-directory>
+```
+
+This writes a v4 inventory with
+`images/api.manifest.json` and `images/api.image.tar` pinned by exact hashes.
+To include both static portals in the same signed-source install candidate,
+first build each with `scripts/build-static-runtime-image.mjs` from the same
+source SHA, then run:
+
+```sh
+node scripts/build-standalone-install.mjs --api-image-dir <absolute-api-image-output-directory> --admin-image-dir <absolute-admin-image-output-directory> --applicant-image-dir <absolute-applicant-image-output-directory>
+```
+
+The all-or-nothing portal options write a v6 inventory with six image
+archives. Bundle verification checks each portal's OCI index, runtime role,
+source revision, asset-list checksum, and archive hash, and pins the temporary
+installation relay script by path and SHA-256. The offline loader imports
+source-scoped admin and applicant tags without a registry pull. A v5/v6 Helm
+mapping reads these portal identities from the verified bundle rather than
+separate portal manifests. This is install-byte evidence only: neither the
+loader nor the wizard starts the portals or establishes an offline actor
+journey. The approved installer plan must still bind the six running image
+identities and qualify the deployed API and portals with egress denied.
+
+After loading the v6 images, run
+`node scripts/check-standalone-static-assets.mjs <verified-v6-bundle>` on the
+same Docker host. It creates disposable, network-disabled containers without
+starting them, copies each image's `/app/public` tree, and compares every
+regular file, size, and hash against the verified portal manifest. It rejects
+extra files and links, including a linked public root. The readback accepts
+the verified OCI index ID or config ID from the local Docker image store.
+Retain the reported image IDs and inventory hash as
+install readback evidence. This check requires a locally loaded image; it is
+not an offline browser journey, a process-level egress test, or proof of image
+build provenance.
+
+The verifier checks that the API archive's OCI image ID, Linux architecture,
+non-root entrypoint, and source-revision label match the builder manifest and
+the package release revision. The offline loader then imports a source-scoped
+`tr-standalone/api` tag without pulling. It rejects image-name annotations,
+unapproved platform variants, and selected Node execution-injection settings.
+For this arm64 local RC, build and export with Docker's containerd image store
+and the default attestation index enabled; classic-store or direct-manifest
+API archives are not yet supported. The ledger image checker permits only a
+distribution-source annotation matching the pinned repository, never an image
+name or tag annotation. The loader snapshots one checked archive at a time to
+a private temporary directory, rehashes it before Docker reads it, and
+accepts the checked OCI or config ID reported by the daemon. Ensure the
+temporary filesystem can hold the largest image archive. A v3 bundle remains a ledger-stack
+bundle only; neither format starts the API or proves that it can query a live
+local ledger. Matching source labels and hashes do not independently prove
+image build provenance; the release operator must approve the exact archive
+digest and retain the signed build evidence.
+
+For an isolated cluster, the API may listen on `0.0.0.0` only with
+`--cluster-bind`, a complete detached-reviewer-signed local-ledger plan, and a
+signed v4, v5, or v6 install inventory with an API archive pin. Before opening that
+listener, it checks a file at `/app/source-revision` in the container
+filesystem against the approved plan. The listener bounds header, request,
+idle-socket, and keep-alive waits and has a 16-connection cap; it does not
+emit wildcard CORS headers. These limits do not cancel a stalled indexer
+provider call, which remains a runtime resilience and qualification gate. Snapshot and
+workspace modes and unsafe demo mutations cannot use this option. The operator
+must still keep the API on a private service, use a read-only image filesystem,
+allow only authorized in-cluster callers through network policy, and separately
+qualify ingress/TLS and finalized ledger reads. The file check is a consistency
+guard, not image provenance or proof that the cluster denies egress. No chart
+or cluster qualification is implied by this CLI option.
+
 The builder creates a **new** ignored `artifacts/standalone-install/<source SHA>/`
 directory; it does not overwrite an existing bundle or rebuild Compact keys.
 It packs ten packages, copies the 18 local proof-parameter files, exports the
@@ -108,7 +205,8 @@ record independent registry-digest verification at acquisition.
 
 On a clean offline host, run
 `node scripts/load-standalone-install-images.mjs <verified-bundle-directory>`.
-It rechecks the bundle, loads archives without pulling, verifies each Docker
+It rechecks the bundle, snapshots and hashes each archive in a private
+temporary directory, loads those snapshots without pulling, verifies each Docker
 image ID against the archived config bytes, and creates source-SHA-scoped
 local tags. Reject a tag already bound to different bytes. Set
 `TR_NODE_IMAGE`, `TR_INDEXER_IMAGE`, and `TR_PROOF_SERVER_IMAGE` to the returned
@@ -191,6 +289,28 @@ missing or extra mount, or elevated container privilege. Wizard-driven
 and secret and the proof server's bind source against the prepared private
 `stack.env`; its observation records only a match flag, never secret values.
 A direct topology check without that private input cannot attest the match.
+
+The direct topology check requires Docker's **effective** loopback port mapping,
+not just the requested `HostConfig.PortBindings`. Confirm that `docker port
+<project>-node-1` exposes the intended `127.0.0.1` port and that the host can
+reach it. On this macOS Docker Desktop development host, an internal-only
+ledger bridge had requested loopback bindings but `NetworkSettings.Ports`
+contained empty lists; the host RPC connection failed. Wizard `observe-stack`
+may record this explicitly as `unpublished-install-access-required` after
+checking the private inputs and the isolated bridge. That observation is **not**
+host connectivity, local-ledger deployment, or offline-runtime evidence.
+Wizard genesis observation requires either an effective direct mapping or a
+v6 verified, source-pinned temporary installation relay. Older bundles and
+the existing v3 smoke stack remain connectivity-only through the relay. Do
+not add an egress-capable network
+to the ledger services merely to make the check pass.
+The v6 relay gate verifies the running image, mounted script hash, inherited
+image environment, exact loopback publications, and selected bridge before and
+after genesis preflight. Deployment reservation checks the same relay and the
+plan's node and indexer URLs; a post-submission mismatch is an unknown outcome
+that must be reconciled, never retried blindly. The proof-server endpoint is
+still supplied by the operator's provider configuration and needs separate
+review. Remove the relay before any offline-runtime qualification.
 A config-only render and a healthy new node do
 not prove a local contract deployment, finalized readback, denied egress for
 other processes, or release qualification. Review the new genesis and repeat
@@ -454,7 +574,12 @@ candidate bytes; it does not by itself support an RC qualification claim.
 egress behavior, including prepared private-input matching and unchanged
 bundled Compose bytes. For v3, it also matches the verified archive image IDs,
 source-scoped offline tags, and Docker Compose's recorded bundle paths before
-appending timestamped ledger-bridge evidence. A v3 setup record created before
+appending timestamped ledger-bridge evidence. Its probe runs a fresh throwaway
+container on the same bridge using the verified node image ID, rather than
+trusting a mutable local tag or directly probing the running node. A standalone CLI
+invocation against a source-scoped offline stack must supply the same verified
+bundle: `node scripts/check-standalone-egress.mjs <verified-bundle-directory>`.
+A v3 setup record created before
 image identities were recorded cannot be upgraded in place; begin a fresh
 setup directory rather than replacing its evidence. At
 most 20 pre-genesis observations are retained; investigate drift before that
@@ -469,9 +594,14 @@ be observed for historical smoke, not RC qualification. This step does not appro
 genesis, attest actor egress, verify a contract readback, or qualify a release.
 
 `collect-genesis-candidate` is an optional, non-overwriting first-run aid. It
-rechecks the live v3 stack and writes `genesis-candidate.untrusted.json` in the
+rechecks the live v3-v6 stack and writes `genesis-candidate.untrusted.json` in the
 private setup directory, recording the **node-reported** genesis hash,
 finalized checkpoint, install source and inventory, and observer-script hash.
+It accepts a ledger bridge whose requested host ports are unpublished on Docker
+Desktop, but requires exactly the three ledger services attached. Disconnect
+the temporary installation relay before collection, then reconnect that same
+relay for the separately verified loopback preflight. Neither the unpublished
+port allowance nor this candidate qualifies host access or offline egress.
 It does not create an approved pin, change `localLedger` status, or authorize
 deployment. An independent reviewer must compare the candidate with the
 pinned chain specification through a channel other than this node, approve
@@ -532,9 +662,43 @@ reviewer signature before deployment. The signed JSON has exactly these fields:
 The reviewer compares the candidate genesis to independently obtained
 chain-spec evidence, signs the exact JSON bytes on a separate trusted system,
 and sends the detached signature and public signing key to the operator.
+An existing GitHub-registered **GPG signing key** may be used for this human
+review. GitHub registration or a Verified commit is not the approval: the
+reviewer must still sign the exact `genesis-approval.unsigned.json` bytes with
+that key. Select the full 40-hex-character primary signing-key fingerprint,
+not its short key ID or an encryption subkey; confirm the key owner and
+fingerprint through a channel independent of the node and the GitHub key
+listing. Do not export or send a secret key. For example, on the reviewer's
+trusted signing system, after inspecting the draft and independent evidence:
+
+```sh
+gpg --local-user REVIEWER_SIGNING_KEY_FINGERPRINT --armor --detach-sign \
+  --output genesis-approval.sig genesis-approval.unsigned.json
+gpg --verify genesis-approval.sig genesis-approval.unsigned.json
+```
+
+The `reviewedReference` in the draft must identify the independently reviewed
+chain specification or reproducible genesis evidence and its immutable digest
+(a ticket or document ID is optional). For a format-only illustration, run
+`node scripts/demo-genesis-reference.mjs standalone` or
+`node scripts/demo-genesis-reference.mjs preview`. These commands hash distinct,
+synthetic chain-spec fixtures and print `demo:` references. They do not contact
+either network, read a real genesis, produce a signed approval, or qualify a
+release. The wizard rejects their `demo:` references. The node-generated
+candidate packet by itself is not such a reference. If that independent
+reference is not available, leave the draft unsigned and deployment blocked;
+do not substitute chat approval or a GitHub commit signature.
 The operator obtains the expected fingerprint through an independently
-approved channel, imports the public key into a mode-0700 local GPG keyring,
-and runs `approve-genesis`. The wizard does not download keys or establish
+approved channel and runs `approve-genesis` with either the reviewer's
+armored **public-key export** (`gpg --armor --export FINGERPRINT >
+reviewer-public.asc`) or a local GPG keyring directory. The wizard imports the
+public export into a short-lived isolated verification home; it never needs
+the reviewer's secret key. For a directory, pre-create it with mode `0700`
+and import the public key there with `gpg --homedir
+/absolute/private/reviewer-public-keyring --import reviewer-public.asc`. The
+directory must contain `pubring.kbx`; keyboxd-only and legacy `pubring.gpg`
+homes are not accepted. Both forms pin the full reviewer fingerprint.
+The wizard does not download keys or establish
 reviewer authority from a typed fingerprint: the release owner must separately
 verify the key owner and the provenance of `reviewedReference`. It checks
 the signature, signer fingerprint, source, inventory, genesis, and setup time,
@@ -858,6 +1022,9 @@ host ports in the operator's approved endpoint plan and separately pin the
 opaque wallet provider endpoints. Stop and remove
 the relay before the offline runtime test; the relay has a `bridge` attachment
 and is **not** evidence of egress denial.
+Use the absolute canonical `install-relay.py` path returned by the verified v6
+bundle for the read-only mount; a symlink or differently spelled source path
+fails the live relay gate.
 
 ```sh
 export TR_STACK_NAME=tr-standalone-local-qualification
@@ -866,7 +1033,7 @@ docker run -d --pull=never --name "$TR_RELAY_NAME" --network bridge \
   --publish 127.0.0.1:40944:30944 \
   --publish 127.0.0.1:48088:38088 \
   --publish 127.0.0.1:46300:36300 \
-  --mount type=bind,src="$PWD/deploy/standalone/local-install-relay.py",dst=/relay.py,readonly \
+  --mount type=bind,src="<verified-v6-bundle>/install-relay.py",dst=/relay.py,readonly \
   --entrypoint /usr/bin/python3 \
   midnightntwrk/midnight-node@sha256:c3e46f8beff308b352813cd8904f6480c331504e09060abd671b8a32e1255220 \
   /relay.py
@@ -941,7 +1108,10 @@ ephemeral copy of the pinned node image on Docker's normal bridge. The same
 IP-pinned HTTPS request must then fail on the dedicated internal bridge,
 and the canary's DNS lookup must fail there as well. The control must have a
 broad outbound route; the internal probe must have no `/0` or `/1` route.
-The command changes no ledger data or service mounts. Its evidence is limited
+The isolated probes target the observed Docker network ID, which must remain
+the same before and after the probe; the wizard also requires its topology and
+egress observations to agree on that ID. A replaced ledger bridge invalidates
+the result. The command changes no ledger data or service mounts. Its evidence is limited
 to this canary and the ledger bridge. It does not verify wallet, API, browser,
 backup, other host egress paths, or actor journeys, and it does not replace
 firewall logs or an offline end-to-end run.
@@ -955,7 +1125,7 @@ head yields `pending`, not qualification evidence.
 
 ### Ledger-bridge restart observation
 
-After recording a v3 `observe-stack` result, capture one non-overwriting
+After recording a v3-v6 `observe-stack` result, capture one non-overwriting
 baseline in the private setup directory. Restart the selected project's
 services **one at a time**, checking health between commands, then verify:
 
@@ -968,21 +1138,83 @@ docker restart <selected-project>-proof-server-1
 node scripts/check-standalone-restart.mjs verify /absolute/private/setup-directory
 ```
 
-The observer rechecks the verified v3 bundle, private prepared inputs, live
+The observer rechecks the verified bundle, private prepared inputs, live
 container image IDs and Compose paths, and the same named volumes. Verification
 requires each service's container ID to remain stable and start time to advance, the earlier finalized block to
 retain its hash at the same height, and finality to progress afterward. It
-records the observer script hash separately from the bundle source SHA. The
+also binds the ledger network ID and observed host-port access mode across
+both snapshots. On Docker Desktop, an unpublished requested loopback port is
+accepted for this **ledger-only** observation; it is not evidence that the host
+can reach the ledger, that the installation relay is present, or that offline
+egress is denied. Disconnect any temporary relay before each snapshot so the
+bridge contains exactly the three pinned services. It records the observer
+script hash separately from the bundle source SHA. The
 private `restart-baseline.json` and `restart-verification.json` files are
 created once with mode 0600; do not overwrite them to retry a failure. Retain
 the explicit restart command log and investigate failed or ambiguous results.
 Never use `down -v` on a ledger whose history is evidence.
+The wizard's `status` command checks these private evidence files without
+querying Docker: `restartObservation` can report
+`self-attested-ledger-bridge-only` with both finalized heights and an explicit
+`pre-deployment-smoke`, setup-recorded deployment, or unbound deployment-state
+marker. Only a valid staged-bootstrap readback receives the recorded-deployment
+label; unknown, mismatched, and legacy states remain unbound. This is a
+consistency check of operator-held files, not proof that Docker/RPC was
+observed independently. `restartRestore` remains `pending`. A changed
+baseline, mismatched verification, or evidence bound to another setup reports
+`invalid-evidence-investigate` without hiding deployment or maintenance alerts.
+Preserve the files for investigation instead of recapturing. Evidence files
+are published atomically only after a private temporary file is synced, so an
+interrupted write cannot leave a half-written final path.
+If deployment changes between baseline and verification, the comparison fails
+closed. Preserve that baseline as failed evidence and use a fresh private setup
+directory under an approved recovery procedure for a new observation; do not
+overwrite or delete the original evidence.
 
 This is **ledger-bridge continuity only**. A pre-deployment run is a development
 smoke, not RC evidence. Even after deployment, this helper does not read back
 the contract, wallet keys, API state, browser journeys, or backup media; it
 does not exercise cross-host restore, prove independent service restarts from
 the command log alone, or close the restart/recovery release gate.
+
+The first dedicated local-ledger b3 observation was captured before contract
+deployment. Its finalized-history continuity is a development smoke only;
+it cannot be relabelled after deployment. A release observation needs a new,
+approved setup and post-deployment baseline, plus the separate contract,
+wallet, API, and recovery readbacks described above.
+
+### Distinct-project restore readback
+
+After deployment and before a separately approved backup, capture a
+non-overwriting finalized checkpoint in the source setup directory. Restore
+the operator-held backup to a **different isolated project and setup
+directory**, then read the destination's finalized chain:
+
+```sh
+node scripts/check-standalone-restore.mjs capture /absolute/private/source-setup
+# Operator stops services, backs up, transfers, and restores node/indexer,
+# wallet, API, and contract state under an approved custody procedure.
+node scripts/check-standalone-restore.mjs verify /absolute/private/source-setup /absolute/private/destination-setup
+```
+
+The readback rechecks each project's verified install bundle and live ledger
+topology. It requires the same source revision, observer and install inventory,
+genesis, and historical finalized block hash, with a different project,
+network, and three container identities. Destination finality must advance
+beyond the source checkpoint. The source snapshot and destination result are
+private, atomically published one-write files. Verification also binds the
+source snapshot to the source setup record. The result distinguishes
+pre-deployment or unbound smoke from matching valid staged-bootstrap setup
+records, but neither
+classification independently reads contract state. Preserve the files on any failure instead of recapturing
+or resetting volumes.
+
+This is only **distinct-project ledger continuity**. The script cannot prove
+that a backup was made, transferred to another host, or held under approved
+custody. It does not read contract state, wallet keys, API data, or transaction
+journals; these require separate post-restore evidence. Running its tests
+with injected snapshots is not local deployment or restore evidence. A
+pre-deployment run is development smoke only and does not advance the RC gate.
 
 ## Acceptance Test Before Claiming Support
 

@@ -2,8 +2,9 @@
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
-import { lstat, readFile, realpath } from "node:fs/promises";
+import { constants as fsConstants, createReadStream } from "node:fs";
+import { copyFile, lstat, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -25,33 +26,55 @@ function inspectOptionalTag(tag, runDocker) {
   }
 }
 
-async function verifiedArchivePath(root, image) {
+async function stagedArchivePath(root, image, staging) {
   const archive = resolve(root, image.archive);
   if (!archive.startsWith(`${root}${sep}`) || !(await lstat(archive)).isFile()) {
     throw new Error("Install image archive path is not a regular bundle file");
   }
+  const actual = await realpath(archive);
+  if (!actual.startsWith(`${root}${sep}`)) {
+    throw new Error("Install image archive escapes the bundle");
+  }
+  const staged = join(staging, `${image.role}.tar`);
+  await copyFile(archive, staged, fsConstants.COPYFILE_EXCL);
   const hash = createHash("sha256");
-  for await (const chunk of createReadStream(archive)) hash.update(chunk);
+  for await (const chunk of createReadStream(staged)) hash.update(chunk);
   if (hash.digest("hex") !== image.archiveSha256) {
     throw new Error("Install image archive changed after bundle verification");
   }
-  return archive;
+  return staged;
 }
 
 /** Loads only previously verified archive bytes; never pulls from a registry. */
 export async function loadStandaloneInstallImages(bundlePath, dependencies = {}) {
   const root = await realpath(resolve(bundlePath));
-  await (dependencies.verify ?? verifyStandaloneInstallBundle)(root);
-  const inventory = JSON.parse(await readFile(join(root, "install-inventory.json"), "utf8"));
+  const verified = await (dependencies.verify ?? verifyStandaloneInstallBundle)(root);
+  const inventoryBytes = await readFile(join(root, "install-inventory.json"));
+  if (createHash("sha256").update(inventoryBytes).digest("hex") !== verified?.inventorySha256) {
+    throw new Error("Install inventory changed after bundle verification");
+  }
+  const inventory = JSON.parse(inventoryBytes.toString("utf8"));
   if (!REVISION.test(inventory.sourceRevision)) throw new Error("Install inventory source is invalid");
+  const hasApi = ["tr-standalone-install-v4", "tr-standalone-install-v5",
+    "tr-standalone-install-v6"].includes(inventory.format);
+  const apiImageId = hasApi ? verified?.apiRuntime?.imageId : null;
+  const apiConfigId = hasApi ? verified?.apiRuntime?.configId : null;
+  if (hasApi
+    && (!/^sha256:[0-9a-f]{64}$/u.test(apiImageId ?? "")
+      || !/^sha256:[0-9a-f]{64}$/u.test(apiConfigId ?? ""))) {
+    throw new Error("Verified API image IDs are missing");
+  }
+  if (["tr-standalone-install-v5", "tr-standalone-install-v6"].includes(inventory.format)
+    && ["admin", "applicant"].some((role) =>
+      !/^sha256:[0-9a-f]{64}$/u.test(verified?.portalRuntimes?.[role]?.imageId ?? "")
+      || !/^sha256:[0-9a-f]{64}$/u.test(verified?.portalRuntimes?.[role]?.configId ?? ""))) {
+    throw new Error("Verified portal image IDs are missing");
+  }
   const runDocker = dependencies.docker ?? docker;
   const inspectArchive = dependencies.imageId ?? installedImageIdFromArchive;
   const tags = {};
-  for (const image of inventory.images) {
-    const archive = await (dependencies.archivePath ?? verifiedArchivePath)(root, image);
-    const configId = inspectArchive(archive, image.reference);
-    const manifestId = `sha256:${image.reference.split("@sha256:")[1]}`;
-    const acceptedIds = new Set([configId, manifestId]);
+  const staging = await mkdtemp(join(tmpdir(), "tr-install-image-load-"));
+  async function load(image, acceptedIds, archive) {
     const tag = `tr-standalone/${image.role}:sha-${inventory.sourceRevision}`;
     const existing = inspectOptionalTag(tag, runDocker);
     if (existing !== null && !acceptedIds.has(existing)) {
@@ -69,8 +92,45 @@ export async function loadStandaloneInstallImages(bundlePath, dependencies = {})
     if (existing === null) runDocker(["tag", loadedId, tag]);
     tags[image.role] = tag;
   }
-  return { kind: "local-image-load-observation", sourceRevision: inventory.sourceRevision,
-    tags, freshDaemon: "not-verified", pullDisabledRestart: "not-run" };
+  try {
+    for (const image of inventory.images) {
+      const archive = await (dependencies.archivePath ?? stagedArchivePath)(root, image, staging);
+      try {
+        const configId = inspectArchive(archive, image.reference);
+        const manifestId = `sha256:${image.reference.split("@sha256:")[1]}`;
+        await load(image, new Set([configId, manifestId]), archive);
+      } finally {
+        if (!dependencies.archivePath) await rm(archive, { force: true });
+      }
+    }
+    if (hasApi) {
+      const image = { role: "api", archive: inventory.apiRuntime.archive,
+        archiveSha256: inventory.apiRuntime.archiveSha256 };
+      const archive = await (dependencies.archivePath ?? stagedArchivePath)(root, image, staging);
+      try {
+        await load(image, new Set([apiImageId, apiConfigId]), archive);
+      } finally {
+        if (!dependencies.archivePath) await rm(archive, { force: true });
+      }
+    }
+    if (["tr-standalone-install-v5", "tr-standalone-install-v6"].includes(inventory.format)) {
+      for (const role of ["admin", "applicant"]) {
+        const pin = inventory.portalRuntimes[role];
+        const image = { role, archive: pin.archive, archiveSha256: pin.archiveSha256 };
+        const archive = await (dependencies.archivePath ?? stagedArchivePath)(root, image, staging);
+        try {
+          const verifiedRole = verified.portalRuntimes[role];
+          await load(image, new Set([verifiedRole.imageId, verifiedRole.configId]), archive);
+        } finally {
+          if (!dependencies.archivePath) await rm(archive, { force: true });
+        }
+      }
+    }
+    return { kind: "local-image-load-observation", sourceRevision: inventory.sourceRevision,
+      tags, freshDaemon: "not-verified", pullDisabledRestart: "not-run" };
+  } finally {
+    await rm(staging, { recursive: true, force: true });
+  }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

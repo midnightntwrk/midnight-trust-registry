@@ -1,0 +1,16 @@
+Deployment phase: {{ .Values.deploymentPhase }}.
+Bootstrap runs only node, indexer, and prover. After target-cluster genesis
+readback and independent first-run approvals, supply the signed API materials
+and upgrade with deploymentPhase=runtime to add API and portals.
+
+This chart creates private ClusterIP Services only. It does not create Secrets,
+PVCs, an Ingress, a wallet, a ledger deployment, or release approval.
+
+All six OCI images must already exist on every eligible arm64 node because
+imagePullPolicy is Never. Use an operator-labeled pod for in-namespace access:
+trust-registry.midnight.network/role=operator. The operator must separately
+enforce namespace RBAC so untrusted users cannot create pods with that label.
+
+Do not claim local/offline qualification until finalized ledger readback,
+egress-denied actor journeys, restart/restore, and independent security review
+have been observed on the exact installed bytes.

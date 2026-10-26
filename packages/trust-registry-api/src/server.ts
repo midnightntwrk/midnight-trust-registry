@@ -224,6 +224,7 @@ class HttpProblem extends Error {
 
 export type TrustRegistryApiServerOptions = {
   source: TrustRegistryApiStateSource;
+  corsPolicy?: "public" | "none";
   clock?: () => string;
   problemBaseUri?: string;
   mutationDidResolver?: Parameters<typeof verifyMutationIntentDidSignature>[2];
@@ -339,10 +340,13 @@ const writeJson = (
 const setCorsHeaders = (
   response: ServerResponse,
 ): void => {
+  if (corsDisabledResponses.has(response)) return;
   response.setHeader("access-control-allow-origin", "*");
   response.setHeader("access-control-allow-headers", "content-type");
   response.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
 };
+
+const corsDisabledResponses = new WeakSet<ServerResponse>();
 
 const writeNoContent = (
   response: ServerResponse,
@@ -932,6 +936,7 @@ export const createTrustRegistryApiServer = (
   };
 
   return createServer(async (request, response) => {
+    if (options.corsPolicy === "none") corsDisabledResponses.add(response);
     let privateApplicantRoute = false;
     try {
       const method = request.method ?? "GET";

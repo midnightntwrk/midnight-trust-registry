@@ -30,3 +30,5 @@ export * from "./cli.js";
 export * from "./schemas.js";
 export * from "./server.js";
 export * from "./source.js";
+export * from "./local-ledger-projection.js";
+export * from "./local-ledger-source.js";

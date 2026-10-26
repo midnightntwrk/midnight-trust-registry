@@ -2120,3 +2120,77 @@ it against the preserved setup state. The same pinned governance reviewer
 signs both approvals. It is not a substitute for independent receipt review,
 finalized maintenance readback, offline actor journeys, or human security
 approval; an ambiguous no-receipt attempt cannot pass this gate.
+
+The 0.1.0 Helm backlog (#218) depends on a runnable, ledger-backed API image,
+not just Kubernetes templates. The current standalone Compose files start only
+node, indexer, and proof server. A local, unpushed signed slice through
+`bbee90e` builds two static portal OCI archives from a clean signed export,
+records asset and archive hashes, and avoids remote Turbo cache reads/writes.
+Both portal roles passed read-only, network-isolated startup at `b0f3844`;
+admin rebuilt from `bbee90e`. A separate signed local API-image candidate at
+`a5484f7` built an arm64 OCI archive and passed GPG and API-import checks in a
+read-only, network-disabled container. Independent review found its legacy
+deployment could re-resolve dependencies and published DID proving keys were
+still included; that archive is not a release candidate. The corrected builder
+at signed revision `a26ea84` uses the shared lockfile, excludes the known DID
+proof assets and all native addons, and scans the full runtime payload. Two
+builds had the same 12,166-entry payload digest after excluding pnpm's volatile
+install metadata. Their OCI image/archive digests differed, so the exact
+archive remains pinned separately. Packaging checks do not prove
+cluster qualification or offline actor journeys. An unpushed v4 install
+inventory slice binds a separately built API archive to the same signed
+source revision as the release packages, verifies its OCI/config identity,
+and imports a private hash-checked copy without a registry pull. It rejects
+image-name annotations and unapproved platform variants. The signed local
+API plan can reference a v4 inventory, but the installer does not start or
+observe a running API. The CLI now has a separate
+reviewer-signed read-only local-ledger mode, but its tests use simulator or
+reader doubles. The indexer's Compact state lacks state-root authentication,
+the signed governance timestamp map is not independently derived from the
+chain, and no same-head API image has been installed and observed running from
+a verified first-run inventory.
+No live DID/VC/status authority or deployed actor path is established.
+Complete #219 and the real isolated-cluster qualification before presenting a
+chart as the offline RC deployment path. Chart lint and rendered manifests
+cannot replace enforced egress denial, finalized readback, or restore evidence.
+The running dedicated ledger bridge is healthy and its installation bytes
+were verified, but its genesis remains a node-reported candidate without
+independent signed approval; no deployment or committee transition is recorded
+in that setup state.
+
+On 2026-10-20 the pinned node digest was independently traced to Docker Hub's
+`1.0.0-arm64` tag and the public `midnight-node` `node-1.0.0` release.
+The tagged source, downloaded release tarball, and pinned image agree on the
+SHA-256 of `res/cfg/dev.toml` and both `undeployed` genesis files. A disposable
+network-disabled container running the separately downloaded release binary
+reported the same genesis hash as the dedicated stack. This is a review packet,
+not a governance signature or release qualification. The image's
+`dev.earthly.git-sha` names an Earthly build-tool commit, not node source.
+More importantly, the macOS Docker Desktop smoke stack requests loopback
+bindings in `HostConfig.PortBindings` but has empty effective
+`NetworkSettings.Ports` and no direct host RPC access. The wizard can now
+record a prepared, isolated bridge as `unpublished-install-access-required`,
+and a fresh live observation matched its private inputs and pinned images and
+passed a scoped ledger-bridge egress probe. A temporary relay reached node RPC,
+indexer GraphQL, and proof-server version, then was removed; it was not a
+source-pinned installation path or offline-runtime evidence. Genesis observation
+still requires verified effective host access, so do not deploy until a reviewed
+access path passes that gate. Preserve the existing volumes and private
+candidate evidence meanwhile.
+
+The next complete v6 install-bundle format pins the temporary relay script
+beside the six images and two Compose files. Its read-only verifier checks the
+running relay image, exact Python entrypoint, read-only script mount, environment
+identical to the pinned base image, mounted script bytes, selected internal
+bridge plus default bridge, and three effective loopback ports. Wizard genesis
+observation and deployment reservation recheck
+the same relay identity and source-pinned bytes. This is an installation-only
+access path: it must be removed before offline actor and egress qualification.
+The deployment plan's node and indexer URLs must all match the relay, and a
+post-submission drift check marks the attempt unknown rather than permitting a
+blind retry. The proof-server URL lives in provider configuration outside this
+plan and remains a separate qualification concern. Hashing current mounted
+bytes does not prove which Python code was loaded at process start against a
+malicious host administrator. The existing v3 smoke bundle lacks this pin and
+remains unqualified; no v6 bundle has yet been built or independently approved
+on the local stack.

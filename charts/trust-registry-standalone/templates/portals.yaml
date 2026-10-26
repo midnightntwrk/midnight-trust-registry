@@ -1,0 +1,62 @@
+{{- if eq .Values.deploymentPhase "runtime" }}
+{{- range $role, $image := dict "admin" .Values.images.admin "applicant" .Values.images.applicant }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "tr.componentName" (dict "root" $ "component" $role) }}
+  labels:
+    {{- include "tr.labels" (dict "root" $ "component" $role) | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "tr.selector" (dict "root" $ "component" $role) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "tr.labels" (dict "root" $ "component" $role) | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector:
+        kubernetes.io/arch: arm64
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: {{ $role }}
+          image: {{ $image | quote }}
+          imagePullPolicy: {{ $.Values.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: 4173
+          startupProbe:
+            exec:
+              command: [node, -e, "fetch('http://127.0.0.1:4173/').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+            periodSeconds: 5
+            failureThreshold: 20
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command: [node, -e, "fetch('http://127.0.0.1:4173/').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: [node, -e, "fetch('http://127.0.0.1:4173/').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+            periodSeconds: 30
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml (index $.Values.resources $role) | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+{{- end }}
+{{- end }}

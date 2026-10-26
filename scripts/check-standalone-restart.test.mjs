@@ -8,6 +8,9 @@ import test from "node:test";
 import {
   captureStandaloneRestartBaseline,
   compareStandaloneRestartSnapshots,
+  deploymentMarkerFromRecord,
+  observeStandaloneRestartSnapshot,
+  readStandaloneRestartEvidence,
   verifyStandaloneRestart,
 } from "./check-standalone-restart.mjs";
 
@@ -18,10 +21,25 @@ const afterHash = `0x${"3".repeat(64)}`;
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const services = ["node", "indexer", "proof-server"];
 
+test("deployment marker requires a valid reconciled staged-bootstrap receipt", () => {
+  const receipt = { networkId: "undeployed", contractAddress: `0x${"4".repeat(64)}`,
+    blockHash: `0x${"5".repeat(64)}`, txId: "local-tx", blockHeight: 12 };
+  const record = { deployment: { state: "observed", result: {
+    receipt, readbackStatus: "staged-bootstrap-pending" } } };
+  assert.deepEqual(deploymentMarkerFromRecord(record), { state: "observed",
+    contractAddress: receipt.contractAddress, readbackStatus: "staged-bootstrap-pending",
+    validReceipt: true });
+  assert.equal(deploymentMarkerFromRecord({ deployment: { state: "observed", result: {
+    receipt: { ...receipt, contractAddress: `0x${"0".repeat(64)}` },
+    readbackStatus: "staged-bootstrap-pending" } } }).validReceipt, false);
+});
+
 function snapshot() {
   return {
     format: "tr-standalone-restart-snapshot-v1",
     project: "tr-standalone-local-restart-test",
+    networkId: "ledger-id",
+    hostPortAccess: "unpublished-install-access-required",
     sourceRevision: revision,
     observerSha256: "a".repeat(64),
     installInventorySha256: "b".repeat(64),
@@ -44,6 +62,7 @@ test("requires every service restart, intact volumes, and finalized history", ()
   for (const service of services) after.containers[service].startedAt = "2026-10-20T00:01:00Z";
   const result = compareStandaloneRestartSnapshots(before, after);
   assert.equal(result.releaseQualified, false);
+  assert.equal(result.deploymentEvidence, undefined);
   assert.equal(result.crossHostRestore, "not-run");
   assert.equal(result.preservedCheckpointHash, beforeHash);
   for (const service of services) {
@@ -66,9 +85,38 @@ test("requires every service restart, intact volumes, and finalized history", ()
   const changedSource = structuredClone(after);
   changedSource.sourceRevision = "f".repeat(40);
   assert.throws(() => compareStandaloneRestartSnapshots(before, changedSource), /changed sourceRevision/u);
+  const changedNetwork = structuredClone(after);
+  changedNetwork.networkId = "replacement-ledger";
+  assert.throws(() => compareStandaloneRestartSnapshots(before, changedNetwork), /changed networkId/u);
+  const changedAccess = structuredClone(after);
+  changedAccess.hostPortAccess = "effective-loopback";
+  assert.throws(() => compareStandaloneRestartSnapshots(before, changedAccess), /changed hostPortAccess/u);
   const changedObserver = structuredClone(after);
   changedObserver.observerSha256 = "f".repeat(64);
   assert.throws(() => compareStandaloneRestartSnapshots(before, changedObserver), /changed observerSha256/u);
+  const recordedBefore = { ...before, setupDeployment: { state: "observed",
+    contractAddress: `0x${"4".repeat(64)}`, readbackStatus: "staged-bootstrap-pending",
+    validReceipt: true } };
+  const recordedAfter = { ...after, setupDeployment: structuredClone(recordedBefore.setupDeployment) };
+  assert.equal(compareStandaloneRestartSnapshots(recordedBefore, recordedAfter).deploymentEvidence,
+    "setup-recorded-deployment-ledger-only");
+  const mismatch = structuredClone(recordedBefore);
+  mismatch.setupDeployment.readbackStatus = "mismatch";
+  assert.equal(compareStandaloneRestartSnapshots(mismatch,
+    { ...after, setupDeployment: structuredClone(mismatch.setupDeployment) }).deploymentEvidence,
+  "deployment-state-observed-unbound");
+  const unknown = { ...before, setupDeployment: { state: "unknown", contractAddress: null } };
+  assert.equal(compareStandaloneRestartSnapshots(unknown,
+    { ...after, setupDeployment: structuredClone(unknown.setupDeployment) }).deploymentEvidence,
+  "deployment-state-unknown-unbound");
+  const legacyObserved = { ...before, setupDeployment: { state: "observed",
+    contractAddress: `0x${"4".repeat(64)}` } };
+  assert.equal(compareStandaloneRestartSnapshots(legacyObserved,
+    { ...after, setupDeployment: structuredClone(legacyObserved.setupDeployment) }).deploymentEvidence,
+  "deployment-state-observed-unbound");
+  recordedAfter.setupDeployment.state = "unknown";
+  assert.throws(() => compareStandaloneRestartSnapshots(recordedBefore, recordedAfter),
+    /setup deployment record changed/u);
 });
 
 test("captures private immutable baseline and verifies a restarted local ledger bridge", async () => {
@@ -103,6 +151,7 @@ test("captures private immutable baseline and verifies a restarted local ledger 
   await writeFile(join(directory, "setup-record.json"), JSON.stringify(record), { mode: 0o600 });
   let restarted = false;
   let brokenHistory = false;
+  let allowUnpublishedHostPorts;
   const dependencies = {
     verifyBundle: async () => ({ sourceRevision: revision,
       runtimeComposeSha256: composeHash, runtimeOfflineComposeSha256: offlineHash,
@@ -112,8 +161,10 @@ test("captures private immutable baseline and verifies a restarted local ledger 
       assert.equal(config.project, project);
       assert.equal(expected.requirePrivateInputs, true);
       assert.equal(expected.images.length, 3);
-      return { project, preparedInputsMatched: true, verifiedImageIdsMatched: true,
-        bundleComposeFilesMatched: true };
+      allowUnpublishedHostPorts = expected.allowUnpublishedHostPorts;
+      return { project, networkId: "ledger-id", internalNetworkOnly: true,
+        hostPortAccess: "unpublished-install-access-required", preparedInputsMatched: true,
+        verifiedImageIdsMatched: true, bundleComposeFilesMatched: true };
     },
     command: async (_name, args) => {
       if (args[0] === "ps") {
@@ -139,8 +190,20 @@ test("captures private immutable baseline and verifies a restarted local ledger 
     },
   };
   try {
+    const expected = { sourceRevision: revision, installInventorySha256: digest(inventory), project };
+    assert.deepEqual(await readStandaloneRestartEvidence(directory, expected), { status: "pending" });
+    await observeStandaloneRestartSnapshot(directory, { allowUnpublishedHostPorts: true }, dependencies);
+    assert.equal(allowUnpublishedHostPorts, true);
     const baseline = await captureStandaloneRestartBaseline(directory, dependencies);
+    assert.equal(allowUnpublishedHostPorts, true);
     assert.equal(baseline.finalizedHash, beforeHash);
+    const baselineRecord = JSON.parse(await readFile(baseline.baselinePath, "utf8"));
+    assert.equal(baselineRecord.networkId, "ledger-id");
+    assert.equal(baselineRecord.hostPortAccess, "unpublished-install-access-required");
+    assert.deepEqual(await readStandaloneRestartEvidence(directory, expected),
+      { status: "baseline-captured-verification-pending" });
+    await assert.rejects(readStandaloneRestartEvidence(directory,
+      { ...expected, project: "another-project" }), /not bound to this setup/u);
     await assert.rejects(captureStandaloneRestartBaseline(directory, dependencies), { code: "EEXIST" });
     restarted = true;
     brokenHistory = true;
@@ -148,8 +211,20 @@ test("captures private immutable baseline and verifies a restarted local ledger 
     brokenHistory = false;
     const result = await verifyStandaloneRestart(directory, dependencies);
     assert.equal(result.releaseQualified, false);
+    assert.equal(result.deploymentEvidence, "pre-deployment-smoke");
     assert.equal(JSON.parse(await readFile(join(directory, "restart-verification.json"), "utf8"))
       .baselineSha256.length, 64);
+    assert.deepEqual(await readStandaloneRestartEvidence(directory, expected), {
+      status: "self-attested-ledger-bridge-only", deploymentEvidence: "pre-deployment-smoke",
+      beforeFinalizedHeight: 11, afterFinalizedHeight: 12,
+    });
+    const verificationPath = join(directory, "restart-verification.json");
+    const verificationBytes = await readFile(verificationPath);
+    const forged = JSON.parse(verificationBytes);
+    forged.baselineSha256 = "f".repeat(64);
+    await writeFile(verificationPath, JSON.stringify(forged));
+    await assert.rejects(readStandaloneRestartEvidence(directory, expected), /does not match/u);
+    await writeFile(verificationPath, verificationBytes);
     await assert.rejects(verifyStandaloneRestart(directory, dependencies), { code: "EEXIST" });
   } finally {
     await rm(root, { recursive: true, force: true });

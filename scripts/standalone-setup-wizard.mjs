@@ -2,7 +2,9 @@
 
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { link, open, lstat, mkdir, readFile, realpath, rename, unlink } from "node:fs/promises";
+import { constants } from "node:fs";
+import { link, open, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
@@ -20,8 +22,9 @@ import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { pinnedStandaloneImages } from "./build-standalone-install.mjs";
 import { observeStandaloneEgress } from "./check-standalone-egress.mjs";
+import { observeStandaloneInstallRelay } from "./check-standalone-install-relay.mjs";
 import { observeStandaloneTopology, standaloneStackConfig } from "./check-standalone-topology.mjs";
-import { observeStandaloneRestartSnapshot } from "./check-standalone-restart.mjs";
+import { observeStandaloneRestartSnapshot, readStandaloneRestartEvidence } from "./check-standalone-restart.mjs";
 import { checkLocalLedgerPreflight } from "./local-ledger-preflight.mjs";
 import {
   loadApprovedMaintenanceMaterial, reconcileLocalDeployment, runLocalDeployment,
@@ -185,7 +188,7 @@ export async function prepareStandaloneStack(directory, requested, dependencies 
       || !SHA256.test(verified.runtimeOfflineComposeSha256 ?? "")
       || JSON.parse(inventoryBytes).runtimeCompose?.sha256 !== verified.runtimeComposeSha256
       || JSON.parse(inventoryBytes).runtimeCompose?.offlineSha256 !== verified.runtimeOfflineComposeSha256) {
-      throw new Error("New standalone setup requires a verified v3 runtime Compose pin");
+      throw new Error("New standalone setup requires a verified v3/v4/v5 runtime Compose pin");
     }
     const composeBytes = await readFile(composePath);
     if (sha256(composeBytes) !== verified.runtimeComposeSha256
@@ -232,21 +235,11 @@ export async function prepareStandaloneStack(directory, requested, dependencies 
   });
 }
 
-export async function observeStandaloneStack(directory, dependencies = {}) {
-  return withLock(directory, async (root) => {
-    const { record } = await readRecord(root);
+async function preparedStandaloneTopology(root, record) {
     if (!record.stack) throw new Error("Prepare an isolated stack before observing it");
-    if (record.ledgerObservation || record.deployment) {
-      throw new Error("Stack observations cannot change after local-ledger observation begins");
-    }
-    const observations = record.stack.observations ?? (record.stack.observation
-      ? [record.stack.observation] : []);
-    if (!Array.isArray(observations) || observations.length >= 20) {
-      throw new Error("Stack observation history is full or malformed");
-    }
     if (record.install.verified?.runtimeComposeSha256
       && !Array.isArray(record.install.verified.images)) {
-      throw new Error("Verified v3 install image identities are missing from setup");
+      throw new Error("Verified install image identities are missing from setup");
     }
     const envBytes = await regularBytes(join(root, "stack.env"));
     if (sha256(envBytes) !== record.stack.envFileSha256) {
@@ -291,19 +284,38 @@ export async function observeStandaloneStack(directory, dependencies = {}) {
       || !/^[0-9a-f]{64}$/u.test(selected.TR_INDEXER_SECRET ?? "")) {
       throw new Error("Prepared private stack inputs disagree with the install bundle");
     }
-    const topology = await (dependencies.observeTopology ?? observeStandaloneTopology)(config, {
+    const expectedTopology = {
       requirePrivateInputs: true,
+      allowUnpublishedHostPorts: true,
       proofParamsDir,
       indexerPassword: selected.TR_INDEXER_PASSWORD,
       indexerSecret: selected.TR_INDEXER_SECRET,
       ...(record.install.verified?.runtimeComposeSha256 ? {
-        sourceRevision: record.sourceRevision,
+        sourceRevision: record.install.verified.sourceRevision,
         images: record.install.verified.images,
         allowOffline: true,
         composeFiles: [join(record.install.bundle, "compose.yml"),
           join(record.install.bundle, "compose.offline.yml")],
       } : {}),
-    });
+    };
+    return { config, expectedTopology };
+}
+
+export async function observeStandaloneStack(directory, dependencies = {}) {
+  return withLock(directory, async (root) => {
+    const { record } = await readRecord(root);
+    if (!record.stack) throw new Error("Prepare an isolated stack before observing it");
+    if (record.ledgerObservation || record.deployment) {
+      throw new Error("Stack observations cannot change after local-ledger observation begins");
+    }
+    const observations = record.stack.observations ?? (record.stack.observation
+      ? [record.stack.observation] : []);
+    if (!Array.isArray(observations) || observations.length >= 20) {
+      throw new Error("Stack observation history is full or malformed");
+    }
+    const { config, expectedTopology } = await preparedStandaloneTopology(root, record);
+    const topology = await (dependencies.observeTopology ?? observeStandaloneTopology)(config,
+      expectedTopology);
     const egress = await (dependencies.observeEgress ?? observeStandaloneEgress)({
       env: {
         TR_STACK_NAME: config.project,
@@ -312,8 +324,11 @@ export async function observeStandaloneStack(directory, dependencies = {}) {
         TR_INDEXER_PORT: config.ports.indexer,
         TR_PROOF_PORT: config.ports["proof-server"],
       },
+      expectedTopology,
     });
-    if (topology.project !== config.project || egress.project !== config.project) {
+    if (topology.project !== config.project || egress.project !== config.project
+      || typeof topology.networkId !== "string" || topology.networkId.length === 0
+      || egress.networkId !== topology.networkId) {
       throw new Error("Stack observations disagree with the selected project");
     }
     record.stack.observation = { observedAt: new Date().toISOString(), topology, egress };
@@ -330,9 +345,10 @@ export async function collectStandaloneGenesisCandidate(directory, dependencies 
     const { record } = await readRecord(root);
     if (!record.install.verified?.runtimeComposeSha256 || !record.stack?.observation
       || record.ledgerObservation || record.genesisApproval || record.deployment) {
-      throw new Error("Collect a candidate only from an observed v3 stack before recording a genesis pin");
+      throw new Error("Collect a candidate only from an observed stack before recording a genesis pin");
     }
-    const snapshot = await (dependencies.observeSnapshot ?? observeStandaloneRestartSnapshot)(root);
+    const snapshot = await (dependencies.observeSnapshot ?? observeStandaloneRestartSnapshot)(root,
+      { allowUnpublishedHostPorts: true });
     if (snapshot.project !== record.stack.project
       || snapshot.sourceRevision !== record.sourceRevision
       || snapshot.installInventorySha256 !== record.install.inventorySha256
@@ -382,13 +398,60 @@ export async function observeStandaloneLedger(directory, pinPath, dependencies =
     if (pin.sourceRevision !== record.sourceRevision) {
       throw new Error("Genesis pin source revision disagrees with the installed bundle");
     }
+    let installAccess;
+    if (record.install.verified?.runtimeComposeSha256) {
+      const { config, expectedTopology } = await preparedStandaloneTopology(root, record);
+      const directUrl = `http://127.0.0.1:${record.stack.ports.node}`;
+      if (!Array.isArray(pin.allowedHosts) || pin.allowedHosts.length !== 1
+        || pin.allowedHosts[0] !== "127.0.0.1") {
+        throw new Error("Genesis pin must allow only the prepared loopback host");
+      }
+      if (pin.rpcUrl === directUrl) {
+        const current = await (dependencies.observeTopology ?? observeStandaloneTopology)(config,
+          { ...expectedTopology, allowUnpublishedHostPorts: false });
+        if (current.project !== record.stack.project
+          || current.networkId !== record.stack.observation.topology.networkId
+          || current.internalNetworkOnly !== true) {
+          throw new Error("Current ledger topology disagrees with the recorded stack observation");
+        }
+        installAccess = { kind: "effective-direct-loopback", networkId: current.networkId };
+      } else {
+        if (!record.install.verified.installRelay) {
+          throw new Error("Genesis pin must target the prepared stack's exact loopback RPC endpoint");
+        }
+        const current = await (dependencies.observeInstallRelay ?? observeStandaloneInstallRelay)(
+          config, record.install.verified, expectedTopology);
+        if (current.project !== record.stack.project
+          || current.networkId !== record.stack.observation.topology.networkId
+          || current.topology?.internalNetworkOnly !== true
+          || current.topology?.hostPortAccess !== "unpublished-install-access-required"
+          || pin.rpcUrl !== `http://127.0.0.1:${current.ports?.node}`) {
+          throw new Error("Genesis pin does not match the verified installation relay");
+        }
+        installAccess = { kind: current.kind, networkId: current.networkId,
+          relayId: current.relayId, ports: current.ports,
+          relayScriptSha256: current.relayScriptSha256, installationOnly: true };
+      }
+    }
     const observation = await (dependencies.preflight ?? checkLocalLedgerPreflight)(pin);
+    if (installAccess?.kind === "standalone-install-relay-observation") {
+      const { config, expectedTopology } = await preparedStandaloneTopology(root, record);
+      const current = await (dependencies.observeInstallRelay ?? observeStandaloneInstallRelay)(
+        config, record.install.verified, expectedTopology);
+      if (current.relayId !== installAccess.relayId
+        || current.networkId !== installAccess.networkId
+        || JSON.stringify(current.ports) !== JSON.stringify(installAccess.ports)
+        || current.relayScriptSha256 !== installAccess.relayScriptSha256) {
+        throw new Error("Installation relay changed during genesis observation");
+      }
+    }
     record.ledgerObservation = {
       pinSha256: sha256(pinBytes),
       expectedGenesisHash: pin.expectedGenesisHash,
       rpcUrl: pin.rpcUrl,
       allowedHosts: pin.allowedHosts,
       observation,
+      ...(installAccess ? { installAccess } : {}),
     };
     await writeRecord(root, record);
     return record.ledgerObservation;
@@ -399,15 +462,60 @@ export async function verifyDetachedReviewerSignature(
   documentPath, signaturePath, keyringDirectory, expectedFingerprint,
 ) {
   if (!FINGERPRINT.test(expectedFingerprint)) throw new Error("Reviewer signing-key fingerprint must be canonical");
-  await privateDirectory(keyringDirectory);
-  const { stdout } = await execFileAsync("gpg", [
-    "--batch", "--no-auto-key-retrieve", "--homedir", keyringDirectory,
-    "--status-fd=1", "--verify", signaturePath, documentPath,
-  ], { timeout: 30_000, maxBuffer: 1024 * 1024 });
-  const valid = [...stdout.matchAll(/^\[GNUPG:\] VALIDSIG ([A-F0-9]{40})(?: |$)/gmu)];
-  if (valid.length !== 1 || valid[0][1] !== expectedFingerprint
-    || /^\[GNUPG:\] (?:EXPKEYSIG|REVKEYSIG|BADSIG|ERRSIG|KEYEXPIRED|KEYREVOKED|SIGEXPIRED) /mu.test(stdout)) {
-    throw new Error("Detached approval signature does not match the pinned reviewer key");
+  const publicKeySource = resolve(keyringDirectory);
+  const sourceStat = await lstat(publicKeySource);
+  const armoredExport = sourceStat.isFile();
+  const keyboxPath = armoredExport ? publicKeySource
+    : join(await privateDirectory(publicKeySource), "pubring.kbx");
+  let keybox;
+  try {
+    keybox = await open(keyboxPath,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      throw new Error("Reviewer keyring needs pubring.kbx; export and import the public key into a pre-created private directory");
+    }
+    throw error;
+  }
+  let publicKeys;
+  try {
+    const stat = await keybox.stat();
+    if (!stat.isFile() || stat.size === 0 || stat.size > 8 * 1024 * 1024
+      || (typeof process.getuid === "function" && stat.uid !== process.getuid())) {
+      throw new Error("Reviewer public keyring must be an owned bounded regular file");
+    }
+    publicKeys = await keybox.readFile();
+    if (publicKeys.length !== stat.size) throw new Error("Reviewer public keyring changed during read");
+  } finally {
+    await keybox.close();
+  }
+  if (armoredExport && !publicKeys.toString("utf8").startsWith("-----BEGIN PGP PUBLIC KEY BLOCK-----\n")) {
+    throw new Error("Reviewer key file must be an armored public-key export");
+  }
+  const shortTempRoot = tmpdir().length > 55 ? "/tmp" : tmpdir();
+  const temporary = await mkdtemp(join(shortTempRoot, "tr-reviewer-keyring-"));
+  try {
+    const keyring = join(temporary, "pubring.kbx");
+    if (armoredExport) {
+      const exportPath = join(temporary, "reviewer-public.asc");
+      await writeFile(exportPath, publicKeys, { flag: "wx", mode: 0o600 });
+      await execFileAsync("gpg", ["--batch", "--no-options", "--homedir", temporary,
+        "--import", exportPath], { timeout: 30_000, maxBuffer: 1024 * 1024 });
+    } else {
+      await writeFile(keyring, publicKeys, { flag: "wx", mode: 0o600 });
+    }
+    const { stdout } = await execFileAsync("gpg", [
+      "--batch", "--no-options", "--no-auto-key-retrieve", "--trust-model", "always",
+      "--no-default-keyring", "--homedir", temporary, "--keyring", keyring,
+      "--status-fd=1", "--verify", signaturePath, documentPath,
+    ], { timeout: 30_000, maxBuffer: 1024 * 1024 });
+    const valid = [...stdout.matchAll(/^\[GNUPG:\] VALIDSIG ([A-F0-9]{40})(?: |$)/gmu)];
+    if (valid.length !== 1 || valid[0][1] !== expectedFingerprint
+      || /^\[GNUPG:\] (?:EXPKEYSIG|REVKEYSIG|BADSIG|ERRSIG|KEYEXPIRED|KEYREVOKED|SIGEXPIRED) /mu.test(stdout)) {
+      throw new Error("Detached approval signature does not match the pinned reviewer key");
+    }
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
   }
 }
 
@@ -418,6 +526,7 @@ function reviewerProposal(proposal, fields) {
     || !FINGERPRINT.test(proposal.reviewerFingerprint ?? "")
     || typeof proposal.reviewedReference !== "string"
     || proposal.reviewedReference.length < 8 || proposal.reviewedReference.length > 512
+    || proposal.reviewedReference.startsWith("demo:")
     || !Number.isFinite(approvedAt)
     || new Date(approvedAt).toISOString() !== proposal.approvedAt
     || approvedAt > Date.now() + 5 * 60_000) {
@@ -575,6 +684,7 @@ export async function approveStandaloneGenesis(
       || approval.reviewerFingerprint !== expectedFingerprint
       || typeof approval.reviewedReference !== "string"
       || approval.reviewedReference.length < 8 || approval.reviewedReference.length > 512
+    || approval.reviewedReference.startsWith("demo:")
       || !Number.isFinite(approvedAt) || approvedAt < Date.parse(record.createdAt)
       || approvedAt > Date.now() + 5 * 60_000) {
       throw new Error("Reviewer approval does not bind the current install and observed genesis");
@@ -746,6 +856,26 @@ export async function approveStandaloneCommitteeDeployment(
   });
 }
 
+async function requireCurrentInstallRelay(root, record, verified, plan, dependencies) {
+  const approved = record.ledgerObservation.installAccess;
+  const { config, expectedTopology } = await preparedStandaloneTopology(root, record);
+  const live = await (dependencies.observeInstallRelay ?? observeStandaloneInstallRelay)(
+    config, verified, expectedTopology);
+  const indexerHttp = `http://127.0.0.1:${live.ports?.indexer}/api/v4/graphql`;
+  const indexerWs = `ws://127.0.0.1:${live.ports?.indexer}/api/v4/graphql/ws`;
+  if (live.relayId !== approved.relayId
+    || live.networkId !== approved.networkId
+    || live.relayScriptSha256 !== approved.relayScriptSha256
+    || JSON.stringify(live.ports) !== JSON.stringify(approved.ports)) {
+    throw new Error("Verified installation relay changed");
+  }
+  if (plan.network.rpcUrl !== `http://127.0.0.1:${live.ports?.node}`
+    || plan.network.indexerHttpUrl !== indexerHttp
+    || plan.network.indexerWsUrl !== indexerWs) {
+    throw new Error("Deployment plan endpoints diverged from the verified installation relay");
+  }
+}
+
 export async function attemptStandaloneDeployment(directory, planPath, dependencies = {}) {
   return withLock(directory, async (root) => {
     const { record } = await readRecord(root);
@@ -769,6 +899,10 @@ export async function attemptStandaloneDeployment(directory, planPath, dependenc
       || sha256(inventory) !== record.install.inventorySha256) {
       throw new Error("Installed bundle changed since setup verification");
     }
+    const approvedAccess = record.ledgerObservation.installAccess;
+    if (approvedAccess?.kind === "standalone-install-relay-observation") {
+      await requireCurrentInstallRelay(root, record, verified, plan, dependencies);
+    }
     const packageManifest = JSON.parse(inventory).packageManifest;
     const bundleManifestBytes = await regularBytes(join(record.install.bundle, packageManifest));
     const planManifestBytes = await regularBytes(plan.releaseManifestPath);
@@ -791,6 +925,9 @@ export async function attemptStandaloneDeployment(directory, planPath, dependenc
     await writeRecord(root, record);
     try {
       const result = await (dependencies.deploy ?? runLocalDeployment)(plan);
+      if (approvedAccess?.kind === "standalone-install-relay-observation") {
+        await requireCurrentInstallRelay(root, record, verified, plan, dependencies);
+      }
       record.deployment = { ...record.deployment, state: "observed", result };
       await writeRecord(root, record);
       return result;
@@ -1505,6 +1642,16 @@ export async function approveStandaloneCommitteeRecovery(
 
 export async function standaloneSetupStatus(directory) {
   const { root, record } = await readRecord(directory);
+  let restartObservation;
+  try {
+    restartObservation = await readStandaloneRestartEvidence(root, {
+      sourceRevision: record.sourceRevision,
+      installInventorySha256: record.install?.inventorySha256,
+      project: record.stack?.project,
+    });
+  } catch {
+    restartObservation = { status: "invalid-evidence-investigate" };
+  }
   let lockPresent = false;
   try {
     await lstat(join(root, ".setup.lock"));
@@ -1531,6 +1678,7 @@ export async function standaloneSetupStatus(directory) {
     maintenanceTransitionAlert: record.maintenanceAttempt?.alert ?? null,
     maintenanceLastReadback: record.maintenanceAttempt?.reconciliation?.status ?? null,
     offlineJourneys: "pending",
+    restartObservation,
     restartRestore: "pending",
     independentReview: "pending",
     releaseQualified: false,

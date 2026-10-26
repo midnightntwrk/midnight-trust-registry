@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstat, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -34,8 +34,10 @@ import {
   verifyDetachedReviewerSignature,
 } from "./standalone-setup-wizard.mjs";
 import { pinnedStandaloneImages } from "./build-standalone-install.mjs";
+import { demoGenesisReference } from "./demo-genesis-reference.mjs";
 
 const sourceRevision = "a".repeat(40);
+const ledgerNetworkId = "ledger-id";
 const expectedGenesisHash = `0x${"b".repeat(64)}`;
 const reviewerFingerprint = "A".repeat(40);
 const governanceFingerprint = "B".repeat(40);
@@ -81,13 +83,29 @@ async function fixture(format = "tr-standalone-install-v2") {
   const images = pinnedStandaloneImages(compose.toString("utf8"));
   await writeFile(join(bundle, "install-inventory.json"), JSON.stringify({ sourceRevision,
     format, packageManifest: "release-manifest.json", images,
-    ...(format === "tr-standalone-install-v3" ? { runtimeCompose: {
+    ...(["tr-standalone-install-v3", "tr-standalone-install-v4", "tr-standalone-install-v5", "tr-standalone-install-v6"].includes(format) ? { runtimeCompose: {
       path: "compose.yml", sha256: composeSha256,
       offlinePath: "compose.offline.yml", offlineSha256: offlineComposeSha256,
+    } } : {}),
+    ...(["tr-standalone-install-v4", "tr-standalone-install-v5", "tr-standalone-install-v6"].includes(format) ? { apiRuntime: {
+      manifest: "images/api.manifest.json", manifestSha256: "a".repeat(64),
+      archive: "images/api.image.tar", archiveSha256: "b".repeat(64),
+    } } : {}),
+    ...(["tr-standalone-install-v5", "tr-standalone-install-v6"].includes(format) ? { portalRuntimes: {
+      admin: { manifest: "images/admin.manifest.json", manifestSha256: "c".repeat(64),
+        archive: "images/admin.image.tar", archiveSha256: "d".repeat(64) },
+      applicant: { manifest: "images/applicant.manifest.json", manifestSha256: "e".repeat(64),
+        archive: "images/applicant.image.tar", archiveSha256: "f".repeat(64) },
+    } } : {}),
+    ...(format === "tr-standalone-install-v6" ? { installRelay: {
+      path: "install-relay.py", sha256: "b".repeat(64), imageRole: "node",
     } } : {}) }));
   await writeFile(join(bundle, "release-manifest.json"), JSON.stringify({ sourceRevision }));
   await writeFile(join(bundle, "compose.yml"), compose);
   await writeFile(join(bundle, "compose.offline.yml"), offlineCompose);
+  if (format === "tr-standalone-install-v6") {
+    await writeFile(join(bundle, "install-relay.py"), "# fixture relay\n");
+  }
   await mkdir(join(bundle, "proof-params"));
   const releaseManifestPath = join(root, "release-manifest.json");
   await writeFile(releaseManifestPath, JSON.stringify({ sourceRevision }));
@@ -100,8 +118,19 @@ async function fixture(format = "tr-standalone-install-v2") {
     proofParameterCount: 18,
     images: images.map(({ role, reference }) => ({ role, reference,
       acceptedIds: [`sha256:${reference.split("@sha256:")[1]}`] })),
-    runtimeComposeSha256: format === "tr-standalone-install-v3" ? composeSha256 : null,
-    runtimeOfflineComposeSha256: format === "tr-standalone-install-v3" ? offlineComposeSha256 : null });
+    runtimeComposeSha256: format !== "tr-standalone-install-v2" ? composeSha256 : null,
+    runtimeOfflineComposeSha256: format !== "tr-standalone-install-v2" ? offlineComposeSha256 : null,
+    apiRuntime: ["tr-standalone-install-v4", "tr-standalone-install-v5", "tr-standalone-install-v6"].includes(format)
+      ? { imageId: `sha256:${"c".repeat(64)}` } : null,
+    portalRuntimes: ["tr-standalone-install-v5", "tr-standalone-install-v6"].includes(format) ? {
+      admin: { imageId: `sha256:${"d".repeat(64)}` },
+      applicant: { imageId: `sha256:${"e".repeat(64)}` },
+    } : null,
+    installRelay: format === "tr-standalone-install-v6" ? {
+      path: join(bundle, "install-relay.py"), sha256: "b".repeat(64),
+      image: { role: "node", reference: images.find((image) => image.role === "node").reference,
+        acceptedIds: [`sha256:${images.find((image) => image.role === "node").reference.split("@sha256:")[1]}`] },
+    } : null });
   await initializeStandaloneSetup(directory, bundle, { verifyBundle });
   const keyring = join(root, "reviewer-public-keyring");
   await mkdir(keyring, { mode: 0o700 });
@@ -242,6 +271,10 @@ test("unsigned genesis draft binds observed bytes but does not approve them", as
     ...proposal,
     privateKey: "must-not-be-accepted",
   }), /Canonical reviewer metadata/u);
+  await assert.rejects(draftStandaloneGenesisApproval(f.directory, {
+    ...proposal,
+    reviewedReference: demoGenesisReference("standalone").exampleReference,
+  }), /Canonical reviewer metadata/u);
   const result = await draftStandaloneGenesisApproval(f.directory, proposal);
   assert.equal(result.state, "unsigned-human-review-required");
   assert.equal((await lstat(result.path)).mode & 0o077, 0);
@@ -316,6 +349,8 @@ test("wizard prepares a private isolated stack without starting or approving it"
   const status = await standaloneSetupStatus(f.directory);
   assert.equal(status.stackConfiguration, "prepared-runtime-unobserved");
   assert.equal(status.localLedger, "pending");
+  assert.deepEqual(status.restartObservation, { status: "pending" });
+  assert.equal(status.restartRestore, "pending");
   assert.equal(status.releaseQualified, false);
   await assert.rejects(prepareStandaloneStack(f.directory, requested, stackDependencies(f)),
     /already prepared/u);
@@ -326,8 +361,49 @@ test("wizard refuses historical v2 bundles for a new stack", async () => {
   await assert.rejects(prepareStandaloneStack(f.directory, {
     project: "tr-standalone-local-qualification", nodePort: "39944",
     indexerPort: "38088", proofPort: "36300",
-  }, stackDependencies(f)), /requires a verified v3 runtime Compose pin/u);
+  }, stackDependencies(f)), /requires a verified v3\/v4\/v5 runtime Compose pin/u);
   assert.equal((await standaloneSetupStatus(f.directory)).stackConfiguration, "pending");
+});
+
+test("invalid restart evidence does not hide deployment and maintenance alerts", async () => {
+  const f = await fixture();
+  const recordPath = join(f.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  record.maintenanceAttempt = { state: "conflict", alert: "independent-human-recovery-required" };
+  await writeFile(recordPath, JSON.stringify(record));
+  await writeFile(join(f.directory, "restart-baseline.json"), "truncated", { mode: 0o600 });
+  const status = await standaloneSetupStatus(f.directory);
+  assert.equal(status.restartObservation.status, "invalid-evidence-investigate");
+  assert.equal(status.maintenanceTransitionAlert, "independent-human-recovery-required");
+  assert.equal(status.maintenanceTransition, "conflict");
+  assert.equal(status.releaseQualified, false);
+});
+
+test("v4 setup retains the API image pin but does not claim it is running", async () => {
+  const f = await fixture("tr-standalone-install-v4");
+  await prepareStandaloneStack(f.directory, {
+    project: "tr-standalone-local-qualification", nodePort: "39944",
+    indexerPort: "38088", proofPort: "36300",
+  }, stackDependencies(f));
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  assert.equal(record.install.verified.apiRuntime.imageId, `sha256:${"c".repeat(64)}`);
+  const status = await standaloneSetupStatus(f.directory);
+  assert.equal(status.localLedger, "pending");
+  assert.equal(status.releaseQualified, false);
+});
+
+test("v5 setup retains portal pins without claiming actor runtime", async () => {
+  const f = await fixture("tr-standalone-install-v5");
+  await prepareStandaloneStack(f.directory, {
+    project: "tr-standalone-local-qualification", nodePort: "39944",
+    indexerPort: "38088", proofPort: "36300",
+  }, stackDependencies(f));
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  assert.equal(record.install.verified.portalRuntimes.admin.imageId, `sha256:${"d".repeat(64)}`);
+  assert.equal(record.install.verified.portalRuntimes.applicant.imageId, `sha256:${"e".repeat(64)}`);
+  const status = await standaloneSetupStatus(f.directory);
+  assert.equal(status.offlineJourneys, "pending");
+  assert.equal(status.releaseQualified, false);
 });
 
 test("v3 setup cannot record genesis or draft approval before stack observation", async () => {
@@ -365,6 +441,7 @@ test("wizard records only selected ledger-bridge topology and egress observation
   const project = "tr-standalone-local-qualification";
   await prepareStandaloneStack(f.directory, { project, nodePort: "39944",
     indexerPort: "38088", proofPort: "36300" }, stackDependencies(f));
+  await writeFile(f.pinPath, JSON.stringify({ ...pin, rpcUrl: "http://127.0.0.1:39944" }));
   const result = await observeStandaloneStack(f.directory, {
     observeTopology: async (config, expected) => {
       assert.equal(config.project, project);
@@ -372,16 +449,20 @@ test("wizard records only selected ledger-bridge topology and egress observation
       assert.match(expected.indexerPassword, /^[0-9a-f]{48}$/u);
       assert.match(expected.indexerSecret, /^[0-9a-f]{64}$/u);
       assert.equal(expected.requirePrivateInputs, true);
+      assert.equal(expected.allowUnpublishedHostPorts, true);
       assert.equal(expected.sourceRevision, sourceRevision);
       assert.equal(expected.images.length, 3);
       assert.equal(expected.composeFiles.length, 2);
-      return { kind: "standalone-runtime-topology-observation", project,
+      return { kind: "standalone-runtime-topology-observation", project, networkId: ledgerNetworkId,
         preparedInputsMatched: true, egressDenied: "not-verified", actorJourneys: "not-run" };
     },
-    observeEgress: async ({ env }) => {
+    observeEgress: async ({ env, expectedTopology }) => {
       assert.equal(env.TR_STACK_NAME, project);
       assert.equal(env.TR_NODE_PORT, "39944");
-      return { kind: "standalone-ledger-egress-probe", project,
+      assert.equal(expectedTopology.sourceRevision, sourceRevision);
+      assert.equal(expectedTopology.allowOffline, true);
+      assert.equal(expectedTopology.images.length, 3);
+      return { kind: "standalone-ledger-egress-probe", project, networkId: ledgerNetworkId,
         scope: "canary HTTPS and DNS on ledger bridge only" };
     },
   });
@@ -395,16 +476,54 @@ test("wizard records only selected ledger-bridge topology and egress observation
   const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
   assert.equal(record.stack.observations.length, 1);
   assert.ok(Number.isFinite(Date.parse(record.stack.observation.observedAt)));
+  await assert.rejects(observeStandaloneStack(f.directory, {
+    observeTopology: async () => ({ project, networkId: ledgerNetworkId }),
+    observeEgress: async () => ({ project, networkId: "replacement-ledger-id" }),
+  }), /Stack observations disagree/u);
   await observeStandaloneStack(f.directory, {
-    observeTopology: async () => ({ project }),
-    observeEgress: async () => ({ project, canaryAddress: "192.0.2.1" }),
+    observeTopology: async () => ({ project, networkId: ledgerNetworkId }),
+    observeEgress: async () => ({ project, networkId: ledgerNetworkId, canaryAddress: "192.0.2.1" }),
   });
   const repeated = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
   assert.equal(repeated.stack.observations.length, 2);
   assert.equal(repeated.stack.observations[0].egress.scope,
     "canary HTTPS and DNS on ledger bridge only");
   assert.equal(repeated.stack.observations[1].egress.canaryAddress, "192.0.2.1");
+  const envPath = join(f.directory, "stack.env");
+  const preparedEnv = await readFile(envPath);
+  await writeFile(envPath, preparedEnv.toString("utf8").replace("TR_NODE_PORT=39944", "TR_NODE_PORT=49944"));
+  await assert.rejects(observeStandaloneLedger(f.directory, f.pinPath, {
+    observeTopology: async () => { throw new Error("must not inspect Docker after env drift"); },
+  }), /Prepared stack environment changed/u);
+  await writeFile(envPath, preparedEnv);
+  const composePath = join(repeated.install.bundle, "compose.yml");
+  const preparedCompose = await readFile(composePath);
+  await writeFile(composePath, "name: changed\n");
+  await assert.rejects(observeStandaloneLedger(f.directory, f.pinPath, {
+    observeTopology: async () => { throw new Error("must not inspect Docker after Compose drift"); },
+  }), /Runtime Compose changed/u);
+  await writeFile(composePath, preparedCompose);
+  await assert.rejects(observeStandaloneLedger(f.directory, f.pinPath, {
+    observeTopology: async () => { throw new Error("effective loopback port is absent"); },
+    preflight: async () => { throw new Error("must not query genesis"); },
+  }), /effective loopback port is absent/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).localLedger, "pending");
+  await writeFile(f.pinPath, JSON.stringify(pin));
+  await assert.rejects(observeStandaloneLedger(f.directory, f.pinPath, {
+    observeTopology: async () => ({ project, networkId: ledgerNetworkId,
+      internalNetworkOnly: true }),
+    preflight: async () => { throw new Error("must not query another stack"); },
+  }), /exact loopback RPC endpoint/u);
+  await writeFile(f.pinPath, JSON.stringify({ ...pin, rpcUrl: "http://127.0.0.1:39944" }));
   await observeStandaloneLedger(f.directory, f.pinPath, {
+    observeTopology: async (config, expected) => {
+      assert.equal(config.project, project);
+      assert.equal(expected.composeFiles.length, 2);
+      assert.equal(expected.requirePrivateInputs, true);
+      assert.equal(expected.allowUnpublishedHostPorts, false);
+      assert.match(expected.indexerPassword, /^[0-9a-f]{48}$/u);
+      return { project, networkId: ledgerNetworkId, internalNetworkOnly: true };
+    },
     preflight: async () => ({ kind: "local-node-observation-only" }),
   });
   await assert.rejects(observeStandaloneStack(f.directory, {
@@ -417,10 +536,12 @@ test("genesis candidate is untrusted, non-overwriting, and cannot approve the no
   const project = "tr-standalone-local-qualification";
   await prepareStandaloneStack(f.directory, { project, nodePort: "39944",
     indexerPort: "38088", proofPort: "36300" }, stackDependencies(f));
+  await writeFile(f.pinPath, JSON.stringify({ ...pin, rpcUrl: "http://127.0.0.1:39944" }));
   await observeStandaloneStack(f.directory, {
-    observeTopology: async () => ({ project, preparedInputsMatched: true,
+    observeTopology: async () => ({ project, networkId: ledgerNetworkId, preparedInputsMatched: true,
       verifiedImageIdsMatched: true, bundleComposeFilesMatched: true }),
-    observeEgress: async () => ({ project, kind: "standalone-ledger-egress-probe" }),
+    observeEgress: async () => ({ project, networkId: ledgerNetworkId,
+      kind: "standalone-ledger-egress-probe" }),
   });
   const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
   const observed = { project, sourceRevision,
@@ -438,7 +559,10 @@ test("genesis candidate is untrusted, non-overwriting, and cannot approve the no
     observeSnapshot: async () => ({ ...observed, observedAt: "2026-10-20" }),
   }), /candidate disagrees/u);
   const collected = await collectStandaloneGenesisCandidate(f.directory, {
-    observeSnapshot: async () => observed,
+    observeSnapshot: async (_root, options) => {
+      assert.equal(options.allowUnpublishedHostPorts, true);
+      return observed;
+    },
   });
   const file = JSON.parse(await readFile(collected.path, "utf8"));
   assert.equal(file.nodeReportedGenesisHash, expectedGenesisHash);
@@ -450,11 +574,110 @@ test("genesis candidate is untrusted, non-overwriting, and cannot approve the no
   }), { code: "EEXIST" });
   assert.equal((await readdir(f.directory)).some((name) => name.includes("genesis-candidate.untrusted.json.")), false);
   await observeStandaloneLedger(f.directory, f.pinPath, {
+    observeTopology: async () => ({ project, networkId: ledgerNetworkId,
+      internalNetworkOnly: true }),
     preflight: async () => ({ kind: "local-node-observation-only" }),
   });
   await assert.rejects(collectStandaloneGenesisCandidate(f.directory, {
     observeSnapshot: async () => observed,
   }), /before recording a genesis pin/u);
+});
+
+test("v6 genesis pin requires the same verified installation relay across preflight", async () => {
+  const f = await fixture("tr-standalone-install-v6");
+  const project = "tr-standalone-local-qualification";
+  await prepareStandaloneStack(f.directory, { project, nodePort: "39944",
+    indexerPort: "38088", proofPort: "36300" }, stackDependencies(f));
+  await observeStandaloneStack(f.directory, {
+    observeTopology: async () => ({ project, networkId: ledgerNetworkId,
+      internalNetworkOnly: true, hostPortAccess: "unpublished-install-access-required" }),
+    observeEgress: async () => ({ project, networkId: ledgerNetworkId }),
+  });
+  const relay = { kind: "standalone-install-relay-observation", project,
+    networkId: ledgerNetworkId, relayId: "relay-id",
+    ports: { node: "60944", indexer: "60888", "proof-server": "60630" },
+    relayScriptSha256: "b".repeat(64),
+    topology: { internalNetworkOnly: true, hostPortAccess: "unpublished-install-access-required" } };
+  await writeFile(f.pinPath, JSON.stringify({ ...pin, rpcUrl: "http://127.0.0.1:60945" }));
+  await assert.rejects(observeStandaloneLedger(f.directory, f.pinPath, {
+    observeInstallRelay: async () => relay,
+    preflight: async () => { throw new Error("must not query wrong port"); },
+  }), /does not match the verified installation relay/u);
+  await writeFile(f.pinPath, JSON.stringify({ ...pin, rpcUrl: "http://127.0.0.1:60944" }));
+  let calls = 0;
+  await assert.rejects(observeStandaloneLedger(f.directory, f.pinPath, {
+    observeInstallRelay: async () => ({ ...relay, relayId: ++calls === 1 ? "relay-id" : "replacement" }),
+    preflight: async () => ({ kind: "local-node-observation-only" }),
+  }), /relay changed during genesis observation/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).localLedger, "pending");
+  const observed = await observeStandaloneLedger(f.directory, f.pinPath, {
+    observeInstallRelay: async (config, verified, expected) => {
+      assert.equal(config.project, project);
+      assert.equal(verified.installRelay.sha256, "b".repeat(64));
+      assert.equal(expected.requirePrivateInputs, true);
+      return relay;
+    },
+    preflight: async () => ({ kind: "local-node-observation-only" }),
+  });
+  assert.equal(observed.installAccess.relayId, "relay-id");
+  assert.equal(observed.installAccess.installationOnly, true);
+});
+
+test("v6 deployment reservation rejects a changed installation relay", async () => {
+  const f = await fixture("tr-standalone-install-v6");
+  const project = "tr-standalone-local-qualification";
+  await prepareStandaloneStack(f.directory, { project, nodePort: "39944",
+    indexerPort: "38088", proofPort: "36300" }, stackDependencies(f));
+  await observeStandaloneStack(f.directory, {
+    observeTopology: async () => ({ project, networkId: ledgerNetworkId,
+      internalNetworkOnly: true, hostPortAccess: "unpublished-install-access-required" }),
+    observeEgress: async () => ({ project, networkId: ledgerNetworkId }),
+  });
+  const relay = { kind: "standalone-install-relay-observation", project,
+    networkId: ledgerNetworkId, relayId: "relay-id",
+    ports: { node: "60944", indexer: "60888", "proof-server": "60630" },
+    relayScriptSha256: "b".repeat(64),
+    topology: { internalNetworkOnly: true, hostPortAccess: "unpublished-install-access-required" } };
+  const relayRpc = "http://127.0.0.1:60944";
+  await writeFile(f.pinPath, JSON.stringify({ ...pin, rpcUrl: relayRpc }));
+  await observeStandaloneLedger(f.directory, f.pinPath, {
+    observeInstallRelay: async () => relay,
+    preflight: async () => ({ kind: "local-node-observation-only" }),
+  });
+  const approval = JSON.parse(await readFile(f.approvalPath, "utf8"));
+  approval.pinSha256 = createHash("sha256").update(await readFile(f.pinPath)).digest("hex");
+  approval.rpcUrl = relayRpc;
+  await writeFile(f.approvalPath, JSON.stringify(approval));
+  await approve(f);
+  const planDocument = JSON.parse(await readFile(f.planPath, "utf8"));
+  planDocument.network.rpcUrl = relayRpc;
+  planDocument.network.indexerHttpUrl = "http://127.0.0.1:60888/api/v4/graphql";
+  planDocument.network.indexerWsUrl = "ws://127.0.0.1:60888/api/v4/graphql/ws";
+  await writeFile(f.planPath, JSON.stringify(planDocument));
+  const wrongIndexer = { ...planDocument, network: { ...planDocument.network,
+    indexerHttpUrl: "http://127.0.0.1:60889/api/v4/graphql" } };
+  await writeFile(f.planPath, JSON.stringify(wrongIndexer));
+  await assert.rejects(attemptStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    observeInstallRelay: async () => relay,
+    deploy: async () => { throw new Error("must not submit"); },
+  }), /plan endpoints diverged/u);
+  await writeFile(f.planPath, JSON.stringify(planDocument));
+  await assert.rejects(attemptStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    observeInstallRelay: async () => ({ ...relay, relayId: "replacement" }),
+    deploy: async () => { throw new Error("must not submit"); },
+  }), /Verified installation relay changed/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).deployment, "pending");
+  let observations = 0;
+  await assert.rejects(attemptStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    observeInstallRelay: async () => (++observations === 1 ? relay
+      : { ...relay, relayId: "replacement" }),
+    deploy: async () => ({ kind: "local-deployment-submission-observation", readbackStatus: "pending" }),
+  }), /outcome is unknown/u);
+  assert.equal(observations, 2);
+  assert.equal((await standaloneSetupStatus(f.directory)).deployment, "unknown");
 });
 
 test("interactive wizard stops when stack preparation is deferred", async () => {
@@ -499,9 +722,10 @@ test("interactive wizard stops before genesis until the prepared stack is observ
     observeTopology: async (_config, expected) => {
       assert.match(expected.indexerSecret, /^[0-9a-f]{64}$/u);
       topologyCalled = true;
-      return { project, preparedInputsMatched: true };
+      return { project, networkId: ledgerNetworkId, preparedInputsMatched: true };
     },
-    observeEgress: async () => ({ project, scope: "ledger bridge only" }),
+    observeEgress: async () => ({ project, networkId: ledgerNetworkId,
+      scope: "ledger bridge only" }),
   } });
   assert.equal(topologyCalled, true);
   assert.equal(prompts.at(-1), "Independently reviewed local genesis pin JSON (blank to stop): ");
@@ -516,9 +740,10 @@ test("interactive wizard collects an untrusted genesis candidate without pinning
   await prepareStandaloneStack(f.directory, { project, nodePort: "39944",
     indexerPort: "38088", proofPort: "36300" }, stackDependencies(f));
   await observeStandaloneStack(f.directory, {
-    observeTopology: async () => ({ project, preparedInputsMatched: true,
+    observeTopology: async () => ({ project, networkId: ledgerNetworkId, preparedInputsMatched: true,
       verifiedImageIdsMatched: true, bundleComposeFilesMatched: true }),
-    observeEgress: async () => ({ project, kind: "standalone-ledger-egress-probe" }),
+    observeEgress: async () => ({ project, networkId: ledgerNetworkId,
+      kind: "standalone-ledger-egress-probe" }),
   });
   const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
   const prompts = [];
@@ -1861,6 +2086,17 @@ test("signature verification reads a private snapshot of the retained approval b
   assert.deepEqual((await readdir(f.directory)).sort(), ["setup-record.json"]);
 });
 
+test("synthetic demo reference cannot enter a signed genesis approval", async () => {
+  const f = await fixture();
+  await observeStandaloneLedger(f.directory, f.pinPath, {
+    preflight: async () => ({ kind: "local-node-observation-only" }),
+  });
+  const document = JSON.parse(await readFile(f.approvalPath, "utf8"));
+  document.reviewedReference = demoGenesisReference("preview").exampleReference;
+  await writeFile(f.approvalPath, JSON.stringify(document));
+  await assert.rejects(approve(f), /does not bind the current install and observed genesis/u);
+});
+
 test("detached GPG verification accepts only the pinned signing key and exact bytes", async (t) => {
   if (spawnSync("gpg", ["--version"], { stdio: "ignore" }).status !== 0) {
     t.skip("gpg is not installed");
@@ -1880,12 +2116,36 @@ test("detached GPG verification accepts only the pinned signing key and exact by
   const fingerprint = listing.split("\n").find((line) => line.startsWith("fpr:"))?.split(":")[9];
   assert.match(fingerprint, /^[A-F0-9]{40}$/u);
   const publicKey = execFileSync("gpg", ["--homedir", signer, "--batch", "--export", fingerprint]);
+  const armoredPublicKey = execFileSync("gpg", ["--homedir", signer, "--batch", "--armor",
+    "--export", fingerprint]);
   execFileSync("gpg", ["--homedir", verifier, "--batch", "--import"], { input: publicKey, stdio: ["pipe", "pipe", "pipe"] });
   const document = join(root, "approval.json");
   const signature = join(root, "approval.sig");
   await writeFile(document, '{"format":"tr-local-genesis-approval-v1"}\n');
   execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--detach-sign", "--output", signature, document]);
   await verifyDetachedReviewerSignature(document, signature, verifier, fingerprint);
+  const publicExport = join(root, "reviewer-public.asc");
+  await writeFile(publicExport, armoredPublicKey, { mode: 0o600 });
+  await verifyDetachedReviewerSignature(document, signature, publicExport, fingerprint);
+  await assert.rejects(verifyDetachedReviewerSignature(document, signature, publicExport, "B".repeat(40)),
+    /does not match/u);
+  const invalidExport = join(root, "invalid-public.asc");
+  await writeFile(invalidExport, "-----BEGIN PGP PRIVATE KEY BLOCK-----\n", { mode: 0o600 });
+  await assert.rejects(verifyDetachedReviewerSignature(document, signature, invalidExport, fingerprint),
+    /armored public-key export/u);
+  const longKeyring = join(root, "nested-".repeat(10), "reviewer-".repeat(8));
+  await mkdir(longKeyring, { recursive: true, mode: 0o700 });
+  await writeFile(join(longKeyring, "pubring.kbx"), await readFile(join(verifier, "pubring.kbx")),
+    { mode: 0o600 });
+  await verifyDetachedReviewerSignature(document, signature, longKeyring, fingerprint);
+  const unsupportedKeyring = join(root, "unsupported-keyring");
+  await mkdir(unsupportedKeyring, { mode: 0o700 });
+  await assert.rejects(verifyDetachedReviewerSignature(document, signature, unsupportedKeyring, fingerprint),
+    /needs pubring\.kbx/u);
+  const linkedKeyring = join(root, "linked-keyring");
+  await mkdir(linkedKeyring, { mode: 0o700 });
+  await symlink(join(verifier, "pubring.kbx"), join(linkedKeyring, "pubring.kbx"));
+  await assert.rejects(verifyDetachedReviewerSignature(document, signature, linkedKeyring, fingerprint));
   await assert.rejects(verifyDetachedReviewerSignature(document, signature, verifier, "B".repeat(40)), /does not match/u);
   await writeFile(document, '{"format":"tampered"}\n');
   await assert.rejects(verifyDetachedReviewerSignature(document, signature, verifier, fingerprint));

@@ -57,15 +57,29 @@ function requirePreparedInput(container, name, value) {
   }
 }
 
-function requireLoopbackBinding(container, service, port) {
+function requireLoopbackBinding(container, service, port, allowUnpublished = false) {
   const bindings = container.HostConfig?.PortBindings;
+  const effective = container.NetworkSettings?.Ports;
   const target = PORTS[service].target;
   if (!bindings || Object.keys(bindings).length !== 1
     || !Array.isArray(bindings[target]) || bindings[target].length !== 1
-    || bindings[target][0].HostIp !== "127.0.0.1"
-    || bindings[target][0].HostPort !== port) {
+    || bindings[target][0]?.HostIp !== "127.0.0.1"
+    || bindings[target][0]?.HostPort !== port
+    || !effective || !Object.hasOwn(effective, target)
+    || Object.entries(effective).some(([name, entries]) => name !== target
+      && entries !== null && (!Array.isArray(entries) || entries.length !== 0))) {
     throw new Error(`Dedicated ${service} port is not bound only to approved loopback`);
   }
+  if (allowUnpublished && (effective[target] === null
+    || (Array.isArray(effective[target]) && effective[target].length === 0))) {
+    return "unpublished";
+  }
+  if (!Array.isArray(effective[target]) || effective[target].length !== 1
+    || effective[target][0]?.HostIp !== "127.0.0.1"
+    || effective[target][0]?.HostPort !== port) {
+    throw new Error(`Dedicated ${service} port is not bound only to approved loopback`);
+  }
+  return "effective-loopback";
 }
 
 /** A read-only topology observation, not a packet-level proof of denied egress. */
@@ -83,7 +97,8 @@ export function checkStandaloneTopology(network, containers, config = standalone
     || !/^[0-9a-f]{40}$/u.test(expected.sourceRevision))) {
     throw new Error("Verified image identities are incomplete");
   }
-  if (network?.Name !== config.network || network.Internal !== true
+  if (network?.Name !== config.network || typeof network.Id !== "string" || network.Id.length === 0
+    || network.Internal !== true
     || network.Driver !== "bridge" || network.EnableIPv6 !== false
     || network.Labels?.["com.docker.compose.project"] !== config.project) {
     throw new Error("Dedicated ledger network is not an internal IPv4-only Compose bridge");
@@ -92,12 +107,17 @@ export function checkStandaloneTopology(network, containers, config = standalone
     throw new Error("Dedicated stack must contain exactly three services");
   }
   const attachedIds = Object.keys(network.Containers ?? {}).sort();
-  const serviceIds = containers.map((container) => container.Id).sort();
-  if (attachedIds.length !== SERVICES.length
+  const serviceIds = [...containers.map((container) => container.Id),
+    ...(expected?.installRelayId ? [expected.installRelayId] : [])].sort();
+  if (expected?.installRelayId && expected?.allowUnpublishedHostPorts !== true) {
+    throw new Error("Installation relay requires explicit unpublished-host observation");
+  }
+  if (attachedIds.length !== serviceIds.length
     || attachedIds.some((id, index) => id !== serviceIds[index])) {
     throw new Error("Dedicated ledger network has a missing or extra container attachment");
   }
   const observed = [];
+  const portAccess = new Set();
   let offlineImages = 0;
   for (const container of containers) {
     const labels = container.Config?.Labels;
@@ -145,7 +165,8 @@ export function checkStandaloneTopology(network, containers, config = standalone
       || container.NetworkSettings.Networks[config.network].NetworkID !== network.Id) {
       throw new Error("Dedicated service has a non-internal network attachment");
     }
-    requireLoopbackBinding(container, service, config.ports[service]);
+    portAccess.add(requireLoopbackBinding(container, service, config.ports[service],
+      expected?.allowUnpublishedHostPorts === true));
     if (service === "node") requireMount(container, "/node/chain", "volume", true,
       `${config.project}_node-data`);
     if (service === "indexer") {
@@ -172,6 +193,9 @@ export function checkStandaloneTopology(network, containers, config = standalone
   if (observed.sort().join("\0") !== [...SERVICES].sort().join("\0")) {
     throw new Error("Dedicated service set is incomplete");
   }
+  if (portAccess.size !== 1) {
+    throw new Error("Dedicated service host access mode is inconsistent");
+  }
   if (offlineImages > 0 && (offlineImages !== SERVICES.length
     || !expected?.composeFiles || containers.some((container) =>
       container.Config.Labels["com.docker.compose.project.config_files"].split(",").length !== 2))) {
@@ -181,8 +205,10 @@ export function checkStandaloneTopology(network, containers, config = standalone
     kind: "standalone-runtime-topology-observation",
     project: config.project,
     network: config.network,
+    networkId: network.Id,
     services: observed,
     internalNetworkOnly: true,
+    ...(portAccess.has("unpublished") ? { hostPortAccess: "unpublished-install-access-required" } : {}),
     proofParameterCacheReadOnly: true,
     ...(privateInputs ? { preparedInputsMatched: true } : {}),
     ...(expected?.images ? { verifiedImageIdsMatched: true } : {}),
