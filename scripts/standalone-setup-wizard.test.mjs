@@ -3041,7 +3041,7 @@ test("detached GPG verification accepts only the pinned signing key and exact by
   await assert.rejects(verifyDetachedReviewerSignature(document, signature, publicExport, "B".repeat(40), approvedAt),
     /does not match/u);
   const invalidExport = join(root, "invalid-public.asc");
-  await writeFile(invalidExport, "-----BEGIN PGP PRIVATE KEY BLOCK-----\n", { mode: 0o600 });
+  await writeFile(invalidExport, "-----BEGIN PGP PRIVATE KEY BLOCK-----\n", { mode: 0o600 }); // nosemgrep: generic.secrets.security.detected-pgp-private-key-block.detected-pgp-private-key-block -- incomplete negative-test marker, no key bytes
   await assert.rejects(verifyDetachedReviewerSignature(document, signature, invalidExport, fingerprint, approvedAt),
     /armored public-key export/u);
   const longKeyring = join(root, "nested-".repeat(10), "reviewer-".repeat(8));

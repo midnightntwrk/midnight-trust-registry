@@ -522,7 +522,13 @@ The dedicated smoke stack keeps node RPC, indexer, and proof-server services on
 its internal bridge. On Docker Desktop, that bridge does **not** publish the
 configured loopback ports to the host, even though Compose records the port
 bindings. Probe service aliases from a container on the isolated network;
-host-side preflight/deployment needs a separately controlled temporary access
+the indexer's `ws://node:9944` connections are plaintext within this bridge,
+not authenticated or encrypted against a compromised peer on that bridge.
+The optional Helm chart makes the same local transport assumption only when
+its ClusterIP services and default-deny NetworkPolicies are enforced by the
+cluster CNI. Do not use the chart in a cluster without policy enforcement or
+expose this WebSocket endpoint outside the controlled local trust boundary.
+Host-side preflight/deployment needs a separately controlled temporary access
 path and cannot be counted as an offline journey while that path permits
 egress. Do not expose these endpoints on public interfaces. Start and fund
 local accounts before disabling egress. A local
