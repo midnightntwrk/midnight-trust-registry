@@ -106,6 +106,23 @@ results.
    approval-chain evidence. Issue #234
    remains a release gate until independent finality and exact-head review
    establish that this linkage is sufficient for the deployed runtime.
+   For a source-pinned operator observation, use the combined command below.
+   It verifies the full install bundle, checks wizard-recorded ledger
+   prerequisites, and only then runs live current-query and API-container
+   egress probes. It does not submit an actor mutation or set an acceptance
+   verdict. Save its JSON in a private evidence file and inspect it before
+   attaching it to a case. Missing gates exit 2 without touching the API;
+   invalid bundles or probe failures exit 1. Exit 0 proves only this read-only
+   slice, not release qualification.
+
+   ```sh
+   pnpm observe:standalone-qualification \
+     /absolute/private/setup /absolute/verified-bundle "$SOURCE_SHA"
+   ```
+
+   Add `--api-restart` only when the dedicated API may be restarted. It checks
+   that the signed plan and selected state survive one API-container restart;
+   it does not restart the ledger or test restore.
    Before an operator actor run, check the wizard's ledger prerequisites:
 
    ```sh

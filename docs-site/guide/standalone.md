@@ -191,17 +191,22 @@ recognition actions, DID and live VC-status checks, negative authorization
 cases, egress-denied actor work, restart and distinct-project restore, and
 independent human security review. Record each as `pass`, `fail`, or `not-run`
 with raw receipts. After deployment and the signed API plan exist, run the
-opt-in read-only API observation against the same setup and verified bundle:
+read-only API observation against the same setup, verified bundle, and exact
+signed source revision:
 
 ```sh
-pnpm observe:standalone-current-query "$SETUP" "$INSTALL"
-pnpm observe:standalone-api-restart "$SETUP" "$INSTALL"
+pnpm observe:standalone-qualification "$SETUP" "$INSTALL" "$SOURCE_SHA"
+# Only when this dedicated API may be restarted:
+pnpm observe:standalone-qualification "$SETUP" "$INSTALL" "$SOURCE_SHA" --api-restart
 ```
 
-Save both JSON reports and raw egress logs privately. The first command
-checks live current issuer, verifier, auditor, and recognition reads with
-API-container TCP/DNS canary denial. The second restarts only the API and
-requires the same signed plan and selected state afterward. Neither command
+The command verifies bundle bytes and source identity first, exits 2 without
+probing the API while wizard ledger prerequisites are missing, and exits 1 on
+invalid bundle or probe failure. Save JSON reports and raw egress logs
+privately. With prerequisites present, it checks live current issuer,
+verifier, auditor, and recognition reads with API-container TCP/DNS canary
+denial. The opt-in flag restarts only the API and requires the same signed
+plan and selected state afterward. Neither invocation
 submits an actor transaction, authenticates node finality independently,
 tests host/browser egress, or restores a ledger backup.
 
