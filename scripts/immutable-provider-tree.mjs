@@ -1,4 +1,4 @@
-import { lstatSync, readlinkSync, readdirSync, realpathSync } from "node:fs";
+import { lstatSync, opendirSync, readlinkSync, realpathSync } from "node:fs";
 import { registerHooks } from "node:module";
 import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,35 +53,40 @@ export function assertImmutableProviderTree(rootPath, options = {}) {
       throw new Error(`Provider tree contains a mutable or linked directory: ${directory}`);
     }
     directories += 1;
-    for (const name of readdirSync(directory)) {
-      if (entries >= maxEntries) {
-        throw new Error("Provider code tree exceeds the bounded entry count");
-      }
-      entries += 1;
-      const path = join(directory, name);
-      const entry = lstatSync(path);
-      if (entry.uid !== trustedUid) {
-        throw new Error(`Provider tree contains a mutable or linked entry: ${path}`);
-      }
-      if (entry.isSymbolicLink()) {
-        // A link's mode is not its replacement authority; the scanned parent
-        // controls replacement, and the resolved in-tree target is scanned too.
-        const target = readlinkSync(path);
-        const lexical = resolve(directory, target);
-        if (isAbsolute(target) || !within(root, lexical)
-          || !within(root, realpathSync(path))) {
-          throw new Error(`Provider link escapes the approved code tree: ${path}`);
+    const handle = opendirSync(directory);
+    try {
+      for (let item = handle.readSync(); item !== null; item = handle.readSync()) {
+        if (entries >= maxEntries) {
+          throw new Error("Provider code tree exceeds the bounded entry count");
         }
-        links += 1;
-      } else if ((entry.mode & 0o022) !== 0) {
-        throw new Error(`Provider tree contains a mutable or linked entry: ${path}`);
-      } else if (entry.isDirectory()) {
-        pending.push(path);
-      } else if (entry.isFile() && entry.nlink === 1) {
-        files += 1;
-      } else {
-        throw new Error(`Provider tree contains a non-regular or hard-linked entry: ${path}`);
+        entries += 1;
+        const path = join(directory, item.name);
+        const entry = lstatSync(path);
+        if (entry.uid !== trustedUid) {
+          throw new Error(`Provider tree contains a mutable or linked entry: ${path}`);
+        }
+        if (entry.isSymbolicLink()) {
+          // A link's mode is not its replacement authority; the scanned parent
+          // controls replacement, and the resolved in-tree target is scanned too.
+          const target = readlinkSync(path);
+          const lexical = resolve(directory, target);
+          if (isAbsolute(target) || !within(root, lexical)
+            || !within(root, realpathSync(path))) {
+            throw new Error(`Provider link escapes the approved code tree: ${path}`);
+          }
+          links += 1;
+        } else if ((entry.mode & 0o022) !== 0) {
+          throw new Error(`Provider tree contains a mutable or linked entry: ${path}`);
+        } else if (entry.isDirectory()) {
+          pending.push(path);
+        } else if (entry.isFile() && entry.nlink === 1) {
+          files += 1;
+        } else {
+          throw new Error(`Provider tree contains a non-regular or hard-linked entry: ${path}`);
+        }
       }
+    } finally {
+      handle.closeSync();
     }
   }
   if (files === 0) throw new Error("Provider code tree has no files");
