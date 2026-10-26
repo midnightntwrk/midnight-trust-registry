@@ -110,3 +110,8 @@ envelope and exact terms. It intentionally cannot fill the active policy
 commitment, registered evidence-verifier key, signatures, or authenticated
 finalized action sequence; a real writer must obtain and recheck those from
 the current ledger before it signs or broadcasts.
+`prepareUnsignedLocalIssuerProposalCall` now supplies that signature-free
+Compact context from a caller-authenticated finalized ledger, checking the
+active policy and evidence-verifier key, scope availability, and action
+sequence. The existing signed call reuses the same preflight. This helper
+does not authenticate the ledger source or configure the production API.

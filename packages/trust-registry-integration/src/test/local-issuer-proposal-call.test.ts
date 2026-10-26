@@ -19,6 +19,7 @@ import {
 
 import {
   prepareLocalIssuerProposalCall,
+  prepareUnsignedLocalIssuerProposalCall,
   submitLocalIssuerProposalCall,
   type LocalIssuerProposalCall,
 } from "../local-issuer-proposal-call.js";
@@ -122,6 +123,24 @@ beforeEach(() => {
 });
 
 describe("local issuer proposal circuit call", () => {
+  it("prepares the exact unsigned signing context from current ledger state", () => {
+    const { call, ledger } = fixture();
+    const unsigned = prepareUnsignedLocalIssuerProposalCall(call, ledger);
+    const signed = prepareLocalIssuerProposalCall(call, ledger);
+    expect(unsigned.actionPayloadHash).toEqual(signed.actionPayloadHash);
+    expect(unsigned.actionKind).toEqual(signed.actionKind);
+    expect(unsigned.actionSequence).toBe(signed.actionSequence);
+    expect(unsigned.requiredThreshold).toBe(1n);
+    expect(unsigned.policyCommitment).toEqual(ledger.governancePolicyCommitment);
+    expect(unsigned.policyVersion).toBe(ledger.governancePolicyVersion);
+    expect(() => prepareUnsignedLocalIssuerProposalCall(call, {
+      ...ledger, governancePolicyCommitment: bytes32Commitment("stale-policy"),
+    })).toThrow(/not current/u);
+    expect(() => prepareUnsignedLocalIssuerProposalCall(call, {
+      ...ledger, issuerAuthorizationIds: { ...ledger.issuerAuthorizationIds, member: () => true },
+    })).toThrow(/already exists/u);
+  });
+
   it("preflights the finalized context and submits through a reservation", async () => {
     const { call, ledger } = fixture();
     const prepared = prepareLocalIssuerProposalCall(call, ledger);

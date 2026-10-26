@@ -44,6 +44,26 @@ export type LocalIssuerProposalCall = {
   signers: readonly Signer[];
 };
 
+export type UnsignedLocalIssuerProposalCall = Omit<LocalIssuerProposalCall,
+  "evidenceVerifierSignature" | "signers">;
+
+export type LocalIssuerProposalSigningContext = {
+  registryId: Uint8Array;
+  networkIdCommitment: Uint8Array;
+  contractAddress: Uint8Array;
+  authorizationId: Uint8Array;
+  policyCommitment: Uint8Array;
+  policyVersion: bigint;
+  actionKind: Uint8Array;
+  actionPayloadHash: Uint8Array;
+  actionSequence: bigint;
+  evidenceHash: Uint8Array;
+  statusPolicyBindingCommitment: Uint8Array;
+  evidenceVerifierAuthorizationId: Uint8Array;
+  evidenceVerifierKeyIdCommitment: Uint8Array;
+  requiredThreshold: bigint;
+};
+
 export type LocalIssuerProposalCallContext = {
   actionKind: Uint8Array;
   actionPayloadHash: Uint8Array;
@@ -73,8 +93,10 @@ const bytes32 = (value: Uint8Array, label: string): Uint8Array => {
 const same = (left: Uint8Array, right: Uint8Array): boolean => Buffer.from(left).equals(right);
 const isZero = (value: Uint8Array): boolean => value.every((byte) => byte === 0);
 
-/** The reader must authenticate finality independently of the submitting SDK provider. */
-export function prepareLocalIssuerProposalCall(input: LocalIssuerProposalCall, ledger: Ledger): LocalIssuerProposalCallContext {
+/** The caller must authenticate this finalized ledger independently of the submitting SDK provider. */
+export function prepareUnsignedLocalIssuerProposalCall(
+  input: UnsignedLocalIssuerProposalCall, ledger: Ledger,
+): LocalIssuerProposalSigningContext {
   if (input.networkId !== "undeployed" || getNetworkId() !== input.networkId
     || !/^0x[0-9a-f]{64}$/u.test(input.contractAddress)
     || /^0x0{64}$/u.test(input.contractAddress)
@@ -134,32 +156,11 @@ export function prepareLocalIssuerProposalCall(input: LocalIssuerProposalCall, l
     baseHash, input.evidenceVerifierAuthorizationId, input.evidenceVerifierKeyIdCommitment,
     evidenceKey.policyCommitment, evidenceKey.policyVersion,
   );
-  if (!verifyIssuerProposalEvidenceSignature(
-    evidenceKey.publicKey, registryId, ledger.deploymentNetworkIdCommitment, contractAddress,
-    input.evidenceVerifierKeyIdCommitment,
-    actionPayloadHash, input.evidenceVerifierSignature,
-  )) throw new Error("Issuer evidence signature does not bind the current proposal");
-
   const actionKind = encodeCompactActionKind("tr:issuer:propose");
   const requiredThreshold = TrustRegistryContract.pureCircuits.actionScopedMaintainerThreshold(
     actionKind, ledger.maintainerThreshold, ledger.emergencyMaintainerThreshold,
     ledger.archivalMaintainerThreshold,
   );
-  if (BigInt(input.signers.length) < requiredThreshold || input.signers.length > 5) {
-    throw new Error("Maintainer signer count does not satisfy the issuer action threshold");
-  }
-  for (const signer of input.signers) {
-    if (isZero(bytes32(signer.keyId, "Maintainer key id")) || !ledger.maintainerKeyIds.member(signer.keyId)) {
-      throw new Error("Maintainer signer key is not registered");
-    }
-    const maintainer = ledger.maintainerRecords.lookup(signer.keyId);
-    if (maintainer.status !== MaintainerStatus.active
-      || !same(maintainer.keyId, signer.keyId)
-      || maintainer.publicKey.x !== signer.publicKey.x
-      || maintainer.publicKey.y !== signer.publicKey.y) {
-      throw new Error("Maintainer signer is not current and active");
-    }
-  }
   if (ledger.issuerAuthorizationIds.member(input.authorizationId)
     || ledger.issuerProposalEvidenceRecords.member(input.authorizationId)) {
     throw new Error("Issuer proposal authorization already exists");
@@ -175,9 +176,52 @@ export function prepareLocalIssuerProposalCall(input: LocalIssuerProposalCall, l
     }
   }
   const actionSequence = ledger.governanceActionCount;
+  return {
+    registryId,
+    networkIdCommitment: networkId,
+    contractAddress,
+    authorizationId: input.authorizationId,
+    policyCommitment: ledger.governancePolicyCommitment,
+    policyVersion: ledger.governancePolicyVersion,
+    actionKind,
+    actionPayloadHash,
+    actionSequence,
+    evidenceHash: input.evidenceHash,
+    statusPolicyBindingCommitment: input.statusPolicyBindingCommitment,
+    evidenceVerifierAuthorizationId: input.evidenceVerifierAuthorizationId,
+    evidenceVerifierKeyIdCommitment: input.evidenceVerifierKeyIdCommitment,
+    requiredThreshold,
+  };
+}
+
+/** The reader must authenticate finality independently of the submitting SDK provider. */
+export function prepareLocalIssuerProposalCall(input: LocalIssuerProposalCall, ledger: Ledger): LocalIssuerProposalCallContext {
+  const prepared = prepareUnsignedLocalIssuerProposalCall(input, ledger);
+  const evidenceKey = ledger.evidenceVerifierKeyRecords.lookup(input.evidenceVerifierAuthorizationId);
+  if (!verifyIssuerProposalEvidenceSignature(
+    evidenceKey.publicKey, prepared.registryId, prepared.networkIdCommitment, prepared.contractAddress,
+    input.evidenceVerifierKeyIdCommitment,
+    prepared.actionPayloadHash, input.evidenceVerifierSignature,
+  )) throw new Error("Issuer evidence signature does not bind the current proposal");
+  if (BigInt(input.signers.length) < prepared.requiredThreshold || input.signers.length > 5) {
+    throw new Error("Maintainer signer count does not satisfy the issuer action threshold");
+  }
+  for (const signer of input.signers) {
+    if (isZero(bytes32(signer.keyId, "Maintainer key id")) || !ledger.maintainerKeyIds.member(signer.keyId)) {
+      throw new Error("Maintainer signer key is not registered");
+    }
+    const maintainer = ledger.maintainerRecords.lookup(signer.keyId);
+    if (maintainer.status !== MaintainerStatus.active
+      || !same(maintainer.keyId, signer.keyId)
+      || maintainer.publicKey.x !== signer.publicKey.x
+      || maintainer.publicKey.y !== signer.publicKey.y) {
+      throw new Error("Maintainer signer is not current and active");
+    }
+  }
   if (input.signers.some((signer) => !verifyDeploymentBoundMaintainerAction(
-    signer.publicKey, registryId, networkId, contractAddress, ledger.governancePolicyCommitment,
-    actionKind, actionPayloadHash, actionSequence, signer.signature,
+    signer.publicKey, prepared.registryId, prepared.networkIdCommitment, prepared.contractAddress,
+    prepared.policyCommitment, prepared.actionKind, prepared.actionPayloadHash,
+    prepared.actionSequence, signer.signature,
   ))) throw new Error("Maintainer signature does not bind the current issuer proposal");
   const authorizationBundle = buildCanonicalMaintainerAuthorizationBundle(input.signers);
   const signerSetHash = TrustRegistryContract.pureCircuits.maintainerSignerSetHash(
@@ -186,12 +230,13 @@ export function prepareLocalIssuerProposalCall(input: LocalIssuerProposalCall, l
     authorizationBundle.signer4.keyId, authorizationBundle.signer5.keyId,
   );
   return {
-    actionKind,
-    actionPayloadHash,
-    actionSequence,
+    actionKind: prepared.actionKind,
+    actionPayloadHash: prepared.actionPayloadHash,
+    actionSequence: prepared.actionSequence,
     expectedEventHash: TrustRegistryContract.pureCircuits.governanceEventHash(
-      registryId, networkId, contractAddress, ledger.governancePolicyCommitment,
-      signerSetHash, actionKind, actionPayloadHash, actionSequence,
+      prepared.registryId, prepared.networkIdCommitment, prepared.contractAddress,
+      prepared.policyCommitment, signerSetHash, prepared.actionKind, prepared.actionPayloadHash,
+      prepared.actionSequence,
     ),
     authorizationBundle,
   };
