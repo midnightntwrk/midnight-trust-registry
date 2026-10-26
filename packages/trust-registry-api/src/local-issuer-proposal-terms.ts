@@ -1,16 +1,20 @@
 import {
   ApplicationEvidenceSubmissionSchema,
   canonicalizeJson,
+  computeGovernancePolicySnapshotCommitment,
   computeIssuerStatusPolicyBindingCommitment,
+  GovernancePolicySnapshotSchema,
   IssuerStatusPolicyBindingSchema,
   IssuerGovernedResourceTypeSchema,
   sha256Hex,
   type ApplicationEvidenceSubmission,
+  type GovernancePolicySnapshot,
 } from "@midnight-ntwrk/trust-registry-domain";
 import { bytes32Commitment } from "@midnight-ntwrk/trust-registry-client";
 import { TrustRegistryContract } from "@midnight-ntwrk/trust-registry-contract";
-import { getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
+import { getLocalNetworkProfile, prepareUnsignedLocalIssuerProposalCall } from "@midnight-ntwrk/trust-registry-integration";
 import type { LocalIssuerProposalCall } from "@midnight-ntwrk/trust-registry-integration";
+import type { LocalIssuerProposalSigningContext } from "@midnight-ntwrk/trust-registry-integration";
 import { z } from "zod";
 
 import type { LocalLedgerRuntimePlan } from "./local-ledger-runtime.js";
@@ -121,5 +125,65 @@ export function bindAcceptedLocalIssuerProposalTerms(input: {
       trustLevel: bytes32Commitment(terms.trustLevel),
       evidenceHash: hexBytes32(accepted.evidence.commitment),
     },
+  };
+}
+
+/** The caller must authenticate the ledger, policy snapshot, and trusted time before using this signing context. */
+export function prepareBoundLocalIssuerProposal(input: {
+  terms: unknown;
+  pending: PendingApplicationRecord | null;
+  accepted: AcceptedApplicationEvidence | null;
+  submittedEvidence: ApplicationEvidenceSubmission;
+  plan: Pick<LocalLedgerRuntimePlan, "networkId" | "contractAddress" | "expectedGenesisHash">;
+  policySnapshot: GovernancePolicySnapshot;
+  ledger: TrustRegistryContract.Ledger;
+}): {
+  reviewBindingSha256: string;
+  signingReviewSha256: string;
+  signingContext: LocalIssuerProposalSigningContext;
+} {
+  const policy = GovernancePolicySnapshotSchema.parse(input.policySnapshot);
+  const bound = bindAcceptedLocalIssuerProposalTerms({
+    ...input,
+    currentPolicy: { registryId: policy.registryId, policyId: policy.policyId, version: policy.policyVersion },
+  });
+  if (input.ledger.governancePolicyVersion !== BigInt(policy.policyVersion.slice(1))
+    || `0x${Buffer.from(input.ledger.governancePolicyCommitment).toString("hex")}`
+      !== computeGovernancePolicySnapshotCommitment(policy)) {
+    throw new Error("Finalized issuer policy does not match the selected policy snapshot");
+  }
+  const accepted = AcceptedEvidenceRecordSchema.parse(input.accepted);
+  const verifierDidCommitment = bytes32Commitment(accepted.evidence.envelope.evidenceVerifierDid);
+  const scopeKey = TrustRegistryContract.pureCircuits.evidenceVerifierKeyScopeKey(
+    verifierDidCommitment, input.ledger.governancePolicyCommitment,
+  );
+  if (!input.ledger.currentEvidenceVerifierKeyIdsByScopeKey.member(scopeKey)) {
+    throw new Error("No current evidence-verifier key is registered for the accepted DID and policy");
+  }
+  const evidenceVerifierAuthorizationId = input.ledger.currentEvidenceVerifierKeyIdsByScopeKey.lookup(scopeKey);
+  if (!input.ledger.evidenceVerifierKeyRecords.member(evidenceVerifierAuthorizationId)) {
+    throw new Error("Current evidence-verifier key record is unavailable");
+  }
+  const evidenceKey = input.ledger.evidenceVerifierKeyRecords.lookup(evidenceVerifierAuthorizationId);
+  const signingContext = prepareUnsignedLocalIssuerProposalCall({
+    ...bound.unsignedFields,
+    policyId: input.ledger.governancePolicyCommitment,
+    evidenceVerifierAuthorizationId,
+    evidenceVerifierKeyIdCommitment: evidenceKey.keyIdCommitment,
+  }, input.ledger);
+  const hex = (value: Uint8Array): string => `0x${Buffer.from(value).toString("hex")}`;
+  return {
+    reviewBindingSha256: bound.reviewBindingSha256,
+    signingReviewSha256: sha256Hex(`tr:local-issuer-signing-review:v1\0${canonicalizeJson({
+      reviewBindingSha256: bound.reviewBindingSha256,
+      policySnapshotCommitment: computeGovernancePolicySnapshotCommitment(policy),
+      evidenceVerifierAuthorizationId: hex(evidenceVerifierAuthorizationId),
+      evidenceVerifierKeyIdCommitment: hex(evidenceKey.keyIdCommitment),
+      actionKind: hex(signingContext.actionKind),
+      actionPayloadHash: hex(signingContext.actionPayloadHash),
+      actionSequence: signingContext.actionSequence.toString(),
+      requiredThreshold: signingContext.requiredThreshold.toString(),
+    })}`),
+    signingContext,
   };
 }

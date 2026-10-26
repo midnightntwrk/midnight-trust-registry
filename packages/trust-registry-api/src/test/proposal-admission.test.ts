@@ -1,13 +1,16 @@
 import {
   computeApplicationEvidenceCommitment,
   computeAuthorizationScopeCommitment,
+  computeGovernancePolicySnapshotCommitment,
   computeIssuerStatusPolicyBindingCommitment,
+  GovernancePolicySnapshotSchema,
   issuerGovernedResourceId,
   type ApplicationChallengeBinding,
   type ApplicationEvidenceSubmission,
 } from "@midnight-ntwrk/trust-registry-domain";
 import { bytes32Commitment } from "@midnight-ntwrk/trust-registry-client";
 import { TrustRegistryContract } from "@midnight-ntwrk/trust-registry-contract";
+import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import { describe, expect, it } from "vitest";
 
 import { createTrustRegistryApiServer } from "../server.js";
@@ -19,7 +22,7 @@ import {
   ProposalAdmissionRejectedError,
   type AcceptedApplicationEvidence,
 } from "../proposal-admission.js";
-import { bindAcceptedLocalIssuerProposalTerms } from "../local-issuer-proposal-terms.js";
+import { bindAcceptedLocalIssuerProposalTerms, prepareBoundLocalIssuerProposal } from "../local-issuer-proposal-terms.js";
 import type { PendingApplicationRecord } from "../pending-application-registration.js";
 
 const scope = {
@@ -159,6 +162,69 @@ describe("local issuer proposal terms", () => {
       archiveEventHash: `0x${"9".repeat(64)}` } })).toThrow();
     expect(() => bind({ accepted: { ...accepted, evidence: { ...evidence,
       signature: { ...evidence.signature, value: "substituted" } } } })).toThrow();
+  });
+
+  it("prepares a signable payload only for the selected policy and current verifier key", () => {
+    setNetworkId("undeployed");
+    const policySnapshot = GovernancePolicySnapshotSchema.parse({
+      format: "tr-policy-snapshot-v1",
+      registryId: binding.registryId,
+      policyId: binding.policyId,
+      policyVersion: binding.policyVersion,
+      effectiveFrom: "2026-10-13T00:00:00.000Z",
+      effectiveUntil: null,
+      contentCommitment: `0x${"a".repeat(64)}`,
+      thresholds: ["maintainer", "member", "emergency", "archival"].map((family) => ({ family, threshold: 1 })),
+    });
+    const policyCommitment = Buffer.from(computeGovernancePolicySnapshotCommitment(policySnapshot).slice(2), "hex");
+    const verifierAuthorizationId = bytes32Commitment("verifier:current");
+    const verifierKeyId = bytes32Commitment("verifier-key:current");
+    const verifierDid = bytes32Commitment(binding.evidenceVerifierDid);
+    const keyScope = TrustRegistryContract.pureCircuits.evidenceVerifierKeyScopeKey(verifierDid, policyCommitment);
+    const suite = new Uint8Array(32);
+    suite.set(new TextEncoder().encode("jubjub-schnorr"));
+    const ledger = {
+      initialized: true, contractVersion: 1n,
+      registryId: bytes32Commitment(binding.registryId),
+      deploymentNetworkIdCommitment: bytes32Commitment("undeployed"),
+      governancePolicyCommitment: policyCommitment,
+      governancePolicyVersion: 1n, governanceActionCount: 3n,
+      maintainerThreshold: 1n, emergencyMaintainerThreshold: 1n, archivalMaintainerThreshold: 1n,
+      evidenceVerifierKeyRecords: {
+        member: (id: Uint8Array) => Buffer.from(id).equals(verifierAuthorizationId),
+        lookup: () => ({
+          status: TrustRegistryContract.EvidenceVerifierKeyStatus.active,
+          authorizationId: verifierAuthorizationId, keyIdCommitment: verifierKeyId,
+          verifierDidCommitment: verifierDid, policyCommitment, policyVersion: 1n, suite,
+        }),
+      },
+      currentEvidenceVerifierKeyIdsByScopeKey: {
+        member: (key: Uint8Array) => Buffer.from(key).equals(Buffer.from(keyScope)),
+        lookup: () => verifierAuthorizationId,
+      },
+      issuerAuthorizationIds: { member: () => false },
+      issuerProposalEvidenceRecords: { member: () => false },
+      currentIssuerAuthorizationIdsByScopeKey: { member: () => false },
+    } as unknown as TrustRegistryContract.Ledger;
+    const prepare = (overrides: Partial<Parameters<typeof prepareBoundLocalIssuerProposal>[0]> = {}) =>
+      prepareBoundLocalIssuerProposal({
+        terms: localTerms, pending, accepted, submittedEvidence: evidence,
+        plan: localPlan, policySnapshot, ledger, ...overrides,
+      });
+    const prepared = prepare();
+    expect(prepared.signingContext.policyCommitment).toEqual(policyCommitment);
+    expect(prepared.signingContext.evidenceVerifierAuthorizationId).toEqual(verifierAuthorizationId);
+    expect(prepared.signingContext.actionSequence).toBe(3n);
+    expect(prepared.signingReviewSha256).toMatch(/^0x[0-9a-f]{64}$/u);
+    expect(prepare({ ledger: { ...ledger, governanceActionCount: 4n } }).signingReviewSha256)
+      .not.toBe(prepared.signingReviewSha256);
+    expect(() => prepare({ policySnapshot: { ...policySnapshot,
+      contentCommitment: `0x${"b".repeat(64)}` } })).toThrow(/selected policy snapshot/u);
+    expect(() => prepare({ ledger: { ...ledger,
+      currentEvidenceVerifierKeyIdsByScopeKey: {
+        ...ledger.currentEvidenceVerifierKeyIdsByScopeKey, member: () => false,
+      },
+    } })).toThrow(/No current evidence-verifier key/u);
   });
 });
 

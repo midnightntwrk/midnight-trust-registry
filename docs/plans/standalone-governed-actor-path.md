@@ -115,3 +115,9 @@ Compact context from a caller-authenticated finalized ledger, checking the
 active policy and evidence-verifier key, scope availability, and action
 sequence. The existing signed call reuses the same preflight. This helper
 does not authenticate the ledger source or configure the production API.
+`prepareBoundLocalIssuerProposal` joins the accepted application and terms to
+that preflight only when the selected policy snapshot commitment equals the
+current Compact ledger commitment. It returns a separate signing-review digest
+covering the active policy, verifier key, action payload, sequence, and
+threshold. The caller must still authenticate finality, time, and live VC
+status before asking anyone to sign.
