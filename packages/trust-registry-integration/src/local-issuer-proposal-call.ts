@@ -133,7 +133,8 @@ export function prepareLocalIssuerProposalCall(input: LocalIssuerProposalCall, l
     evidenceKey.policyCommitment, evidenceKey.policyVersion,
   );
   if (!verifyIssuerProposalEvidenceSignature(
-    evidenceKey.publicKey, registryId, input.evidenceVerifierKeyIdCommitment,
+    evidenceKey.publicKey, registryId, ledger.deploymentNetworkIdCommitment, contractAddress,
+    input.evidenceVerifierKeyIdCommitment,
     actionPayloadHash, input.evidenceVerifierSignature,
   )) throw new Error("Issuer evidence signature does not bind the current proposal");
 

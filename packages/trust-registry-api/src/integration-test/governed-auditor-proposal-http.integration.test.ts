@@ -105,7 +105,8 @@ describe("Compact-backed auditor proposals over HTTP", () => {
         if (!ledger.evidenceVerifierKeyRecords.member(context.evidenceVerifierAuthorizationId)
           || !verifyAuditorProposalEvidenceSignature(
             ledger.evidenceVerifierKeyRecords.lookup(context.evidenceVerifierAuthorizationId).publicKey,
-            context.registryId, context.evidenceVerifierKeyIdCommitment, context.actionPayloadHash, signature,
+            context.registryId, context.networkIdCommitment, context.contractAddress,
+            context.evidenceVerifierKeyIdCommitment, context.actionPayloadHash, signature,
           )) {
           throw new GovernedAuditorProposalRejectedError("invalid-evidence");
         }
@@ -163,7 +164,8 @@ describe("Compact-backed auditor proposals over HTTP", () => {
       expect(executions).toBe(0);
       expect(await journal.read("auditor", auditor.authorizationId)).toBeNull();
       const wrong = signAuditorProposalEvidenceFromSeed(second.seed,
-        bytes(prepared.registryId), bytes(prepared.evidenceVerifierKeyIdCommitment), bytes(prepared.actionPayloadHash));
+        bytes(prepared.registryId), bytes(prepared.networkIdCommitment), bytes(prepared.contractAddress),
+        bytes(prepared.evidenceVerifierKeyIdCommitment), bytes(prepared.actionPayloadHash));
       const wrongResponse = await submit(prepared,
         `0x${Buffer.from(encodeJubjubSignature(wrong)).toString("hex")}`);
       expect(wrongResponse.status).toBe(403);

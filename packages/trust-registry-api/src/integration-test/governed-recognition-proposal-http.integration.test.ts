@@ -181,6 +181,8 @@ describe("governed recognition proposal HTTP", () => {
           || !verifyRecognitionProposalEvidenceSignature(
             verifierKey.publicKey,
             prepared.registryId,
+            prepared.networkIdCommitment,
+            prepared.contractAddress,
             prepared.evidenceVerifierKeyIdCommitment,
             prepared.actionPayloadHash,
             verifierSignature,
@@ -312,7 +314,8 @@ describe("governed recognition proposal HTTP", () => {
       expect(insufficient.status, JSON.stringify(await insufficient.json())).toBe(403);
       expect((await submit(prepared, [first, outsider])).status).toBe(403);
       const wrongVerifier = signRecognitionProposalEvidenceFromSeed(
-        second.seed, bytes(prepared.registryId), bytes(prepared.evidenceVerifierKeyIdCommitment),
+        second.seed, bytes(prepared.registryId), bytes(prepared.networkIdCommitment),
+        bytes(prepared.contractAddress), bytes(prepared.evidenceVerifierKeyIdCommitment),
         bytes(prepared.actionPayloadHash),
       );
       expect((await submit(prepared, [first, other], wrongVerifier)).status).toBe(403);

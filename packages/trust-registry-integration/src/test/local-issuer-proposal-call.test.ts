@@ -102,7 +102,7 @@ const fixture = (): { call: LocalIssuerProposalCall; ledger: TrustRegistryContra
     evidenceVerifierAuthorizationId: verifierAuthorizationId,
     evidenceVerifierKeyIdCommitment: verifierKeyId,
     evidenceVerifierSignature: signIssuerProposalEvidenceFromSeed(
-      verifierSeed, registryId, verifierKeyId, actionPayloadHash,
+      verifierSeed, registryId, networkIdCommitment, addressBytes, verifierKeyId, actionPayloadHash,
     ),
     signers: [{
       keyId, publicKey: signerPublicKey,
@@ -363,7 +363,7 @@ describe("local issuer proposal circuit call", () => {
       readFinalizedLedger: async (address) => ({ contractAddress: address, genesisHash, ledger }),
       providers: {} as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"],
       readSubmissionProviderIdentity: async () => ({ contractAddress: `0x${"b".repeat(64)}`, genesisHash }), journal,
-    })).rejects.toThrow(/Maintainer signature/u);
+    })).rejects.toThrow(/Issuer evidence signature does not bind the current proposal/u);
     expect(journal.executeOnce).not.toHaveBeenCalled();
     expect(mocks.submitCallTx).not.toHaveBeenCalled();
   });

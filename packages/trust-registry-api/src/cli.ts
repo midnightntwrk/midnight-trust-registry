@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { once } from "node:events";
 import { isAbsolute } from "node:path";
 
@@ -339,6 +340,7 @@ export const runTrustRegistryApiCli = async (
     const proposal = await resolveCompactProposalEvidenceSnapshot(
       source.readFinalizedProposalLedger, snapshot.registry.registryId,
       options.proposalRole!, options.authorizationId!,
+      Buffer.from(plan.contractAddress.slice(2), "hex"),
     );
     const observation = proposal === null ? null : {
       eventHash: proposal.eventHash,
@@ -375,6 +377,7 @@ export const runTrustRegistryApiCli = async (
     const attempt = await journal.reconcile(options.proposalRole!, options.authorizationId!, async (role, id) => {
       const proposal = await resolveCompactProposalEvidenceSnapshot(
         source.readFinalizedProposalLedger, snapshot.registry.registryId, role, id,
+        Buffer.from(plan.contractAddress.slice(2), "hex"),
       );
       return proposal === null ? null : {
         eventHash: proposal.eventHash,

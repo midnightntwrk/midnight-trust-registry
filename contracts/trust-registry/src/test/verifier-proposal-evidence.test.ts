@@ -125,7 +125,8 @@ const setup = () => {
       simulator.getLedger().governancePolicyVersion,
     );
     const digest = pureCircuits.verifierProposalEvidenceSignatureDigest(
-      registryId, evidenceVerifier.keyIdCommitment, boundHash,
+      registryId, FIXTURE_NETWORK_ID_COMMITMENT, encodeContractAddress(simulator.contractAddress),
+      evidenceVerifier.keyIdCommitment, boundHash,
     ) as JubjubDigest;
     return {
       baseHash,
@@ -199,7 +200,9 @@ describe("verifier proposal evidence binding", () => {
     expect(() => registry.call({ ...fields, authorizationId: labelToBytes32("other-id") }, bundle,
       undefined, undefined, evidenceSignature)).toThrow(/invalid jubjub schnorr signature/i);
     const issuerDigest = pureCircuits.issuerProposalEvidenceSignatureDigest(
-      registry.registryId, registry.evidenceVerifier.keyIdCommitment, boundHash,
+      registry.registryId, FIXTURE_NETWORK_ID_COMMITMENT,
+      encodeContractAddress(registry.simulator.contractAddress),
+      registry.evidenceVerifier.keyIdCommitment, boundHash,
     ) as JubjubDigest;
     expect(() => registry.call(fields, bundle, undefined, undefined,
       signJubjubDigestFromSeed(new Uint8Array(32).fill(45), issuerDigest)))

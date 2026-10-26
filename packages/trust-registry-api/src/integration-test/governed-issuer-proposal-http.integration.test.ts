@@ -117,7 +117,8 @@ describe("Compact-backed issuer proposals over HTTP", () => {
           if (!ledger.evidenceVerifierKeyRecords.member(context.evidenceVerifierAuthorizationId)
             || !verifyIssuerProposalEvidenceSignature(
               ledger.evidenceVerifierKeyRecords.lookup(context.evidenceVerifierAuthorizationId).publicKey,
-              context.registryId, context.evidenceVerifierKeyIdCommitment, context.actionPayloadHash, signature,
+              context.registryId, context.networkIdCommitment, context.contractAddress,
+              context.evidenceVerifierKeyIdCommitment, context.actionPayloadHash, signature,
             )) {
             throw new GovernedIssuerProposalRejectedError("invalid-evidence");
           }
@@ -163,7 +164,8 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       expect(await journal.read("issuer", issuer.authorizationId)).toBeNull();
       expect(executions).toBe(0);
       const wrongVerifierSignature = signIssuerProposalEvidenceFromSeed(
-        second.seed, bytes(prepared.registryId), bytes(prepared.evidenceVerifierKeyIdCommitment),
+        second.seed, bytes(prepared.registryId), bytes(prepared.networkIdCommitment),
+        bytes(prepared.contractAddress), bytes(prepared.evidenceVerifierKeyIdCommitment),
         bytes(prepared.actionPayloadHash),
       );
       const wrongVerifier = await post("submit", { ...request,
@@ -412,7 +414,8 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       })).status).toBe(403);
       expect((await submit(prepared, [first])).status).toBe(403);
       const wrongVerifierSignature = signIssuerProposalEvidenceFromSeed(
-        second.seed, bytes(prepared.registryId), bytes(prepared.evidenceVerifierKeyIdCommitment),
+        second.seed, bytes(prepared.registryId), bytes(prepared.networkIdCommitment),
+        bytes(prepared.contractAddress), bytes(prepared.evidenceVerifierKeyIdCommitment),
         bytes(prepared.actionPayloadHash),
       );
       expect((await post("submit", {
