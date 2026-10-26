@@ -632,13 +632,28 @@ contractMaintenanceSigningKey, stop? }`. It owns the funded local wallet and
 all opaque Midnight.js provider endpoints; no wallet seed, signing key, or
 mnemonic belongs in the plan or CLI output. The module is privileged code, not
 a data file: review its transitive imports, approve its SHA-256, install it
-read-only, and enforce process-level egress controls. The runner reads a
-no-follow regular-file descriptor and rechecks its bytes and inode immediately
+read-only, and enforce process-level egress controls. The real deployment,
+maintenance, and verifier-key insertion CLIs now require
+`TR_IMMUTABLE_PROVIDER_ROOT` to name an absolute, root-owned code tree
+containing the approved provider and to run as a non-root user. The tree may
+have ordinary root-write permissions but no group/other write permission;
+it is effectively read-only to that process. The check rejects symlinks,
+hard links, group/other-writable descendants, and untrusted ancestors before network
+preflight; test-injected provider factories do not exercise that CLI gate.
+Root and administrative updates are inside the trusted computing base: a
+compromised root account or root-managed update during deployment can still
+replace code. Freeze the installed code tree for the run and retain the
+installer's source and image hashes; this check is not protection from root.
+Paths that traverse symlinked ancestors are intentionally rejected rather
+than canonicalized into an alternate approval path.
+The runner reads a no-follow regular-file descriptor and rechecks its bytes and inode immediately
 before import, including for maintenance and verifier-key insertion. This
-rejects replacements during network preflight, but does **not** make a writable
-module tree immutable, bind transitive imports, or eliminate the final
-check-to-import race. Issue #233 remains a local-RC security gate; do not use
-this recheck as release qualification. Use a pre-provisioned private journal directory and retain it with
+rejects replacements during network preflight, but the tree check does not
+prove that every resolved transitive import stays inside the approved tree.
+Nor does it eliminate the final check-to-import race outside the immutable
+tree's operating-system boundary. Issue #233 remains a
+local-RC security gate. Do not use this partial hardening as release
+qualification. Use a pre-provisioned private journal directory and retain it with
 the receipt and ledger evidence. The CLI checks the manifest source, module
 hash, endpoint allowlist, and live genesis/finalized-head preflight before
 loading the provider. The deployment helper checks installed verifier-key

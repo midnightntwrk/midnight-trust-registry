@@ -91,6 +91,22 @@ test("checks source and provider bytes before network or provider access", async
   assert.deepEqual(steps, []);
 });
 
+test("real verifier-key insertion stops without an immutable provider root", async () => {
+  const previous = process.env.TR_IMMUTABLE_PROVIDER_ROOT;
+  delete process.env.TR_IMMUTABLE_PROVIDER_ROOT;
+  let called = false;
+  try {
+    await assert.rejects(runLocalVerifierKeyInsertion(plan, {
+      validateEndpoints: async () => { called = true; },
+      observe: async () => { called = true; },
+    }), /TR_IMMUTABLE_PROVIDER_ROOT/u);
+    assert.equal(called, false);
+  } finally {
+    if (previous === undefined) delete process.env.TR_IMMUTABLE_PROVIDER_ROOT;
+    else process.env.TR_IMMUTABLE_PROVIDER_ROOT = previous;
+  }
+});
+
 test("verifier-key insertion rejects a same-byte provider replacement during preflight", async () => {
   const path = join(root, "replace-insertion-provider.mjs");
   const replacement = join(root, "insertion-replacement.mjs");

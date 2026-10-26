@@ -114,6 +114,24 @@ test("deployment rechecks approved release manifest bytes before loading provide
   assert.equal(loaded, false);
 });
 
+test("real deployment and maintenance stop without an immutable provider root", async () => {
+  const previous = process.env.TR_IMMUTABLE_PROVIDER_ROOT;
+  delete process.env.TR_IMMUTABLE_PROVIDER_ROOT;
+  let called = false;
+  try {
+    const dependencies = {
+      validateEndpoints: async () => { called = true; },
+      observe: async () => { called = true; },
+    };
+    await assert.rejects(runLocalDeployment(plan, dependencies), /TR_IMMUTABLE_PROVIDER_ROOT/u);
+    await assert.rejects(loadApprovedMaintenanceMaterial(plan, dependencies), /TR_IMMUTABLE_PROVIDER_ROOT/u);
+    assert.equal(called, false);
+  } finally {
+    if (previous === undefined) delete process.env.TR_IMMUTABLE_PROVIDER_ROOT;
+    else process.env.TR_IMMUTABLE_PROVIDER_ROOT = previous;
+  }
+});
+
 test("observes the pinned node before importing the provider and passes only approved inputs", async () => {
   const steps = [];
   const result = await runLocalDeployment(plan, {
@@ -195,6 +213,7 @@ test("endpoint rejection prevents preflight and provider import", async () => {
   await assert.rejects(runLocalDeployment(plan, {
     validateEndpoints: async () => { throw new Error("invalid endpoint"); },
     observe: async () => { observed = true; },
+    loadProvider: async () => { throw new Error("provider must not load"); },
   }), /invalid endpoint/u);
   assert.equal(observed, false);
 });
