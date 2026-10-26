@@ -134,7 +134,7 @@ names cases `L01`-`S01`: issuer/verifier/auditor grants, maintainer and
 recognition actions, DID and live VC-status checks, negative authorization
 cases, egress-denied actor work, restart and distinct-project restore, and
 independent human security review. Record each as `pass`, `fail`, or `not-run`
-with raw receipts. `pnpm check:standalone-acceptance-evidence "$EVIDENCE_DIR"`
+with raw receipts. `pnpm check:standalone-acceptance-evidence "$EVIDENCE_DIR" "$SOURCE_SHA"`
 checks inventory integrity, not whether the claims or finality are true.
 
 The release remains blocked until those cases pass for one exact source and

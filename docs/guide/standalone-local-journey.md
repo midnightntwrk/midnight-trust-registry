@@ -217,11 +217,14 @@ facts. Do not include seeds, private keys, or credentials. Keep each raw file
 below 32 MiB and use separate files per case.
 
 ```sh
-pnpm check:standalone-acceptance-evidence /absolute/private/acceptance
+pnpm check:standalone-acceptance-evidence /absolute/private/acceptance "$SOURCE_SHA"
 ```
 
-Exit 2 means at least one case is not `pass`; exit 1 means the inventory or a
-file is invalid, missing, symlinked, or hash-mismatched. Exit 0 means only
+Pass the full signed source commit selected for the **current** install candidate;
+the checker rejects a bundle from a different commit instead of validating
+stale acceptance evidence. Exit 2 means at least one case is not `pass`; exit 1
+means the source differs or the inventory or a file is invalid, missing,
+symlinked, or hash-mismatched. Exit 0 means only
 that all case labels are `pass` and every listed file matches its digest. The
 report **always** says `releaseQualified: false`: this command cannot verify
 receipt authenticity, ledger finality, the correctness of a human security

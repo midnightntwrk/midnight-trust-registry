@@ -29,6 +29,10 @@ test("inventory is fail-closed and never asserts release qualification", async (
     assert.equal(pending.completeInventory, false);
     assert.equal(pending.releaseQualified, false);
     assert.equal(pending.receiptAndFinalityContent, "not-independently-verified");
+    await assert.rejects(checkStandaloneAcceptanceEvidence(root, candidate, "f".repeat(40)),
+      /differs from the selected candidate/u);
+    await assert.rejects(checkStandaloneAcceptanceEvidence(root, candidate, "not-a-sha"),
+      /full lowercase commit SHA/u);
     for (const id of CASES) {
       const bytes = Buffer.from(`raw operator output for ${id}\n`);
       await writeFile(join(root, `${id}.log`), bytes);
@@ -84,12 +88,15 @@ test("CLI initializes a private manifest, reports pending cases and rejects a li
       candidate.signedPlanSha256, candidate.genesisHash, candidate.contractAddress);
     assert.equal(initialized.status, 0, initialized.stderr);
     assert.deepEqual(JSON.parse(await readFile(join(root, "acceptance.json"), "utf8")), candidate);
-    assert.equal(run(root).status, 2);
+    assert.equal(run(root).status, 1);
+    assert.equal(run(root, "f".repeat(40)).status, 1);
+    assert.match(run(root, "f".repeat(40)).stderr, /differs from the selected candidate/u);
+    assert.equal(run(root, candidate.sourceRevision).status, 2);
     assert.equal(run("init", root, candidate.sourceRevision, candidate.installInventorySha256,
       candidate.signedPlanSha256, candidate.genesisHash, candidate.contractAddress).status, 1);
     await rename(join(root, "acceptance.json"), join(root, "saved.json"));
     await symlink(join(root, "saved.json"), join(root, "acceptance.json"));
-    assert.equal(run(root).status, 1);
+    assert.equal(run(root, candidate.sourceRevision).status, 1);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

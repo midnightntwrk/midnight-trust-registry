@@ -87,7 +87,10 @@ async function readAcceptanceManifest(root) {
 }
 
 /** Checks the inventory, not the truth of a receipt, finality, or a human verdict. */
-export async function checkStandaloneAcceptanceEvidence(root, manifest) {
+export async function checkStandaloneAcceptanceEvidence(root, manifest, expectedSourceRevision = null) {
+  if (expectedSourceRevision !== null && !REVISION.test(expectedSourceRevision)) {
+    throw new Error("Expected candidate source revision must be a full lowercase commit SHA");
+  }
   if (!exactKeys(manifest, ["format", "sourceRevision", "installInventorySha256", "signedPlanSha256",
     "genesisHash", "contractAddress", "cases"])
     || manifest.format !== "tr-standalone-acceptance-evidence-v1"
@@ -98,6 +101,9 @@ export async function checkStandaloneAcceptanceEvidence(root, manifest) {
     || !ADDRESS.test(manifest.contractAddress)
     || !exactKeys(manifest.cases, CASES)) {
     throw new Error("Acceptance manifest must pin one source, install, plan, genesis, deployment, and all cases");
+  }
+  if (expectedSourceRevision !== null && manifest.sourceRevision !== expectedSourceRevision) {
+    throw new Error("Acceptance evidence source revision differs from the selected candidate");
   }
   const cases = {};
   const seen = new Set();
@@ -135,8 +141,8 @@ export async function checkStandaloneAcceptanceEvidence(root, manifest) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const initialize = process.argv[2] === "init";
-    if ((initialize && process.argv.length !== 9) || (!initialize && process.argv.length !== 3)) {
-      throw new Error("Usage: check-standalone-acceptance-evidence.mjs [init] <absolute-private-evidence-dir> [source-revision inventory-sha256 signed-plan-sha256 genesis-hash contract-address]");
+    if ((initialize && process.argv.length !== 9) || (!initialize && process.argv.length !== 4)) {
+      throw new Error("Usage: check-standalone-acceptance-evidence.mjs init <absolute-private-evidence-dir> <source-revision> <inventory-sha256> <signed-plan-sha256> <genesis-hash> <contract-address> | check-standalone-acceptance-evidence.mjs <absolute-private-evidence-dir> <candidate-source-revision>");
     }
     const directory = process.argv[initialize ? 3 : 2];
     if (!isAbsolute(directory)) throw new Error("Evidence root must be an absolute path");
@@ -157,7 +163,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       process.exit(0);
     }
     const manifest = await readAcceptanceManifest(root);
-    const report = await checkStandaloneAcceptanceEvidence(root, manifest);
+    const report = await checkStandaloneAcceptanceEvidence(root, manifest, process.argv[3]);
     console.log(JSON.stringify(report, null, 2));
     if (!report.completeInventory) process.exitCode = 2;
   } catch (error) {
