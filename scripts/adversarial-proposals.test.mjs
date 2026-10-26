@@ -132,7 +132,8 @@ test("compact-issuer-proposal-altered-evidence-hash", () => {
   const alteredVerifierSignature = harness.signIssuerProposalEvidence(altered);
   const verifierKey = harness.simulator.getEvidenceVerifierKey(altered.evidenceVerifierAuthorizationId);
   assert.equal(verifyIssuerProposalEvidenceSignature(
-    verifierKey.publicKey, altered.registryId, altered.evidenceVerifierKeyIdCommitment,
+    verifierKey.publicKey, altered.registryId, altered.networkIdCommitment, altered.contractAddress,
+    altered.evidenceVerifierKeyIdCommitment,
     altered.actionPayloadHash, alteredVerifierSignature,
   ), true);
   const second = createMaintainerScenarioFixture("isolated-issuer-proposal-evidence-substitution-second");
@@ -198,7 +199,8 @@ test("issuer-unauthorized-evidence-verifier-compact", () => {
     issuerProposal("isolated-issuer-unauthorized-verifier");
   const outsider = createMaintainerScenarioFixture("isolated-unauthorized-verifier-key");
   const wrongSignature = signIssuerProposalEvidenceFromSeed(
-    outsider.seed, prepared.registryId, prepared.evidenceVerifierKeyIdCommitment,
+    outsider.seed, prepared.registryId, prepared.networkIdCommitment, prepared.contractAddress,
+    prepared.evidenceVerifierKeyIdCommitment,
     prepared.actionPayloadHash,
   );
   const before = harness.simulator.getLedger().governanceActionCount;
@@ -415,7 +417,8 @@ for (const role of [
     const alteredVerifierSignature = harness[role.sign](altered);
     const verifierKey = harness.simulator.getEvidenceVerifierKey(altered.evidenceVerifierAuthorizationId);
     assert.equal(role.verifySignature(
-      verifierKey.publicKey, altered.registryId, altered.evidenceVerifierKeyIdCommitment,
+      verifierKey.publicKey, altered.registryId, altered.networkIdCommitment, altered.contractAddress,
+      altered.evidenceVerifierKeyIdCommitment,
       altered.actionPayloadHash, alteredVerifierSignature,
     ), true);
     const before = harness.simulator.getLedger().governanceActionCount;

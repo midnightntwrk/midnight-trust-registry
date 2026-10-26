@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { encodeContractAddress } from "@midnight-ntwrk/compact-runtime";
 
 import { describe, expect, it } from "vitest";
 import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
@@ -29,6 +30,8 @@ import {
 import { createTrustRegistryApiServer } from "../server.js";
 
 describe("finalized Compact proposal observation", () => {
+  const addressOf = (harness: LocalTrustRegistryIntegrationHarness) =>
+    encodeContractAddress(harness.simulator.contractAddress);
   it.each(["issuer", "verifier", "auditor", "maintainer", "recognition"] as const)(
     "projects the immutable %s evidence and the registered verifier key",
     async (role: ProposalRole) => {
@@ -41,13 +44,13 @@ describe("finalized Compact proposal observation", () => {
       const id = "maintainerId" in fixture ? fixture.maintainerId
         : "recognitionId" in fixture ? fixture.recognitionId : fixture.authorizationId;
       const read = async () => harness.simulator.getLedger();
-      expect(await resolveCompactProposalEvidenceSnapshot(read, harness.registryId, role, id)).toBeNull();
+      expect(await resolveCompactProposalEvidenceSnapshot(read, harness.registryId, role, id, addressOf(harness))).toBeNull();
       if (role === "issuer") harness.proposeIssuer(fixture as ReturnType<typeof createIssuerScenarioFixture>);
       else if (role === "verifier") harness.proposeVerifier(fixture as ReturnType<typeof createVerifierScenarioFixture>);
       else if (role === "auditor") harness.proposeAuditor(fixture as ReturnType<typeof createAuditorScenarioFixture>);
       else if (role === "maintainer") harness.proposeMaintainer(fixture as ReturnType<typeof createMaintainerScenarioFixture>);
       else harness.proposeRecognition(fixture as ReturnType<typeof createRecognitionScenarioFixture>);
-      const snapshot = await resolveCompactProposalEvidenceSnapshot(read, harness.registryId, role, id);
+      const snapshot = await resolveCompactProposalEvidenceSnapshot(read, harness.registryId, role, id, addressOf(harness));
       expect(snapshot).toMatchObject({
         role,
         authorizationId: id,
@@ -84,11 +87,14 @@ describe("finalized Compact proposal observation", () => {
         },
       });
       await expect(resolveCompactProposalEvidenceSnapshot(
-        async () => substituted, harness.registryId, role, id,
+        async () => substituted, harness.registryId, role, id, addressOf(harness),
       )).rejects.toThrow("signature is invalid");
-      expect(await resolveCompactProposalEvidenceSnapshot(read, harness.registryId, role, `${id}:other`)).toBeNull();
-      await expect(resolveCompactProposalEvidenceSnapshot(read, "registry:wrong", role, id))
+      expect(await resolveCompactProposalEvidenceSnapshot(read, harness.registryId, role, `${id}:other`, addressOf(harness))).toBeNull();
+      await expect(resolveCompactProposalEvidenceSnapshot(read, "registry:wrong", role, id, addressOf(harness)))
         .rejects.toThrow("different trust registry");
+      await expect(resolveCompactProposalEvidenceSnapshot(
+        read, harness.registryId, role, id, new Uint8Array(32).fill(99),
+      )).rejects.toThrow("signature is invalid");
     },
   );
 
@@ -134,7 +140,7 @@ describe("finalized Compact proposal observation", () => {
     const issuer = createIssuerScenarioFixture("history-after-suspension");
     harness.proposeIssuer(issuer);
     const read = async () => harness.simulator.getLedger();
-    const proposal = await resolveCompactProposalEvidenceSnapshot(read, harness.registryId, "issuer", issuer.authorizationId);
+    const proposal = await resolveCompactProposalEvidenceSnapshot(read, harness.registryId, "issuer", issuer.authorizationId, addressOf(harness));
     harness.approveIssuer(issuer);
     harness.activateIssuer(issuer);
     harness.suspendIssuer(issuer);
@@ -142,7 +148,7 @@ describe("finalized Compact proposal observation", () => {
       .not.toEqual(harness.simulator.getLedger().issuerProposalEvidenceRecords.lookup(
         issuer.authorizationIdCommitment,
       ).evidenceCommitment);
-    expect(await resolveCompactProposalEvidenceSnapshot(read, harness.registryId, "issuer", issuer.authorizationId))
+    expect(await resolveCompactProposalEvidenceSnapshot(read, harness.registryId, "issuer", issuer.authorizationId, addressOf(harness)))
       .toEqual(proposal);
   });
 
@@ -163,7 +169,7 @@ describe("finalized Compact proposal observation", () => {
     });
     await expect(resolveCompactProposalEvidenceSnapshot(async () => ({
       ...ledger, issuerAuthorizationRecords: substituted,
-    }), harness.registryId, "issuer", issuer.authorizationId)).rejects.toThrow("signature is invalid");
+    }), harness.registryId, "issuer", issuer.authorizationId, addressOf(harness))).rejects.toThrow("signature is invalid");
   });
 
   it("verifies every historical proposal role after its verifier key is retired", async () => {
@@ -189,7 +195,7 @@ describe("finalized Compact proposal observation", () => {
     ] as const;
     const read = async () => harness.simulator.getLedger();
     const before = await Promise.all(proposals.map(async ([role, id]) => {
-      const snapshot = await resolveCompactProposalEvidenceSnapshot(read, harness.registryId, role, id);
+      const snapshot = await resolveCompactProposalEvidenceSnapshot(read, harness.registryId, role, id, addressOf(harness));
       expect(snapshot?.signatureVerified).toBe(true);
       return snapshot;
     }));
@@ -221,7 +227,7 @@ describe("finalized Compact proposal observation", () => {
       .toBe(EvidenceVerifierKeyStatus.retired);
     for (const [index, [role, id]] of proposals.entries()) {
       expect(before[index]?.verifierAuthorizationId).toBe(`0x${Buffer.from(oldId).toString("hex")}`);
-      expect(await resolveCompactProposalEvidenceSnapshot(read, harness.registryId, role, id))
+      expect(await resolveCompactProposalEvidenceSnapshot(read, harness.registryId, role, id, addressOf(harness)))
         .toEqual(before[index]);
     }
     const rotatedLedger = harness.simulator.getLedger();
@@ -237,7 +243,7 @@ describe("finalized Compact proposal observation", () => {
     for (const [role, id] of proposals) {
       await expect(resolveCompactProposalEvidenceSnapshot(async () => ({
         ...rotatedLedger, evidenceVerifierKeyRecords: keyRecords,
-      }), harness.registryId, role, id)).rejects.toThrow("signature is invalid");
+      }), harness.registryId, role, id, addressOf(harness))).rejects.toThrow("signature is invalid");
     }
   });
 
@@ -276,6 +282,7 @@ describe("finalized Compact proposal observation", () => {
     let failRead = false;
     const server = createTrustRegistryApiServer({
       source,
+      proposalContractAddress: addressOf(harness),
       readFinalizedProposalLedger: async () => {
         if (failRead) throw new Error("private indexer diagnostic");
         return finalized;
@@ -329,6 +336,7 @@ describe("finalized Compact proposal observation", () => {
       loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "private-proposal-evidence" }) };
     const server = createTrustRegistryApiServer({
       source,
+      proposalContractAddress: addressOf(harness),
       readFinalizedProposalLedger: async () => harness.simulator.getLedger(),
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

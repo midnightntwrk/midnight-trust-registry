@@ -1658,6 +1658,8 @@ export class LocalTrustRegistryIntegrationHarness {
     return signMaintainerProposalEvidenceFromSeed(
       this.evidenceVerifierKey.seed,
       prepared.registryId,
+      prepared.networkIdCommitment,
+      prepared.contractAddress,
       prepared.evidenceVerifierKeyIdCommitment,
       prepared.actionPayloadHash,
     );
@@ -1871,6 +1873,8 @@ export class LocalTrustRegistryIntegrationHarness {
       signIssuerProposalEvidenceFromSeed(
         this.evidenceVerifierKey.seed,
         prepared.registryId,
+        prepared.networkIdCommitment,
+        prepared.contractAddress,
         prepared.evidenceVerifierKeyIdCommitment,
         prepared.actionPayloadHash,
       ),
@@ -1942,6 +1946,8 @@ export class LocalTrustRegistryIntegrationHarness {
     return signIssuerProposalEvidenceFromSeed(
       this.evidenceVerifierKey.seed,
       prepared.registryId,
+      prepared.networkIdCommitment,
+      prepared.contractAddress,
       prepared.evidenceVerifierKeyIdCommitment,
       prepared.actionPayloadHash,
     );
@@ -2262,6 +2268,8 @@ export class LocalTrustRegistryIntegrationHarness {
     return signVerifierProposalEvidenceFromSeed(
       this.evidenceVerifierKey.seed,
       prepared.registryId,
+      prepared.networkIdCommitment,
+      prepared.contractAddress,
       prepared.evidenceVerifierKeyIdCommitment,
       prepared.actionPayloadHash,
     );
@@ -2516,6 +2524,8 @@ export class LocalTrustRegistryIntegrationHarness {
     return signRecognitionProposalEvidenceFromSeed(
       this.evidenceVerifierKey.seed,
       prepared.registryId,
+      prepared.networkIdCommitment,
+      prepared.contractAddress,
       prepared.evidenceVerifierKeyIdCommitment,
       prepared.actionPayloadHash,
     );
@@ -2749,6 +2759,8 @@ export class LocalTrustRegistryIntegrationHarness {
     return signAuditorProposalEvidenceFromSeed(
       this.evidenceVerifierKey.seed,
       prepared.registryId,
+      prepared.networkIdCommitment,
+      prepared.contractAddress,
       prepared.evidenceVerifierKeyIdCommitment,
       prepared.actionPayloadHash,
     );

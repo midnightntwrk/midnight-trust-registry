@@ -79,6 +79,7 @@ describe("externally signed Compact auditor governance", () => {
       signPrepared(harness, second, proposal), signPrepared(harness, third, proposal),
     ], signAuditorProposalEvidenceFromSeed(
       outsider.seed, proposal.registryId,
+      proposal.networkIdCommitment, proposal.contractAddress,
       proposal.evidenceVerifierKeyIdCommitment, proposal.actionPayloadHash,
     ))).toThrow();
     expect(harness.simulator.getLedger().governanceActionCount).toBe(initialCount);
