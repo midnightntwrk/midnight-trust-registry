@@ -138,7 +138,18 @@ results.
    historical ledger state at new finalized checkpoints. Restore a backup in
    a distinct isolated project and reject stale/conflicting checkpoints.
    Quarantine ambiguous submissions; do not treat an empty indexer read as
-   permission to retry. See issues #220 and #230.
+   permission to retry. For an opt-in **API-only** restart observation, after
+   the signed-plan current-query probe passes, run:
+
+   ```sh
+   pnpm observe:standalone-api-restart /absolute/private/setup /absolute/verified-bundle
+   ```
+
+   This restarts the dedicated API container once, repeats the read and
+   API-container egress probes, and rejects a changed plan or selected state.
+   It does not restart the node, wallet, or portals; it is not backup/restore,
+   actor-write, or independently authenticated finality evidence. See issues
+   #220 and #230 for the remaining recovery gate.
 9. **Review and sign off.** Preserve raw receipts, hashes, commands, logs,
    timestamps, egress-deny evidence, and redacted reviewer decisions in a
    private evidence bundle. An independent human reviewer must record scope,
