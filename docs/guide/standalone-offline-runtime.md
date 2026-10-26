@@ -151,8 +151,8 @@ therefore still starts and observes only node, indexer, and proof server.
 Do not put `compose.api.yml` in a default `COMPOSE_FILE` during installation.
 **Do not pass this overlay or enable the API profile before approved genesis,
 deployment, maintenance transition, and a
-detached-reviewer-signed v2 local API plan.** The approval directory must
-contain the signed plan, signature, reviewed public keyring, pinned snapshot,
+detached-reviewer-signed v3 local API plan.** The approval directory must
+contain the signed plan, signature, wizard-exported approval chain, reviewed public keyring, pinned snapshot,
 install inventory, and release manifest at the paths named by the signed plan.
 It is bind-mounted read-only; the selected UID/GID must own or be allowed to
 read those private inputs. The operator supplies the exact locally loaded API
@@ -304,16 +304,20 @@ temporary filesystem can hold the largest image archive. A v3 bundle remains a l
 bundle only and cannot back a signed local-ledger API plan. The API requires a
 v4-v6 inventory with an API image pin and checks that its embedded release
 manifest digest and path identify the same signed manifest bytes as the plan.
-The v2 signed API plan must also pin the complete release-manifest verifier-key
+The v3 signed API plan must also pin the complete release-manifest verifier-key
 catalog and a non-bootstrap committee of at least three distinct public keys,
 threshold at least two, and a positive transition counter. Each API query
 checks the finalized network, contract address, verifier-key catalog, and
 maintenance authority against the plan from the same contract-state read as
 the Compact ledger projection. Any verifier-key or authority change requires
 manual review, a new signed plan, and an API restart. These comparisons do
-**not** independently link the plan reviewer or contract to the wizard's signed
-genesis, deployment, and maintenance receipts; issue #234 remains a release
-gate, even if this API check passes.
+bind the plan reviewer and contract to the wizard's signed genesis, committee,
+and deployment approvals when the private chain file and its hash are pinned.
+The maintenance readback in that chain is a wizard-observed receipt, not an
+independently authenticated finality proof. Issue #234 remains a release gate
+until real deployed evidence, independent finality, and exact-head review
+validate the complete handoff. A readable v2 plan lacks this approval-chain
+check and is not local-RC evidence.
 Archive verification alone does not start the API or prove that it can query a live
 local ledger. Matching source labels and hashes do not independently prove
 image build provenance; the release operator must approve the exact archive

@@ -79,16 +79,21 @@ results.
    signed approval documents, signatures, and a minimal observed maintenance
    receipt, but omits wallet material, provider configuration, and the full
    setup record. Store its printed SHA-256 with the operator evidence. This is
-   an **export, not API-side verification**: the API still needs to verify all
-   detached signatures and bind the plan to these exact bytes (#234). The
-   command fails on pending, conflicting, or incomplete readback. It does
-   not establish independent finality or qualify a release.
+   an **export, not API-side verification**. The command fails on pending,
+   conflicting, or incomplete readback. It does not establish independent
+   finality or qualify a release.
 6. **Start the local API and portals from pinned images.** Sign the API's
    immutable current-state plan, verify it with `trust-registry-api
    check-local-ledger-plan`, initialize the bound proposal journal, and start
    local-ledger mode. Snapshot/workspace/demo mode is not acceptable. The
-   signed plan must identify the approved genesis and deployed contract;
-   unresolved plan-to-deployment binding in issue #234 remains a stop gate.
+   signed `tr-local-api-runtime-v3` plan must name the exported approval-chain
+   path and SHA-256, as well as the approved genesis and deployed contract.
+   The API rechecks the embedded detached signatures, signed hash links,
+   custody roster, and committee before serving. Use the same approved
+   governance reviewer fingerprint and private public-key keyring in the
+   CLI invocation. A v2 plan is not approval-chain evidence. Issue #234
+   remains a release gate until independent finality and exact-head review
+   establish that this linkage is sufficient for the deployed runtime.
    Before an operator actor run, check the wizard's ledger prerequisites:
 
    ```sh
@@ -113,7 +118,8 @@ results.
    with the raw probe logs in the private evidence directory. An exit code 0
    is **read-only API runtime evidence**, not a governed-write actor journey:
    the check does not authenticate node/indexer finality, cover host/browser
-   egress, validate plan-to-deployment linkage (#234), or close release gates.
+   egress, independently authenticate the deployment/finality evidence (#234),
+   or close release gates.
 7. **Disconnect external egress, then run the actor use case.** Keep the local
    service network and loopback available. Record issuer application and
    governed authorization, verifier and auditor decisions, maintainer action,

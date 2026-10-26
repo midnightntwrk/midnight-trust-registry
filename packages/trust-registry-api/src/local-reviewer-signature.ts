@@ -58,7 +58,8 @@ export async function readBoundedLocalApprovalFile(
 
 export async function verifyDetachedLocalReviewerSignature(input: {
   documentBytes: Buffer;
-  signaturePath: string;
+  signaturePath?: string;
+  signatureBytes?: Buffer;
   keyringDirectory: string;
   reviewerFingerprint: string;
   description?: string;
@@ -67,7 +68,14 @@ export async function verifyDetachedLocalReviewerSignature(input: {
   if (!FINGERPRINT.test(input.reviewerFingerprint)) {
     throw new Error(`${description} reviewer primary signing-key fingerprint must be canonical`);
   }
-  const signatureBytes = await readBoundedLocalApprovalFile(input.signaturePath, 64 * 1024);
+  if ((input.signaturePath === undefined) === (input.signatureBytes === undefined)) {
+    throw new Error(`${description} requires exactly one detached signature source`);
+  }
+  const signatureBytes = input.signatureBytes
+    ?? await readBoundedLocalApprovalFile(input.signaturePath!, 64 * 1024);
+  if (signatureBytes.length === 0 || signatureBytes.length > 64 * 1024) {
+    throw new Error(`${description} detached signature is missing or oversized`);
+  }
   if (!isAbsolute(input.keyringDirectory)) {
     throw new Error(`${description} reviewer keyring path must be absolute`);
   }

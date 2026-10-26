@@ -9,6 +9,7 @@ import {
 } from "@midnight-ntwrk/trust-registry-integration";
 
 import { createLocalLedgerBoundSource, LocalLedgerSourceUnavailableError } from "./local-ledger-source.js";
+import { verifyLocalApiApprovalChain } from "./local-approval-chain.js";
 import { readBoundedLocalApprovalFile, verifyDetachedLocalReviewerSignature } from "./local-reviewer-signature.js";
 export { assertApprovedReviewerSignatureStatus } from "./local-reviewer-signature.js";
 
@@ -18,7 +19,9 @@ const REVISION = /^[0-9a-f]{40}$/u;
 const DECIMAL = /^(0|[1-9][0-9]*)$/u;
 
 export type LocalLedgerRuntimePlan = LocalNetworkDeploymentActionReaderConfig & {
-  format: "tr-local-api-runtime-v2";
+  format: "tr-local-api-runtime-v2" | "tr-local-api-runtime-v3";
+  approvalChainPath?: string;
+  approvalChainSha256?: string;
   sourceRevision: string;
   installInventoryPath: string;
   installInventorySha256: string;
@@ -78,12 +81,18 @@ export function validateLocalLedgerRuntimePlan(value: unknown): LocalLedgerRunti
     throw new Error("Local API runtime plan must be an object");
   }
   const plan = value as Record<string, unknown>;
+  const approvalChainKeys = plan.format === "tr-local-api-runtime-v3"
+    ? ["approvalChainPath", "approvalChainSha256"] : [];
   if (!exactKeys(plan, ["allowedHosts", "contractAddress", "expectedGenesisHash", "format",
     "indexerHttpUrl", "indexerWsUrl", "installInventoryPath", "installInventorySha256",
     "maintenanceAuthority", "networkId", "notAfter", "notBefore", "releaseManifestPath",
     "releaseManifestSha256", "rpcUrl", "sequenceTimestamps", "snapshotPath", "snapshotSha256",
-    "sourceRevision", "verifierKeySha256"])
-    || plan.format !== "tr-local-api-runtime-v2" || plan.networkId !== "undeployed"
+    "sourceRevision", "verifierKeySha256", ...approvalChainKeys])
+    || !["tr-local-api-runtime-v2", "tr-local-api-runtime-v3"].includes(plan.format as string)
+    || (plan.format === "tr-local-api-runtime-v3"
+      && (typeof plan.approvalChainPath !== "string" || !isAbsolute(plan.approvalChainPath)
+        || typeof plan.approvalChainSha256 !== "string" || !SHA256.test(plan.approvalChainSha256)))
+    || plan.networkId !== "undeployed"
     || typeof plan.sourceRevision !== "string" || !REVISION.test(plan.sourceRevision)
     || typeof plan.expectedGenesisHash !== "string" || !HASH.test(plan.expectedGenesisHash)
     || /^0x0{64}$/u.test(plan.expectedGenesisHash)
@@ -260,6 +269,15 @@ export async function loadApprovedLocalLedgerRuntimePlanWithDigest(
       !Object.hasOwn(manifest.verifierKeySha256, name)
       || manifest.verifierKeySha256[name] !== hash)) {
     throw new Error("Local API approved verifier-key catalog differs from the release manifest");
+  }
+  if (plan.format === "tr-local-api-runtime-v3") {
+    const chainBytes = await readBoundedLocalApprovalFile(plan.approvalChainPath!, 512 * 1024, true);
+    if (digest(chainBytes) !== plan.approvalChainSha256) {
+      throw new Error("Local API approval-chain bytes differ from the signed runtime plan");
+    }
+    await verifyLocalApiApprovalChain({ chainBytes, plan,
+      keyringDirectory: input.keyringDirectory,
+      governanceReviewerFingerprint: input.reviewerFingerprint });
   }
   return { plan, planSha256: digest(planBytes) };
 }
