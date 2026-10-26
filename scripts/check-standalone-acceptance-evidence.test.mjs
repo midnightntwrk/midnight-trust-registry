@@ -7,7 +7,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { attachStandaloneAcceptanceEvidence, checkStandaloneAcceptanceEvidence } from "./check-standalone-acceptance-evidence.mjs";
+import { assessStandaloneObservationBinding, attachStandaloneAcceptanceEvidence, checkStandaloneAcceptanceEvidence } from "./check-standalone-acceptance-evidence.mjs";
 
 const CASES = ["L01", "L02", "A01", "A02", "A03", "A04", "N01", "O01", "R01", "S01"];
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -19,6 +19,116 @@ const manifest = () => ({
   genesisHash: `0x${"d".repeat(64)}`,
   contractAddress: `0x${"e".repeat(64)}`,
   cases: Object.fromEntries(CASES.map((id) => [id, { status: "not-run", evidence: [] }])),
+});
+const observation = (candidate) => ({
+  format: "tr-standalone-qualification-observation-v1",
+  sourceRevision: candidate.sourceRevision,
+  inventorySha256: candidate.installInventorySha256,
+  prerequisites: {
+    format: "tr-standalone-journey-prerequisites-v1",
+    sourceRevision: candidate.sourceRevision,
+    expectedSourceRevision: candidate.sourceRevision,
+    ledgerPrerequisitesObserved: true,
+    missing: [],
+    releaseQualified: false,
+  },
+  currentQuery: {
+    format: "tr-standalone-current-query-journey-v2",
+    sourceRevision: candidate.sourceRevision,
+    networkId: "f".repeat(64),
+    apiContainerId: "1".repeat(64),
+    planSha256: candidate.signedPlanSha256,
+    planExpectedGenesisHash: candidate.genesisHash,
+    planContractAddress: candidate.contractAddress,
+    selectedStateSha256: "2".repeat(64),
+    releaseQualified: false,
+  },
+  apiRestart: "not-run",
+  governedActorJourneys: "not-run",
+  independentFinality: "not-verified",
+  fullEgressDenial: "not-verified",
+  deployedRecovery: "not-run",
+  independentSecurityReview: "not-verified",
+  releaseQualified: false,
+});
+
+test("read-only observation binds to one acceptance candidate without passing cases", () => {
+  const candidate = manifest();
+  const observed = observation(candidate);
+  const result = assessStandaloneObservationBinding(candidate, observed);
+  assert.equal(result.readOnlyObservationBound, true);
+  assert.equal(result.actorJourney, "not-run");
+  assert.equal(result.acceptanceCasesChanged, false);
+  assert.equal(result.releaseQualified, false);
+  assert.equal(candidate.cases.A04.status, "not-run");
+
+  for (const change of [
+    { sourceRevision: "9".repeat(40) },
+    { inventorySha256: "9".repeat(64) },
+    { governedActorJourneys: "pass" },
+    { releaseQualified: true },
+  ]) {
+    assert.throws(() => assessStandaloneObservationBinding(candidate, { ...observed, ...change }), /differs/u);
+  }
+  for (const change of [
+    { planSha256: "9".repeat(64) },
+    { planExpectedGenesisHash: `0x${"9".repeat(64)}` },
+    { planContractAddress: `0x${"9".repeat(64)}` },
+  ]) {
+    assert.throws(() => assessStandaloneObservationBinding(candidate,
+      { ...observed, currentQuery: { ...observed.currentQuery, ...change } }), /differs/u);
+  }
+  const restart = {
+    format: "tr-standalone-api-restart-observation-v1",
+    sourceRevision: candidate.sourceRevision,
+    networkId: observed.currentQuery.networkId,
+    apiContainerId: observed.currentQuery.apiContainerId,
+    planSha256: candidate.signedPlanSha256,
+    selectedStateSha256: observed.currentQuery.selectedStateSha256,
+    releaseQualified: false,
+  };
+  assert.equal(assessStandaloneObservationBinding(candidate,
+    { ...observed, apiRestart: restart }).apiRestartBound, true);
+  assert.throws(() => assessStandaloneObservationBinding(candidate,
+    { ...observed, apiRestart: { ...restart, networkId: "0".repeat(64) } }), /differs/u);
+  const pending = { ...observed, prerequisites: { ...observed.prerequisites,
+    ledgerPrerequisitesObserved: false, missing: ["deploymentObserved"] }, currentQuery: "not-run" };
+  assert.equal(assessStandaloneObservationBinding(candidate, pending).readOnlyObservationBound, false);
+});
+
+test("observation CLI rejects public, linked, and mismatched evidence without changing verdicts", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-acceptance-observe-"));
+  const script = fileURLToPath(new URL("./check-standalone-acceptance-evidence.mjs", import.meta.url));
+  const run = (...args) => spawnSync(process.execPath, [script, ...args], { encoding: "utf8" });
+  try {
+    const candidate = manifest();
+    await writeFile(join(root, "acceptance.json"), `${JSON.stringify(candidate)}\n`, { mode: 0o600 });
+    const path = join(root, "observation.json");
+    await writeFile(path, `${JSON.stringify(observation(candidate))}\n`, { mode: 0o600 });
+    const matched = run("observe", root, candidate.sourceRevision, "observation.json");
+    assert.equal(matched.status, 0, matched.stderr);
+    assert.equal(JSON.parse(matched.stdout).readOnlyObservationBound, true);
+    assert.deepEqual(JSON.parse(await readFile(join(root, "acceptance.json"), "utf8")), candidate);
+    const pending = observation(candidate);
+    pending.prerequisites.ledgerPrerequisitesObserved = false;
+    pending.prerequisites.missing = ["deploymentObserved"];
+    pending.currentQuery = "not-run";
+    await writeFile(path, `${JSON.stringify(pending)}\n`, { mode: 0o600 });
+    const blocked = run("observe", root, candidate.sourceRevision, "observation.json");
+    assert.equal(blocked.status, 2, blocked.stderr);
+    assert.equal(JSON.parse(blocked.stdout).readOnlyObservationBound, false);
+    await writeFile(path, `${JSON.stringify(observation(candidate))}\n`, { mode: 0o600 });
+    assert.equal(run("observe", root, "9".repeat(40), "observation.json").status, 1);
+    await writeFile(path, `${JSON.stringify(observation({ ...candidate,
+      signedPlanSha256: "9".repeat(64) }))}\n`, { mode: 0o600 });
+    assert.equal(run("observe", root, candidate.sourceRevision, "observation.json").status, 1);
+    await symlink("observation.json", join(root, "linked.json"));
+    assert.equal(run("observe", root, candidate.sourceRevision, "linked.json").status, 1);
+    await writeFile(join(root, "public.json"), "{}\n", { mode: 0o644 });
+    assert.equal(run("observe", root, candidate.sourceRevision, "public.json").status, 1);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("inventory is fail-closed and never asserts release qualification", async () => {

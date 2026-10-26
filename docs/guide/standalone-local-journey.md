@@ -270,6 +270,34 @@ receipt authenticity, ledger finality, the correctness of a human security
 verdict, or the truth of a `pass` label. A second operator must examine the
 raw evidence and independently disposition the release gates.
 
+### Bind a read-only observation to this candidate
+
+After the approved API is running, capture the combined read-only probe in the
+private acceptance directory. Use `umask 077` so the report is not readable by
+other local users. An exit code of 2 means a prerequisite is missing; retain
+the report for diagnosis, but do not mark a case passed. The probe must run
+against the same source revision and install bundle used for `acceptance.json`.
+
+```sh
+umask 077
+pnpm observe:standalone-qualification \
+  /absolute/private/setup /absolute/verified-bundle "$SOURCE_SHA" \
+  > /absolute/private/acceptance/read-only-observation.json
+node scripts/check-standalone-acceptance-evidence.mjs observe \
+  /absolute/private/acceptance "$SOURCE_SHA" read-only-observation.json
+```
+
+The second command compares the report's source, inventory, signed API-plan
+hash, approved genesis, and deployed contract with the acceptance candidate.
+It exits 0 only for a matching read-only observation, 2 for an observation
+stopped before the API probe, and 1 for invalid or mixed-candidate evidence.
+It requires a private regular file, does not change `acceptance.json`, and
+never marks `A04` or another case passed. It cannot independently authenticate
+the report, ledger finality, actor mutations, or the security verdict. An
+operator may attach the report as supporting evidence only after checking its
+raw probe logs and provenance; the full `A04` live VC-status requirement still
+needs separate evidence.
+
 ## Evidence verdict
 
 Use these labels consistently:

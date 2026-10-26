@@ -86,6 +86,97 @@ async function readAcceptanceManifest(root) {
   }
 }
 
+async function readPrivateObservation(root, path) {
+  const absolute = evidencePath(root, path);
+  let parent = root;
+  for (const part of path.split("/").slice(0, -1)) {
+    parent = join(parent, part);
+    if (!(await lstat(parent)).isDirectory()) {
+      throw new Error(`Observation parent must be a real directory: ${path}`);
+    }
+  }
+  const file = await open(absolute, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const before = await file.stat({ bigint: true });
+    if (!before.isFile() || before.size === 0n || before.size > 1024n * 1024n
+      || before.nlink !== 1n || (before.mode & 0o077n) !== 0n) {
+      throw new Error("Observation must be a private bounded regular file");
+    }
+    const bytes = await file.readFile();
+    const after = await file.stat({ bigint: true });
+    if (BigInt(bytes.length) !== before.size || after.dev !== before.dev
+      || after.ino !== before.ino || after.size !== before.size
+      || after.mtimeNs !== before.mtimeNs || after.ctimeNs !== before.ctimeNs) {
+      throw new Error("Observation changed during read");
+    }
+    return JSON.parse(bytes.toString("utf8"));
+  } finally {
+    await file.close();
+  }
+}
+
+/** Binds a read-only observer report to one acceptance candidate; never passes a case. */
+export function assessStandaloneObservationBinding(manifest, observation) {
+  if (observation?.format !== "tr-standalone-qualification-observation-v1"
+    || observation.sourceRevision !== manifest.sourceRevision
+    || observation.inventorySha256 !== manifest.installInventorySha256
+    || observation.releaseQualified !== false
+    || observation.governedActorJourneys !== "not-run"
+    || observation.independentFinality !== "not-verified"
+    || observation.fullEgressDenial !== "not-verified"
+    || observation.deployedRecovery !== "not-run"
+    || observation.independentSecurityReview !== "not-verified"
+    || observation.prerequisites?.format !== "tr-standalone-journey-prerequisites-v1"
+    || observation.prerequisites.sourceRevision !== manifest.sourceRevision
+    || observation.prerequisites.expectedSourceRevision !== manifest.sourceRevision
+    || observation.prerequisites.releaseQualified !== false
+    || !Array.isArray(observation.prerequisites.missing)) {
+    throw new Error("Observation source, inventory, or prerequisite identity differs from acceptance candidate");
+  }
+  const query = observation.currentQuery;
+  if (query === "not-run") {
+    if (observation.prerequisites.ledgerPrerequisitesObserved !== false
+      || observation.prerequisites.missing.length === 0
+      || observation.apiRestart !== "not-run") {
+      throw new Error("Observation reports inconsistent pending prerequisites");
+    }
+  } else if (observation.prerequisites.ledgerPrerequisitesObserved !== true
+    || observation.prerequisites.missing.length !== 0
+    || query?.format !== "tr-standalone-current-query-journey-v2"
+    || query.sourceRevision !== manifest.sourceRevision
+    || !SHA256.test(query.networkId ?? "")
+    || !SHA256.test(query.apiContainerId ?? "")
+    || !SHA256.test(query.selectedStateSha256 ?? "")
+    || query.planSha256 !== manifest.signedPlanSha256
+    || query.planExpectedGenesisHash !== manifest.genesisHash
+    || query.planContractAddress !== manifest.contractAddress
+    || query.releaseQualified !== false) {
+    throw new Error("Observed current query differs from acceptance plan or deployment");
+  }
+  const restart = observation.apiRestart;
+  if (restart !== "not-run" && (query === "not-run"
+    || restart?.format !== "tr-standalone-api-restart-observation-v1"
+    || restart.sourceRevision !== manifest.sourceRevision
+    || restart.networkId !== query.networkId
+    || restart.apiContainerId !== query.apiContainerId
+    || restart.planSha256 !== query.planSha256
+    || restart.selectedStateSha256 !== query.selectedStateSha256
+    || restart.releaseQualified !== false)) {
+    throw new Error("API restart observation differs from the current-query observation");
+  }
+  return {
+    format: "tr-standalone-observation-binding-v1",
+    sourceRevision: manifest.sourceRevision,
+    readOnlyObservationBound: query !== "not-run",
+    apiRestartBound: restart !== "not-run",
+    actorJourney: "not-run",
+    observationAuthenticity: "not-independently-verified",
+    receiptAndFinalityContent: "not-independently-verified",
+    acceptanceCasesChanged: false,
+    releaseQualified: false,
+  };
+}
+
 /** Attaches bytes already captured by the operator; it never marks a case passed. */
 export async function attachStandaloneAcceptanceEvidence(root, expectedSourceRevision, caseId, path) {
   if (!CASES.includes(caseId)) throw new Error("Unknown standalone acceptance case");
@@ -189,11 +280,13 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   try {
     const initialize = process.argv[2] === "init";
     const attach = process.argv[2] === "attach";
+    const observe = process.argv[2] === "observe";
     if ((initialize && process.argv.length !== 9) || (attach && process.argv.length !== 7)
-      || (!initialize && !attach && process.argv.length !== 4)) {
-      throw new Error("Usage: check-standalone-acceptance-evidence.mjs init <absolute-private-evidence-dir> <source-revision> <inventory-sha256> <signed-plan-sha256> <genesis-hash> <contract-address> | attach <absolute-private-evidence-dir> <candidate-source-revision> <case-id> <relative-evidence-path> | <absolute-private-evidence-dir> <candidate-source-revision>");
+      || (observe && process.argv.length !== 6)
+      || (!initialize && !attach && !observe && process.argv.length !== 4)) {
+      throw new Error("Usage: check-standalone-acceptance-evidence.mjs init <absolute-private-evidence-dir> <source-revision> <inventory-sha256> <signed-plan-sha256> <genesis-hash> <contract-address> | attach <absolute-private-evidence-dir> <candidate-source-revision> <case-id> <relative-evidence-path> | observe <absolute-private-evidence-dir> <candidate-source-revision> <relative-observation-json> | <absolute-private-evidence-dir> <candidate-source-revision>");
     }
-    const directory = process.argv[initialize || attach ? 3 : 2];
+    const directory = process.argv[initialize || attach || observe ? 3 : 2];
     if (!isAbsolute(directory)) throw new Error("Evidence root must be an absolute path");
     const root = resolve(directory);
     const stat = await lstat(root);
@@ -215,6 +308,14 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       console.log(JSON.stringify(await attachStandaloneAcceptanceEvidence(
         root, process.argv[4], process.argv[5], process.argv[6]), null, 2));
       process.exit(0);
+    }
+    if (observe) {
+      const manifest = await readAcceptanceManifest(root);
+      await checkStandaloneAcceptanceEvidence(root, manifest, process.argv[4]);
+      const report = assessStandaloneObservationBinding(manifest,
+        await readPrivateObservation(root, process.argv[5]));
+      console.log(JSON.stringify(report, null, 2));
+      process.exit(report.readOnlyObservationBound ? 0 : 2);
     }
     const manifest = await readAcceptanceManifest(root);
     const report = await checkStandaloneAcceptanceEvidence(root, manifest, process.argv[3]);
