@@ -148,6 +148,62 @@ describe("local issuer proposal terms", () => {
 });
 
 describe("proposal admission", () => {
+  it("requires and forwards explicit issuer terms in local-ledger prepare", async () => {
+    type Options = Parameters<typeof createTrustRegistryApiServer>[0];
+    const source: Options["source"] = {
+      mode: "local-ledger",
+      localDeploymentBinding: {
+        contractAddress: localPlan.contractAddress,
+        expectedGenesisHash: localPlan.expectedGenesisHash,
+      },
+      async loadSnapshot() { throw new Error("unused"); },
+      async readFinalizedProposalLedger() { throw new Error("unused"); },
+    };
+    const observed: unknown[] = [];
+    const bytes = new Uint8Array(32).fill(1);
+    const server = createTrustRegistryApiServer({
+      source,
+      governedIssuerProposals: {
+        async prepare(_authorizationId, _evidence, terms) {
+          observed.push(terms);
+          return {
+            registryId: bytes, networkIdCommitment: bytes, contractAddress: bytes,
+            authorizationId: bytes, policyCommitment: bytes, policyVersion: 1n,
+            actionKind: bytes, actionPayloadHash: bytes, actionSequence: 1n,
+            evidenceHash: bytes, statusPolicyBindingCommitment: bytes,
+            evidenceVerifierAuthorizationId: bytes, evidenceVerifierKeyIdCommitment: bytes,
+          };
+        },
+        async preflightSubmission() {},
+        async execute() { throw new Error("unused"); },
+      },
+      proposalAdmission: {
+        async resolvePendingApplication() { return pending; },
+        async resolveAcceptedEvidence() { return accepted; },
+      },
+      proposalSubmissionJournal: {
+        async assertDeploymentBinding() {},
+        async executeOnce() { throw new Error("unused"); },
+        async reconcile() { throw new Error("unused"); },
+      } as NonNullable<Options["proposalSubmissionJournal"]>,
+    });
+    try {
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("Expected local HTTP listener");
+      const url = `http://127.0.0.1:${address.port}/v1/governed/issuer/${pending.authorizationId}/proposal/prepare`;
+      const post = (body: unknown) => fetch(url, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+      });
+      expect((await post({ evidence })).status).toBe(400);
+      expect(observed).toEqual([]);
+      expect((await post({ evidence, terms: localTerms })).status).toBe(200);
+      expect(observed).toEqual([localTerms]);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
   it("refuses a combined VP and proposal server without a receipt-backed admission port", () => {
     expect(() => createTrustRegistryApiServer({
       source: createInMemorySource(createOperatorWorkspace({ label: "proposal-admission" }).snapshot),

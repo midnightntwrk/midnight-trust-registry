@@ -99,3 +99,9 @@ It does not verify the live VC status authority, current
 ledger policy, maintainer signatures, provider identity, or finality; the
 production API does not yet call it. Those checks remain mandatory before
 any broadcast or E2E verdict.
+
+The issuer proposal HTTP prepare/submit requests can now carry the same
+canonical terms, and local-ledger mode refuses either request without them.
+The port receives the terms for repeated binding at prepare, preflight, and
+execute time. This is request plumbing, not an installed write adapter: the
+signed local API CLI still configures no issuer proposal port.

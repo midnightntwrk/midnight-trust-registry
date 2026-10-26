@@ -423,7 +423,15 @@ with `{ "evidence": <signed application evidence> }`, followed by
 `POST /v1/governed/issuer/:id/proposal/submit` with the same evidence, the
 exact prepared response, external maintainer `signers`, and an
 `evidenceVerifierSignature`. It is available only when the embedding server
-injects `governedIssuerProposals`; the packaged CLI returns 503. The port
+injects `governedIssuerProposals`; the packaged CLI returns 503.
+In local-ledger mode, both prepare and submit additionally require the same
+`terms` object in `tr-local-issuer-proposal-terms-v1` format. It names the
+approved network, genesis, contract, application, authorization, evidence
+commitment, exact trust level, and complete status-policy binding. The port
+receives these terms again at prepare, preflight, and execution, and must
+bind them to the authenticated current policy and finalized Compact payload;
+the HTTP schema alone does not establish that binding. The packaged CLI still
+configures no governed issuer writer. The port
 must recheck the already verified, one-use-challenge evidence and current
 Compact context. Compact verifies the registered evidence-verifier key and
 maintainer quorum for the proposal digest. Raw VC/VP payloads are not accepted
