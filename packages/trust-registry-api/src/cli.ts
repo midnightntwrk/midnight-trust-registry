@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 import { once } from "node:events";
 import { isAbsolute } from "node:path";
 
-import { createLocalNetworkDeploymentActionReader } from "@midnight-ntwrk/trust-registry-integration";
+import { createLocalNetworkDeploymentActionReader, getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
 
 import {
   createSnapshotFileSource,
@@ -448,7 +448,7 @@ export const runTrustRegistryApiCli = async (
     };
     process.stdout.write(`${JSON.stringify({
       format: "tr-local-proposal-observation-v1",
-      networkId: "undeployed",
+      networkId: getLocalNetworkProfile().networkId,
       registryId: snapshot.registry.registryId,
       contractAddress: plan.contractAddress,
       role: options.proposalRole,
@@ -487,7 +487,7 @@ export const runTrustRegistryApiCli = async (
     });
     process.stdout.write(`${JSON.stringify({
       format: "tr-local-proposal-reconciliation-v1",
-      networkId: "undeployed",
+      networkId: getLocalNetworkProfile().networkId,
       registryId: snapshot.registry.registryId,
       contractAddress: plan.contractAddress,
       role: attempt.role,

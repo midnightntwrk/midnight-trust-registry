@@ -29,6 +29,13 @@ self-hosted/local-only. Preview, Preprod, and Mainnet deployments require their
 own operator, reviewed genesis evidence, authenticated finality, and security
 approval before any release claim.
 
+The local API's signed-plan validation, finalized source, proposal journal,
+and recovery reports use the standalone catalog entry for their network ID.
+Changing that entry is a protocol and deployment change, not an operator
+override: rebuild the install bundle, review the new chain profile, and issue
+new signed plans and evidence. Existing signed plans and journal bindings must
+not be relabeled for another network.
+
 When changing a profile, update the catalog and its validation tests together.
 Do not replace the local `undeployed` network ID with a public ID or weaken
 local-only guards to make a deployment appear portable. A new chain requires a

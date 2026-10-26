@@ -66,7 +66,7 @@ export function getNetworkProfile(id: string): TrustRegistryNetworkProfile {
   return profile;
 }
 
-export function getLocalNetworkProfile(): TrustRegistryNetworkProfile {
+export function getLocalNetworkProfile(): Extract<TrustRegistryNetworkProfile, { id: "standalone" }> {
   const profile = getNetworkProfile("standalone");
   if (profile.kind !== "self-hosted-local") throw new Error("Standalone profile must be local-only");
   return profile;

@@ -25,7 +25,7 @@ import {
   computeGovernancePolicySnapshotCommitment,
   deriveGovernancePolicySnapshot,
 } from "@midnight-ntwrk/trust-registry-domain";
-import { resolveCompactHistoricalEpochAnchor } from "@midnight-ntwrk/trust-registry-integration";
+import { getLocalNetworkProfile, resolveCompactHistoricalEpochAnchor } from "@midnight-ntwrk/trust-registry-integration";
 
 const hex = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString("hex")}`;
 const commitment = (value: string): string => hex(bytes32Commitment(value));
@@ -422,7 +422,7 @@ export function assertLocalLedgerProjectionMatchesSnapshot(
 export function assertLocalLedgerEvidenceMatchesSnapshot(input: {
   snapshot: TrustRegistryOperatorSnapshot;
   ledger: Ledger;
-  expectedNetworkId: "undeployed";
+  expectedNetworkId: ReturnType<typeof getLocalNetworkProfile>["networkId"];
   contractAddress: Uint8Array;
   sequenceToTimestamp: SequenceToTimestamp;
 }): void {

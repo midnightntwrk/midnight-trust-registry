@@ -4,6 +4,7 @@ import { dirname, isAbsolute, join } from "node:path";
 import type { SequenceToTimestamp } from "@midnight-ntwrk/trust-registry-client";
 import {
   createLocalNetworkDeploymentActionReader,
+  getLocalNetworkProfile,
   type FinalizedRegistryLedgerView,
   type LocalNetworkDeploymentActionReaderConfig,
 } from "@midnight-ntwrk/trust-registry-integration";
@@ -92,7 +93,7 @@ export function validateLocalLedgerRuntimePlan(value: unknown): LocalLedgerRunti
     || (plan.format === "tr-local-api-runtime-v3"
       && (typeof plan.approvalChainPath !== "string" || !isAbsolute(plan.approvalChainPath)
         || typeof plan.approvalChainSha256 !== "string" || !SHA256.test(plan.approvalChainSha256)))
-    || plan.networkId !== "undeployed"
+    || plan.networkId !== getLocalNetworkProfile().networkId
     || typeof plan.sourceRevision !== "string" || !REVISION.test(plan.sourceRevision)
     || typeof plan.expectedGenesisHash !== "string" || !HASH.test(plan.expectedGenesisHash)
     || /^0x0{64}$/u.test(plan.expectedGenesisHash)

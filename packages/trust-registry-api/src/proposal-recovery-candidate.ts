@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 
 import { encodeCompactActionKind } from "@midnight-ntwrk/trust-registry-contract";
-import type { FinalizedRegistryLedgerView } from "@midnight-ntwrk/trust-registry-integration";
+import { getLocalNetworkProfile, type FinalizedRegistryLedgerView } from "@midnight-ntwrk/trust-registry-integration";
 import { resolveCompactProposalObservation } from "./compact-proposal-observation.js";
 import { proposalAttemptDigest, type ProposalSubmissionAttempt } from "./proposal-submission-journal.js";
 
@@ -32,7 +32,7 @@ export async function assessProposalRecoveryCandidate(input: {
   journalBindingDigest: string;
 }): Promise<{
   format: "tr-local-proposal-recovery-candidate-v2";
-  networkId: "undeployed";
+  networkId: ReturnType<typeof getLocalNetworkProfile>["networkId"];
   registryId: string;
   contractAddress: string;
   planExpectedGenesisHash: string;
@@ -56,7 +56,7 @@ export async function assessProposalRecoveryCandidate(input: {
   releaseQualified: false;
 }> {
   const { attempt, view } = input;
-  if (view.networkId !== "undeployed"
+  if (view.networkId !== getLocalNetworkProfile().networkId
     || !/^0x[0-9a-f]{64}$/u.test(input.contractAddress.toLowerCase())
     || /^0x0{64}$/u.test(input.contractAddress.toLowerCase())
     || view.contractAddress.toLowerCase() !== input.contractAddress.toLowerCase()
@@ -97,7 +97,7 @@ export async function assessProposalRecoveryCandidate(input: {
             : "sequence-invalidated-record-absent";
   return {
     format: "tr-local-proposal-recovery-candidate-v2",
-    networkId: "undeployed",
+    networkId: getLocalNetworkProfile().networkId,
     registryId: input.registryId,
     contractAddress: input.contractAddress.toLowerCase(),
     planExpectedGenesisHash: input.planExpectedGenesisHash.toLowerCase(),
