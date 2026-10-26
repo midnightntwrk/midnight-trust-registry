@@ -84,6 +84,21 @@ results.
    ledger prerequisites are present. It does not verify the complete
    verifier-key inventory, signed API plan, authenticated finality, egress
    denial, an actor action, or release readiness.
+   Once the approved API is actually running, run the read-only current-query
+   slice with the same `TR_STACK_NAME`, `TR_API_APPROVAL_DIR`, `TR_API_UID`,
+   `TR_API_GID`, and `TR_API_REVIEWER_FINGERPRINT` used to start it:
+
+   ```sh
+   pnpm observe:standalone-current-query /absolute/private/setup /absolute/verified-bundle
+   ```
+
+   This checks issuer, verifier, auditor, and recognition current queries
+   against the live signed-plan source twice, around a positive-control TCP
+   and DNS egress-denial probe of the same API container. Save its JSON output
+   with the raw probe logs in the private evidence directory. An exit code 0
+   is **read-only API runtime evidence**, not a governed-write actor journey:
+   the check does not authenticate node/indexer finality, cover host/browser
+   egress, validate plan-to-deployment linkage (#234), or close release gates.
 7. **Disconnect external egress, then run the actor use case.** Keep the local
    service network and loopback available. Record issuer application and
    governed authorization, verifier and auditor decisions, maintainer action,
