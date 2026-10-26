@@ -6,6 +6,7 @@ import {
   ProposalSubmissionBlockedByReservationError,
   ProposalSubmissionOutcomeUnknownError,
 } from "@midnight-ntwrk/trust-registry-api";
+import { createPinnedLocalSubmissionProvider } from "@midnight-ntwrk/trust-registry-integration/local-pinned-submission-provider";
 
 const [path, operation] = process.argv.slice(2);
 if (!path || !operation || typeof process.send !== "function") {
@@ -19,10 +20,24 @@ const event = `0x${"dd".repeat(32)}`;
 const context = { actionSequence: "7", actionKind: `0x${"ee".repeat(32)}`,
   actionPayloadHash: `0x${"ff".repeat(32)}` };
 const journal = new FileProposalSubmissionJournal(path);
+// Every fork has fresh provider-local guards; only the journal persists across forks.
+const provider = createPinnedLocalSubmissionProvider({
+  nodeWsUrl: "ws://127.0.0.1:9944",
+  indexerHttpUrl: "http://127.0.0.1:8088",
+  indexerWsUrl: "ws://127.0.0.1:8089",
+  allowedHosts: ["127.0.0.1"],
+  contractAddress: contract,
+  expectedGenesisHash: genesis,
+});
+if (typeof provider.midnightProvider.submitTx !== "function") {
+  throw new Error("Pinned submission provider was not recreated");
+}
+process.send("provider-created");
 
 async function submit(role, id, failAfterBroadcast = false) {
   return journal.executeOnce(role, id, evidence, async () => {
-    process.send("broadcast");
+    // This callback is the SDK submission seam; no node connection is made in this test.
+    process.send("submission-callback");
     if (failAfterBroadcast) throw new Error("provider response lost");
     return { eventHash: event };
   }, context);

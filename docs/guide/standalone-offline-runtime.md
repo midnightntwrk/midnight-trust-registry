@@ -1620,9 +1620,10 @@ journal is the cross-restart authority: its reservation must be durable
 restarting the API or provider must reopen the same bound journal and keep an
 ambiguous reservation blocked. Synthetic HTTP and journal tests exercise this
 ordering. The light-lane process-restart test forks a fresh API-side journal
-and provider callback for each attempt; a lost response and lagging finalized
-read never permit a second broadcast, and a failed journal write prevents the
-first one. These tests do not prove a real local-ledger restart or
+and pinned submission-provider instance for each attempt. Its mocked SDK
+submission callback is not reached after a lost response or lagging finalized
+read, and a failed journal write prevents the first callback. This verifies
+the journal boundary, not a real node broadcast, local-ledger restart, or
 non-inclusion. Preserve the original journal and its binding sidecar across
 service restart and backup/restore.
 

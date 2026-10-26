@@ -47,23 +47,23 @@ describe("durable local proposal quarantine across fresh journal and provider ca
   });
   afterEach(async () => { await rm(directory, { recursive: true, force: true }); });
 
-  it("prevents a second broadcast after an ambiguous response until finalized reconciliation", async () => {
-    expect(await child(path, "reserve")).toEqual(["broadcast"]);
+  it("prevents a new provider process from reaching submission after an ambiguous response", async () => {
+    expect(await child(path, "reserve")).toEqual(["provider-created", "submission-callback"]);
     const reserved = await readFile(path);
-    expect(await child(path, "retry")).toEqual(["blocked"]);
-    expect(await child(path, "other")).toEqual(["blocked"]);
-    expect(await child(path, "lagging")).toEqual([]);
-    expect(await child(path, "retry")).toEqual(["blocked"]);
-    expect(await child(path, "other")).toEqual(["blocked"]);
+    expect(await child(path, "retry")).toEqual(["provider-created", "blocked"]);
+    expect(await child(path, "other")).toEqual(["provider-created", "blocked"]);
+    expect(await child(path, "lagging")).toEqual(["provider-created"]);
+    expect(await child(path, "retry")).toEqual(["provider-created", "blocked"]);
+    expect(await child(path, "other")).toEqual(["provider-created", "blocked"]);
     expect(await readFile(path)).toEqual(reserved);
-    expect(await child(path, "observed")).toEqual([]);
-    expect(await child(path, "retry")).toEqual(["blocked"]);
-    expect(await child(path, "other")).toEqual(["broadcast"]);
+    expect(await child(path, "observed")).toEqual(["provider-created"]);
+    expect(await child(path, "retry")).toEqual(["provider-created", "blocked"]);
+    expect(await child(path, "other")).toEqual(["provider-created", "submission-callback"]);
   }, 90_000);
 
   it("never calls the provider when reservation persistence fails", async () => {
     await writeFile(join(directory, "not-a-directory"), "blocked", { mode: 0o600 });
     expect(await child(join(directory, "not-a-directory", "journal.json"), "write-failure"))
-      .toEqual(["blocked"]);
+      .toEqual(["provider-created", "blocked"]);
   });
 });

@@ -26,6 +26,7 @@ type SubmissionExtrinsic = {
   send(callback: (result: SubmissionStatus) => void): Promise<() => void>;
 };
 
+// Same-process guards only. The durable proposal journal must reserve before every SDK submission.
 const uncertainDeployments = new Set<string>();
 const inFlightDeployments = new Set<string>();
 
