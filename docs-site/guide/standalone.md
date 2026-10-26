@@ -80,6 +80,14 @@ own GPG key. A ticket ID is optional; the reviewed chain-spec digest is not.
 Likewise, governance must approve real maintenance public keys, threshold,
 and custody roles. A 1-of-3 development smoke roster is not release approval.
 
+To prepare a private review packet, follow the
+[verified temporary relay procedure](https://github.com/midnightntwrk/midnight-trust-registry/blob/milestone-0.1.0/docs/guide/standalone-offline-runtime.md#first-run-setup-wizard-initial-slice),
+run `node scripts/standalone-setup-wizard.mjs draft-genesis-pin "$SETUP"`
+while that relay is attached, then stop and remove it. Finally run
+`pnpm prepare:standalone-genesis-review "$SETUP"`. The packet lists pinned
+bytes and the node's untrusted report; it cannot supply an independent chain
+specification or a signature.
+
 For pre-deployment continuity, capture a baseline, restart the three dedicated
 services without deleting volumes, and verify the prior checkpoint remains
 readable at a later height. Retain the raw output in the private setup

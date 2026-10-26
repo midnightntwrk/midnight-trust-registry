@@ -842,6 +842,17 @@ chain-spec provenance and proposed pin before the separate `observe` command;
 the same relay identity and ports must be restored and reverified for that
 observation. A pre-existing proposal is not replaced automatically.
 
+After the untrusted proposal exists, run
+`pnpm prepare:standalone-genesis-review /absolute/private/setup-directory`.
+It re-verifies the install bundle, compares the private candidate and pin with
+the selected source, project, network profile, inventory, and pinned node image,
+then writes a non-overwriting mode-0600 `genesis-review-packet.md` in the
+private setup directory. This is a human review checklist and digest inventory,
+**not** independent chain-spec evidence or approval. The reviewer must obtain
+the authentic chain specification and approved install digest through a separate
+channel, compare them, and later sign the wizard's exact unsigned approval
+draft. The packet itself is never the signing target.
+
 For the pinned local node image, `CFG_PRESET=dev` selects the embedded
 `/res/cfg/dev.toml`, which references
 `/res/genesis/genesis_block_undeployed.mn` and
