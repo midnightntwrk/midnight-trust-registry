@@ -17,6 +17,11 @@ const PROJECT = /^tr-standalone-local-[a-z0-9][a-z0-9-]*[a-z0-9]$/u;
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const exactFields = (value, fields) => value !== null && typeof value === "object"
   && !Array.isArray(value) && Object.keys(value).sort().join("\0") === [...fields].sort().join("\0");
+const validLoopbackRpcUrl = (value) => {
+  const match = typeof value === "string"
+    ? /^http:\/\/127\.0\.0\.1:([1-9][0-9]*)$/u.exec(value) : null;
+  return match !== null && Number(match[1]) >= 1024 && Number(match[1]) <= 65535;
+};
 
 export function validateGenesisReviewEvidence(record, candidate, pin, verified) {
   const profile = getLocalNetworkProfile();
@@ -64,7 +69,7 @@ export function validateGenesisReviewEvidence(record, candidate, pin, verified) 
     || pin.networkId !== profile.networkId
     || pin.sourceRevision !== record.sourceRevision
     || pin.expectedGenesisHash !== candidate.nodeReportedGenesisHash
-    || !/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/u.test(pin.rpcUrl)
+    || !validLoopbackRpcUrl(pin.rpcUrl)
     || JSON.stringify(pin.allowedHosts) !== '["127.0.0.1"]') {
     throw new Error("Proposed genesis pin differs from the untrusted candidate");
   }

@@ -49,6 +49,8 @@ test("packet labels self-reported values and independent approval requirements",
     { candidate: { ...candidate, project: "tr-standalone-local-other" } },
     { pin: { ...pin, expectedGenesisHash: `0x${"0".repeat(64)}` } },
     { pin: { ...pin, rpcUrl: "http://example.com:40947" } },
+    { pin: { ...pin, rpcUrl: "http://127.0.0.1:1" } },
+    { pin: { ...pin, rpcUrl: "http://127.0.0.1:99999" } },
     { record: { ...record, networkProfile: { ...profile, networkId: "preview" } } },
     { verified: { ...verified, inventorySha256: "0".repeat(64) } },
   ]) {
