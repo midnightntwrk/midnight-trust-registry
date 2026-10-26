@@ -66,6 +66,13 @@ export type GovernedIssuerProposalContext = {
 export type GovernedIssuerProposalPort = {
   /** Verify the signed application evidence against the active policy and current Compact context. */
   prepare(authorizationId: string, evidence: ApplicationEvidenceSubmission): Promise<GovernedIssuerProposalContext>;
+  /** Reject known-invalid submissions without broadcasting; required when a durable journal is configured. */
+  preflightSubmission?(
+    authorizationId: string, evidence: ApplicationEvidenceSubmission,
+    signers: readonly GovernedMembershipSigner[],
+    evidenceVerifierSignature: TrustRegistryJubjubSignature,
+    context: GovernedIssuerProposalContext,
+  ): Promise<void>;
   /** Recheck evidence, quorum, policy, and sequence in Compact before accepting. */
   execute(
     authorizationId: string,

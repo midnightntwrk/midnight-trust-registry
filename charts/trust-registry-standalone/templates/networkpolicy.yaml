@@ -6,10 +6,7 @@ metadata:
     app.kubernetes.io/name: trust-registry-standalone
     app.kubernetes.io/instance: {{ .Release.Name | quote }}
 spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/instance: {{ .Release.Name | quote }}
-      app.kubernetes.io/part-of: trust-registry-standalone
+  podSelector: {}
   policyTypes: [Ingress, Egress]
 {{- range $role, $callers := dict "node" (list "indexer" "api" "operator") "indexer" (list "api" "operator" "actor") "proof-server" (list "operator" "actor") "api" (list "operator" "actor") "admin" (list "operator" "actor") "applicant" (list "operator" "actor") }}
 {{- if or (eq $.Values.deploymentPhase "runtime") (has $role (list "node" "indexer" "proof-server")) }}
@@ -37,6 +34,44 @@ spec:
       ports:
         - protocol: TCP
           port: {{ index (dict "node" 9944 "indexer" 8088 "proof-server" 6300 "api" 4400 "admin" 4173 "applicant" 4173) $role }}
+{{- end }}
+{{- end }}
+{{- range $role, $destinations := dict "operator" (list "node" "indexer" "proof-server" "api" "admin" "applicant") "actor" (list "indexer" "proof-server" "api" "admin" "applicant") }}
+{{- if or (eq $.Values.deploymentPhase "runtime") (eq $role "operator") }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "tr.fullname" $ }}-{{ $role }}-egress
+spec:
+  podSelector:
+    matchLabels:
+      trust-registry.midnight.network/role: {{ $role }}
+  policyTypes: [Egress]
+  egress:
+    {{- range $destination := $destinations }}
+    {{- if or (eq $.Values.deploymentPhase "runtime") (has $destination (list "node" "indexer" "proof-server")) }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "tr.selector" (dict "root" $ "component" $destination) | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ index (dict "node" 9944 "indexer" 8088 "proof-server" 6300 "api" 4400 "admin" 4173 "applicant" 4173) $destination }}
+    {{- end }}
+    {{- end }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $.Values.networkPolicy.dnsNamespaceLabels | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $.Values.networkPolicy.dnsPodLabels | nindent 14 }}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
 {{- end }}
 {{- end }}
 {{- range $role, $destinations := dict "indexer" (list "node") "api" (list "node" "indexer") }}

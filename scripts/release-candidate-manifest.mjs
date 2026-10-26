@@ -42,7 +42,20 @@ const assertExactTarballs = (artifactDir, filenames) => {
   }
 };
 
-const packedEntries = (tarball) => run("tar", ["-tzf", tarball]).split("\n");
+export function packedEntries(tarball) {
+  const paths = run("tar", ["-tzf", tarball]).split("\n").filter(Boolean);
+  const verbose = run("tar", ["-tvzf", tarball]).split("\n").filter(Boolean);
+  if (paths.length !== verbose.length) {
+    throw new Error("Packed package archive listings disagree");
+  }
+  for (let index = 0; index < paths.length; index += 1) {
+    const expectedType = paths[index].endsWith("/") ? "d" : "-";
+    if (verbose[index][0] !== expectedType) {
+      throw new Error(`Packed package contains a non-regular archive entry: ${paths[index]}`);
+    }
+  }
+  return paths;
+}
 const assertPackedPackageIdentity = (tarball, name, version) => {
   const manifest = JSON.parse(readPackedTarEntry(tarball, "package/package.json").toString("utf8"));
   if (manifest.name !== name || manifest.version !== version) {
@@ -85,7 +98,9 @@ export function buildReleaseCandidateManifest(input) {
     if (!existsSync(path) || statSync(path).size === 0) {
       throw new Error(`${workspace}: packed artifact is missing or empty: ${filename}`);
     }
-    assertCanonicalPackedPaths(packedEntries(path));
+    const entries = packedEntries(path);
+    assertCanonicalPackedPaths(entries);
+    assertRequiredPackedPaths(entries, workspace);
     assertPackedPackageIdentity(path, manifest.name, manifest.version);
     return {
       workspace,
@@ -184,6 +199,19 @@ export function assertCanonicalPackedPaths(paths) {
   }
 }
 
+export function assertRequiredPackedPaths(paths, workspace) {
+  const required = packageManifestCatalog.get(workspace)?.requiredPackedPaths;
+  if (!Array.isArray(required) || required.length === 0) {
+    throw new Error(`Release package has no required-path catalog: ${workspace}`);
+  }
+  const files = new Set(paths.filter((path) => path.startsWith("package/") && !path.endsWith("/"))
+    .map((path) => path.slice("package/".length)));
+  const missing = required.filter((path) => !files.has(path));
+  if (missing.length > 0) {
+    throw new Error(`${workspace}: packed artifact is missing required files: ${missing.join(", ")}`);
+  }
+}
+
 export function verifyReleaseCandidateArtifacts(manifest, artifactDir, workspaces = artifactWorkspaces) {
   if (manifest?.format !== "tr-release-candidate-manifest-v2"
     || !HASH.test(manifest.sourceRevision)
@@ -219,7 +247,9 @@ export function verifyReleaseCandidateArtifacts(manifest, artifactDir, workspace
     if (!existsSync(path) || statSync(path).size !== entry.sizeBytes || sha256(path) !== entry.sha256) {
       throw new Error(`Release candidate artifact hash or size mismatch: ${entry.filename}`);
     }
-    assertCanonicalPackedPaths(packedEntries(path));
+    const entries = packedEntries(path);
+    assertCanonicalPackedPaths(entries);
+    assertRequiredPackedPaths(entries, entry.workspace);
     assertPackedPackageIdentity(path, entry.name, entry.version);
   }
   assertExactTarballs(artifactDir, filenames);

@@ -102,6 +102,11 @@ verifier-key bytes, and maintenance authority in the same finalized contract
 read; a key or committee change requires a new manually reviewed signed plan.
 missing sequence timestamps or an expired plan fail closed. Ledger read and
 projection failures return a generic 503 without exposing provider or file details.
+After any failed finalized read, including a transient provider outage, the
+process stays unavailable until an operator-controlled restart. Restoring old
+snapshot bytes or replaying an older view cannot silently make that process
+healthy again. A restart must use a newly reviewed plan if finalized state
+changed; this in-process latch is not durable rollback protection across restarts.
 Any governed mutation changes the finalized action count, so the current
 signed plan and snapshot become stale until an independently reviewed
 replacement is signed and installed. `/health` fails closed during that gap;
@@ -125,6 +130,46 @@ queries must pass before restoring traffic. If any check fails, leave the API
 unavailable and reconcile the finalized ledger; never roll back to a plan whose
 governance count is stale or restart in fixture mode. Preserve both signed versions
 for audit. This is an operator procedure, not an automated signer or live test.
+For a read-only proposal spot-check after that rotation, run
+`trust-registry-api observe-local-proposal` with the same four signed-plan
+arguments plus `--role issuer` (or another governed role) and the exact
+`--authorization-id`. It reads the pinned current finalized source without a
+listener and prints the event/evidence commitments after checking the proposal
+signature and ledger-record consistency. `present-and-verified` does not mean
+the record matches the private submission journal. `not-observed`
+is not proof of failure and never permits retry; compare the result with the
+private journal under the recovery procedure. Its report sets
+`releaseQualified: false` and does not advance the journal.
+Before the first submission, run `trust-registry-api init-local-proposal-journal`
+with the four signed-plan arguments and an absolute `--submission-journal`
+path. It binds an empty private journal to the reviewed genesis, registry ID,
+and contract address. A nonempty unbound journal cannot be retroactively bound.
+Back up the journal, its `.binding` sidecar, and any referenced segments as
+one private unit. After a post-mutation signed plan has passed its preflight,
+use `trust-registry-api reconcile-local-proposal` with
+the same signed-plan arguments, exact `--role` and `--authorization-id`, and
+an absolute `--submission-journal` path. It marks an entry `observed` only
+when the verified ledger record matches the journal's evidence commitment
+and any recorded event hash. A different deployment binding fails closed
+before readback. Output distinguishes `observed` from `not-observed`; absence
+leaves the attempt pending and never permits a retry.
+An embedding host enabling local-ledger proposal routes must expose the
+reviewer-approved deployment identity on its source and use a journal adapter
+that checks this binding before every proposal submission or reconciliation.
+Local resolve routes use that source's finalized proposal reader, never a
+separately injected port resolver. Actual submission target binding and real
+local-ledger actor journeys remain RC gates; the shipped CLI does not wire
+governed proposal ports.
+Even an `observed` entry does not prove transaction identity after a lost
+response, independently authenticate finality, or qualify the release.
+For a read-only current-route check against a running loopback listener, run
+`trust-registry-api observe-local-ledger-api` with the same four signed-plan
+arguments and `--api-origin http://127.0.0.1:4400`. It compares registry,
+current epoch, all bounded issuer/verifier/auditor/recognition records,
+not-found behavior, and historical-route rejection with the signed source.
+Its JSON report has `releaseQualified: false`: it does not attest the API
+process or image, independently authenticate finality, perform actor mutations,
+or prove browser, DID/VC/status, egress-denied, or recovery behavior.
 All local-ledger HTTP responses use `Cache-Control: no-store` so intermediaries
 and browsers are not instructed to reuse stale authorization decisions.
 With `--serve-portals`, the API serves packaged admin and applicant assets at
@@ -151,6 +196,19 @@ test has been completed through this CLI. Do not expose it as the 0.1.0 RC API
 until those independent gates and the first-run approval workflow are complete.
 
 Current route set:
+
+In local-ledger mode, only `GET /v1/epochs/current` is available for epoch
+queries. `GET /v1/epochs/resolve` and `GET /v1/epochs/:epochId` return 501
+because the current-map projection does not prove a complete historical epoch
+archive. Fixture-backed modes retain those historical routes.
+Current authorization and recognition resolution in local-ledger mode selects
+only IDs from the verified finalized current-scope indexes, not the most recent
+snapshot timestamp. A broad query matching multiple current scopes returns 409;
+an unavailable current-index read returns 503. The local HTTP observation also
+checks the signed snapshot generation time, registry summary, and current
+resolution against the finalized selection. Its counts include all by-ID
+records, not only current IDs; it remains readback only, not deployment or
+actor-journey qualification.
 
 - `GET /health`
 - `GET /v1/registry`

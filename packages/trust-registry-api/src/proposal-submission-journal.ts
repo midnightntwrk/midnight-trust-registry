@@ -1,10 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { mkdir, open, rename, rm } from "node:fs/promises";
+import { link, mkdir, open, rename, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { withExclusiveWorkspaceWrite, WorkspaceMutationLockedError } from "@midnight-ntwrk/trust-registry-cli";
+import { canonicalizeJson, sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
 import { z } from "zod";
 
 import { GovernedMembershipActionReceiptSchema, type GovernedMembershipActionReceipt } from "./governed-membership-actions.js";
@@ -15,13 +16,22 @@ const MAX_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_MANIFEST_BYTES = 1024 * 1024;
 const MAX_ARCHIVES = 64;
 const Bytes32Schema = z.string().regex(/^0x[0-9a-f]{64}$/u);
+const CanonicalActionSequencePattern = /^(0|[1-9][0-9]{0,19})$/u;
+const ActionSequenceSchema = z.string()
+  .refine((value) => CanonicalActionSequencePattern.test(value) && BigInt(value) < (1n << 64n));
 const ProposalRoleSchema = z.enum(["issuer", "verifier", "auditor", "maintainer", "recognition"]);
+const ReservationContextSchema = z.strictObject({
+  actionSequence: ActionSequenceSchema,
+  actionKind: Bytes32Schema,
+  actionPayloadHash: Bytes32Schema,
+});
 const AttemptSchema = z.strictObject({
   role: ProposalRoleSchema,
   authorizationId: z.string().trim().min(1).max(256),
   evidenceCommitment: Bytes32Schema,
   state: z.enum(["reserved", "submitted", "observed"]),
   eventHash: Bytes32Schema.nullable(),
+  reservationContext: ReservationContextSchema.optional(),
 }).refine((attempt) => (attempt.state === "reserved") === (attempt.eventHash === null));
 const StateSchema = z.strictObject({
   version: z.literal(1),
@@ -43,9 +53,21 @@ const ManifestSchema = z.strictObject({
   archives: z.array(SegmentSchema).max(MAX_ARCHIVES),
   active: SegmentSchema,
 });
+const DeploymentBindingSchema = z.strictObject({
+  format: z.literal("tr-proposal-journal-binding-v1"),
+  registryId: z.string().trim().min(1).max(256),
+  networkId: z.literal("undeployed"),
+  expectedGenesisHash: Bytes32Schema,
+  contractAddress: Bytes32Schema,
+});
 
 export type GovernedProposalSubmissionRole = z.infer<typeof ProposalRoleSchema>;
+export type ProposalReservationContext = z.infer<typeof ReservationContextSchema>;
 export type ProposalSubmissionAttempt = z.infer<typeof AttemptSchema>;
+export const proposalAttemptDigest = (attempt: ProposalSubmissionAttempt): string =>
+  sha256Hex(`tr-proposal-attempt-v1\0${canonicalizeJson(AttemptSchema.parse(attempt))}`);
+export const proposalJournalBindingDigest = (binding: z.infer<typeof DeploymentBindingSchema>): string =>
+  sha256Hex(`tr-proposal-journal-binding-v1\0${canonicalizeJson(DeploymentBindingSchema.parse(binding))}`);
 export type FinalizedProposalReader = (
   role: GovernedProposalSubmissionRole,
   authorizationId: string,
@@ -84,6 +106,16 @@ export class ProposalSubmissionAlreadyPendingError extends Error {
   }
 }
 
+export class ProposalSubmissionBlockedByReservationError extends Error {
+  constructor(
+    readonly blockingRole: GovernedProposalSubmissionRole,
+    readonly blockingAuthorizationId: string,
+  ) {
+    super("Another proposal submission is reserved; reconcile it before submitting a different proposal");
+    this.name = "ProposalSubmissionBlockedByReservationError";
+  }
+}
+
 export class ProposalSubmissionConflictError extends Error {
   constructor() {
     super("Proposal submission conflicts with recorded evidence or event");
@@ -107,11 +139,15 @@ export class ProposalSubmissionOutcomeUnknownError extends Error {
 
 /** Reservation survives a lost Compact response; only an independently finalized reader can confirm observation. */
 export interface ProposalSubmissionJournal {
+  assertDeploymentBinding?(
+    registryId: string, contractAddress: string, expectedGenesisHash: string,
+  ): Promise<void>;
   executeOnce(
     role: GovernedProposalSubmissionRole,
     authorizationId: string,
     evidenceCommitment: string,
     execute: () => Promise<GovernedMembershipActionReceipt>,
+    reservationContext?: ProposalReservationContext,
   ): Promise<GovernedMembershipActionReceipt>;
   reconcile(
     role: GovernedProposalSubmissionRole,
@@ -129,13 +165,91 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
     this.path = resolve(path);
   }
 
+  /** A legacy journal with attempts cannot be retrospectively assigned to a deployment. */
+  async bindDeployment(registryId: string, contractAddress: string, expectedGenesisHash: string): Promise<void> {
+    const binding = DeploymentBindingSchema.parse({
+      format: "tr-proposal-journal-binding-v1", registryId,
+      networkId: "undeployed", contractAddress, expectedGenesisHash,
+    });
+    await this.withWrite(async () => {
+      const current = await this.readBinding();
+      if (current !== null) {
+        if (current.registryId !== binding.registryId || current.contractAddress !== binding.contractAddress
+          || current.expectedGenesisHash !== binding.expectedGenesisHash) {
+          throw new ProposalSubmissionConflictError();
+        }
+        await this.requireExisting();
+        return;
+      }
+      const storage = await this.readStorage();
+      if (storage.active.attempts.length !== 0 || storage.archived.length !== 0) {
+        throw new ProposalSubmissionConflictError();
+      }
+      if (await this.readPrivateFile(this.path, MAX_FILE_BYTES) === null) {
+        await this.writeState(emptyState());
+      }
+      const bindingPath = `${this.path}.binding`;
+      const temporaryPath = `${bindingPath}.${randomUUID()}.tmp`;
+      try {
+        const handle = await open(temporaryPath, "wx", 0o600);
+        try {
+          await handle.writeFile(JSON.stringify(binding));
+          await handle.sync();
+        } finally {
+          await handle.close();
+        }
+        await link(temporaryPath, bindingPath);
+      } finally {
+        await rm(temporaryPath, { force: true });
+      }
+      const directory = await open(dirname(bindingPath), "r");
+      try {
+        await directory.sync();
+      } finally {
+        await directory.close();
+      }
+    });
+  }
+
+  async assertDeploymentBinding(
+    registryId: string, contractAddress: string, expectedGenesisHash: string,
+  ): Promise<void> {
+    const expected = DeploymentBindingSchema.parse({
+      format: "tr-proposal-journal-binding-v1", registryId,
+      networkId: "undeployed", contractAddress, expectedGenesisHash,
+    });
+    const current = await this.readBinding();
+    if (current === null || current.registryId !== expected.registryId
+      || current.contractAddress !== expected.contractAddress
+      || current.expectedGenesisHash !== expected.expectedGenesisHash) throw new ProposalSubmissionConflictError();
+    await this.requireExisting();
+  }
+
+  async requireExisting(): Promise<void> {
+    if (await this.readPrivateFile(this.path, MAX_FILE_BYTES) === null) {
+      throw new InvalidProposalSubmissionJournalError();
+    }
+  }
+
+  private async readBinding(): Promise<z.infer<typeof DeploymentBindingSchema> | null> {
+    const raw = await this.readPrivateFile(`${this.path}.binding`, 1024);
+    if (raw === null) return null;
+    try {
+      return DeploymentBindingSchema.parse(JSON.parse(raw));
+    } catch {
+      throw new InvalidProposalSubmissionJournalError();
+    }
+  }
+
   async executeOnce(
     role: GovernedProposalSubmissionRole,
     authorizationId: string,
     evidenceCommitment: string,
     execute: () => Promise<GovernedMembershipActionReceipt>,
+    reservationContext?: ProposalReservationContext,
   ): Promise<GovernedMembershipActionReceipt> {
     const key = this.parseKey(role, authorizationId, evidenceCommitment);
+    const context = reservationContext === undefined ? undefined : ReservationContextSchema.parse(reservationContext);
     await this.withWrite(async () => {
       const storage = await this.readStorage();
       const existing = [...storage.active.attempts, ...storage.archived].find((attempt) => attempt.role === key.role
@@ -144,14 +258,20 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
         if (existing.evidenceCommitment !== key.evidenceCommitment) throw new ProposalSubmissionConflictError();
         throw new ProposalSubmissionAlreadyPendingError(existing.state);
       }
+      const blocker = storage.active.attempts.find((attempt) => attempt.state === "reserved");
+      if (blocker !== undefined) {
+        throw new ProposalSubmissionBlockedByReservationError(blocker.role, blocker.authorizationId);
+      }
       if (storage.active.attempts.length >= MAX_ENTRIES) throw new ProposalSubmissionCapacityError();
-      const attempts = [...storage.active.attempts, { ...key, state: "reserved" as const, eventHash: null }];
+      const attempts = [...storage.active.attempts,
+        { ...key, state: "reserved" as const, eventHash: null, ...(context === undefined ? {} : { reservationContext: context }) }];
       const projectedAttempts = storage.active.attempts.map((attempt) => attempt.state === "reserved"
         ? { ...attempt, state: "submitted", eventHash: `0x${"0".repeat(64)}` }
         : attempt);
       const submittedSize = Buffer.byteLength(JSON.stringify({
         version: 1,
-        attempts: [...projectedAttempts, { ...key, state: "submitted", eventHash: `0x${"0".repeat(64)}` }],
+        attempts: [...projectedAttempts, { ...key, state: "submitted", eventHash: `0x${"0".repeat(64)}`,
+          ...(context === undefined ? {} : { reservationContext: context }) }],
       }), "utf8");
       if (submittedSize > MAX_FILE_BYTES) throw new ProposalSubmissionCapacityError();
       await this.writeActive(storage, StateSchema.parse({
@@ -188,6 +308,33 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
       const attempt = [...storage.active.attempts, ...storage.archived].find((entry) => entry.role === parsedRole
         && entry.authorizationId === parsedId);
       return attempt === undefined ? null : structuredClone(attempt);
+    });
+  }
+
+  /** Read one attempt and its deployment binding under the same private journal lock. */
+  async readBoundAttempt(
+    registryId: string, contractAddress: string, expectedGenesisHash: string,
+    role: GovernedProposalSubmissionRole, authorizationId: string,
+  ): Promise<{ attempt: ProposalSubmissionAttempt | null; bindingDigest: string }> {
+    const expected = DeploymentBindingSchema.parse({
+      format: "tr-proposal-journal-binding-v1", registryId,
+      networkId: "undeployed", contractAddress, expectedGenesisHash,
+    });
+    const parsedRole = ProposalRoleSchema.parse(role);
+    const parsedId = AttemptSchema.shape.authorizationId.parse(authorizationId);
+    return this.withWrite(async () => {
+      const current = await this.readBinding();
+      if (current === null || current.registryId !== expected.registryId
+        || current.contractAddress !== expected.contractAddress
+        || current.expectedGenesisHash !== expected.expectedGenesisHash) throw new ProposalSubmissionConflictError();
+      await this.requireExisting();
+      const storage = await this.readStorage();
+      const matches = [...storage.active.attempts, ...storage.archived].filter((entry) => entry.role === parsedRole
+        && entry.authorizationId === parsedId);
+      if (matches.length > 1) throw new ProposalSubmissionConflictError();
+      const found = matches[0];
+      return { attempt: found === undefined ? null : structuredClone(found),
+        bindingDigest: proposalJournalBindingDigest(current) };
     });
   }
 
@@ -270,6 +417,7 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
         || (attempt.eventHash !== null && attempt.eventHash !== observation.eventHash)) {
         throw new ProposalSubmissionConflictError();
       }
+      if (attempt.state === "observed") return structuredClone(attempt);
       attempt.state = "observed";
       attempt.eventHash = observation.eventHash;
       await this.writeActive(storage, storage.active);

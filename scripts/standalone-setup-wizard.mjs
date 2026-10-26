@@ -3,7 +3,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
-import { link, open, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { link, open, lstat, mkdir, mkdtemp, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -20,6 +20,7 @@ import { ContractMaintenanceAuthority } from "@midnight-ntwrk/midnight-js-protoc
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
+import { checkHelmImageMapping } from "./check-helm-image-mapping.mjs";
 import { pinnedStandaloneImages } from "./build-standalone-install.mjs";
 import { observeStandaloneEgress } from "./check-standalone-egress.mjs";
 import { observeStandaloneInstallRelay } from "./check-standalone-install-relay.mjs";
@@ -72,12 +73,32 @@ async function verifiedPackageManifestBytes(bundle, inventory, verified) {
   return manifestBytes;
 }
 
-async function regularBytes(path) {
-  const stat = await lstat(path);
-  if (!stat.isFile() || stat.size === 0 || stat.size > 16 * 1024 * 1024) {
-    throw new Error("Setup input must be a bounded regular file");
+export async function regularBytes(path, { privateFile = false } = {}) {
+  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const before = await file.stat({ bigint: true });
+    if (!before.isFile() || before.size === 0n || before.size > 16n * 1024n * 1024n
+      || (privateFile && (before.nlink !== 1n || (before.mode & 0o077n) !== 0n
+        || (typeof process.getuid === "function" && before.uid !== BigInt(process.getuid()))))) {
+      throw new Error("Setup input must be a bounded regular file with required ownership");
+    }
+    const bytes = Buffer.alloc(Number(before.size));
+    let count = 0;
+    while (count < bytes.length) {
+      const result = await file.read(bytes, count, bytes.length - count, count);
+      if (result.bytesRead === 0) break;
+      count += result.bytesRead;
+    }
+    const after = await file.stat({ bigint: true });
+    if (count !== bytes.length || after.size !== before.size || after.dev !== before.dev
+      || after.ino !== before.ino || after.nlink !== before.nlink
+      || after.mtimeNs !== before.mtimeNs || after.ctimeNs !== before.ctimeNs) {
+      throw new Error("Setup input changed during read");
+    }
+    return bytes;
+  } finally {
+    await file.close();
   }
-  return readFile(path);
 }
 
 function parseCanonicalSignedJson(bytes, label) {
@@ -101,7 +122,7 @@ async function privateDirectory(path) {
 
 async function readRecord(directory) {
   const root = await privateDirectory(resolve(directory));
-  const record = JSON.parse((await regularBytes(join(root, RECORD))).toString("utf8"));
+  const record = JSON.parse((await regularBytes(join(root, RECORD), { privateFile: true })).toString("utf8"));
   if (record?.format !== FORMAT || typeof record?.sourceRevision !== "string") {
     throw new Error("Invalid standalone setup record");
   }
@@ -186,6 +207,48 @@ export async function initializeStandaloneSetup(directory, bundleDirectory, depe
   return record;
 }
 
+export async function checkStandaloneHelmBootstrapHandoff(directory, paths, dependencies = {}) {
+  return withLock(directory, async (root) => {
+    const { record } = await readRecord(root);
+    if (record.stack || record.ledgerObservation || record.genesisApproval
+      || record.deployment || record.committeeApproval || record.maintenanceAttempt) {
+      throw new Error("Helm bootstrap requires a fresh setup; Compose ledger evidence cannot qualify a Helm target");
+    }
+    const inventoryBytes = await regularBytes(join(record.install.bundle, "install-inventory.json"));
+    const inventory = JSON.parse(inventoryBytes);
+    if (sha256(inventoryBytes) !== record.install.inventorySha256
+      || inventory.sourceRevision !== record.sourceRevision) {
+      throw new Error("Helm bootstrap install inventory changed since wizard initialization");
+    }
+    if (inventory.format !== "tr-standalone-install-v6") {
+      throw new Error("Helm bootstrap requires a v6 install bundle");
+    }
+    const mapping = await (dependencies.checkMapping ?? checkHelmImageMapping)({
+      bundleRoot: record.install.bundle,
+      valuesPath: paths.valuesPath,
+      receiptPath: paths.receiptPath,
+      signaturePath: paths.signaturePath,
+      keyringPath: paths.keyringPath,
+      signerFingerprint: paths.signerFingerprint,
+    });
+    if (mapping.sourceRevision !== record.sourceRevision
+      || mapping.inventorySha256 !== record.install.inventorySha256
+      || !SHA256.test(mapping.mappingSha256 ?? "")
+      || mapping.deploymentPhase !== "bootstrap") {
+      throw new Error("Signed Helm bootstrap mapping does not match this setup and its approved phase");
+    }
+    return {
+      format: "tr-helm-bootstrap-handoff-v1",
+      sourceRevision: record.sourceRevision,
+      inventorySha256: record.install.inventorySha256,
+      mappingSha256: mapping.mappingSha256,
+      deploymentPhase: "bootstrap",
+      targetGenesisApproval: "pending",
+      releaseQualified: false,
+    };
+  });
+}
+
 export async function assertUnusedStandaloneProject(project, command = execFileAsync) {
   const options = { timeout: 10_000, maxBuffer: 1024 * 1024 };
   const [containers, networks, volumes, labeledNetworks, labeledVolumes] = await Promise.all([
@@ -241,9 +304,9 @@ export async function prepareStandaloneStack(directory, requested, dependencies 
       || JSON.parse(inventoryBytes).runtimeCompose?.offlineSha256 !== verified.runtimeOfflineComposeSha256) {
       throw new Error("New standalone setup requires a verified v3/v4/v5 runtime Compose pin");
     }
-    const composeBytes = await readFile(composePath);
+    const composeBytes = await regularBytes(composePath);
     if (sha256(composeBytes) !== verified.runtimeComposeSha256
-      || sha256(await readFile(offlineComposePath)) !== verified.runtimeOfflineComposeSha256) {
+      || sha256(await regularBytes(offlineComposePath)) !== verified.runtimeOfflineComposeSha256) {
       throw new Error("Current runtime Compose differs from the verified install bundle");
     }
     const installedImages = JSON.parse(inventoryBytes).images;
@@ -441,6 +504,109 @@ export async function collectStandaloneGenesisCandidate(directory, dependencies 
     const bytes = Buffer.from(`${JSON.stringify(candidate, null, 2)}\n`);
     await writePrivateSnapshot(path, bytes);
     return { path, candidateSha256: sha256(bytes), status: candidate.status };
+  });
+}
+
+/** Drafts an untrusted pin from the current installation access path; never approves it. */
+export async function draftStandaloneGenesisPin(directory, dependencies = {}) {
+  return withLock(directory, async (root) => {
+    const { record } = await readRecord(root);
+    if (!record.install.verified?.runtimeComposeSha256 || !record.stack?.observation
+      || record.ledgerObservation || record.genesisApproval || record.deployment) {
+      throw new Error("Draft a genesis pin only from an observed, pre-approval standalone stack");
+    }
+    const candidateBytes = await regularBytes(join(root, "genesis-candidate.untrusted.json"));
+    const candidate = JSON.parse(candidateBytes);
+    if (!Buffer.from(`${JSON.stringify(candidate, null, 2)}\n`).equals(candidateBytes)
+      || candidate?.format !== "tr-local-genesis-candidate-v1"
+      || Object.keys(candidate).sort().join("\0") !== [
+        "format", "installInventorySha256", "networkId", "nodeReportedFinalizedBlockHash",
+        "nodeReportedFinalizedHeight", "nodeReportedGenesisHash", "observedAt",
+        "observerSha256", "project", "sourceRevision", "status",
+      ].sort().join("\0")
+      || candidate.status !== "untrusted-node-observation-independent-review-required"
+      || candidate.sourceRevision !== record.sourceRevision
+      || candidate.installInventorySha256 !== record.install.inventorySha256
+      || candidate.project !== record.stack.project || candidate.networkId !== "undeployed"
+      || !HASH.test(candidate.nodeReportedGenesisHash)
+      || /^0x0{64}$/u.test(candidate.nodeReportedGenesisHash)
+      || !HASH.test(candidate.nodeReportedFinalizedBlockHash)
+      || /^0x0{64}$/u.test(candidate.nodeReportedFinalizedBlockHash)
+      || !Number.isSafeInteger(candidate.nodeReportedFinalizedHeight)
+      || candidate.nodeReportedFinalizedHeight < 1
+      || !SHA256.test(candidate.observerSha256)
+      || !Number.isFinite(Date.parse(candidate.observedAt ?? ""))
+      || new Date(Date.parse(candidate.observedAt)).toISOString() !== candidate.observedAt) {
+      throw new Error("Untrusted genesis candidate is malformed or disagrees with the observed install");
+    }
+    const { config, expectedTopology } = await preparedStandaloneTopology(root, record);
+    const observedNetworkId = record.stack.observation.topology?.networkId;
+    let rpcPort;
+    let accessKind;
+    let accessObservation;
+    if (record.stack.observation.topology?.hostPortAccess === "effective-loopback") {
+      const current = await (dependencies.observeTopology ?? observeStandaloneTopology)(config,
+        { ...expectedTopology, allowUnpublishedHostPorts: false });
+      if (current.project !== config.project || current.networkId !== observedNetworkId
+        || current.internalNetworkOnly !== true || current.hostPortAccess !== "effective-loopback") {
+        throw new Error("Direct loopback access changed since the stack observation");
+      }
+      rpcPort = config.ports.node;
+      accessKind = "effective-direct-loopback";
+      accessObservation = current;
+    } else if (record.stack.observation.topology?.hostPortAccess
+      === "unpublished-install-access-required" && record.install.verified.installRelay) {
+      const current = await (dependencies.observeInstallRelay ?? observeStandaloneInstallRelay)(
+        config, record.install.verified, expectedTopology);
+      if (current.kind !== "standalone-install-relay-observation"
+        || current.project !== config.project || current.networkId !== observedNetworkId
+        || current.topology?.internalNetworkOnly !== true
+        || current.topology?.hostPortAccess !== "unpublished-install-access-required") {
+        throw new Error("Verified installation relay disagrees with the observed stack");
+      }
+      rpcPort = current.ports.node;
+      accessKind = current.kind;
+      accessObservation = current;
+    } else {
+      throw new Error("A verified loopback or installation relay path is required to draft a genesis pin");
+    }
+    if (typeof rpcPort !== "string" || !/^[1-9][0-9]*$/u.test(rpcPort)
+      || Number(rpcPort) < 1024 || Number(rpcPort) > 65535) {
+      throw new Error("Verified installation access has no valid loopback RPC port");
+    }
+    const pin = {
+      format: "tr-local-ledger-pin-v1",
+      networkId: "undeployed",
+      sourceRevision: record.sourceRevision,
+      rpcUrl: `http://127.0.0.1:${rpcPort}`,
+      expectedGenesisHash: candidate.nodeReportedGenesisHash,
+      allowedHosts: ["127.0.0.1"],
+    };
+    await (dependencies.preflight ?? checkLocalLedgerPreflight)(pin);
+    if (accessKind === "effective-direct-loopback") {
+      const current = await (dependencies.observeTopology ?? observeStandaloneTopology)(config,
+        { ...expectedTopology, allowUnpublishedHostPorts: false });
+      if (current.project !== accessObservation.project
+        || current.networkId !== accessObservation.networkId
+        || current.internalNetworkOnly !== true
+        || current.hostPortAccess !== "effective-loopback") {
+        throw new Error("Direct loopback access changed during genesis pin draft");
+      }
+    } else {
+      const current = await (dependencies.observeInstallRelay ?? observeStandaloneInstallRelay)(
+        config, record.install.verified, expectedTopology);
+      if (current.relayId !== accessObservation.relayId
+        || current.networkId !== accessObservation.networkId
+        || JSON.stringify(current.ports) !== JSON.stringify(accessObservation.ports)
+        || current.relayScriptSha256 !== accessObservation.relayScriptSha256) {
+        throw new Error("Installation relay changed during genesis pin draft");
+      }
+    }
+    const bytes = Buffer.from(`${JSON.stringify(pin, null, 2)}\n`);
+    const path = join(root, "genesis-pin.proposed.json");
+    await writePrivateSnapshot(path, bytes);
+    return { path, pinSha256: sha256(bytes), candidateSha256: sha256(candidateBytes),
+      accessKind, status: "untrusted-proposal-independent-review-required" };
   });
 }
 
@@ -1998,8 +2164,8 @@ export async function runStandaloneSetupInteractive(
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [command, directory, input, signature, keyring, fingerprint, extra, more] = process.argv.slice(2);
-  if (!directory || !["run", "init", "prepare-stack", "observe-stack", "collect-genesis-candidate", "observe", "draft-genesis", "approve-genesis", "draft-committee", "approve-committee", "approve-committee-deployment", "deploy", "reconcile-deploy", "insert-key", "reconcile-key", "prepare-committee", "submit-committee", "reconcile-committee", "approve-committee-recovery", "status"].includes(command)) {
-    throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|prepare-stack|observe-stack|collect-genesis-candidate|observe|draft-genesis|approve-genesis|draft-committee|approve-committee|approve-committee-deployment|deploy|reconcile-deploy|insert-key|reconcile-key|prepare-committee|submit-committee|reconcile-committee|approve-committee-recovery|status> <private-setup-dir> [inputs]");
+  if (!directory || !["run", "init", "prepare-stack", "observe-stack", "collect-genesis-candidate", "draft-genesis-pin", "observe", "draft-genesis", "approve-genesis", "draft-committee", "approve-committee", "approve-committee-deployment", "deploy", "reconcile-deploy", "insert-key", "reconcile-key", "prepare-committee", "submit-committee", "reconcile-committee", "approve-committee-recovery", "check-helm-bootstrap", "status"].includes(command)) {
+    throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|prepare-stack|observe-stack|collect-genesis-candidate|draft-genesis-pin|observe|draft-genesis|approve-genesis|draft-committee|approve-committee|approve-committee-deployment|deploy|reconcile-deploy|insert-key|reconcile-key|prepare-committee|submit-committee|reconcile-committee|approve-committee-recovery|check-helm-bootstrap|status> <private-setup-dir> [inputs]");
   }
   if (command === "run") await runStandaloneSetupInteractive(directory);
   else if (command === "init" && input) console.log(JSON.stringify(await initializeStandaloneSetup(directory, input)));
@@ -2011,6 +2177,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   else if (command === "observe-stack") console.log(JSON.stringify(await observeStandaloneStack(directory)));
   else if (command === "collect-genesis-candidate") {
     console.log(JSON.stringify(await collectStandaloneGenesisCandidate(directory)));
+  }
+  else if (command === "draft-genesis-pin") {
+    console.log(JSON.stringify(await draftStandaloneGenesisPin(directory)));
   }
   else if (command === "observe" && input) console.log(JSON.stringify(await observeStandaloneLedger(directory, input)));
   else if (command === "draft-genesis" && input) {
@@ -2064,6 +2233,13 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     console.log(JSON.stringify(await approveStandaloneCommitteeRecovery(
       directory, input, signature, keyring, fingerprint, extra, more,
     )));
+  }
+  else if (command === "check-helm-bootstrap" && input && signature && keyring
+    && fingerprint && extra) {
+    console.log(JSON.stringify(await checkStandaloneHelmBootstrapHandoff(directory, {
+      valuesPath: input, receiptPath: signature, signaturePath: keyring,
+      keyringPath: fingerprint, signerFingerprint: extra,
+    })));
   }
   else if (command === "status") console.log(JSON.stringify(await standaloneSetupStatus(directory), null, 2));
   else throw new Error(`Missing input path for ${command}`);

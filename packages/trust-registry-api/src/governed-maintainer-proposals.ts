@@ -63,6 +63,13 @@ export type GovernedMaintainerProposalContext = {
 
 export type GovernedMaintainerProposalPort = {
   prepare(maintainerId: string, evidence: ApplicationEvidenceSubmission): Promise<GovernedMaintainerProposalContext>;
+  /** Reject known-invalid submissions without broadcasting; required when a durable journal is configured. */
+  preflightSubmission?(
+    maintainerId: string, evidence: ApplicationEvidenceSubmission,
+    signers: readonly GovernedMembershipSigner[],
+    evidenceVerifierSignature: TrustRegistryJubjubSignature,
+    context: GovernedMaintainerProposalContext,
+  ): Promise<void>;
   execute(
     maintainerId: string,
     evidence: ApplicationEvidenceSubmission,

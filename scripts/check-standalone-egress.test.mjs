@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { hasBroadOutboundRoute, hasValidRouteTable, observeStandaloneEgress, parseCanaryAddress,
+import { assertOnlyLedgerRoutes, hasBroadOutboundRoute, hasValidRouteTable, ledgerSubnet,
+  observeStandaloneEgress, parseCanaryAddress,
   validateEgressProbe, verifiedOfflineEgressTopology } from "./check-standalone-egress.mjs";
 
 const header = "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT";
@@ -10,6 +11,9 @@ const defaultRoute = "eth0\t00000000\t010015AC\t0003\t0\t0\t0\t00000000\t0\t0\t0
 const controlRoute = `${header}\n${subnet}\n${defaultRoute}\n`;
 const isolatedRoute = `${header}\n${subnet}\n`;
 const observedNetwork = { networkId: "ledger-id" };
+const inspectedNetwork = { Id: "ledger-id", Internal: true, EnableIPv6: false,
+  IPAM: { Config: [{ Subnet: "172.21.0.0/16" }] } };
+const networkInspection = { code: 0, stdout: JSON.stringify([inspectedNetwork]) };
 
 test("accepts only a reachable control and denied isolated connection", () => {
   assert.equal(hasBroadOutboundRoute(controlRoute), true);
@@ -45,19 +49,51 @@ test("does not mistake DNS, TLS, or timeout failure for denied egress", () => {
   }), /DNS resolution/u);
 });
 
-test("rejects broad /0 and /1 routes regardless of flags", () => {
+test("rejects broad /0 through /8 routes regardless of flags", () => {
   assert.equal(hasBroadOutboundRoute(`${header}\neth0\t00000000\t00000000\t0001\t0\t0\t0\t00000000\n`), true);
   assert.equal(hasBroadOutboundRoute(`${header}\neth0\t00000000\t00000000\t0007\t0\t0\t0\t00000080\n`), true);
+  assert.equal(hasBroadOutboundRoute(`${header}\neth0\t00000000\t00000000\t0001\t0\t0\t0\t000000C0\n`), true);
+  assert.equal(hasBroadOutboundRoute(`${header}\neth0\t00000000\t00000000\t0001\t0\t0\t0\t000000FF\n`), true);
+  assert.equal(hasBroadOutboundRoute(`${header}\neth0\t00000000\t00000000\t0001\t0\t0\t0\t000080FF\n`), false);
   assert.equal(hasBroadOutboundRoute(`${header}\r\n${subnet}\r\n`), false);
   assert.equal(hasBroadOutboundRoute(`${header}\n`), false);
   assert.equal(hasValidRouteTable(isolatedRoute), true);
+  assert.equal(hasValidRouteTable(`${header}\neth0\t00000000\t00000000\t0001\t0\t0\t0\t00FF00FF\n`), false);
   assert.equal(hasValidRouteTable(`${header}\n`), false);
   assert.equal(hasValidRouteTable(""), false);
+  assert.throws(() => validateEgressProbe({
+    controlRoute, isolatedRoute: `${header}\neth0\t00000000\t00000000\t0001\t0\t0\t0\t000000C0\n`,
+    controlCode: 0, isolatedCode: 7, isolatedDnsCode: 2, isolatedDnsOutput: "",
+  }), /broad outbound route/u);
   assert.throws(() => validateEgressProbe({
     controlRoute, isolatedRoute: `${header}\n`, controlCode: 0, isolatedCode: 7,
     isolatedDnsCode: 2, isolatedDnsOutput: "",
   }), /empty or malformed/u);
 });
+
+test("confines every isolated route to the observed ledger subnet", () => {
+  const subnet = ledgerSubnet(inspectedNetwork, "ledger-id");
+  assert.equal(subnet.text, "172.21.0.0/16");
+  assert.doesNotThrow(() => assertOnlyLedgerRoutes(isolatedRoute, subnet));
+  const liveShapedSubnet = ledgerSubnet({ ...inspectedNetwork,
+    IPAM: { Config: [{ Subnet: "192.168.176.0/20" }] } }, "ledger-id");
+  assert.doesNotThrow(() => assertOnlyLedgerRoutes(
+    `${header}\n${subnetRoute("00B0A8C0", "00F0FFFF")}\n`, liveShapedSubnet));
+  const publicRoute = `${header}\n${subnetRoute("000271CB", "00FFFFFF")}\n`;
+  assert.equal(hasBroadOutboundRoute(publicRoute), false);
+  assert.throws(() => assertOnlyLedgerRoutes(publicRoute, subnet), /escapes the observed subnet/u);
+  const otherPrivateRoute = `${header}\n${subnetRoute("00001EAC", "0000FFFF")}\n`;
+  assert.throws(() => assertOnlyLedgerRoutes(otherPrivateRoute, subnet), /escapes the observed subnet/u);
+  assert.throws(() => assertOnlyLedgerRoutes(controlRoute, subnet), /escapes the observed subnet/u);
+  assert.throws(() => ledgerSubnet({ ...inspectedNetwork, Id: "changed" }, "ledger-id"), /IPAM/u);
+  assert.throws(() => ledgerSubnet({ ...inspectedNetwork,
+    IPAM: { Config: [{ Subnet: "172.21.0.1/16" }] } }, "ledger-id"), /not canonical/u);
+  assert.throws(() => ledgerSubnet({ ...inspectedNetwork,
+    IPAM: { Config: [{ Subnet: "172.21.0.0/16" }, { Subnet: "10.0.0.0/8" }] } }, "ledger-id"), /IPAM/u);
+});
+
+const subnetRoute = (destination, mask) =>
+  `eth0\t${destination}\t00000000\t0001\t0\t0\t0\t${mask}`;
 
 test("requires a valid IPv4 canary address", () => {
   assert.equal(parseCanaryAddress("104.20.23.154 STREAM example.com\n"), "104.20.23.154");
@@ -72,6 +108,7 @@ test("orchestrates restricted probes and checks topology before and after", asyn
   const image = `midnightntwrk/midnight-node@sha256:${"a".repeat(64)}`;
   const dockerCommand = async (args) => {
     calls.push(args);
+    if (args[0] === "network") return networkInspection;
     if (args[0] === "inspect") return { code: 0, stdout: `${image}\n` };
     const network = args[args.indexOf("--network") + 1];
     const entrypoint = args[args.indexOf("--entrypoint") + 1];
@@ -95,7 +132,7 @@ test("orchestrates restricted probes and checks topology before and after", asyn
   assert.equal(result.project, project);
   assert.equal(result.networkId, observedNetwork.networkId);
   assert.equal(result.internalBridgeCanaryDnsResolutionDenied, true);
-  assert.equal(calls[0].at(-1), `${project}-node-1`);
+  assert.ok(calls.some((args) => args[0] === "inspect" && args.at(-1) === `${project}-node-1`));
   assert.equal(calls.filter((args) => args[0] === "run").length, 6);
   for (const args of calls.filter((entry) => entry[0] === "run")) {
     assert.ok(args.includes("--read-only"));
@@ -118,6 +155,7 @@ test("uses the verified image ID for a source-scoped offline bundle probe", asyn
     composeFiles: ["/bundle/compose.yml", "/bundle/compose.offline.yml"] };
   let observations = 0;
   const dockerCommand = async (args) => {
+    if (args[0] === "network") return networkInspection;
     if (args[0] === "inspect") return { code: 0,
       stdout: `${args[2] === "{{.Image}}" ? imageId : image}\n` };
     assert.equal(args[args.indexOf("--entrypoint") + 2], imageId);
@@ -155,8 +193,9 @@ test("uses the verified image ID for a source-scoped offline bundle probe", asyn
       ? { code: 0, stdout: "unapproved:latest\n" } : dockerCommand(args),
   }), /not tied/u);
   await assert.rejects(observeStandaloneEgress({ expectedTopology, env: { TR_STACK_NAME: project },
-    observeTopology: async () => observedNetwork, dockerCommand: async (args) => ({ code: 0,
-      stdout: `${args[2] === "{{.Image}}" ? `sha256:${"c".repeat(64)}` : image}\n` }),
+    observeTopology: async () => observedNetwork, dockerCommand: async (args) => args[0] === "network"
+      ? networkInspection : { code: 0,
+        stdout: `${args[2] === "{{.Image}}" ? `sha256:${"c".repeat(64)}` : image}\n` },
   }), /image ID differs/u);
 });
 
@@ -164,6 +203,9 @@ test("fails if the ledger bridge is replaced during the egress probe", async () 
   let observations = 0;
   const image = `midnightntwrk/midnight-node@sha256:${"a".repeat(64)}`;
   const dockerCommand = async (args) => {
+    if (args[0] === "network") return { code: 0, stdout: JSON.stringify([
+      { ...inspectedNetwork, Id: args.at(-1) },
+    ]) };
     if (args[0] === "inspect") return { code: 0, stdout: `${image}\n` };
     const network = args[args.indexOf("--network") + 1];
     const entrypoint = args[args.indexOf("--entrypoint") + 1];
@@ -205,6 +247,7 @@ test("removes only its own probe container after a Docker startup failure", asyn
   let probeName;
   let removedName;
   const dockerCommand = async (args) => {
+    if (args[0] === "network") return networkInspection;
     if (args[0] === "inspect") return { code: 0, stdout: `${image}\n` };
     if (args[0] === "rm") {
       removedName = args[2];
@@ -222,10 +265,12 @@ test("removes only its own probe container after a Docker startup failure", asyn
 test("fails closed on a floating image or leaking isolated DNS", async () => {
   await assert.rejects(observeStandaloneEgress({
     observeTopology: async () => observedNetwork,
-    dockerCommand: async () => ({ code: 0, stdout: "midnight-node:latest\n" }),
+    dockerCommand: async (args) => args[0] === "network" ? networkInspection
+      : { code: 0, stdout: "midnight-node:latest\n" },
   }), /digest-pinned/u);
   const image = `midnightntwrk/midnight-node@sha256:${"a".repeat(64)}`;
   const dockerCommand = async (args) => {
+    if (args[0] === "network") return networkInspection;
     if (args[0] === "inspect") return { code: 0, stdout: `${image}\n` };
     const network = args[args.indexOf("--network") + 1];
     const entrypoint = args[args.indexOf("--entrypoint") + 1];

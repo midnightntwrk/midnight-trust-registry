@@ -45,6 +45,23 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
      <reviewer-keyring> <REVIEWER_FINGERPRINT>
    ```
 
+   For a new Helm installation, initialize a separate private first-run setup
+   record from that exact v6 bundle and check the signed bootstrap mapping
+   against it before applying the chart:
+
+   ```sh
+   node scripts/standalone-setup-wizard.mjs init <private-helm-setup-dir> <v6-bundle>
+   node scripts/standalone-setup-wizard.mjs check-helm-bootstrap \
+     <private-helm-setup-dir> <approved-bootstrap-values.yaml> \
+     <mapping.json> <mapping.sig> <reviewer-keyring> <REVIEWER_FINGERPRINT>
+   ```
+
+   This is a read-only preflight. It rejects runtime-phase values and refuses
+   to reuse a Compose setup record or its genesis observation for Helm. It
+   does not deploy, approve the target cluster's genesis, prove registry
+   provenance, or qualify the release. Helm runtime promotion still requires
+   its own independently reviewed local-ledger and committee evidence.
+
    A legacy v4 bundle needs two additional arguments immediately after
    `<v4-bundle>`: `<admin-image/manifest.json>` and
    `<applicant-image/manifest.json>`. Do not pass separate portal manifests for
@@ -176,7 +193,8 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    this checker does not observe the cluster release.
    After installation, use an explicitly selected, reviewed kubeconfig and
    context for a non-mutating Kubernetes workload observation. The observer
-   needs `list` on nodes, Deployments, ReplicaSets, and Pods, and `get` on
+   needs `list` on nodes, Deployments, ReplicaSets, Pods, Services, and
+   NetworkPolicies, and `get` on
    both API Secrets and the API Pod,
    plus `create` on `pods/exec` to run a fixed, read-only hash probe in the API
    container. Limit Secret `get` to the two names with RBAC `resourceNames`;
@@ -224,6 +242,12 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    an ephemeral debug container is present. It also rejects live Deployment
    Pod specs that differ from the exact signed Helm render. A v1 node scope
    remains valid for fleet receipt checks but is rejected by this live observer.
+   It lists all Services and NetworkPolicies in the dedicated namespace, not
+   just release-labelled objects, and rejects additions, removals, or spec
+   drift from the signed render. An unrelated Service or NetworkPolicy in the
+   namespace also fails closed. This can detect an additive permissive policy
+   or extra exposure Service at observation time, but not whether the CNI
+   enforced the intended traffic boundary.
    Capture the observer output and non-Secret Kubernetes responses through an
    access-controlled evidence channel. Retain Secret metadata and digests,
    not raw Secret responses: they contain private snapshot and approval data.
@@ -235,7 +259,7 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    authenticate the reviewer-approved `clusterReference` against the API,
    prove image bytes executed from the CRI store, prove a running process has
    not changed after observation, verify PVC contents,
-   inspect unrelated or unlabelled workloads, measure runtime egress, or
+   inspect unrelated or unlabelled workloads, measure CNI-enforced runtime egress, or
    exercise the local ledger or actor journeys. A later rollout, image-store
    replacement, or plan rotation requires a fresh observation. It compares security-relevant
    Pod specs across each Deployment, owned ReplicaSet, and running Pod,
@@ -255,8 +279,8 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    check is still required to validate API-server defaulting (including
    resource quantities, probe fields,
    and projected volume modes); synthetic tests do not establish it.
-   It does **not** compare live Services, NetworkPolicies, PVCs, or unrelated
-   workloads with the render. The Kubernetes queries and in-container probe
+   It does **not** compare live PVCs or unrelated workloads with the render,
+   and policy-object parity is not a packet-level egress test. The Kubernetes queries and in-container probe
    are not one atomic snapshot; separate authenticated evidence capture is
    still needed for release review.
    A passing synthetic test is not live qualification evidence.
@@ -327,16 +351,26 @@ actual cluster.
 
 ## Isolation and operations
 
-The default NetworkPolicy denies ingress and egress for chart pods. Narrow
-rules permit API-to-node/indexer, indexer-to-node, and selected DNS access.
+The default NetworkPolicy denies ingress and egress for **every Pod in the
+dedicated namespace**, including operator and actor test Pods. Do not install
+this chart in a shared namespace: the policy will also isolate unrelated Pods.
+Narrow rules permit API-to-node/indexer, indexer-to-node, operator-to-local
+services, actor-to-local services in runtime phase, and selected DNS access.
 Actor-labelled pods cannot reach node RPC; only the API, indexer, and
 operator-labelled pods can. Operator access to the dev-preset RPC is powerful
-and must be restricted by namespace RBAC.
+and must be restricted by namespace RBAC and Pod-label admission controls.
 In-namespace bootstrap/actor pods must carry
 `trust-registry.midnight.network/role=operator` or `=actor` for service ingress.
 Namespace RBAC must prevent untrusted users from assigning those labels.
+Pod creation rights alone permit callers to choose labels unless admission
+enforces the trusted actor/operator identity; verify that control on the real
+cluster before using the role labels as a security boundary.
 The DNS selectors are configurable because CNI/CoreDNS labels differ by
-cluster. No rule grants public-IP egress. Port-forward, host networking,
+cluster. If CoreDNS forwards external queries, DNS itself remains an egress
+channel; configure and test a local-only resolver before claiming offline
+runtime. Local DID/VC/status authority traffic needs a separately reviewed
+exact policy and must not be inferred from these chart rules. No rule grants
+public-IP egress. Port-forward, host networking,
 node-local agents, and CNI behavior require real-cluster verification.
 The API ingress rule admits only same-namespace pods labelled as an actor or
 operator. A controller in another namespace cannot reach the API without a

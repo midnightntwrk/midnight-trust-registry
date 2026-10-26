@@ -56,6 +56,18 @@ additional milestone branch-protection gates.
    check them; the SHA flag prevents a race with a subsequent push. Merge one
    PR at a time, bottom-up for stacks.
 
+## Phase-exit cleanup
+
+Do not report a local development phase or merged stack slice complete until
+its worktrees and build targets have been inventoried. Remove obsolete
+worktrees and reproducible targets in the same phase, after verifying clean
+Git state, unpublished commits, and ownership. Preserve generated proving and
+verifier keys, signed install artifacts, private approval evidence, and active
+ledger volumes; verify an archive before removing an artifact-bearing
+worktree. Record any intentionally retained worktree or target with a concrete
+reason and next cleanup condition. Never transfer routine cleanup to the user
+or another agent, and never use a destructive reset to make cleanup possible.
+
 ## Bounded review loop
 
 One round is one completed correctness/security review of a candidate head,

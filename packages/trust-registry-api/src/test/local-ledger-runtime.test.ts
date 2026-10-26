@@ -21,6 +21,7 @@ import {
   sequenceTimestampMap,
   validateLocalLedgerRuntimePlan,
 } from "../local-ledger-runtime.js";
+import { resolveAuthorizationEntry, resolveRecognitionEntry } from "../source.js";
 
 const sourceRevision = "a".repeat(40);
 const sha256 = (bytes: Buffer | string): string => createHash("sha256").update(bytes).digest("hex");
@@ -102,6 +103,10 @@ describe("approved local-ledger API runtime", () => {
       const linked = join(root, "linked-revision");
       await symlink(path, linked);
       await expect(assertLocalApiImageSourceRevision(sourceRevision, linked)).rejects.toThrow();
+      const fifo = join(root, "revision-fifo");
+      execFileSync("mkfifo", [fifo]);
+      await expect(assertLocalApiImageSourceRevision(sourceRevision, fifo))
+        .rejects.toThrow(/bounded regular file/u);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -194,27 +199,44 @@ describe("approved local-ledger API runtime", () => {
     const source = await createApprovedLocalLedgerRuntimeSource(approved);
     const stale = { cause: { message: expect.stringMatching(/do not cover the finalized governance count/u) } };
     await expect(source.loadSnapshot()).rejects.toMatchObject(stale);
-    await expect(source.readFinalizedProposalLedger()).rejects.toMatchObject(stale);
-    expect(readCurrentFinalizedLedger).toHaveBeenCalledTimes(2);
+    await expect(source.readFinalizedProposalLedger()).rejects.toMatchObject({
+      cause: { message: expect.stringMatching(/operator restart is required/u) },
+    });
+    expect(readCurrentFinalizedLedger).toHaveBeenCalledTimes(1);
     readCurrentFinalizedLedger.mockResolvedValue({ ledger: { governanceActionCount: 1n },
       verifierKeySha256: { ...verifierKeySha256, first: "4".repeat(64) },
       maintenanceAuthority: { ...maintenanceAuthority, counter: 0n } });
-    await expect(source.loadSnapshot()).rejects.toMatchObject({
+    await expect((await createApprovedLocalLedgerRuntimeSource(approved)).loadSnapshot()).rejects.toMatchObject({
       cause: { message: expect.stringMatching(/Finalized verifier-key catalog differs/u) },
     });
     readCurrentFinalizedLedger.mockResolvedValue({ ledger: { governanceActionCount: 1n },
       verifierKeySha256,
       maintenanceAuthority: { ...maintenanceAuthority, counter: 1n } });
-    await expect(source.readFinalizedProposalLedger()).rejects.toMatchObject({
-      cause: { message: expect.stringMatching(/Finalized maintenance authority differs/u) },
+    await expect((await createApprovedLocalLedgerRuntimeSource(approved)).readFinalizedProposalLedger())
+      .rejects.toMatchObject({
+        cause: { message: expect.stringMatching(/Finalized maintenance authority differs/u) },
+      });
+    readCurrentFinalizedLedger.mockResolvedValue({ ledger: { governanceActionCount: 1n },
+      verifierKeySha256,
+      maintenanceAuthority: { ...maintenanceAuthority, counter: 0n } });
+    await expect(source.loadSnapshot()).rejects.toMatchObject({
+      cause: { message: expect.stringMatching(/operator restart is required/u) },
     });
+    expect(readCurrentFinalizedLedger).toHaveBeenCalledTimes(3);
     vi.useFakeTimers();
     try {
       vi.setSystemTime(new Date(approved.notAfter).getTime() + 1);
       const expired = { cause: { message: expect.stringMatching(/not currently valid/u) } };
       await expect(source.loadSnapshot()).rejects.toMatchObject(expired);
+      await expect(source.loadCurrentLedgerSelection()).rejects.toMatchObject(expired);
       await expect(source.readFinalizedProposalLedger()).rejects.toMatchObject(expired);
-      expect(readCurrentFinalizedLedger).toHaveBeenCalledTimes(4);
+      await expect(resolveAuthorizationEntry(source, {
+        role: "issuer", subjectDid: "did:midnight:expired", resourceId: "resource:expired",
+      })).rejects.toMatchObject(expired);
+      await expect(resolveRecognitionEntry(source, {
+        recognizedAuthorityDid: "did:midnight:expired", scopeResourceId: "resource:expired",
+      })).rejects.toMatchObject(expired);
+      expect(readCurrentFinalizedLedger).toHaveBeenCalledTimes(3);
     } finally {
       vi.useRealTimers();
       readerMocks.createReader.mockReset();

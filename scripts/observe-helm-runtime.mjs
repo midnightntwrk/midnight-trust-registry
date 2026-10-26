@@ -4,6 +4,7 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { mkdtemp, open, readFile, rm, writeFile } from "node:fs/promises";
+import { isIP } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -514,6 +515,89 @@ export function validateHelmRenderedWorkloadParity(renderedBytes, mappingBytes, 
   return scope.renderedManifestSha256;
 }
 
+const SERVICE_ALLOCATED_FIELDS = new Set(["clusterIP", "clusterIPs", "ipFamilies"]);
+const SERVICE_SERVER_DEFAULTS = { ipFamilyPolicy: "SingleStack",
+  internalTrafficPolicy: "Cluster", sessionAffinity: "None" };
+
+function serviceSpecWithoutServerDefaults(actual, approved) {
+  const result = structuredClone(actual);
+  for (const key of SERVICE_ALLOCATED_FIELDS) {
+    if (!Object.hasOwn(approved, key)) delete result[key];
+  }
+  for (const [key, value] of Object.entries(SERVICE_SERVER_DEFAULTS)) {
+    if (!Object.hasOwn(approved, key) && Object.hasOwn(result, key)) {
+      if (result[key] !== value) throw new Error(`Live Service has a non-default ${key}`);
+      delete result[key];
+    }
+  }
+  return result;
+}
+
+export function validateHelmRenderedNetworkBoundary(renderedBytes, mappingBytes, scopeBytes,
+  resources) {
+  const mapping = validateSignedImageMapping(JSON.parse(mappingBytes));
+  const scope = validateApprovedNodeScope(JSON.parse(scopeBytes), mappingBytes);
+  if (scope.format !== "tr-helm-approved-node-scope-v2"
+    || sha256(renderedBytes) !== scope.renderedManifestSha256) {
+    throw new Error("Network boundary differs from the signed v2 Helm render");
+  }
+  if (resources?.kind !== "List" || !Array.isArray(resources.items)
+    || resources.items.some((item) => !["Service", "NetworkPolicy"].includes(item.kind))) {
+    throw new Error("Kubernetes did not return a complete Service and NetworkPolicy list");
+  }
+  const documents = yaml.loadAll(renderedBytes.toString("utf8")).filter(Boolean);
+  const expectedServices = mapping.images.map((image) =>
+    `${scope.releaseName}-tr-${COMPONENTS.get(image.role)}`);
+  const expectedPolicies = [`${scope.releaseName}-tr-default-deny`,
+    ...mapping.images.map((image) =>
+      `${scope.releaseName}-tr-${COMPONENTS.get(image.role)}-ingress`),
+    `${scope.releaseName}-tr-indexer-egress`, `${scope.releaseName}-tr-api-egress`,
+    `${scope.releaseName}-tr-operator-egress`, `${scope.releaseName}-tr-actor-egress`];
+  const renderedServices = documents.filter((item) => item.kind === "Service");
+  const renderedPolicies = documents.filter((item) => item.kind === "NetworkPolicy");
+  const liveServices = resources.items.filter((item) => item.kind === "Service");
+  const livePolicies = resources.items.filter((item) => item.kind === "NetworkPolicy");
+  exactNames(renderedServices.map((item) => item.metadata?.name), expectedServices,
+    "Rendered Helm Services");
+  exactNames(renderedPolicies.map((item) => item.metadata?.name), expectedPolicies,
+    "Rendered Helm NetworkPolicies");
+  exactNames(liveServices.map((item) => item.metadata?.name), expectedServices,
+    "Live Helm Services");
+  exactNames(livePolicies.map((item) => item.metadata?.name), expectedPolicies,
+    "Live Helm NetworkPolicies");
+  const defaultDeny = renderedPolicies.find((item) =>
+    item.metadata.name === `${scope.releaseName}-tr-default-deny`);
+  if (!isDeepStrictEqual(defaultDeny.spec, {
+    podSelector: {},
+    policyTypes: ["Ingress", "Egress"],
+  })) {
+    throw new Error("Signed Helm render has no strict namespace-wide default-deny policy");
+  }
+  for (const expected of renderedServices) {
+    const actual = liveServices.find((item) => item.metadata.name === expected.metadata.name);
+    if (expected.spec?.type !== "ClusterIP" || actual.spec?.type !== "ClusterIP"
+      || isIP(actual.spec.clusterIP) === 0
+      || !Array.isArray(actual.spec.clusterIPs)
+      || actual.spec.clusterIPs[0] !== actual.spec.clusterIP
+      || actual.spec.clusterIPs.some((address) => isIP(address) === 0)
+      || (expected.metadata.namespace !== undefined && expected.metadata.namespace !== scope.namespace)
+      || actual.metadata.namespace !== scope.namespace || actual.metadata.deletionTimestamp
+      || !isDeepStrictEqual(serviceSpecWithoutServerDefaults(actual.spec, expected.spec),
+        expected.spec)) {
+      throw new Error(`Live Service differs from the signed Helm render: ${expected.metadata.name}`);
+    }
+  }
+  for (const expected of renderedPolicies) {
+    const actual = livePolicies.find((item) => item.metadata.name === expected.metadata.name);
+    if ((expected.metadata.namespace !== undefined && expected.metadata.namespace !== scope.namespace)
+      || actual.metadata.namespace !== scope.namespace || actual.metadata.deletionTimestamp
+      || !isDeepStrictEqual(actual.spec, expected.spec)) {
+      throw new Error(`Live NetworkPolicy differs from the signed Helm render: ${expected.metadata.name}`);
+    }
+  }
+  return { services: [...expectedServices].sort(), networkPolicies: [...expectedPolicies].sort() };
+}
+
 async function boundedFile(path, maxBytes, description) {
   if (typeof path !== "string" || !path.startsWith("/")) {
     throw new Error(`An absolute ${description} path is required`);
@@ -579,10 +663,14 @@ export async function observeSignedHelmRuntime(paths, dependencies = {}) {
   const workloads = JSON.parse((await command("kubectl", [...base, "--namespace", scope.namespace,
     "get", "deployments,replicasets,pods", "--selector", selector,
     "--output=json", "--chunk-size=0"], options)).stdout);
+  const networkResources = JSON.parse((await command("kubectl", [...base, "--namespace", scope.namespace,
+    "get", "services,networkpolicies", "--output=json", "--chunk-size=0"], options)).stdout);
   const observed = validateHelmRuntimeObservation(mappingBytes, scopeBytes, fleet, nodes, workloads,
     paths.kubeContext);
   const renderedManifestSha256 = validateHelmRenderedWorkloadParity(renderedBytes,
     mappingBytes, scopeBytes, workloads);
+  const networkBoundary = validateHelmRenderedNetworkBoundary(renderedBytes,
+    mappingBytes, scopeBytes, networkResources);
   const apiWorkload = observed.workloads.find((workload) => workload.role === "api");
   const apiPod = workloads.items.find((item) => item.kind === "Pod"
     && item.metadata?.name === apiWorkload.pod);
@@ -662,13 +750,13 @@ export async function observeSignedHelmRuntime(paths, dependencies = {}) {
     throw new Error("Approved API Pod changed during observation");
   }
   return { ...observed, format: "tr-helm-live-workload-observation-v2",
-    renderedManifestSha256, apiPlanBinding: { ...apiPlanBinding,
+    renderedManifestSha256, networkBoundary, apiPlanBinding: { ...apiPlanBinding,
       observedImageID: apiWorkload.imageID, apiApprovalSecret, apiKeyringSecret,
       signerFingerprint: paths.apiPlanSignerFingerprint,
       signatureSha256: expectedRuntimeHashes["api-plan.sig"],
       keyringSha256: expectedRuntimeHashes["pubring.kbx"],
       runtimeApprovalHashes: runtimeHashes },
-    qualification: "not-established: signed plan/Secret/runtime-file/image parity is point-in-time, not live network policy, offline actor, or restore evidence" };
+    qualification: "not-established: signed configuration parity is point-in-time, not measured egress denial, offline actor, or restore evidence" };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

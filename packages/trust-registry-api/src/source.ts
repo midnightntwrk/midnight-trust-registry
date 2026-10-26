@@ -55,12 +55,38 @@ export type TrustRegistryApiSourceMode = "snapshot" | "workspace" | "memory" | "
 
 export type TrustRegistryApiStateSource = {
   readonly mode: TrustRegistryApiSourceMode;
+  /** Present only for reviewer-approved local-ledger sources. */
+  readonly localDeploymentBinding?: {
+    readonly contractAddress: string;
+    readonly expectedGenesisHash: string;
+  };
   /** Address validated by a local finalized reader, including read-only sources. */
   readonly localProposalContractAddress?: string;
   /** Local-ledger mode must read proposal evidence through this deployment-bound reader. */
   readonly readFinalizedProposalLedger?: import("./compact-proposal-observation.js").FinalizedProposalLedgerReader;
   loadSnapshot(): Promise<TrustRegistryOperatorSnapshot>;
+  loadCurrentLedgerSelection?(): Promise<TrustRegistryApiCurrentLedgerSelection>;
 };
+
+export type TrustRegistryApiCurrentLedgerSelection = {
+  snapshot: TrustRegistryOperatorSnapshot;
+  authorizationIds: Record<TrustRegistryApiAuthorizationRole, ReadonlySet<string>>;
+  recognitionIds: ReadonlySet<string>;
+};
+
+export class CurrentLedgerSelectionUnavailableError extends Error {
+  constructor() {
+    super("Finalized current-record selection is unavailable");
+    this.name = "CurrentLedgerSelectionUnavailableError";
+  }
+}
+
+export class CurrentLedgerSelectionAmbiguousError extends Error {
+  constructor() {
+    super("Multiple current records match the requested scope");
+    this.name = "CurrentLedgerSelectionAmbiguousError";
+  }
+}
 
 export type TrustRegistryApiMutableStateSource = TrustRegistryApiStateSource & {
   readonly mode: "workspace";
@@ -373,8 +399,20 @@ const resolveAuthorizationInSnapshot = (
 export const resolveAuthorizationEntry = async (
   source: TrustRegistryApiStateSource,
   request: TrustRegistryApiResolveAuthorizationRequest,
-): Promise<TrustRegistryAuthorizationSnapshotEntry | null> =>
-  resolveAuthorizationInSnapshot(await source.loadSnapshot(), request);
+): Promise<TrustRegistryAuthorizationSnapshotEntry | null> => {
+  if (source.mode !== "local-ledger") {
+    return resolveAuthorizationInSnapshot(await source.loadSnapshot(), request);
+  }
+  if (source.loadCurrentLedgerSelection === undefined) {
+    throw new CurrentLedgerSelectionUnavailableError();
+  }
+  const { snapshot, authorizationIds } = await source.loadCurrentLedgerSelection();
+  const matches = authorizationEntriesForRole(snapshot, request.role).filter((entry) =>
+    authorizationIds[request.role].has(entry.authorization.authorizationId)
+    && matchesAuthorizationRequest(entry, request));
+  if (matches.length > 1) throw new CurrentLedgerSelectionAmbiguousError();
+  return matches[0] ?? null;
+};
 
 const evaluateAuthorizationInSnapshot = (
   snapshot: TrustRegistryOperatorSnapshot,
@@ -444,28 +482,32 @@ export const getRecognitionEntryById = async (
   );
 };
 
+const matchesRecognitionRequest = (
+  entry: TrustRegistryRecognitionSnapshotEntry,
+  request: TrustRegistryApiResolveRecognitionRequest,
+): boolean =>
+  entry.recognition.recognizedAuthorityDid === request.recognizedAuthorityDid
+  && entry.recognition.scope.resourceId === request.scopeResourceId
+  && canonicalizeJson(entry.recognition.scope.context ?? null) === canonicalizeJson(request.scopeContext ?? null)
+  && (
+    request.recognizedRegistryId === undefined
+    || entry.recognition.recognizedRegistryId === request.recognizedRegistryId
+  )
+  && (
+    request.scopeResourceType === undefined
+    || entry.recognition.scope.resourceType === request.scopeResourceType
+  )
+  && (
+    request.trustLevel === undefined
+    || entry.recognition.trustLevel === request.trustLevel
+  );
+
 const resolveRecognitionInSnapshot = (
   snapshot: TrustRegistryOperatorSnapshot,
   request: TrustRegistryApiResolveRecognitionRequest,
 ): TrustRegistryRecognitionSnapshotEntry | null => {
-  const matches = snapshot.recognitionEntries.filter(
-    (entry) =>
-      entry.recognition.recognizedAuthorityDid === request.recognizedAuthorityDid
-      && entry.recognition.scope.resourceId === request.scopeResourceId
-      && canonicalizeJson(entry.recognition.scope.context ?? null) === canonicalizeJson(request.scopeContext ?? null)
-      && (
-        request.recognizedRegistryId === undefined
-        || entry.recognition.recognizedRegistryId === request.recognizedRegistryId
-      )
-      && (
-        request.scopeResourceType === undefined
-        || entry.recognition.scope.resourceType === request.scopeResourceType
-      )
-      && (
-        request.trustLevel === undefined
-        || entry.recognition.trustLevel === request.trustLevel
-      ),
-  );
+  const matches = snapshot.recognitionEntries.filter((entry) =>
+    matchesRecognitionRequest(entry, request));
 
   return sortRecognitionEntries(matches).at(0) ?? null;
 };
@@ -473,8 +515,20 @@ const resolveRecognitionInSnapshot = (
 export const resolveRecognitionEntry = async (
   source: TrustRegistryApiStateSource,
   request: TrustRegistryApiResolveRecognitionRequest,
-): Promise<TrustRegistryRecognitionSnapshotEntry | null> =>
-  resolveRecognitionInSnapshot(await source.loadSnapshot(), request);
+): Promise<TrustRegistryRecognitionSnapshotEntry | null> => {
+  if (source.mode !== "local-ledger") {
+    return resolveRecognitionInSnapshot(await source.loadSnapshot(), request);
+  }
+  if (source.loadCurrentLedgerSelection === undefined) {
+    throw new CurrentLedgerSelectionUnavailableError();
+  }
+  const { snapshot, recognitionIds } = await source.loadCurrentLedgerSelection();
+  const matches = snapshot.recognitionEntries.filter((entry) =>
+    recognitionIds.has(entry.recognition.recognitionId)
+    && matchesRecognitionRequest(entry, request));
+  if (matches.length > 1) throw new CurrentLedgerSelectionAmbiguousError();
+  return matches[0] ?? null;
+};
 
 const evaluateRecognitionInSnapshot = (
   snapshot: TrustRegistryOperatorSnapshot,

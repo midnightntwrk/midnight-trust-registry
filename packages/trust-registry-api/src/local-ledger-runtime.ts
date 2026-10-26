@@ -170,26 +170,30 @@ export function validateLocalLedgerRuntimePlan(value: unknown): LocalLedgerRunti
 
 async function boundedFile(path: string, maxBytes: number): Promise<Buffer> {
   if (!isAbsolute(path)) throw new Error("Local API approval path must be absolute");
-  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
-    const stat = await file.stat();
-    if (!stat.isFile() || stat.size === 0 || stat.size > maxBytes) {
+    const before = await file.stat({ bigint: true });
+    if (!before.isFile() || before.size === 0n || before.size > BigInt(maxBytes)) {
       throw new Error("Local API approval file must be a bounded regular file");
     }
-    if (typeof process.getuid === "function" && stat.uid !== process.getuid() && stat.uid !== 0) {
+    if (typeof process.getuid === "function" && before.uid !== BigInt(process.getuid()) && before.uid !== 0n) {
       throw new Error("Local API approval file must be owned by root or the runtime user");
     }
-    const buffer = Buffer.alloc(maxBytes + 1);
+    const buffer = Buffer.alloc(Number(before.size));
     let count = 0;
     while (count < buffer.length) {
       const result = await file.read(buffer, count, buffer.length - count, count);
       if (result.bytesRead === 0) break;
       count += result.bytesRead;
     }
-    if (count === 0 || count > maxBytes || count !== stat.size) {
+    const after = await file.stat({ bigint: true });
+    if (count !== buffer.length || after.size !== before.size || after.dev !== before.dev
+      || after.ino !== before.ino || after.nlink !== before.nlink || after.mode !== before.mode
+      || after.uid !== before.uid || after.mtimeNs !== before.mtimeNs
+      || after.ctimeNs !== before.ctimeNs) {
       throw new Error("Local API approval file changed or exceeded its size limit");
     }
-    return buffer.subarray(0, count);
+    return buffer;
   } finally {
     await file.close();
   }
@@ -373,13 +377,27 @@ export async function createApprovedLocalLedgerRuntimeSource(plan: LocalLedgerRu
   };
   return {
     ...source,
+    localDeploymentBinding: {
+      contractAddress: plan.contractAddress,
+      expectedGenesisHash: plan.expectedGenesisHash,
+    },
     async loadSnapshot() {
       assertPlanCurrent();
-      return source.loadSnapshot();
+      const snapshot = await source.loadSnapshot();
+      assertPlanCurrent();
+      return snapshot;
+    },
+    async loadCurrentLedgerSelection() {
+      assertPlanCurrent();
+      const selection = await source.loadCurrentLedgerSelection();
+      assertPlanCurrent();
+      return selection;
     },
     async readFinalizedProposalLedger() {
       assertPlanCurrent();
-      return source.readFinalizedProposalLedger();
+      const ledger = await source.readFinalizedProposalLedger();
+      assertPlanCurrent();
+      return ledger;
     },
   };
 }

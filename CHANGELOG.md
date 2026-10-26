@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- add an experimental Node-only local issuer submitter that checks node and
+  indexer genesis, binds the SDK provider pair, and owns a non-reconnecting
+  Polkadot transport with bounded connection/submission attempts. Bound the
+  SDK's later indexer transaction read on the same provider instance; an
+  expired read or uncertain broadcast quarantines its approved deployment
+  target across provider instances until journal reconciliation and process
+  restart. A pending broadcast reserves that target, and the private proposal
+  journal blocks new proposals after restart while any ambiguous reservation
+  remains. Audited recovery of never-observed attempts remains open in #220;
+  live qualification still blocks API write-path wiring
+- exercise local issuer submission with the real private journal across
+  restart and ambiguous SDK responses; this remains mocked-network evidence
+- require the local issuer circuit-call helper to check the private journal's
+  deployment binding, finalized reader's genesis, and submitting providers'
+  asserted identity before reservation; SDK-mocked tests remain
+  non-qualification evidence until an authenticated provider adapter exists
+- bind an empty local proposal journal to the signed genesis, registry, and
+  contract before submissions; enforce that binding for embedded local-ledger
+  proposal routes, read local resolutions through the bound source rather than
+  a port callback, return sanitized 503s for unavailable local evidence or
+  invalid private journal files, reject cross-deployment reconciliation, and
+  distinguish absent readback from observed attempts without permitting retry
 - prepare a private first-run standalone Compose environment from a verified
   install bundle and record explicit ledger-bridge topology/egress observations
   without advancing deployment or release approvals

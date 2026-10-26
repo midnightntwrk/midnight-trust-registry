@@ -42,12 +42,62 @@ async function runInNetwork(command, image, network, entrypoint, args) {
   }
 }
 
+function routePrefixLength(hexMask) {
+  if (!/^[0-9a-fA-F]{8}$/u.test(hexMask)) return null;
+  const mask = routeAddress(hexMask);
+  const hostMask = (~mask) >>> 0;
+  if ((hostMask & ((hostMask + 1) >>> 0)) !== 0) return null;
+  return Math.clz32(hostMask);
+}
+
+function routeAddress(hex) {
+  const bytes = hex.match(/../gu).map((byte) => Number.parseInt(byte, 16));
+  return ((bytes[3] << 24) | (bytes[2] << 16) | (bytes[1] << 8) | bytes[0]) >>> 0;
+}
+
+function ipv4Address(value) {
+  const parts = value.split(".");
+  if (parts.length !== 4 || parts.some((part) => !/^(?:0|[1-9][0-9]{0,2})$/u.test(part)
+    || Number(part) > 255)) return null;
+  return parts.reduce((address, part) => ((address << 8) | Number(part)) >>> 0, 0);
+}
+
+export function ledgerSubnet(network, expectedId) {
+  if (network?.Id !== expectedId || network?.Internal !== true
+    || network?.EnableIPv6 !== false || network?.IPAM?.Config?.length !== 1) {
+    throw new Error("Observed ledger network IPAM differs from the isolated topology");
+  }
+  const subnet = network.IPAM.Config[0]?.Subnet;
+  const match = typeof subnet === "string" ? /^(\d+(?:\.\d+){3})\/(\d{1,2})$/u.exec(subnet) : null;
+  const address = match ? ipv4Address(match[1]) : null;
+  const prefix = match ? Number(match[2]) : null;
+  if (address === null || !Number.isInteger(prefix) || prefix < 1 || prefix > 32) {
+    throw new Error("Ledger bridge has no valid IPv4 subnet");
+  }
+  const mask = (0xffffffff << (32 - prefix)) >>> 0;
+  if (((address & mask) >>> 0) !== address) throw new Error("Ledger bridge subnet is not canonical");
+  return { address, mask, prefix, text: subnet };
+}
+
+export function assertOnlyLedgerRoutes(routeTable, subnet) {
+  if (!hasValidRouteTable(routeTable)) throw new Error("Ledger route table is malformed");
+  const lines = routeTable.trim().split("\n").slice(1);
+  for (const line of lines) {
+    const columns = line.trim().split(/\s+/u);
+    const prefix = routePrefixLength(columns[7]);
+    const destination = routeAddress(columns[1]);
+    if (prefix < subnet.prefix || ((destination & subnet.mask) >>> 0) !== subnet.address) {
+      throw new Error("Ledger bridge route escapes the observed subnet");
+    }
+  }
+}
+
 export function hasBroadOutboundRoute(routeTable) {
   return routeTable.split("\n").slice(1).some((line) => {
     const columns = line.trim().split(/\s+/u);
-    if (columns.length < 8 || !/^[0-9a-fA-F]{8}$/u.test(columns[7])) return false;
-    const mask = Number.parseInt(columns[7], 16);
-    return (mask === 0 || (mask & (mask - 1)) === 0) && mask !== 0xffffffff;
+    if (columns.length < 8) return false;
+    const prefix = routePrefixLength(columns[7]);
+    return prefix !== null && prefix <= 8;
   });
 }
 
@@ -59,7 +109,7 @@ export function hasValidRouteTable(routeTable) {
     const columns = line.trim().split(/\s+/u);
     return columns.length >= 8
       && /^[0-9a-fA-F]{8}$/u.test(columns[1])
-      && /^[0-9a-fA-F]{8}$/u.test(columns[7]);
+      && routePrefixLength(columns[7]) !== null;
   });
 }
 
@@ -115,6 +165,8 @@ export async function observeStandaloneEgress(dependencies = {}) {
   if (typeof before?.networkId !== "string" || before.networkId.length === 0) {
     throw new Error("Ledger network identity was not observed before the egress probe");
   }
+  const inspectedNetwork = JSON.parse((await command(["network", "inspect", before.networkId])).stdout);
+  const subnet = ledgerSubnet(inspectedNetwork?.[0], before.networkId);
   const image = (await command([
     "inspect", "--format", "{{.Config.Image}}", `${config.project}-node-1`,
   ])).stdout.trim();
@@ -165,6 +217,7 @@ export async function observeStandaloneEgress(dependencies = {}) {
     isolatedDnsCode: isolatedDns.code,
     isolatedDnsOutput: isolatedDns.stdout,
   });
+  assertOnlyLedgerRoutes(isolatedRoute.stdout, subnet);
   const after = await topology(config, expectedTopology);
   if (after?.networkId !== before.networkId) {
     throw new Error("Ledger network identity changed during the egress probe");
@@ -174,6 +227,7 @@ export async function observeStandaloneEgress(dependencies = {}) {
     observedAt: new Date().toISOString(),
     project: config.project,
     networkId: before.networkId,
+    ledgerSubnet: subnet.text,
     image,
     probeImage,
     canary: CANARY,
@@ -182,7 +236,7 @@ export async function observeStandaloneEgress(dependencies = {}) {
     internalBridgeHttpsConnectionDenied: true,
     internalBridgeCanaryDnsResolutionDenied: true,
     internalBridgeBroadOutboundRouteAbsent: true,
-    scope: "canary HTTPS and DNS on ledger bridge only; wallet, API, browser, backups, and actor journeys not verified",
+    scope: "canary HTTPS and DNS plus routes confined to the observed ledger subnet; wallet, API, browser, backups, and actor journeys not verified",
   };
 }
 

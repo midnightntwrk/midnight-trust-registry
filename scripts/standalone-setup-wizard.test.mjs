@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, link, lstat, mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -12,6 +12,7 @@ import { VerifierKeyInsertionOutcomeUnknownError } from "@midnight-ntwrk/trust-r
 import {
   assertUnusedStandaloneProject,
   assertDetachedReviewerSignatureStatus,
+  checkStandaloneHelmBootstrapHandoff,
   draftStandaloneGenesisApproval,
   draftStandaloneCommitteeApproval,
   approveStandaloneCommittee,
@@ -21,6 +22,7 @@ import {
   attemptStandaloneDeployment as attemptStandaloneDeploymentRaw,
   attemptStandaloneVerifierKeyInsertion as attemptStandaloneVerifierKeyInsertionRaw,
   collectStandaloneGenesisCandidate,
+  draftStandaloneGenesisPin,
   initializeStandaloneSetup,
   observeStandaloneLedger as observeStandaloneLedgerRaw,
   observeStandaloneStack,
@@ -29,6 +31,7 @@ import {
   reconcileStandaloneCommitteeTransition as reconcileStandaloneCommitteeTransitionRaw,
   reconcileStandaloneDeployment as reconcileStandaloneDeploymentRaw,
   reconcileStandaloneVerifierKeyInsertion as reconcileStandaloneVerifierKeyInsertionRaw,
+  regularBytes,
   runStandaloneSetupInteractive,
   standaloneSetupStatus,
   submitStandaloneCommitteeTransition as submitStandaloneCommitteeTransitionRaw,
@@ -38,6 +41,29 @@ import { pinnedStandaloneImages } from "./build-standalone-install.mjs";
 import { demoGenesisReference } from "./demo-genesis-reference.mjs";
 
 const sourceRevision = "a".repeat(40);
+
+test("setup input reader rejects linked or unsafe private files", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "tr-setup-reader-"));
+  try {
+    const source = join(directory, "source.json");
+    const symbolic = join(directory, "symbolic.json");
+    const hard = join(directory, "hard.json");
+    await writeFile(source, "{}", { mode: 0o600 });
+    assert.equal((await regularBytes(source, { privateFile: true })).toString(), "{}");
+
+    await symlink(source, symbolic);
+    await assert.rejects(regularBytes(symbolic), /ELOOP|symbolic link/u);
+
+    await link(source, hard);
+    await assert.rejects(regularBytes(source, { privateFile: true }), /required ownership/u);
+    await chmod(source, 0o644);
+    await assert.rejects(regularBytes(source, { privateFile: true }), /required ownership/u);
+    await assert.rejects(regularBytes(directory), /bounded regular file/u);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 const ledgerNetworkId = "ledger-id";
 const expectedGenesisHash = `0x${"b".repeat(64)}`;
 const reviewerFingerprint = "A".repeat(40);
@@ -252,6 +278,51 @@ async function fixture(format = "tr-standalone-install-v3", manifestOverride) {
   return { directory, pinPath, planPath, releaseManifestPath, approvalPath, signaturePath,
     keyring, verifyBundle };
 }
+
+test("Helm bootstrap handoff binds the signed mapping to a fresh wizard install", async (t) => {
+  const f = await fixture("tr-standalone-install-v6");
+  t.after(() => rm(join(f.directory, ".."), { recursive: true, force: true }));
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  const paths = { valuesPath: "values.yaml", receiptPath: "mapping.json",
+    signaturePath: "mapping.sig", keyringPath: "reviewer-keyring",
+    signerFingerprint: reviewerFingerprint };
+  const validMapping = {
+    sourceRevision, inventorySha256: record.install.inventorySha256,
+    mappingSha256: "a".repeat(64), deploymentPhase: "bootstrap",
+  };
+  const result = await checkStandaloneHelmBootstrapHandoff(f.directory, paths, {
+    checkMapping: async (received) => {
+      assert.deepEqual(received, { bundleRoot: record.install.bundle, ...paths });
+      return validMapping;
+    },
+  });
+  assert.equal(result.mappingSha256, validMapping.mappingSha256);
+  assert.equal(result.targetGenesisApproval, "pending");
+  assert.equal(result.releaseQualified, false);
+
+  for (const override of [
+    { sourceRevision: "b".repeat(40) },
+    { inventorySha256: "b".repeat(64) },
+    { mappingSha256: "not-a-hash" },
+    { deploymentPhase: "runtime" },
+  ]) {
+    await assert.rejects(checkStandaloneHelmBootstrapHandoff(f.directory, paths, {
+      checkMapping: async () => ({ ...validMapping, ...override }),
+    }), /Signed Helm bootstrap mapping/);
+  }
+  await writeFile(join(record.install.bundle, "install-inventory.json"), "{}");
+  await assert.rejects(checkStandaloneHelmBootstrapHandoff(f.directory, paths, {
+    checkMapping: async () => validMapping,
+  }), /install inventory changed/);
+});
+
+test("Helm bootstrap handoff rejects evidence from a Compose setup", async (t) => {
+  const f = await fixture();
+  t.after(() => rm(join(f.directory, ".."), { recursive: true, force: true }));
+  await assert.rejects(checkStandaloneHelmBootstrapHandoff(f.directory, {}, {
+    checkMapping: async () => { throw new Error("mapping should not be checked"); },
+  }), /Compose ledger evidence cannot qualify a Helm target/);
+});
 
 async function approve(f) {
   return approveStandaloneGenesis(
@@ -725,6 +796,132 @@ test("genesis candidate is untrusted, non-overwriting, and cannot approve the no
   await assert.rejects(collectStandaloneGenesisCandidate(f.directory, {
     observeSnapshot: async () => observed,
   }), /before recording a genesis pin/u);
+});
+
+test("drafted v6 genesis pin is private, untrusted, relay-bound, and non-overwriting", async () => {
+  const f = await fixture("tr-standalone-install-v6");
+  const project = "tr-standalone-local-qualification";
+  await prepareStandaloneStack(f.directory, { project, nodePort: "39944",
+    indexerPort: "38088", proofPort: "36300" }, stackDependencies(f));
+  await observeStandaloneStack(f.directory, {
+    observeTopology: async () => ({ project, networkId: ledgerNetworkId,
+      internalNetworkOnly: true, hostPortAccess: "unpublished-install-access-required" }),
+    observeEgress: async () => ({ project, networkId: ledgerNetworkId }),
+  });
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  const observed = { project, sourceRevision, installInventorySha256: record.install.inventorySha256,
+    observerSha256: "c".repeat(64), genesisHash: expectedGenesisHash,
+    finalizedHash: `0x${"d".repeat(64)}`, finalizedHeight: 11,
+    observedAt: "2026-10-20T00:00:00.000Z" };
+  await collectStandaloneGenesisCandidate(f.directory, { observeSnapshot: async () => observed });
+  const relay = { kind: "standalone-install-relay-observation", project,
+    networkId: ledgerNetworkId, ports: { node: "60944" },
+    topology: { internalNetworkOnly: true, hostPortAccess: "unpublished-install-access-required" } };
+  await assert.rejects(draftStandaloneGenesisPin(f.directory, {
+    observeInstallRelay: async () => ({ ...relay, project: "other-project" }),
+  }), /relay disagrees/u);
+  await assert.rejects(draftStandaloneGenesisPin(f.directory, {
+    observeInstallRelay: async () => ({ ...relay, ports: { node: "undefined" } }),
+  }), /valid loopback RPC port/u);
+  const candidatePath = join(f.directory, "genesis-candidate.untrusted.json");
+  const original = await readFile(candidatePath);
+  await writeFile(candidatePath, `${JSON.stringify({
+    ...JSON.parse(original), sourceRevision: "f".repeat(40),
+  }, null, 2)}\n`);
+  await assert.rejects(draftStandaloneGenesisPin(f.directory, {
+    observeInstallRelay: async () => { throw new Error("must not inspect relay after bad candidate"); },
+  }), /candidate is malformed or disagrees/u);
+  await writeFile(candidatePath, original.toString("utf8").replace(
+    '"format": "tr-local-genesis-candidate-v1",',
+    '"format": "tr-local-genesis-candidate-v1",\n  "format": "tr-local-genesis-candidate-v1",',
+  ));
+  await assert.rejects(draftStandaloneGenesisPin(f.directory, {
+    observeInstallRelay: async () => { throw new Error("must not inspect relay after duplicate key"); },
+  }), /candidate is malformed or disagrees/u);
+  await writeFile(candidatePath, original);
+  await assert.rejects(draftStandaloneGenesisPin(f.directory, {
+    observeInstallRelay: async () => relay,
+    preflight: async (currentPin) => {
+      assert.equal(currentPin.expectedGenesisHash, expectedGenesisHash);
+      assert.equal(currentPin.rpcUrl, "http://127.0.0.1:60944");
+      throw new Error("live genesis no longer matches candidate");
+    },
+  }), /live genesis no longer matches candidate/u);
+  await assert.rejects(lstat(join(f.directory, "genesis-pin.proposed.json")), { code: "ENOENT" });
+  let relayChecks = 0;
+  await assert.rejects(draftStandaloneGenesisPin(f.directory, {
+    observeInstallRelay: async () => {
+      relayChecks += 1;
+      return relayChecks === 1 ? relay : { ...relay, relayId: "changed-relay" };
+    },
+    preflight: async () => ({ kind: "local-node-observation-only" }),
+  }), /Installation relay changed during genesis pin draft/u);
+  await assert.rejects(lstat(join(f.directory, "genesis-pin.proposed.json")), { code: "ENOENT" });
+  const result = await draftStandaloneGenesisPin(f.directory, {
+    observeInstallRelay: async (_config, _verified, expected) => {
+      assert.equal(expected.allowUnpublishedHostPorts, true);
+      return relay;
+    },
+    preflight: async (currentPin) => {
+      assert.equal(currentPin.expectedGenesisHash, expectedGenesisHash);
+      return { kind: "local-node-observation-only" };
+    },
+  });
+  assert.equal(result.accessKind, "standalone-install-relay-observation");
+  assert.equal(result.status, "untrusted-proposal-independent-review-required");
+  assert.equal(result.candidateSha256, createHash("sha256").update(original).digest("hex"));
+  assert.equal((await lstat(result.path)).mode & 0o077, 0);
+  assert.deepEqual(JSON.parse(await readFile(result.path, "utf8")), {
+    ...pin, rpcUrl: "http://127.0.0.1:60944",
+  });
+  assert.equal((await standaloneSetupStatus(f.directory)).localLedger, "pending");
+  await assert.rejects(draftStandaloneGenesisPin(f.directory, {
+    observeInstallRelay: async () => relay,
+    preflight: async () => ({ kind: "local-node-observation-only" }),
+  }), { code: "EEXIST" });
+  assert.equal((await readdir(f.directory)).some((name) => name.includes("genesis-pin.proposed.json.")), false);
+});
+
+test("drafted direct-loopback pin rechecks topology without approving genesis", async () => {
+  const f = await fixture("tr-standalone-install-v3");
+  const project = "tr-standalone-local-qualification";
+  await prepareStandaloneStack(f.directory, { project, nodePort: "39944",
+    indexerPort: "38088", proofPort: "36300" }, stackDependencies(f));
+  const topology = { project, networkId: ledgerNetworkId, internalNetworkOnly: true,
+    hostPortAccess: "effective-loopback" };
+  await observeStandaloneStack(f.directory, {
+    observeTopology: async () => topology,
+    observeEgress: async () => ({ project, networkId: ledgerNetworkId }),
+  });
+  const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
+  await collectStandaloneGenesisCandidate(f.directory, { observeSnapshot: async () => ({
+    project, sourceRevision, installInventorySha256: record.install.inventorySha256,
+    observerSha256: "c".repeat(64), genesisHash: expectedGenesisHash,
+    finalizedHash: `0x${"d".repeat(64)}`, finalizedHeight: 11,
+    observedAt: "2026-10-20T00:00:00.000Z",
+  }) });
+  await assert.rejects(draftStandaloneGenesisPin(f.directory, {
+    observeTopology: async () => ({ ...topology, networkId: "different-network" }),
+  }), /Direct loopback access changed/u);
+  let topologyChecks = 0;
+  await assert.rejects(draftStandaloneGenesisPin(f.directory, {
+    observeTopology: async () => {
+      topologyChecks += 1;
+      return topologyChecks === 1 ? topology : { ...topology, networkId: "different-network" };
+    },
+    preflight: async () => ({ kind: "local-node-observation-only" }),
+  }), /Direct loopback access changed during genesis pin draft/u);
+  await assert.rejects(lstat(join(f.directory, "genesis-pin.proposed.json")), { code: "ENOENT" });
+  const result = await draftStandaloneGenesisPin(f.directory, {
+    observeTopology: async () => topology,
+    preflight: async (currentPin) => {
+      assert.equal(currentPin.rpcUrl, "http://127.0.0.1:39944");
+      return { kind: "local-node-observation-only" };
+    },
+  });
+  assert.equal(result.accessKind, "effective-direct-loopback");
+  assert.equal(JSON.parse(await readFile(result.path, "utf8")).rpcUrl, "http://127.0.0.1:39944");
+  assert.equal((await standaloneSetupStatus(f.directory)).localLedger, "pending");
 });
 
 test("v6 genesis pin requires the same verified installation relay across preflight", async () => {

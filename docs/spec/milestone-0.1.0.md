@@ -436,9 +436,10 @@ maintainer.
 - The API and local applications complete an applicant-to-quorum-to-epoch-to-
   relying-party journey using authenticated actor intents, without direct
   fixture-file edits.
-- Current and historical evidence is verified independently, including
-  policy/key rotation, suspension/revocation, wrong scope, stale epoch, and
-  tampered proof failures. Simulator finality is labeled as simulated.
+- Current evidence is verified independently, including policy/key rotation,
+  suspension/revocation, wrong scope, stale epoch, and tampered proof failures.
+  Historical API/TRQP decision and evidence routes return the explicit
+  out-of-scope response in this RC. Simulator finality is labeled as simulated.
 - UC-15 exports TR decision evidence plus VC-compatible issuer and verifier
   descriptors with authority proofs; a Ledger 8 consumer fixture pins its own
   anchor and rejects wrong domain/key/scope, stale sequence, and revoked

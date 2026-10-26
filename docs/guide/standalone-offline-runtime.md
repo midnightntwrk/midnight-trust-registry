@@ -123,7 +123,7 @@ node scripts/build-standalone-install.mjs --api-image-dir <absolute-api-image-ou
 ```
 
 The read-only preflight checks the signed clean source, complete contract and
-proof-parameter inputs, exact-source API and portal manifests, pinned local
+proof-parameter inputs, all required workspace package entrypoints, exact-source API and portal manifests, pinned local
 image digests, and unused destination before any bundle directory is created.
 It does not build images or prove that a later copy/save cannot fail; recheck
 the completed bundle and running deployment separately.
@@ -187,8 +187,12 @@ signed v4, v5, or v6 install inventory with an API archive pin. Before opening t
 listener, it checks a file at `/app/source-revision` in the container
 filesystem against the approved plan. The listener bounds header, request,
 idle-socket, and keep-alive waits and has a 16-connection cap; it does not
-emit wildcard CORS headers. These limits do not cancel a stalled indexer
-provider call, which remains a runtime resilience and qualification gate. Snapshot and
+emit wildcard CORS headers. The finalized-ledger source shares one in-flight
+read and returns 503 after a 15-second deadline. Because the indexer provider
+offers no cancellation here, a timed-out read leaves the process fail-closed
+until an operator investigates and restarts it; the underlying provider call
+may still be running. This bounds the HTTP wait but does not prove transport
+cleanup or live-runtime resilience, which remain qualification gates. Snapshot and
 workspace modes and unsafe demo mutations cannot use this option. The operator
 must still keep the API on a private service, use a read-only image filesystem,
 allow only authorized in-cluster callers through network policy, and separately
@@ -213,7 +217,8 @@ candidate bytes.
 
 Run `node scripts/check-standalone-install.mjs <bundle-directory>` before
 disconnecting and after transfer. It verifies the package manifest against
-the packed contract, including the manifest's Compact-source and generated
+the packed contract and each package's required entrypoint files, including
+the manifest's Compact-source and generated
 contract hashes against the corresponding tarball bytes and its declared
 compiler version against packed contract metadata, and hashes each
 image archive and all 18 required proof
@@ -224,6 +229,8 @@ runtime input, not as an unpinned writable container layer.
 Every package tarball must use canonical `package/` paths; aliases, dot segments,
 and duplicate normalized paths are rejected so the checked entries cannot be
 shadowed by another top-level archive prefix during installation. Its packed
+members must be regular files or directories; a symlinked required entrypoint
+or any other linked or special member fails before installation. The packed
 `package/package.json` name and version must match the release workspace.
 The manifest-backed package smoke rehashes private temporary copies before
 passing them to `npm install`, so changes to the original staging paths after
@@ -574,6 +581,9 @@ docker compose --env-file /absolute/private/setup-directory/stack.env -p tr-stan
 node scripts/standalone-setup-wizard.mjs observe-stack /absolute/private/setup-directory
 # Optional: collect the node's untrusted genesis candidate for independent review.
 node scripts/standalone-setup-wizard.mjs collect-genesis-candidate /absolute/private/setup-directory
+# Optional: with the reviewed installation relay attached, draft a private, untrusted pin.
+node scripts/standalone-setup-wizard.mjs draft-genesis-pin /absolute/private/setup-directory
+# Human review must precede the separate observation and approval steps.
 node scripts/standalone-setup-wizard.mjs observe /absolute/private/setup-directory /absolute/independently-reviewed-genesis-pin.json
 node scripts/standalone-setup-wizard.mjs draft-genesis /absolute/private/setup-directory /absolute/genesis-review-metadata.json
 # A human reviewer independently checks and signs the exact unsigned draft bytes.
@@ -657,6 +667,20 @@ independently reviewed pin JSON. Leave that second prompt blank until the
 reviewer has supplied the pin. Re-running collection does not overwrite an
 existing candidate; preserve the first file and investigate any changed node
 observation in a separate evidence record.
+
+`draft-genesis-pin` is an optional, non-overwriting aid after candidate
+collection. It rechecks the current direct-loopback path or the v6 bundle's
+verified installation-only relay, confirms that the live RPC still reports the
+candidate genesis and a progressing finalized head, and rechecks the access
+path before writing mode-0600
+`genesis-pin.proposed.json` from the untrusted candidate and actual loopback
+RPC port. Its output includes both candidate and pin SHA-256 hashes and leaves
+all approval, deployment, and release states pending. It does not independently
+derive genesis or make the proposal safe to trust: the recheck is still the
+same node's self-report. The reviewer must verify the
+chain-spec provenance and proposed pin before the separate `observe` command;
+the same relay identity and ports must be restored and reverified for that
+observation. A pre-existing proposal is not replaced automatically.
 
 For the pinned local node image, `CFG_PRESET=dev` selects the embedded
 `/res/cfg/dev.toml`, which references
@@ -1203,7 +1227,10 @@ This contacts the external third-party host `example.com` from a restricted
 ephemeral copy of the pinned node image on Docker's normal bridge. The same
 IP-pinned HTTPS request must then fail on the dedicated internal bridge,
 and the canary's DNS lookup must fail there as well. The control must have a
-broad outbound route; the internal probe must have no `/0` or `/1` route.
+broad outbound route; the internal probe must have no `/0` through `/8`
+route and rejects malformed route masks. Every route on the internal probe
+must stay inside the IPv4 subnet reported by the same observed Docker ledger
+network, so a narrower public route also fails the check.
 The isolated probes target the observed Docker network ID, which must remain
 the same before and after the probe; the wizard also requires its topology and
 egress observations to agree on that ID. A replaced ledger bridge invalidates
@@ -1335,9 +1362,55 @@ with injected snapshots is not local deployment or restore evidence.
    detach-sign a new plan, use `trust-registry-api check-local-ledger-plan`
    against the complete new signed set without a listener, switch to that
    immutable versioned plan/snapshot set, and restart. The preflight is a
-   consistency check, not independent finality proof. Verify startup,
-   `/health`, and current actor reads before
-   reopening traffic. A failed rotation leaves the API unavailable; do not
+   consistency check, not independent finality proof. The current-state
+   proposal spot-check can use `trust-registry-api observe-local-proposal`
+   with that signed-plan evidence, `--role`, and `--authorization-id`. Its
+   `not-observed` result never authorizes resubmission; compare any observed
+   event/evidence commitments with the private journal under the approved
+   recovery procedure. The report explicitly sets `releaseQualified: false`.
+   `present-and-verified` checks the proposal record and evidence signature,
+   not the journal attempt or independent finality.
+   Before the first submission, initialize an empty journal with
+   `trust-registry-api init-local-proposal-journal`, the signed-plan options,
+   and an absolute `--submission-journal` path. This binds it to the reviewed
+   genesis, registry ID, and contract address; do not retrofit a nonempty
+   unbound journal. For a controlled transition, make a private byte-for-byte
+   backup of the journal, its `.binding` sidecar, and referenced segments, then run
+   `trust-registry-api reconcile-local-proposal` with the signed-plan options,
+   exact role/authorization ID, and `--submission-journal` absolute path.
+   It advances only a matching record to `observed`; output distinguishes
+   `not-observed`, which leaves the reservation pending and never permits retry.
+   A deployment-binding mismatch or evidence conflict fails closed. Even after a lost
+   response is reconciled, separately inspect the governance event and do
+   not infer transaction identity or release qualification from this command.
+   The current-state HTTP spot-check can use
+   `trust-registry-api observe-local-ledger-api` with
+   the same signed-plan arguments and an explicit loopback `--api-origin`.
+   Its current-route readback report is diagnostic only (`releaseQualified:
+   false`); it cannot replace actor journeys, process identity, authenticated
+   finality, egress-denied execution, or recovery evidence. The current-state
+   spot-check probes resolution for every pinned snapshot lookup key, including
+   superseded issuer, verifier, auditor, and recognition records. Each key must
+   resolve to its finalized current record or to 404 if none exists. It requires
+   a finalized current active member per role; a snapshot-only active record
+   does not satisfy this check. The route tests use fixture sources and remain
+   separate from a deployed local-ledger run. The current-state projection
+   also recomputes issuer, verifier, auditor, and recognition
+   scope indexes from the Compact records, checks record and active counters,
+   and rejects missing or redirected indexes. It also checks current lifecycle
+   sequences against the governance count and status. These checks do not
+   authenticate the indexer checkpoint, prove complete transition history, or
+   establish verifier/auditor scope preimages from the snapshot alone. Verify
+   startup, `/health`, and current actor reads before reopening traffic. A
+   failed finalized read latches the API unavailable until a controlled restart,
+   even if old snapshot bytes or the provider later appear healthy. This covers
+   current resolution as well as snapshot and proposal reads. Separately, each
+   local-ledger source read checks the signed plan's validity before and after
+   the provider call; an in-flight read finishing after plan expiry rejects.
+   The provider-failure latch
+   does not persist across restarts, so the operator must reconcile the current
+   finalized checkpoint and plan before restarting. A failed rotation leaves
+   the API unavailable; do not
    restart with a stale plan or a fixture source. Capture this sequence as live
    offline evidence, not as a simulator test. Reject stale, substituted, or
    unavailable trust data rather than silently treating it as valid.

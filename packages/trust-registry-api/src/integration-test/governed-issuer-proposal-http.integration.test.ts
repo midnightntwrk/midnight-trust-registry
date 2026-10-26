@@ -1,15 +1,16 @@
 import { Buffer } from "node:buffer";
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
   signIssuerProposalEvidenceFromSeed,
   signDeploymentBoundMaintainerActionFromSeed,
+  verifyIssuerProposalEvidenceSignature,
 } from "@midnight-ntwrk/trust-registry-contract";
 import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
 import {
@@ -86,10 +87,12 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       governedResource,
     };
     const directory = await mkdtemp(join(tmpdir(), "tr-issuer-journal-http-"));
-    const journal = new FileProposalSubmissionJournal(join(directory, "journal.json"));
+    const journalPath = join(directory, "journal.json");
+    const journal = new FileProposalSubmissionJournal(journalPath);
     let finalizedLedger = harness.simulator.getLedger();
     let eventHash: string | undefined;
     let executions = 0;
+    let preflights = 0;
     const server = createTrustRegistryApiServer({
       source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "journal" }) },
       proposalAdmission: {
@@ -105,6 +108,21 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       proposalSubmissionJournal: journal,
       governedIssuerProposals: {
         prepare: async () => harness.prepareIssuerProposalAction(issuer, evidence),
+        preflightSubmission: async (_authorizationId, _evidence, signers, signature, context) => {
+          preflights += 1;
+          const ledger = harness.simulator.getLedger();
+          if (BigInt(signers.length) < ledger.maintainerThreshold) {
+            throw new GovernedIssuerProposalRejectedError("invalid-signers");
+          }
+          if (!ledger.evidenceVerifierKeyRecords.member(context.evidenceVerifierAuthorizationId)
+            || !verifyIssuerProposalEvidenceSignature(
+              ledger.evidenceVerifierKeyRecords.lookup(context.evidenceVerifierAuthorizationId).publicKey,
+              context.registryId, context.networkIdCommitment, context.contractAddress,
+              context.evidenceVerifierKeyIdCommitment, context.actionPayloadHash, signature,
+            )) {
+            throw new GovernedIssuerProposalRejectedError("invalid-evidence");
+          }
+        },
         execute: async (_, submitted, signers, verifierSignature) => {
           executions += 1;
           eventHash = `0x${Buffer.from(harness.executeIssuerProposalWithSignatures(
@@ -140,10 +158,45 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       const duplicateVotes = await post("submit", { ...request, signers: [request.signers[0], request.signers[0]] });
       expect(duplicateVotes.status).toBe(403);
       expect(await journal.read("issuer", issuer.authorizationId)).toBeNull();
+      const insufficient = await post("submit", { ...request, signers: [request.signers[0]] });
+      expect(insufficient.status).toBe(403);
+      expect(preflights).toBe(1);
+      expect(await journal.read("issuer", issuer.authorizationId)).toBeNull();
+      expect(executions).toBe(0);
+      const wrongVerifierSignature = signIssuerProposalEvidenceFromSeed(
+        second.seed, bytes(prepared.registryId), bytes(prepared.networkIdCommitment),
+        bytes(prepared.contractAddress), bytes(prepared.evidenceVerifierKeyIdCommitment),
+        bytes(prepared.actionPayloadHash),
+      );
+      const wrongVerifier = await post("submit", { ...request,
+        evidenceVerifierSignature: `0x${Buffer.from(encodeJubjubSignature(wrongVerifierSignature)).toString("hex")}` });
+      expect(wrongVerifier.status).toBe(403);
+      expect((await wrongVerifier.json()).detail).toBe("invalid-evidence");
+      expect(preflights).toBe(2);
+      expect(executions).toBe(0);
+      expect(await journal.read("issuer", issuer.authorizationId)).toBeNull();
+      await expect(journal.executeOnce("verifier", "private-blocking-authorization", evidence.commitment,
+        async () => { throw new Error("response lost after submission"); })).rejects.toThrow();
+      const blocked = await post("submit", request);
+      expect(blocked.status).toBe(409);
+      const blockedProblem = await blocked.json() as { type: string; detail: string };
+      expect(blockedProblem.type).toMatch(/proposal-submission-blocked$/u);
+      expect(JSON.stringify(blockedProblem)).not.toContain("private-blocking-authorization");
+      expect(JSON.stringify(blockedProblem)).not.toContain("verifier");
+      expect(executions).toBe(0);
+      await journal.reconcile("verifier", "private-blocking-authorization",
+        async () => ({ eventHash: `0x${"99".repeat(32)}`, evidenceCommitment: evidence.commitment }));
       const uncertain = await post("submit", request);
       expect(uncertain.status).toBe(503);
       expect((await uncertain.json()).type).toMatch(/proposal-submission-uncertain$/u);
-      expect(await journal.read("issuer", issuer.authorizationId)).toMatchObject({ state: "reserved", eventHash: null });
+      expect(await journal.read("issuer", issuer.authorizationId)).toMatchObject({
+        state: "reserved", eventHash: null,
+        reservationContext: {
+          actionSequence: prepared.actionSequence,
+          actionKind: prepared.actionKind,
+          actionPayloadHash: prepared.actionPayloadHash,
+        },
+      });
       expect(harness.simulator.getLedger().issuerAuthorizationCount).toBe(1n);
       const duplicate = await post("submit", request);
       expect(duplicate.status).toBe(409);
@@ -156,6 +209,97 @@ describe("Compact-backed issuer proposals over HTTP", () => {
     } finally {
       server.closeAllConnections();
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("uses the bound reader, not the port resolver, for synthetic local-ledger readback", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("issuer-local-reader-route");
+    const issuer = createIssuerScenarioFixture("issuer-local-reader-candidate");
+    const scope = createIssuerAuthorizationScopeFixture(issuer);
+    const governedResource = { type: issuerResourceTypeDetails[issuer.resourceType].governedType, id: issuer.resourceId };
+    const evidence = harness.createApplicationEvidence({
+      applicationId: issuer.authorizationId, subjectDid: issuer.subjectDid,
+      role: "issuer", scope, governedResource,
+    });
+    const binding = {
+      registryId: evidence.envelope.registryId, applicationId: evidence.envelope.applicationId,
+      subjectDid: evidence.envelope.subjectDid, evidenceVerifierDid: evidence.envelope.evidenceVerifierDid,
+      role: "issuer" as const, policyId: evidence.envelope.policyId,
+      policyVersion: evidence.envelope.policyVersion, scope,
+      scopeCommitment: evidence.envelope.scopeCommitment, governedResource,
+    };
+    const directory = await mkdtemp(join(tmpdir(), "tr-local-reader-route-"));
+    const contractAddress = `0x${harness.simulator.contractAddress}`;
+    const genesisHash = `0x${"a".repeat(64)}`;
+    const journalPath = join(directory, "journal.json");
+    const journal = new FileProposalSubmissionJournal(journalPath);
+    await journal.bindDeployment(harness.registryId, contractAddress, genesisHash);
+    const reader = vi.fn(async () => harness.simulator.getLedger());
+    const resolve = vi.fn(async () => { throw new Error("untrusted port resolver"); });
+    const serverFor = (sourceGenesisHash: string) => createTrustRegistryApiServer({
+      source: {
+        mode: "local-ledger", localDeploymentBinding: { contractAddress, expectedGenesisHash: sourceGenesisHash },
+        loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "synthetic-local-readback" }),
+        readFinalizedProposalLedger: reader,
+      },
+      proposalAdmission: {
+        resolvePendingApplication: async () => ({
+          authorizationId: issuer.authorizationId, binding, status: "pending", createdAt: "2026-05-20T00:00:00.000Z",
+        }),
+        resolveAcceptedEvidence: async () => ({
+          evidence, receipt: { receiptId: `0x${"b2".repeat(32)}`, evidenceCommitment: evidence.commitment,
+            acceptedAt: "2026-05-20T00:01:00.000Z" },
+        }),
+      },
+      proposalSubmissionJournal: journal,
+      governedIssuerProposals: {
+        prepare: async () => { throw new Error("unused"); },
+        preflightSubmission: async () => {},
+        execute: async () => { throw new Error("unused"); },
+        resolve,
+      },
+    });
+    try {
+      for (const [sourceGenesisHash, expectedStatus] of [
+        [genesisHash, 200], [`0x${"c".repeat(64)}`, 409], [genesisHash, 503],
+      ] as const) {
+        const server = serverFor(sourceGenesisHash);
+        try {
+          await new Promise<void>((ready) => server.listen(0, "127.0.0.1", ready));
+          const address = server.address();
+          if (address === null || typeof address === "string") throw new Error("API listener address unavailable");
+          if (expectedStatus === 503) reader.mockRejectedValueOnce(new Error("secret-provider-credential"));
+          const response = await fetch(`http://127.0.0.1:${address.port}/v1/governed/issuer/${issuer.authorizationId}/proposal/resolve`, {
+            method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ evidence }),
+          });
+          expect(response.status).toBe(expectedStatus);
+          if (expectedStatus === 200) expect(await response.json()).toEqual({ state: "not-observed" });
+          if (expectedStatus === 503) expect(await response.text()).not.toContain("secret-provider-credential");
+        } finally {
+          server.closeAllConnections();
+          await new Promise<void>((ready, reject) => server.close((error) => error ? reject(error) : ready()));
+        }
+      }
+      expect(reader).toHaveBeenCalledTimes(2);
+      expect(resolve).not.toHaveBeenCalled();
+      await chmod(`${journalPath}.binding`, 0o644);
+      const server = serverFor(genesisHash);
+      try {
+        await new Promise<void>((ready) => server.listen(0, "127.0.0.1", ready));
+        const address = server.address();
+        if (address === null || typeof address === "string") throw new Error("API listener address unavailable");
+        const response = await fetch(`http://127.0.0.1:${address.port}/v1/governed/issuer/${issuer.authorizationId}/proposal/resolve`, {
+          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ evidence }),
+        });
+        expect(response.status).toBe(503);
+        expect((await response.json()).type).toMatch(/proposal-submission-journal-unavailable$/u);
+      } finally {
+        server.closeAllConnections();
+        await new Promise<void>((ready, reject) => server.close((error) => error ? reject(error) : ready()));
+      }
+      expect(reader).toHaveBeenCalledTimes(2);
+    } finally {
       await rm(directory, { recursive: true, force: true });
     }
   });

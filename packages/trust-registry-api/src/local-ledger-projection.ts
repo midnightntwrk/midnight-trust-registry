@@ -10,6 +10,12 @@ import {
   type SequenceToTimestamp,
 } from "@midnight-ntwrk/trust-registry-client";
 import {
+  computeAuditorAuthorizationScopeKey,
+  computeIssuerAuthorizationScopeKey,
+  computeRecognitionScopeKey,
+  computeVerifierAuthorizationScopeKey,
+} from "@midnight-ntwrk/trust-registry-contract";
+import {
   AuthorizationStatus,
   IssuerResourceType,
   type Ledger,
@@ -65,6 +71,140 @@ function assertExactMap<T>(
     assertRecord(entry, record, key);
   }
   if (seen.size !== indexed.size) throw new Error(`${label} finalized ledger iteration was incomplete`);
+}
+
+function assertCurrentScopeIndex<T extends { proposedAtSequence: bigint }>(
+  label: string,
+  records: Iterable<[Uint8Array, T]>,
+  index: { size(): bigint; [Symbol.iterator](): Iterator<[Uint8Array, Uint8Array]> },
+  scopeKeyOf: (record: T) => Uint8Array,
+): void {
+  const latest = new Map<string, { id: string; sequence: bigint }>();
+  for (const [id, record] of records) {
+    const key = hex(scopeKeyOf(record));
+    const previous = latest.get(key);
+    if (previous?.sequence === record.proposedAtSequence) {
+      throw new Error(`${label} finalized scope has ambiguous proposal sequence`);
+    }
+    if (previous === undefined || record.proposedAtSequence > previous.sequence) {
+      latest.set(key, { id: hex(id), sequence: record.proposedAtSequence });
+    }
+  }
+  if (index.size() !== BigInt(latest.size)) {
+    throw new Error(`${label} finalized current-scope index is incomplete`);
+  }
+  const seen = new Set<string>();
+  for (const [keyBytes, idBytes] of index) {
+    const key = hex(keyBytes);
+    if (seen.has(key) || latest.get(key)?.id !== hex(idBytes)) {
+      throw new Error(`${label} finalized current-scope index differs from records`);
+    }
+    seen.add(key);
+  }
+  if (seen.size !== latest.size) {
+    throw new Error(`${label} finalized current-scope index iteration was incomplete`);
+  }
+}
+
+function assertRecordCounters(
+  label: string,
+  records: { size(): bigint; [Symbol.iterator](): Iterator<[Uint8Array, { status: AuthorizationStatus }]> },
+  total: bigint,
+  active: bigint,
+): void {
+  let observed = 0n;
+  let activeObserved = 0n;
+  for (const [, record] of records) {
+    observed += 1n;
+    if (record.status === AuthorizationStatus.active) activeObserved += 1n;
+  }
+  if (records.size() !== observed || total !== observed || active !== activeObserved) {
+    throw new Error(`${label} finalized counters differ from the complete record map`);
+  }
+}
+
+type LifecycleRecord = {
+  status: AuthorizationStatus;
+  proposedAtSequence: bigint;
+  authorizedAtSequence: bigint;
+  suspendedAtSequence: bigint;
+  revokedAtSequence: bigint;
+  archivedAtSequence: bigint;
+  lastStatusSequence: bigint;
+};
+
+function assertLifecycleSequences<T extends LifecycleRecord>(
+  label: string,
+  records: Iterable<[Uint8Array, T]>,
+  governanceActionCount: bigint,
+  activeAt: (record: T) => bigint,
+): void {
+  for (const [, record] of records) {
+    const proposed = record.proposedAtSequence;
+    const authorized = record.authorizedAtSequence;
+    const active = activeAt(record);
+    const suspended = record.suspendedAtSequence;
+    const revoked = record.revokedAtSequence;
+    const archived = record.archivedAtSequence;
+    let previous = 0n;
+    for (const sequence of [proposed, authorized, active, suspended, revoked, archived]) {
+      if (sequence === 0n) continue;
+      if (sequence <= previous || sequence > governanceActionCount) {
+        throw new Error(`${label} finalized lifecycle sequences are inconsistent`);
+      }
+      previous = sequence;
+    }
+    if (proposed === 0n || (authorized === 0n && (active !== 0n || revoked !== 0n))
+      || (active === 0n && suspended !== 0n)) {
+      throw new Error(`${label} finalized lifecycle sequences are incomplete`);
+    }
+    let expectedLast: bigint;
+    switch (record.status) {
+      case AuthorizationStatus.proposed:
+        expectedLast = proposed;
+        if (authorized !== 0n || active !== 0n || suspended !== 0n
+          || revoked !== 0n || archived !== 0n) {
+          throw new Error(`${label} finalized lifecycle status disagrees with sequences`);
+        }
+        break;
+      case AuthorizationStatus.authorized:
+        expectedLast = authorized;
+        if (authorized === 0n || active !== 0n || suspended !== 0n
+          || revoked !== 0n || archived !== 0n) {
+          throw new Error(`${label} finalized lifecycle status disagrees with sequences`);
+        }
+        break;
+      case AuthorizationStatus.active:
+        expectedLast = active;
+        if (active === 0n || suspended !== 0n || revoked !== 0n || archived !== 0n) {
+          throw new Error(`${label} finalized lifecycle status disagrees with sequences`);
+        }
+        break;
+      case AuthorizationStatus.suspended:
+        expectedLast = suspended;
+        if (suspended === 0n || revoked !== 0n || archived !== 0n) {
+          throw new Error(`${label} finalized lifecycle status disagrees with sequences`);
+        }
+        break;
+      case AuthorizationStatus.revoked:
+        expectedLast = revoked;
+        if (revoked === 0n || archived !== 0n) {
+          throw new Error(`${label} finalized lifecycle status disagrees with sequences`);
+        }
+        break;
+      case AuthorizationStatus.archived:
+        expectedLast = archived;
+        if (archived === 0n) {
+          throw new Error(`${label} finalized lifecycle status disagrees with sequences`);
+        }
+        break;
+      default:
+        throw new Error(`${label} finalized lifecycle status is unsupported`);
+    }
+    if (record.lastStatusSequence !== expectedLast) {
+      throw new Error(`${label} finalized last status sequence differs from status`);
+    }
+  }
 }
 
 function assertAuthorizationFields(
@@ -199,6 +339,9 @@ export function assertLocalLedgerProjectionMatchesSnapshot(
     || !snapshot.epochs.some((epoch) => canonicalizeJson(epoch) === canonicalizeJson(snapshot.currentEpoch))) {
     throw new Error("Candidate current epoch is not the finalized latest epoch");
   }
+  if (ledger.epochCommitmentCount !== ledger.epochCommitmentRecords.size()) {
+    throw new Error("Epoch finalized counter differs from the complete record map");
+  }
 
   assertExactMap("issuer", snapshot.issuerEntries,
     (entry) => entry.authorization.authorizationId, ledger.issuerAuthorizationRecords,
@@ -236,6 +379,43 @@ export function assertLocalLedgerProjectionMatchesSnapshot(
         throw new Error("Recognition candidate record differs from finalized Compact state");
       }
     });
+  assertCurrentScopeIndex("issuer", ledger.issuerAuthorizationRecords,
+    ledger.currentIssuerAuthorizationIdsByScopeKey,
+    (record) => computeIssuerAuthorizationScopeKey(
+      record.subjectDidCommitment, record.resourceType, record.resourceId));
+  assertCurrentScopeIndex("verifier", ledger.verifierAuthorizationRecords,
+    ledger.currentVerifierAuthorizationIdsByScopeKey,
+    (record) => computeVerifierAuthorizationScopeKey(
+      record.subjectDidCommitment, record.requestResourceId,
+      record.allowedAttributeSetCommitment, record.allowedPredicateSetCommitment,
+      record.disclosureLevelCommitment));
+  assertCurrentScopeIndex("auditor", ledger.auditorAuthorizationRecords,
+    ledger.currentAuditorAuthorizationIdsByScopeKey,
+    (record) => computeAuditorAuthorizationScopeKey(
+      record.subjectDidCommitment, record.requestResourceId,
+      record.allowedAttributeSetCommitment, record.allowedPredicateSetCommitment,
+      record.disclosureLevelCommitment));
+  assertCurrentScopeIndex("recognition", ledger.recognitionRecords,
+    ledger.currentRecognitionIdsByScopeKey,
+    (record) => computeRecognitionScopeKey(
+      record.recognizedAuthorityDidCommitment, record.recognizedRegistryId,
+      record.scopeResourceType, record.scopeResourceId));
+  assertRecordCounters("issuer", ledger.issuerAuthorizationRecords,
+    ledger.issuerAuthorizationCount, ledger.activeIssuerAuthorizationCount);
+  assertRecordCounters("verifier", ledger.verifierAuthorizationRecords,
+    ledger.verifierAuthorizationCount, ledger.activeVerifierAuthorizationCount);
+  assertRecordCounters("auditor", ledger.auditorAuthorizationRecords,
+    ledger.auditorAuthorizationCount, ledger.activeAuditorAuthorizationCount);
+  assertRecordCounters("recognition", ledger.recognitionRecords,
+    ledger.recognitionCount, ledger.activeRecognitionCount);
+  assertLifecycleSequences("issuer", ledger.issuerAuthorizationRecords,
+    ledger.governanceActionCount, (record) => record.activeFromSequence);
+  assertLifecycleSequences("verifier", ledger.verifierAuthorizationRecords,
+    ledger.governanceActionCount, (record) => record.activeFromSequence);
+  assertLifecycleSequences("auditor", ledger.auditorAuthorizationRecords,
+    ledger.governanceActionCount, (record) => record.activeFromSequence);
+  assertLifecycleSequences("recognition", ledger.recognitionRecords,
+    ledger.governanceActionCount, (record) => record.effectiveFromSequence);
 }
 
 /** The ledger must already be authenticated at the selected finalized checkpoint. */

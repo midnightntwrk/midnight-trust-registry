@@ -40,8 +40,8 @@ const verifierKeyPath = process.env.TR_TEST_VERIFIER_KEY_FILE ?? resolve(
   dirname(fileURLToPath(import.meta.url)),
   `../../../../contracts/trust-registry/dist/managed/trust-registry/keys/${verifierCircuit}.verifier`,
 );
-const realVerifierKeyIt = process.env.TR_TEST_VERIFIER_KEY_FILE || existsSync(verifierKeyPath)
-  ? it : it.skip;
+const hasRealVerifierKey = Boolean(process.env.TR_TEST_VERIFIER_KEY_FILE) || existsSync(verifierKeyPath);
+const realVerifierKeyIt = hasRealVerifierKey ? it : it.skip;
 
 function fixture(local = false) {
   const networkId = local ? "undeployed" : "preprod";
@@ -69,7 +69,7 @@ function fixture(local = false) {
 }
 
 describe("checkpointed deployment action reader", () => {
-  realVerifierKeyIt("decodes real Compact ledger state at the selected finalized block", async () => {
+  it("decodes Compact action state and full deployment state when keyed", async () => {
     const { simulator, reader, queryContractState } = fixture();
     const actionState = await reader.readCurrentFinalizedActionState(`0x${address}`);
     expect(queryContractState).toHaveBeenCalledWith(address, { type: "blockHash", blockHash });
@@ -82,10 +82,12 @@ describe("checkpointed deployment action reader", () => {
       governancePolicyCommitment: bytes32Hex(simulator.getLedger().governancePolicyCommitment),
       governanceActionSequence: simulator.getLedger().governanceActionCount,
     });
+    if (!hasRealVerifierKey) return;
     const contractState = new ContractState();
     contractState.data = simulator.circuitContext.currentQueryContext.state;
     const operation = new ContractOperation();
-    operation.verifierKey = readFileSync(verifierKeyPath);
+    const verifierKey = readFileSync(verifierKeyPath);
+    operation.verifierKey = verifierKey;
     contractState.setOperation(verifierCircuit, operation);
     contractState.maintenanceAuthority = new ContractMaintenanceAuthority(
       [signatureVerifyingKey(sampleSigningKey())], 1, 0n);
@@ -100,7 +102,7 @@ describe("checkpointed deployment action reader", () => {
     expect(finalizedLedger.ledger.governanceActionCount).toBe(simulator.getLedger().governanceActionCount);
     expect(bytes32Hex(finalizedLedger.ledger.registryId)).toBe(bytes32Hex(simulator.getLedger().registryId));
     expect(finalizedLedger.verifierKeySha256).toEqual({
-      [verifierCircuit]: createHash("sha256").update(operation.verifierKey).digest("hex"),
+      [verifierCircuit]: createHash("sha256").update(verifierKey).digest("hex"),
     });
     await expect(prepareFinalizedDeploymentActionDigest({
       networkId: "preprod",

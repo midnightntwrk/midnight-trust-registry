@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
+import { fork } from "node:child_process";
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -9,6 +11,7 @@ import {
   FileProposalSubmissionJournal,
   InvalidProposalSubmissionJournalError,
   ProposalSubmissionAlreadyPendingError,
+  ProposalSubmissionBlockedByReservationError,
   ProposalSubmissionCapacityError,
   ProposalSubmissionConflictError,
   ProposalSubmissionOutcomeUnknownError,
@@ -19,6 +22,11 @@ const evidenceCommitment = `0x${"11".repeat(32)}`;
 const otherCommitment = `0x${"22".repeat(32)}`;
 const eventHash = `0x${"33".repeat(32)}`;
 const otherEventHash = `0x${"44".repeat(32)}`;
+const reservationContext = {
+  actionSequence: "7",
+  actionKind: `0x${"55".repeat(32)}`,
+  actionPayloadHash: `0x${"66".repeat(32)}`,
+};
 const authorizationId = "auth:journal:test:v1";
 const roles: GovernedProposalSubmissionRole[] = ["issuer", "verifier", "auditor", "maintainer", "recognition"];
 
@@ -32,6 +40,27 @@ describe("private governed proposal submission journal", () => {
   });
   afterEach(async () => { await rm(directory, { recursive: true, force: true }); });
 
+  it("reads a reservation and deployment binding atomically without releasing it", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    const contractAddress = `0x${"aa".repeat(32)}`;
+    const genesisHash = `0x${"bb".repeat(32)}`;
+    await journal.bindDeployment("registry:local", contractAddress, genesisHash);
+    await expect(journal.executeOnce("issuer", authorizationId, evidenceCommitment,
+      async () => { throw new Error("ambiguous submission"); }, reservationContext))
+      .rejects.toBeInstanceOf(ProposalSubmissionOutcomeUnknownError);
+    const before = await readFile(path);
+    const bound = await journal.readBoundAttempt("registry:local", contractAddress, genesisHash,
+      "issuer", authorizationId);
+    expect(bound.attempt).toMatchObject({ state: "reserved", reservationContext });
+    expect(bound.bindingDigest).toMatch(/^0x[0-9a-f]{64}$/u);
+    expect(await readFile(path)).toEqual(before);
+    await expect(journal.readBoundAttempt("registry:local", contractAddress,
+      `0x${"cc".repeat(32)}`, "issuer", authorizationId))
+      .rejects.toBeInstanceOf(ProposalSubmissionConflictError);
+    expect(await journal.readBoundAttempt("registry:local", contractAddress, genesisHash,
+      "issuer", "missing")).toMatchObject({ attempt: null, bindingDigest: bound.bindingDigest });
+  });
+
   it.each(roles)("persists %s receipt without treating it as finality", async (role) => {
     const journal = new FileProposalSubmissionJournal(path);
     const privatePresentation = "raw-vp-private-claims";
@@ -41,14 +70,14 @@ describe("private governed proposal submission journal", () => {
         expect(privatePresentation).toContain("private");
         expect(privateSignature).toContain("signature");
         return { eventHash };
-      })).toEqual({ eventHash });
+      }, reservationContext)).toEqual({ eventHash });
     expect(await journal.read(role, authorizationId)).toMatchObject({
-      role, authorizationId, evidenceCommitment, state: "submitted", eventHash,
+      role, authorizationId, evidenceCommitment, state: "submitted", eventHash, reservationContext,
     });
     const reopened = new FileProposalSubmissionJournal(path);
     expect(await reopened.reconcile(role, authorizationId, async () => null)).toMatchObject({ state: "submitted" });
     expect(await reopened.reconcile(role, authorizationId,
-      async () => ({ eventHash, evidenceCommitment }))).toMatchObject({ state: "observed" });
+      async () => ({ eventHash, evidenceCommitment }))).toMatchObject({ state: "observed", reservationContext });
     await expect(reopened.executeOnce(role, authorizationId, evidenceCommitment,
       async () => ({ eventHash }))).rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
     expect((await stat(path)).mode & 0o077).toBe(0);
@@ -56,8 +85,12 @@ describe("private governed proposal submission journal", () => {
     expect(serialized).not.toContain("raw-vp-private-claims");
     expect(serialized).not.toContain("maintainer-signature");
     expect(JSON.parse(serialized).attempts).toEqual([{
-      role, authorizationId, evidenceCommitment, state: "observed", eventHash,
+      role, authorizationId, evidenceCommitment, state: "observed", eventHash, reservationContext,
     }]);
+    expect(await reopened.rotateObserved(async () => ({ eventHash, evidenceCommitment })))
+      .toEqual({ archived: 1, pending: 0 });
+    expect(await new FileProposalSubmissionJournal(path).read(role, authorizationId))
+      .toMatchObject({ state: "observed", reservationContext });
   });
 
   it.each(roles)("holds an ambiguous %s response across restart and lagging finalized reads", async (role) => {
@@ -69,18 +102,81 @@ describe("private governed proposal submission journal", () => {
     })).rejects.toBeInstanceOf(ProposalSubmissionOutcomeUnknownError);
     const reopened = new FileProposalSubmissionJournal(path);
     expect(await reopened.read(role, authorizationId)).toMatchObject({ state: "reserved", eventHash: null });
+    const otherRole = role === "issuer" ? "verifier" : "issuer";
+    const submitOther = () => reopened.executeOnce(otherRole, "auth:journal:other", evidenceCommitment, async () => {
+      executions += 1;
+      return { eventHash: otherEventHash };
+    });
+    await expect(submitOther()).rejects.toMatchObject({
+      blockingRole: role, blockingAuthorizationId: authorizationId,
+    });
     await expect(reopened.executeOnce(role, authorizationId, evidenceCommitment, async () => {
       executions += 1;
       return { eventHash };
     })).rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
     expect(executions).toBe(1);
     expect(await reopened.reconcile(role, authorizationId, async () => null)).toMatchObject({ state: "reserved" });
+    await expect(submitOther()).rejects.toBeInstanceOf(ProposalSubmissionBlockedByReservationError);
+    await expect(reopened.reconcile(role, authorizationId,
+      async () => ({ eventHash, evidenceCommitment: otherCommitment })))
+      .rejects.toBeInstanceOf(ProposalSubmissionConflictError);
+    expect(await reopened.read(role, authorizationId)).toMatchObject({ state: "reserved", eventHash: null });
+    await expect(submitOther()).rejects.toBeInstanceOf(ProposalSubmissionBlockedByReservationError);
     await expect(reopened.reconcile(role, authorizationId, async () => {
       throw new Error("finality source unavailable");
     })).rejects.toThrow("finality source unavailable");
     expect(await reopened.read(role, authorizationId)).toMatchObject({ state: "reserved" });
     expect(await reopened.reconcile(role, authorizationId,
       async () => ({ eventHash, evidenceCommitment }))).toMatchObject({ state: "observed", eventHash });
+    await expect(submitOther()).resolves.toEqual({ eventHash: otherEventHash });
+    expect(executions).toBe(2);
+  });
+
+  it("retains signed action context through an ambiguous result and restart", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    await expect(journal.executeOnce("issuer", authorizationId, evidenceCommitment,
+      async () => { throw new Error("submission outcome unknown"); }, reservationContext))
+      .rejects.toBeInstanceOf(ProposalSubmissionOutcomeUnknownError);
+    const reopened = new FileProposalSubmissionJournal(path);
+    expect(await reopened.read("issuer", authorizationId)).toMatchObject({
+      state: "reserved", reservationContext,
+    });
+    expect(JSON.parse(await readFile(path, "utf8")).attempts[0].reservationContext).toEqual(reservationContext);
+    expect(await reopened.reconcile("issuer", authorizationId,
+      async () => ({ eventHash, evidenceCommitment }))).toMatchObject({
+      state: "observed", reservationContext,
+    });
+    expect(await reopened.rotateObserved(async () => ({ eventHash, evidenceCommitment })))
+      .toEqual({ archived: 1, pending: 0 });
+    expect(await new FileProposalSubmissionJournal(path).read("issuer", authorizationId))
+      .toMatchObject({ state: "observed", reservationContext });
+  });
+
+  it("rejects invalid signed action context before creating a reservation", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    let executed = false;
+    await expect(journal.executeOnce("issuer", authorizationId, evidenceCommitment, async () => {
+      executed = true;
+      return { eventHash };
+    }, { ...reservationContext, actionSequence: (1n << 64n).toString() })).rejects.toThrow();
+    expect(executed).toBe(false);
+    expect(await journal.read("issuer", authorizationId)).toBeNull();
+    await writeFile(path, JSON.stringify({
+      version: 1,
+      attempts: [{ role: "issuer", authorizationId, evidenceCommitment,
+        state: "reserved", eventHash: null,
+        reservationContext: { ...reservationContext, actionSequence: (1n << 64n).toString() } }],
+    }), { mode: 0o600 });
+    await expect(journal.read("issuer", authorizationId)).rejects
+      .toBeInstanceOf(InvalidProposalSubmissionJournalError);
+    await writeFile(path, JSON.stringify({
+      version: 1,
+      attempts: [{ role: "issuer", authorizationId, evidenceCommitment,
+        state: "reserved", eventHash: null,
+        reservationContext: { ...reservationContext, actionSequence: "not-a-sequence" } }],
+    }), { mode: 0o600 });
+    await expect(journal.read("issuer", authorizationId)).rejects
+      .toBeInstanceOf(InvalidProposalSubmissionJournalError);
   });
 
   it("rejects conflicting finalized records and different evidence on the same authorization", async () => {
@@ -110,6 +206,92 @@ describe("private governed proposal submission journal", () => {
     const results = await Promise.allSettled([run(left), run(right)]);
     expect(results.map((result) => result.status).sort()).toEqual(["fulfilled", "rejected"]);
     expect(executions).toBe(1);
+  });
+
+  it("blocks a distinct key while another writer holds the first reservation", async () => {
+    const first = new FileProposalSubmissionJournal(path);
+    const second = new FileProposalSubmissionJournal(path);
+    let signalStarted!: () => void;
+    let releaseSubmission!: () => void;
+    const started = new Promise<void>((resolve) => { signalStarted = resolve; });
+    const gate = new Promise<void>((resolve) => { releaseSubmission = resolve; });
+    let executions = 0;
+    const pending = first.executeOnce("issuer", authorizationId, evidenceCommitment, async () => {
+      executions += 1;
+      signalStarted();
+      await gate;
+      return { eventHash };
+    });
+    await started;
+    await expect(second.executeOnce("verifier", "auth:another", evidenceCommitment, async () => {
+      executions += 1;
+      return { eventHash: otherEventHash };
+    })).rejects.toMatchObject({
+      blockingRole: "issuer", blockingAuthorizationId: authorizationId,
+    });
+    releaseSubmission();
+    await expect(pending).resolves.toEqual({ eventHash });
+    expect(await first.read("issuer", authorizationId)).toMatchObject({ state: "submitted", eventHash });
+    await expect(second.executeOnce("verifier", "auth:after-receipt", evidenceCommitment, async () => {
+      executions += 1;
+      return { eventHash: otherEventHash };
+    })).resolves.toEqual({ eventHash: otherEventHash });
+    expect(executions).toBe(2);
+  });
+
+  it("re-reads a reserved proposal written under a different process's filesystem lock", async () => {
+    const child = fork(fileURLToPath(new URL("./fixtures/seed-reserved-proposal-lock.mjs", import.meta.url)),
+      [path, "issuer", authorizationId, evidenceCommitment],
+      { stdio: ["ignore", "ignore", "pipe", "ipc"] });
+    let diagnostic = "";
+    child.stderr?.on("data", (chunk: Buffer) => { diagnostic += chunk.toString(); });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`Child lock timed out: ${diagnostic}`)), 10_000);
+        const finish = () => {
+          clearTimeout(timer);
+          child.off("message", onMessage);
+          child.off("error", onError);
+          child.off("exit", onExit);
+        };
+        const onMessage = (message: unknown) => {
+          if (message !== "locked") return;
+          finish();
+          resolve();
+        };
+        const onError = (error: Error) => { finish(); reject(error); };
+        const onExit = (code: number | null) => {
+          finish();
+          reject(new Error(`Child exited before locking (${String(code)}): ${diagnostic}`));
+        };
+        child.on("message", onMessage);
+        child.once("error", onError);
+        child.once("exit", onExit);
+      });
+      let executions = 0;
+      const outcome = new FileProposalSubmissionJournal(path).executeOnce("verifier", "auth:other-process",
+        evidenceCommitment, async () => {
+          executions += 1;
+          return { eventHash: otherEventHash };
+        }).then(
+        () => ({ succeeded: true as const }),
+        (error: unknown) => ({ succeeded: false as const, error }),
+      );
+      const exited = new Promise<void>((resolve, reject) => {
+        child.once("exit", (code) => code === 0 ? resolve()
+          : reject(new Error(`Child lock holder failed (${String(code)}): ${diagnostic}`)));
+        child.once("error", reject);
+      });
+      child.send("release");
+      await exited;
+      expect(await outcome).toMatchObject({
+        succeeded: false,
+        error: { blockingRole: "issuer", blockingAuthorizationId: authorizationId },
+      });
+      expect(executions).toBe(0);
+    } finally {
+      if (child.exitCode === null) child.kill();
+    }
   });
 
   it("does not downgrade a finalized observation when a delayed submit receipt arrives", async () => {
@@ -176,12 +358,11 @@ describe("private governed proposal submission journal", () => {
     expect(await journal.read("verifier", authorizationId)).toBeNull();
   });
 
-  it("budgets eventual receipt hashes for other outstanding reservations", async () => {
+  it("budgets the new proposal receipt at the active byte boundary", async () => {
     const journal = new FileProposalSubmissionJournal(path);
     const attempts = Array.from({ length: 9_500 }, (_, index) => ({
       role: "issuer", authorizationId: `existing:${index}:${"x".repeat(198 + (index < 129 ? 44 : 0))}`,
-      evidenceCommitment, state: index === 0 ? "reserved" : "observed",
-      eventHash: index === 0 ? null : eventHash,
+      evidenceCommitment, state: "observed", eventHash,
     }));
     const serialized = JSON.stringify({ version: 1, attempts });
     expect(Buffer.byteLength(serialized)).toBeLessThan(4 * 1024 * 1024);
@@ -212,6 +393,9 @@ describe("private governed proposal submission journal", () => {
     });
     expect(await reopened.read("issuer", authorizationId)).toMatchObject({ state: "observed", eventHash });
     expect(await reopened.read("issuer", "unknown-outcome")).toMatchObject({ state: "reserved", eventHash: null });
+    await expect(reopened.executeOnce("verifier", "auth:after-rotation", evidenceCommitment,
+      async () => ({ eventHash: otherEventHash })))
+      .rejects.toBeInstanceOf(ProposalSubmissionBlockedByReservationError);
     let executions = 0;
     await expect(reopened.executeOnce("issuer", authorizationId, evidenceCommitment, async () => {
       executions += 1;
@@ -335,8 +519,7 @@ describe("private governed proposal submission journal", () => {
     };
     const active = JSON.stringify({ version: 1, attempts: Array.from({ length: 9_500 }, (_, index) => ({
       role: "issuer", authorizationId: `existing:${index}:${"x".repeat(198 + (index < 129 ? 44 : 0))}`,
-      evidenceCommitment, state: index === 0 ? "reserved" : "observed",
-      eventHash: index === 0 ? null : eventHash,
+      evidenceCommitment, state: "observed", eventHash,
     })) });
     expect(Buffer.byteLength(active)).toBeLessThan(4 * 1024 * 1024);
     await writeFile(join(directory, manifest.active.file), active, { mode: 0o600 });

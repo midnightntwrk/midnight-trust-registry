@@ -10,7 +10,8 @@ import yaml from "js-yaml";
 
 import { assertWorkloadPodSpecParity, observeSignedHelmRuntime,
   validateApiApprovalSecret, validateApiKeyringSecret, validateApiRuntimeHashes,
-  validateHelmApiPlanBinding, validateHelmRenderedWorkloadParity,
+  validateHelmApiPlanBinding, validateHelmRenderedNetworkBoundary,
+  validateHelmRenderedWorkloadParity,
   validateHelmRuntimeObservation } from "./observe-helm-runtime.mjs";
 
 const roles = ["node", "indexer", "proofServer", "api", "admin", "applicant"];
@@ -444,6 +445,79 @@ test("binds live Deployment Pod specs to the signed exact Helm render", () => {
     actualMappingBytes, actualScopeBytes, workloads), /differs from the signed v2 scope/u);
 });
 
+test("binds namespace Services and additive NetworkPolicies to the signed render", () => {
+  const chart = join(import.meta.dirname, "..", "charts", "trust-registry-standalone");
+  const values = join(chart, "tests", "fixture-values.yaml");
+  const result = spawnSync("helm", ["template", "tr-rc", chart, "--namespace", "trust-registry",
+    "--values", values], { encoding: "utf8", timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
+  assert.equal(result.status, 0, result.stderr);
+  const renderedBytes = Buffer.from(result.stdout);
+  const documents = yaml.loadAll(result.stdout).filter(Boolean);
+  const actualMapping = structuredClone(mapping);
+  for (const image of actualMapping.images) {
+    const deployment = documents.find((item) => item?.kind === "Deployment"
+      && item.metadata.labels["app.kubernetes.io/component"] === component(image.role));
+    image.reference = deployment.spec.template.spec.containers[0].image;
+  }
+  const actualMappingBytes = Buffer.from(`${JSON.stringify(actualMapping)}\n`);
+  const actualScopeBytes = Buffer.from(`${JSON.stringify({ ...scope,
+    format: "tr-helm-approved-node-scope-v2", mappingSha256: hash(actualMappingBytes),
+    renderedManifestSha256: hash(renderedBytes) })}\n`);
+  const resources = { kind: "List", items: documents.filter((item) =>
+    ["Service", "NetworkPolicy"].includes(item.kind)).map((item) => ({
+    ...structuredClone(item), metadata: { ...item.metadata, namespace: "trust-registry" },
+  })) };
+  for (const service of resources.items.filter((item) => item.kind === "Service")) {
+    service.spec.clusterIP = "10.96.0.10";
+    service.spec.clusterIPs = ["10.96.0.10"];
+    service.spec.ipFamilies = ["IPv4"];
+    service.spec.ipFamilyPolicy = "SingleStack";
+    service.spec.internalTrafficPolicy = "Cluster";
+    service.spec.sessionAffinity = "None";
+  }
+  const check = () => validateHelmRenderedNetworkBoundary(renderedBytes,
+    actualMappingBytes, actualScopeBytes, resources);
+  assert.equal(check().services.length, 6);
+  assert.equal(check().networkPolicies.length, 11);
+  const narrowedRender = renderedBytes.toString("utf8").replace(
+    "podSelector: {}",
+    "podSelector:\n    matchLabels:\n      app.kubernetes.io/instance: rc",
+  );
+  const narrowedScope = Buffer.from(`${JSON.stringify({ ...JSON.parse(actualScopeBytes),
+    renderedManifestSha256: hash(Buffer.from(narrowedRender)) })}\n`);
+  assert.throws(() => validateHelmRenderedNetworkBoundary(Buffer.from(narrowedRender),
+    actualMappingBytes, narrowedScope, resources), /strict namespace-wide default-deny/u);
+  const service = resources.items.find((item) => item.kind === "Service");
+  service.spec.type = "LoadBalancer";
+  assert.throws(check, /Live Service differs/u);
+  service.spec.type = "ClusterIP";
+  service.spec.sessionAffinity = "ClientIP";
+  assert.throws(check, /non-default sessionAffinity/u);
+  service.spec.sessionAffinity = "None";
+  service.spec.externalIPs = ["203.0.113.10"];
+  assert.throws(check, /Live Service differs/u);
+  delete service.spec.externalIPs;
+  const policy = resources.items.find((item) => item.kind === "NetworkPolicy"
+    && item.metadata.name.endsWith("-api-egress"));
+  policy.spec.egress.push({ to: [{ ipBlock: { cidr: "0.0.0.0/0" } }] });
+  assert.throws(check, /Live NetworkPolicy differs/u);
+  policy.spec.egress.pop();
+  resources.items.push({ kind: "NetworkPolicy",
+    metadata: { name: "unreviewed-public-egress", namespace: "trust-registry" },
+    spec: { podSelector: {}, policyTypes: ["Egress"], egress: [{}] } });
+  assert.throws(check, /Live Helm NetworkPolicies/u);
+  resources.items.pop();
+  resources.items.push({ kind: "Service",
+    metadata: { name: "unreviewed-public-service", namespace: "trust-registry" },
+    spec: { type: "LoadBalancer", selector: {}, ports: [{ port: 80 }] } });
+  assert.throws(check, /Live Helm Services/u);
+  resources.items.pop();
+  resources.items.splice(resources.items.indexOf(policy), 1);
+  assert.throws(check, /Live Helm NetworkPolicies/u);
+  assert.throws(() => validateHelmRenderedNetworkBoundary(Buffer.from("tampered"),
+    actualMappingBytes, actualScopeBytes, resources), /signed v2 Helm render/u);
+});
+
 test("observes signed fleet, immutable Secrets, and running API file hashes", async () => {
   const root = await mkdtemp(join(tmpdir(), "tr-helm-live-test-"));
   try {
@@ -502,7 +576,31 @@ test("observes signed fleet, immutable Secrets, and running API file hashes", as
       "snapshot.json": hash(snapshot),
       "pubring.kbx": hash(keyringBytes),
     };
-    const renderedBytes = Buffer.from(workloads.items.filter((item) => item.kind === "Deployment")
+    const networkResources = { kind: "List", items: [] };
+    for (const role of roles) {
+      const name = component(role);
+      networkResources.items.push({ kind: "Service",
+        metadata: { name: `tr-rc-tr-${name}`, namespace: "trust-registry" },
+        spec: { type: "ClusterIP", selector: { "app.kubernetes.io/component": name },
+          clusterIP: "10.96.0.10", clusterIPs: ["10.96.0.10"],
+          ports: [{ port: 4400, targetPort: 4400, protocol: "TCP" }] } });
+      networkResources.items.push({ kind: "NetworkPolicy",
+        metadata: { name: `tr-rc-tr-${name}-ingress`, namespace: "trust-registry" },
+        spec: { podSelector: { matchLabels: { "app.kubernetes.io/component": name } },
+          policyTypes: ["Ingress"] } });
+    }
+    for (const name of ["indexer", "api", "operator", "actor"]) {
+      networkResources.items.push({ kind: "NetworkPolicy",
+        metadata: { name: `tr-rc-tr-${name}-egress`, namespace: "trust-registry" },
+        spec: { podSelector: { matchLabels: { "app.kubernetes.io/component": name } },
+          policyTypes: ["Egress"] } });
+    }
+    networkResources.items.push({ kind: "NetworkPolicy",
+      metadata: { name: "tr-rc-tr-default-deny", namespace: "trust-registry" },
+      spec: { podSelector: {},
+      policyTypes: ["Ingress", "Egress"] } });
+    const renderedBytes = Buffer.from([...workloads.items.filter((item) =>
+      item.kind === "Deployment"), ...networkResources.items]
       .map((item) => `---\n${yaml.dump(item)}`).join(""));
     const renderedManifestPath = join(root, "reviewed-render.yaml");
     await writeFile(renderedManifestPath, renderedBytes);
@@ -517,6 +615,7 @@ test("observes signed fleet, immutable Secrets, and running API file hashes", as
     const run = async (program, args) => {
       calls.push([program, args]);
       const value = args.includes("nodes") ? nodes
+        : args.includes("services,networkpolicies") ? networkResources
         : args.includes("secret") ? args.includes("api-keyring") ? keyringSecret : secret
           : args.includes("exec") ? runtimeHashes
             : args.includes("pod") ? apiPod : workloads;
@@ -526,17 +625,26 @@ test("observes signed fleet, immutable Secrets, and running API file hashes", as
       verifyPlanSignature: () => "approved", run };
     const observed = await observeSignedHelmRuntime(paths, dependencies);
     assert.equal(observed.workloads.length, 6);
+    assert.equal(observed.networkBoundary.networkPolicies.length, 11);
     assert.equal(observed.apiPlanBinding.planSha256,
       hash(await readFile(apiPlanPath)));
     assert.equal(observed.apiPlanBinding.apiApprovalSecret.secretUid, "secret-1");
     assert.equal(observed.apiPlanBinding.apiKeyringSecret.secretUid, "keyring-1");
     assert.equal(observed.apiPlanBinding.keyringSha256, hash(keyringBytes));
     assert.deepEqual(observed.apiPlanBinding.runtimeApprovalHashes, runtimeHashes);
-    assert.equal(calls.length, 6);
+    assert.equal(calls.length, 7);
     assert.ok(calls.every(([program, args]) => program === "kubectl"
       && args.includes("--context") && args.includes("isolated-cluster")));
     assert.ok(calls.find(([, args]) => args.includes("exec"))?.[1].includes("node"));
     assert.ok(!JSON.stringify(observed).includes(keyringBytes.toString("base64")));
+    await assert.rejects(observeSignedHelmRuntime(paths, { ...dependencies,
+      run: async (program, args) => args.includes("services,networkpolicies")
+        ? { stdout: JSON.stringify({ ...networkResources,
+          items: [...networkResources.items, { kind: "NetworkPolicy",
+            metadata: { name: "unreviewed-egress", namespace: "trust-registry" },
+            spec: { podSelector: {}, policyTypes: ["Egress"], egress: [{}] } }] }) }
+        : run(program, args),
+    }), /Live Helm NetworkPolicies/u);
     calls.length = 0;
     await assert.rejects(observeSignedHelmRuntime(paths, { ...dependencies,
       verifyPlanSignature: async () => { throw new Error("bad async signature"); },

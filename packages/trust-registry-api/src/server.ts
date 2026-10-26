@@ -20,6 +20,8 @@ import {
   evaluateRecognitionEntryAtTimestamp,
   evaluateRecognitionEvidenceAtTimestamp,
   createTrqpSourceFromStateSource,
+  CurrentLedgerSelectionAmbiguousError,
+  CurrentLedgerSelectionUnavailableError,
   getAuthorizationEntryById,
   getRecognitionEntryById,
   isMutableStateSource,
@@ -162,12 +164,15 @@ import {
   type ProposalAdmissionPort,
 } from "./proposal-admission.js";
 import {
+  InvalidProposalSubmissionJournalError,
   ProposalSubmissionAlreadyPendingError,
+  ProposalSubmissionBlockedByReservationError,
   ProposalSubmissionCapacityError,
   ProposalSubmissionConflictError,
   ProposalSubmissionOutcomeUnknownError,
   type GovernedProposalSubmissionRole,
   type ProposalSubmissionJournal,
+  type ProposalReservationContext,
 } from "./proposal-submission-journal.js";
 import { MutationIntentOperationMismatchError } from "./mutation-intent-preflight.js";
 import { MutationActorNonceCapacityExceededError, MutationIntentActorRejectedError, MutationNonceAlreadyUsedError, MutationNonceCapacityExceededError, MutationNonceClockRollbackError } from "./signed-mutation-state.js";
@@ -370,6 +375,20 @@ const asProblem = (
       type: `${problemBaseUri}/local-ledger-unavailable`,
       title: "local ledger unavailable",
       status: 503,
+    });
+  }
+  if (error instanceof CurrentLedgerSelectionUnavailableError) {
+    return TrustRegistryApiProblemDetailsSchema.parse({
+      type: `${problemBaseUri}/local-ledger-unavailable`,
+      title: "local ledger unavailable",
+      status: 503,
+    });
+  }
+  if (error instanceof CurrentLedgerSelectionAmbiguousError) {
+    return TrustRegistryApiProblemDetailsSchema.parse({
+      type: `${problemBaseUri}/ambiguous-current-scope`,
+      title: "ambiguous current scope",
+      status: 409,
     });
   }
   if (error instanceof SyntaxError) {
@@ -797,6 +816,12 @@ export const createTrustRegistryApiServer = (
     || options.governedAuditorProposals !== undefined
     || options.governedMaintainerProposals !== undefined;
   if (options.source.mode === "local-ledger") {
+    const sourceAddress = options.source.localProposalContractAddress;
+    const approvedAddress = options.source.localDeploymentBinding?.contractAddress;
+    if (sourceAddress !== undefined && approvedAddress !== undefined
+      && sourceAddress.toLowerCase() !== approvedAddress.toLowerCase()) {
+      throw new Error("Local proposal reader and approved deployment addresses differ");
+    }
     if (options.allowUnsafeDemoMutations === true) {
       throw new Error("Local-ledger mode forbids demo mutations");
     }
@@ -807,11 +832,16 @@ export const createTrustRegistryApiServer = (
     }
     if ((hasMembershipProposalPort || options.governedRecognitionProposals !== undefined)
       && (options.proposalSubmissionJournal === undefined
-        || options.readFinalizedProposalLedger === undefined
+        || options.source.readFinalizedProposalLedger === undefined
         || (hasMembershipProposalPort && options.proposalAdmission === undefined)
         || (options.governedRecognitionProposals !== undefined
           && options.recognitionAccreditation === undefined))) {
       throw new Error("Local-ledger proposals require durable submission and finalized observation with admission");
+    }
+    if (options.proposalSubmissionJournal !== undefined
+      && (options.source.localDeploymentBinding === undefined
+        || options.proposalSubmissionJournal.assertDeploymentBinding === undefined)) {
+      throw new Error("Local-ledger proposal journals require a signed deployment binding check");
     }
   }
   if (options.proposalSubmissionJournal !== undefined
@@ -822,8 +852,14 @@ export const createTrustRegistryApiServer = (
   }
   if (options.proposalSubmissionJournal !== undefined
     && options.governedRecognitionProposals !== undefined
-    && options.governedRecognitionProposals.preflightSubmission === undefined) {
+    && typeof options.governedRecognitionProposals.preflightSubmission !== "function") {
     throw new Error("Journaled recognition proposals require side-effect-free submission preflight");
+  }
+  if (options.proposalSubmissionJournal !== undefined
+    && [options.governedIssuerProposals, options.governedVerifierProposals,
+      options.governedAuditorProposals, options.governedMaintainerProposals]
+      .some((port) => port !== undefined && typeof port.preflightSubmission !== "function")) {
+    throw new Error("Journaled membership proposals require side-effect-free submission preflight");
   }
   const problemBaseUri = options.problemBaseUri ?? DEFAULT_PROBLEM_BASE;
   const requireCompleteHistoricalProjection = (): void => {
@@ -880,10 +916,19 @@ export const createTrustRegistryApiServer = (
   };
 
   const mapSubmissionJournalError = (error: unknown): never => {
+    if (error instanceof InvalidProposalSubmissionJournalError) {
+      throw jsonProblem(problemBaseUri, "proposal-submission-journal-unavailable", 503,
+        "proposal submission journal unavailable");
+    }
     if (error instanceof ProposalSubmissionAlreadyPendingError) {
       throw jsonProblem(problemBaseUri, "proposal-submission-uncertain", 409,
         "proposal submission requires reconciliation",
         "An earlier submission may have reached Compact. Resolve against a finalized ledger view; do not retry automatically.");
+    }
+    if (error instanceof ProposalSubmissionBlockedByReservationError) {
+      throw jsonProblem(problemBaseUri, "proposal-submission-blocked", 409,
+        "proposal submissions paused for reconciliation",
+        "A different proposal has an unresolved reservation. Contact the operator; do not retry automatically.");
     }
     if (error instanceof ProposalSubmissionOutcomeUnknownError) {
       throw jsonProblem(problemBaseUri, "proposal-submission-uncertain", 503,
@@ -906,16 +951,52 @@ export const createTrustRegistryApiServer = (
     role: GovernedProposalSubmissionRole,
     authorizationId: string,
     evidenceCommitment: string,
+    prepared: ProposalReservationContext,
     execute: () => Promise<GovernedMembershipActionReceipt>,
   ): Promise<GovernedMembershipActionReceipt> => {
     if (options.proposalSubmissionJournal === undefined) return execute();
     try {
+      await assertJournalMatchesLocalDeployment();
       return await options.proposalSubmissionJournal.executeOnce(
         role, authorizationId, evidenceCommitment, execute,
+        { actionSequence: prepared.actionSequence, actionKind: prepared.actionKind,
+          actionPayloadHash: prepared.actionPayloadHash },
       );
     } catch (error) {
       return mapSubmissionJournalError(error);
     }
+  };
+
+  const assertJournalMatchesLocalDeployment = async (): Promise<void> => {
+    if (options.source.mode !== "local-ledger" || options.proposalSubmissionJournal === undefined) return;
+    const binding = options.source.localDeploymentBinding;
+    const assertBinding = options.proposalSubmissionJournal.assertDeploymentBinding;
+    if (binding === undefined || assertBinding === undefined) {
+      throw new ProposalSubmissionConflictError();
+    }
+    try {
+      const snapshot = await options.source.loadSnapshot();
+      await assertBinding.call(options.proposalSubmissionJournal,
+        snapshot.registry.registryId, binding.contractAddress, binding.expectedGenesisHash);
+    } catch (error) {
+      if (error instanceof ProposalSubmissionConflictError || error instanceof LocalLedgerSourceUnavailableError) {
+        throw error;
+      }
+      throw new InvalidProposalSubmissionJournalError();
+    }
+  };
+
+  const readLocalFinalizedProposal = async (role: ProposalRole, authorizationId: string) => {
+    const reader = options.source.readFinalizedProposalLedger;
+    const address = options.source.localDeploymentBinding?.contractAddress;
+    if (options.source.mode !== "local-ledger" || reader === undefined
+      || address === undefined || !/^0x[0-9a-fA-F]{64}$/u.test(address)) {
+      throw new Error("Deployment-bound finalized proposal reader is unavailable");
+    }
+    const snapshot = await options.source.loadSnapshot();
+    return resolveCompactProposalEvidenceSnapshot(
+      reader, snapshot.registry.registryId, role, authorizationId, Buffer.from(address.slice(2), "hex"),
+    );
   };
 
   const requireValidProposalSigners = (
@@ -939,14 +1020,27 @@ export const createTrustRegistryApiServer = (
     const body = await parseJsonBody(request,
       (value) => GovernedProposalResolveRequestSchema.parse(value), problemBaseUri);
     await requireProposalAdmission(role, authorizationId, body.evidence);
-    if (resolver === undefined) {
+    if (resolver === undefined && options.source.mode !== "local-ledger") {
       throw jsonProblem(problemBaseUri, "governed-proposal-resolution-unavailable", 503,
         "governed proposal resolution unavailable");
     }
+    if (options.source.mode === "local-ledger" && options.proposalSubmissionJournal !== undefined) {
+      try {
+        await assertJournalMatchesLocalDeployment();
+      } catch (error) {
+        return mapSubmissionJournalError(error);
+      }
+    }
     let observed;
     try {
-      observed = await resolver(authorizationId);
+      observed = options.source.mode === "local-ledger"
+        ? await readLocalFinalizedProposal(role, authorizationId)
+        : await resolver!(authorizationId);
     } catch (error) {
+      if (options.source.mode === "local-ledger") {
+        throw jsonProblem(problemBaseUri, "governed-proposal-resolution-unavailable", 503,
+          "governed proposal resolution unavailable");
+      }
       return mapError(error, problemBaseUri);
     }
     if (observed === null) {
@@ -1032,7 +1126,8 @@ export const createTrustRegistryApiServer = (
         const proposalReader = options.source.mode === "local-ledger"
           ? options.source.readFinalizedProposalLedger : options.readFinalizedProposalLedger;
         const pinnedAddress = options.source.mode === "local-ledger"
-          ? options.source.localProposalContractAddress : undefined;
+          ? options.source.localDeploymentBinding?.contractAddress
+            ?? options.source.localProposalContractAddress : undefined;
         const proposalContractAddress = options.source.mode === "local-ledger"
           ? pinnedAddress !== undefined && /^0x[0-9a-fA-F]{64}$/u.test(pinnedAddress)
             ? Buffer.from(pinnedAddress.slice(2), "hex") : undefined
@@ -1250,7 +1345,8 @@ export const createTrustRegistryApiServer = (
         response.setHeader("cache-control", "no-store");
         const recognitionId = parseApplicationIdentifier(segments[3]!, problemBaseUri);
         const port = options.governedRecognitionProposals;
-        if (port?.resolve === undefined || options.recognitionAccreditation === undefined) {
+        if (port === undefined || (port.resolve === undefined && options.source.mode !== "local-ledger")
+          || options.recognitionAccreditation === undefined) {
           throw jsonProblem(problemBaseUri, "governed-proposal-resolution-unavailable", 503,
             "governed proposal resolution unavailable");
         }
@@ -1276,9 +1372,18 @@ export const createTrustRegistryApiServer = (
           throw jsonProblem(problemBaseUri, "unadmitted-proposal", 403,
             "unadmitted proposal", "The proposal has no matching accepted accreditation receipt.");
         }
+        if (options.source.mode === "local-ledger" && options.proposalSubmissionJournal !== undefined) {
+          try {
+            await assertJournalMatchesLocalDeployment();
+          } catch (error) {
+            return mapSubmissionJournalError(error);
+          }
+        }
         let observed;
         try {
-          observed = await port.resolve(recognitionId);
+          observed = options.source.mode === "local-ledger"
+            ? await readLocalFinalizedProposal("recognition", recognitionId)
+            : await port.resolve!(recognitionId);
         } catch {
           throw jsonProblem(problemBaseUri, "governed-proposal-resolution-unavailable", 503,
             "governed proposal resolution unavailable");
@@ -1357,7 +1462,7 @@ export const createTrustRegistryApiServer = (
               await port.preflightSubmission?.(
                 binding, body.evidenceCommitment, signers, evidenceVerifierSignature, current,
               );
-              return executeProposal("recognition", recognitionId, body.evidenceCommitment, async () =>
+              return executeProposal("recognition", recognitionId, body.evidenceCommitment, prepared, async () =>
                 GovernedMembershipActionReceiptSchema.parse(await port.execute(
                   binding, body.evidenceCommitment, signers, evidenceVerifierSignature, current,
                 )));
@@ -1432,8 +1537,10 @@ export const createTrustRegistryApiServer = (
         }
         requireValidProposalSigners(signerContext, signers);
         try {
+          await port.preflightSubmission?.(authorizationId, body.evidence, signers,
+            evidenceVerifierSignature, signerContext);
           const receipt = GovernedMembershipActionReceiptSchema.parse(
-            await executeProposal("issuer", authorizationId, body.evidence.commitment,
+            await executeProposal("issuer", authorizationId, body.evidence.commitment, prepared,
               () => port.execute(authorizationId, body.evidence, signers, evidenceVerifierSignature)),
           );
           writeJson(response, 202, receipt);
@@ -1503,8 +1610,10 @@ export const createTrustRegistryApiServer = (
         }
         requireValidProposalSigners(signerContext, signers);
         try {
+          await port.preflightSubmission?.(authorizationId, body.evidence, signers,
+            evidenceVerifierSignature, signerContext);
           const receipt = GovernedMembershipActionReceiptSchema.parse(
-            await executeProposal("verifier", authorizationId, body.evidence.commitment,
+            await executeProposal("verifier", authorizationId, body.evidence.commitment, prepared,
               () => port.execute(authorizationId, body.evidence, signers, evidenceVerifierSignature)),
           );
           writeJson(response, 202, receipt);
@@ -1574,8 +1683,10 @@ export const createTrustRegistryApiServer = (
         }
         requireValidProposalSigners(signerContext, signers);
         try {
+          await port.preflightSubmission?.(authorizationId, body.evidence, signers,
+            evidenceVerifierSignature, signerContext);
           const receipt = GovernedMembershipActionReceiptSchema.parse(
-            await executeProposal("auditor", authorizationId, body.evidence.commitment,
+            await executeProposal("auditor", authorizationId, body.evidence.commitment, prepared,
               () => port.execute(authorizationId, body.evidence, signers, evidenceVerifierSignature)),
           );
           writeJson(response, 202, receipt);
@@ -1645,8 +1756,10 @@ export const createTrustRegistryApiServer = (
         }
         requireValidProposalSigners(signerContext, signers);
         try {
+          await port.preflightSubmission?.(maintainerId, body.evidence, signers,
+            evidenceVerifierSignature, signerContext);
           const receipt = GovernedMembershipActionReceiptSchema.parse(
-            await executeProposal("maintainer", maintainerId, body.evidence.commitment,
+            await executeProposal("maintainer", maintainerId, body.evidence.commitment, prepared,
               () => port.execute(maintainerId, body.evidence, signers, evidenceVerifierSignature)),
           );
           writeJson(response, 202, receipt);
@@ -2026,6 +2139,7 @@ export const createTrustRegistryApiServer = (
         && segments[1] === "epochs"
         && segments[2] === "resolve"
       ) {
+        requireCompleteHistoricalProjection();
         const evaluatedAt = parseTimestampQueryParameter(
           url.searchParams.get("at"),
           "at",
@@ -2046,6 +2160,7 @@ export const createTrustRegistryApiServer = (
       }
 
       if (method === "GET" && segments.length === 3 && segments[0] === "v1" && segments[1] === "epochs") {
+        requireCompleteHistoricalProjection();
         const epoch = await loadEpochById(options.source, segments[2]!);
         if (epoch === null) {
           throw jsonProblem(

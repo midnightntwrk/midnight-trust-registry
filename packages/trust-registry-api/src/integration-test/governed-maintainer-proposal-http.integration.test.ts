@@ -1,4 +1,7 @@
 import { Buffer } from "node:buffer";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -7,6 +10,7 @@ import {
   encodeJubjubSignature,
   signMaintainerProposalEvidenceFromSeed,
   signDeploymentBoundMaintainerActionFromSeed,
+  verifyMaintainerProposalEvidenceSignature,
 } from "@midnight-ntwrk/trust-registry-contract";
 import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
 import {
@@ -22,7 +26,9 @@ import {
   type PreparedGovernedMaintainerProposal,
 } from "../governed-maintainer-proposals.js";
 import { createTrustRegistryApiServer } from "../server.js";
+import { FileProposalSubmissionJournal } from "../proposal-submission-journal.js";
 import { resolveCompactProposalObservation } from "../compact-proposal-observation.js";
+import { acceptedProposalAdmission } from "./fixtures/accepted-proposal-admission.js";
 
 const bytes = (value: string): Uint8Array => Buffer.from(value.slice(2), "hex");
 
@@ -56,11 +62,12 @@ describe("Compact-backed maintainer proposals over HTTP", () => {
     harness.authorizeMaintainer(second);
     harness.authorizeMaintainer(third);
     harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    const scope = createMaintainerAuthorizationScopeFixture(harness.registryId);
     const evidence = harness.createApplicationEvidence({
       applicationId: candidate.maintainerId,
       subjectDid: candidate.subjectDid,
       role: "maintainer",
-      scope: createMaintainerAuthorizationScopeFixture(harness.registryId),
+      scope,
     });
     const source = { mode: "memory" as const, loadSnapshot: async () => publishSimulatorSnapshot(harness,
       { label: "maintainer-proposal-http" }) };
@@ -75,6 +82,8 @@ describe("Compact-backed maintainer proposals over HTTP", () => {
     } finally {
       await new Promise<void>((resolve, reject) => unavailable.close((error) => error ? reject(error) : resolve()));
     }
+    let preflights = 0;
+    let executions = 0;
     const port: GovernedMaintainerProposalPort = {
       async prepare(maintainerId, submitted) {
         if (maintainerId !== candidate.maintainerId) {
@@ -86,7 +95,23 @@ describe("Compact-backed maintainer proposals over HTTP", () => {
           throw new GovernedMaintainerProposalRejectedError("invalid-evidence");
         }
       },
+      async preflightSubmission(_maintainerId, _evidence, signers, signature, context) {
+        preflights += 1;
+        const ledger = harness.simulator.getLedger();
+        if (BigInt(signers.length) < ledger.maintainerThreshold) {
+          throw new GovernedMaintainerProposalRejectedError("invalid-signers");
+        }
+        if (!ledger.evidenceVerifierKeyRecords.member(context.evidenceVerifierAuthorizationId)
+          || !verifyMaintainerProposalEvidenceSignature(
+            ledger.evidenceVerifierKeyRecords.lookup(context.evidenceVerifierAuthorizationId).publicKey,
+            context.registryId, context.networkIdCommitment, context.contractAddress,
+            context.evidenceVerifierKeyIdCommitment, context.actionPayloadHash, signature,
+          )) {
+          throw new GovernedMaintainerProposalRejectedError("invalid-evidence");
+        }
+      },
       async execute(maintainerId, submitted, signers, verifierSignature) {
+        executions += 1;
         if (maintainerId !== candidate.maintainerId) {
           throw new GovernedMaintainerProposalRejectedError("unknown-maintainer");
         }
@@ -107,7 +132,11 @@ describe("Compact-backed maintainer proposals over HTTP", () => {
           harness.registryId, "maintainer", maintainerId);
       },
     };
-    const server = createTrustRegistryApiServer({ source, governedMaintainerProposals: port });
+    const directory = await mkdtemp(join(tmpdir(), "tr-maintainer-preflight-"));
+    const journal = new FileProposalSubmissionJournal(join(directory, "journal.json"));
+    const server = createTrustRegistryApiServer({ source, governedMaintainerProposals: port,
+      proposalSubmissionJournal: journal,
+      proposalAdmission: acceptedProposalAdmission(candidate.maintainerId, scope, evidence) });
     try {
       await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
       const address = server.address();
@@ -128,12 +157,21 @@ describe("Compact-backed maintainer proposals over HTTP", () => {
       const signers = [signPrepared(harness, second, prepared), signPrepared(harness, third, prepared)];
       const submit = (context: PreparedGovernedMaintainerProposal, proof: string, votes = signers) =>
         post("submit", { evidence, prepared: context, signers: votes, evidenceVerifierSignature: proof });
-      expect((await submit(prepared, encoded, [signers[0]!])).status).toBe(403);
+      const insufficient = await submit(prepared, encoded, [signers[0]!]);
+      expect(insufficient.status, await insufficient.text()).toBe(403);
+      expect(preflights).toBe(1);
+      expect(executions).toBe(0);
+      expect(await journal.read("maintainer", candidate.maintainerId)).toBeNull();
       const wrong = signMaintainerProposalEvidenceFromSeed(second.seed,
         bytes(prepared.registryId), bytes(prepared.networkIdCommitment), bytes(prepared.contractAddress),
         bytes(prepared.evidenceVerifierKeyIdCommitment), bytes(prepared.actionPayloadHash));
-      expect((await submit(prepared,
-        `0x${Buffer.from(encodeJubjubSignature(wrong)).toString("hex")}`)).status).toBe(403);
+      const wrongResponse = await submit(prepared,
+        `0x${Buffer.from(encodeJubjubSignature(wrong)).toString("hex")}`);
+      expect(wrongResponse.status).toBe(403);
+      expect((await wrongResponse.json()).detail).toBe("invalid-evidence");
+      expect(preflights).toBe(2);
+      expect(executions).toBe(0);
+      expect(await journal.read("maintainer", candidate.maintainerId)).toBeNull();
       expect((await submit(prepared, "0x00")).status).toBe(400);
       expect((await submit({ ...prepared, actionSequence: (BigInt(prepared.actionSequence) + 1n).toString() },
         encoded)).status).toBe(409);
@@ -141,6 +179,10 @@ describe("Compact-backed maintainer proposals over HTTP", () => {
       expect(accepted.status).toBe(202);
       const receipt = await accepted.json() as { eventHash: string };
       expect(receipt.eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
+      const recorded = await journal.read("maintainer", candidate.maintainerId);
+      expect(recorded?.state).toBe("submitted");
+      expect(recorded?.reservationContext).toEqual({ actionSequence: prepared.actionSequence,
+        actionKind: prepared.actionKind, actionPayloadHash: prepared.actionPayloadHash });
       expect(harness.simulator.getLedger().maintainerMembershipCount).toBe(4n);
       expect((await submit(prepared, encoded)).status).toBe(409);
       expect(await (await post("resolve", { evidence })).json()).toEqual({
@@ -148,9 +190,10 @@ describe("Compact-backed maintainer proposals over HTTP", () => {
       });
       expect((await post("resolve", {
         evidence: { ...evidence, commitment: `0x${"00".repeat(32)}` },
-      })).status).toBe(409);
+      })).status).toBe(403);
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      await rm(directory, { recursive: true, force: true });
     }
   });
 });

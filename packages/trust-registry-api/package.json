@@ -50,7 +50,7 @@
     "test": "vitest run src/test --testTimeout 30000",
     "build:light": "pnpm run build",
     "test:light": "vitest run src/test --testTimeout 90000",
-    "integration": "vitest run src/integration-test --testTimeout 120000",
+    "integration": "pnpm --filter @midnight-ntwrk/trust-registry-integration build && vitest run src/integration-test --testTimeout 120000",
     "integration:light": "pnpm run integration"
   },
   "dependencies": {
@@ -65,5 +65,9 @@
     "@midnight-ntwrk/trust-registry-integration": "workspace:0.1.0",
     "@midnight-ntwrk/trust-registry-trqp-adapter": "workspace:0.1.0",
     "zod": "^4.6.6"
+  },
+  "devDependencies": {
+    "@midnight-ntwrk/midnight-js-contracts": "4.1.1",
+    "@midnight-ntwrk/midnight-js-network-id": "4.1.1"
   }
 }
