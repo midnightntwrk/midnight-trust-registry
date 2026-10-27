@@ -29,7 +29,7 @@ function evidencePath(root, path) {
     || path.includes("\\") || path.split("/").some((part) => part === "" || part === "." || part === "..")) {
     throw new Error(`Evidence path must be a simple relative path: ${String(path)}`);
   }
-  if (path === "acceptance.json") {
+  if (path.toLowerCase() === "acceptance.json") {
     throw new Error("Acceptance manifest cannot be attached as its own evidence");
   }
   const absolute = resolve(root, path);
