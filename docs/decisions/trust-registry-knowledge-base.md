@@ -2630,3 +2630,14 @@ API test suite passed. This is one #234 identity link, not proof that the
 maintenance readback is independently finalized, that the deployment is
 qualified, or that the human security review is complete. A future reviewer
 rotation needs an explicit signed protocol rather than a silent keyring change.
+
+The local deployment and staged-reconciliation shell is now in the strict
+security-script type gate. Its plan type distinguishes full from staged
+deployment, so only the staged call carries an initial verifier-key name.
+Parsed release manifests and provider factory results enter as `unknown` at
+the dynamic-code boundary; a malformed or empty verifier-key hash catalog
+stops before endpoint observation or provider import. The test fixture now
+uses a realistic nonempty catalog and adds an early-denial case. Strict
+typechecking does not prove that a dynamically loaded provider is benign or
+that its output is a finalized ledger result; immutable installation, signed
+approval, and live reconciliation remain separate gates.

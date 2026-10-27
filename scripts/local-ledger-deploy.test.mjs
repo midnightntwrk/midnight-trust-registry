@@ -28,7 +28,8 @@ const moduleSource = `export const createLocalDeploymentMaterial = async () => (
 });\n`;
 await writeFile(modulePath, moduleSource);
 await writeFile(manifestPath, JSON.stringify({
-  format: "tr-release-candidate-manifest-v2", sourceRevision, verifierKeySha256: {},
+  format: "tr-release-candidate-manifest-v2", sourceRevision,
+  verifierKeySha256: { authorizeMaintainerAuditEvent: "c".repeat(64) },
 }));
 const plan = {
   format: "tr-local-deployment-plan-v1",
@@ -132,6 +133,21 @@ test("deployment rechecks approved release manifest bytes before loading provide
     loadProvider: async () => { loaded = true; },
   }, { expectedReleaseManifestSha256: "f".repeat(64) }), /Release manifest bytes changed/u);
   assert.equal(loaded, false);
+});
+
+test("malformed verifier-key catalog stops before endpoint or provider use", async () => {
+  const badManifest = join(root, "malformed-manifest.json");
+  await writeFile(badManifest, JSON.stringify({
+    format: "tr-release-candidate-manifest-v2", sourceRevision,
+    verifierKeySha256: { authorizeMaintainerAuditEvent: "not-a-hash" },
+  }));
+  let called = false;
+  await assert.rejects(runLocalDeployment({ ...plan, releaseManifestPath: badManifest }, {
+    validateEndpoints: async () => { called = true; },
+    observe: async () => { called = true; },
+    loadProvider: async () => { called = true; },
+  }), /verifier-key catalog is malformed/u);
+  assert.equal(called, false);
 });
 
 test("real deployment and maintenance stop without an immutable provider root", async () => {

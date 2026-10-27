@@ -22,6 +22,24 @@ import { validateLocalDeploymentPlan } from "./local-deployment-plan-policy.mjs"
 
 export { validateLocalDeploymentPlan };
 
+/** @typedef {ReturnType<typeof validateLocalDeploymentPlan>} LocalDeploymentPlan */
+/** @typedef {Parameters<typeof deployLocalTrustRegistryOnce>[0]} DeploymentInput */
+/** @typedef {Parameters<typeof deployLocalTrustRegistryStagedOnce>[0]} StagedDeploymentInput */
+/** @typedef {Awaited<ReturnType<typeof deployLocalTrustRegistryOnce>>} DeploymentResult */
+/** @typedef {Pick<DeploymentInput, "bootstrap" | "providers" | "contractMaintenanceSigningKey"> &
+ * {stop?: () => Promise<void>}} DeploymentMaterial */
+/** @typedef {{validateEndpoints?: typeof createLocalNetworkDeploymentActionReader,
+ * observe?: typeof checkLocalLedgerPreflight,
+ * loadProvider?: (modulePath: string) => Promise<unknown>,
+ * deployOnce?: (input: DeploymentInput | StagedDeploymentInput) => Promise<DeploymentResult>,
+ * inspectDeployment?: FileDeploymentAttemptJournal["inspectApproved"],
+ * readback?: typeof reconcileLocalStagedDeployment}} DeploymentDependencies */
+/** @typedef {{expectedReleaseManifestSha256?: string,
+ * expectedDeploymentReceipt?: Partial<DeploymentResult["receipt"]>}} DeploymentApproval */
+/** @param {unknown} value @returns {value is Record<string, unknown>} */
+const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+
+/** @param {string} path */
 async function regularFile(path) {
   const stat = await lstat(path);
   if (!stat.isFile() || stat.size === 0 || stat.size > 16 * 1024 * 1024) {
@@ -31,6 +49,10 @@ async function regularFile(path) {
 }
 
 /** The provider module is privileged code; the approved hash is checked before import. */
+/** @param {LocalDeploymentPlan} plan
+ * @param {DeploymentDependencies} dependencies
+ * @param {DeploymentApproval} approval
+ * @param {"createLocalDeploymentMaterial" | "createLocalMaintenanceMaterial"} factoryName */
 async function loadApprovedMaterial(plan, dependencies, approval, factoryName) {
   validateLocalDeploymentPlan(plan);
   const manifestBytes = await regularFile(plan.releaseManifestPath);
@@ -38,11 +60,19 @@ async function loadApprovedMaterial(plan, dependencies, approval, factoryName) {
     && createHash("sha256").update(manifestBytes).digest("hex") !== approval.expectedReleaseManifestSha256) {
     throw new Error("Release manifest bytes changed after setup approval");
   }
-  const manifest = JSON.parse(manifestBytes.toString("utf8"));
-  if (manifest?.format !== "tr-release-candidate-manifest-v2"
-    || manifest.sourceRevision !== plan.sourceRevision) {
+  const parsedManifest = /** @type {unknown} */ (JSON.parse(manifestBytes.toString("utf8")));
+  if (!isRecord(parsedManifest)
+    || parsedManifest.format !== "tr-release-candidate-manifest-v2"
+    || parsedManifest.sourceRevision !== plan.sourceRevision) {
     throw new Error("Approved source SHA disagrees with the release manifest");
   }
+  if (!isRecord(parsedManifest.verifierKeySha256)
+    || Object.keys(parsedManifest.verifierKeySha256).length === 0
+    || Object.entries(parsedManifest.verifierKeySha256).some(([name, hash]) =>
+      name.length === 0 || typeof hash !== "string" || !/^[0-9a-f]{64}$/u.test(hash))) {
+    throw new Error("Release manifest verifier-key catalog is malformed");
+  }
+  const manifest = /** @type {DeploymentInput["releaseManifest"]} */ (parsedManifest);
   const providerIdentity = await readApprovedProviderIdentity(plan.providerModulePath, plan.providerModuleSha256);
   if (dependencies.loadProvider === undefined) {
     const tree = assertApprovedProviderTree(plan.providerModulePath, process.env.TR_IMMUTABLE_PROVIDER_ROOT);
@@ -65,41 +95,52 @@ async function loadApprovedMaterial(plan, dependencies, approval, factoryName) {
   if (typeof factory !== "function") {
     throw new Error(`Approved provider module must export ${factoryName}`);
   }
-  const material = await factory({
+  const material = await /** @type {(input: {network: LocalDeploymentPlan["network"],
+   * releaseManifest: DeploymentInput["releaseManifest"]}) => Promise<unknown>} */ (factory)({
     network: plan.network, releaseManifest: manifest,
   });
   return { manifest, material };
 }
 
+/** @param {LocalDeploymentPlan} plan
+ * @param {DeploymentDependencies} [dependencies]
+ * @param {DeploymentApproval} [approval] */
 export async function loadApprovedDeploymentMaterial(plan, dependencies = {}, approval = {}) {
   return loadApprovedMaterial(plan, dependencies, approval, "createLocalDeploymentMaterial");
 }
 
+/** @param {LocalDeploymentPlan} plan
+ * @param {DeploymentDependencies} [dependencies]
+ * @param {DeploymentApproval} [approval] */
 export async function loadApprovedMaintenanceMaterial(plan, dependencies = {}, approval = {}) {
   return loadApprovedMaterial(plan, dependencies, approval, "createLocalMaintenanceMaterial");
 }
 
+/** @param {LocalDeploymentPlan} plan
+ * @param {DeploymentDependencies} [dependencies]
+ * @param {DeploymentApproval} [approval] */
 export async function runLocalDeployment(plan, dependencies = {}, approval = {}) {
   const { manifest, material } = await loadApprovedDeploymentMaterial(plan, dependencies, approval);
   try {
-    if (!material || typeof material !== "object" || !material.bootstrap
+    if (!isRecord(material) || !material.bootstrap
       || !material.providers || !material.contractMaintenanceSigningKey) {
       throw new Error("Provider module did not return bootstrap, providers, and maintenance signing key");
     }
-    const deployOnce = dependencies.deployOnce ?? (plan.format === "tr-local-staged-deployment-plan-v1"
-      ? deployLocalTrustRegistryStagedOnce : deployLocalTrustRegistryOnce);
-    const result = await deployOnce({
+    const approvedMaterial = /** @type {DeploymentMaterial} */ (material);
+    const deploymentInput = {
       network: plan.network,
-      bootstrap: material.bootstrap,
+      bootstrap: approvedMaterial.bootstrap,
       releaseManifest: manifest,
-      providers: material.providers,
-      contractMaintenanceSigningKey: material.contractMaintenanceSigningKey,
+      providers: approvedMaterial.providers,
+      contractMaintenanceSigningKey: approvedMaterial.contractMaintenanceSigningKey,
       sourceRevision: plan.sourceRevision,
-      ...(plan.format === "tr-local-staged-deployment-plan-v1" ? {
-        initialVerifierKeyName: plan.initialVerifierKeyName,
-      } : {}),
       journal: new FileDeploymentAttemptJournal(plan.journalPath),
-    });
+    };
+    const result = plan.format === "tr-local-staged-deployment-plan-v1"
+      ? await (dependencies.deployOnce ?? deployLocalTrustRegistryStagedOnce)({
+        ...deploymentInput, initialVerifierKeyName: plan.initialVerifierKeyName,
+      })
+      : await (dependencies.deployOnce ?? deployLocalTrustRegistryOnce)(deploymentInput);
     return {
       kind: "local-deployment-submission-observation",
       sourceRevision: plan.sourceRevision,
@@ -107,7 +148,7 @@ export async function runLocalDeployment(plan, dependencies = {}, approval = {})
       readbackStatus: result.readback.status,
     };
   } finally {
-    if (typeof material?.stop === "function") {
+    if (isRecord(material) && typeof material.stop === "function") {
       try {
         await material.stop();
       } catch {
@@ -119,22 +160,26 @@ export async function runLocalDeployment(plan, dependencies = {}, approval = {})
 }
 
 /** Inspects the original journal and finalized image; never enters the SDK deploy path. */
+/** @param {LocalDeploymentPlan} plan
+ * @param {DeploymentDependencies} [dependencies]
+ * @param {DeploymentApproval} [approval] */
 export async function reconcileLocalDeployment(plan, dependencies = {}, approval = {}) {
   if (plan?.format !== "tr-local-staged-deployment-plan-v1") {
     throw new Error("Read-only deployment reconciliation requires a staged local plan");
   }
   const { manifest, material } = await loadApprovedDeploymentMaterial(plan, dependencies, approval);
   try {
-    if (!material || typeof material !== "object" || !material.bootstrap
+    if (!isRecord(material) || !material.bootstrap
       || !material.contractMaintenanceSigningKey) {
       throw new Error("Approved provider did not return staged bootstrap and maintenance key");
     }
+    const approvedMaterial = /** @type {DeploymentMaterial} */ (material);
     const entry = await (dependencies.inspectDeployment ?? (async (intent) =>
       new FileDeploymentAttemptJournal(plan.journalPath).inspectApproved(intent)))({
       network: plan.network,
-      bootstrap: material.bootstrap,
+      bootstrap: approvedMaterial.bootstrap,
       releaseManifest: manifest,
-      contractMaintenanceSigningKey: material.contractMaintenanceSigningKey,
+      contractMaintenanceSigningKey: approvedMaterial.contractMaintenanceSigningKey,
       sourceRevision: plan.sourceRevision,
       initialVerifierKeyName: plan.initialVerifierKeyName,
     });
@@ -152,15 +197,16 @@ export async function reconcileLocalDeployment(plan, dependencies = {}, approval
       blockHash: entry.submitted.blockHash,
       blockHeight: entry.submitted.blockHeight,
     };
-    if (approval.expectedDeploymentReceipt
-      && ["networkId", "contractAddress", "txId", "blockHash", "blockHeight"]
-        .some((field) => receipt[field] !== approval.expectedDeploymentReceipt[field])) {
+    const expectedReceipt = approval.expectedDeploymentReceipt;
+    const receiptFields = /** @type {const} */ (["networkId", "contractAddress", "txId",
+      "blockHash", "blockHeight"]);
+    if (expectedReceipt && receiptFields.some((field) => receipt[field] !== expectedReceipt[field])) {
       throw new Error("Deployment journal receipt disagrees with the setup-recorded receipt");
     }
     const readback = await (dependencies.readback ?? reconcileLocalStagedDeployment)({
       network: plan.network,
       receipt,
-      bootstrap: material.bootstrap,
+      bootstrap: approvedMaterial.bootstrap,
       releaseManifest: manifest,
       initialVerifierKeyName: plan.initialVerifierKeyName,
       bootstrapMaintenanceVerifyingKey: entry.reservation.bootstrapMaintenanceVerifyingKey,
@@ -170,7 +216,7 @@ export async function reconcileLocalDeployment(plan, dependencies = {}, approval
       readbackStatus: readback.status,
       ...(readback.finalizedBlockHash ? { finalizedBlockHash: readback.finalizedBlockHash } : {}) };
   } finally {
-    if (typeof material?.stop === "function") {
+    if (isRecord(material) && typeof material.stop === "function") {
       try {
         await material.stop();
       } catch {

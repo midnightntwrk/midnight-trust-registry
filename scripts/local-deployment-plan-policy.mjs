@@ -12,10 +12,14 @@ const NETWORK_FIELDS = ["allowedHosts", "expectedGenesisHash", "indexerHttpUrl",
   "indexerWsUrl", "networkId", "rpcUrl"];
 
 /** @typedef {{allowedHosts: string[], expectedGenesisHash: string, indexerHttpUrl: string,
- * indexerWsUrl: string, networkId: string, rpcUrl: string}} LocalDeploymentNetwork */
-/** @typedef {{format: string, journalPath: string, network: LocalDeploymentNetwork,
+ * indexerWsUrl: string, networkId: "undeployed", rpcUrl: string}} LocalDeploymentNetwork */
+/** @typedef {{journalPath: string, network: LocalDeploymentNetwork,
  * providerModulePath: string, providerModuleSha256: string, releaseManifestPath: string,
- * sourceRevision: string, initialVerifierKeyName?: string}} LocalDeploymentPlan */
+ * sourceRevision: string}} LocalDeploymentPlanBase */
+/** @typedef {LocalDeploymentPlanBase & (
+ * {format: "tr-local-deployment-plan-v1"} |
+ * {format: "tr-local-staged-deployment-plan-v1", initialVerifierKeyName: string}
+ * )} LocalDeploymentPlan */
 
 /** @param {unknown} value @returns {value is Record<string, unknown>} */
 const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
