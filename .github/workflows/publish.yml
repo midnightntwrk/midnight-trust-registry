@@ -146,11 +146,13 @@ jobs:
           --verify artifacts/npm-release.manifest.json
 
       - name: Smoke test release tarballs before publish
+        env:
+          VERSION: ${{ inputs.version }}
         run: >-
           pnpm run published-artifacts:smoke --
           --tarball-dir artifacts/npm-release
           --manifest artifacts/npm-release.manifest.json
-          --version "${{ inputs.version }}"
+          --version "$VERSION"
 
       - name: Upload release tarballs
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # ratchet:actions/upload-artifact@v4
