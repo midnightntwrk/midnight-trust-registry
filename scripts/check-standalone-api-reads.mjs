@@ -9,6 +9,7 @@ import { observeStandaloneApiRuntime } from "./check-standalone-api-runtime.mjs"
 
 const run = promisify(execFile);
 const CONTAINER_ID = /^[0-9a-f]{64}$/u;
+const SHA256 = /^[0-9a-f]{64}$/u;
 const canonicalTimestamp = (value) => {
   const parsed = typeof value === "string" ? Date.parse(value) : Number.NaN;
   return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
@@ -27,6 +28,7 @@ function checkedTopology(report) {
     || report.internalNetworkOnly !== true
     || report.hostPortPublished !== false
     || !CONTAINER_ID.test(report.apiContainerId ?? "")
+    || !SHA256.test(report.installInventorySha256 ?? "")
     || typeof report.apiStartedAt !== "string"
     || !Number.isFinite(Date.parse(report.apiStartedAt))
     || !Number.isSafeInteger(report.apiRestartCount) || report.apiRestartCount < 0
@@ -99,8 +101,9 @@ export async function probeStandaloneApiCurrentReads(bundle, env = process.env, 
     || before.apiStartedAt !== after.apiStartedAt
     || before.apiRestartCount !== after.apiRestartCount
     || before.networkId !== after.networkId
+    || before.installInventorySha256 !== after.installInventorySha256
     || before.sourceRevision !== after.sourceRevision) {
-    throw new Error("API runtime container or internal network changed during current-read probe");
+    throw new Error("API runtime container, install inventory, or internal network changed during current-read probe");
   }
   return {
     format: "tr-standalone-api-current-read-probe-v4",
@@ -109,6 +112,7 @@ export async function probeStandaloneApiCurrentReads(bundle, env = process.env, 
     apiStartedAt: before.apiStartedAt,
     apiRestartCount: before.apiRestartCount,
     networkId: before.networkId,
+    installInventorySha256: before.installInventorySha256,
     planSha256: current.planSha256,
     planContractAddress: current.planContractAddress,
     planExpectedGenesisHash: current.planExpectedGenesisHash,

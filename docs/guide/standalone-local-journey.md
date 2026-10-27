@@ -204,8 +204,9 @@ they can all run today. The implementation sequence is in
 
    This checks issuer, verifier, auditor, and recognition current queries
    against the live signed-plan source twice. It also requires the API's
-   running project and network, plus the plan's genesis and contract address,
-   to match the wizard-approved deployment before probing egress. It requires
+   running project and network, the verified install inventory SHA-256, and
+   the plan's genesis and contract address to match the wizard-approved setup
+   before probing egress. It requires
    the selected-state SHA-256 to stay fixed around a positive-control TCP and
    DNS egress-denial probe of the same API container. Save its JSON output
    with the raw probe logs in the private evidence directory. An exit code 0

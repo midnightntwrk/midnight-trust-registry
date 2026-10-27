@@ -9,6 +9,7 @@ const topology = {
   kind: "standalone-api-runtime-topology-observation",
   releaseQualified: false,
   sourceRevision,
+  installInventorySha256: "9".repeat(64),
   apiContainerId: "c".repeat(64),
   apiStartedAt: "2026-10-24T10:00:00.000Z",
   apiRestartCount: 0,
@@ -56,6 +57,7 @@ test("probes loopback from the verified API container, then rechecks its identit
     sourceRevision, apiContainerId: topology.apiContainerId,
     apiStartedAt: topology.apiStartedAt, apiRestartCount: topology.apiRestartCount,
     networkId: topology.networkId,
+    installInventorySha256: topology.installInventorySha256,
     planSha256: report.planSha256, planNotAfter: report.planNotAfter,
     planContractAddress: report.planContractAddress,
     planExpectedGenesisHash: report.planExpectedGenesisHash,
@@ -78,6 +80,9 @@ test("does not exec when topology or reviewer input is invalid", async () => {
   const execDocker = async () => { execCount += 1; return JSON.stringify(report); };
   await assert.rejects(probeStandaloneApiCurrentReads("/bundle", env, {
     observe: async () => ({ ...topology, apiContainerId: "not-an-id" }), execDocker,
+  }), /topology observation is incomplete/u);
+  await assert.rejects(probeStandaloneApiCurrentReads("/bundle", env, {
+    observe: async () => ({ ...topology, installInventorySha256: "bad" }), execDocker,
   }), /topology observation is incomplete/u);
   await assert.rejects(probeStandaloneApiCurrentReads("/bundle", {
     TR_API_REVIEWER_FINGERPRINT: "bad",
@@ -112,6 +117,14 @@ test("rejects a replaced container or network after the HTTP probe", async () =>
     observe: async () => {
       observed += 1;
       return observed === 1 ? topology : { ...topology, networkId: "other" };
+    },
+    execDocker: async () => JSON.stringify(report),
+  }), /changed during current-read probe/u);
+  observed = 0;
+  await assert.rejects(probeStandaloneApiCurrentReads("/bundle", env, {
+    observe: async () => {
+      observed += 1;
+      return observed === 1 ? topology : { ...topology, installInventorySha256: "8".repeat(64) };
     },
     execDocker: async () => JSON.stringify(report),
   }), /changed during current-read probe/u);

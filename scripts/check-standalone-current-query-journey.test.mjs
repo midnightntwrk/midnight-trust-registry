@@ -9,6 +9,7 @@ const status = {
   releaseQualified: false,
   stackProject: "local-registry-test",
   stackNetworkId: "1".repeat(64),
+  installInventorySha256: "2".repeat(64),
   setupLock: "absent",
   install: "verified-staged-bytes-only",
   stackConfiguration: "observed-ledger-bridge-only",
@@ -39,6 +40,7 @@ const read = {
   apiStartedAt: "2026-01-01T00:00:00Z",
   apiRestartCount: 0,
   networkId: status.stackNetworkId,
+  installInventorySha256: status.installInventorySha256,
   counts: roles,
   resolvedLookups: roles,
 };
@@ -89,30 +91,34 @@ test("missing wizard approval stops before touching the running API", async () =
   assert.equal(called, false);
 });
 
-test("signed API runtime must match wizard-approved genesis, deployment, and network before egress", async () => {
+test("signed API runtime must match wizard-approved install, genesis, deployment, and network before egress", async () => {
   for (const mismatch of [
     { approvedGenesisHash: `0x${"e".repeat(64)}` },
     { deployedContractAddress: `0x${"e".repeat(64)}` },
     { stackNetworkId: "e".repeat(64) },
+    { installInventorySha256: "e".repeat(64) },
   ]) {
     let egressCalled = false;
     await assert.rejects(observeStandaloneCurrentQueryJourney("/setup", "/bundle", env,
       dependencies({
         setupStatus: async () => ({ ...status, ...mismatch }),
         egress: async () => { egressCalled = true; return egress; },
-      })), /differs from the approved wizard deployment, genesis, or network/u);
+      })), /differs from the approved wizard install, deployment, genesis, or network/u);
     assert.equal(egressCalled, false);
   }
 });
 
-test("selected API project must match the approved wizard project", async () => {
-  let readCalled = false;
-  await assert.rejects(observeStandaloneCurrentQueryJourney("/setup", "/bundle", env,
-    dependencies({
-      setupStatus: async () => ({ ...status, stackProject: "other-project" }),
-      read: async () => { readCalled = true; return read; },
-    })), /Approved wizard project or network differs/u);
-  assert.equal(readCalled, false);
+test("selected API project and wizard install identity fail before runtime reads", async () => {
+  for (const mismatch of [{ stackProject: "other-project" },
+    { installInventorySha256: "bad" }]) {
+    let readCalled = false;
+    await assert.rejects(observeStandaloneCurrentQueryJourney("/setup", "/bundle", env,
+      dependencies({
+        setupStatus: async () => ({ ...status, ...mismatch }),
+        read: async () => { readCalled = true; return read; },
+      })), /Approved wizard install, project, or network differs/u);
+    assert.equal(readCalled, false);
+  }
 });
 
 test("rejects an empty or mocked actor selection", async () => {
@@ -132,6 +138,7 @@ test("rejects a swapped signed plan, selected state, or API container between re
     [{ planSha256: "e".repeat(64) }, /changed during egress probe/u],
     [{ planContractAddress: `0x${"e".repeat(64)}` }, /differs from the approved wizard/u],
     [{ planExpectedGenesisHash: `0x${"d".repeat(64)}` }, /differs from the approved wizard/u],
+    [{ installInventorySha256: "d".repeat(64) }, /differs from the approved wizard/u],
     [{ selectedStateSha256: "f".repeat(64) }, /changed during egress probe/u],
     [{ apiContainerId: "f".repeat(64) }, /changed during egress probe/u],
   ]) {

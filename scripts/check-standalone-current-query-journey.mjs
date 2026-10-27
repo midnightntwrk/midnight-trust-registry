@@ -17,6 +17,7 @@ function checkedRead(report, status) {
     || report.releaseQualified !== false || report.sourceRevision !== status.sourceRevision
     || report.routeReadback !== "same-container-signed-plan-current-only"
     || !SHA256.test(report.planSha256 ?? "")
+    || !SHA256.test(report.installInventorySha256 ?? "")
     || !BLOCK_HASH.test(report.planContractAddress ?? "")
     || /^0x0{64}$/u.test(report.planContractAddress)
     || !BLOCK_HASH.test(report.planExpectedGenesisHash ?? "")
@@ -36,8 +37,9 @@ function checkedRead(report, status) {
   }
   if (report.planContractAddress !== status.deployedContractAddress
     || report.planExpectedGenesisHash !== status.approvedGenesisHash
-    || report.networkId !== status.stackNetworkId) {
-    throw new Error("Live signed API runtime differs from the approved wizard deployment, genesis, or network");
+    || report.networkId !== status.stackNetworkId
+    || report.installInventorySha256 !== status.installInventorySha256) {
+    throw new Error("Live signed API runtime differs from the approved wizard install, deployment, genesis, or network");
   }
   return report;
 }
@@ -68,8 +70,9 @@ export async function observeStandaloneCurrentQueryJourney(setupDirectory, bundl
   }
   if (typeof status.stackProject !== "string" || status.stackProject.length === 0
     || status.stackProject !== env.TR_STACK_NAME
-    || !SHA256.test(status.stackNetworkId ?? "")) {
-    throw new Error("Approved wizard project or network differs from the selected API runtime");
+    || !SHA256.test(status.stackNetworkId ?? "")
+    || !SHA256.test(status.installInventorySha256 ?? "")) {
+    throw new Error("Approved wizard install, project, or network differs from the selected API runtime");
   }
 
   const read = dependencies.read ?? probeStandaloneApiCurrentReads;
@@ -81,6 +84,7 @@ export async function observeStandaloneCurrentQueryJourney(setupDirectory, bundl
     || second.apiStartedAt !== first.apiStartedAt
     || second.apiRestartCount !== first.apiRestartCount
     || second.networkId !== first.networkId
+    || second.installInventorySha256 !== first.installInventorySha256
     || second.planSha256 !== first.planSha256
     || second.planContractAddress !== first.planContractAddress
     || second.planExpectedGenesisHash !== first.planExpectedGenesisHash
@@ -89,13 +93,14 @@ export async function observeStandaloneCurrentQueryJourney(setupDirectory, bundl
     || second.currentEpochId !== first.currentEpochId
     || ROLES.some((role) => second.counts[role] !== first.counts[role]
       || second.resolvedLookups[role] !== first.resolvedLookups[role])) {
-    throw new Error("Current-query deployment, signed plan, or selected actor reads changed during egress probe");
+    throw new Error("Current-query install, deployment, signed plan, or selected actor reads changed during egress probe");
   }
   return {
     format: "tr-standalone-current-query-journey-v2",
     sourceRevision: status.sourceRevision,
     apiContainerId: first.apiContainerId,
     networkId: first.networkId,
+    installInventorySha256: first.installInventorySha256,
     planSha256: first.planSha256,
     planContractAddress: first.planContractAddress,
     planExpectedGenesisHash: first.planExpectedGenesisHash,

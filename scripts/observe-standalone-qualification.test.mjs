@@ -31,6 +31,7 @@ const status = {
 const query = {
   format: "tr-standalone-current-query-journey-v2",
   sourceRevision: source,
+  installInventorySha256: install.inventorySha256,
   networkId,
   apiContainerId: "6".repeat(64),
   planContractAddress: contractAddress,
@@ -42,6 +43,7 @@ const query = {
 const restart = {
   format: "tr-standalone-api-restart-observation-v1",
   sourceRevision: source,
+  installInventorySha256: install.inventorySha256,
   networkId,
   apiContainerId: query.apiContainerId,
   planSha256: query.planSha256,
@@ -91,6 +93,7 @@ test("rejects setup inventory, project, network, contract, and genesis mixups", 
   }
   assert.equal(probed, false);
   for (const mutation of [
+    { installInventorySha256: "0".repeat(64) },
     { networkId: "0".repeat(64) },
     { planContractAddress: `0x${"2".repeat(64)}` },
     { planExpectedGenesisHash: `0x${"3".repeat(64)}` },
@@ -121,7 +124,8 @@ test("opt-in API restart must preserve the observed plan and selected state", as
     { apiRestart: true, env: { TR_STACK_NAME: project } },
     dependencies({ restart: async () => ({ ...restart, planSha256: "f".repeat(64) }) })),
   /incompatible/u);
-  for (const mutation of [{ apiContainerId: "7".repeat(64) }, { networkId: "8".repeat(64) }]) {
+  for (const mutation of [{ apiContainerId: "7".repeat(64) },
+    { networkId: "8".repeat(64) }, { installInventorySha256: "0".repeat(64) }]) {
     await assert.rejects(observeStandaloneQualification("/setup", "/bundle", source,
       { apiRestart: true, env: { TR_STACK_NAME: project } },
       dependencies({ restart: async () => ({ ...restart, ...mutation }) })), /incompatible/u);
