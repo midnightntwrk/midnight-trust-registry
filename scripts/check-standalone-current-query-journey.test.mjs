@@ -7,6 +7,8 @@ const sourceRevision = "a".repeat(40);
 const status = {
   sourceRevision,
   releaseQualified: false,
+  stackProject: "local-registry-test",
+  stackNetworkId: "1".repeat(64),
   setupLock: "absent",
   install: "verified-staged-bytes-only",
   stackConfiguration: "observed-ledger-bridge-only",
@@ -36,7 +38,7 @@ const read = {
   apiContainerId: "d".repeat(64),
   apiStartedAt: "2026-01-01T00:00:00Z",
   apiRestartCount: 0,
-  networkId: "network-1",
+  networkId: status.stackNetworkId,
   counts: roles,
   resolvedLookups: roles,
 };
@@ -62,9 +64,11 @@ function dependencies(overrides = {}) {
   };
 }
 
+const env = { TR_STACK_NAME: status.stackProject };
+
 test("combines two live current reads around the API egress probe without release claims", async () => {
   let reads = 0;
-  const result = await observeStandaloneCurrentQueryJourney("/setup", "/bundle", {},
+  const result = await observeStandaloneCurrentQueryJourney("/setup", "/bundle", env,
     dependencies({ read: async () => { reads += 1; return read; } }));
   assert.equal(reads, 2);
   assert.equal(result.format, "tr-standalone-current-query-journey-v2");
@@ -79,35 +83,46 @@ test("combines two live current reads around the API egress probe without releas
 
 test("missing wizard approval stops before touching the running API", async () => {
   let called = false;
-  await assert.rejects(observeStandaloneCurrentQueryJourney("/setup", "/bundle", {},
+  await assert.rejects(observeStandaloneCurrentQueryJourney("/setup", "/bundle", env,
     dependencies({ setupStatus: async () => ({ ...status, localLedger: "pending" }),
       read: async () => { called = true; return read; } })), /genesisApproved/u);
   assert.equal(called, false);
 });
 
-test("signed API plan must match the wizard-approved genesis and deployment before egress", async () => {
+test("signed API runtime must match wizard-approved genesis, deployment, and network before egress", async () => {
   for (const mismatch of [
     { approvedGenesisHash: `0x${"e".repeat(64)}` },
     { deployedContractAddress: `0x${"e".repeat(64)}` },
+    { stackNetworkId: "e".repeat(64) },
   ]) {
     let egressCalled = false;
-    await assert.rejects(observeStandaloneCurrentQueryJourney("/setup", "/bundle", {},
+    await assert.rejects(observeStandaloneCurrentQueryJourney("/setup", "/bundle", env,
       dependencies({
         setupStatus: async () => ({ ...status, ...mismatch }),
         egress: async () => { egressCalled = true; return egress; },
-      })), /differs from the approved wizard deployment or genesis/u);
+      })), /differs from the approved wizard deployment, genesis, or network/u);
     assert.equal(egressCalled, false);
   }
 });
 
+test("selected API project must match the approved wizard project", async () => {
+  let readCalled = false;
+  await assert.rejects(observeStandaloneCurrentQueryJourney("/setup", "/bundle", env,
+    dependencies({
+      setupStatus: async () => ({ ...status, stackProject: "other-project" }),
+      read: async () => { readCalled = true; return read; },
+    })), /Approved wizard project or network differs/u);
+  assert.equal(readCalled, false);
+});
+
 test("rejects an empty or mocked actor selection", async () => {
-  await assert.rejects(observeStandaloneCurrentQueryJourney("/setup", "/bundle", {},
+  await assert.rejects(observeStandaloneCurrentQueryJourney("/setup", "/bundle", env,
     dependencies({ read: async () => ({ ...read, resolvedLookups: { ...roles, issuer: 0 } }) })),
   /no resolved actor role/u);
 });
 
 test("rejects egress denial without positive controls", async () => {
-  await assert.rejects(observeStandaloneCurrentQueryJourney("/setup", "/bundle", {},
+  await assert.rejects(observeStandaloneCurrentQueryJourney("/setup", "/bundle", env,
     dependencies({ egress: async () => ({ ...egress, bridgeDnsCanaryReachable: false }) })),
   /egress probe/u);
 });
@@ -121,7 +136,7 @@ test("rejects a swapped signed plan, selected state, or API container between re
     [{ apiContainerId: "f".repeat(64) }, /changed during egress probe/u],
   ]) {
     let reads = 0;
-    await assert.rejects(observeStandaloneCurrentQueryJourney("/setup", "/bundle", {},
+    await assert.rejects(observeStandaloneCurrentQueryJourney("/setup", "/bundle", env,
       dependencies({ read: async () => { reads += 1; return reads === 1 ? read : { ...read, ...mutation }; } })),
     expectedError);
   }
@@ -129,7 +144,7 @@ test("rejects a swapped signed plan, selected state, or API container between re
 
 test("rejects role count drift between reads", async () => {
   let reads = 0;
-  await assert.rejects(observeStandaloneCurrentQueryJourney("/setup", "/bundle", {},
+  await assert.rejects(observeStandaloneCurrentQueryJourney("/setup", "/bundle", env,
     dependencies({ read: async () => { reads += 1; return reads === 1 ? read
       : { ...read, counts: { ...roles, verifier: 2 } }; } })), /changed during egress probe/u);
 });

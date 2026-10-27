@@ -35,8 +35,9 @@ function checkedRead(report, status) {
     throw new Error("Live current-query readback is incomplete or has no resolved actor role");
   }
   if (report.planContractAddress !== status.deployedContractAddress
-    || report.planExpectedGenesisHash !== status.approvedGenesisHash) {
-    throw new Error("Live signed API plan differs from the approved wizard deployment or genesis");
+    || report.planExpectedGenesisHash !== status.approvedGenesisHash
+    || report.networkId !== status.stackNetworkId) {
+    throw new Error("Live signed API runtime differs from the approved wizard deployment, genesis, or network");
   }
   return report;
 }
@@ -64,6 +65,11 @@ export async function observeStandaloneCurrentQueryJourney(setupDirectory, bundl
   const prerequisites = assessStandaloneJourneyPrerequisites(status);
   if (!prerequisites.ledgerPrerequisitesObserved) {
     throw new Error(`Standalone ledger prerequisites missing: ${prerequisites.missing.join(", ")}`);
+  }
+  if (typeof status.stackProject !== "string" || status.stackProject.length === 0
+    || status.stackProject !== env.TR_STACK_NAME
+    || !SHA256.test(status.stackNetworkId ?? "")) {
+    throw new Error("Approved wizard project or network differs from the selected API runtime");
   }
 
   const read = dependencies.read ?? probeStandaloneApiCurrentReads;
