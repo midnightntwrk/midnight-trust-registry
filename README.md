@@ -32,6 +32,7 @@ Choose the path that matches what you need:
 | --- | --- | --- |
 | Explore the API, portals, and governed use cases on a laptop | [Quickstart and local demo](docs-site/guide/quickstart.md) | Fixture and Compact-simulator behavior; **not** a deployed ledger or release qualification. |
 | Install a self-hosted stack and prepare an offline-runtime run | [Standalone first run](docs-site/guide/standalone.md) | Source-pinned install and isolated local-ledger observations, up to the human approval stop. |
+| Test the use case and understand the evidence boundary | [End-to-end testing](docs-site/guide/end-to-end-testing.md) | Runnable demo path and the separate deployed standalone acceptance path. |
 | Qualify the 0.1.0 local release candidate | [Operator acceptance record](docs/guide/standalone-local-journey.md#operator-acceptance-record) | Only case-by-case evidence from one approved, deployed, finalized source candidate can support a release decision. The full actor journey has **not** been recorded yet. |
 
 The packaged signed local-ledger API currently serves reads but does not wire
