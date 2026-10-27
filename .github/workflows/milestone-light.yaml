@@ -67,3 +67,7 @@ jobs:
       - run: pnpm --filter @midnight-ntwrk/trust-registry-integration run integration
       - run: pnpm --filter @midnight-ntwrk/trust-registry-api run integration
       - run: pnpm run demo:smoke
+      - name: Install pinned Playwright Chromium for fixture browser journeys
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Run fixture-backed browser journeys (not standalone qualification)
+        run: pnpm run test:e2e:demo:browser

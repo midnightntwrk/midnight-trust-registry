@@ -28,7 +28,9 @@ status, or offline runtime. In an artifact-bearing checkout, **do not run**
 applicant and admin flows in a real browser, install Google Chrome and run
 `pnpm run test:e2e:demo:browser`. This reuses the demo command's built assets
 and runs all Playwright specs without invoking the destructive light build.
-It still uses fixture identity/status and simulator governance. See the
+CI installs Playwright-pinned Chromium instead of Google Chrome. Both variants
+still use fixture identity/status and simulator governance; a green CI browser
+step is **not** standalone deployment evidence. See the
 [demo quickstart](quickstart.md) for individual commands and expected behavior.
 
 ## Prepare a standalone run
