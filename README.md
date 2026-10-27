@@ -35,6 +35,11 @@ Choose the path that matches what you need:
 | Test the use case and understand the evidence boundary | [End-to-end testing](docs-site/guide/end-to-end-testing.md) | Runnable demo path and the separate deployed standalone acceptance path. |
 | Qualify the 0.1.0 local release candidate | [Operator acceptance record](docs/guide/standalone-local-journey.md#operator-acceptance-record) | Only case-by-case evidence from one approved, deployed, finalized source candidate can support a release decision. The full actor journey has **not** been recorded yet. |
 
+For a disposable-checkout adopter smoke after install and build, run
+`pnpm run test:e2e:demo`. It covers simulator-backed role journeys and the
+fixture API/UI, not standalone deployment. See the end-to-end guide for the
+separate local-ledger acceptance stop gates.
+
 The packaged signed local-ledger API currently serves reads but does not wire
 governed writes or a live VC status-authority adapter. Do not substitute demo
 results, mock-provider tests, or a node-reported genesis hash for the

@@ -16,17 +16,18 @@ bundle must be preserved.
 ```sh
 pnpm install --frozen-lockfile
 ./run.sh --light
-pnpm run demo:membership:smoke
-pnpm run demo:smoke
+pnpm run test:e2e:demo
 ```
 
-`demo:membership:smoke` covers signed issuer, verifier, auditor, and
-maintainer simulator journeys. `demo:smoke` checks the local API/UI fixture
-flow. For the applicant forms in Chrome, optionally run `pnpm run
-test:browser`. These checks are useful regression and adoption tests, but
-their keys, identity/status responses, and ledger finality are not production
-trust anchors. See the [demo quickstart](quickstart.md) for the individual
-commands and expected behavior.
+`test:e2e:demo` runs signed issuer, verifier, auditor, and maintainer Compact
+simulator journeys, then starts the fixture API and both served UIs on
+ephemeral loopback ports. A passing exit code means those two demo checks
+passed; it does not imply a deployed contract, authenticated finality, live VC
+status, or offline runtime. In an artifact-bearing checkout, **do not run**
+`./run.sh --light`: use a disposable checkout for that prerequisite. For the
+applicant forms in Chrome, optionally run `pnpm run test:browser` in the
+disposable checkout. See the [demo quickstart](quickstart.md) for the
+individual commands and expected behavior.
 
 ## Prepare a standalone run
 
@@ -65,6 +66,10 @@ enable governed writes, or pass any actor case. The report pairs each missing
 gate with a `nextActions` entry. If `sourceMatchesCandidate` is false, start a
 new exact-source setup rather than reusing evidence from the older install.
 Do not remove an active setup lock or sign an approval on an operator's behalf.
+No standalone actor E2E command is currently green by design: the packaged
+local-ledger API is read-only, and the issuer/verifier/auditor/maintainer ports
+are not supplied by a qualified embedding host. Stop at this preflight rather
+than recording the simulator command above as an `A01`-`O01` pass.
 
 ## Run and record the real use case
 
