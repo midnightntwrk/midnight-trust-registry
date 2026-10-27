@@ -10,10 +10,11 @@ const subnetRoute = "eth0\t000015AC\t00000000\t0001\t0\t0\t0\t0000FFFF\t0\t0\t0"
 const defaultRoute = "eth0\t00000000\t010015AC\t0003\t0\t0\t0\t00000000\t0\t0\t0";
 const nodeImage = `sha256:${"a".repeat(64)}`;
 const apiImage = `sha256:${"b".repeat(64)}`;
+const apiIndex = `sha256:${"d".repeat(64)}`;
 const expectedTopology = { allowOffline: true, sourceRevision: "c".repeat(40),
   images: [{ role: "node", acceptedIds: [nodeImage] }],
   installRelay: { imageRole: "api" },
-  apiRuntime: { imageId: apiImage } };
+  apiRuntime: { imageId: apiIndex, configId: apiImage } };
 
 test("generated canary script is valid Node source with escaped HTTP framing", () => {
   assert.doesNotThrow(() => new Script(localEgressCanaryServerScript));
@@ -79,6 +80,8 @@ test("offline ledger probe uses a disposable local canary and cleans up", async 
   assert.ok(runs.every((args) => args.includes("--pull") && args.includes("never")));
   assert.ok(runs.every((args) => args.includes("--read-only") && args.includes("--cap-drop")));
   assert.ok(runs.some((args) => args.includes("--network-alias")));
+  assert.ok(runs.some((args) => args.includes(apiImage)));
+  assert.ok(runs.every((args) => !args.includes(apiIndex)));
   assert.ok(runs.every((args) => !args.join(" ").includes("example.com")));
   assert.ok(setup.calls.some((args) => args[0] === "rm" && args[1] === "-f"));
   assert.ok(setup.calls.some((args) => args[0] === "network" && args[1] === "rm"));
