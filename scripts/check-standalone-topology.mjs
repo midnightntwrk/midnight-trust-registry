@@ -12,12 +12,42 @@ const run = promisify(execFile);
 const DEFAULT_PROJECT = "tr-standalone-local-smoke";
 const SERVICES = ["node", "indexer", "proof-server"];
 const DIGEST_IMAGE = /^[a-z0-9][a-z0-9./_-]*@sha256:[0-9a-f]{64}$/u;
+/** @type {Record<string, {variable: string, defaultPort: number, target: string}>} */
 const PORTS = {
   node: { variable: "TR_NODE_PORT", defaultPort: 29944, target: "9944/tcp" },
   indexer: { variable: "TR_INDEXER_PORT", defaultPort: 28088, target: "8088/tcp" },
   "proof-server": { variable: "TR_PROOF_PORT", defaultPort: 26300, target: "6300/tcp" },
 };
 
+/**
+ * These shapes describe Docker's untrusted inspect JSON. Runtime checks below
+ * still decide whether any observed field is acceptable.
+ * @typedef {{Name: string, Id: string, Internal: boolean, Driver: string,
+ *   EnableIPv6: boolean, Labels?: Record<string, string>,
+ *   Containers?: Record<string, unknown>}} DockerNetwork
+ * @typedef {{Destination: string, Type: string, RW: boolean,
+ *   Name?: string, Source?: string}} DockerMount
+ * @typedef {{HostIp: string, HostPort: string}} DockerPort
+ * @typedef {{Id: string, Image: string,
+ *   Config: {Image: string, Labels: Record<string, string>, Env?: string[]},
+ *   State?: {Running?: boolean, Paused?: boolean, Health?: {Status?: string}},
+ *   HostConfig?: {PortBindings?: Record<string, DockerPort[]>, Privileged?: boolean,
+ *     CapAdd?: string[], PidMode?: string, IpcMode?: string, UsernsMode?: string,
+ *     Devices?: unknown[], DeviceRequests?: unknown[], CgroupnsMode?: string,
+ *     SecurityOpt?: string[]},
+ *   Mounts?: DockerMount[],
+ *   NetworkSettings?: {Ports?: Record<string, DockerPort[] | null>,
+ *     Networks?: Record<string, {NetworkID: string}>}}} DockerContainer
+ * @typedef {{role: string, reference: string, acceptedIds: string[]}} VerifiedImage
+ * @typedef {{sourceRevision?: string, images?: VerifiedImage[],
+ *   requirePrivateInputs?: boolean, proofParamsDir?: string,
+ *   indexerPassword?: string, indexerSecret?: string, installRelayId?: string,
+ *   allowUnpublishedHostPorts?: boolean, allowOffline?: boolean,
+ *   composeFiles?: string[]}} ExpectedTopology
+ * @typedef {{project: string, network: string, ports: Record<string, string>}} StackConfig
+ */
+
+/** @param {NodeJS.ProcessEnv} env */
 export function standaloneStackConfig(env = process.env) {
   const project = env.TR_STACK_NAME ?? DEFAULT_PROJECT;
   if (typeof project !== "string" || project.length > 63
@@ -27,6 +57,7 @@ export function standaloneStackConfig(env = process.env) {
   if (env.COMPOSE_PROJECT_NAME !== undefined && env.COMPOSE_PROJECT_NAME !== project) {
     throw new Error("COMPOSE_PROJECT_NAME must match TR_STACK_NAME");
   }
+  /** @type {Record<string, string>} */
   const ports = {};
   for (const [service, definition] of Object.entries(PORTS)) {
     const value = env[definition.variable] ?? String(definition.defaultPort);
@@ -42,6 +73,8 @@ export function standaloneStackConfig(env = process.env) {
   return { project, network: `${project}_ledger`, ports };
 }
 
+/** @param {DockerContainer} container @param {string} destination
+ * @param {string} type @param {boolean} expectedWritable @param {string} [expectedName] */
 function requireMount(container, destination, type, expectedWritable = true, expectedName) {
   const mount = container.Mounts?.find((item) => item.Destination === destination);
   if (!mount || mount.Type !== type || mount.RW !== expectedWritable
@@ -50,6 +83,7 @@ function requireMount(container, destination, type, expectedWritable = true, exp
   }
 }
 
+/** @param {DockerContainer} container @param {string} name @param {string} value */
 function requirePreparedInput(container, name, value) {
   const matches = container.Config?.Env?.filter((entry) => entry.startsWith(`${name}=`)) ?? [];
   if (matches.length !== 1 || matches[0] !== `${name}=${value}`) {
@@ -57,6 +91,8 @@ function requirePreparedInput(container, name, value) {
   }
 }
 
+/** @param {DockerContainer} container @param {string} service
+ * @param {string} port @param {boolean} allowUnpublished */
 function requireLoopbackBinding(container, service, port, allowUnpublished = false) {
   const bindings = container.HostConfig?.PortBindings;
   const effective = container.NetworkSettings?.Ports;
@@ -82,7 +118,9 @@ function requireLoopbackBinding(container, service, port, allowUnpublished = fal
   return "effective-loopback";
 }
 
-/** A read-only topology observation, not a packet-level proof of denied egress. */
+/** A read-only topology observation, not a packet-level proof of denied egress.
+ * @param {DockerNetwork | null} network @param {DockerContainer[]} containers
+ * @param {StackConfig} config @param {ExpectedTopology} [expected] */
 export function checkStandaloneTopology(network, containers, config = standaloneStackConfig({}), expected) {
   const privateInputs = expected?.requirePrivateInputs === true || (expected
     && [expected.proofParamsDir, expected.indexerPassword,
@@ -116,6 +154,7 @@ export function checkStandaloneTopology(network, containers, config = standalone
     || attachedIds.some((id, index) => id !== serviceIds[index])) {
     throw new Error("Dedicated ledger network has a missing or extra container attachment");
   }
+  /** @type {string[]} */
   const observed = [];
   const portAccess = new Set();
   let offlineImages = 0;
@@ -162,7 +201,7 @@ export function checkStandaloneTopology(network, containers, config = standalone
     }
     const networks = Object.keys(container.NetworkSettings?.Networks ?? {});
     if (networks.length !== 1 || networks[0] !== config.network
-      || container.NetworkSettings.Networks[config.network].NetworkID !== network.Id) {
+      || container.NetworkSettings?.Networks?.[config.network]?.NetworkID !== network.Id) {
       throw new Error("Dedicated service has a non-internal network attachment");
     }
     portAccess.add(requireLoopbackBinding(container, service, config.ports[service],
@@ -171,7 +210,9 @@ export function checkStandaloneTopology(network, containers, config = standalone
       `${config.project}_node-data`);
     if (service === "indexer") {
       requireMount(container, "/data", "volume", true, `${config.project}_indexer-data`);
-      if (privateInputs) {
+      if (privateInputs && expected
+        && typeof expected.indexerPassword === "string"
+        && typeof expected.indexerSecret === "string") {
         for (const name of ["APP__INFRA__STORAGE__PASSWORD", "APP__INFRA__PUB_SUB__PASSWORD",
           "APP__INFRA__LEDGER_STATE_STORAGE__PASSWORD"]) {
           requirePreparedInput(container, name, expected.indexerPassword);
@@ -181,7 +222,7 @@ export function checkStandaloneTopology(network, containers, config = standalone
     }
     if (service === "proof-server") {
       requireMount(container, "/.cache/midnight/zk-params", "bind", false);
-      if (privateInputs && container.Mounts[0].Source !== expected.proofParamsDir) {
+      if (privateInputs && expected && container.Mounts[0].Source !== expected.proofParamsDir) {
         throw new Error("Running proof cache differs from the prepared install path");
       }
       if (!container.Config.Env?.includes("MIDNIGHT_PROOF_SERVER_NO_FETCH_PARAMS=true")) {
@@ -218,18 +259,22 @@ export function checkStandaloneTopology(network, containers, config = standalone
   };
 }
 
+/** @param {string[]} args */
 async function docker(args) {
   const { stdout } = await run("docker", args, { timeout: 20_000, maxBuffer: 8 * 1024 * 1024 });
   return stdout;
 }
 
+/** @param {StackConfig} config @param {ExpectedTopology} [expected] */
 export async function observeStandaloneTopology(config = standaloneStackConfig(), expected) {
   const ids = (await docker(["ps", "-aq", "--filter", `label=com.docker.compose.project=${config.project}`]))
     .trim().split("\n").filter(Boolean);
   if (ids.length !== SERVICES.length) {
     throw new Error("Dedicated Compose project is absent or has an unexpected service count");
   }
+  /** @type {DockerNetwork[]} */
   const [network] = JSON.parse(await docker(["network", "inspect", config.network]));
+  /** @type {DockerContainer[]} */
   const containers = JSON.parse(await docker(["inspect", ...ids]));
   return checkStandaloneTopology(network, containers, config, expected);
 }

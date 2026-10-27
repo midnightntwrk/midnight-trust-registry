@@ -49,6 +49,8 @@
     "scripts/standalone-compose-image-policy.mjs",
     "scripts/standalone-install-image-inventory-policy.mjs",
     "scripts/standalone-egress-route-policy.mjs",
+    "scripts/check-standalone-topology.mjs",
+    "scripts/check-standalone-egress.mjs",
     "scripts/runtime-healthcheck.mjs",
     "scripts/static-runtime-archive.mjs",
     "scripts/verify-helm-mapping-signature.mjs"

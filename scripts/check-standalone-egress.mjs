@@ -19,6 +19,13 @@ const run = promisify(execFile);
 const CANARY = "example.com";
 const DIGEST_IMAGE = /^[a-z0-9][a-z0-9./_-]*@sha256:[0-9a-f]{64}$/u;
 
+/** @typedef {{code: number, stdout: string, stderr: string}} DockerResult */
+/** @typedef {(args: string[], allowFailure?: boolean) => Promise<DockerResult>} DockerCommand */
+/** @typedef {{dockerCommand?: DockerCommand,
+ *   observeTopology?: typeof observeStandaloneTopology, env?: NodeJS.ProcessEnv,
+ *   expectedTopology?: NonNullable<Parameters<typeof observeStandaloneTopology>[1]>}} EgressDependencies */
+
+/** @param {string[]} args @param {boolean} allowFailure */
 async function docker(args, allowFailure = false) {
   try {
     const { stdout, stderr } = await run("docker", args, { timeout: 30_000, maxBuffer: 1024 * 1024 });
@@ -34,6 +41,8 @@ async function docker(args, allowFailure = false) {
   }
 }
 
+/** @param {DockerCommand} command @param {string} image @param {string} network
+ * @param {string} entrypoint @param {string[]} args */
 async function runInNetwork(command, image, network, entrypoint, args) {
   const name = `tr-egress-probe-${randomUUID()}`;
   try {
@@ -50,6 +59,8 @@ async function runInNetwork(command, image, network, entrypoint, args) {
   }
 }
 
+/** @param {string} bundleDirectory
+ * @param {typeof verifyStandaloneInstallBundle} verifyBundle */
 export async function verifiedOfflineEgressTopology(bundleDirectory,
   verifyBundle = verifyStandaloneInstallBundle) {
   const root = await realpath(resolve(bundleDirectory));
@@ -66,6 +77,7 @@ export async function verifiedOfflineEgressTopology(bundleDirectory,
       join(root, "compose.offline.yml")] };
 }
 
+/** @param {EgressDependencies} dependencies */
 export async function observeStandaloneEgress(dependencies = {}) {
   const command = dependencies.dockerCommand ?? docker;
   const topology = dependencies.observeTopology ?? observeStandaloneTopology;
