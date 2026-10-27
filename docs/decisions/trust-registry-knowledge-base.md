@@ -2532,3 +2532,13 @@ detached-signature verification; the extracted decision does not verify a
 signature or authenticate finality independently. Both checked-JS gates and
 the 102-case wizard suite passed. The remaining wizard sequencing and installer
 adapters stay in the #229 migration inventory.
+
+The genesis-review packet's candidate/pin comparison is also isolated in a
+strictly checked pure module. It requires the selected standalone profile,
+source and inventory pins, observed dedicated bridge, pinned node image,
+canonical node-reported candidate, and loopback-only proposed pin. The image
+reference syntax is shared with the installer rather than duplicated. New
+negatives cover missing or primitive inputs, malformed observation and image,
+wrong host lists, noncanonical time, and wrong numeric types. This comparison
+still uses values reported by the same node: it is **not** an independent
+chain-spec review, detached human approval, or deployed-ledger evidence.

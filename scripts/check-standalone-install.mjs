@@ -11,11 +11,12 @@ import yaml from "js-yaml";
 import { verifyReleaseCandidateArtifacts } from "./release-candidate-manifest.mjs";
 import { matchesApprovedRuntimeHealthcheck } from "./runtime-healthcheck.mjs";
 import { staticImageIdentityFromArchive, validateStaticImageManifest } from "./static-runtime-archive.mjs";
+import { STANDALONE_IMAGE_REFERENCE } from "./standalone-image-reference.mjs";
+export { STANDALONE_IMAGE_REFERENCE } from "./standalone-image-reference.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
 const REVISION = /^[0-9a-f]{40}$/u;
 const ROLES = ["node", "indexer", "proof-server"];
-export const STANDALONE_IMAGE_REFERENCE = /^[a-z0-9][a-z0-9./_:-]*@sha256:[0-9a-f]{64}$/u;
 const IMAGE_ID = /^sha256:[0-9a-f]{64}$/u;
 const FINGERPRINT = /^[0-9A-F]{40}$/u;
 

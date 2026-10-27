@@ -55,13 +55,27 @@ test("packet labels self-reported values and independent approval requirements",
     { pin: { ...pin, rpcUrl: "http://example.com:40947" } },
     { pin: { ...pin, rpcUrl: "http://127.0.0.1:1" } },
     { pin: { ...pin, rpcUrl: "http://127.0.0.1:99999" } },
+    { pin: { ...pin, allowedHosts: ["127.0.0.1", "example.com"] } },
+    { pin: { ...pin, rpcUrl: null } },
     { record: { ...record, networkProfile: { ...profile, networkId: "preview" } } },
+    { record: { ...record, stack: { ...record.stack, observation: null } } },
+    { record: { ...record, sourceRevision: undefined } },
+    { candidate: { ...candidate, nodeReportedFinalizedHeight: "7" } },
+    { candidate: { ...candidate, observedAt: "2026-10-26T20:00:00Z" } },
     { verified: { ...verified, inventorySha256: "0".repeat(64) } },
+    { verified: { ...verified, images: [{ role: "node", reference: "midnight/node:latest" }] } },
+    { verified: { ...verified, images: [null] } },
   ]) {
     assert.throws(() => validateGenesisReviewEvidence(
       invalid.record ?? record, invalid.candidate ?? candidate,
       invalid.pin ?? pin, invalid.verified ?? verified));
   }
+  for (const inputs of [
+    [null, candidate, pin, verified],
+    [record, null, pin, verified],
+    [record, candidate, null, verified],
+    [record, candidate, pin, null],
+  ]) assert.throws(() => validateGenesisReviewEvidence(...inputs));
 });
 
 test("packet uses private immutable inputs and never overwrites evidence", async () => {
