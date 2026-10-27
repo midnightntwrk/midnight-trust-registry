@@ -57,10 +57,12 @@ const HELP_TEXT = `Usage:
     --submission-journal ABSOLUTE_PATH
   trust-registry-api draft-local-proposal-recovery-decision --local-ledger-plan PATH --local-ledger-signature PATH
     --local-ledger-keyring DIRECTORY --local-ledger-reviewer FINGERPRINT
+    --recovery-reviewer DISTINCT_FINGERPRINT
     --role issuer|verifier|auditor|maintainer|recognition --authorization-id ID
     --submission-journal ABSOLUTE_PATH --finality-evidence ABSOLUTE_PATH --evidence-reference REF
   trust-registry-api verify-local-proposal-recovery-decision --local-ledger-plan PATH --local-ledger-signature PATH
     --local-ledger-keyring DIRECTORY --local-ledger-reviewer FINGERPRINT
+    --recovery-reviewer DISTINCT_FINGERPRINT --recovery-keyring DIRECTORY
     --role issuer|verifier|auditor|maintainer|recognition --authorization-id ID
     --submission-journal ABSOLUTE_PATH --finality-evidence ABSOLUTE_PATH
     --recovery-decision ABSOLUTE_PATH --recovery-signature ABSOLUTE_PATH
@@ -106,6 +108,8 @@ export type TrustRegistryApiCliOptions = {
   evidenceReference?: string;
   recoveryDecisionPath?: string;
   recoverySignaturePath?: string;
+  recoveryReviewerFingerprint?: string;
+  recoveryKeyringDirectory?: string;
   clusterBind?: boolean;
   servePortals?: boolean;
   unsafeDemoMutations?: boolean;
@@ -186,6 +190,22 @@ export const parseTrustRegistryApiCliArgs = (
         if (arg === "--local-ledger-signature") options.localLedgerSignaturePath = value;
         if (arg === "--local-ledger-keyring") options.localLedgerKeyringDirectory = value;
         if (arg === "--local-ledger-reviewer") options.localLedgerReviewerFingerprint = value;
+        break;
+      }
+      case "--recovery-reviewer": {
+        const fingerprint = args.shift();
+        if (fingerprint === undefined || !/^[0-9A-F]{40}$/u.test(fingerprint)) {
+          throw new Error(`--recovery-reviewer requires a 40-character uppercase fingerprint\n\n${HELP_TEXT}`);
+        }
+        options.recoveryReviewerFingerprint = fingerprint;
+        break;
+      }
+      case "--recovery-keyring": {
+        const directory = args.shift();
+        if (directory === undefined || !isAbsolute(directory)) {
+          throw new Error(`--recovery-keyring requires an absolute directory\n\n${HELP_TEXT}`);
+        }
+        options.recoveryKeyringDirectory = directory;
         break;
       }
       case "--api-origin": {
@@ -290,11 +310,15 @@ export const parseTrustRegistryApiCliArgs = (
       allowed.add("--submission-journal");
     }
     if (command === "draft-local-proposal-recovery-decision"
-      || command === "verify-local-proposal-recovery-decision") allowed.add("--finality-evidence");
+      || command === "verify-local-proposal-recovery-decision") {
+      allowed.add("--finality-evidence");
+      allowed.add("--recovery-reviewer");
+    }
     if (command === "draft-local-proposal-recovery-decision") allowed.add("--evidence-reference");
     if (command === "verify-local-proposal-recovery-decision") {
       allowed.add("--recovery-decision");
       allowed.add("--recovery-signature");
+      allowed.add("--recovery-keyring");
     }
     if (options.localLedgerPlanPath === undefined || [...seen].some((arg) => !allowed.has(arg))) {
       throw new Error("Local readback accepts only complete signed local-ledger evidence");
@@ -312,12 +336,20 @@ export const parseTrustRegistryApiCliArgs = (
       || command === "verify-local-proposal-recovery-decision") && options.finalityEvidencePath === undefined) {
       throw new Error("Recovery decision commands require --finality-evidence");
     }
+    if ((command === "draft-local-proposal-recovery-decision"
+      || command === "verify-local-proposal-recovery-decision")
+      && (!/^[0-9A-F]{40}$/u.test(options.localLedgerReviewerFingerprint ?? "")
+        || options.recoveryReviewerFingerprint === undefined
+        || options.recoveryReviewerFingerprint === options.localLedgerReviewerFingerprint)) {
+      throw new Error("Recovery decision requires a reviewer distinct from the API-plan reviewer");
+    }
     if (command === "draft-local-proposal-recovery-decision" && options.evidenceReference === undefined) {
       throw new Error("Recovery decision draft requires --evidence-reference");
     }
     if (command === "verify-local-proposal-recovery-decision"
-      && (options.recoveryDecisionPath === undefined || options.recoverySignaturePath === undefined)) {
-      throw new Error("Recovery decision verification requires --recovery-decision and --recovery-signature");
+      && (options.recoveryDecisionPath === undefined || options.recoverySignaturePath === undefined
+        || options.recoveryKeyringDirectory === undefined)) {
+      throw new Error("Recovery decision verification requires --recovery-decision, --recovery-signature, and --recovery-keyring");
     }
     if (command === "init-local-proposal-journal" && options.submissionJournalPath === undefined) {
       throw new Error("Local journal initialization requires --submission-journal");
@@ -327,7 +359,8 @@ export const parseTrustRegistryApiCliArgs = (
   if (options.apiOrigin !== undefined || options.proposalRole !== undefined
     || options.authorizationId !== undefined || options.submissionJournalPath !== undefined
     || options.finalityEvidencePath !== undefined || options.evidenceReference !== undefined
-    || options.recoveryDecisionPath !== undefined || options.recoverySignaturePath !== undefined) {
+    || options.recoveryDecisionPath !== undefined || options.recoverySignaturePath !== undefined
+    || options.recoveryReviewerFingerprint !== undefined || options.recoveryKeyringDirectory !== undefined) {
     throw new Error("Observation arguments are not accepted by the serve command");
   }
   if (!Number.isInteger(options.port) || options.port < 1 || options.port > 65535) {
@@ -511,7 +544,7 @@ export const runTrustRegistryApiCli = async (
     const draft = await draftProposalRecoveryDecision({ candidate,
       finalityEvidencePath: options.finalityEvidencePath!,
       evidenceReference: options.evidenceReference!,
-      reviewerFingerprint: options.localLedgerReviewerFingerprint! });
+      reviewerFingerprint: options.recoveryReviewerFingerprint! });
     process.stdout.write(draft);
     return;
   }
@@ -521,8 +554,9 @@ export const runTrustRegistryApiCli = async (
       decisionPath: options.recoveryDecisionPath!,
       signaturePath: options.recoverySignaturePath!,
       finalityEvidencePath: options.finalityEvidencePath!,
-      keyringDirectory: options.localLedgerKeyringDirectory!,
-      reviewerFingerprint: options.localLedgerReviewerFingerprint! });
+      keyringDirectory: options.recoveryKeyringDirectory!,
+      reviewerFingerprint: options.recoveryReviewerFingerprint!,
+      planReviewerFingerprint: options.localLedgerReviewerFingerprint! });
     process.stdout.write(`${JSON.stringify({ format: "tr-local-proposal-recovery-verification-v1",
       decisionSha256: result.decisionSha256,
       candidateSha256: proposalRecoveryCandidateDigest(candidate),

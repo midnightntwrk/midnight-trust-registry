@@ -1743,7 +1743,8 @@ input, not proof of non-inclusion. If its action sequence appears invalidated,
 retain independently collected finality evidence in a private file. Use
 `draft-local-proposal-recovery-decision --finality-evidence ABSOLUTE_PATH
 --evidence-reference REF` with the same signed-plan, role, authorization ID,
-and journal arguments as `inspect` to produce canonical unsigned JSON. The
+and journal arguments as `inspect`, plus `--recovery-reviewer FINGERPRINT`
+for a reviewer distinct from the API-plan reviewer, to produce canonical unsigned JSON. The
 reviewer must inspect the candidate and evidence, then detached-sign the exact
 saved bytes. The signed decision names the reserved action sequence, kind,
 and payload hash so the reviewer can compare the intended action with the
@@ -1751,15 +1752,19 @@ private journal; the candidate digest also binds the full report. This is the
 `tr-local-proposal-recovery-decision-v2` draft format; earlier unsigned drafts
 must be regenerated and reviewed rather than reinterpreted as v2.
 `verify-local-proposal-recovery-decision` takes the same inputs
-plus `--recovery-decision` and `--recovery-signature` absolute paths. Its output
+plus `--recovery-decision` and `--recovery-signature` absolute paths and
+`--recovery-keyring` pointing to the separate reviewer's public-key directory.
+The verifier rejects the API-plan signer's fingerprint as recovery reviewer;
+a different keyring path with the same signer is insufficient. Its output
 explicitly reports `finalityAuthenticated: false`, `releaseQualified: false`,
 and `retryPermitted: false`. Neither command changes the journal or reopens
 proposal submissions. The draft timestamp is not the reviewer signing time.
 If the finalized checkpoint advances while the reviewer works, verification
 may reject the old candidate; do not weaken its exact-byte binding or treat
-the later read as non-inclusion proof. The recovery reviewer and plan reviewer
-are currently the same pinned key; #220 must settle separation of duties
-before any release path is enabled. Do not use a null indexer read, elapsed
+the later read as non-inclusion proof. This separates reviewer identities for
+the read-only draft and verification steps, but #220 still needs an independently
+authenticated finality policy, durable tombstone, and reviewed journal mutation.
+Do not use a null indexer read, elapsed
 time, or a new journal path as recovery authority. Issue #220 remains the stop
 gate until a
 reviewed finality policy, durable tombstone, and operator recovery path exist.

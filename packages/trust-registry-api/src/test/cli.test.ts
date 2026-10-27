@@ -155,28 +155,38 @@ describe("API CLI binding", () => {
     const base = [...localArgs.slice(1), "--role", "issuer",
       "--authorization-id", "issuer:local:1",
       "--submission-journal", "/run/trust-registry/proposals.json",
-      "--finality-evidence", "/run/trust-registry/finality.json"];
+      "--finality-evidence", "/run/trust-registry/finality.json",
+      "--recovery-reviewer", "B".repeat(40)];
     const draft = ["draft-local-proposal-recovery-decision", ...base,
       "--evidence-reference", "review:local-1"];
     const verify = ["verify-local-proposal-recovery-decision", ...base,
+      "--recovery-keyring", "/run/recovery-keyring",
       "--recovery-decision", "/run/trust-registry/decision.json",
       "--recovery-signature", "/run/trust-registry/decision.sig"];
     expect(parseTrustRegistryApiCliArgs(draft)).toMatchObject({
       command: "draft-local-proposal-recovery-decision", evidenceReference: "review:local-1",
       finalityEvidencePath: "/run/trust-registry/finality.json",
+      recoveryReviewerFingerprint: "B".repeat(40),
     });
     expect(parseTrustRegistryApiCliArgs(verify)).toMatchObject({
       command: "verify-local-proposal-recovery-decision",
       recoveryDecisionPath: "/run/trust-registry/decision.json",
       recoverySignaturePath: "/run/trust-registry/decision.sig",
+      recoveryKeyringDirectory: "/run/recovery-keyring",
     });
     for (const args of [
       draft.slice(0, -2),
       [...draft.slice(0, -1), "review\nspoof"],
       [...draft.slice(0, -1), "demo:unsafe"],
       [...draft, "--recovery-signature", "/tmp/unexpected.sig"],
+      [...draft, "--recovery-keyring", "/tmp/unexpected"],
+      [...draft.slice(0, -4), "--recovery-reviewer", "A".repeat(40),
+        "--evidence-reference", "review:local-1"],
+      [...draft.slice(0, -4), "--recovery-reviewer", "b".repeat(40),
+        "--evidence-reference", "review:local-1"],
       [...draft, "--snapshot", "fixture.json"],
       verify.slice(0, -2),
+      verify.filter((arg) => arg !== "--recovery-keyring" && arg !== "/run/recovery-keyring"),
       [...verify.slice(0, -1), "relative.sig"],
       [...verify, "--evidence-reference", "unexpected"],
     ]) expect(() => parseTrustRegistryApiCliArgs(args)).toThrow();

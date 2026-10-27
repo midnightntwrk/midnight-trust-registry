@@ -87,7 +87,8 @@ describe("signed local proposal recovery decision", () => {
           "--output", signaturePath, decisionPath]);
       };
       const input = { decisionPath, signaturePath, finalityEvidencePath,
-        keyringDirectory: verifier, reviewerFingerprint: fingerprint!, candidate };
+        keyringDirectory: verifier, reviewerFingerprint: fingerprint!,
+        planReviewerFingerprint: "A".repeat(40), candidate };
       await expect(draftProposalRecoveryDecision({ candidate, finalityEvidencePath,
         evidenceReference: decision.evidenceReference, reviewerFingerprint: fingerprint!,
         now: Date.parse(decision.draftedAt) })).resolves.toBe(`${canonicalizeJson(decision)}\n`);
@@ -111,6 +112,10 @@ describe("signed local proposal recovery decision", () => {
         decision, decisionSha256: hash(`${canonicalizeJson(decision)}\n`),
         finalityAuthenticated: false, releaseQualified: false, retryPermitted: false,
       });
+      await expect(loadApprovedProposalRecoveryDecision({ ...input,
+        planReviewerFingerprint: fingerprint! })).rejects.toThrow(/distinct from the API-plan reviewer/u);
+      await expect(loadApprovedProposalRecoveryDecision({ ...input,
+        planReviewerFingerprint: fingerprint!.toLowerCase() })).rejects.toThrow(/distinct from the API-plan reviewer/u);
       const untrustedParent = join(root, "untrusted-parent");
       const untrustedKeyring = join(untrustedParent, "verifier");
       await mkdir(untrustedParent);
