@@ -341,5 +341,11 @@ export async function createApprovedLocalLedgerRuntimeSource(plan: LocalLedgerRu
       assertPlanCurrent();
       return ledger;
     },
+    async readIssuerProposalSnapshot() {
+      assertPlanCurrent();
+      const snapshot = await source.readIssuerProposalSnapshot();
+      assertPlanCurrent();
+      return { ...snapshot, genesisHash: plan.expectedGenesisHash };
+    },
   };
 }

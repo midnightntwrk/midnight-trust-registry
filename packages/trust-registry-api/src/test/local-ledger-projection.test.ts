@@ -20,6 +20,7 @@ import {
   createRecognitionScenarioFixture,
   createVerifierScenarioFixture,
 } from "@midnight-ntwrk/trust-registry-integration";
+import { deriveGovernancePolicySnapshot } from "@midnight-ntwrk/trust-registry-domain";
 
 import {
   assertCompletePolicyRevisionHistory,
@@ -551,6 +552,12 @@ describe("local ledger-bound API source", () => {
       });
       expect(source.localProposalContractAddress).toBe(address.toLowerCase());
       await expect(source.readFinalizedProposalLedger()).resolves.toBe(ledger);
+      await expect(source.readIssuerProposalSnapshot()).resolves.toEqual({
+        contractAddress: address,
+        finalizedBlockHash: view.finalizedBlockHash,
+        policySnapshot: deriveGovernancePolicySnapshot(snapshot.policy),
+        ledger,
+      });
       const current = await source.loadCurrentLedgerSelection!();
       expect(current.authorizationIds.issuer).toEqual(new Set(snapshot.issuerEntries.map(
         (entry) => entry.authorization.authorizationId)));

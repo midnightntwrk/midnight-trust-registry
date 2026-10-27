@@ -250,6 +250,7 @@ describe("local issuer proposal terms", () => {
     const readAuthenticatedFinalizedSnapshot = vi.fn(async () => ({
       contractAddress: localPlan.contractAddress,
       genesisHash: localPlan.expectedGenesisHash,
+      finalizedBlockHash: `0x${"a".repeat(64)}`,
       policySnapshot, ledger,
     }));
     const port = createBoundLocalIssuerProposalPort({
@@ -285,6 +286,16 @@ describe("local issuer proposal terms", () => {
     readAuthenticatedFinalizedSnapshot.mockResolvedValueOnce({
       contractAddress: localPlan.contractAddress,
       genesisHash: `0x${"9".repeat(64)}`,
+      finalizedBlockHash: `0x${"a".repeat(64)}`,
+      policySnapshot, ledger,
+    });
+    await expect(port.prepare(pending.authorizationId, evidence, localTerms))
+      .rejects.toThrow(/approved deployment/u);
+    expect(verifyLiveEvidence).toHaveBeenCalledTimes(3);
+    readAuthenticatedFinalizedSnapshot.mockResolvedValueOnce({
+      contractAddress: localPlan.contractAddress,
+      genesisHash: localPlan.expectedGenesisHash,
+      finalizedBlockHash: `0x${"0".repeat(64)}`,
       policySnapshot, ledger,
     });
     await expect(port.prepare(pending.authorizationId, evidence, localTerms))

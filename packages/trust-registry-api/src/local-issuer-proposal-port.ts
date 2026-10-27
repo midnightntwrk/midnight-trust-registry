@@ -23,9 +23,10 @@ import {
 } from "./local-issuer-proposal-terms.js";
 import type { ProposalAdmissionPort } from "./proposal-admission.js";
 
-type FinalizedIssuerSnapshot = {
+export type FinalizedIssuerSnapshot = {
   contractAddress: string;
   genesisHash: string;
+  finalizedBlockHash: string;
   policySnapshot: GovernancePolicySnapshot;
   ledger: TrustRegistryContract.Ledger;
 };
@@ -71,7 +72,9 @@ export function createBoundLocalIssuerProposalPort(
     const admission = await dependencies.readCapturedAdmission(terms.applicationId);
     const snapshot = await dependencies.readAuthenticatedFinalizedSnapshot(dependencies.plan.contractAddress);
     if (snapshot.contractAddress !== dependencies.plan.contractAddress
-      || snapshot.genesisHash !== dependencies.plan.expectedGenesisHash) {
+      || snapshot.genesisHash !== dependencies.plan.expectedGenesisHash
+      || !/^0x[0-9a-f]{64}$/u.test(snapshot.finalizedBlockHash)
+      || /^0x0{64}$/u.test(snapshot.finalizedBlockHash)) {
       throw new Error("Authenticated issuer ledger does not match the approved deployment");
     }
     const prepared = prepareBoundLocalIssuerProposal({

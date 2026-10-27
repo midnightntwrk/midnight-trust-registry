@@ -144,3 +144,8 @@ from one validated persisted-state read. HTTP admission prefers that captured
 pair when the port supports it, and the issuer-port assembly requires it;
 legacy two-method adapters remain compatible but must not be mistaken for an
 atomic production admission source.
+The approved local read source also exposes the selected policy snapshot,
+Compact ledger, and finalized block hash from one bounded read, then adds
+the reviewer-signed genesis pin at the plan wrapper. This avoids mixing two
+checkpoints while preparing issuer signatures. It remains a pinned local-node
+observation, not independently authenticated finality or a wired CLI writer.

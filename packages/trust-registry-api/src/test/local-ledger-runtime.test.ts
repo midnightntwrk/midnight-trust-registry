@@ -244,6 +244,7 @@ describe("approved local-ledger API runtime", () => {
       await expect(source.loadSnapshot()).rejects.toMatchObject(expired);
       await expect(source.loadCurrentLedgerSelection()).rejects.toMatchObject(expired);
       await expect(source.readFinalizedProposalLedger()).rejects.toMatchObject(expired);
+      await expect(source.readIssuerProposalSnapshot()).rejects.toMatchObject(expired);
       await expect(resolveAuthorizationEntry(source, {
         role: "issuer", subjectDid: "did:midnight:expired", resourceId: "resource:expired",
       })).rejects.toMatchObject(expired);
