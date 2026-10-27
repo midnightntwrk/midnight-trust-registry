@@ -36,7 +36,7 @@ it("wires only approved local endpoints to a genesis-pinned finalized ledger rea
   const reader = await createLocalNetworkDeploymentActionReader(config());
   await expect(reader.readCurrentFinalizedActionState(address)).resolves.toBeNull();
   expect(mocks.provider).toHaveBeenCalledWith(
-    "http://indexer:8080/graphql", "ws://indexer:8080/graphql/ws",
+    "http://indexer.:8080/graphql", "ws://indexer.:8080/graphql/ws",
   );
   expect(mocks.query).toHaveBeenCalledWith(address.slice(2), {
     type: "blockHash", blockHash: finalized.slice(2),

@@ -311,10 +311,14 @@ and the [standalone qualification plan](../../docs/guide/standalone-offline-runt
    `bootstrap` phase first, observe its genesis, complete the first-run
    wizard's detached approvals, and provision the API Secrets. Then upgrade
    to `deploymentPhase: runtime`. Use a release name beginning with a lowercase
-   letter and at most 47 characters; the signed plan's `allowedHosts` and endpoint URLs must use the
-   chart's exact short Service names `<release>-tr-node` and
-   `<release>-tr-indexer`, not fully qualified cluster DNS names. Do not use
-   `--wait` for a runtime upgrade
+   letter and at most 47 characters. The current endpoint validator roots
+   short service aliases before connecting to prevent DNS search-domain
+   expansion. Kubernetes normally resolves Services through namespace search
+   domains, so this chart's short Service names are not a validated runtime
+   endpoint profile. Helm template checks do not establish API connectivity;
+   do not use this optional chart for 0.1.0 qualification until an approved,
+   absolute cluster Service identity and connectivity profile is implemented.
+   Do not use `--wait` for a runtime upgrade
    until the signed plan and local ledger are actually ready. Run
    `helm lint charts/trust-registry-standalone -f <approved-values>` and
    `helm template rc charts/trust-registry-standalone -n <namespace> -f <approved-values>`.

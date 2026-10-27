@@ -90,7 +90,7 @@ describe("pinned local submission provider", () => {
       midnightProvider: pinned.midnightProvider, publicDataProvider: pinned.publicDataProvider,
     } as never)).resolves.toEqual({ contractAddress, genesisHash });
     expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
-      provider: expect.objectContaining({ endpoint: new URL(config.nodeWsUrl).toString(), autoConnectMs: false }),
+      provider: expect.objectContaining({ endpoint: "ws://node.:9944/", autoConnectMs: false }),
     }));
     expect(getBlockHash).toHaveBeenCalledWith(0);
     expect(mocks.disconnect).toHaveBeenCalled();

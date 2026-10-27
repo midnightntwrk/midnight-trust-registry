@@ -565,7 +565,10 @@ endpoints. The caller-supplied Midnight.js wallet, proving, and submission
 providers are opaque to these helpers and **are not covered by that
 allowlist**. Pin their endpoint configuration separately and enforce egress
 denial for the complete process and container network; syntax checks on local
-aliases do not prove where DNS resolves them. The indexer client's own redirect
+aliases do not prove where DNS resolves them. Approved single-label aliases
+are sent to the client as rooted names (`node.` rather than `node`) to prevent
+search-domain expansion. This does not authenticate their DNS answers. The
+indexer client's own redirect
 handling is also outside the allowlist check, so egress denial is required
 even for configured readback URLs. Use single-label aliases only on the
 isolated container network. The public adapter still rejects `undeployed`;
