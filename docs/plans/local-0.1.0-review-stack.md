@@ -30,7 +30,9 @@ annotation. That fix does not disposition the WebSocket transport risk or the
 independent human security gate #232. The same #238 head also rejects case and
 Unicode-normalized aliases of private acceptance evidence paths. Its focused
 exact-tree tests and read-only Codex delta review found no actionable
-regression; full exact-head CI was still running when this snapshot was taken.
+regression. Full exact-head build/package/test, quality, docs, and aggregate
+scan checks subsequently passed; external Opengrep remained red, so this is
+not a fully green merge gate or release approval.
 
 ## Unpublished continuation
 
