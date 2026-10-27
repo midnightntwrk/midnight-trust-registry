@@ -1445,9 +1445,11 @@ host ports in the operator's approved endpoint plan and separately pin the
 opaque wallet provider endpoints. Stop and remove
 the relay before the offline runtime test; the relay has a `bridge` attachment
 and is **not** evidence of egress denial.
-Use the absolute canonical `install-relay.py` path returned by the verified v6
+Use the absolute canonical `install-relay.mjs` path returned by the verified v6
 bundle for the read-only mount; a symlink or differently spelled source path
 fails the live relay gate.
+The relay uses the pinned API image's Node runtime and does not require Python
+in the API base image.
 
 ```sh
 export TR_STACK_NAME=tr-standalone-local-qualification
@@ -1457,10 +1459,10 @@ docker run -d --pull=never --name "$TR_RELAY_NAME" --network bridge \
   --publish 127.0.0.1:40944:30944 \
   --publish 127.0.0.1:48088:38088 \
   --publish 127.0.0.1:46300:36300 \
-  --mount type=bind,src="<verified-v6-bundle>/install-relay.py",dst=/relay.py,readonly \
-  --entrypoint /usr/bin/python3 \
+  --mount type=bind,src="<verified-v6-bundle>/install-relay.mjs",dst=/relay.mjs,readonly \
+  --entrypoint node \
   "$TR_API_IMAGE" \
-  /relay.py
+  /relay.mjs
 docker network connect "${TR_STACK_NAME}_ledger" "$TR_RELAY_NAME"
 # Perform approved installation/deployment checks, then remove the access path.
 docker stop "$TR_RELAY_NAME"

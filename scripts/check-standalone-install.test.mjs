@@ -418,8 +418,8 @@ test("v6 pins the installation relay script beside the complete runtime", async 
       applicant: await staticImageArchive(root, "applicant"),
     };
     const relay = Buffer.from("# fixed destination installation relay\n");
-    await writeFile(join(root, "install-relay.py"), relay);
-    inventory.installRelay = { path: "install-relay.py", sha256: sha(relay), imageRole: "node" };
+    await writeFile(join(root, "install-relay.mjs"), relay);
+    inventory.installRelay = { path: "install-relay.mjs", sha256: sha(relay), imageRole: "node" };
     await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
     const verified = await verifyStandaloneInstallBundle(root, () => {});
     assert.equal(verified.installRelay.sha256, sha(relay));
@@ -472,9 +472,9 @@ test("v6 pins the installation relay script beside the complete runtime", async 
     await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /API Compose pin is missing/u);
     inventory.runtimeCompose.apiSha256 = sha(apiCompose);
     await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
-    await writeFile(join(root, "install-relay.py"), "changed\n");
+    await writeFile(join(root, "install-relay.mjs"), "changed\n");
     await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /relay bytes disagree/u);
-    await writeFile(join(root, "install-relay.py"), relay);
+    await writeFile(join(root, "install-relay.mjs"), relay);
     inventory.installRelay.imageRole = "indexer";
     await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
     await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /relay pin is missing/u);

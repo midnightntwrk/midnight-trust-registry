@@ -403,7 +403,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
   }
   let installRelay = null;
   if (inventory.format === "tr-standalone-install-v6") {
-    if (inventory.installRelay?.path !== "install-relay.py"
+    if (inventory.installRelay?.path !== "install-relay.mjs"
       || !SHA256.test(inventory.installRelay.sha256)
       || !["node", "api"].includes(inventory.installRelay.imageRole)) {
       throw new Error("Standalone installation relay pin is missing or malformed");

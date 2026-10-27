@@ -37,11 +37,11 @@ export function checkStandaloneInstallRelay(network, ledgerContainers, relay, co
     || relay?.Name !== `/${config.project}-install-relay`
     || relay.State?.Running !== true || relay.State?.Paused === true
     || relay.Config?.Image !== image.reference || !image.acceptedIds?.includes(relay.Image)
-    || JSON.stringify(relay.Config?.Entrypoint) !== JSON.stringify(["/usr/bin/python3"])
-    || JSON.stringify(relay.Config?.Cmd) !== JSON.stringify(["/relay.py"])
+    || JSON.stringify(relay.Config?.Entrypoint) !== JSON.stringify(["node"])
+    || JSON.stringify(relay.Config?.Cmd) !== JSON.stringify(["/relay.mjs"])
     || JSON.stringify(relayHealthcheck) !== JSON.stringify(expectedHealthcheck)
     || (relay.Config?.Env ?? []).some((entry) =>
-      /^(?:PYTHON[A-Z_]*|LD_PRELOAD|LD_LIBRARY_PATH)=/u.test(entry))
+      /^(?:NODE_OPTIONS|NODE_PATH|LD_PRELOAD|LD_LIBRARY_PATH)=/u.test(entry))
     || relay.Config?.Labels?.["com.docker.compose.project"] !== undefined) {
     throw new Error("Installation relay identity or entrypoint differs from the verified bundle");
   }
@@ -53,7 +53,7 @@ export function checkStandaloneInstallRelay(network, ledgerContainers, relay, co
     throw new Error("Installation relay has elevated privileges");
   }
   if (relay.Mounts?.length !== 1 || relay.Mounts[0].Type !== "bind"
-    || relay.Mounts[0].Destination !== "/relay.py" || relay.Mounts[0].RW !== false
+    || relay.Mounts[0].Destination !== "/relay.mjs" || relay.Mounts[0].RW !== false
     || relay.Mounts[0].Source !== pin.path) {
     throw new Error("Installation relay script mount differs from the verified bundle");
   }
@@ -119,9 +119,9 @@ export async function observeStandaloneInstallRelay(config, verified, expectedTo
   const [baseImage] = JSON.parse(await runDocker(["image", "inspect", image.reference]));
   const observation = checkStandaloneInstallRelay(network, containers, relay, config, verified,
     expectedTopology, baseImage);
-  const mountedHash = (await runDocker(["exec", relay.Id, "/usr/bin/python3", "-I", "-c",
-    "import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], 'rb').read()).hexdigest())",
-    "/relay.py"])).trim();
+  const mountedHash = (await runDocker(["exec", relay.Id, "node", "-e",
+    "const fs=require('node:fs'); const crypto=require('node:crypto'); process.stdout.write(crypto.createHash('sha256').update(fs.readFileSync(process.argv[1])).digest('hex'))",
+    "/relay.mjs"])).trim();
   if (mountedHash !== pin.sha256) {
     throw new Error("Running installation relay script differs from the verified bundle");
   }

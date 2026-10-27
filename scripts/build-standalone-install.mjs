@@ -234,8 +234,8 @@ export async function buildStandaloneInstall(options = {}) {
 
   let installRelay;
   if (portalRuntimes) {
-    const path = "install-relay.py";
-    copyFileSync(join(root, "deploy/standalone/local-install-relay.py"), join(destination, path),
+    const path = "install-relay.mjs";
+    copyFileSync(join(root, "deploy/standalone/local-install-relay.mjs"), join(destination, path),
       fsConstants.COPYFILE_EXCL);
     installRelay = { path, sha256: await sha256(join(destination, path)), imageRole: "api" };
   }
