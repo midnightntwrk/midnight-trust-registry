@@ -128,3 +128,14 @@ the after-reservation form because the HTTP server already reserves before
 calling `execute`. Both forms recheck the finalized ledger and provider
 identity; neither by itself proves that the provider code is pinned or that
 SDK finalization is independently authenticated.
+An opt-in `createBoundLocalIssuerProposalPort` now composes the accepted
+application binder, current policy/ledger preflight, live-evidence callback,
+provider-code check, SDK preflight, and after-reservation execution. Its
+dependencies are deliberately mandatory and deployment-owned; the signed
+local API CLI does not instantiate it. Its injected-dependency tests prove
+fail-closed ordering, not a deployed issuer journey. A production host still
+needs an independently authenticated finality reader, VC-owned live status
+adapter, approved immutable provider loader, signed write-plan pins,
+finalized proposal resolution, and a full offline actor run. If state changes
+after HTTP preflight but before the reserved execution, the journal retains
+the reservation for explicit reconciliation rather than silently retrying.

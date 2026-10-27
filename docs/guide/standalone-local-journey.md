@@ -17,6 +17,10 @@ results.
 The current signed local API CLI is read-only: it does not configure the
 production applicant/VP intake, accepted-application admission, governed
 proposal ports, or submitting provider. Governed proposal writes return 503.
+An opt-in issuer-port assembly exists for an embedding host, but it requires
+independently implemented live evidence, authenticated finality, and approved
+provider-code dependencies. It is not wired into this CLI; its unit and SDK
+tests do not count as the `A01` deployed actor case.
 `GET /health` reports `configuredGovernedProposalRoles: []` for this CLI; a
 healthy current-read response is not a write-capability or release verdict.
 The operator steps below are the **acceptance procedure**, not a claim that

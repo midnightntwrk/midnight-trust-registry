@@ -100,6 +100,26 @@ describe("Compact-backed issuer proposals over HTTP", () => {
     const journal = new FileProposalSubmissionJournal(journalPath);
     const contractAddress = `0x${harness.simulator.contractAddress}`;
     const genesisHash = `0x${"a".repeat(64)}`;
+    const terms = {
+      format: "tr-local-issuer-proposal-terms-v1",
+      networkId: "undeployed",
+      contractAddress,
+      expectedGenesisHash: genesisHash,
+      applicationId: evidence.envelope.applicationId,
+      authorizationId: issuer.authorizationId,
+      evidenceCommitment: evidence.commitment,
+      trustLevel: "assessed",
+      statusPolicyBinding: {
+        version: "tr-issuer-status-policy-v1",
+        trustRegistryId: evidence.envelope.registryId,
+        issuerAuthorizationId: issuer.authorizationId,
+        statusRegistryId: `0x${"c".repeat(64)}`,
+        statusAuthorityVerificationMethod: `${evidence.envelope.subjectDid}#status-1`,
+        statusPolicyId: "status:policy:issuer-journal",
+        statusPolicyVersion: "v1",
+        statusPolicyContentCommitment: `0x${"d".repeat(64)}`,
+      },
+    };
     await journal.bindDeployment(harness.registryId, contractAddress, genesisHash);
     const operatorSnapshot = publishSimulatorSnapshot(harness, { label: "synthetic-local-journal" });
     let finalizedLedger = harness.simulator.getLedger();
@@ -165,11 +185,13 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       const post = (action: "prepare" | "submit" | "resolve", body: unknown) => fetch(`${endpoint}/${action}`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
       });
-      const preparedResponse = await post("prepare", { evidence });
+      expect((await post("prepare", { evidence })).status).toBe(400);
+      const preparedResponse = await post("prepare", { evidence, terms });
       expect(preparedResponse.status).toBe(200);
       const prepared = await preparedResponse.json() as PreparedGovernedIssuerProposal;
       const verifierSignature = harness.signIssuerProposalEvidence(harness.prepareIssuerProposalAction(issuer, evidence));
-      const request = { evidence, prepared, signers: [signPrepared(harness, second, prepared), signPrepared(harness, third, prepared)],
+      const request = { evidence, terms, prepared,
+        signers: [signPrepared(harness, second, prepared), signPrepared(harness, third, prepared)],
         evidenceVerifierSignature: `0x${Buffer.from(encodeJubjubSignature(verifierSignature)).toString("hex")}` };
       const preparedContext = harness.prepareIssuerProposalAction(issuer, evidence);
       const decodedSigners = decodeGovernedMembershipSigners(request);
@@ -233,7 +255,7 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       expect(harness.simulator.getLedger().governanceActionCount).toBe(BigInt(prepared.actionSequence));
       await journal.reconcile("verifier", "private-blocking-authorization",
         async () => ({ eventHash: `0x${"99".repeat(32)}`, evidenceCommitment: evidence.commitment }));
-      const refreshedPrepared = await (await post("prepare", { evidence })).json() as PreparedGovernedIssuerProposal;
+      const refreshedPrepared = await (await post("prepare", { evidence, terms })).json() as PreparedGovernedIssuerProposal;
       expect(refreshedPrepared, "proposal context changed before issuer execution").toEqual(prepared);
       const uncertain = await post("submit", request);
       expect(uncertain.status, JSON.stringify(await uncertain.clone().json())).toBe(503);

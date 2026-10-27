@@ -141,6 +141,7 @@ export function prepareBoundLocalIssuerProposal(input: {
   reviewBindingSha256: string;
   signingReviewSha256: string;
   signingContext: LocalIssuerProposalSigningContext;
+  unsignedFields: UnsignedLocalIssuerProposalFields;
 } {
   const policy = GovernancePolicySnapshotSchema.parse(input.policySnapshot);
   const bound = bindAcceptedLocalIssuerProposalTerms({
@@ -185,5 +186,6 @@ export function prepareBoundLocalIssuerProposal(input: {
       requiredThreshold: signingContext.requiredThreshold.toString(),
     })}`),
     signingContext,
+    unsignedFields: bound.unsignedFields,
   };
 }

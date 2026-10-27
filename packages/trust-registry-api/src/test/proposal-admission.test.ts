@@ -9,9 +9,14 @@ import {
   type ApplicationEvidenceSubmission,
 } from "@midnight-ntwrk/trust-registry-domain";
 import { bytes32Commitment } from "@midnight-ntwrk/trust-registry-client";
-import { TrustRegistryContract } from "@midnight-ntwrk/trust-registry-contract";
+import {
+  deriveJubjubPublicKeyFromSeed,
+  signDeploymentBoundMaintainerActionFromSeed,
+  signIssuerProposalEvidenceFromSeed,
+  TrustRegistryContract,
+} from "@midnight-ntwrk/trust-registry-contract";
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createTrustRegistryApiServer } from "../server.js";
 import { createInMemorySource } from "../source.js";
@@ -23,6 +28,7 @@ import {
   type AcceptedApplicationEvidence,
 } from "../proposal-admission.js";
 import { bindAcceptedLocalIssuerProposalTerms, prepareBoundLocalIssuerProposal } from "../local-issuer-proposal-terms.js";
+import { createBoundLocalIssuerProposalPort } from "../local-issuer-proposal-port.js";
 import type { PendingApplicationRecord } from "../pending-application-registration.js";
 
 const scope = {
@@ -164,7 +170,7 @@ describe("local issuer proposal terms", () => {
       signature: { ...evidence.signature, value: "substituted" } } } })).toThrow();
   });
 
-  it("prepares a signable payload only for the selected policy and current verifier key", () => {
+  it("prepares a signable payload only for the selected policy and current verifier key", async () => {
     setNetworkId("undeployed");
     const policySnapshot = GovernancePolicySnapshotSchema.parse({
       format: "tr-policy-snapshot-v1",
@@ -179,6 +185,9 @@ describe("local issuer proposal terms", () => {
     const policyCommitment = Buffer.from(computeGovernancePolicySnapshotCommitment(policySnapshot).slice(2), "hex");
     const verifierAuthorizationId = bytes32Commitment("verifier:current");
     const verifierKeyId = bytes32Commitment("verifier-key:current");
+    const maintainerKeyId = bytes32Commitment("maintainer-key:current");
+    const maintainerSeed = new Uint8Array(32).fill(13);
+    const verifierSeed = new Uint8Array(32).fill(19);
     const verifierDid = bytes32Commitment(binding.evidenceVerifierDid);
     const keyScope = TrustRegistryContract.pureCircuits.evidenceVerifierKeyScopeKey(verifierDid, policyCommitment);
     const suite = new Uint8Array(32);
@@ -190,11 +199,16 @@ describe("local issuer proposal terms", () => {
       governancePolicyCommitment: policyCommitment,
       governancePolicyVersion: 1n, governanceActionCount: 3n,
       maintainerThreshold: 1n, emergencyMaintainerThreshold: 1n, archivalMaintainerThreshold: 1n,
+      maintainerKeyIds: { member: (id: Uint8Array) => Buffer.from(id).equals(maintainerKeyId) },
+      maintainerRecords: { lookup: () => ({ keyId: maintainerKeyId,
+        publicKey: deriveJubjubPublicKeyFromSeed(maintainerSeed),
+        status: TrustRegistryContract.MaintainerStatus.active }) },
       evidenceVerifierKeyRecords: {
         member: (id: Uint8Array) => Buffer.from(id).equals(verifierAuthorizationId),
         lookup: () => ({
           status: TrustRegistryContract.EvidenceVerifierKeyStatus.active,
           authorizationId: verifierAuthorizationId, keyIdCommitment: verifierKeyId,
+          publicKey: deriveJubjubPublicKeyFromSeed(verifierSeed),
           verifierDidCommitment: verifierDid, policyCommitment, policyVersion: 1n, suite,
         }),
       },
@@ -225,6 +239,75 @@ describe("local issuer proposal terms", () => {
         ...ledger.currentEvidenceVerifierKeyIdsByScopeKey, member: () => false,
       },
     } })).toThrow(/No current evidence-verifier key/u);
+
+    const verifyLiveEvidence = vi.fn(async () => {});
+    const assertApprovedProviderCode = vi.fn(async () => {});
+    const loadApprovedSubmissionProviders = vi.fn(async () => ({
+      providers: {} as never, readSubmissionProviderIdentity: async () => ({
+        contractAddress: localPlan.contractAddress, genesisHash: localPlan.expectedGenesisHash,
+      }),
+    }));
+    const readAuthenticatedFinalizedSnapshot = vi.fn(async () => ({
+      contractAddress: localPlan.contractAddress,
+      genesisHash: localPlan.expectedGenesisHash,
+      policySnapshot, ledger,
+    }));
+    const port = createBoundLocalIssuerProposalPort({
+      plan: localPlan,
+      async readCapturedAdmission(applicationId) {
+        expect(applicationId).toBe(binding.applicationId);
+        return { pending, accepted };
+      },
+      readAuthenticatedFinalizedSnapshot,
+      verifyLiveEvidence,
+      assertApprovedProviderCode,
+      loadApprovedSubmissionProviders,
+    });
+    const context = await port.prepare(pending.authorizationId, evidence, localTerms);
+    expect(context).toEqual(prepared.signingContext);
+    expect(verifyLiveEvidence).toHaveBeenCalledOnce();
+    expect(assertApprovedProviderCode).not.toHaveBeenCalled();
+    expect(loadApprovedSubmissionProviders).not.toHaveBeenCalled();
+    await expect(port.prepare("issuer:wrong", evidence, localTerms))
+      .rejects.toThrow(/authorization does not match/u);
+
+    const signature = {} as Parameters<NonNullable<typeof port.preflightSubmission>>[3];
+    await expect(port.preflightSubmission!(pending.authorizationId, evidence, [], signature,
+      { ...context, actionSequence: 4n }, localTerms)).rejects.toThrow(/context is stale/u);
+    expect(assertApprovedProviderCode).not.toHaveBeenCalled();
+    expect(loadApprovedSubmissionProviders).not.toHaveBeenCalled();
+
+    assertApprovedProviderCode.mockRejectedValueOnce(new Error("installed provider digest changed"));
+    await expect(port.preflightSubmission!(pending.authorizationId, evidence, [], signature,
+      context, localTerms)).rejects.toThrow(/installed provider digest changed/u);
+    expect(loadApprovedSubmissionProviders).not.toHaveBeenCalled();
+
+    readAuthenticatedFinalizedSnapshot.mockResolvedValueOnce({
+      contractAddress: localPlan.contractAddress,
+      genesisHash: `0x${"9".repeat(64)}`,
+      policySnapshot, ledger,
+    });
+    await expect(port.prepare(pending.authorizationId, evidence, localTerms))
+      .rejects.toThrow(/approved deployment/u);
+    expect(verifyLiveEvidence).toHaveBeenCalledTimes(3);
+    verifyLiveEvidence.mockRejectedValueOnce(new Error("live status authority unavailable"));
+    await expect(port.prepare(pending.authorizationId, evidence, localTerms))
+      .rejects.toThrow(/live status authority unavailable/u);
+    expect(loadApprovedSubmissionProviders).not.toHaveBeenCalled();
+
+    const verifierSignature = signIssuerProposalEvidenceFromSeed(
+      verifierSeed, context.registryId, context.networkIdCommitment, context.contractAddress,
+      context.evidenceVerifierKeyIdCommitment, context.actionPayloadHash,
+    );
+    const signers = [{ keyId: maintainerKeyId, publicKey: deriveJubjubPublicKeyFromSeed(maintainerSeed),
+      signature: signDeploymentBoundMaintainerActionFromSeed(
+        maintainerSeed, context.registryId, context.networkIdCommitment, context.contractAddress,
+        context.policyCommitment, context.actionKind, context.actionPayloadHash, context.actionSequence,
+      ) }];
+    await expect(port.preflightSubmission!(pending.authorizationId, evidence,
+      signers, verifierSignature, context, localTerms)).resolves.toBeUndefined();
+    expect(loadApprovedSubmissionProviders).toHaveBeenCalledOnce();
+    expect(assertApprovedProviderCode).toHaveBeenCalledTimes(3);
   });
 });
 

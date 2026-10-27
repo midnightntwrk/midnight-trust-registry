@@ -436,6 +436,18 @@ must recheck the already verified, one-use-challenge evidence and current
 Compact context. Compact verifies the registered evidence-verifier key and
 maintainer quorum for the proposal digest. Raw VC/VP payloads are not accepted
 by this API, and a 202 is simulator acceptance, not network finality.
+`createBoundLocalIssuerProposalPort` is an opt-in assembly for an embedding
+host. It requires a captured pending/accepted application pair, an
+independently authenticated finalized ledger plus matching policy snapshot,
+live DID/VP/VC-status and trusted-time verification, immutable approved
+provider-code checks, and provider loading. It compares the reviewed context
+before loading a provider, repeats the code check around loading, and uses
+the SDK's side-effect-free preflight before the API-owned journal reserves.
+After reservation it rechecks and submits once without creating a second
+journal. A failure then remains quarantined for operator reconciliation; it
+is not permission to retry. The factory does not supply those trusted
+dependencies, finalized proposal resolution, or a production CLI writer.
+Injected-provider tests are not deployed standalone E2E evidence.
 An embedding host may also provide a ledger-backed `resolve` method for
 `POST /v1/governed/:role/:id/proposal/resolve` with the same accepted
 `{ "evidence": ... }`. The API returns `observed` with the proposal event

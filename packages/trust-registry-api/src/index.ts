@@ -23,6 +23,7 @@ export * from "./did-bound-evidence-verifier-policy-port.js";
 export * from "./governed-proposal-observation.js";
 export * from "./compact-proposal-observation.js";
 export * from "./governed-issuer-proposals.js";
+export * from "./local-issuer-proposal-port.js";
 export * from "./governed-verifier-proposals.js";
 export * from "./governed-auditor-proposals.js";
 export * from "./governed-maintainer-proposals.js";
