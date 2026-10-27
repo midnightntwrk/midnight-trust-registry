@@ -59,8 +59,8 @@ group would target the immediately preceding group. The table is a review
 plan, **not** an authorization to push, create PRs, mark drafts ready, merge,
 or claim exact-head CI. Verify GPG/DCO, focused and applicable full checks,
 and independent current-head review for each group after publication. The
-live #240 head was still `bbe527cf` on 2026-10-27. At local head `6c82bef8`,
-all five group endpoints were in its descendant chain, and all 59 local
+live #240 head was still `bbe527cf` on 2026-10-27. At local head `aaaeec39`,
+all six group endpoints were in its descendant chain, and all 72 local
 commits above it had good Git signatures and DCO trailers. This point-in-time
 local audit does not replace a new base/identity check before publication. The
 read-only local Codex review through `c786254f` found no actionable
@@ -100,6 +100,14 @@ The later local acceptance-evidence alias and operator-guide commits overlap
 the branch-owned fixes now published on #238. Reconcile those equivalent
 patches when preparing any subsequent stack update; do not force-push,
 duplicate their effect, or claim deployed E2E from these tests.
+At local head `aaaeec39`, the acceptance and journey-prerequisite focused
+tests passed 25/25, `pnpm run docs-check` passed, and
+`pnpm audit --audit-level low` found no known vulnerabilities. The
+[security-scan disposition](../guide/security-scan-disposition.md) now records
+the exact Compose bridge membership and host-loopback node RPC exposure for
+the five remaining WebSocket findings. This is a review input, not a scanner
+waiver: #238 remains draft with external Opengrep OSS red, and #232 requires
+an independent human disposition of the observed transport boundary.
 
 ## Release boundary
 
