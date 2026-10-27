@@ -3289,9 +3289,9 @@ test("detached GPG verification accepts only the pinned signing key and exact by
   const unrelatedDocument = join(root, "unrelated.json");
   await writeFile(unrelatedDocument, '{"format":"different"}\n');
   await assert.rejects(verifyDetachedReviewerSignature(unrelatedDocument, attachedSignature,
-    verifier, fingerprint, approvedAt), /detached signature|not verified/u);
+    verifier, fingerprint, approvedAt), /does not match|not verified/u);
   await assert.rejects(verifyDetachedReviewerSignature(unrelatedDocument, clearSignature,
-    verifier, fingerprint, approvedAt), /detached signature|not verified/u);
+    verifier, fingerprint, approvedAt), /does not match|not verified/u);
   await writeFile(document, '{"format":"tampered"}\n');
   await assert.rejects(verifyDetachedReviewerSignature(document, signature, verifier, fingerprint, approvedAt));
 });

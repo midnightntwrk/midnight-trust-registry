@@ -1,9 +1,8 @@
-import { execFileSync } from "node:child_process";
-import { constants, existsSync, closeSync, fstatSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { constants, closeSync, fstatSync, openSync, readFileSync } from "node:fs";
+import { isAbsolute } from "node:path";
 
 import { assertStrictDetachedSignatureStatus } from "@midnight-ntwrk/trust-registry-integration/reviewer-signature-status";
+import { verifyDetachedReviewerBytes } from "@midnight-ntwrk/trust-registry-integration/reviewer-signature-verifier";
 
 const FINGERPRINT = /^[0-9A-F]{40}$/u;
 
@@ -51,25 +50,14 @@ export function verifyMappingSignature(receiptBytes, signaturePath, keyringPath,
   if (!Buffer.isBuffer(receiptBytes) || !FINGERPRINT.test(signerFingerprint)) {
     throw new Error("Helm image mapping approval input is invalid");
   }
-  const verifier = ["/usr/bin/gpgv", "/opt/homebrew/bin/gpgv", "/usr/local/bin/gpgv"].find(existsSync);
-  if (!verifier) throw new Error("Helm image mapping requires a trusted GPGV executable");
   const signature = boundedFile(signaturePath, 64 * 1024);
   const keyring = boundedFile(keyringPath, 8 * 1024 * 1024);
-  const temporary = mkdtempSync(join(tmpdir(), "tr-helm-mapping-"));
   try {
-    const snapshotSignature = join(temporary, "mapping.sig");
-    const snapshotKeyring = join(temporary, "pubring.gpg");
-    writeFileSync(snapshotSignature, signature, { flag: "wx", mode: 0o600 });
-    writeFileSync(snapshotKeyring, keyring, { flag: "wx", mode: 0o600 });
-    const output = execFileSync(verifier, ["--homedir", temporary,
-      "--keyring", snapshotKeyring, "--status-fd", "1", "--", snapshotSignature, "-"],
-    { input: receiptBytes, encoding: "utf8", timeout: 30_000,
-      maxBuffer: 1024 * 1024, stdio: ["pipe", "pipe", "pipe"],
-      env: { PATH: "/usr/bin:/bin", HOME: temporary, LC_ALL: "C" } });
-    return approvedMappingSigner(output, signerFingerprint);
+    verifyDetachedReviewerBytes({ documentBytes: receiptBytes, signatureBytes: signature,
+      publicKeyBytes: keyring, publicKeyFormat: "binary",
+      expectedPrimaryFingerprint: signerFingerprint });
   } catch {
     throw new Error("Helm image mapping has no valid detached signature");
-  } finally {
-    rmSync(temporary, { recursive: true, force: true });
   }
+  return signerFingerprint;
 }

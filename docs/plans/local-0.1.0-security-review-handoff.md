@@ -81,7 +81,8 @@ For first-run approval signatures, the wizard's exported verifier reads bounded
 document and signature bytes without following final symlinks, then verifies
 private snapshots with a constrained GPG process. The ordinary wizard approval
 path also snapshots the bytes it parses and retains. The API and optional Helm
-mapping use the same strict status policy, but their verifier implementations
-are not yet one shared module; [#235](https://github.com/midnightntwrk/midnight-trust-registry/issues/235)
-tracks that remaining convergence and adversarial review. These local tests
+mapping now use the same isolated GPG execution and strict status verifier;
+their input-file ownership and keyring-format checks remain caller-specific.
+[#235](https://github.com/midnightntwrk/midnight-trust-registry/issues/235)
+tracks exact-head review and publication of this convergence. These local tests
 do not authenticate the genesis source, the human reviewer, or ledger finality.

@@ -2,9 +2,8 @@
 
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { constants, existsSync } from "node:fs";
-import { link, open, lstat, mkdir, mkdtemp, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { constants } from "node:fs";
+import { link, open, lstat, mkdir, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
@@ -17,6 +16,7 @@ import {
   VerifierKeyInsertionOutcomeUnknownError,
 } from "@midnight-ntwrk/trust-registry-integration";
 import { assertStrictDetachedSignatureStatus } from "@midnight-ntwrk/trust-registry-integration/reviewer-signature-status";
+import { verifyDetachedReviewerBytes } from "@midnight-ntwrk/trust-registry-integration/reviewer-signature-verifier";
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
@@ -745,33 +745,12 @@ export async function verifyDetachedReviewerSignature(
   if (armoredExport && !publicKeys.toString("utf8").startsWith("-----BEGIN PGP PUBLIC KEY BLOCK-----\n")) {
     throw new Error("Reviewer key file must be an armored public-key export");
   }
-  const shortTempRoot = tmpdir().length > 55 ? "/tmp" : tmpdir();
-  const temporary = await mkdtemp(join(shortTempRoot, "tr-reviewer-keyring-"));
   try {
-    const gpg = ["/usr/bin/gpg", "/opt/homebrew/bin/gpg", "/usr/local/bin/gpg"].find(existsSync);
-    if (!gpg) throw new Error("A trusted GPG executable is required for reviewer approval");
-    const verificationEnv = { PATH: "/usr/bin:/bin", HOME: temporary, LC_ALL: "C" };
-    const documentSnapshot = join(temporary, "approval.json");
-    const signatureSnapshot = join(temporary, "approval.sig");
-    await writeFile(documentSnapshot, documentBytes, { flag: "wx", mode: 0o600 });
-    await writeFile(signatureSnapshot, signatureBytes, { flag: "wx", mode: 0o600 });
-    const keyring = join(temporary, "pubring.kbx");
-    if (armoredExport) {
-      const exportPath = join(temporary, "reviewer-public.asc");
-      await writeFile(exportPath, publicKeys, { flag: "wx", mode: 0o600 });
-      await execFileAsync(gpg, ["--batch", "--no-options", "--homedir", temporary,
-        "--import", exportPath], { timeout: 30_000, maxBuffer: 1024 * 1024, env: verificationEnv });
-    } else {
-      await writeFile(keyring, publicKeys, { flag: "wx", mode: 0o600 });
-    }
-    const { stdout } = await execFileAsync(gpg, [
-      "--batch", "--no-options", "--no-auto-key-retrieve", "--trust-model", "always",
-      "--no-default-keyring", "--homedir", temporary, "--keyring", keyring,
-      "--status-fd=1", "--verify", signatureSnapshot, documentSnapshot,
-    ], { timeout: 30_000, maxBuffer: 1024 * 1024, env: verificationEnv });
-    assertDetachedReviewerSignatureStatus(stdout, expectedFingerprint, approvedAt);
-  } finally {
-    await rm(temporary, { recursive: true, force: true });
+    verifyDetachedReviewerBytes({ documentBytes, signatureBytes, publicKeyBytes: publicKeys,
+      publicKeyFormat: armoredExport ? "armored" : "keybox",
+      expectedPrimaryFingerprint: expectedFingerprint, approvedAt });
+  } catch {
+    throw new Error("Detached approval signature does not match the pinned reviewer key");
   }
 }
 
