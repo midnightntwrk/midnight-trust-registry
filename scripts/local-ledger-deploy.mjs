@@ -2,7 +2,7 @@
 
 import { createHash } from "node:crypto";
 import { lstat, readFile } from "node:fs/promises";
-import { isAbsolute, resolve } from "node:path";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
@@ -18,41 +18,9 @@ import {
 import { checkLocalLedgerPreflight } from "./local-ledger-preflight.mjs";
 import { loadRecheckedApprovedProvider, readApprovedProviderIdentity } from "./approved-provider-identity.mjs";
 import { assertApprovedProviderImportBoundary, assertApprovedProviderTree } from "./immutable-provider-tree.mjs";
+import { validateLocalDeploymentPlan } from "./local-deployment-plan-policy.mjs";
 
-const SHA256 = /^[0-9a-f]{64}$/u;
-const REVISION = /^[0-9a-f]{40}$/u;
-const HASH = /^0x[0-9a-f]{64}$/u;
-const PLAN_FIELDS = ["format", "journalPath", "network", "providerModulePath",
-  "providerModuleSha256", "releaseManifestPath", "sourceRevision"];
-const STAGED_PLAN_FIELDS = [...PLAN_FIELDS, "initialVerifierKeyName"];
-const NETWORK_FIELDS = ["allowedHosts", "expectedGenesisHash", "indexerHttpUrl",
-  "indexerWsUrl", "networkId", "rpcUrl"];
-
-const exactFields = (value, fields) => value !== null && typeof value === "object"
-  && !Array.isArray(value) && Object.keys(value).sort().join("\0") === [...fields].sort().join("\0");
-
-export function validateLocalDeploymentPlan(plan) {
-  const full = exactFields(plan, PLAN_FIELDS) && plan.format === "tr-local-deployment-plan-v1";
-  const staged = exactFields(plan, STAGED_PLAN_FIELDS)
-    && plan.format === "tr-local-staged-deployment-plan-v1"
-    && typeof plan.initialVerifierKeyName === "string"
-    && /^[A-Za-z][A-Za-z0-9_]{0,127}$/u.test(plan.initialVerifierKeyName);
-  if ((!full && !staged)
-    || !REVISION.test(plan.sourceRevision) || !SHA256.test(plan.providerModuleSha256)
-    || !exactFields(plan.network, NETWORK_FIELDS)
-    || plan.network.networkId !== getLocalNetworkProfile().networkId
-    || !HASH.test(plan.network.expectedGenesisHash)
-    || /^0x0{64}$/u.test(plan.network.expectedGenesisHash)
-    || !["rpcUrl", "indexerHttpUrl", "indexerWsUrl"].every(
-      (field) => typeof plan.network[field] === "string" && plan.network[field].length > 0)
-    || !Array.isArray(plan.network.allowedHosts) || plan.network.allowedHosts.length === 0
-    || plan.network.allowedHosts.some((host) => typeof host !== "string" || host.length === 0)
-    || !["journalPath", "providerModulePath", "releaseManifestPath"].every(
-      (field) => typeof plan[field] === "string" && isAbsolute(plan[field]))) {
-    throw new Error("Local deployment requires an exact source, genesis, endpoint, and provider approval plan");
-  }
-  return plan;
-}
+export { validateLocalDeploymentPlan };
 
 async function regularFile(path) {
   const stat = await lstat(path);

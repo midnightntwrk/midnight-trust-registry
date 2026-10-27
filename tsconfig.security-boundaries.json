@@ -13,6 +13,7 @@
   "files": [
     "scripts/approved-provider-identity.mjs",
     "scripts/immutable-provider-tree.mjs",
+    "scripts/local-deployment-plan-policy.mjs",
     "scripts/provider-runtime-content.mjs",
     "scripts/check-published-package-integrity.mjs",
     "scripts/standalone-approval-policy.mjs",

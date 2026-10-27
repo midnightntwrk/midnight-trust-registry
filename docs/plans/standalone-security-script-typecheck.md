@@ -4,12 +4,13 @@ Issue #229 tracks typed assurance for the self-hosted 0.1.0 installer and
 operator workflow. The existing broad `checkJs` configuration includes the
 wizard and installer but permits implicit `any`; Quality CI now runs it.
 A second, strict no-emit gate runs
-`pnpm run check:security-boundaries-types` for eleven privileged boundaries:
+`pnpm run check:security-boundaries-types` for twelve privileged boundaries:
 
 | Checked file | Security decision |
 | --- | --- |
 | `scripts/approved-provider-identity.mjs` | Hash and inode continuity across provider loading. |
 | `scripts/immutable-provider-tree.mjs` | Root-owned code tree and import confinement. |
+| `scripts/local-deployment-plan-policy.mjs` | Exact source, network, provider, and journal fields before deployment or key insertion. |
 | `scripts/provider-runtime-content.mjs` | Content digest and file continuity during the reviewed provider transfer. |
 | `scripts/check-published-package-integrity.mjs` | Existing npm-version SHA-512 match before an idempotent publish skip. |
 | `scripts/standalone-approval-policy.mjs` | Canonical reviewer metadata and release committee/custody validation. |
@@ -35,7 +36,7 @@ inventory, not a waiver of the release security review.
 | Priority | Files | Reason to retain until typed |
 | --- | --- | --- |
 | 1 | `scripts/standalone-setup-wizard.mjs`, `scripts/prepare-standalone-genesis-review.mjs` | Signed genesis, committee, deployment, and recovery approval sequencing. Reviewer metadata, committee validation, untrusted genesis-review comparison, and API approval-chain export are strictly checked; remaining transitions and the I/O shell still need migration. |
-| 2 | `scripts/local-ledger-deploy.mjs`, `scripts/local-ledger-insert-verifier-key.mjs`, `scripts/stage-provider-runtime.mjs` | Privileged provider material, one-attempt journals, and exact-source install. The direct deployment and insertion CLIs are disabled; the wizard imports these functions after approval checks. |
+| 2 | `scripts/local-ledger-deploy.mjs`, `scripts/local-ledger-insert-verifier-key.mjs`, `scripts/stage-provider-runtime.mjs` | Privileged provider material, one-attempt journals, and exact-source install. The shared deployment-plan validator is strictly checked, but the submission and material-loading shells remain non-strict. The direct deployment and insertion CLIs are disabled; the wizard imports these functions after approval checks. |
 | 3 | `scripts/build-standalone-install.mjs`, `scripts/load-standalone-install-images.mjs`, `scripts/check-standalone-install.mjs` | Source and OCI image pin decisions. Keep hash and path validation identical while moving pure validators to typed code. |
 | 4 | `scripts/check-helm-image-mapping.mjs`, `scripts/observe-helm-runtime.mjs` | Optional Kubernetes mapping and observations; Helm is not a 0.1.0 RC gate. |
 | 5 | `scripts/release-candidate-manifest.mjs`, `scripts/check-publish-tarball.mjs` | Release package and verifier-key hash decisions; manifest-backed publish remains a separate release gate. |

@@ -60,6 +60,13 @@ test("rejects malformed local deployment plans", () => {
   } }), /exact source/u);
   assert.throws(() => validateLocalDeploymentPlan({ ...plan, extra: true }), /exact source/u);
   assert.throws(() => validateLocalDeploymentPlan({ ...plan, journalPath: "relative.json" }), /exact source/u);
+  for (const malformed of [null, [], {}, { ...plan, network: null },
+    { ...plan, sourceRevision: undefined }, { ...plan, providerModuleSha256: 42 },
+    { ...plan, network: { ...plan.network, expectedGenesisHash: `0x${"0".repeat(64)}` } },
+    { ...plan, network: { ...plan.network, allowedHosts: [null] } },
+    { ...plan, network: { ...plan.network, indexerHttpUrl: null } }]) {
+    assert.throws(() => validateLocalDeploymentPlan(malformed), /exact source/u);
+  }
 });
 
 test("staged plan passes its circuit pin without changing the full-plan path", async () => {
