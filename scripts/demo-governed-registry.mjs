@@ -86,6 +86,8 @@ import {
 } from "../packages/trust-registry-api/dist/index.js";
 import { AdversarialMatrix } from "./adversarial-matrix.mjs";
 import { buildActorEvidenceReport } from "./actor-evidence-report.mjs";
+import { runDenialSafetyScenario } from "./governed-demo-denial-safety.mjs";
+import { runMaintainerSafetyScenarios } from "./governed-demo-maintainer-safety.mjs";
 import { TrustRegistryTrqpAdapter, verifyTrqpRecognitionEvidenceFromApi } from "../adapters/trqp/dist/index.js";
 
 const asHex = (value) => `0x${Buffer.from(value).toString("hex")}`;
@@ -136,125 +138,10 @@ const expectHttp = async (response, status) => {
 const adversarialMatrix = new AdversarialMatrix({ collectFailures: true });
 const expectedAdversarialCaseCount = 198;
 
-const lastActiveHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-last-active");
-const bootstrapMembership = {
-  maintainerIdCommitment: lastActiveHarness.maintainerIdCommitment,
-  maintainerId: lastActiveHarness.maintainerId,
-  subjectDidCommitment: lastActiveHarness.maintainerDidCommitment,
-  keyId: lastActiveHarness.simulator.getLedger().lastAuthorizedMaintainerKeyId,
-  seed: new Uint8Array(32),
-  subjectDid: lastActiveHarness.maintainerDid,
-  trustLevel: "bootstrap-maintainer",
-};
-const lastActiveActionCount = lastActiveHarness.simulator.getLedger().governanceActionCount;
-adversarialMatrix.expectThrown(() => lastActiveHarness.suspendMaintainer(bootstrapMembership), {
-  id: "compact-self-voted-maintainer-suspension",
-  invariant: "A maintainer cannot vote to suspend its own DID",
-  boundary: "compact",
-  messagePattern: /own DID/iu,
-  category: "conflicted-maintainer-vote-rejected",
-});
-adversarialMatrix.expectThrown(() => lastActiveHarness.revokeMaintainer(bootstrapMembership), {
-  id: "compact-self-voted-maintainer-revocation",
-  invariant: "A maintainer cannot vote to revoke its own DID",
-  boundary: "compact",
-  messagePattern: /own DID/iu,
-  category: "conflicted-maintainer-vote-rejected",
-});
-assert.equal(lastActiveHarness.simulator.getLedger().activeMaintainerCount, 1n);
-assert.equal(lastActiveHarness.simulator.getLedger().governanceActionCount, lastActiveActionCount);
-const thresholdSecond = createMaintainerScenarioFixture("governed-demo-threshold-second");
-const thresholdThird = createMaintainerScenarioFixture("governed-demo-threshold-third");
-lastActiveHarness.authorizeMaintainer(thresholdSecond);
-lastActiveHarness.authorizeMaintainer(thresholdThird);
-lastActiveHarness.updateMaintainerThresholdPolicy(2n, 1n, 1n, [thresholdSecond]);
-const thresholdRemoval = lastActiveHarness.prepareMaintainerDecisionAction(bootstrapMembership, "suspend");
-const thresholdActionCount = lastActiveHarness.simulator.getLedger().governanceActionCount;
-adversarialMatrix.expectThrown(() => lastActiveHarness.executeMaintainerDecisionWithSignatures(
-  bootstrapMembership, "suspend", [signCompact(thresholdSecond, thresholdRemoval, lastActiveHarness)],
-), {
-  id: "compact-removal-below-maintainer-threshold",
-  invariant: "A non-conflicted signer cannot remove a maintainer into an all-member quorum",
-  boundary: "compact",
-  messagePattern: /non-conflicted removal quorum/iu,
-  category: "maintainer-threshold-protected",
-});
-assert.equal(lastActiveHarness.simulator.getLedger().activeMaintainerCount, 3n);
-assert.equal(lastActiveHarness.simulator.getLedger().governanceActionCount, thresholdActionCount);
+runMaintainerSafetyScenarios(adversarialMatrix, signCompact);
 
-const removedSignerHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-removed-signer");
-const removedSigner = createMaintainerScenarioFixture("governed-demo-removed-signer");
-const removedSignerIssuer = createIssuerScenarioFixture("governed-demo-removed-signer-issuer");
-removedSignerHarness.authorizeMaintainer(removedSigner);
-removedSignerHarness.suspendMaintainer(removedSigner);
-removedSignerHarness.proposeIssuer(removedSignerIssuer);
-const removedSignerApproval = removedSignerHarness.prepareIssuerDecisionAction(removedSignerIssuer, "approve");
-const removedSignerActionCount = removedSignerHarness.simulator.getLedger().governanceActionCount;
-adversarialMatrix.expectThrown(() => removedSignerHarness.executeIssuerDecisionWithSignatures(
-  removedSignerIssuer, "approve", [signCompact(removedSigner, removedSignerApproval, removedSignerHarness)],
-), {
-  id: "compact-removed-maintainer-signer",
-  invariant: "A suspended maintainer key cannot approve a new issuer",
-  boundary: "compact",
-  messagePattern: /active|authorized|maintainer|signature|assert/iu,
-  category: "removed-signer-rejected",
-});
-assert.equal(removedSignerHarness.simulator.getLedger().governanceActionCount, removedSignerActionCount);
-
-const denialHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-denial");
-const denialSecond = createMaintainerScenarioFixture("governed-demo-denial-second");
-const denialThird = createMaintainerScenarioFixture("governed-demo-denial-third");
-const deniedIssuer = createIssuerScenarioFixture("governed-demo-denied-issuer");
-const replacementIssuer = {
-  ...deniedIssuer,
-  authorizationId: `${deniedIssuer.authorizationId}:replacement`,
-  authorizationIdCommitment: bytes32Commitment(`${deniedIssuer.authorizationId}:replacement`),
-};
-denialHarness.authorizeMaintainer(denialSecond);
-denialHarness.authorizeMaintainer(denialThird);
-denialHarness.proposeIssuer(deniedIssuer);
-adversarialMatrix.expectThrown(() => denialHarness.proposeIssuer(replacementIssuer), {
-  id: "denied-proposal-blocks-live-scope-reuse",
-  invariant: "A second application cannot claim the same scope while a proposal remains live",
-  boundary: "compact",
-  messagePattern: /live authorization/iu,
-  category: "duplicate-live-scope-rejected",
-});
-denialHarness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
-const denialPrepared = denialHarness.prepareIssuerDecisionAction(deniedIssuer, "archive");
-const denialActionCount = denialHarness.simulator.getLedger().governanceActionCount;
-adversarialMatrix.expectThrown(() => denialHarness.executeIssuerDecisionWithSignatures(
-  deniedIssuer, "archive", [signCompact(denialSecond, denialPrepared, denialHarness)],
-), {
-  id: "denied-proposal-requires-quorum",
-  invariant: "Archiving a pending issuer proposal requires the current maintainer quorum",
-  boundary: "compact",
-  messagePattern: /threshold|quorum|signer|authorization/iu,
-  category: "insufficient-archive-quorum",
-});
-assert.equal(denialHarness.simulator.getLedger().governanceActionCount, denialActionCount);
-const denialEventHash = denialHarness.executeIssuerDecisionWithSignatures(
-  deniedIssuer, "archive", [signCompact(denialSecond, denialPrepared, denialHarness), signCompact(denialThird, denialPrepared, denialHarness)],
-);
-assert.equal(denialHarness.simulator.getIssuerAuthorization(deniedIssuer.authorizationIdCommitment).status,
-  AuthorizationStatus.archived);
-const deniedBundle = denialHarness.buildIssuerHistoricalEvidence(deniedIssuer);
-assert.equal(deniedBundle.authorization?.status, "archived");
-assert.equal(deniedBundle.authorization?.authorizedAt, undefined);
-assert.equal(deniedBundle.authorization?.activeFrom, undefined);
-adversarialMatrix.expectThrown(() => new TrustRegistrySimulatorClient(denialHarness.simulator)
-  .verifyIssuerAuthorizationBundle(deniedBundle, {}), {
-  id: "denied-proposal-is-not-trust",
-  invariant: "Historical evidence for an archived proposal cannot authorize a current issuer",
-  boundary: "client",
-  messagePattern: /not active/iu,
-  category: "archived-issuer-not-active",
-});
-const replacementProposalEventHash = denialHarness.proposeIssuer(replacementIssuer, [denialSecond]);
-assert.equal(denialHarness.simulator.getIssuerAuthorization(replacementIssuer.authorizationIdCommitment).status,
-  AuthorizationStatus.proposed);
-assert.equal(denialHarness.simulator.getIssuerAuthorization(deniedIssuer.authorizationIdCommitment).status,
-  AuthorizationStatus.archived);
+const { denialEventHash, deniedIssuer, deniedBundle, replacementIssuer, replacementProposalEventHash } =
+  runDenialSafetyScenario(adversarialMatrix, signCompact);
 
 const evidenceHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-evidence-boundaries");
 const policyIdIssuer = createIssuerScenarioFixture("governed-demo-wrong-policy-id");
