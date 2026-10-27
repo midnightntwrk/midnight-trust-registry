@@ -35,8 +35,10 @@ pnpm exec playwright test
 ```
 
 `test:e2e:demo` first checks that prebuilt Compact output contains the current
-source and contract module, then compiles the contract TypeScript helpers in
-place and rebuilds the downstream TypeScript and UI workspaces
+source and contract module. If generated source declarations are absent, it
+restores only that contract module from the preserved `dist` copy; mismatched
+generated source stops the run. It then compiles contract TypeScript helpers in
+place and rebuilds downstream TypeScript and UI workspaces
 without regenerating Compact keys. It runs signed issuer, verifier, auditor,
 and maintainer Compact simulator journeys, then starts the fixture API and
 both served UIs on ephemeral loopback ports. A passing exit code means those

@@ -2762,9 +2762,10 @@ The demo E2E command previously ran its four signed simulator journeys before
 building the packages they imported. Individual demo and browser aliases also
 used `build:light`, which removes full generated Compact output. The shared
 prebuilt-runtime build now checks the copied Compact source and generated
-contract-module presence, recompiles contract TypeScript helpers and downstream
-TypeScript/UI workspaces, and is used
-by those documented commands and the prebuilt integration lane. A missing or
+contract-module presence, restores missing generated source declarations from
+the preserved `dist` copy (rejecting mismatches), and recompiles contract
+TypeScript helpers and downstream TypeScript/UI workspaces. It is used by the
+documented commands and prebuilt integration lane. A missing or
 stale prebuilt contract stops before a journey rather than silently selecting
 a destructive light build. This prevents stale package results and protects
 artifact-bearing checkouts; the check does not independently authenticate

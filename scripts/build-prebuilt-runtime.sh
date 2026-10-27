@@ -11,6 +11,23 @@ if [[ ! -f "$dist_file" || ! -f "$managed_file" ]] || ! cmp -s "$source_file" "$
   exit 1
 fi
 
+# The contract helper imports generated declarations from src/managed. Restore
+# only this small contract module from the preserved dist copy when absent.
+source_managed=contracts/trust-registry/src/managed/trust-registry/contract
+dist_managed=contracts/trust-registry/dist/managed/trust-registry/contract
+if [[ -L "$source_managed" || -L "$(dirname "$source_managed")" ]]; then
+  echo "Generated contract source must not be a symlink." >&2
+  exit 1
+fi
+if [[ ! -e "$source_managed" ]]; then
+  mkdir -p "$(dirname "$source_managed")"
+  cp -R "$dist_managed" "$source_managed"
+fi
+if ! diff -qr "$source_managed" "$dist_managed" >/dev/null; then
+  echo "Generated contract source differs from preserved dist artifacts; prepare a source-matched bundle." >&2
+  exit 1
+fi
+
 # Compile contract TypeScript helpers in place without invoking its Compact build.
 pnpm --filter @midnight-ntwrk/trust-registry-contract exec tsc -p tsconfig.build.json
 
