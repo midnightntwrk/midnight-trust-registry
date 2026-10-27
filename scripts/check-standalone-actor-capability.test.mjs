@@ -35,6 +35,15 @@ test("read-only CLI, wrong plan, and missing roles fail the capability check", (
 });
 
 test("unbound, malformed, or duplicate role observations are rejected", () => {
+  for (const malformed of [
+    null,
+    {},
+    { ...health, localPlanSha256: null },
+    { ...health, finalizedBlockHash: null },
+    { ...health, configuredGovernedProposalRoles: null },
+    { ...health, configuredGovernedProposalRoles: ["issuer", null] },
+    { ...health, configuredGovernedProposalRoles: ["issuer", "unknown"] },
+  ]) assert.throws(() => assessStandaloneActorCapability(malformed, plan));
   assert.throws(() => assessStandaloneActorCapability({ ...health, sourceMode: "memory" }, plan));
   assert.throws(() => assessStandaloneActorCapability({ ...health, finalizedBlockHash: `0x${"0".repeat(64)}` }, plan));
   assert.throws(() => assessStandaloneActorCapability({ ...health,

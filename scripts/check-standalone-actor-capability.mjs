@@ -9,30 +9,37 @@ const SHA256 = /^[0-9a-f]{64}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
 const ROLES = new Set(["issuer", "verifier", "auditor", "maintainer", "recognition"]);
 
-/** A health response is a configuration observation, never actor or finality evidence. */
+/** A health response is a configuration observation, never actor or finality evidence.
+ * @param {Record<string, unknown> | null | undefined} health
+ * @param {string} expectedPlanSha256
+ * @param {string[]} [requiredRoles]
+ */
 export function assessStandaloneActorCapability(health, expectedPlanSha256, requiredRoles = ["issuer"]) {
   if (!SHA256.test(expectedPlanSha256) || !Array.isArray(requiredRoles)
     || requiredRoles.length === 0 || requiredRoles.some((role) => !ROLES.has(role))
     || new Set(requiredRoles).size !== requiredRoles.length) {
     throw new Error("Expected plan SHA-256 and distinct known actor roles are required");
   }
+  const planSha256 = health?.localPlanSha256;
+  const finalizedBlockHash = health?.finalizedBlockHash;
+  const configuredRoles = health?.configuredGovernedProposalRoles;
   if (health?.status !== "ok" || health.sourceMode !== "local-ledger"
-    || !SHA256.test(health.localPlanSha256 ?? "")
-    || !HASH.test(health.finalizedBlockHash ?? "")
-    || /^0x0{64}$/u.test(health.finalizedBlockHash)
-    || !Array.isArray(health.configuredGovernedProposalRoles)
-    || health.configuredGovernedProposalRoles.some((role) => !ROLES.has(role))
-    || new Set(health.configuredGovernedProposalRoles).size !== health.configuredGovernedProposalRoles.length) {
+    || typeof planSha256 !== "string" || !SHA256.test(planSha256)
+    || typeof finalizedBlockHash !== "string" || !HASH.test(finalizedBlockHash)
+    || /^0x0{64}$/u.test(finalizedBlockHash)
+    || !Array.isArray(configuredRoles)
+    || configuredRoles.some((role) => typeof role !== "string" || !ROLES.has(role))
+    || new Set(configuredRoles).size !== configuredRoles.length) {
     throw new Error("Health response is not a pinned local-ledger API observation");
   }
-  const missingRoles = requiredRoles.filter((role) => !health.configuredGovernedProposalRoles.includes(role));
+  const missingRoles = requiredRoles.filter((role) => !configuredRoles.includes(role));
   return {
     format: "tr-standalone-actor-capability-v1",
-    planMatchesCandidate: health.localPlanSha256 === expectedPlanSha256,
-    finalizedBlockHash: health.finalizedBlockHash,
-    configuredRoles: health.configuredGovernedProposalRoles,
+    planMatchesCandidate: planSha256 === expectedPlanSha256,
+    finalizedBlockHash,
+    configuredRoles,
     missingRoles,
-    requestedPortsConfigured: missingRoles.length === 0 && health.localPlanSha256 === expectedPlanSha256,
+    requestedPortsConfigured: missingRoles.length === 0 && planSha256 === expectedPlanSha256,
     actorJourney: "not-run",
     observationAuthenticity: "not-independently-verified",
     independentFinality: "not-verified",
@@ -41,6 +48,7 @@ export function assessStandaloneActorCapability(health, expectedPlanSha256, requ
   };
 }
 
+/** @param {string} path */
 async function readHealth(path) {
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
@@ -70,7 +78,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     console.log(JSON.stringify(report, null, 2));
     if (!report.requestedPortsConfigured) process.exitCode = 2;
   } catch (error) {
-    console.error(`Standalone actor capability check failed: ${error.message}`);
+    console.error(`Standalone actor capability check failed: ${error instanceof Error ? error.message : String(error)}`);
     process.exitCode = 1;
   }
 }
