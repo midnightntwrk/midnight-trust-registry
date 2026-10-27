@@ -51,6 +51,10 @@ group would target the immediately preceding group. The table is a review
 plan, **not** an authorization to push, create PRs, mark drafts ready, merge,
 or claim exact-head CI. Verify GPG/DCO, focused and applicable full checks,
 and independent current-head review for each group after publication. The
+live #240 head was still `bbe527cf` on 2026-10-27. At local head `6c82bef8`,
+all five group endpoints were in its descendant chain, and all 59 local
+commits above it had good Git signatures and DCO trailers. This point-in-time
+local audit does not replace a new base/identity check before publication. The
 read-only local Codex review through `c786254f` found no actionable
 regression in group D, but later commits or PR rebases require a fresh review.
 Read-only Codex CLI reviews of group A at `31ef0672`, group B at
