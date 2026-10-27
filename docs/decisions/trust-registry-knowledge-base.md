@@ -2787,3 +2787,16 @@ suite. They do not use a public or deployed local network.
 No test in this group establishes a deployed ledger, authentic finality, or
 permission to clear an unobserved reservation. The #220 recovery proof and
 #219 offline actor qualification remain open.
+
+## Local RC independent review handoff
+
+The published local qualification stack is now draft PRs #238, #239, and
+#240, not the older seven-branch publication plan. The
+[review-stack plan](../plans/local-0.1.0-review-stack.md) records their order
+without freezing their heads. The
+[security-review handoff](../plans/local-0.1.0-security-review-handoff.md)
+gives the independent reviewer an exact-source inventory and the trust
+boundaries to inspect for #232. It is a checklist, not an attributable human
+verdict. The unpublished local descendants and passing fixture tests do not
+change the published PR checks or the missing signed genesis, authenticated
+deployed readback, offline actor, restore, and VC-owned status evidence.
