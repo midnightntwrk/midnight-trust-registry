@@ -56,7 +56,7 @@ git verify-commit "$SOURCE_SHA"
 shasum -a 256 "$INSTALL/install-inventory.json"
 # Compare the signer fingerprint and inventory digest with independently
 # approved values before continuing. The checker alone cannot do that.
-node scripts/check-standalone-install.mjs "$INSTALL"
+node scripts/check-standalone-install.mjs "$INSTALL" "$SOURCE_SHA"
 node scripts/standalone-setup-wizard.mjs init "$SETUP" "$INSTALL"
 node scripts/standalone-setup-wizard.mjs prepare-stack "$SETUP" "$PROJECT" 39944 38088 36300
 node scripts/load-standalone-install-images.mjs "$INSTALL"

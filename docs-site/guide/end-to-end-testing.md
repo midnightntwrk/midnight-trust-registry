@@ -61,7 +61,10 @@ wallet, containers, or volumes.
 
 1. Verify the GPG-signed source commit and independently approved digest of
    its exact-source install inventory. Then run
-   `node scripts/check-standalone-install.mjs "$INSTALL"`.
+   `node scripts/check-standalone-install.mjs "$INSTALL" "$SOURCE_SHA"`.
+   The second argument is the selected full commit SHA; a valid bundle from
+   another revision is rejected before setup. Internal hash verification does
+   not replace independent provenance review.
 2. Follow [the standalone first run](standalone.md) to initialize the wizard,
    load the pinned images, observe the local stack, and collect an **untrusted**
    genesis candidate. The unattended path stops there.

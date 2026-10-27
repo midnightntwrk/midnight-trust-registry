@@ -360,7 +360,7 @@ partial directory is retained for inspection; use a new signed source commit
 or a separately reviewed recovery procedure rather than silently replacing
 candidate bytes.
 
-Run `node scripts/check-standalone-install.mjs <bundle-directory>` before
+Run `node scripts/check-standalone-install.mjs <bundle-directory> <selected-source-sha>` before
 disconnecting and after transfer. It verifies the package manifest against
 the packed contract and each package's required entrypoint files, including
 the manifest's Compact-source and generated

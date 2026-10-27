@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { STANDALONE_PROOF_PARAMETER_PATHS, verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { approvedRuntimeHealthcheck } from "./runtime-healthcheck.mjs";
@@ -175,6 +176,29 @@ test("verifies pinned packages, images, and all 18 proof parameters", async () =
     assert.ok(result.images.every((image) => image.acceptedIds.includes(
       `sha256:${image.reference.split("@sha256:")[1]}`)));
     assert.equal(result.proofParameterCount, 18);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects an install from a different selected source before package verification", async () => {
+  const { root } = await fixture();
+  try {
+    let packagesChecked = false;
+    const verifyPackages = () => { packagesChecked = true; };
+    await assert.rejects(verifyStandaloneInstallBundle(root, verifyPackages, "b".repeat(40)),
+      /source revision differs from the selected candidate/u);
+    assert.equal(packagesChecked, false);
+    await assert.rejects(verifyStandaloneInstallBundle(root, verifyPackages, "short-sha"),
+      /full lowercase commit SHA/u);
+    assert.equal(packagesChecked, false);
+    const script = fileURLToPath(new URL("./check-standalone-install.mjs", import.meta.url));
+    const cli = spawnSync(process.execPath, [script, root, "b".repeat(40)], { encoding: "utf8" });
+    assert.notEqual(cli.status, 0);
+    assert.match(cli.stderr, /source revision differs from the selected candidate/u);
+    const result = await verifyStandaloneInstallBundle(root, verifyPackages, revision);
+    assert.equal(result.sourceRevision, revision);
+    assert.equal(packagesChecked, true);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

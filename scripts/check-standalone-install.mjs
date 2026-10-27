@@ -232,7 +232,12 @@ async function regularFiles(directory, prefix = "") {
 }
 
 /** Verifies staged bytes only. It does not prove image provenance, deployment, or offline behavior. */
-export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages = verifyReleaseCandidateArtifacts) {
+/** @param {string | null} [expectedSourceRevision] */
+export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages = verifyReleaseCandidateArtifacts,
+  expectedSourceRevision = null) {
+  if (expectedSourceRevision !== null && !REVISION.test(expectedSourceRevision)) {
+    throw new Error("Expected install source revision must be a full lowercase commit SHA");
+  }
   const root = await realpath(resolve(bundleRoot));
   const inventoryBytes = await readFile(await regularBundleFile(root, "install-inventory.json"));
   const inventorySha256 = createHash("sha256").update(inventoryBytes).digest("hex");
@@ -247,6 +252,9 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
     || typeof inventory.proofParameters?.directory !== "string"
     || !Array.isArray(inventory.proofParameters?.files)) {
     throw new Error("Standalone install inventory format or required roles are invalid");
+  }
+  if (expectedSourceRevision !== null && inventory.sourceRevision !== expectedSourceRevision) {
+    throw new Error("Standalone install source revision differs from the selected candidate");
   }
   const hasApiOverlayPin = inventory.runtimeCompose?.apiPath !== undefined
     || inventory.runtimeCompose?.apiSha256 !== undefined;
@@ -452,8 +460,9 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (process.argv.length !== 3) {
-    throw new Error("Usage: node scripts/check-standalone-install.mjs <bundle-directory>");
+  if (process.argv.length !== 3 && process.argv.length !== 4) {
+    throw new Error("Usage: node scripts/check-standalone-install.mjs <bundle-directory> [expected-source-revision]");
   }
-  console.log(JSON.stringify(await verifyStandaloneInstallBundle(process.argv[2])));
+  console.log(JSON.stringify(await verifyStandaloneInstallBundle(
+    process.argv[2], verifyReleaseCandidateArtifacts, process.argv[3] ?? null)));
 }
