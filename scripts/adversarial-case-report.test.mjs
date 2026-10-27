@@ -52,6 +52,13 @@ ok 1 - case-a
   assert.deepEqual(report.cases[1], { id: "case-b", status: "failed", reason: "missing-outcome" });
 });
 
+test("rejects an outcome attributed to another isolated case", () => {
+  assert.throws(() => parseAdversarialTap("# Subtest: case-a\nok 1 - case-b\n# tests 1\n"),
+    /outcome ID differs from subtest/u);
+  assert.throws(() => parseAdversarialTap("# Subtest: case-a\nnot ok 1 - case-b\n# tests 1\n"),
+    /outcome ID differs from subtest/u);
+});
+
 test("does not accept an interrupted or abnormal runner as a complete failed-case report", () => {
   const report = parseAdversarialTap("# Subtest: case-a\nnot ok 1 - case-a\n# tests 1\n");
   assert.doesNotThrow(() => assertCompletedAdversarialRun({ status: 1, signal: null }, report));

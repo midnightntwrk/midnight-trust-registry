@@ -24,6 +24,9 @@ export const parseAdversarialTap = (tap) => {
     assert.equal(seen.has(id), false, `Duplicate isolated adversarial case: ${id}`);
     seen.add(id);
     const outcome = block.match(/^((?:not )?ok) \d+ - ([a-z][a-z0-9-]+)(?: # (SKIP|TODO).*)?$/mu);
+    if (outcome && outcome[2] !== id) {
+      throw new Error(`Isolated adversarial outcome ID differs from subtest: ${id} !== ${outcome[2]}`);
+    }
     const status = outcome?.[1] === "ok" && outcome[3] === undefined ? "passed" : "failed";
     const failureType = block.match(/^\s+failureType: '([^']+)'$/mu)?.[1];
     cases.push({
