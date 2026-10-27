@@ -62,9 +62,15 @@ Do not use this exception for externally reachable WebSockets. Dynamic-regex
 alerts must be checked against the caller's input domain: the restart evidence
 path was changed to bounded filename parsing, while the Compact Nix canary
 selects from a fixed platform list and the dependency refresher escapes
-package names. These are not runtime actor inputs. Other Opengrep findings,
-including HTML rendering, still require review in the full exact-head report;
-this note does not waive them.
+package names. These are not runtime actor inputs. The two portals render
+untrusted values into HTML templates through an encoder for ampersands, angle
+brackets, and both quote types. The applicant portal already tests a script
+tag in a displayed DID; the admin console now tests that a malicious ledger
+label and API error remain text nodes rather than creating an image element.
+Those browser tests are regression evidence, not a proof that every future
+template context is safe. Review the complete exact-head Opengrep report and
+any newly added interpolation before disposition; this note does not waive
+the scanner or independent human review.
 
 Record the candidate source SHA, scan run URL, tool versions, complete
 findings, and each disposition in the release evidence. Keep #198 draft if
