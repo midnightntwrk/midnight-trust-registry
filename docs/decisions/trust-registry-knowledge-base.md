@@ -2673,3 +2673,16 @@ uses a real file journal and checks that no reservation or submission occurs;
 it is not a deployed-ledger actor test. This closes a deterministic
 pre-broadcast wedge identified under #220, not the broader audited recovery
 policy for a reservation whose network outcome is unknown.
+
+## Local proposal recovery proof boundary
+
+Issue #220 remains a local RC safety/liveness gate. The current recovery
+candidate and detached-signed decision are read-only: even a later governance
+counter and absent current proposal record cannot prove the original action
+did not execute. The [recovery specification](../spec/local-proposal-recovery.md)
+requires independently authenticated complete action history, proof that the
+original signed sequence is no longer executable, a separate human reviewer,
+and a durable non-replayable journal tombstone before another proposal can
+proceed. None of those requirements may be replaced by a null indexer read,
+timeout, or new journal path. Synthetic tests of the candidate remain
+non-deployment evidence.

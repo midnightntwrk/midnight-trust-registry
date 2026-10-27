@@ -1798,6 +1798,9 @@ Do not use a null indexer read, elapsed
 time, or a new journal path as recovery authority. Issue #220 remains the stop
 gate until a
 reviewed finality policy, durable tombstone, and operator recovery path exist.
+The proposed proof and journal-transition acceptance contract is in
+[Local proposal reservation recovery](../spec/local-proposal-recovery.md).
+It does not grant an operator a recovery command today.
 
 ## Security-Script Type Gate
 
