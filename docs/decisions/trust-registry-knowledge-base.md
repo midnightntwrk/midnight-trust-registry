@@ -2521,3 +2521,14 @@ the browser-inclusive fixture demo passed. Codex CLI review found and the
 follow-up fixed the late-expiry gap, then found no actionable regression in
 the correction. These tests and review do not implement a live VC-owned status
 adapter, authenticate a deployed ledger, or close the human release review.
+
+The wizard's restricted API approval-chain export decision now lives in a
+strictly checked pure module. It preserves canonical signed-document byte
+checks, approval hash links, source/install pins, deployment receipt matching,
+and unambiguous maintenance readback before exporting only the public-key
+approval evidence. Missing record fields, zero finalized hashes, and duplicate
+signed JSON keys fail closed. The wizard still owns private-file I/O and
+detached-signature verification; the extracted decision does not verify a
+signature or authenticate finality independently. Both checked-JS gates and
+the 102-case wizard suite passed. The remaining wizard sequencing and installer
+adapters stay in the #229 migration inventory.

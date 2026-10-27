@@ -15,6 +15,7 @@
     "scripts/immutable-provider-tree.mjs",
     "scripts/provider-runtime-content.mjs",
     "scripts/standalone-approval-policy.mjs",
+    "scripts/standalone-api-approval-chain.mjs",
     "scripts/verify-helm-mapping-signature.mjs"
   ]
 }

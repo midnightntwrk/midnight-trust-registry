@@ -126,6 +126,20 @@ test("API approval-chain export refuses missing or substituted deployment eviden
     committeeDeploymentApproval: { ...committeeDeploymentApproval, documentSha256: "f".repeat(64) } },
   manifest), /digest/u);
   assert.throws(() => buildStandaloneApiApprovalChain(record, "f".repeat(64)), /approval chain/u);
+  assert.throws(() => buildStandaloneApiApprovalChain({ ...record, install: undefined }, manifest), /inventory/u);
+  assert.throws(() => buildStandaloneApiApprovalChain({ ...record, sourceRevision: undefined }, manifest),
+    /approval chain/u);
+  assert.throws(() => buildStandaloneApiApprovalChain({ ...record, maintenanceAttempt: {
+    ...record.maintenanceAttempt, reconciliation: { ...record.maintenanceAttempt.reconciliation,
+      finalizedBlockHash: `0x${"0".repeat(64)}` },
+  } }, manifest), /readback/u);
+  const duplicatedFormat = Buffer.from(Buffer.from(genesisApproval.documentBase64, "base64")
+    .toString("utf8").replace('"format":"tr-local-genesis-approval-v1"',
+      '"format":"tr-local-genesis-approval-v1","format":"tr-local-genesis-approval-v1"'));
+  assert.throws(() => buildStandaloneApiApprovalChain({ ...record, genesisApproval: {
+    ...genesisApproval, documentBase64: duplicatedFormat.toString("base64"),
+    documentSha256: digest(duplicatedFormat),
+  } }, manifest), /canonical signed JSON/u);
 });
 const pin = {
   format: "tr-local-ledger-pin-v1",
