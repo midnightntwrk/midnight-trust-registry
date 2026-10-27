@@ -133,24 +133,21 @@ export class InMemoryApplicationChallengeStore implements ApplicationChallengeSt
       throw new ApplicationChallengeBindingConflictError();
     }
     const supersededPrevious = previous !== undefined && nowMs < previous.record.expiresAtMs;
-    if (previousHash !== undefined) this.remove(previousHash);
-    if (this.records.size >= this.maxEntries) {
-      for (const [hash, current] of this.records) {
-        if (nowMs >= current.record.expiresAtMs) this.remove(hash);
-      }
-      if (this.records.size >= this.maxEntries) throw new ApplicationChallengeCapacityError();
-    }
-    if (record.subjectHash !== undefined) {
-      let liveForSubject = 0;
-      for (const [hash, current] of this.records) {
-        if (nowMs >= current.record.expiresAtMs) {
-          this.remove(hash);
-        } else if (current.record.subjectHash === record.subjectHash) {
+    let liveEntries = 0;
+    let liveForSubject = 0;
+    for (const [hash, current] of this.records) {
+      if (nowMs >= current.record.expiresAtMs) {
+        this.remove(hash);
+      } else if (hash !== previousHash) {
+        liveEntries += 1;
+        if (record.subjectHash !== undefined && current.record.subjectHash === record.subjectHash) {
           liveForSubject += 1;
         }
       }
-      if (liveForSubject >= this.maxPerSubject) throw new ApplicationChallengeSubjectCapacityError();
     }
+    if (liveEntries >= this.maxEntries) throw new ApplicationChallengeCapacityError();
+    if (liveForSubject >= this.maxPerSubject) throw new ApplicationChallengeSubjectCapacityError();
+    if (previousHash !== undefined) this.remove(previousHash);
     const saved = Object.freeze({ ...record });
     const entry = { record: saved, timer: undefined as unknown as NodeJS.Timeout };
     this.records.set(saved.challengeHash, entry);

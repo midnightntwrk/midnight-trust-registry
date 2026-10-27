@@ -199,6 +199,9 @@ transition. The reference store rejects such changes; a future public route
 MUST authenticate the applicant before allowing either replacement or
 same-binding retries, so a third party cannot invalidate an outstanding
 challenge.
+Capacity or authenticated-subject quota rejection MUST leave a previous live
+same-binding challenge intact, including when that challenge predates subject
+quota tagging.
 
 The 0.1.0 reference intake profile permits zero clock skew between the
 challenge service and its trusted evaluation instant. A VP verification time

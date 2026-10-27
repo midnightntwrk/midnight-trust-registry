@@ -171,6 +171,21 @@ describe("application challenge lifecycle", () => {
     expect(await service.consume({ binding, nonce: second.nonce, challengeHash: second.challengeHash })).toBe(second.challengeHash);
   });
 
+  it("keeps an older untagged challenge when an authenticated retry exceeds the subject quota", async () => {
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(3, 1), () => START);
+    const first = await service.issue(binding);
+    const secondBinding = { ...binding, applicationId: "application:issuer:two" };
+    const second = await service.issue(secondBinding, binding.subjectDid);
+
+    await expect(service.issue(binding, binding.subjectDid)).rejects.toMatchObject({
+      code: "CHALLENGE_SUBJECT_CAPACITY",
+    });
+    expect(await service.consume({ binding, nonce: first.nonce, challengeHash: first.challengeHash }))
+      .toBe(first.challengeHash);
+    expect(await service.consume({ binding: secondBinding, nonce: second.nonce, challengeHash: second.challengeHash }))
+      .toBe(second.challengeHash);
+  });
+
   it("distinguishes a fresh retry after expiry from superseding a live tab", async () => {
     let now = START;
     const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => now);
