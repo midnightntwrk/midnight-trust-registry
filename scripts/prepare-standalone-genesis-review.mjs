@@ -10,7 +10,7 @@ import { validateGenesisReviewEvidence } from "./standalone-genesis-review-polic
 export { validateGenesisReviewEvidence } from "./standalone-genesis-review-policy.mjs";
 import { renderGenesisReviewPacket } from "./standalone-genesis-review-packet.mjs";
 export { renderGenesisReviewPacket } from "./standalone-genesis-review-packet.mjs";
-import { regularBytes } from "./standalone-setup-wizard.mjs";
+import { regularBytes } from "./standalone-private-file-bytes.mjs";
 
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
