@@ -13,7 +13,7 @@ import { assessProposalRecoveryCandidate } from "../proposal-recovery-candidate.
 import { draftProposalRecoveryDecision } from "../proposal-recovery-decision.js";
 import { FileProposalSubmissionJournal, proposalJournalBindingDigest,
   ProposalSubmissionAlreadyPendingError, ProposalSubmissionOutcomeUnknownError,
-  ProposalSubmissionCapacityError,
+  ProposalSubmissionCapacityError, ProposalSubmissionConflictError,
   type ProposalReservationContext } from "../proposal-submission-journal.js";
 
 const hash = (byte: string) => `0x${byte.repeat(64)}`;
@@ -124,8 +124,24 @@ describe("audited proposal reservation abandonment", () => {
           verifiedPlanReviewerFingerprint: fingerprint!,
           view: view(), originalActionRejected: true as const }),
       })).rejects.toThrow(/distinct from the API-plan reviewer/u);
+      await expect(journal.abandonInvalidatedReservation({ ...input,
+        authenticateFinality: async (bytes: Buffer) => ({
+          ...await input.authenticateFinality(bytes),
+          view: { ...view(), finalizedBlockHash: hash("b") },
+        }),
+      })).rejects.toThrow(/Signed recovery decision does not match/u);
       expect((await journal.read("issuer", authorizationId))?.state).toBe("reserved");
-      const abandoned = await journal.abandonInvalidatedReservation(input);
+      const competing = new FileProposalSubmissionJournal(journalPath);
+      const outcomes = await Promise.allSettled([
+        journal.abandonInvalidatedReservation(input),
+        competing.abandonInvalidatedReservation(input),
+      ]);
+      const successful = outcomes.filter((outcome) => outcome.status === "fulfilled");
+      const rejected = outcomes.filter((outcome) => outcome.status === "rejected");
+      expect(successful).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0]?.reason).toBeInstanceOf(ProposalSubmissionConflictError);
+      const abandoned = successful[0]!.value;
       expect(abandoned).toMatchObject({ state: "abandoned", eventHash: null,
         recovery: { reservedAttemptDigest: candidate.attemptDigest,
           finalityEvidenceSha256: digest(evidence), reviewerFingerprint: fingerprint!,

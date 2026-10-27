@@ -110,6 +110,12 @@ JSON edits, journal deletion, a reset, or a retry. Issue #220 and the human
 security gate remain open until the real local-ledger proof and operator path
 are reviewed and exercised.
 
+The local mechanics suite also races two journal instances against the same
+signed decision and rejects a substituted finalized checkpoint. These checks
+exercise lock and decision binding in one test process, not independent
+processes or an authenticated local ledger. They must not be counted as the
+deployed recovery or offline end-to-end acceptance run.
+
 ## Acceptance tests for the future implementation
 
 | Case | Required result |
