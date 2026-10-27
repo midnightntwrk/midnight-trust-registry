@@ -80,7 +80,7 @@ beforeEach(async () => {
   const view = { networkId: "undeployed", contractAddress,
     finalizedBlockHash: `0x${"f".repeat(64)}`, ledger: { governanceActionCount: 3n } };
   mocks.createReader.mockResolvedValue({ readCurrentFinalizedLedger: async () => view });
-  mocks.assess.mockResolvedValue({ format: "tr-local-proposal-recovery-candidate-v2",
+  mocks.assess.mockResolvedValue({ format: "tr-local-proposal-recovery-candidate-v3",
     reason: "sequence-invalidated-record-absent", reviewCandidate: true,
     retryPermitted: false, releaseQualified: false });
   mocks.digestCandidate.mockReturnValue("9".repeat(64));

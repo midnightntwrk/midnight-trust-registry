@@ -1821,7 +1821,7 @@ reviewer must inspect the candidate and evidence, then detached-sign the exact
 saved bytes. The signed decision names the reserved action sequence, kind,
 and payload hash so the reviewer can compare the intended action with the
 private journal; the candidate digest also binds the full report. This is the
-`tr-local-proposal-recovery-decision-v2` draft format; earlier unsigned drafts
+`tr-local-proposal-recovery-decision-v3` draft format; earlier unsigned drafts
 must be regenerated and reviewed rather than reinterpreted as v2.
 `verify-local-proposal-recovery-decision` takes the same inputs
 plus `--recovery-decision` and `--recovery-signature` absolute paths and

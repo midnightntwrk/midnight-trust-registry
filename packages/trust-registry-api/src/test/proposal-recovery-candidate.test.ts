@@ -54,10 +54,10 @@ describe("read-only proposal recovery candidates", () => {
     expect(live.reason).toBe("sequence-still-live");
     expect(live.reviewCandidate).toBe(false);
 
-    harness.authorizeMaintainer(createMaintainerScenarioFixture("recovery-candidate-advancer"));
+    harness.proposeMaintainer(createMaintainerScenarioFixture("recovery-candidate-advancer"));
     const candidate = await assessProposalRecoveryCandidate(input(harness, recorded));
     expect(candidate).toMatchObject({
-      format: "tr-local-proposal-recovery-candidate-v2",
+      format: "tr-local-proposal-recovery-candidate-v3",
       reason: "sequence-invalidated-record-absent", reviewCandidate: true,
       reservationActionSequence: sequence.toString(),
       reservationActionKind: actionKind("issuer"), reservationActionPayloadHash: hash("c"),
@@ -65,12 +65,60 @@ describe("read-only proposal recovery candidates", () => {
       approvedPlanSha256: "7".repeat(64),
       journalBindingDigest: hash("8"),
       finalizedGovernanceActionCount: harness.simulator.getLedger().governanceActionCount.toString(),
+      finalizedLastActionKind: `0x${Buffer.from(harness.simulator.getLedger().lastAuthorizedActionKind).toString("hex")}`,
+      finalizedLastActionPayloadHash: `0x${Buffer.from(harness.simulator.getLedger().lastAuthorizedActionPayloadHash).toString("hex")}`,
       retryPermitted: false, releaseQualified: false,
     });
     expect(candidate.attemptDigest).toMatch(/^0x[0-9a-f]{64}$/u);
     expect((await assessProposalRecoveryCandidate(input(harness, { ...recorded,
       evidenceCommitment: hash("9"),
     }))).attemptDigest).not.toBe(candidate.attemptDigest);
+  });
+
+  it("keeps later sequence history and a matching last action inconclusive", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("recovery-candidate-history");
+    const sequence = harness.simulator.getLedger().governanceActionCount;
+    const recorded = attempt("issuer:history", sequence);
+    harness.proposeMaintainer(createMaintainerScenarioFixture("recovery-candidate-first"));
+
+    const immediatelyAfter = input(harness, recorded);
+    const matchingLastAction = {
+      ...immediatelyAfter,
+      view: { ...immediatelyAfter.view, ledger: {
+        ...immediatelyAfter.view.ledger,
+        lastAuthorizedActionKind: Buffer.from(actionKind("issuer").slice(2), "hex"),
+        lastAuthorizedActionPayloadHash: Buffer.from(recorded.reservationContext!.actionPayloadHash.slice(2), "hex"),
+      } },
+    };
+    const matching = await assessProposalRecoveryCandidate(matchingLastAction);
+    expect(matching.reason).toBe("sequence-occupied-by-matching-payload");
+    expect(matching.reviewCandidate).toBe(false);
+    for (const changedField of ["lastAuthorizedActionKind", "lastAuthorizedActionPayloadHash"] as const) {
+      const different = await assessProposalRecoveryCandidate({
+        ...matchingLastAction,
+        view: { ...matchingLastAction.view, ledger: {
+          ...matchingLastAction.view.ledger,
+          [changedField]: Buffer.from("d".repeat(64), "hex"),
+        } },
+      });
+      expect(different.reason).toBe("sequence-invalidated-record-absent");
+      expect(different.reviewCandidate).toBe(true);
+    }
+    await expect(assessProposalRecoveryCandidate({
+      ...immediatelyAfter,
+      view: { ...immediatelyAfter.view, ledger: {
+        ...immediatelyAfter.view.ledger,
+        lastAuthorizedActionKind: new Uint8Array(31),
+      } },
+    })).rejects.toThrow(/last action readback/u);
+
+    harness.proposeMaintainer(createMaintainerScenarioFixture("recovery-candidate-second"));
+    const later = await assessProposalRecoveryCandidate(input(harness, recorded));
+    expect(later.reason).toBe("sequence-advanced-history-unavailable");
+    expect(later.finalizedLastActionKind).toBeNull();
+    expect(later.finalizedLastActionPayloadHash).toBeNull();
+    expect(later.reviewCandidate).toBe(false);
+    expect(later.retryPermitted).toBe(false);
   });
 
   it("blocks matching and conflicting finalized proposal records", async () => {
@@ -89,6 +137,15 @@ describe("read-only proposal recovery candidates", () => {
     expect(matching.reason).toBe("matching-record");
     expect(matching.observedEventHash).toBe(observation!.eventHash);
     expect(matching.reviewCandidate).toBe(false);
+    const malformedLastAction = input(harness, {
+      ...recorded, evidenceCommitment: observation!.evidenceCommitment,
+    });
+    expect((await assessProposalRecoveryCandidate({
+      ...malformedLastAction,
+      view: { ...malformedLastAction.view, ledger: {
+        ...malformedLastAction.view.ledger, lastAuthorizedActionKind: new Uint8Array(31),
+      } },
+    })).reason).toBe("matching-record");
     const conflicting = await assessProposalRecoveryCandidate(input(harness, recorded));
     expect(conflicting.reason).toBe("conflicting-record");
     expect(conflicting.reviewCandidate).toBe(false);
