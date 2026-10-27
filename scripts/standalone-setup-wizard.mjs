@@ -13,11 +13,10 @@ import { promisify } from "node:util";
 import {
   FileMaintenanceTransitionJournal, prepareLocalNetworkCommitteeTransition,
   reconcileLocalNetworkCommitteeTransition, submitLocalNetworkCommitteeTransition,
-  getLocalNetworkProfile, validateMaintenancePolicy,
+  getLocalNetworkProfile,
   VerifierKeyInsertionOutcomeUnknownError,
 } from "@midnight-ntwrk/trust-registry-integration";
 import { assertStrictDetachedSignatureStatus } from "@midnight-ntwrk/trust-registry-integration/reviewer-signature-status";
-import { ContractMaintenanceAuthority } from "@midnight-ntwrk/midnight-js-protocol/ledger";
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
@@ -26,6 +25,9 @@ import { pinnedStandaloneImages } from "./build-standalone-install.mjs";
 import { observeStandaloneEgress } from "./check-standalone-egress.mjs";
 import { observeStandaloneInstallRelay } from "./check-standalone-install-relay.mjs";
 import { observeStandaloneTopology, standaloneStackConfig } from "./check-standalone-topology.mjs";
+import {
+  canonicalReviewerMetadata, reviewerProposal, validateReleaseCommittee,
+} from "./standalone-approval-policy.mjs";
 import { observeStandaloneRestartSnapshot, readStandaloneRestartEvidence } from "./check-standalone-restart.mjs";
 import { checkLocalLedgerPreflight } from "./local-ledger-preflight.mjs";
 import {
@@ -780,26 +782,6 @@ export async function verifyDetachedReviewerSignature(
   }
 }
 
-function canonicalReviewerMetadata(value, earliest, latest) {
-  const approvedAt = Date.parse(value?.approvedAt);
-  return typeof value?.reviewedReference === "string"
-    && value.reviewedReference.length >= 8 && value.reviewedReference.length <= 512
-    && !value.reviewedReference.startsWith("demo:")
-    && typeof value.approvedAt === "string"
-    && Number.isFinite(approvedAt)
-    && new Date(approvedAt).toISOString() === value.approvedAt
-    && approvedAt >= earliest && approvedAt <= latest;
-}
-
-function reviewerProposal(proposal, fields) {
-  if (proposal === null || typeof proposal !== "object" || Array.isArray(proposal)
-    || Object.keys(proposal).sort().join("\0") !== fields.sort().join("\0")
-    || !FINGERPRINT.test(proposal.reviewerFingerprint ?? "")
-    || !canonicalReviewerMetadata(proposal, -Infinity, Date.now() + 5 * 60_000)) {
-    throw new Error("Canonical reviewer metadata and a human-supplied approval time are required");
-  }
-}
-
 export async function draftStandaloneGenesisApproval(directory, proposal) {
   return withLock(directory, async (root) => {
     const { record } = await readRecord(root);
@@ -833,33 +815,6 @@ export async function draftStandaloneGenesisApproval(directory, proposal) {
     await writePrivateSnapshot(path, bytes);
     return { path, documentSha256: sha256(bytes), state: "unsigned-human-review-required" };
   });
-}
-
-function validateReleaseCommittee(maintenancePolicy, custodians) {
-  if (maintenancePolicy === null || typeof maintenancePolicy !== "object"
-    || Array.isArray(maintenancePolicy)
-    || maintenancePolicy.mode !== "committee"
-    || !Array.isArray(maintenancePolicy.verifyingKeys)
-    || Object.keys(maintenancePolicy).sort().join("\0") !== "mode\0threshold\0verifyingKeys") {
-    throw new Error("Release maintenance approval requires a canonical committee policy");
-  }
-  validateMaintenancePolicy(maintenancePolicy);
-  const keys = maintenancePolicy.verifyingKeys;
-  try {
-    new ContractMaintenanceAuthority(keys.map((key) => key.slice(2)), maintenancePolicy.threshold, 1n);
-  } catch {
-    throw new Error("Release committee contains a verifying key the Midnight ledger cannot use");
-  }
-  if (!Array.isArray(custodians) || custodians.length !== keys.length
-    || custodians.some((entry, index) => entry === null || typeof entry !== "object" || Array.isArray(entry)
-      || Object.keys(entry).sort().join("\0") !== "custodyReference\0holderRole\0verifyingKey"
-      || entry.verifyingKey !== keys[index]
-      || typeof entry.holderRole !== "string" || entry.holderRole.length < 3 || entry.holderRole.length > 128
-      || typeof entry.custodyReference !== "string" || entry.custodyReference.length < 8
-      || entry.custodyReference.length > 512)
-    || new Set(custodians.map((entry) => entry.holderRole)).size !== keys.length) {
-    throw new Error("Committee custody must bind distinct holder roles to every approved public key");
-  }
 }
 
 export async function draftStandaloneCommitteeApproval(directory, proposal) {

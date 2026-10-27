@@ -2491,3 +2491,11 @@ signature verification. The remaining non-strict approval, installer,
 maintenance, and release scripts are listed with migration priority and owner in
 `docs/plans/standalone-security-script-typecheck.md`. This does not type the
 large wizard or replace its adversarial tests and independent human review.
+
+The wizard's canonical reviewer metadata and release committee/custody
+validation now live in a strictly checked, side-effect-free policy module.
+Direct negatives cover noncanonical/missing fields, synthetic references,
+one-of-three smoke thresholds, duplicate keys, and duplicate custody roles.
+The wizard's existing approval and recovery suite still passes. This changes
+neither the required detached human signatures nor the pending real local
+deployment and offline actor acceptance gates.
