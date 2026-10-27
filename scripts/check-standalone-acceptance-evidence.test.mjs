@@ -171,6 +171,14 @@ test("rejects missing cases, evidence reuse, traversal, symlinks and unbounded c
     candidate.cases.S01 = { status: "pass", evidence: [{ path: "receipt.log", sha256: sha(bytes) }] };
     candidate.cases.L01 = { status: "pass", evidence: [{ path: "receipt.log", sha256: sha(bytes) }] };
     await assert.rejects(checkStandaloneAcceptanceEvidence(root, candidate), /reused/u);
+    await writeFile(join(root, "RECEIPT.LOG"), bytes);
+    candidate.cases.L01.evidence[0].path = "RECEIPT.LOG";
+    await assert.rejects(checkStandaloneAcceptanceEvidence(root, candidate), /reused/u);
+    await writeFile(join(root, "\u00e9.log"), bytes);
+    await writeFile(join(root, "e\u0301.log"), bytes);
+    candidate.cases.S01.evidence[0].path = "\u00e9.log";
+    candidate.cases.L01.evidence[0].path = "e\u0301.log";
+    await assert.rejects(checkStandaloneAcceptanceEvidence(root, candidate), /reused/u);
     candidate.cases.L01 = { status: "not-run", evidence: [] };
     candidate.cases.S01.evidence[0].path = "../receipt.log";
     await assert.rejects(checkStandaloneAcceptanceEvidence(root, candidate), /relative path/u);

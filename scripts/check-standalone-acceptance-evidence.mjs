@@ -260,8 +260,9 @@ export async function checkStandaloneAcceptanceEvidence(root, manifest, expected
       if (!exactKeys(item, ["path", "sha256"]) || !SHA256.test(item.sha256)) {
         throw new Error(`${id} evidence requires a relative path and SHA-256`);
       }
-      if (seen.has(item.path)) throw new Error(`Evidence reused across cases: ${item.path}`);
-      seen.add(item.path);
+      const identity = item.path.normalize("NFC").toLowerCase();
+      if (seen.has(identity)) throw new Error(`Evidence reused across cases: ${item.path}`);
+      seen.add(identity);
       if (await digestEvidence(root, item.path) !== item.sha256) {
         throw new Error(`${id} evidence SHA-256 mismatch: ${item.path}`);
       }
