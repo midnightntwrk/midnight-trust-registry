@@ -78,6 +78,9 @@ The candidate file is explicitly **untrusted**. Compare its hash to an
 independently reviewed chain specification. The human reviewer, not the
 installer or an AI agent, signs the exact genesis approval bytes with their
 own GPG key. A ticket ID is optional; the reviewed chain-spec digest is not.
+The \`standalone\` profile uses Midnight's local ledger network ID
+\`undeployed\`; that ID is not a Trust Registry deployment status and does
+not replace the per-installation genesis pin or finalized contract receipt.
 Likewise, governance must approve real maintenance public keys, threshold,
 and custody roles. A 1-of-3 development smoke roster is not release approval.
 

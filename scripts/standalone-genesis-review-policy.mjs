@@ -89,7 +89,7 @@ export function validateGenesisReviewEvidence(recordValue, candidateValue, pinVa
     throw new Error("Proposed genesis pin differs from the untrusted candidate");
   }
   return { sourceRevision: record.sourceRevision, project: stack.project,
-    networkId: profile.networkId, inventorySha256: verified.inventorySha256,
+    profileId: profile.id, networkId: profile.networkId, inventorySha256: verified.inventorySha256,
     nodeImage: nodeImage.reference, nodeReportedGenesisHash: candidate.nodeReportedGenesisHash,
     observedAt: candidate.observedAt, rpcUrl: pin.rpcUrl };
 }

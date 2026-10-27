@@ -43,6 +43,9 @@ test("packet labels self-reported values and independent approval requirements",
       reference: `registry.example:5000/node:stable@sha256:${"f".repeat(64)}` }],
   }).nodeImage, `registry.example:5000/node:stable@sha256:${"f".repeat(64)}`);
   const packet = renderGenesisReviewPacket(evidence, "1".repeat(64), "2".repeat(64));
+  assert.match(packet, /Trust Registry environment profile \| `standalone`/u);
+  assert.match(packet, /Midnight ledger network ID \| `undeployed`/u);
+  assert.match(packet, /not a statement\nthat this Trust Registry contract/u);
   assert.match(packet, /UNTRUSTED/u);
   assert.match(packet, /controlled independently of this running node/u);
   assert.match(packet, /\*\*not\*\* independent evidence/u);

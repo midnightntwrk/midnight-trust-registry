@@ -29,12 +29,19 @@ maintenance transition is authorized by this packet.
 | Signed-source revision to authenticate | \`${evidence.sourceRevision}\` |
 | Install inventory SHA-256 to compare out of band | \`${evidence.inventorySha256}\` |
 | Pinned node image | \`${evidence.nodeImage}\` |
-| Isolated project / network | \`${evidence.project}\` / \`${evidence.networkId}\` |
+| Isolated Docker project | \`${evidence.project}\` |
+| Trust Registry environment profile | \`${evidence.profileId}\` |
+| Midnight ledger network ID | \`${evidence.networkId}\` |
 | Candidate file SHA-256 | \`${candidateSha256}\` |
 | Proposed pin file SHA-256 | \`${pinSha256}\` |
 | Node-reported genesis hash (UNTRUSTED) | \`${evidence.nodeReportedGenesisHash}\` |
 | Node observation time | \`${evidence.observedAt}\` |
 | Proposed installation-only RPC URL | \`${evidence.rpcUrl}\` |
+
+The environment profile selects the per-installation genesis-pin policy.
+\`undeployed\` is Midnight's local ledger network identifier, not a statement
+that this Trust Registry contract has or has not been deployed. The deployment
+receipt and finalized contract readback are separate evidence.
 
 ## Human reviewer decisions
 
