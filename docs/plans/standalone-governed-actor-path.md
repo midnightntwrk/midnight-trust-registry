@@ -138,7 +138,11 @@ same intent. The light preflight lane also runs the reservation, blocked retry,
 reconciliation, and blocked replay in four independent Node processes against
 one journal. The callback models a lost provider response; this does not kill
 a process mid-write or exercise a deployed ledger or distinct-project restore.
-Those remain release evidence under #219 and #230.
+An additional child is force-killed after reservation durability but before
+the broadcast callback can write its marker; a fresh child remains blocked.
+This tests one crash boundary, not every filesystem failure or an actual
+deployed provider restart. Deployed actor and recovery evidence remains open
+under #219 and #230.
 An opt-in `createBoundLocalIssuerProposalPort` now composes the accepted
 application binder, current policy/ledger preflight, live-evidence callback,
 provider-code check, SDK preflight, and after-reservation execution. Its

@@ -20,7 +20,7 @@ const reservationContext = {
 };
 
 const journal = new FileProposalSubmissionJournal(journalPath);
-if (phase === "reserve") {
+if (phase === "reserve" || phase === "crash") {
   await journal.bindDeployment(registryId, contractAddress, genesisHash);
 } else {
   await journal.assertDeploymentBinding(registryId, contractAddress, genesisHash);
@@ -33,7 +33,13 @@ const execute = () => journal.executeOnce("issuer", authorizationId, evidenceCom
   }, reservationContext);
 
 let state;
-if (phase === "reserve") {
+if (phase === "crash") {
+  await journal.executeOnce("issuer", authorizationId, evidenceCommitment, async () => {
+    process.kill(process.pid, "SIGKILL");
+    throw new Error("Unreachable after forced process termination");
+  }, reservationContext);
+  throw new Error("Crash phase unexpectedly survived");
+} else if (phase === "reserve") {
   try {
     await execute();
     throw new Error("Ambiguous submission unexpectedly succeeded");
