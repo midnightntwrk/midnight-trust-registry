@@ -227,12 +227,17 @@ node scripts/check-standalone-acceptance-evidence.mjs init \
 # After saving a redacted raw receipt under $EVIDENCE_DIR/L01/deploy.log:
 node scripts/check-standalone-acceptance-evidence.mjs attach \
   "$EVIDENCE_DIR" "$SOURCE_SHA" L01 L01/deploy.log
+# Only after a human has reviewed the raw receipt:
+node scripts/check-standalone-acceptance-evidence.mjs decide \
+  "$EVIDENCE_DIR" "$SOURCE_SHA" L01 pass \
+  operator:alice finalized-readback-reviewed
 pnpm check:standalone-acceptance-evidence "$EVIDENCE_DIR" "$SOURCE_SHA"
 ```
 
 Attaching a file hashes it but deliberately leaves the case `not-run` until
-an operator assesses the receipt and changes its verdict. Preserve the raw
-file and do not reuse it for a different case.
+an operator assesses the receipt. `decide` then creates a private, hash-linked
+record of the explicit verdict; it does not authenticate the reviewer or the
+receipt. Preserve the raw file and do not reuse it for a different case.
 
 The checker exits 2 while cases are not marked `pass`, 1 for invalid or
 source-mismatched evidence, and 0 only for a complete hash-consistent

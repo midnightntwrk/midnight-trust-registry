@@ -11,6 +11,10 @@ const SHA256 = /^[0-9a-f]{64}$/u;
 const REVISION = /^[0-9a-f]{40}$/u;
 const ADDRESS = /^0x[0-9a-f]{64}$/u;
 const MAX_FILE_BYTES = 32 * 1024 * 1024;
+const MAX_MANIFEST_BYTES = 1024 * 1024;
+const MAX_RAW_EVIDENCE_PER_CASE = 32;
+const MAX_DECISIONS_PER_CASE = 64;
+const isDecisionPath = (path) => typeof path === "string" && path.toLowerCase().startsWith("decisions/");
 
 function exactKeys(value, expected) {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -41,7 +45,8 @@ async function digestEvidence(root, path) {
   const file = await open(absolute, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const before = await file.stat({ bigint: true });
-    if (!before.isFile() || before.size === 0n || before.size > BigInt(MAX_FILE_BYTES)) {
+    if (!before.isFile() || before.nlink !== 1n
+      || before.size === 0n || before.size > BigInt(MAX_FILE_BYTES)) {
       throw new Error(`Evidence must be a nonempty bounded regular file: ${path}`);
     }
     const hash = createHash("sha256");
@@ -69,7 +74,7 @@ async function readAcceptanceManifest(root) {
     constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const before = await file.stat({ bigint: true });
-    if (!before.isFile() || before.size === 0n || before.size > 1024n * 1024n
+    if (!before.isFile() || before.size === 0n || before.size > BigInt(MAX_MANIFEST_BYTES)
       || before.nlink !== 1n || (before.mode & 0o077n) !== 0n) {
       throw new Error("Acceptance manifest must be a private bounded regular file");
     }
@@ -180,6 +185,7 @@ export function assessStandaloneObservationBinding(manifest, observation) {
 /** Attaches bytes already captured by the operator; it never marks a case passed. */
 export async function attachStandaloneAcceptanceEvidence(root, expectedSourceRevision, caseId, path) {
   if (!CASES.includes(caseId)) throw new Error("Unknown standalone acceptance case");
+  if (isDecisionPath(path)) throw new Error("Decision paths are reserved for the verdict command");
   const lock = join(root, ".acceptance.lock");
   await mkdir(lock, { mode: 0o700 });
   let temporary;
@@ -191,8 +197,9 @@ export async function attachStandaloneAcceptanceEvidence(root, expectedSourceRev
     if (Object.values(manifest.cases).some((entry) => entry.evidence.some((item) => item.path === path))) {
       throw new Error("Evidence path is already attached to an acceptance case");
     }
-    if (manifest.cases[caseId].evidence.length >= 32) {
-      throw new Error("Acceptance case has reached its evidence limit");
+    if (manifest.cases[caseId].evidence.filter((item) => !isDecisionPath(item.path)).length
+      >= MAX_RAW_EVIDENCE_PER_CASE) {
+      throw new Error("Acceptance case has reached its raw evidence limit");
     }
     const item = { path, sha256: await digestEvidence(root, path) };
     manifest.cases[caseId].evidence.push(item);
@@ -224,10 +231,101 @@ export async function attachStandaloneAcceptanceEvidence(root, expectedSourceRev
   }
 }
 
+/** Records an explicit operator verdict; it never verifies the truth of the attached evidence. */
+export async function decideStandaloneAcceptanceCase(
+  root, expectedSourceRevision, caseId, status, reviewer, reasonCode,
+) {
+  if (!CASES.includes(caseId) || !["pass", "fail", "not-run"].includes(status)
+    || typeof reviewer !== "string" || !/^[a-zA-Z0-9._@:-]{3,128}$/u.test(reviewer)
+    || typeof reasonCode !== "string" || !/^[a-z][a-z0-9-]{2,63}$/u.test(reasonCode)) {
+    throw new Error("Decision requires a known case, status, reviewer identifier, and non-sensitive reason code");
+  }
+  const lock = join(root, ".acceptance.lock");
+  await mkdir(lock, { mode: 0o700 });
+  let temporary;
+  let decisionPath;
+  let decisionCreated = false;
+  let committed = false;
+  try {
+    const manifestPath = join(root, "acceptance.json");
+    const before = await lstat(manifestPath);
+    const manifest = await readAcceptanceManifest(root);
+    await checkStandaloneAcceptanceEvidence(root, manifest, expectedSourceRevision);
+    const entry = manifest.cases[caseId];
+    if ((status === "pass" || status === "fail")
+      && !entry.evidence.some((item) => !item.path.startsWith("decisions/"))) {
+      throw new Error("Pass or fail requires attached raw case evidence before an operator decision");
+    }
+    if (entry.evidence.filter((item) => isDecisionPath(item.path)).length >= MAX_DECISIONS_PER_CASE) {
+      throw new Error("Acceptance case has reached its decision-history limit");
+    }
+    const directory = join(root, "decisions");
+    try { await mkdir(directory, { mode: 0o700 }); } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+    }
+    const directoryStat = await lstat(directory);
+    if (!directoryStat.isDirectory() || (directoryStat.mode & 0o077) !== 0) {
+      throw new Error("Acceptance decisions directory must be private and not a symlink");
+    }
+    const previousStatus = entry.status;
+    const path = `decisions/${caseId}-${randomUUID()}.json`;
+    decisionPath = evidencePath(root, path);
+    const decision = {
+      format: "tr-standalone-case-decision-v1", sourceRevision: manifest.sourceRevision,
+      caseId, previousStatus, status, reviewer, reasonCode,
+      decidedAt: new Date().toISOString(), evidence: [...entry.evidence],
+      reviewerAuthenticated: false, evidenceContentVerified: false, releaseQualified: false,
+    };
+    const file = await open(decisionPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
+    decisionCreated = true;
+    try {
+      await file.writeFile(`${JSON.stringify(decision, null, 2)}\n`);
+      await file.sync();
+    } finally {
+      await file.close();
+    }
+    const decisionsDirectory = await open(directory, constants.O_RDONLY);
+    try { await decisionsDirectory.sync(); } finally { await decisionsDirectory.close(); }
+    const parentDirectory = await open(root, constants.O_RDONLY);
+    try { await parentDirectory.sync(); } finally { await parentDirectory.close(); }
+    entry.evidence.push({ path, sha256: await digestEvidence(root, path) });
+    entry.status = status;
+    await checkStandaloneAcceptanceEvidence(root, manifest, expectedSourceRevision);
+    const unchanged = await lstat(manifestPath);
+    if (unchanged.dev !== before.dev || unchanged.ino !== before.ino
+      || unchanged.size !== before.size || unchanged.mtimeMs !== before.mtimeMs
+      || unchanged.ctimeMs !== before.ctimeMs) {
+      throw new Error("Acceptance manifest changed during operator decision");
+    }
+    temporary = join(root, `.acceptance-${randomUUID()}.tmp`);
+    const draft = await open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
+    try {
+      await draft.writeFile(`${JSON.stringify(manifest, null, 2)}\n`);
+      await draft.sync();
+    } finally {
+      await draft.close();
+    }
+    await rename(temporary, manifestPath);
+    committed = true;
+    temporary = undefined;
+    const rootDirectory = await open(root, constants.O_RDONLY);
+    try { await rootDirectory.sync(); } finally { await rootDirectory.close(); }
+    return { format: "tr-standalone-case-decision-report-v1", caseId, previousStatus, status,
+      decisionPath: path, reviewerAuthenticated: false, releaseQualified: false };
+  } finally {
+    if (temporary !== undefined) await unlink(temporary);
+    if (!committed && decisionCreated) await unlink(decisionPath);
+    await rmdir(lock);
+  }
+}
+
 /** Checks the inventory, not the truth of a receipt, finality, or a human verdict. */
 export async function checkStandaloneAcceptanceEvidence(root, manifest, expectedSourceRevision = null) {
   if (expectedSourceRevision !== null && !REVISION.test(expectedSourceRevision)) {
     throw new Error("Expected candidate source revision must be a full lowercase commit SHA");
+  }
+  if (Buffer.byteLength(`${JSON.stringify(manifest, null, 2)}\n`) > MAX_MANIFEST_BYTES) {
+    throw new Error("Acceptance manifest exceeds the readable size limit");
   }
   if (!exactKeys(manifest, ["format", "sourceRevision", "installInventorySha256", "signedPlanSha256",
     "genesisHash", "contractAddress", "cases"])
@@ -249,8 +347,10 @@ export async function checkStandaloneAcceptanceEvidence(root, manifest, expected
     const entry = manifest.cases[id];
     if (!exactKeys(entry, ["status", "evidence"])
       || !["pass", "fail", "not-run"].includes(entry.status)
-      || !Array.isArray(entry.evidence) || entry.evidence.length > 32
-      || (entry.status === "pass" && entry.evidence.length === 0)) {
+      || !Array.isArray(entry.evidence)
+      || entry.evidence.filter((item) => !isDecisionPath(item?.path)).length > MAX_RAW_EVIDENCE_PER_CASE
+      || entry.evidence.filter((item) => isDecisionPath(item?.path)).length > MAX_DECISIONS_PER_CASE
+      || (entry.status === "pass" && !entry.evidence.some((item) => !isDecisionPath(item?.path)))) {
       throw new Error(`${id} requires status pass/fail/not-run and raw evidence for pass`);
     }
     for (const item of entry.evidence) {
@@ -280,13 +380,15 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   try {
     const initialize = process.argv[2] === "init";
     const attach = process.argv[2] === "attach";
+    const decide = process.argv[2] === "decide";
     const observe = process.argv[2] === "observe";
     if ((initialize && process.argv.length !== 9) || (attach && process.argv.length !== 7)
+      || (decide && process.argv.length !== 9)
       || (observe && process.argv.length !== 6)
-      || (!initialize && !attach && !observe && process.argv.length !== 4)) {
-      throw new Error("Usage: check-standalone-acceptance-evidence.mjs init <absolute-private-evidence-dir> <source-revision> <inventory-sha256> <signed-plan-sha256> <genesis-hash> <contract-address> | attach <absolute-private-evidence-dir> <candidate-source-revision> <case-id> <relative-evidence-path> | observe <absolute-private-evidence-dir> <candidate-source-revision> <relative-observation-json> | <absolute-private-evidence-dir> <candidate-source-revision>");
+      || (!initialize && !attach && !decide && !observe && process.argv.length !== 4)) {
+      throw new Error("Usage: check-standalone-acceptance-evidence.mjs init <absolute-private-evidence-dir> <source-revision> <inventory-sha256> <signed-plan-sha256> <genesis-hash> <contract-address> | attach <absolute-private-evidence-dir> <candidate-source-revision> <case-id> <relative-evidence-path> | decide <absolute-private-evidence-dir> <candidate-source-revision> <case-id> <pass|fail|not-run> <reviewer-id> <reason-code> | observe <absolute-private-evidence-dir> <candidate-source-revision> <relative-observation-json> | <absolute-private-evidence-dir> <candidate-source-revision>");
     }
-    const directory = process.argv[initialize || attach || observe ? 3 : 2];
+    const directory = process.argv[initialize || attach || decide || observe ? 3 : 2];
     if (!isAbsolute(directory)) throw new Error("Evidence root must be an absolute path");
     const root = resolve(directory);
     const stat = await lstat(root);
@@ -307,6 +409,11 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     if (attach) {
       console.log(JSON.stringify(await attachStandaloneAcceptanceEvidence(
         root, process.argv[4], process.argv[5], process.argv[6]), null, 2));
+      process.exit(0);
+    }
+    if (decide) {
+      console.log(JSON.stringify(await decideStandaloneAcceptanceCase(
+        root, ...process.argv.slice(4, 9)), null, 2));
       process.exit(0);
     }
     if (observe) {

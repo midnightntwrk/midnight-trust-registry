@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { link, lstat, mkdtemp, mkdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { assessStandaloneObservationBinding, attachStandaloneAcceptanceEvidence, checkStandaloneAcceptanceEvidence } from "./check-standalone-acceptance-evidence.mjs";
+import { assessStandaloneObservationBinding, attachStandaloneAcceptanceEvidence, checkStandaloneAcceptanceEvidence,
+  decideStandaloneAcceptanceCase } from "./check-standalone-acceptance-evidence.mjs";
 
 const CASES = ["L01", "L02", "A01", "A02", "A03", "A04", "N01", "O01", "R01", "S01"];
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -254,6 +255,115 @@ test("rejects an attached symlink and an active evidence writer lock", async () 
     await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
       "L01", "raw.log"), { code: "EEXIST" });
     assert.deepEqual(JSON.parse(await readFile(join(root, "acceptance.json"), "utf8")), candidate);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("operator verdicts require raw evidence and leave a private hash-linked record", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-acceptance-decision-"));
+  const script = fileURLToPath(new URL("./check-standalone-acceptance-evidence.mjs", import.meta.url));
+  const run = (...args) => spawnSync(process.execPath, [script, ...args], { encoding: "utf8" });
+  try {
+    const candidate = manifest();
+    await writeFile(join(root, "acceptance.json"), `${JSON.stringify(candidate)}\n`, { mode: 0o600 });
+    assert.equal(run("decide", root, candidate.sourceRevision, "A01", "pass",
+      "operator:alice", "finalized-readback-reviewed").status, 1);
+    assert.equal(run("decide", root, "f".repeat(40), "A01", "not-run",
+      "operator:alice", "not-started").status, 1);
+    await writeFile(join(root, "actor.log"), "redacted actor receipt\n", { mode: 0o600 });
+    await attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision, "A01", "actor.log");
+    const passed = run("decide", root, candidate.sourceRevision, "A01", "pass",
+      "operator:alice", "finalized-readback-reviewed");
+    assert.equal(passed.status, 0, passed.stderr);
+    const first = JSON.parse(passed.stdout);
+    assert.equal(first.status, "pass");
+    assert.equal(first.previousStatus, "not-run");
+    assert.equal(first.reviewerAuthenticated, false);
+    assert.equal(first.releaseQualified, false);
+    const firstRecord = JSON.parse(await readFile(join(root, first.decisionPath), "utf8"));
+    assert.deepEqual(firstRecord.evidence, [{ path: "actor.log", sha256: sha("redacted actor receipt\n") }]);
+    assert.equal(firstRecord.evidenceContentVerified, false);
+    assert.equal((await lstat(join(root, first.decisionPath))).mode & 0o777, 0o600);
+    assert.equal((await lstat(join(root, "decisions"))).mode & 0o777, 0o700);
+    const failed = await decideStandaloneAcceptanceCase(root, candidate.sourceRevision, "A01", "fail",
+      "operator:bob", "receipt-disputed");
+    assert.equal(failed.previousStatus, "pass");
+    const secondRecord = JSON.parse(await readFile(join(root, failed.decisionPath), "utf8"));
+    assert.equal(secondRecord.previousStatus, "pass");
+    assert.equal(secondRecord.evidence.length, 2);
+    const updated = JSON.parse(await readFile(join(root, "acceptance.json"), "utf8"));
+    assert.equal(updated.cases.A01.status, "fail");
+    assert.equal(updated.cases.A01.evidence.length, 3);
+    assert.equal((await checkStandaloneAcceptanceEvidence(root, updated)).releaseQualified, false);
+    await mkdir(join(root, ".acceptance.lock"));
+    await assert.rejects(decideStandaloneAcceptanceCase(root, candidate.sourceRevision, "A01", "pass",
+      "operator:alice", "recheck-complete"), { code: "EEXIST" });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("raw evidence capacity does not prevent a later verdict reversal", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-acceptance-capacity-"));
+  try {
+    const candidate = manifest();
+    for (let index = 0; index < 31; index += 1) {
+      const path = `raw-${index}.log`;
+      const bytes = `receipt ${index}\n`;
+      await writeFile(join(root, path), bytes, { mode: 0o600 });
+      candidate.cases.A01.evidence.push({ path, sha256: sha(bytes) });
+    }
+    await writeFile(join(root, "acceptance.json"), `${JSON.stringify(candidate)}\n`, { mode: 0o600 });
+    await decideStandaloneAcceptanceCase(root, candidate.sourceRevision, "A01", "pass",
+      "operator:alice", "initial-review");
+    await decideStandaloneAcceptanceCase(root, candidate.sourceRevision, "A01", "fail",
+      "operator:alice", "receipt-disputed");
+    await writeFile(join(root, "raw-31.log"), "additional receipt\n", { mode: 0o600 });
+    await attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision, "A01", "raw-31.log");
+    await writeFile(join(root, "raw-32.log"), "excess receipt\n", { mode: 0o600 });
+    await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
+      "A01", "raw-32.log"), /raw evidence limit/u);
+    await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
+      "A01", "decisions/forged.json"), /reserved/u);
+    await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
+      "A01", "Decisions/forged.json"), /reserved/u);
+    const updated = JSON.parse(await readFile(join(root, "acceptance.json"), "utf8"));
+    assert.equal(updated.cases.A01.status, "fail");
+    assert.equal(updated.cases.A01.evidence.length, 34);
+    assert.equal((await checkStandaloneAcceptanceEvidence(root, updated)).releaseQualified, false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a hard-linked decision cannot be attached as raw case evidence", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-acceptance-link-"));
+  try {
+    const candidate = manifest();
+    await writeFile(join(root, "acceptance.json"), `${JSON.stringify(candidate)}\n`, { mode: 0o600 });
+    const decision = await decideStandaloneAcceptanceCase(root, candidate.sourceRevision, "L01", "not-run",
+      "operator:alice", "not-started");
+    await link(join(root, decision.decisionPath), join(root, "copied-decision.json"));
+    await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
+      "A01", "copied-decision.json"), /bounded regular file/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("validator rejects decision-only passes and unreadable oversized manifests", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-acceptance-bounds-"));
+  try {
+    const candidate = manifest();
+    candidate.cases.A01 = { status: "pass", evidence: [{
+      path: "decisions/A01-fake.json", sha256: "f".repeat(64),
+    }] };
+    await assert.rejects(checkStandaloneAcceptanceEvidence(root, candidate), /raw evidence for pass/u);
+    candidate.cases.A01.status = "not-run";
+    candidate.cases.A01.evidence = [{ path: `receipt-${"x".repeat(1024 * 1024)}.log`,
+      sha256: "f".repeat(64) }];
+    await assert.rejects(checkStandaloneAcceptanceEvidence(root, candidate), /readable size limit/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

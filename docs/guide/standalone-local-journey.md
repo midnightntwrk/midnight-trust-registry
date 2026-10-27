@@ -254,10 +254,10 @@ node scripts/check-standalone-acceptance-evidence.mjs init \
   "$SIGNED_PLAN_SHA256" "$GENESIS_HASH" "$CONTRACT_ADDRESS"
 ```
 
-For each case in `acceptance.json`, set `status` to `pass`, `fail`, or
-`not-run` **only after reviewing the underlying run**. Put its redacted raw
-command output/receipts under that private directory. Attach each file with
-the helper, which hashes it and updates the case inventory atomically while
+For each case in `acceptance.json`, record `pass`, `fail`, or `not-run`
+**only after reviewing the underlying run**. Put its redacted raw command
+output/receipts under that private directory. Attach each file with the
+helper, which hashes it and updates the case inventory atomically while
 leaving its status unchanged:
 
 ```sh
@@ -265,9 +265,31 @@ node scripts/check-standalone-acceptance-evidence.mjs attach \
   /absolute/private/acceptance "$SOURCE_SHA" L01 L01/deploy.log
 ```
 
+After inspecting the raw evidence, record an explicit operator decision.
+Use a stable reviewer identifier and a non-sensitive reason code; put detailed
+reasoning in a separately attached private file rather than command arguments:
+
+```sh
+node scripts/check-standalone-acceptance-evidence.mjs decide \
+  /absolute/private/acceptance "$SOURCE_SHA" L01 pass \
+  operator:alice finalized-readback-reviewed
+```
+
+`decide` requires attached raw evidence for `pass` or `fail`. It creates a
+mode-0600 decision record under `decisions/`, records the previous status and
+all attached evidence hashes, and adds its own hash to the same case under the
+inventory lock. A later change to `fail` or `not-run` creates another record;
+it does not overwrite the earlier decision. Decision history is limited to
+64 records per case, separate from the 32 raw files allowed per case, so a full raw
+evidence inventory cannot prevent an operator from revoking a verdict.
+These records are self-attested,
+not signatures or independent evidence verification. For `S01`, attach the
+non-author human's separately signed security verdict before recording `pass`.
+Never treat a CLI verdict as proof of its underlying receipt or finality.
+
 Use a different relative file for each case. If `.acceptance.lock` exists,
 check whether an evidence writer is active before removing a stale lock; do
-not start a competing writer. A `pass` must have at least one file. Record the
+not start a competing writer. A `pass` must have at least one raw file. Record the
 command, UTC time, checkpoint, operator decision, and relevant transaction or
 journal identifier **in the retained file**; the checker does not infer these
 facts. Do not include seeds, private keys, or credentials. Keep each raw file
