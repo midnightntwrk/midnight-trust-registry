@@ -2840,3 +2840,15 @@ sub-millisecond chronology while accepting equivalent offset spellings.
 Regression tests exercise a 10-digit fraction and malformed timestamps.
 Other trust-decision and adapter sites remain in the #179 audit; this domain
 validator fix is not a deployed standalone E2E result.
+
+## Recognition challenge fractional-time consumption
+
+The one-use recognition authority challenge now checks the signed assertion's
+issue time against its stored millisecond window and its expiry against the
+trusted consume clock without dropping signed fractional digits. An assertion
+signed a fraction after the trusted clock is rejected without spending the
+challenge; an assertion expiring a fraction after that clock remains current.
+Out-of-range stored window timestamps fail before conversion. Persisted
+admission expiry remains conservatively rounded down to milliseconds. These
+tests use a fixture DID resolver and in-memory challenge store, so they do not
+establish a deployed standalone actor journey or close #179's wider audit.

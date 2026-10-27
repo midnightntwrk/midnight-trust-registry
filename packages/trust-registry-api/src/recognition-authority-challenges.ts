@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 
 import type { MidnightDIDResolverInterface } from "@midnight-ntwrk/midnight-did";
 import {
+  compareRfc3339Instants,
   DidSchema,
   HashHexSchema,
   recognitionAccreditorAnchorCommitment,
@@ -30,6 +31,7 @@ import type { RecognitionAdmissionReceipt, RecognitionAdmissionStore } from "./f
 
 const CHALLENGE_TTL_MS = 5 * 60_000;
 const MAX_COLLISION_ATTEMPTS = 3;
+const MAX_CHALLENGE_RECORD_MS = Date.parse("9999-12-31T23:59:59.999Z");
 
 export const RecognitionAuthorityChallengeBindingSchema = z.strictObject({
   targetRegistryId: ScopedIdentifierSchema,
@@ -253,7 +255,8 @@ export class RecognitionAuthorityChallengeService {
     if (window === null || window.challengeHash !== challengeHash || window.bindingHash !== hash
       || !Number.isSafeInteger(window.issuedAtMs) || !Number.isSafeInteger(window.expiresAtMs)
       || window.issuedAtMs < 0 || window.issuedAtMs > nowMs
-      || window.expiresAtMs <= nowMs || window.expiresAtMs <= window.issuedAtMs) {
+      || window.expiresAtMs <= nowMs || window.expiresAtMs <= window.issuedAtMs
+      || window.expiresAtMs > MAX_CHALLENGE_RECORD_MS) {
       throw new Error("Recognition authority challenge is invalid or already consumed");
     }
     const verified = await verifyRecognitionAuthorityAssertion({
@@ -261,21 +264,22 @@ export class RecognitionAuthorityChallengeService {
       expected: { ...binding, challengeHash, evaluatedAtMs: nowMs },
       resolver: input.resolver,
     });
-    const issuedAtMs = Date.parse(verified.statement.issuedAt);
-    if (issuedAtMs < window.issuedAtMs || issuedAtMs > nowMs || issuedAtMs >= window.expiresAtMs) {
+    if (compareRfc3339Instants(verified.statement.issuedAt, new Date(window.issuedAtMs).toISOString()) < 0
+      || compareRfc3339Instants(verified.statement.issuedAt, new Date(nowMs).toISOString()) > 0
+      || compareRfc3339Instants(verified.statement.issuedAt, new Date(window.expiresAtMs).toISOString()) >= 0) {
       throw new Error("Recognition authority assertion was signed outside the challenge window");
     }
     const evidence = await verifyEvidence(verified, nowMs);
     let consumeAtMs = this.now();
     const evidenceExpiry = evidenceExpiresAtMs?.(evidence);
-    if (Date.parse(verified.statement.expiresAt) <= consumeAtMs
+    if (compareRfc3339Instants(verified.statement.expiresAt, new Date(consumeAtMs).toISOString()) <= 0
       || (evidenceExpiry !== undefined && (!Number.isSafeInteger(evidenceExpiry)
         || evidenceExpiry <= consumeAtMs))) {
       throw new Error("Recognition proof expired before challenge consumption");
     }
     await beforeConsume?.(consumeAtMs);
     consumeAtMs = this.now();
-    if (Date.parse(verified.statement.expiresAt) <= consumeAtMs
+    if (compareRfc3339Instants(verified.statement.expiresAt, new Date(consumeAtMs).toISOString()) <= 0
       || (evidenceExpiry !== undefined && evidenceExpiry <= consumeAtMs)) {
       throw new Error("Recognition proof expired before challenge consumption");
     }
