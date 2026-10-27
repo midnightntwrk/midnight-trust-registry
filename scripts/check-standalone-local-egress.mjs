@@ -9,15 +9,20 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 import { observeStandaloneTopology, standaloneStackConfig } from "./check-standalone-topology.mjs";
-import { assertOnlyLedgerRoutes, ledgerSubnet, parseCanaryAddress,
-  validateEgressProbe, verifiedOfflineEgressTopology } from "./check-standalone-egress.mjs";
+import { apiEgressCanaryServerScript, apiEgressDnsScript } from "./check-standalone-api-egress.mjs";
+import { assertOnlyLedgerRoutes, hasBroadOutboundRoute, hasValidRouteTable,
+  ledgerSubnet, verifiedOfflineEgressTopology } from "./check-standalone-egress.mjs";
 
 const run = promisify(execFile);
 const port = 45987;
 const privateControlSubnet = /^10\.(?:0|[1-9]\d?|1\d\d|2[0-4]\d|25[0-5])\.(?:0|[1-9]\d?|1\d\d|2[0-4]\d|25[0-5])\.0\/24$/u;
-export const localEgressCanaryServerScript = String.raw`require('node:net').createServer(socket=>socket.end(
-  'HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
-)).listen(${port},'0.0.0.0')`;
+export const localEgressCanaryServerScript = apiEgressCanaryServerScript;
+const dnsAddress = "198.51.100.7";
+const deniedDns = /^denied:(?:ETIMEOUT|ENETUNREACH|EHOSTUNREACH|ECONNREFUSED)$/u;
+
+function countCanaryQueries(output) {
+  return output.split(/\r?\n/u).filter((line) => line === "tr-offline-dns-query").length;
+}
 
 async function docker(args, allowFailure = false) {
   try {
@@ -86,7 +91,7 @@ export async function observeStandaloneLocalEgress(dependencies = {}) {
   }
   const suffix = randomUUID();
   const networkName = `tr-local-egress-${suffix}`;
-  const canaryName = `tr-canary-${suffix}.invalid`;
+  const canaryName = "tr-offline-canary.invalid";
   const containerName = `tr-local-egress-canary-${suffix}`;
   let networkCreated = false;
   let canaryStarted = false;
@@ -100,7 +105,7 @@ export async function observeStandaloneLocalEgress(dependencies = {}) {
     requireSuccess(await command(["run", "-d", "--rm", "--name", containerName,
       "--pull", "never", "--read-only", "--cap-drop", "ALL",
       "--security-opt", "no-new-privileges", "--network", networkName,
-      "--network-alias", canaryName, "--entrypoint", "node", apiImage,
+      "--entrypoint", "node", apiImage,
       "-e", localEgressCanaryServerScript]), "Local canary start");
     canaryStarted = true;
     const [canary] = JSON.parse(requireSuccess(await command(["inspect", containerName]),
@@ -118,17 +123,22 @@ export async function observeStandaloneLocalEgress(dependencies = {}) {
       network, "cat", ["/proc/net/route"]), "Probe route inspection");
     const controlRoute = await routes(networkName);
     const isolatedRoute = await routes(before.networkId);
-    const dns = async (network) => probe(command, nodeImage, network, "getent",
-      ["ahostsv4", canaryName]);
+    const dns = async (network) => probe(command, apiImage, network, "node",
+      ["-e", apiEgressDnsScript, address, String(port)]);
     let dnsControlBefore;
     for (let attempt = 0; attempt < 10; attempt += 1) {
       dnsControlBefore = await dns(networkName);
-      if (dnsControlBefore.code === 0) break;
+      if (dnsControlBefore.code === 0
+        && dnsControlBefore.stdout.trim() === `resolved:${dnsAddress}`) break;
       await delay(100);
     }
-    if (dnsControlBefore.code !== 0 || parseCanaryAddress(dnsControlBefore.stdout) !== address) {
-      throw new Error("Local DNS positive control did not resolve the canary");
+    if (dnsControlBefore.code !== 0
+      || dnsControlBefore.stdout.trim() !== `resolved:${dnsAddress}`) {
+      throw new Error("Local DNS/UDP positive control did not resolve the canary");
     }
+    const queryCountBefore = countCanaryQueries(requireSuccess(await command(["logs", containerName]),
+      "Canary DNS query log"));
+    if (queryCountBefore < 1) throw new Error("Canary did not log the DNS positive control");
     const curlArgs = ["--noproxy", "*", "--resolve", `${canaryName}:${port}:${address}`,
       "--connect-timeout", "5", "--max-time", "10", "-fsSI", `http://${canaryName}:${port}`];
     let control;
@@ -139,15 +149,32 @@ export async function observeStandaloneLocalEgress(dependencies = {}) {
     }
     const isolated = await probe(command, nodeImage, before.networkId, "curl", curlArgs);
     const isolatedDns = await dns(before.networkId);
+    await delay(200);
+    const queryCountAfterIsolation = countCanaryQueries(requireSuccess(
+      await command(["logs", containerName]), "Canary DNS isolation log"));
     const controlAfter = await probe(command, nodeImage, networkName, "curl", curlArgs);
     const dnsControlAfter = await dns(networkName);
     if (controlAfter.code !== 0 || dnsControlAfter.code !== 0
-      || parseCanaryAddress(dnsControlAfter.stdout) !== address) {
+      || dnsControlAfter.stdout.trim() !== `resolved:${dnsAddress}`) {
       throw new Error("Local positive control changed during the probe");
     }
-    validateEgressProbe({ controlRoute, isolatedRoute, controlCode: control.code,
-      isolatedCode: isolated.code, isolatedDnsCode: isolatedDns.code,
-      isolatedDnsOutput: isolatedDns.stdout });
+    let queryCountAfter;
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      queryCountAfter = countCanaryQueries(requireSuccess(await command(["logs", containerName]),
+        "Canary final DNS query log"));
+      if (queryCountAfter > queryCountBefore) break;
+      await delay(100);
+    }
+    if (!hasValidRouteTable(controlRoute) || !hasValidRouteTable(isolatedRoute)
+      || !hasBroadOutboundRoute(controlRoute) || hasBroadOutboundRoute(isolatedRoute)
+      || control.code !== 0 || isolated.code !== 7) {
+      throw new Error("Local HTTP canary or route isolation check failed");
+    }
+    if (isolatedDns.code !== 7 || !deniedDns.test(isolatedDns.stdout.trim())
+      || queryCountAfterIsolation !== queryCountBefore
+      || queryCountAfter !== queryCountBefore + 1) {
+      throw new Error(`Local DNS/UDP canary route was not denied: code=${isolatedDns.code}, result=${isolatedDns.stdout.trim()}, queries=${queryCountBefore}/${queryCountAfterIsolation}/${queryCountAfter}`);
+    }
     assertOnlyLedgerRoutes(isolatedRoute, subnet);
     const after = await topology(config, expected);
     if (after.networkId !== before.networkId) {
@@ -158,7 +185,7 @@ export async function observeStandaloneLocalEgress(dependencies = {}) {
       nodeImage, canaryImage: apiImage, canaryAddress: address,
       controlHttpReachable: true, internalBridgeHttpConnectionDenied: true,
       internalBridgeCanaryDnsResolutionDenied: true, internalBridgeBroadOutboundRouteAbsent: true,
-      scope: "disposable local HTTP/Docker DNS canary and node-image route probe; no public Internet required; running node, wallet, API, browser, backup and actor journeys not verified",
+      scope: "disposable local HTTP and DNS/UDP canary routes using node/API probe images; no public Internet required; other DNS routes, running services, wallet, browser, backup and actor journeys not verified",
       releaseQualified: false };
   } catch (error) {
     failure = error;

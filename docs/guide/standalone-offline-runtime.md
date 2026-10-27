@@ -1536,10 +1536,15 @@ node scripts/check-standalone-local-egress.mjs <verified-bundle-directory>
 ```
 
 The disposable verified-API-image HTTP canary and node-image probe need no
-public Internet. The probe checks DNS and TCP positive controls on its
-temporary control bridge, then denial from the observed ledger bridge. It
+public Internet. The probe checks TCP and synthetic DNS/UDP positive controls
+on its temporary control bridge, then denial from the observed ledger bridge.
+The DNS check requires a successful answer before and after the isolated
+attempt, and checks the canary's query log to ensure the isolated packet did
+not arrive; an `ECONNREFUSED` response alone is not sufficient. It
 removes its own canary and bridge afterward; cleanup failure invalidates the
-observation. It does not exercise the running node's application traffic.
+observation. The result proves only those two canary routes from disposable
+node/API probe images. It does not exercise the running node's application
+traffic or prove that Docker's embedded DNS cannot recurse externally.
 If Docker's default address pools are exhausted, choose an unused private
 `10.x.x.0/24` that does not overlap the ledger bridge or host routes, then set
 `TR_EGRESS_CONTROL_SUBNET` for this one probe. The control network is temporary;

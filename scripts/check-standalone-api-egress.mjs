@@ -16,8 +16,8 @@ const run = promisify(execFile);
 const canaryPort = 45987;
 const dnsCanaryName = "tr-offline-canary.invalid";
 const dnsCanaryAddress = "198.51.100.7";
-export const apiEgressCanaryServerScript = `const net=require('node:net'),dgram=require('node:dgram');
-net.createServer(socket=>socket.end()).listen(${canaryPort},'0.0.0.0');
+export const apiEgressCanaryServerScript = String.raw`const net=require('node:net'),dgram=require('node:dgram');
+net.createServer(socket=>socket.end('HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n')).listen(${canaryPort},'0.0.0.0');
 const server=dgram.createSocket('udp4');
 server.on('message',(query,remote)=>{
   if(query.length<18)return;
@@ -28,6 +28,7 @@ server.on('message',(query,remote)=>{
   }
   if(offset+5>query.length||labels.join('.')!=='${dnsCanaryName}'
     ||query.readUInt16BE(offset+1)!==1||query.readUInt16BE(offset+3)!==1)return;
+  console.log('tr-offline-dns-query');
   const question=query.subarray(12,offset+5);
   const answer=Buffer.from([0xc0,0x0c,0,1,0,1,0,0,0,0,0,4,198,51,100,7]);
   const reply=Buffer.alloc(12+question.length+answer.length);

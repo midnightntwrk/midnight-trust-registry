@@ -44,8 +44,14 @@ The newer signed `ed1260a3` source forwards an explicit control subnet through
 the wizard, so even this successful pre-deployment packet is no longer an
 exact-current-head release candidate. No signed genesis approval, deployed
 contract, authenticated finalized readback, actor journey, or restore test
-occurred. Both new projects' containers were stopped with volumes and private
-evidence retained.
+occurred. A later development probe against the retained `31f6` bridge used
+the verified image IDs with a synthetic DNS/UDP canary. A positive control
+answered before and after the isolated attempt, while the canary query count
+did not advance during that attempt; local TCP and DNS/UDP canary routes were
+denied. This was run with newer source than the install bundle and was not a
+wizard release observation. It does not establish general DNS isolation or
+egress denial for deployed services or actors. Both projects' volumes and
+private evidence remain retained.
 
 The earlier retained pre-deployment bridge observation **b33** was bound
 to signed/DCO source `8957d96d29554e7ed9be9cd692b2a00d7c819e3f` and
