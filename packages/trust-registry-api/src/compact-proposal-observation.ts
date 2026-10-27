@@ -44,6 +44,32 @@ const authorizationRecordKeys = {
   recognition: "recognitionRecords",
 } as const satisfies Record<ProposalRole, keyof Ledger>;
 
+const proposalEvidenceOperations = {
+  issuer: {
+    bind: computeIssuerEvidenceBoundProposalPayloadHash,
+    verify: verifyIssuerProposalEvidenceSignature,
+  },
+  verifier: {
+    bind: computeVerifierEvidenceBoundProposalPayloadHash,
+    verify: verifyVerifierProposalEvidenceSignature,
+  },
+  auditor: {
+    bind: computeAuditorEvidenceBoundProposalPayloadHash,
+    verify: verifyAuditorProposalEvidenceSignature,
+  },
+  maintainer: {
+    bind: computeMaintainerEvidenceBoundProposalPayloadHash,
+    verify: verifyMaintainerProposalEvidenceSignature,
+  },
+  recognition: {
+    bind: computeRecognitionEvidenceBoundProposalPayloadHash,
+    verify: verifyRecognitionProposalEvidenceSignature,
+  },
+} as const satisfies Record<ProposalRole, {
+  bind: typeof computeIssuerEvidenceBoundProposalPayloadHash;
+  verify: typeof verifyIssuerProposalEvidenceSignature;
+}>;
+
 /** The caller must supply an independently finalized ledger view, not an unconfirmed transaction result. */
 export type FinalizedProposalLedgerReader = () => Promise<Ledger>;
 
@@ -175,18 +201,9 @@ export async function resolveCompactProposalEvidenceSnapshot(
       record.recognizedRegistryId, record.scopeResourceType, record.scopeResourceId, record.policyId,
       record.trustLevel, proposal.evidenceCommitment);
   }
-  const bind = role === "issuer" ? computeIssuerEvidenceBoundProposalPayloadHash
-    : role === "verifier" ? computeVerifierEvidenceBoundProposalPayloadHash
-      : role === "auditor" ? computeAuditorEvidenceBoundProposalPayloadHash
-        : role === "maintainer" ? computeMaintainerEvidenceBoundProposalPayloadHash
-          : computeRecognitionEvidenceBoundProposalPayloadHash;
+  const { bind, verify } = proposalEvidenceOperations[role];
   const boundActionPayloadHash = bind(basePayloadHash, proposal.evidenceVerifierAuthorizationId,
     proposal.evidenceVerifierKeyIdCommitment, proposal.activePolicyCommitment, proposal.activePolicyVersion);
-  const verify = role === "issuer" ? verifyIssuerProposalEvidenceSignature
-    : role === "verifier" ? verifyVerifierProposalEvidenceSignature
-      : role === "auditor" ? verifyAuditorProposalEvidenceSignature
-        : role === "maintainer" ? verifyMaintainerProposalEvidenceSignature
-          : verifyRecognitionProposalEvidenceSignature;
   if (!verify(key.publicKey, ledger.registryId, ledger.deploymentNetworkIdCommitment,
     expectedContractAddress, proposal.evidenceVerifierKeyIdCommitment,
     boundActionPayloadHash, {

@@ -39,6 +39,13 @@ shorter-lived and more action-oriented than the normative specification.
   actor journeys, deployed restart/restore, and independent human security
   review (#232) still gate the local RC. #198 stays draft; Preprod and Helm are
   deferred or optional, respectively.
+- The merged #210 API code already uses a production Compact ledger type and
+  distinguishes explicit recognition denial (403) from unavailable
+  authorization dependencies (503). A later local #215 slice replaces the
+  remaining five-way proposal-evidence bind/verify ternaries with one
+  exhaustively typed role table. Its Compact-backed observation test covers
+  all five roles; #215 remains open until this local slice is independently
+  reviewed and merged.
 
 ## October 24 2026 API Egress Probe Checkpoint
 
