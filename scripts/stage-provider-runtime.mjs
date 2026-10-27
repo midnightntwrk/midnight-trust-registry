@@ -21,16 +21,19 @@ const REQUIRED_ENTRYPOINTS = ["package.json", "pnpm-lock.yaml", "pnpm-workspace.
   "scripts/approved-provider-preload.mjs",
   "scripts/immutable-provider-tree.mjs", "scripts/local-ledger-deploy.mjs",
   "scripts/local-ledger-insert-verifier-key.mjs"];
+/** @param {string} root @param {string} path */
 const within = (root, path) => {
   const remainder = relative(root, path);
   return remainder === "" || (remainder !== ".." && !remainder.startsWith(`..${sep}`));
 };
 
+/** @param {string} file @param {string[]} args @param {string} [cwd] */
 function command(file, args, cwd = sourceRoot) {
   return execFileSync(file, args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
     maxBuffer: 16 * 1024 * 1024 }).trim();
 }
 
+/** @param {string} root @param {typeof command} [run] */
 function signedCleanRevision(root, run = command) {
   const revision = run("git", ["rev-parse", "HEAD"], root);
   if (!SHA.test(revision) || run("git", ["status", "--porcelain", "--untracked-files=all"], root) !== "") {
@@ -40,6 +43,9 @@ function signedCleanRevision(root, run = command) {
   return revision;
 }
 
+/** @param {string} root @param {string} revision @param {typeof command} run
+ * @param {string[]} requiredEntrypoints
+ */
 function assertArchiveSourceEntries(root, revision, run, requiredEntrypoints) {
   const entries = run("git", ["ls-tree", "-r", "-z", revision], root).split("\0").filter(Boolean);
   const paths = new Map();
@@ -61,6 +67,7 @@ function assertArchiveSourceEntries(root, revision, run, requiredEntrypoints) {
   return paths;
 }
 
+/** @param {string} root @param {Map<string, string>} expected */
 async function assertExtractedSource(root, expected) {
   const found = new Set();
   const pending = [root];
@@ -100,13 +107,20 @@ async function assertExtractedSource(root, expected) {
   }
 }
 
+/** @param {string} path */
 async function sha256File(path) {
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(path)) hash.update(chunk);
   return hash.digest("hex");
 }
 
-/** Stages reviewed source and verified packages; ownership transfer is an operator action. */
+/** Stages reviewed source and verified packages; ownership transfer is an operator action.
+ * @param {string} bundleDirectory
+ * @param {string} destination
+ * @param {{sourceRoot?: string, command?: typeof command,
+ *   requiredEntrypoints?: string[], verifyBundle?: typeof verifyStandaloneInstallBundle,
+ *   expectedWorkspaces?: typeof artifactWorkspaces}} [dependencies]
+ */
 export async function stageProviderRuntime(bundleDirectory, destination, dependencies = {}) {
   if (typeof getuid !== "function" || getuid() === 0) {
     throw new Error("Provider staging must run as a non-root user");

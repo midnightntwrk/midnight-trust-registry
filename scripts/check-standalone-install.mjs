@@ -22,6 +22,7 @@ const ROLES = ["node", "indexer", "proof-server"];
 const IMAGE_ID = /^sha256:[0-9a-f]{64}$/u;
 const FINGERPRINT = /^[0-9A-F]{40}$/u;
 
+/** @param {string} composeSource */
 export function pinnedStandaloneImages(composeSource) {
   return pinnedStandaloneImagePolicy(yaml.load(composeSource));
 }
@@ -32,6 +33,7 @@ export const STANDALONE_PROOF_PARAMETER_PATHS = Object.freeze([
     ["prover", "verifier", "bzkir"].map((extension) => `zswap/9/${circuit}.${extension}`)),
 ].sort());
 
+/** @param {string} root @param {string} name */
 function bundlePath(root, name) {
   if (typeof name !== "string" || name.length === 0 || isAbsolute(name)
     || name.split("/").some((part) => part === ".." || part === "." || part === "")
@@ -41,6 +43,7 @@ function bundlePath(root, name) {
   return join(root, name);
 }
 
+/** @param {string} root @param {string} name */
 async function regularBundleFile(root, name) {
   const path = bundlePath(root, name);
   const stat = await lstat(path);
@@ -52,18 +55,21 @@ async function regularBundleFile(root, name) {
   return path;
 }
 
+/** @param {string} path */
 async function sha256(path) {
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(path)) hash.update(chunk);
   return hash.digest("hex");
 }
 
+/** @param {string} archive @param {string} member */
 function archiveMember(archive, member) {
   return execFileSync("tar", ["-xOf", archive, member], {
     encoding: "utf8", timeout: 30_000, maxBuffer: 1024 * 1024,
   });
 }
 
+/** @param {string} archive @param {string} digest */
 function verifiedArchiveBlob(archive, digest) {
   if (!IMAGE_ID.test(digest)) throw new Error("Container archive blob digest is malformed");
   const bytes = archiveMember(archive, `blobs/sha256/${digest.slice(7)}`);
@@ -74,6 +80,7 @@ function verifiedArchiveBlob(archive, digest) {
 }
 
 /** Checks the saved API image identity without Docker or a registry. */
+/** @param {string} archive @param {Record<string, any>} manifest @param {string} sourceRevision */
 export function installedApiImageIdFromArchive(archive, manifest, sourceRevision) {
   if (!["tr-api-runtime-image-v1", "tr-api-runtime-image-v2"].includes(manifest?.format)
     || manifest.sourceRevision !== sourceRevision
@@ -114,13 +121,13 @@ export function installedApiImageIdFromArchive(archive, manifest, sourceRevision
   }
   const imageIndex = JSON.parse(verifiedArchiveBlob(archive, manifest.imageId));
   const architecture = manifest.platform.split("/")[1];
-  const imageDescriptors = imageIndex?.manifests?.filter((entry) =>
+  const imageDescriptors = imageIndex?.manifests?.filter((/** @type {any} */ entry) =>
     entry.platform?.os === "linux" && entry.platform?.architecture === architecture);
-  const otherDescriptors = imageIndex?.manifests?.filter((entry) => !imageDescriptors.includes(entry));
+  const otherDescriptors = imageIndex?.manifests?.filter((/** @type {any} */ entry) => !imageDescriptors.includes(entry));
   if (imageIndex?.schemaVersion !== 2 || imageIndex.annotations !== undefined
     || imageDescriptors?.length !== 1 || imageDescriptors[0].annotations !== undefined
     || otherDescriptors?.length > 1
-    || otherDescriptors?.some((entry) => entry.platform?.os !== "unknown"
+    || otherDescriptors?.some((/** @type {any} */ entry) => entry.platform?.os !== "unknown"
       || entry.platform?.architecture !== "unknown"
       || entry.annotations?.["vnd.docker.reference.type"] !== "attestation-manifest"
       || entry.annotations?.["vnd.docker.reference.digest"] !== imageDescriptors[0].digest
@@ -131,7 +138,7 @@ export function installedApiImageIdFromArchive(archive, manifest, sourceRevision
   const imageManifest = JSON.parse(verifiedArchiveBlob(archive, imageDescriptors[0].digest));
   if (imageManifest?.schemaVersion !== 2 || !IMAGE_ID.test(imageManifest.config?.digest)
     || !Array.isArray(imageManifest.layers)
-    || imageManifest.layers.some((layer) => !IMAGE_ID.test(layer?.digest))) {
+    || imageManifest.layers.some((/** @type {any} */ layer) => !IMAGE_ID.test(layer?.digest))) {
     throw new Error("API archive image manifest is malformed");
   }
   const configBytes = verifiedArchiveBlob(archive, imageManifest.config.digest);
@@ -141,7 +148,7 @@ export function installedApiImageIdFromArchive(archive, manifest, sourceRevision
   if (legacy?.length !== 1
     || legacy[0]?.RepoTags !== null
     || legacy[0]?.Config !== `blobs/sha256/${imageManifest.config.digest.slice(7)}`
-    || JSON.stringify(legacy[0]?.Layers) !== JSON.stringify(imageManifest.layers?.map((layer) =>
+    || JSON.stringify(legacy[0]?.Layers) !== JSON.stringify(imageManifest.layers?.map((/** @type {any} */ layer) =>
       `blobs/sha256/${layer.digest?.slice(7)}`))) {
     throw new Error("API archive legacy manifest disagrees with OCI image or imports a tag");
   }
@@ -163,6 +170,7 @@ export function installedApiImageIdFromArchive(archive, manifest, sourceRevision
   return { imageId: manifest.imageId, configId: imageManifest.config.digest };
 }
 
+/** @param {string} archive @param {string} reference */
 export function installedImageIdFromArchive(archive, reference) {
   const expected = reference.split("@sha256:")[1];
   const source = reference.split("@sha256:")[0];
@@ -211,7 +219,11 @@ export function installedImageIdFromArchive(archive, reference) {
   return `sha256:${configDigest}`;
 }
 
+/** @param {string} directory @param {string} [prefix]
+ * @returns {Promise<string[]>}
+ */
 async function regularFiles(directory, prefix = "") {
+  /** @type {string[]} */
   const files = [];
   for (const entry of await readdir(join(directory, prefix), { withFileTypes: true })) {
     const name = prefix ? `${prefix}/${entry.name}` : entry.name;
@@ -222,8 +234,11 @@ async function regularFiles(directory, prefix = "") {
   return files.sort();
 }
 
-/** Verifies staged bytes only. It does not prove image provenance, deployment, or offline behavior. */
-/** @param {string | null} [expectedSourceRevision] */
+/** Verifies staged bytes only. It does not prove image provenance, deployment, or offline behavior.
+ * @param {string} bundleRoot
+ * @param {typeof verifyReleaseCandidateArtifacts} [verifyPackages]
+ * @param {string | null} [expectedSourceRevision]
+ */
 export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages = verifyReleaseCandidateArtifacts,
   expectedSourceRevision = null) {
   if (expectedSourceRevision !== null && !REVISION.test(expectedSourceRevision)) {
@@ -354,7 +369,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
     if (Object.keys(inventory.portalRuntimes ?? {}).sort().join("\0") !== "admin\0applicant") {
       throw new Error("Standalone v5/v6 install requires both portal image pins");
     }
-    portalRuntimes = {};
+    portalRuntimes = /** @type {Record<string, any>} */ ({});
     for (const role of ["admin", "applicant"]) {
       const pin = inventory.portalRuntimes[role];
       if (pin?.manifest !== `images/${role}.manifest.json`
@@ -413,7 +428,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
     throw new Error("Proof parameter directory escapes the install bundle");
   }
   const parameterFiles = inventory.proofParameters.files;
-  const pinnedNames = parameterFiles.map((file) => file?.path).sort();
+  const pinnedNames = parameterFiles.map((/** @type {any} */ file) => file?.path).sort();
   if (pinnedNames.join("\0") !== STANDALONE_PROOF_PARAMETER_PATHS.join("\0")
     || (await regularFiles(proofRoot)).join("\0") !== STANDALONE_PROOF_PARAMETER_PATHS.join("\0")) {
     throw new Error("Standalone proof parameter inventory is incomplete or has extra files");
