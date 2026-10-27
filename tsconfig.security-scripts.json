@@ -18,6 +18,7 @@
     "scripts/build-standalone-install.mjs",
     "scripts/check-helm-image-mapping.mjs",
     "scripts/check-standalone-restart.mjs",
+    "scripts/check-published-package-integrity.mjs",
     "scripts/check-standalone-acceptance-evidence.mjs",
     "scripts/immutable-provider-tree.mjs",
     "scripts/local-ledger-deploy.mjs",

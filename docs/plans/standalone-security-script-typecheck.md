@@ -4,13 +4,14 @@ Issue #229 tracks typed assurance for the self-hosted 0.1.0 installer and
 operator workflow. The existing broad `checkJs` configuration includes the
 wizard and installer but permits implicit `any`; Quality CI now runs it.
 A second, strict no-emit gate runs
-`pnpm run check:security-boundaries-types` for nine privileged boundaries:
+`pnpm run check:security-boundaries-types` for ten privileged boundaries:
 
 | Checked file | Security decision |
 | --- | --- |
 | `scripts/approved-provider-identity.mjs` | Hash and inode continuity across provider loading. |
 | `scripts/immutable-provider-tree.mjs` | Root-owned code tree and import confinement. |
 | `scripts/provider-runtime-content.mjs` | Content digest and file continuity during the reviewed provider transfer. |
+| `scripts/check-published-package-integrity.mjs` | Existing npm-version SHA-512 match before an idempotent publish skip. |
 | `scripts/standalone-approval-policy.mjs` | Canonical reviewer metadata and release committee/custody validation. |
 | `scripts/standalone-acceptance-decision-policy.mjs` | Source-bound operator decision history and current evidence coverage. |
 | `scripts/standalone-api-approval-chain.mjs` | Exact-byte approval-chain export and deployment/maintenance readback binding. |

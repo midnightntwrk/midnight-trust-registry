@@ -14,6 +14,7 @@
     "scripts/approved-provider-identity.mjs",
     "scripts/immutable-provider-tree.mjs",
     "scripts/provider-runtime-content.mjs",
+    "scripts/check-published-package-integrity.mjs",
     "scripts/standalone-approval-policy.mjs",
     "scripts/standalone-acceptance-decision-policy.mjs",
     "scripts/standalone-api-approval-chain.mjs",

@@ -48,4 +48,6 @@ test("publish workflow binds signed source, manifest verification and tested tar
   assert.doesNotMatch(workflow, /run: node scripts\/release-set-version\.mjs --version "\$VERSION"\s*$/mu);
   assert.match(workflow, /MANIFEST_PATH: artifacts\/npm-release\.manifest\.json/u);
   assert.match(publisher, /node scripts\/check-publish-tarball\.mjs "\$\{manifest_path\}" "\$\{tarball\}"/u);
+  assert.match(publisher, /npm view "\$\{package_name\}@\$\{version\}" dist --json/u);
+  assert.match(publisher, /node scripts\/check-published-package-integrity\.mjs "\$\{tarball\}" "\$\{published_dist\}"/u);
 });

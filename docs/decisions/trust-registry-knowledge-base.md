@@ -2567,3 +2567,12 @@ evidence. The original CLI continues to own private-file reads and digests.
 This improves reviewability of the acceptance inventory but does not change
 the self-attested nature of decisions or make a fixture browser run a local
 ledger qualification.
+
+The protected npm publish job now verifies the registry's SHA-512 integrity
+against each exact manifest-checked tarball before skipping an already
+published immutable version. A lookup error other than an explicit npm 404,
+or missing/weak/mismatched integrity metadata, stops publication. Tampered
+tarball and malformed metadata negatives cover this idempotent resume path.
+This closes an artifact-byte gap in #236 locally; exact-head protected CI,
+release-owner approval, and independent review remain required before the
+release gate can be considered satisfied.
