@@ -81,6 +81,16 @@ if (operation === "reserve") {
     if (error.message === "Submission proceeded without a durable journal") throw error;
     process.send("blocked");
   }
+} else if (operation === "reservation-write-failure") {
+  await journal.bindDeployment("registry:local", contract, genesis);
+  journal.writeAtomically = async () => { throw new Error("injected reservation persistence failure"); };
+  try {
+    await submit("issuer", "issuer:1");
+    throw new Error("Submission proceeded after reservation write failure");
+  } catch (error) {
+    if (error.message !== "injected reservation persistence failure") throw error;
+    process.send("blocked");
+  }
 } else {
   throw new Error("Unknown child operation");
 }

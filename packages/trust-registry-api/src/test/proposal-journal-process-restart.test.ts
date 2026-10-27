@@ -66,4 +66,10 @@ describe("durable local proposal quarantine across fresh journal and provider ca
     expect(await child(join(directory, "not-a-directory", "journal.json"), "write-failure"))
       .toEqual(["provider-created", "blocked"]);
   });
+
+  it("never calls the provider when a bound journal cannot persist the reservation", async () => {
+    expect(await child(path, "reservation-write-failure")).toEqual(["provider-created", "blocked"]);
+    expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ version: 1, attempts: [] });
+    expect(await child(path, "other")).toEqual(["provider-created", "submission-callback"]);
+  });
 });
