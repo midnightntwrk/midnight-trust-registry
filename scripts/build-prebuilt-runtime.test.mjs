@@ -51,13 +51,15 @@ test("demo E2E rebuilds current workspaces without a destructive Compact build",
   try {
     const result = f.run();
     assert.equal(result.status, 0, result.stderr);
-    const call = readFileSync(f.log, "utf8").trim();
-    assert.match(call, /^-r --filter @midnight-ntwrk\/trust-registry-domain /u);
-    assert.match(call, /--filter @midnight-ntwrk\/trust-registry-api /u);
-    assert.match(call, /--filter @midnight-ntwrk\/trust-registry-applicant-portal /u);
-    assert.match(call, /--filter @midnight-ntwrk\/trust-registry-trqp-adapter /u);
-    assert.match(call, / run build$/u);
-    assert.doesNotMatch(call, /build:light|compact|clean/u);
+    const calls = readFileSync(f.log, "utf8").trim().split("\n");
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0], "--filter @midnight-ntwrk/trust-registry-contract exec tsc -p tsconfig.build.json");
+    assert.match(calls[1], /^-r --filter @midnight-ntwrk\/trust-registry-domain /u);
+    assert.match(calls[1], /--filter @midnight-ntwrk\/trust-registry-api /u);
+    assert.match(calls[1], /--filter @midnight-ntwrk\/trust-registry-applicant-portal /u);
+    assert.match(calls[1], /--filter @midnight-ntwrk\/trust-registry-trqp-adapter /u);
+    assert.match(calls[1], / run build$/u);
+    assert.doesNotMatch(calls.join(" "), /build:light|compact:light|clean/u);
   } finally {
     rmSync(f.root, { recursive: true, force: true });
   }
@@ -82,6 +84,7 @@ test("demo E2E propagates a package build failure", () => {
   const f = fixture();
   try {
     assert.equal(f.run({ FAKE_PNPM_EXIT: "17" }).status, 17);
+    assert.equal(readFileSync(f.log, "utf8").trim().split("\n").length, 1);
   } finally {
     rmSync(f.root, { recursive: true, force: true });
   }

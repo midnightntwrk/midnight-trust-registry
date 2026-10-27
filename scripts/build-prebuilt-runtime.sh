@@ -11,7 +11,10 @@ if [[ ! -f "$dist_file" || ! -f "$managed_file" ]] || ! cmp -s "$source_file" "$
   exit 1
 fi
 
-# Only rebuild TypeScript and UI workspaces; never replace generated Compact keys.
+# Compile contract TypeScript helpers in place without invoking its Compact build.
+pnpm --filter @midnight-ntwrk/trust-registry-contract exec tsc -p tsconfig.build.json
+
+# Rebuild downstream TypeScript and UI workspaces; never replace generated Compact keys.
 pnpm -r \
   --filter @midnight-ntwrk/trust-registry-domain \
   --filter @midnight-ntwrk/trust-registry-client \

@@ -32,8 +32,9 @@ pnpm run demo:signed-auditor
 pnpm run demo:signed-maintainer
 ```
 
-`test:e2e:demo` checks the prebuilt Compact source, safely rebuilds its
-TypeScript/UI dependencies, then starts the fixture API and both served UIs
+`test:e2e:demo` checks the prebuilt Compact source, safely recompiles its
+contract helpers and downstream TypeScript/UI dependencies, then starts the
+fixture API and both served UIs
 on ephemeral loopback ports. Quality CI runs the four journeys together with
 `pnpm run demo:membership:smoke` after the package build; that step does not
 regenerate proving keys. Neither command exercises a deployed local ledger.

@@ -30,8 +30,9 @@ lane as not run if Chrome is unavailable.
 `./run.sh --light` removes generated Compact outputs. Never run it in a
 checkout holding full proving keys, a verified install bundle, or private
 approval evidence. Once source-matched Compact output is already present,
-`test:e2e:demo`, the individual demo aliases, and `test:browser` rebuild only
-TypeScript/UI packages and preserve that output. Use `pnpm run integration:prebuilt`
+`test:e2e:demo`, the individual demo aliases, and `test:browser` compile only
+contract helpers and downstream TypeScript/UI packages while preserving the
+Compact output. Use `pnpm run integration:prebuilt`
 for the broader prebuilt simulator integration lane; neither command is a
 standalone deployment test. See the [demo details](quickstart.md) and
 [test boundaries](end-to-end-testing.md).
