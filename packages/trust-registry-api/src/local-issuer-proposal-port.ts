@@ -63,6 +63,15 @@ export type LocalIssuerProposalPortDependencies = {
 export function createBoundLocalIssuerProposalPort(
   dependencies: LocalIssuerProposalPortDependencies,
 ): GovernedIssuerProposalPort {
+  const assertEvidenceCurrent = async (evidence: ApplicationEvidenceSubmission): Promise<number> => {
+    const trustedTimeMs = await dependencies.readTrustedTimeMs();
+    if (!Number.isSafeInteger(trustedTimeMs) || trustedTimeMs < Date.parse(evidence.envelope.verifiedAt)
+      || trustedTimeMs >= Date.parse(evidence.envelope.expiresAt)) {
+      throw new Error("Accepted issuer evidence is not current at trusted time");
+    }
+    return trustedTimeMs;
+  };
+
   const loadPrepared = async (
     authorizationId: string,
     submittedEvidence: ApplicationEvidenceSubmission,
@@ -84,11 +93,7 @@ export function createBoundLocalIssuerProposalPort(
       terms, ...admission, submittedEvidence, plan: dependencies.plan,
       policySnapshot: snapshot.policySnapshot, ledger: snapshot.ledger,
     });
-    const trustedTimeMs = await dependencies.readTrustedTimeMs();
-    if (!Number.isSafeInteger(trustedTimeMs) || trustedTimeMs < Date.parse(submittedEvidence.envelope.verifiedAt)
-      || trustedTimeMs >= Date.parse(submittedEvidence.envelope.expiresAt)) {
-      throw new Error("Accepted issuer evidence is not current at trusted time");
-    }
+    const trustedTimeMs = await assertEvidenceCurrent(submittedEvidence);
     await dependencies.verifyLiveEvidence({ terms, ...admission, submittedEvidence, snapshot, trustedTimeMs });
     return prepared;
   };
@@ -139,7 +144,9 @@ export function createBoundLocalIssuerProposalPort(
     },
     async execute(authorizationId, evidence, signers, signature, terms) {
       const { input } = await submissionInput(authorizationId, evidence, signers, signature, terms);
-      return executeLocalIssuerProposalAfterReservation(input);
+      return executeLocalIssuerProposalAfterReservation(input, async () => {
+        await assertEvidenceCurrent(evidence);
+      });
     },
   };
 }

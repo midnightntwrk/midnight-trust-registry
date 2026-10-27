@@ -320,8 +320,10 @@ const submitPreparedLocalIssuerProposal = async (
 /** The caller must already own a durable reservation; this function never retries an ambiguous submit. */
 export async function executeLocalIssuerProposalAfterReservation(
   input: LocalIssuerProposalSubmissionInput,
+  assertReadyBeforeBroadcast?: () => Promise<void>,
 ): Promise<{ eventHash: string }> {
   const { prepared, compiledContract } = await preflightLocalIssuerProposalSubmission(input);
+  await assertReadyBeforeBroadcast?.();
   return submitPreparedLocalIssuerProposal(input, prepared, compiledContract);
 }
 

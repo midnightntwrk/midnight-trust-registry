@@ -330,6 +330,12 @@ describe("local issuer proposal terms", () => {
     await expect(port.execute(pending.authorizationId, evidence,
       signers, verifierSignature, localTerms)).rejects.toThrow(/not current at trusted time/u);
     expect(loadApprovedSubmissionProviders).toHaveBeenCalledOnce();
+
+    readTrustedTimeMs.mockResolvedValueOnce(Date.parse("2026-10-13T00:00:02.000Z"));
+    readTrustedTimeMs.mockResolvedValueOnce(Date.parse(evidence.envelope.expiresAt));
+    await expect(port.execute(pending.authorizationId, evidence,
+      signers, verifierSignature, localTerms)).rejects.toThrow(/not current at trusted time/u);
+    expect(loadApprovedSubmissionProviders).toHaveBeenCalledTimes(2);
   });
 });
 

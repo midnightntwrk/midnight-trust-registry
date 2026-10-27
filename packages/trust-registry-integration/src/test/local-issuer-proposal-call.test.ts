@@ -144,6 +144,19 @@ describe("local issuer proposal circuit call", () => {
     expect(mocks.submitCallTx).toHaveBeenCalledOnce();
   });
 
+  it("checks a post-preflight guard before any SDK broadcast", async () => {
+    const { call, ledger } = fixture();
+    const assertReadyBeforeBroadcast = vi.fn(async () => { throw new Error("evidence expired"); });
+    await expect(executeLocalIssuerProposalAfterReservation({
+      call, expectedGenesisHash: genesisHash,
+      readFinalizedLedger: async (address) => ({ contractAddress: address, genesisHash, ledger }),
+      providers: {} as Parameters<typeof executeLocalIssuerProposalAfterReservation>[0]["providers"],
+      readSubmissionProviderIdentity,
+    }, assertReadyBeforeBroadcast)).rejects.toThrow(/evidence expired/u);
+    expect(assertReadyBeforeBroadcast).toHaveBeenCalledOnce();
+    expect(mocks.submitCallTx).not.toHaveBeenCalled();
+  });
+
   it("prepares the exact unsigned signing context from current ledger state", () => {
     const { call, ledger } = fixture();
     const unsigned = prepareUnsignedLocalIssuerProposalCall(call, ledger);

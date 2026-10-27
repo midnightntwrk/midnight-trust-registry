@@ -443,14 +443,17 @@ live DID/VP/VC-status verification and an injected trusted-time source,
 immutable approved
 provider-code checks, and provider loading. It compares the reviewed context
 before loading a provider, rejects evidence outside its signed validity
-window at each prepare/preflight/execute, repeats the code check around
-loading, and uses
+window at each prepare/preflight/execute and again immediately before SDK
+broadcast, repeats the code check around loading, and uses
 the SDK's side-effect-free preflight before the API-owned journal reserves.
 After reservation it rechecks and submits once without creating a second
 journal. A failure then remains quarantined for operator reconciliation; it
 is not permission to retry. The factory does not supply those trusted
 dependencies, finalized proposal resolution, or a production CLI writer.
 Injected-provider tests are not deployed standalone E2E evidence.
+The final local clock check cannot prove that a transaction reaches a finalized
+block before evidence expiry; a deployment must enforce its approved
+transition-time policy using authenticated ledger evidence.
 An embedding host may also provide a ledger-backed `resolve` method for
 `POST /v1/governed/:role/:id/proposal/resolve` with the same accepted
 `{ "evidence": ... }`. The API returns `observed` with the proposal event
