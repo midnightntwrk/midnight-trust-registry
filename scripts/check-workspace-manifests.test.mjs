@@ -40,6 +40,11 @@ test("manifest lint works before packages are installed", () => {
     writeFileSync(buildOrderPath, JSON.stringify(buildOrder));
     assert.throws(() => checkWorkspaceManifests(root), /dist-dependent adversarial smoke/u);
     copyFileSync(join(source, "package.json"), buildOrderPath);
+    const prematureTopology = JSON.parse(readFileSync(buildOrderPath, "utf8"));
+    prematureTopology.scripts["ci:lint"] += " && pnpm run test:standalone-topology";
+    writeFileSync(buildOrderPath, JSON.stringify(prematureTopology));
+    assert.throws(() => checkWorkspaceManifests(root), /standalone topology tests require build:light/u);
+    copyFileSync(join(source, "package.json"), buildOrderPath);
     const missingBuild = JSON.parse(readFileSync(buildOrderPath, "utf8"));
     missingBuild.scripts["ci:build:light"] = missingBuild.scripts["ci:build:light"]
       .replace("pnpm run build:light && ", "");
