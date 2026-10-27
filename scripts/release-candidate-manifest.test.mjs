@@ -145,6 +145,12 @@ test("candidate manifest binds signed source inputs and exact package bytes", ()
   assert.equal(manifest.packages[0].sha256,
     createHash("sha256").update(readFileSync(contractTarball)).digest("hex"));
   assert.equal(verifyReleaseCandidateArtifacts(manifest, input.artifactDir, input.workspaces).length, 2);
+  for (const malformed of [null, 7, { ...manifest, packages: [null, manifest.packages[1]] },
+    { ...manifest, packages: [{ ...manifest.packages[0], sizeBytes: "wrong" }, manifest.packages[1]] },
+    { ...manifest, lockfileSha256: 7 }]) {
+    assert.throws(() => verifyReleaseCandidateArtifacts(malformed, input.artifactDir, input.workspaces),
+      /manifest format or package count is invalid/u);
+  }
   const domainEntrypoint = join(root, "packed-domain/package/dist/index.js");
   rmSync(domainEntrypoint);
   symlinkSync("browser.js", domainEntrypoint);

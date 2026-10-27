@@ -52,6 +52,8 @@ test("full release circuit inventory comes from validated Compact metadata", () 
   assert.throws(() => proofCircuitNames({ circuits: [{ name: "a", proof: true }, { name: "a", proof: true }] }), /unique/);
   assert.throws(() => proofCircuitNames({ circuits: [{ name: "../a", proof: true }] }), /valid/);
   assert.throws(() => proofCircuitNames({}), /circuits array/);
+  assert.throws(() => proofCircuitNames(null), /circuits array/);
+  assert.throws(() => proofCircuitNames({ circuits: [{ proof: true, name: 7 }] }), /valid/);
 });
 
 test("publish workflow runs light tests before full build and package gate", () => {
