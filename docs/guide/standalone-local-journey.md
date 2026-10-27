@@ -3,6 +3,12 @@
 This is the short path to a **self-hosted, offline-runtime** Trust Registry
 qualification run. Installation may use the network; the runtime may not.
 Preprod, Preview, Mainnet, Kubernetes, and Helm are not 0.1.0 local-RC gates.
+The `standalone` [network profile](../spec/network-profiles.md) supplies the
+Midnight SDK network ID (`undeployed`) to the local checkpoint and deployment
+readers. That ID is a protocol selector, not a genesis hash or an assertion
+that a contract is deployed. Each installation needs its own independently
+reviewed genesis pin. A genesis-pinned RPC response from the local node is
+operator-node evidence; it does not independently authenticate finality.
 The detailed procedures and threat model are in
 [Standalone Offline Runtime Qualification](standalone-offline-runtime.md).
 The [security-scan disposition](security-scan-disposition.md) explains how to
