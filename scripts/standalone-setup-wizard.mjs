@@ -434,6 +434,7 @@ export async function observeStandaloneStack(directory, dependencies = {}) {
       throw new Error("Stack observation history is full or malformed");
     }
     const { config, expectedTopology } = await preparedStandaloneTopology(root, record);
+    const controlSubnet = dependencies.egressControlSubnet ?? process.env.TR_EGRESS_CONTROL_SUBNET;
     const topology = await (dependencies.observeTopology ?? observeStandaloneTopology)(config,
       expectedTopology);
     const egress = await (dependencies.observeEgress ?? (expectedTopology.installRelay
@@ -444,6 +445,7 @@ export async function observeStandaloneStack(directory, dependencies = {}) {
         TR_NODE_PORT: config.ports.node,
         TR_INDEXER_PORT: config.ports.indexer,
         TR_PROOF_PORT: config.ports["proof-server"],
+        ...(controlSubnet === undefined ? {} : { TR_EGRESS_CONTROL_SUBNET: controlSubnet }),
       },
       expectedTopology,
     });

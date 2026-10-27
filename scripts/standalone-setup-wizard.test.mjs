@@ -744,6 +744,7 @@ test("wizard records only selected ledger-bridge topology and egress observation
     indexerPort: "38088", proofPort: "36300" }, stackDependencies(f));
   await writeFile(f.pinPath, JSON.stringify({ ...pin, rpcUrl: "http://127.0.0.1:39944" }));
   const result = await observeStandaloneStack(f.directory, {
+    egressControlSubnet: "10.253.247.0/24",
     observeTopology: async (config, expected) => {
       assert.equal(config.project, project);
       assert.match(expected.proofParamsDir, /\/proof-params$/u);
@@ -760,6 +761,7 @@ test("wizard records only selected ledger-bridge topology and egress observation
     observeEgress: async ({ env, expectedTopology }) => {
       assert.equal(env.TR_STACK_NAME, project);
       assert.equal(env.TR_NODE_PORT, "39944");
+      assert.equal(env.TR_EGRESS_CONTROL_SUBNET, "10.253.247.0/24");
       assert.equal(expectedTopology.sourceRevision, sourceRevision);
       assert.equal(expectedTopology.allowOffline, true);
       assert.equal(expectedTopology.images.length, 3);
