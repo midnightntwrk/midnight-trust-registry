@@ -10,6 +10,37 @@ deployed-ledger, offline actor, restart/restore, and security evidence.
 
 ## Latest local pre-deployment checkpoint
 
+The most recent source-matched **pre-deployment** packet was prepared from
+signed/DCO source `779bfd1d0b72fd02cb3320511212d9ebd73cc334`. Its verified
+v6 install inventory SHA-256 is
+`66f8d669eb2b06e90f3444c27a0c69f5368f007568f28b757e156229c7e6154d`
+and covers ten packed packages, six pinned images, and 18 proof-parameter
+files. Packed actor and VC consumer fixture checks passed. The dedicated
+`wizard-779bfd1` bridge matched the bundle's three ledger images and passed
+bridge-scoped HTTP/DNS egress-canary denial. A pre-deployment restart retained
+the node-reported finalized checkpoint hash while its height advanced from
+49 to 61. Its node-reported genesis candidate SHA-256 is
+`86925630cc88da02765de3fe33e2185a81479ecb1087ed3c9668ec43cf5627b9`;
+the proposed pin SHA-256 is
+`d1a207e5a816314c2c485b18dd46d958b894be4b52e98ec2058c8f7b97cc8de1`.
+Both remain **untrusted node-derived proposals**. The prerequisite checker
+exited 2 at `genesisApproved`; the three dedicated containers were stopped,
+with private evidence and volumes retained. The packet did not deploy a
+contract, authenticate finality independently, run an offline actor, or test
+deployed restore. This documentation update is newer than the recorded source,
+so the `779bfd1d` bundle is not an exact-head release candidate. Do not sign
+the proposed pin as a final release approval while the implementation stack
+is still changing.
+
+The operator's next safe action is to freeze and independently review the
+intended release source and chain specification, then regenerate a
+source-matched bundle and approval draft. The human reviewer, not an AI or
+node report, signs the exact wizard approval bytes. Separately approve the
+release committee threshold, public keys, and custody roles before attempting
+deployment. Retain the failed prerequisite report as evidence of the stop.
+
+### Historical checkpoint
+
 The private `artifacts/standalone-setup/wizard-7efc-1/` setup was built from
 signed/DCO source `7efcf60760dc7e37641f7c8f3b575dc83fd5dd6b` and a
 verified v6 install inventory with SHA-256
