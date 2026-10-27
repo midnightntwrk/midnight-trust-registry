@@ -8,6 +8,8 @@ import test from "node:test";
 
 import { approvedMappingSigner, staticImageIdentityFromArchive, verifyHelmImageMapping,
   verifyMappingSignature } from "./check-helm-image-mapping.mjs";
+import { validateStaticImageManifest } from "./static-runtime-archive.mjs";
+import { approvedRuntimeHealthcheck } from "./runtime-healthcheck.mjs";
 
 const revision = "a".repeat(40);
 const inventorySha256 = "b".repeat(64);
@@ -19,6 +21,18 @@ const roles = ["node", "indexer", "proofServer", "api", "admin", "applicant"];
 const images = roles.map((role) => ({ role,
   reference: `registry.example.test/tr/${role.toLowerCase()}@sha256:${"e".repeat(64)}`,
   archiveSha256, imageId, configId }));
+
+test("rejects malformed static image manifest inputs before asset digest checks", () => {
+  for (const invalid of [null, [], "portal", { format: "tr-static-runtime-image-v1" },
+    { format: "tr-static-runtime-image-v1", assets: [null] }]) {
+    assert.throws(() => validateStaticImageManifest(invalid, "admin", revision, archiveSha256),
+      /static image manifest is invalid/u);
+  }
+});
+
+test("runtime healthcheck rejects inherited role names", () => {
+  assert.throws(() => approvedRuntimeHealthcheck("toString"), /Unknown runtime healthcheck role/u);
+});
 const bundle = {
   sourceRevision: revision,
   inventorySha256,
