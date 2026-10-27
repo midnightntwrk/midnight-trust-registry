@@ -6,6 +6,20 @@ simulator. The **standalone acceptance path** requires one independently
 approved local ledger deployment, live DID/VC/status services, and operator
 evidence. Passing the demo path does not advance the standalone release gate.
 
+## Choose the test you need
+
+| Goal | Run | Passing result means |
+| --- | --- | --- |
+| Try the product flows without a ledger | `pnpm run test:e2e:demo` | The four signed role journeys and fixture API/UI smoke completed in a Compact simulator. |
+| Exercise the demo in a browser | `pnpm run test:e2e:demo:browser` | The same demo plus applicant/admin Playwright flows completed against fixture services. |
+| Check a real standalone candidate before actor testing | `node scripts/check-standalone-journey-prerequisites.mjs "$SETUP" "$SOURCE_SHA"` | Exit 0: the wizard recorded the prerequisite ledger observations for this exact source. Exit 2: stop and follow `nextActions`. |
+| Record a deployed candidate's operator-reviewed cases | `node scripts/check-standalone-acceptance-evidence.mjs "$ACCEPTANCE" "$SOURCE_SHA"` | Exit 0: all case decisions and evidence digests are present; receipt authenticity, finality, and the security verdict still need independent review. |
+
+There is deliberately no green standalone actor-E2E shortcut. A demo result,
+successful prerequisite check, or complete evidence inventory cannot substitute
+for real actor transactions on a reviewed, finalized, egress-denied local
+deployment.
+
 ## Run the demo path today
 
 Use Node.js 24, the repository's pinned pnpm version, and a fresh checkout.
@@ -64,6 +78,8 @@ wallet, containers, or volumes.
 Check the recorded prerequisite gates before starting an actor run:
 
 ```sh
+SOURCE_SHA="$(git rev-parse HEAD)"
+SETUP=/absolute/private/setup
 node scripts/standalone-setup-wizard.mjs status "$SETUP"
 node scripts/check-standalone-journey-prerequisites.mjs "$SETUP" "$SOURCE_SHA"
 ```
@@ -73,6 +89,10 @@ has recorded its ledger prerequisites; it does not authenticate finality,
 enable governed writes, or pass any actor case. The report pairs each missing
 gate with a `nextActions` entry. If `sourceMatchesCandidate` is false, start a
 new exact-source setup rather than reusing evidence from the older install.
+Do not change `SOURCE_SHA` to the older setup's revision just to make this
+check pass: the source, install bundle, API plan, and acceptance inventory must
+identify the same candidate. This command is safe to rerun and does not deploy
+or modify the ledger.
 Do not remove an active setup lock or sign an approval on an operator's behalf.
 No standalone actor E2E command is currently green by design: the packaged
 local-ledger API is read-only, and the issuer/verifier/auditor/maintainer ports
