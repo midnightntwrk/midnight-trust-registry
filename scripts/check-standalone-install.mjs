@@ -13,6 +13,7 @@ import { matchesApprovedRuntimeHealthcheck } from "./runtime-healthcheck.mjs";
 import { staticImageIdentityFromArchive, validateStaticImageManifest } from "./static-runtime-archive.mjs";
 import { STANDALONE_IMAGE_REFERENCE } from "./standalone-image-reference.mjs";
 import { pinnedStandaloneImagePolicy } from "./standalone-compose-image-policy.mjs";
+import { pinnedStandaloneInventoryImages } from "./standalone-install-image-inventory-policy.mjs";
 export { STANDALONE_IMAGE_REFERENCE } from "./standalone-image-reference.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
@@ -246,6 +247,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
   if (expectedSourceRevision !== null && inventory.sourceRevision !== expectedSourceRevision) {
     throw new Error("Standalone install source revision differs from the selected candidate");
   }
+  const images = pinnedStandaloneInventoryImages(inventory.images);
   const hasApiOverlayPin = inventory.runtimeCompose?.apiPath !== undefined
     || inventory.runtimeCompose?.apiSha256 !== undefined;
   if (hasApiOverlayPin && !["tr-standalone-install-v4", "tr-standalone-install-v5",
@@ -289,20 +291,14 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
       runtimeApiComposeSha256 = inventory.runtimeCompose.apiSha256;
     }
     const pinnedImages = pinnedStandaloneImages(await readFile(composeFile, "utf8"));
-    if (pinnedImages.some(({ role, reference }) => !inventory.images.some((image) =>
+    if (pinnedImages.some(({ role, reference }) => !images.some((image) =>
       image?.role === role && image.reference === reference))) {
       throw new Error("Standalone image inventory disagrees with the runtime Compose pin");
     }
     runtimeComposeSha256 = inventory.runtimeCompose.sha256;
     runtimeOfflineComposeSha256 = inventory.runtimeCompose.offlineSha256;
   }
-  const imageRoles = inventory.images.map((image) => image?.role).sort();
-  if (imageRoles.join("\0") !== [...ROLES].sort().join("\0")) {
-    throw new Error("Standalone install inventory must pin node, indexer, and proof-server exactly once");
-  }
-  if (new Set(inventory.images.map((image) => image.archive)).size !== inventory.images.length) {
-    throw new Error("Each container role requires a distinct pinned archive");
-  }
+  const imageRoles = images.map((image) => image.role).sort();
   const packageManifestBytes = await readFile(await regularBundleFile(root, inventory.packageManifest));
   const packageManifestSha256 = createHash("sha256").update(packageManifestBytes).digest("hex");
   if (inventory.format !== "tr-standalone-install-v2"
@@ -321,10 +317,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
   }
   verifyPackages(packageManifest, artifactRoot);
   const verifiedImages = [];
-  for (const image of inventory.images) {
-    if (!STANDALONE_IMAGE_REFERENCE.test(image.reference) || !SHA256.test(image.archiveSha256)) {
-      throw new Error(`Unpinned or invalid container image: ${image.role}`);
-    }
+  for (const image of images) {
     const archive = await regularBundleFile(root, image.archive);
     if (await sha256(archive) !== image.archiveSha256) {
       throw new Error(`Container archive hash mismatch: ${image.role}`);

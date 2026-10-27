@@ -4,7 +4,7 @@ Issue #229 tracks typed assurance for the self-hosted 0.1.0 installer and
 operator workflow. The existing broad `checkJs` configuration includes the
 wizard and installer but permits implicit `any`; Quality CI now runs it.
 A second, strict no-emit gate runs
-`pnpm run check:security-boundaries-types` for twenty-six privileged boundaries:
+`pnpm run check:security-boundaries-types` for twenty-seven privileged boundaries:
 
 | Checked file | Security decision |
 | --- | --- |
@@ -31,6 +31,7 @@ A second, strict no-emit gate runs
 | `scripts/standalone-private-file-bytes.mjs` | Bounded, no-follow reads of private setup and approval evidence with inode and ownership continuity. |
 | `scripts/standalone-image-reference.mjs` | Shared pinned OCI reference syntax for installer and review policy. |
 | `scripts/standalone-compose-image-policy.mjs` | Exact base Compose project, role map, and digest-pinned image decisions before inventory comparison. It does not validate overlays or deployed topology. |
+| `scripts/standalone-install-image-inventory-policy.mjs` | Exact ledger image roles, unique archive mapping, and digest pins before archive I/O. It does not authenticate archive contents or installed runtime. |
 | `scripts/runtime-healthcheck.mjs` | Exact runtime healthcheck shape for the API and static portals. |
 | `scripts/static-runtime-archive.mjs` | Untrusted Docker/OCI image metadata, runtime identity, and static asset manifest decisions. |
 | `scripts/verify-helm-mapping-signature.mjs` | Optional Helm mapping signature and pinned keyring. |
@@ -51,7 +52,7 @@ inventory, not a waiver of the release security review.
 | --- | --- | --- |
 | 1 | `scripts/standalone-setup-wizard.mjs`, `scripts/prepare-standalone-genesis-review.mjs` | Signed genesis, committee, deployment, and recovery approval sequencing. Reviewer metadata, committee validation, untrusted genesis-review comparison and packet rendering, private-file reads, and API approval-chain export are strictly checked; remaining transitions and the I/O shell still need migration. |
 | 2 | `scripts/stage-provider-runtime.mjs` | Privileged provider material and exact-source install. The package catalog decision, deployment and insertion plan validators, and their submission/reconciliation shells are strictly checked; the provider staging I/O shell remains non-strict. The direct deployment and insertion CLIs are disabled; the wizard imports these functions after approval checks. |
-| 3 | `scripts/build-standalone-install.mjs`, `scripts/load-standalone-install-images.mjs`, `scripts/check-standalone-install.mjs` | Source and OCI image pin decisions. Base Compose image mapping, static portal archive and runtime healthcheck decisions are strictly checked; the broader bundle verifier and installation I/O still need migration. Keep hash and path validation identical while moving the remaining pure validators to typed code. |
+| 3 | `scripts/build-standalone-install.mjs`, `scripts/load-standalone-install-images.mjs`, `scripts/check-standalone-install.mjs` | Source and OCI image pin decisions. Base Compose and image-inventory mappings, static portal archive and runtime healthcheck decisions are strictly checked; the broader bundle verifier and installation I/O still need migration. Keep hash and path validation identical while moving the remaining pure validators to typed code. |
 | 4 | `scripts/check-helm-image-mapping.mjs`, `scripts/observe-helm-runtime.mjs` | Optional Kubernetes mapping and observations; Helm is not a 0.1.0 RC gate. |
 
 The standalone acceptance inventory checker is included in the broad

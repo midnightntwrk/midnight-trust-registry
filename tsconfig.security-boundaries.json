@@ -34,6 +34,7 @@
     "scripts/standalone-private-file-bytes.mjs",
     "scripts/standalone-image-reference.mjs",
     "scripts/standalone-compose-image-policy.mjs",
+    "scripts/standalone-install-image-inventory-policy.mjs",
     "scripts/runtime-healthcheck.mjs",
     "scripts/static-runtime-archive.mjs",
     "scripts/verify-helm-mapping-signature.mjs"

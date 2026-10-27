@@ -14,10 +14,12 @@ shorter-lived and more action-oriented than the normative specification.
 
 ## October 27 2026 Installer And E2E Boundary
 
-- The installer now uses one strictly typechecked policy for its base Compose
-  project, three service roles, and digest-pinned image references. Malformed
-  YAML shapes, extra roles, and floating image tags fail the focused tests.
-  The install verifier still checks the Compose file's exact bytes against the
+- The installer now uses strictly typechecked policies for its base Compose
+  project, three service roles, and digest-pinned image references, plus the
+  install inventory's exact ledger image roles and distinct archive pins.
+  Malformed YAML shapes, extra or duplicate roles, duplicate archives, and
+  floating image tags fail the focused tests. The install verifier still
+  checks the Compose file's exact bytes and archive contents against the
   inventory. This proves a staged bundle constraint, not Docker's merged
   runtime topology or a deployed ledger. The rest of the bundle verifier and
   wizard I/O remain on the tracked non-strict type-migration list (#229).
