@@ -30,6 +30,7 @@
     "scripts/standalone-api-approval-chain.mjs",
     "scripts/standalone-genesis-review-policy.mjs",
     "scripts/standalone-genesis-review-packet.mjs",
+    "scripts/standalone-genesis-review-io.mjs",
     "scripts/standalone-journey-prerequisites-policy.mjs",
     "scripts/standalone-private-file-bytes.mjs",
     "scripts/standalone-image-reference.mjs",

@@ -97,10 +97,16 @@ test("packet uses private immutable inputs and never overwrites evidence", async
   const candidateBytes = Buffer.from(JSON.stringify(candidate));
   const pinBytes = Buffer.from(JSON.stringify(pin));
   const candidatePath = join(directory, "genesis-candidate.untrusted.json");
+  const recordPath = join(directory, "setup-record.json");
   try {
-    await writeFile(join(directory, "setup-record.json"), JSON.stringify(record), { mode: 0o600 });
+    await writeFile(recordPath, JSON.stringify(record), { mode: 0o600 });
     await writeFile(candidatePath, candidateBytes, { mode: 0o600 });
     await writeFile(join(directory, "genesis-pin.proposed.json"), pinBytes, { mode: 0o600 });
+    await writeFile(recordPath, JSON.stringify({ ...record, install: { inventorySha256 } }));
+    await assert.rejects(prepareStandaloneGenesisReviewPacket(directory, {
+      verifyBundle: async () => { throw new Error("Verifier must not run without a bundle path"); },
+    }), /recorded install bundle path/u);
+    await writeFile(recordPath, JSON.stringify(record));
     const dependencies = { verifyBundle: async (path) => {
       assert.equal(path, bundle);
       return verified;
