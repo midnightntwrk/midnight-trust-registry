@@ -56,7 +56,8 @@ export async function observeStandaloneLocalEgress(dependencies = {}) {
   const expected = dependencies.expectedTopology;
   const apiImage = expected?.apiRuntime?.imageId;
   const node = expected?.images?.find((entry) => entry.role === "node");
-  if (!expected?.allowOffline || !expected?.sourceRevision || !apiImage
+  if (!expected?.allowOffline || !expected?.sourceRevision || !expected?.installRelay
+    || !apiImage
     || !/^sha256:[0-9a-f]{64}$/u.test(apiImage)
     || !node?.acceptedIds?.length) {
     throw new Error("Local egress probe requires verified v6 node and API image identities");

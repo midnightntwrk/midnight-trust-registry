@@ -10,6 +10,7 @@ const nodeImage = `sha256:${"a".repeat(64)}`;
 const apiImage = `sha256:${"b".repeat(64)}`;
 const expectedTopology = { allowOffline: true, sourceRevision: "c".repeat(40),
   images: [{ role: "node", acceptedIds: [nodeImage] }],
+  installRelay: { imageRole: "api" },
   apiRuntime: { imageId: apiImage } };
 
 function harness({ isolatedCurlCode = 7, isolatedDnsCode = 2, canaryImage = apiImage,
@@ -85,6 +86,8 @@ test("offline ledger probe rejects leakage and changed identities", async () => 
   }
   await assert.rejects(observeStandaloneLocalEgress({ ...harness(),
     expectedTopology: { ...expectedTopology, apiRuntime: null } }), /verified v6/u);
+  await assert.rejects(observeStandaloneLocalEgress({ ...harness(),
+    expectedTopology: { ...expectedTopology, installRelay: null } }), /verified v6/u);
 });
 
 test("offline ledger probe cleans its network after canary startup failure", async () => {

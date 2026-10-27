@@ -157,6 +157,7 @@ export async function verifiedOfflineEgressTopology(bundleDirectory,
   }
   return { sourceRevision: verified.sourceRevision, images: verified.images,
     apiRuntime: verified.apiRuntime,
+    installRelay: verified.installRelay,
     allowOffline: true, allowUnpublishedHostPorts: true,
     composeFiles: [join(root, "compose.yml"),
       join(root, "compose.offline.yml")] };

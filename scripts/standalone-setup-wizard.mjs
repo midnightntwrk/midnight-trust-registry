@@ -400,6 +400,7 @@ async function preparedStandaloneTopology(root, record) {
         sourceRevision: record.install.verified.sourceRevision,
         images: record.install.verified.images,
         apiRuntime: record.install.verified.apiRuntime,
+        installRelay: record.install.verified.installRelay,
         allowOffline: true,
         composeFiles: [join(record.install.bundle, "compose.yml"),
           join(record.install.bundle, "compose.offline.yml")],
@@ -435,7 +436,7 @@ export async function observeStandaloneStack(directory, dependencies = {}) {
     const { config, expectedTopology } = await preparedStandaloneTopology(root, record);
     const topology = await (dependencies.observeTopology ?? observeStandaloneTopology)(config,
       expectedTopology);
-    const egress = await (dependencies.observeEgress ?? (expectedTopology.apiRuntime
+    const egress = await (dependencies.observeEgress ?? (expectedTopology.installRelay
       ? observeStandaloneLocalEgress : observeStandaloneEgress))({
       env: {
         TR_STACK_NAME: config.project,
