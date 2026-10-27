@@ -89,7 +89,9 @@ import { buildActorEvidenceReport } from "./actor-evidence-report.mjs";
 import { runApplicationEvidenceSafetyScenarios } from "./governed-demo-application-evidence-safety.mjs";
 import { runDenialSafetyScenario } from "./governed-demo-denial-safety.mjs";
 import { runMaintainerSafetyScenarios } from "./governed-demo-maintainer-safety.mjs";
-import { runOldPolicyIssuerReplay, runOldPolicyRecognitionReplay } from "./governed-demo-policy-replay.mjs";
+import {
+  runOldPolicyIssuerReplay, runOldPolicyRecognitionReplay, runRevisedPolicyRoleReplays,
+} from "./governed-demo-policy-replay.mjs";
 import { TrustRegistryTrqpAdapter, verifyTrqpRecognitionEvidenceFromApi } from "../adapters/trqp/dist/index.js";
 
 const asHex = (value) => `0x${Buffer.from(value).toString("hex")}`;
@@ -473,122 +475,8 @@ adversarialMatrix.expectThrown(() => policyClient.verifyIssuerAuthorizationBundl
   messagePattern: /invalid/iu,
   category: "historical-epoch-signature-rejected",
 });
-const revisedPolicyVerifier = createVerifierScenarioFixture("governed-demo-policy-verifier");
-policyHarness.proposeVerifier(revisedPolicyVerifier);
-const verifierApproval = policyHarness.prepareVerifierDecisionAction(revisedPolicyVerifier, "approve");
-const beforeVerifierRejection = policyHarness.simulator.getLedger().governanceActionCount;
-adversarialMatrix.expectThrown(() => policyHarness.executeVerifierDecisionWithSignatures(
-  revisedPolicyVerifier, "approve", [
-    signCompact(policySecond, verifierApproval, policyHarness, formerPolicyCommitment),
-    signCompact(policyThird, verifierApproval, policyHarness, formerPolicyCommitment),
-  ],
-), {
-  id: "compact-verifier-old-policy-signature-replay",
-  invariant: "Former-policy verifier approval signatures cannot authorize a revised-policy action",
-  boundary: "compact", messagePattern: /Invalid Jubjub Schnorr signature/u,
-  category: "old-policy-signature-rejected",
-});
-assert.equal(policyHarness.simulator.getLedger().governanceActionCount, beforeVerifierRejection);
-adversarialMatrix.expectThrown(() => policyHarness.executeVerifierDecisionWithSignatures(
-  revisedPolicyVerifier, "approve", [signCompact(policySecond, verifierApproval, policyHarness)],
-), {
-  id: "verifier-revised-policy-insufficient-quorum",
-  invariant: "A verifier approval under the revised policy requires the new maintainer quorum",
-  boundary: "compact",
-  messagePattern: /Maintainer signer count must satisfy the action threshold/u,
-  category: "revised-policy-insufficient-quorum",
-});
-assert.equal(policyHarness.simulator.getLedger().governanceActionCount, beforeVerifierRejection);
-policyHarness.approveVerifier(revisedPolicyVerifier);
-policyHarness.activateVerifier(revisedPolicyVerifier);
-const revisedPolicyVerifierBundle = policyHarness.evaluateCurrentVerifierDecision(revisedPolicyVerifier);
-adversarialMatrix.expectVerified(() => policyClient.verifyVerifierAuthorizationBundle(
-  revisedPolicyVerifierBundle, {},
-), {
-  id: "verifier-current-policy-after-threshold-change",
-  invariant: "The verifier can be activated under the revised maintainer quorum",
-  boundary: "client",
-});
-adversarialMatrix.expectThrown(() => policyClient.verifyVerifierAuthorizationBundle(
-  { ...revisedPolicyVerifierBundle, policy: { ...revisedPolicyVerifierBundle.policy, version: "v9" } }, {},
-), {
-  id: "verifier-uncommitted-policy-version",
-  invariant: "A verifier cannot substitute an uncommitted policy version after threshold revision",
-  boundary: "client", messagePattern: /not committed to the ledger/iu,
-  category: "uncommitted-policy-version-rejected",
-});
-const revisedPolicyAuditor = createAuditorScenarioFixture("governed-demo-policy-auditor");
-policyHarness.proposeAuditor(revisedPolicyAuditor);
-const auditorApproval = policyHarness.prepareAuditorDecisionAction(revisedPolicyAuditor, "approve");
-const beforeAuditorRejection = policyHarness.simulator.getLedger().governanceActionCount;
-adversarialMatrix.expectThrown(() => policyHarness.executeAuditorDecisionWithSignatures(
-  revisedPolicyAuditor, "approve", [
-    signCompact(policySecond, auditorApproval, policyHarness, formerPolicyCommitment),
-    signCompact(policyThird, auditorApproval, policyHarness, formerPolicyCommitment),
-  ],
-), {
-  id: "compact-auditor-old-policy-signature-replay",
-  invariant: "Former-policy auditor approval signatures cannot authorize a revised-policy action",
-  boundary: "compact", messagePattern: /Invalid Jubjub Schnorr signature/u,
-  category: "old-policy-signature-rejected",
-});
-assert.equal(policyHarness.simulator.getLedger().governanceActionCount, beforeAuditorRejection);
-adversarialMatrix.expectThrown(() => policyHarness.executeAuditorDecisionWithSignatures(
-  revisedPolicyAuditor, "approve", [signCompact(policySecond, auditorApproval, policyHarness)],
-), {
-  id: "auditor-revised-policy-insufficient-quorum",
-  invariant: "An auditor approval under the revised policy requires the new maintainer quorum",
-  boundary: "compact",
-  messagePattern: /Maintainer signer count must satisfy the action threshold/u,
-  category: "revised-policy-insufficient-quorum",
-});
-assert.equal(policyHarness.simulator.getLedger().governanceActionCount, beforeAuditorRejection);
-policyHarness.approveAuditor(revisedPolicyAuditor);
-policyHarness.activateAuditor(revisedPolicyAuditor);
-adversarialMatrix.expectVerified(() => policyClient.verifyAuditorAuthorizationBundle(
-  policyHarness.evaluateCurrentAuditorDecision(revisedPolicyAuditor), {},
-), {
-  id: "auditor-current-policy-after-threshold-change",
-  invariant: "The auditor can be activated under the revised maintainer quorum",
-  boundary: "client",
-});
-const revisedPolicyMaintainer = createMaintainerScenarioFixture("governed-demo-policy-maintainer");
-policyHarness.proposeMaintainer(revisedPolicyMaintainer);
-const maintainerApproval = policyHarness.prepareMaintainerDecisionAction(revisedPolicyMaintainer, "approve");
-const beforeMaintainerRejection = policyHarness.simulator.getLedger().governanceActionCount;
-adversarialMatrix.expectThrown(() => policyHarness.executeMaintainerDecisionWithSignatures(
-  revisedPolicyMaintainer, "approve", [
-    signCompact(policySecond, maintainerApproval, policyHarness, formerPolicyCommitment),
-    signCompact(policyThird, maintainerApproval, policyHarness, formerPolicyCommitment),
-  ],
-), {
-  id: "compact-maintainer-old-policy-signature-replay",
-  invariant: "Former-policy maintainer approval signatures cannot authorize a revised-policy action",
-  boundary: "compact", messagePattern: /Invalid Jubjub Schnorr signature/u,
-  category: "old-policy-signature-rejected",
-});
-assert.equal(policyHarness.simulator.getLedger().governanceActionCount, beforeMaintainerRejection);
-adversarialMatrix.expectThrown(() => policyHarness.executeMaintainerDecisionWithSignatures(
-  revisedPolicyMaintainer, "approve", [signCompact(policySecond, maintainerApproval, policyHarness)],
-), {
-  id: "maintainer-revised-policy-insufficient-quorum",
-  invariant: "A maintainer approval under the revised policy requires the new maintainer quorum",
-  boundary: "compact",
-  messagePattern: /Maintainer signer count must satisfy the action threshold/u,
-  category: "revised-policy-insufficient-quorum",
-});
-assert.equal(policyHarness.simulator.getLedger().governanceActionCount, beforeMaintainerRejection);
-policyHarness.approveMaintainer(revisedPolicyMaintainer);
-policyHarness.activateMaintainer(revisedPolicyMaintainer);
-adversarialMatrix.expectVerified(() => {
-  const membership = policyHarness.simulator.getMaintainerMembership(revisedPolicyMaintainer.maintainerIdCommitment);
-  assert.equal(membership.status, AuthorizationStatus.active);
-  return membership;
-}, {
-  id: "maintainer-current-policy-after-threshold-change",
-  invariant: "The maintainer can be activated under the revised maintainer quorum",
-  boundary: "integration",
-});
+runRevisedPolicyRoleReplays(adversarialMatrix, policyHarness, policyClient,
+  policySecond, policyThird, formerPolicyCommitment, signCompact);
 
 const harness = new LocalTrustRegistryIntegrationHarness("governed-registry-demo");
 const second = createMaintainerScenarioFixture("governed-demo-second");

@@ -52,10 +52,11 @@ test evidence, not a deployed-ledger or release-qualification result.
 those isolated case IDs with the governed demo's machine-readable matrix.
 The demo remains useful as one sequential actor journey, but its independent
 case report is the regression gate when an earlier journey step fails.
-The issuer and recognition former-policy signature replay scenarios now live
-in `scripts/governed-demo-policy-replay.mjs`. Each keeps the exact payload and
-action sequence fixed across the rejected old-policy signature and successful
-current-policy control. Their isolated counterparts remain in
+The issuer, recognition, verifier, auditor, and maintainer former-policy
+signature replay scenarios now live in `scripts/governed-demo-policy-replay.mjs`.
+Each keeps the exact payload and action sequence fixed across the rejected
+old-policy signature and successful current-policy control. Their isolated
+counterparts remain in
 `scripts/adversarial-compact.test.mjs`; the surrounding historical demo and
 other inline scenarios still need extraction under #216. Neither lane is a
 deployed-ledger replay test.
