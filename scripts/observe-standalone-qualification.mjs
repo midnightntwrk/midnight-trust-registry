@@ -9,6 +9,7 @@ import { assessStandaloneJourneyPrerequisites } from "./check-standalone-journey
 import { observeStandaloneCurrentQueryJourney } from "./check-standalone-current-query-journey.mjs";
 import { observeStandaloneApiRestart } from "./check-standalone-api-restart.mjs";
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
+import { assertApiRestartScope, assertCurrentQueryScope } from "./standalone-qualification-scope-policy.mjs";
 import { standaloneSetupStatus } from "./standalone-setup-wizard.mjs";
 
 const SHA = /^[0-9a-f]{40}$/u;
@@ -55,24 +56,20 @@ export async function observeStandaloneQualification(setupDirectory, bundle, sou
 
   const query = dependencies.query ?? observeStandaloneCurrentQueryJourney;
   report.currentQuery = await query(setupDirectory, bundle, env);
+  assertCurrentQueryScope(report.currentQuery);
   if (report.currentQuery?.format !== "tr-standalone-current-query-journey-v2"
     || report.currentQuery.sourceRevision !== sourceRevision
     || report.currentQuery.installInventorySha256 !== install.inventorySha256
     || report.currentQuery.networkId !== status.stackNetworkId
     || report.currentQuery.planContractAddress !== status.deployedContractAddress
     || report.currentQuery.planExpectedGenesisHash !== status.approvedGenesisHash
-    || report.currentQuery.apiEgressCanaryDenied !== true
-    || report.currentQuery.apiDnsCanaryDenied !== true
-    || report.currentQuery.actorJourneys !== "not-run"
-    || report.currentQuery.hostAndBrowserEgress !== "not-verified"
-    || report.currentQuery.independentFinality !== "not-verified"
-    || report.currentQuery.planToDeploymentBinding !== "not-verified"
     || report.currentQuery.releaseQualified !== false) {
     throw new Error("Current-query observer disagrees with the approved setup deployment");
   }
   if (apiRestart) {
     const restart = dependencies.restart ?? observeStandaloneApiRestart;
     report.apiRestart = await restart(setupDirectory, bundle, env);
+    assertApiRestartScope(report.apiRestart);
     if (report.apiRestart?.format !== "tr-standalone-api-restart-observation-v1"
       || report.apiRestart.sourceRevision !== sourceRevision
       || report.apiRestart.installInventorySha256 !== install.inventorySha256
@@ -80,8 +77,6 @@ export async function observeStandaloneQualification(setupDirectory, bundle, sou
       || report.apiRestart.networkId !== report.currentQuery.networkId
       || report.apiRestart.planSha256 !== report.currentQuery.planSha256
       || report.apiRestart.selectedStateSha256 !== report.currentQuery.selectedStateSha256
-      || report.apiRestart.apiEgressCanaryDenied !== true
-      || report.apiRestart.apiDnsCanaryDenied !== true
       || report.apiRestart.releaseQualified !== false) {
       throw new Error("API restart observer returned an incompatible result");
     }
