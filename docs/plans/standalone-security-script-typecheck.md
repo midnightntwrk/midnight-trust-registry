@@ -4,7 +4,7 @@ Issue #229 tracks typed assurance for the self-hosted 0.1.0 installer and
 operator workflow. The existing broad `checkJs` configuration includes the
 wizard and installer but permits implicit `any`; Quality CI now runs it.
 A second, strict no-emit gate runs
-`pnpm run check:security-boundaries-types` for thirty-eight privileged boundaries:
+`pnpm run check:security-boundaries-types` for forty privileged boundaries:
 
 | Checked file | Security decision |
 | --- | --- |
@@ -28,6 +28,8 @@ A second, strict no-emit gate runs
 | `scripts/standalone-approval-policy.mjs` | Canonical reviewer metadata and release committee/custody validation. |
 | `scripts/check-standalone-actor-capability.mjs` | Fail-closed signed-plan and configured-role preflight before a deployed actor run; does not authenticate finality or execute a transaction. |
 | `scripts/standalone-acceptance-decision-policy.mjs` | Source-bound operator decision history and current evidence coverage. |
+| `scripts/standalone-acceptance-manifest-policy.mjs` | Strictly typed shape and source/deployment identity validation for untrusted acceptance manifests; it does not authenticate attached evidence. |
+| `scripts/check-standalone-acceptance-evidence.mjs` | Strictly checked private-file I/O, attachment and verdict sequencing, observation binding, and exact-byte evidence hashing. Runtime validation remains mandatory for parsed JSON. |
 | `scripts/standalone-api-approval-chain.mjs` | Exact-byte approval-chain export and deployment/maintenance readback binding. |
 | `scripts/standalone-genesis-review-policy.mjs` | Untrusted candidate and proposed pin comparison against a verified profiled install. |
 | `scripts/standalone-genesis-review-packet.mjs` | Typed rendering of the untrusted human genesis review packet; its digests and contents cannot become an approval. |
@@ -68,19 +70,13 @@ inventory, not a waiver of the release security review.
 | 5 | `scripts/check-standalone-egress.mjs`, `scripts/check-standalone-local-egress.mjs`, `scripts/check-standalone-api-egress.mjs` | Docker orchestration and live probe observations remain non-strict; the shared route/subnet, API TCP/DNS denial policy, and API Docker command/result boundary are strictly checked. Keep positive/negative controls and live image identity tests while typing the remaining I/O shells. The API observer imports untyped topology and runtime observers, so adding its entire shell to the strict gate also requires typing those dependencies; do not hide that with blanket `any` assertions. |
 | 6 | `scripts/observe-standalone-qualification.mjs`, `scripts/check-standalone-current-query-journey.mjs`, `scripts/check-standalone-api-restart.mjs` | The aggregate's scope decision and current-query process-identity decision are strictly checked, but Docker/runtime probe I/O and report identity assembly remain non-strict. Keep exact-source, install, deployment, and container identity negatives while typing the remaining shells. |
 
-The standalone acceptance inventory checker is included in the broad
-`checkJs` gate. Its decision-chain policy is also in the strict gate; the
-private-file reads and candidate identity comparison remain runtime-tested in
-the non-strict I/O shell. Neither gate authenticates operator evidence or
-replaces independent review.
-
-The next acceptance-checker migration should define a runtime-validated
-manifest/case/evidence schema before adding its 450-line I/O shell to the
-strict gate. A direct strict-gate probe found implicit input types and
-untyped per-case maps across attachment, operator verdict, and observation
-binding. Do not satisfy the gate with blanket `any` assertions over parsed
-private evidence; preserve malformed-input negatives and the existing
-source-bound decision-chain tests.
+The standalone acceptance inventory checker and its manifest-shape and
+decision-chain policies now join the strict gate. Runtime tests still check
+malformed candidate fields, missing cases, unsafe paths, evidence aliases,
+private-file changes, and ordered operator verdicts. Typechecking and a
+private hash-linked inventory do not authenticate a receipt, finality, a
+reviewer, or the truth of an operator verdict; independent release review
+remains necessary.
 
 The journey-prerequisite policy is strictly checked separately from its CLI
 adapter, which imports the still non-strict wizard. The policy rejects
