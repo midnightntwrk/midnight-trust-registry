@@ -87,6 +87,47 @@ describe("RPC finalized checkpoint source", () => {
     await expect(source.readCurrentFinalizedCheckpoint()).rejects.toThrow();
   });
 
+  it("rejects oversized RPC responses even when the server omits or understates Content-Length", async () => {
+    const oversized = JSON.stringify({ jsonrpc: "2.0", id: 1, result: GENESIS,
+      padding: "x".repeat(8 * 1024) });
+    for (const badResponse of [
+      new Response(oversized, { headers: { "content-length": "1" } }),
+      new Response(new ReadableStream({ start(controller) {
+        controller.enqueue(new TextEncoder().encode(oversized));
+        controller.close();
+      } }), { headers: { "content-type": "application/json" } }),
+    ]) {
+      const source = createLocalRpcFinalizedCheckpointSource({
+        rpcUrl: "http://node:9944", allowedHosts: ["node"],
+        expectedGenesisHash: GENESIS, fetchImpl: fixture([badResponse]).fetchImpl,
+      });
+      await expect(source.readCurrentFinalizedCheckpoint()).rejects.toThrow(/size limit/u);
+    }
+  });
+
+  it("rejects a declared oversized response before reading its body", async () => {
+    let pulled = false;
+    const body = new ReadableStream({ pull() { pulled = true; } }, { highWaterMark: 0 });
+    const source = createLocalRpcFinalizedCheckpointSource({
+      rpcUrl: "http://node:9944", allowedHosts: ["node"],
+      expectedGenesisHash: GENESIS,
+      fetchImpl: fixture([new Response(body, { headers: { "content-length": "8193" } })]).fetchImpl,
+    });
+    await expect(source.readCurrentFinalizedCheckpoint()).rejects.toThrow(/size limit/u);
+    expect(pulled).toBe(false);
+  });
+
+  it("rejects malformed UTF-8 and invalid JSON from the finality endpoint", async () => {
+    for (const bytes of [new Uint8Array([0xff]), new TextEncoder().encode("{not json")]) {
+      const source = createLocalRpcFinalizedCheckpointSource({
+        rpcUrl: "http://node:9944", allowedHosts: ["node"],
+        expectedGenesisHash: GENESIS,
+        fetchImpl: fixture([new Response(bytes)]).fetchImpl,
+      });
+      await expect(source.readCurrentFinalizedCheckpoint()).rejects.toThrow(/invalid JSON or UTF-8/u);
+    }
+  });
+
   it("pins the isolated local genesis before reading a finalized head", async () => {
     const { calls, fetchImpl } = fixture();
     const source = createLocalRpcFinalizedCheckpointSource({
