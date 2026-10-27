@@ -37,6 +37,12 @@ inventory, not a waiver of the release security review.
 | 4 | `scripts/check-helm-image-mapping.mjs`, `scripts/observe-helm-runtime.mjs` | Optional Kubernetes mapping and observations; Helm is not a 0.1.0 RC gate. |
 | 5 | `scripts/release-candidate-manifest.mjs`, `scripts/check-publish-tarball.mjs` | Release package and verifier-key hash decisions; manifest-backed publish remains a separate release gate. |
 
+The standalone acceptance inventory checker is now included in the broad
+`checkJs` gate. Its bounded private-file reads, decision-chain checks, and
+candidate identity comparisons remain runtime-tested; its input objects are
+not yet strictly typed, so the broad gate is not a substitute for independent
+review of operator evidence.
+
 Each migration should add malformed/missing-field negatives, preserve the
 existing exact-byte and journal behavior, and run its focused tests before
 expanding `tsconfig.security-boundaries.json`. Do not treat the broad gate's

@@ -261,7 +261,7 @@ export async function decideStandaloneAcceptanceCase(
     }
     const directory = join(root, "decisions");
     try { await mkdir(directory, { mode: 0o700 }); } catch (error) {
-      if (error?.code !== "EEXIST") throw error;
+      if (!(error instanceof Error) || !("code" in error) || error.code !== "EEXIST") throw error;
     }
     const directoryStat = await lstat(directory);
     if (!directoryStat.isDirectory() || (directoryStat.mode & 0o077) !== 0) {
@@ -314,12 +314,14 @@ export async function decideStandaloneAcceptanceCase(
       decisionPath: path, reviewerAuthenticated: false, releaseQualified: false };
   } finally {
     if (temporary !== undefined) await unlink(temporary);
-    if (!committed && decisionCreated) await unlink(decisionPath);
+    if (!committed && decisionCreated && decisionPath !== undefined) await unlink(decisionPath);
     await rmdir(lock);
   }
 }
 
-/** Checks the inventory, not the truth of a receipt, finality, or a human verdict. */
+/** Checks the inventory, not the truth of a receipt, finality, or a human verdict.
+ * @param {string | null} [expectedSourceRevision]
+ */
 export async function checkStandaloneAcceptanceEvidence(root, manifest, expectedSourceRevision = null) {
   if (expectedSourceRevision !== null && !REVISION.test(expectedSourceRevision)) {
     throw new Error("Expected candidate source revision must be a full lowercase commit SHA");
@@ -456,7 +458,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     console.log(JSON.stringify(report, null, 2));
     if (!report.completeInventory) process.exitCode = 2;
   } catch (error) {
-    console.error(`Standalone acceptance inventory failed: ${error.message}`);
+    console.error(`Standalone acceptance inventory failed: ${error instanceof Error ? error.message : String(error)}`);
     process.exitCode = 1;
   }
 }

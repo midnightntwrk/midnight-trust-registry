@@ -2553,3 +2553,9 @@ receipt, finality, or security verdict. The #230 fresh-process journal and
 provider-construction tests are now explicitly described in the actor-path
 guide, separately from deployed restart/restore acceptance. The standalone
 topology suite (76 tests), documentation build, and low-level audit passed.
+
+The acceptance checker is now part of the broad security-script `checkJs`
+gate in Quality CI. Its private-file and decision-chain tests continue to
+cover runtime behavior. The script's parsed input objects are not yet in the
+strict no-implicit-any boundary, and typechecking does not authenticate an
+operator decision or live ledger receipt.
