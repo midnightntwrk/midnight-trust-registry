@@ -22,6 +22,9 @@ function evidencePath(root, path) {
     || path.includes("\\") || path.split("/").some((part) => part === "" || part === "." || part === "..")) {
     throw new Error(`Evidence path must be a simple relative path: ${String(path)}`);
   }
+  if (path === "acceptance.json") {
+    throw new Error("Acceptance manifest cannot be attached as its own evidence");
+  }
   const absolute = resolve(root, path);
   if (!relative(root, absolute) || relative(root, absolute).startsWith(`..${sep}`)) {
     throw new Error(`Evidence path escapes the private bundle: ${path}`);
