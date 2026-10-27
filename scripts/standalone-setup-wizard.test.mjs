@@ -1592,6 +1592,12 @@ test("stored genesis approval corruption blocks status and deployment before pro
     assert.equal(status.localLedger, "invalid-approval-evidence-investigate");
     assert.equal(status.approvedGenesisHash, null);
     assert.equal(status.releaseQualified, false);
+    const prerequisiteCli = spawnSync(process.execPath, [
+      fileURLToPath(new URL("./check-standalone-journey-prerequisites.mjs", import.meta.url)),
+      f.directory, sourceRevision,
+    ], { encoding: "utf8" });
+    assert.equal(prerequisiteCli.status, 1);
+    assert.match(prerequisiteCli.stderr, /Stored approval evidence is inconsistent; preserve and investigate/u);
     await assert.rejects(attemptStandaloneDeployment(f.directory, f.planPath, {
       verifyBundle: f.verifyBundle,
       deploy: async () => assert.fail("changed approval reached provider"),
