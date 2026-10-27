@@ -34,8 +34,9 @@ include a stable pass/fail reason code; a failing case does not stop later
 cases. The command exits nonzero on a failed case or a count other than 198.
 An interrupted, signaled, or abnormal test-runner exit is rejected even if a
 partial TAP stream contains failed cases; it is not a complete case report.
-Each TAP outcome must name the same stable case ID as its subtest header;
-a result for another case cannot be attributed as a pass or failure. This
+Each TAP block may contain at most one top-level outcome, and it must name
+the same stable case ID as its subtest header; duplicate or mismatched results
+cannot be attributed as a pass or failure. This
 checks report identity, not the authenticity of deployed-ledger evidence.
 On a clean committed checkout, `node scripts/adversarial-case-report.mjs --archive`
 also writes the full report once to a mode-0600 file under private ignored

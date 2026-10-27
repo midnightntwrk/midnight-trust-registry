@@ -23,7 +23,11 @@ export const parseAdversarialTap = (tap) => {
     assert.match(id, /^[a-z][a-z0-9-]+$/u, "Isolated adversarial test needs a stable case ID");
     assert.equal(seen.has(id), false, `Duplicate isolated adversarial case: ${id}`);
     seen.add(id);
-    const outcome = block.match(/^((?:not )?ok) \d+ - ([a-z][a-z0-9-]+)(?: # (SKIP|TODO).*)?$/mu);
+    const outcomes = [...block.matchAll(/^((?:not )?ok) \d+ - ([a-z][a-z0-9-]+)(?: # (SKIP|TODO).*)?$/gmu)];
+    if (outcomes.length > 1) {
+      throw new Error(`Multiple isolated adversarial outcomes for subtest: ${id}`);
+    }
+    const outcome = outcomes[0];
     if (outcome && outcome[2] !== id) {
       throw new Error(`Isolated adversarial outcome ID differs from subtest: ${id} !== ${outcome[2]}`);
     }
@@ -36,7 +40,7 @@ export const parseAdversarialTap = (tap) => {
         : outcome?.[3] === "SKIP" || outcome?.[3] === "TODO" ? "skipped-or-todo"
           : failureType === "testCodeFailure" ? "assertion-failed"
             : failureType === "cancelledByParent" ? "cancelled"
-              : outcome === null ? "missing-outcome" : "test-failed",
+              : outcome === undefined ? "missing-outcome" : "test-failed",
     });
   }
   cases.sort((left, right) => left.id.localeCompare(right.id, "en"));

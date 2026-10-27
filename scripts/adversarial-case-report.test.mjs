@@ -59,6 +59,12 @@ test("rejects an outcome attributed to another isolated case", () => {
     /outcome ID differs from subtest/u);
 });
 
+test("rejects multiple outcomes for one isolated case", () => {
+  assert.throws(() => parseAdversarialTap(
+    "# Subtest: case-a\nok 1 - case-a\nnot ok 2 - case-a\n# tests 1\n"),
+  /Multiple isolated adversarial outcomes/u);
+});
+
 test("does not accept an interrupted or abnormal runner as a complete failed-case report", () => {
   const report = parseAdversarialTap("# Subtest: case-a\nnot ok 1 - case-a\n# tests 1\n");
   assert.doesNotThrow(() => assertCompletedAdversarialRun({ status: 1, signal: null }, report));
