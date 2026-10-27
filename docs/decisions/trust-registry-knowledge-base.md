@@ -2688,3 +2688,19 @@ and a durable non-replayable journal tombstone before another proposal can
 proceed. None of those requirements may be replaced by a null indexer read,
 timeout, or new journal path. Synthetic tests of the candidate remain
 non-deployment evidence.
+
+## Static runtime archive type boundary
+
+The standalone installer now strictly type-checks the static API/portal
+healthcheck shape and Docker/OCI archive verifier. Parsed image metadata and
+asset manifests enter as unknown values and are narrowed before role,
+revision, layer, and asset decisions. The installer rejects malformed OCI
+layers and inherited runtime role names; the existing source-matched image
+and digest rules remain in force. This extends issue #229's strict security
+boundary without claiming that the broader bundle I/O shell or first-run
+wizard is fully typed. Focused archive, install-inventory, and mapping tests,
+the strict and broad security-script type gates, docs build, source lint, and
+dependency audit passed in the writable checkout. The read-only exact-head
+Codex review found no actionable regression; its temp-file tests could not
+run under its sandbox. None of these results is a deployed local-ledger actor
+journey or independent finality evidence for #219.
