@@ -382,6 +382,15 @@ describe("local issuer proposal terms", () => {
     await expect(port.execute(pending.authorizationId, evidence,
       signers, verifierSignature, localTerms)).rejects.toThrow(/context changed before broadcast/u);
     expect(submitTx).not.toHaveBeenCalled();
+
+    readTrustedTimeMs.mockResolvedValueOnce(Date.parse("2026-10-13T00:00:02.000Z"))
+      .mockResolvedValueOnce(Date.parse("2026-10-13T00:00:03.000Z"))
+      .mockResolvedValueOnce(Date.parse(evidence.envelope.expiresAt));
+    submitCallTx.mockImplementationOnce(async (providers) =>
+      providers.midnightProvider.submitTx({} as never));
+    await expect(port.execute(pending.authorizationId, evidence,
+      signers, verifierSignature, localTerms)).rejects.toThrow(/not current at trusted time/u);
+    expect(submitTx).not.toHaveBeenCalled();
   });
 });
 

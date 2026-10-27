@@ -169,7 +169,8 @@ callback or make the host clock a trusted source. After SDK proving/balancing
 and pinned-node genesis verification, the transport broadcast guard repeats
 the captured-admission, authenticated-ledger, trusted-time, and live-evidence
 checks. It rejects a changed signing context and rechecks approved provider
-code before sending. A revoked status or advanced governance sequence at
+code before sending, then samples trusted time once more as its final step.
+A revoked status, expired evidence, or advanced governance sequence at
 that point blocks broadcast, but leaves the durable reservation for explicit
 reconciliation. The guard fails closed when the provider lacks transport-level
 guard support. A change after the guard or delayed finalized inclusion remains

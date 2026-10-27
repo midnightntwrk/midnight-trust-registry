@@ -161,6 +161,7 @@ export function createBoundLocalIssuerProposalPort(
           serializeGovernedIssuerProposal(current.signingContext),
         )) throw new Error("Issuer proposal signing context changed before broadcast");
         await dependencies.assertApprovedProviderCode();
+        await assertEvidenceCurrent(evidence);
       });
     },
   };

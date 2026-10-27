@@ -2507,3 +2507,17 @@ governed-action error text. Applicant test teardown closes browser HTTP
 connections before awaiting server shutdown; a full Chrome run passed all nine
 specs. The browser-inclusive demo command is useful adoption coverage, not
 live local-ledger or egress-denied actor evidence.
+
+The opt-in local issuer port now repeats captured admission, authenticated
+finalized signing context, live evidence verification, and immutable provider
+code checks in the transport's pre-broadcast guard. It samples trusted time
+again as the final guard step so slow verification cannot silently carry
+expired evidence into the send. Injected-dependency tests block transport on
+revoked status, advanced governance sequence, and expiry during guard work.
+A caught guard failure still leaves the durable proposal reservation for
+reconciliation; it is not proof of non-inclusion or permission to retry.
+The API unit suite, issuer HTTP integration, typecheck, docs check, audit, and
+the browser-inclusive fixture demo passed. Codex CLI review found and the
+follow-up fixed the late-expiry gap, then found no actionable regression in
+the correction. These tests and review do not implement a live VC-owned status
+adapter, authenticate a deployed ledger, or close the human release review.
