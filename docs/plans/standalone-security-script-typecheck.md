@@ -4,7 +4,7 @@ Issue #229 tracks typed assurance for the self-hosted 0.1.0 installer and
 operator workflow. The existing broad `checkJs` configuration includes the
 wizard and installer but permits implicit `any`; Quality CI now runs it.
 A second, strict no-emit gate runs
-`pnpm run check:security-boundaries-types` for ten privileged boundaries:
+`pnpm run check:security-boundaries-types` for eleven privileged boundaries:
 
 | Checked file | Security decision |
 | --- | --- |
@@ -16,6 +16,7 @@ A second, strict no-emit gate runs
 | `scripts/standalone-acceptance-decision-policy.mjs` | Source-bound operator decision history and current evidence coverage. |
 | `scripts/standalone-api-approval-chain.mjs` | Exact-byte approval-chain export and deployment/maintenance readback binding. |
 | `scripts/standalone-genesis-review-policy.mjs` | Untrusted candidate and proposed pin comparison against a verified profiled install. |
+| `scripts/standalone-journey-prerequisites-policy.mjs` | Fail-closed wizard-status gate decisions before an offline actor run. |
 | `scripts/standalone-image-reference.mjs` | Shared pinned OCI reference syntax for installer and review policy. |
 | `scripts/verify-helm-mapping-signature.mjs` | Optional Helm mapping signature and pinned keyring. |
 
@@ -44,6 +45,12 @@ The standalone acceptance inventory checker is included in the broad
 private-file reads and candidate identity comparison remain runtime-tested in
 the non-strict I/O shell. Neither gate authenticates operator evidence or
 replaces independent review.
+
+The journey-prerequisite policy is strictly checked separately from its CLI
+adapter, which imports the still non-strict wizard. The policy rejects
+malformed status and fails the verifier-key gate on malformed entries; it
+checks only wizard-recorded state. It does not verify independent finality,
+signed API plans, egress denial, or an actor transaction.
 
 Each migration should add malformed/missing-field negatives, preserve the
 existing exact-byte and journal behavior, and run its focused tests before

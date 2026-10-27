@@ -64,4 +64,19 @@ test("rejects malformed status rather than implying a clean run", () => {
     /Invalid standalone wizard status/u);
   assert.throws(() => assessStandaloneJourneyPrerequisites({ ...approved, sourceRevision: "bad" }),
     /Invalid standalone wizard status/u);
+  assert.throws(() => assessStandaloneJourneyPrerequisites(null),
+    /Invalid standalone wizard status/u);
+  assert.throws(() => assessStandaloneJourneyPrerequisites({ ...approved, stagedVerifierKeys: undefined }),
+    /Invalid standalone wizard status/u);
+  assert.throws(() => assessStandaloneJourneyPrerequisites({ ...approved, sourceRevision: 42 }),
+    /Invalid standalone wizard status/u);
+});
+
+test("malformed verifier-key evidence cannot satisfy the recorded-insertions gate", () => {
+  for (const stagedVerifierKeys of [[null], ["verified"], [{}], [{ state: "pending" }]]) {
+    const report = assessStandaloneJourneyPrerequisites({ ...approved, stagedVerifierKeys });
+    assert.deepEqual(report.missing, ["recordedKeyInsertionsReconciled"]);
+    assert.equal(report.ledgerPrerequisitesObserved, false);
+    assert.equal(report.releaseQualified, false);
+  }
 });

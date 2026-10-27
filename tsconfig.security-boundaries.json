@@ -19,6 +19,7 @@
     "scripts/standalone-acceptance-decision-policy.mjs",
     "scripts/standalone-api-approval-chain.mjs",
     "scripts/standalone-genesis-review-policy.mjs",
+    "scripts/standalone-journey-prerequisites-policy.mjs",
     "scripts/standalone-image-reference.mjs",
     "scripts/verify-helm-mapping-signature.mjs"
   ]
