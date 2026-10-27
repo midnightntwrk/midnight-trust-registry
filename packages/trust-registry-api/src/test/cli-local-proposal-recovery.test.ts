@@ -145,6 +145,7 @@ describe("read-only local proposal recovery inspection CLI", () => {
     expect(mocks.draftDecision).toHaveBeenCalledWith(expect.objectContaining({
       finalityEvidencePath: join(directory, "finality.json"),
       evidenceReference: "private-review-1", reviewerFingerprint: "B".repeat(40),
+      planReviewerFingerprint: "A".repeat(40),
     }));
     expect(output.join("")).toBe('{"reviewOnly":true}\n');
     expect(await readFile(path)).toEqual(before);

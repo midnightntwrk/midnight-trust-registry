@@ -1775,6 +1775,7 @@ retain independently collected finality evidence in a private file. Use
 --evidence-reference REF` with the same signed-plan, role, authorization ID,
 and journal arguments as `inspect`, plus `--recovery-reviewer FINGERPRINT`
 for a reviewer distinct from the API-plan reviewer, to produce canonical unsigned JSON. The
+draft command rejects a duplicate reviewer before producing bytes for signature. The
 reviewer must inspect the candidate and evidence, then detached-sign the exact
 saved bytes. The signed decision names the reserved action sequence, kind,
 and payload hash so the reviewer can compare the intended action with the
