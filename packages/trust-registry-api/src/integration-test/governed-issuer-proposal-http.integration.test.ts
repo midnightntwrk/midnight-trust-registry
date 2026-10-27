@@ -213,6 +213,29 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       const duplicateVotes = await post("submit", { ...request, signers: [request.signers[0], request.signers[0]] });
       expect(duplicateVotes.status).toBe(403);
       expect(await journal.read("issuer", issuer.authorizationId)).toBeNull();
+      const originalLedger = finalizedLedger;
+      const repeatedPublicKeyVote = { ...request.signers[0]!,
+        keyId: `0x${Buffer.from(third.keyId).toString("hex")}` };
+      const secondRecord = originalLedger.maintainerRecords.lookup(second.keyId);
+      finalizedLedger = {
+        ...originalLedger,
+        maintainerRecords: {
+          lookup: (id: Uint8Array) => Buffer.from(id).equals(Buffer.from(third.keyId))
+            ? { ...secondRecord, keyId: third.keyId }
+            : originalLedger.maintainerRecords.lookup(id),
+        },
+      } as typeof finalizedLedger;
+      try {
+        const repeatedKey = await post("submit", { ...request,
+          signers: [request.signers[0], repeatedPublicKeyVote] });
+        expect(repeatedKey.status).toBe(403);
+        expect((await repeatedKey.json()).type).toMatch(/invalid-governed-signature$/u);
+        expect(await journal.read("issuer", issuer.authorizationId)).toBeNull();
+        expect(preflights).toBe(0);
+        expect(executions).toBe(0);
+      } finally {
+        finalizedLedger = originalLedger;
+      }
       const insufficient = await post("submit", { ...request, signers: [request.signers[0]] });
       expect(insufficient.status).toBe(403);
       expect((await insufficient.json()).type).toMatch(/invalid-governed-signature$/u);

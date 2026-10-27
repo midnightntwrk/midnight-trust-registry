@@ -1760,6 +1760,11 @@ read, and a failed journal write prevents the first callback. This verifies
 the journal boundary, not a real node broadcast, local-ledger restart, or
 non-inclusion. Preserve the original journal and its binding sidecar across
 service restart and backup/restore.
+The current issuer and HTTP quorum preflights reject duplicate maintainer
+public keys even when key IDs differ; the HTTP regression uses a real file
+journal and confirms rejection before reservation. This does not make every
+provider or Compact failure recoverable. If a reservation is present after any
+failed submission, keep it blocked and follow the review procedure below.
 
 Keep the API mutation path stopped when a proposal reservation has an unknown
 outcome. `trust-registry-api inspect-local-proposal-recovery` reads the bound
