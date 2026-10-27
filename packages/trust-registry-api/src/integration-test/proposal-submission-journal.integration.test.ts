@@ -535,6 +535,81 @@ describe("private governed proposal submission journal", () => {
     });
   });
 
+  it("compacts small archives while retaining observed history and unresolved reservations", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    await journal.executeOnce("issuer", authorizationId, evidenceCommitment, async () => ({ eventHash }));
+    await journal.reconcile("issuer", authorizationId, async () => ({ eventHash, evidenceCommitment }));
+    await journal.rotateObserved(async () => ({ eventHash, evidenceCommitment }));
+    await journal.executeOnce("verifier", "second-observed", evidenceCommitment,
+      async () => ({ eventHash: otherEventHash }));
+    await journal.reconcile("verifier", "second-observed",
+      async () => ({ eventHash: otherEventHash, evidenceCommitment }));
+    await journal.rotateObserved(async () => ({ eventHash: otherEventHash, evidenceCommitment }));
+    await expect(journal.executeOnce("auditor", "pending", evidenceCommitment,
+      async () => { throw new Error("lost response"); }))
+      .rejects.toBeInstanceOf(ProposalSubmissionOutcomeUnknownError);
+
+    expect(await journal.compactObservedArchives(async (role) => ({
+      eventHash: role === "issuer" ? eventHash : otherEventHash, evidenceCommitment,
+    }))).toEqual({ before: 2, after: 1, archivedEntries: 2 });
+    const reopened = new FileProposalSubmissionJournal(path);
+    expect(await reopened.inspectCapacity()).toMatchObject({
+      archiveCount: 1, archivedEntries: 2, pendingEntries: 1,
+    });
+    expect(await reopened.read("issuer", authorizationId)).toMatchObject({ state: "observed", eventHash });
+    expect(await reopened.read("verifier", "second-observed"))
+      .toMatchObject({ state: "observed", eventHash: otherEventHash });
+    expect(await reopened.read("auditor", "pending")).toMatchObject({ state: "reserved", eventHash: null });
+    await expect(reopened.executeOnce("issuer", authorizationId, evidenceCommitment,
+      async () => ({ eventHash }))).rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
+    await expect(reopened.executeOnce("maintainer", "new-intent", evidenceCommitment,
+      async () => ({ eventHash }))).rejects.toBeInstanceOf(ProposalSubmissionBlockedByReservationError);
+  });
+
+  it("does not compact archives on absent or conflicting finalized evidence", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    for (const [role, id, hash] of [
+      ["issuer", authorizationId, eventHash],
+      ["verifier", "second-observed", otherEventHash],
+    ] as const) {
+      await journal.executeOnce(role, id, evidenceCommitment, async () => ({ eventHash: hash }));
+      await journal.reconcile(role, id, async () => ({ eventHash: hash, evidenceCommitment }));
+      await journal.rotateObserved(async () => ({ eventHash: hash, evidenceCommitment }));
+    }
+    const before = await readFile(path, "utf8");
+    await expect(journal.compactObservedArchives(async () => null))
+      .rejects.toBeInstanceOf(ProposalSubmissionConflictError);
+    await expect(journal.compactObservedArchives(async () => ({ eventHash, evidenceCommitment })))
+      .rejects.toBeInstanceOf(ProposalSubmissionConflictError);
+    expect(await readFile(path, "utf8")).toBe(before);
+    expect(await journal.inspectCapacity()).toMatchObject({ archiveCount: 2, archivedEntries: 2 });
+  });
+
+  it("restores archive slots at the hard cap without permitting archived-ID replay", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    for (let index = 0; index < 64; index += 1) {
+      const id = `archived:${index}`;
+      await journal.executeOnce("issuer", id, evidenceCommitment, async () => ({ eventHash }));
+      await journal.reconcile("issuer", id, async () => ({ eventHash, evidenceCommitment }));
+      await journal.rotateObserved(async () => ({ eventHash, evidenceCommitment }));
+    }
+    expect(await journal.inspectCapacity()).toMatchObject({ archiveCount: 64, archivedEntries: 64 });
+    await journal.executeOnce("verifier", authorizationId, evidenceCommitment,
+      async () => ({ eventHash: otherEventHash }));
+    await journal.reconcile("verifier", authorizationId,
+      async () => ({ eventHash: otherEventHash, evidenceCommitment }));
+    await expect(journal.rotateObserved(async () => ({ eventHash: otherEventHash, evidenceCommitment })))
+      .rejects.toBeInstanceOf(ProposalSubmissionCapacityError);
+    expect(await journal.compactObservedArchives(async () => ({ eventHash, evidenceCommitment })))
+      .toEqual({ before: 64, after: 1, archivedEntries: 64 });
+    const reopened = new FileProposalSubmissionJournal(path);
+    expect(await reopened.rotateObserved(async () => ({ eventHash: otherEventHash, evidenceCommitment })))
+      .toEqual({ archived: 1, pending: 0 });
+    expect(await reopened.inspectCapacity()).toMatchObject({ archiveCount: 2, archivedEntries: 65 });
+    await expect(reopened.executeOnce("issuer", "archived:0", evidenceCommitment,
+      async () => ({ eventHash }))).rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
+  });
+
   it("requires matching finalized evidence for every row before changing the journal", async () => {
     const journal = new FileProposalSubmissionJournal(path);
     await journal.executeOnce("issuer", authorizationId, evidenceCommitment, async () => ({ eventHash }));

@@ -388,6 +388,56 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
     });
   }
 
+  /** Repack finalized history without deleting an authorization or changing pending attempts. */
+  async compactObservedArchives(readFinalized: FinalizedProposalReader): Promise<{
+    before: number; after: number; archivedEntries: number;
+  }> {
+    return this.withWrite(async () => {
+      const storage = await this.readStorage();
+      const before = storage.manifest?.archives.length ?? 0;
+      if (before < 2 || storage.manifest === null) {
+        return { before, after: before, archivedEntries: storage.archived.length };
+      }
+      for (const attempt of storage.archived) {
+        const rawObservation = await readFinalized(attempt.role, attempt.authorizationId);
+        if (rawObservation === null) throw new ProposalSubmissionConflictError();
+        const observation = GovernedProposalObservationSchema.parse(rawObservation);
+        if (observation.evidenceCommitment !== attempt.evidenceCommitment
+          || observation.eventHash !== attempt.eventHash) throw new ProposalSubmissionConflictError();
+      }
+
+      const groups: ProposalSubmissionAttempt[][] = [];
+      let group: ProposalSubmissionAttempt[] = [];
+      let bytes = Buffer.byteLength(JSON.stringify(emptyState()), "utf8");
+      for (const attempt of storage.archived) {
+        const entryBytes = Buffer.byteLength(JSON.stringify(attempt), "utf8") + (group.length === 0 ? 0 : 1);
+        if (group.length === MAX_ENTRIES || bytes + entryBytes > MAX_FILE_BYTES) {
+          groups.push(group);
+          group = [];
+          bytes = Buffer.byteLength(JSON.stringify(emptyState()), "utf8");
+        }
+        group.push(attempt);
+        bytes += Buffer.byteLength(JSON.stringify(attempt), "utf8") + (group.length === 1 ? 0 : 1);
+      }
+      if (group.length > 0) groups.push(group);
+      if (groups.length >= before) {
+        return { before, after: before, archivedEntries: storage.archived.length };
+      }
+
+      const archives = [];
+      for (const attempts of groups) {
+        archives.push(await this.writeSegment(StateSchema.parse({ version: 1, attempts })));
+      }
+      await this.writeManifest(ManifestSchema.parse({
+        version: 2, archives, active: storage.manifest.active,
+      }));
+      for (const segment of storage.manifest.archives) {
+        await rm(join(dirname(this.path), segment.file), { force: true });
+      }
+      return { before, after: archives.length, archivedEntries: storage.archived.length };
+    });
+  }
+
   /** Recheck every observation against a finalized reader before archiving it. */
   async rotateObserved(readFinalized: FinalizedProposalReader): Promise<{ archived: number; pending: number }> {
     return this.withWrite(async () => {
