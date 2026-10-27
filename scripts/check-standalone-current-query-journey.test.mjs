@@ -127,6 +127,19 @@ test("rejects an empty or mocked actor selection", async () => {
   /no resolved actor role/u);
 });
 
+test("rejects missing process identity on either side of the egress probe", async () => {
+  for (const mutation of [{ apiStartedAt: undefined }, { apiRestartCount: undefined }]) {
+    for (const badRead of [1, 2]) {
+      let reads = 0;
+      await assert.rejects(observeStandaloneCurrentQueryJourney("/setup", "/bundle", env,
+        dependencies({ read: async () => {
+          reads += 1;
+          return reads === badRead ? { ...read, ...mutation } : read;
+        } })), /process identity is incomplete/u);
+    }
+  }
+});
+
 test("rejects egress denial without positive controls", async () => {
   await assert.rejects(observeStandaloneCurrentQueryJourney("/setup", "/bundle", env,
     dependencies({ egress: async () => ({ ...egress, bridgeDnsCanaryReachable: false }) })),

@@ -174,6 +174,9 @@ they can all run today. The implementation sequence is in
    The aggregate rejects a child result that changes its unobserved actor,
    independent-finality, host/browser egress, or plan-to-deployment scope
    markers; a successful read-only observation cannot promote those gates.
+   The current-query probe also requires a valid API container identity,
+   process start time, and restart count on both reads around its egress
+   test; missing process identity makes the observation inconclusive.
 
    ```sh
    pnpm observe:standalone-qualification \

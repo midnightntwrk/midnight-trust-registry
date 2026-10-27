@@ -7,12 +7,14 @@ import { assessStandaloneJourneyPrerequisites } from "./check-standalone-journey
 import { observeStandaloneApiEgress } from "./check-standalone-api-egress.mjs";
 import { probeStandaloneApiCurrentReads } from "./check-standalone-api-reads.mjs";
 import { standaloneSetupStatus } from "./standalone-setup-wizard.mjs";
+import { assertCurrentQueryProcessIdentity } from "./standalone-current-query-process-policy.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
 const BLOCK_HASH = /^0x[0-9a-f]{64}$/u;
 const ROLES = ["issuer", "verifier", "auditor", "recognition"];
 
 function checkedRead(report, status) {
+  assertCurrentQueryProcessIdentity(report);
   if (report?.format !== "tr-standalone-api-current-read-probe-v4"
     || report.releaseQualified !== false || report.sourceRevision !== status.sourceRevision
     || report.routeReadback !== "same-container-signed-plan-current-only"
