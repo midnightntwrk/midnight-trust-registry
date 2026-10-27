@@ -89,8 +89,8 @@ test("does not present deployment as the first safe action before approvals", ()
   }, "b".repeat(40));
   assert.equal(report.nextSafeAction.gate, "sourceMatchesCandidate");
   assert.deepEqual(report.blockedActions.map(({ gate }) => gate), [
-    "genesisApproved", "releaseRosterApproved", "deploymentObserved", "recordedKeyInsertionsReconciled",
-    "committeeApproved", "maintenanceObserved",
+    "genesisApproved", "releaseRosterApproved", "deploymentObserved", "committeeApproved",
+    "recordedKeyInsertionsReconciled", "maintenanceObserved",
   ]);
   assert.equal(report.releaseQualified, false);
 });
@@ -118,6 +118,24 @@ test("requires the signed release roster before suggesting deployment", () => {
   assert.match(signedRoster.nextActions.find(({ gate }) => gate === "committeeApproved").action,
     /finalized deployment/u);
   assert.equal(signedRoster.releaseQualified, false);
+});
+
+test("deployment binding precedes key reconciliation, but neither permits maintenance alone", () => {
+  const deployedWithoutBinding = assessStandaloneJourneyPrerequisites({
+    ...approved, stagedVerifierKeys: [],
+    maintenanceApproval: "roster-signature-verified-deployment-binding-pending",
+    maintenanceTransition: "pending", maintenanceLastReadback: null,
+  });
+  assert.equal(deployedWithoutBinding.nextSafeAction.gate, "committeeApproved");
+  assert.equal(deployedWithoutBinding.gates.recordedKeyInsertionsReconciled, false);
+
+  const boundWithoutKeys = assessStandaloneJourneyPrerequisites({
+    ...approved, stagedVerifierKeys: [],
+    maintenanceTransition: "pending", maintenanceLastReadback: null,
+  });
+  assert.equal(boundWithoutKeys.nextSafeAction.gate, "recordedKeyInsertionsReconciled");
+  assert.equal(boundWithoutKeys.gates.committeeApproved, true);
+  assert.equal(boundWithoutKeys.ledgerPrerequisitesObserved, false);
 });
 
 test("rejects malformed status rather than implying a clean run", () => {

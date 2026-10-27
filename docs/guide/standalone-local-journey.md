@@ -99,8 +99,10 @@ they can all run today. The implementation sequence is in
    Once genesis is approved, the prerequisite report must next require the
    signed release roster and its reviewed deployment plan. The wizard rejects
    deployment without this pre-deployment committee approval. The separate
-   deployment-bound committee signature comes after finalized deployment and
-   verifier-key readback; neither signature substitutes for the other.
+   deployment-bound committee signature can follow finalized deployment
+   before the remaining verifier-key insertions. Reconcile every key before
+   transitioning maintenance authority; neither signature substitutes for
+   the other.
 4. **Deploy and reconcile once.** Stage the exact signed source and verified
    packages with `stage-provider-runtime.mjs`; independently record its source,
    inventory, and content digests. Transfer it to a new root-owned code tree
