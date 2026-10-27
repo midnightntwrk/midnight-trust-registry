@@ -49,11 +49,15 @@ or saved receipts.
 2. Have a human independently review the chain specification and exact
    approval bytes, then sign with their own key. Separately approve the
    release maintenance threshold, public keys, and custody roles. The
-   development 1-of-3 smoke roster does not qualify a release. The local v3
-   API approval chain requires the genesis, committee, deployment, and API
-   plan signatures to use the same selected reviewer fingerprint; a reviewer
-   rotation needs a separately reviewed protocol change rather than an
-   extra trusted key silently added to the keyring.
+   development 1-of-3 smoke roster does not qualify a release. The genesis
+   reviewer may be different from the governance reviewer: the signed
+   committee approval must name the exact genesis-approval digest. The
+   committee, deployment approval, and API plan must use the pinned
+   governance reviewer fingerprint. Import both public keys into the private
+   verification keyring when the reviewers differ. Adding a key to that
+   keyring alone does not authorize a substituted genesis approval or rotate
+   the governance reviewer; a later rotation needs an explicit reviewed
+   protocol change.
 3. Deploy once through the approved provider, independently authenticate
    finalized constructor and verifier-key readback, transition to the
    approved committee, and sign a deployment-bound current API plan. Do not
