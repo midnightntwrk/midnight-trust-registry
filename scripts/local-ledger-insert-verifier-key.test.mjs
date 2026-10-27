@@ -81,6 +81,13 @@ test("rejects malformed or shared-journal insertion plans", () => {
   assert.throws(() => validateLocalVerifierKeyInsertionPlan({
     ...plan, journalPath: plan.deploymentJournalPath,
   }), /fixed per-circuit journal/u);
+  for (const malformed of [null, [], {}, { ...plan, network: null },
+    { ...plan, circuitName: "../escape" }, { ...plan, initialVerifierKeyName: undefined },
+    { ...plan, deploymentJournalPath: "relative.json" },
+    { ...plan, providerModuleSha256: 42 }, { ...plan, journalPath: `${root}/other.json` }]) {
+    assert.throws(() => validateLocalVerifierKeyInsertionPlan(malformed),
+      /exact local|exact source|fixed per-circuit journal/u);
+  }
 });
 
 test("checks source and provider bytes before network or provider access", async () => {
