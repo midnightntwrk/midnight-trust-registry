@@ -240,6 +240,9 @@ test("attaches raw evidence without changing an operator verdict or claiming qua
     assert.equal((await checkStandaloneAcceptanceEvidence(root, updated)).completeInventory, false);
     await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
       "A01", "L01/deploy.log"), /already attached/u);
+    await writeFile(join(root, "L01/DEPLOY.LOG"), "operator raw receipt\n");
+    await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
+      "A01", "L01/DEPLOY.LOG"), /reused/u);
     await assert.rejects(attachStandaloneAcceptanceEvidence(root, "f".repeat(40),
       "A01", "L01/deploy.log"), /differs from the selected candidate/u);
     await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
