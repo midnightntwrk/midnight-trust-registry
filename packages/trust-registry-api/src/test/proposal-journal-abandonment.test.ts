@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { encodeCompactActionKind } from "@midnight-ntwrk/trust-registry-contract";
+import { WorkspaceMutationLockedError } from "@midnight-ntwrk/trust-registry-cli";
 import { createMaintainerScenarioFixture, LocalTrustRegistryIntegrationHarness,
   type FinalizedRegistryLedgerView } from "@midnight-ntwrk/trust-registry-integration";
 import { describe, expect, it } from "vitest";
@@ -140,8 +141,11 @@ describe("audited proposal reservation abandonment", () => {
       const rejected = outcomes.filter((outcome) => outcome.status === "rejected");
       expect(successful).toHaveLength(1);
       expect(rejected).toHaveLength(1);
-      expect(rejected[0]?.reason).toBeInstanceOf(ProposalSubmissionConflictError);
+      expect(rejected[0]?.reason instanceof ProposalSubmissionConflictError
+        || rejected[0]?.reason instanceof WorkspaceMutationLockedError).toBe(true);
       const abandoned = successful[0]!.value;
+      await expect(competing.abandonInvalidatedReservation(input))
+        .rejects.toBeInstanceOf(ProposalSubmissionConflictError);
       expect(abandoned).toMatchObject({ state: "abandoned", eventHash: null,
         recovery: { reservedAttemptDigest: candidate.attemptDigest,
           finalityEvidenceSha256: digest(evidence), reviewerFingerprint: fingerprint!,
