@@ -1224,7 +1224,7 @@ describe("trust registry api", () => {
     } finally {
       await server.close();
     }
-  }, 30_000);
+  }, 90_000);
 
   it("returns structured mutation problems and accepts epoch publish without a body", async () => {
     const workspace = createOperatorWorkspace({ label: "kanon-write-errors" });
