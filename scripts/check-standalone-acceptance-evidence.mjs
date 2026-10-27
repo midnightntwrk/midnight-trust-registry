@@ -12,6 +12,7 @@ const CASES = ["L01", "L02", "A01", "A02", "A03", "A04", "N01", "O01", "R01", "S
 const SHA256 = /^[0-9a-f]{64}$/u;
 const REVISION = /^[0-9a-f]{40}$/u;
 const ADDRESS = /^0x[0-9a-f]{64}$/u;
+const NONZERO_HEX = /[1-9a-f]/u;
 const MAX_FILE_BYTES = 32 * 1024 * 1024;
 const MAX_MANIFEST_BYTES = 1024 * 1024;
 const MAX_RAW_EVIDENCE_PER_CASE = 32;
@@ -335,10 +336,15 @@ export async function checkStandaloneAcceptanceEvidence(root, manifest, expected
     "genesisHash", "contractAddress", "cases"])
     || manifest.format !== "tr-standalone-acceptance-evidence-v1"
     || !REVISION.test(manifest.sourceRevision)
+    || !NONZERO_HEX.test(manifest.sourceRevision)
     || !SHA256.test(manifest.installInventorySha256)
+    || !NONZERO_HEX.test(manifest.installInventorySha256)
     || !SHA256.test(manifest.signedPlanSha256)
+    || !NONZERO_HEX.test(manifest.signedPlanSha256)
     || !ADDRESS.test(manifest.genesisHash)
+    || !NONZERO_HEX.test(manifest.genesisHash.slice(2))
     || !ADDRESS.test(manifest.contractAddress)
+    || !NONZERO_HEX.test(manifest.contractAddress.slice(2))
     || !exactKeys(manifest.cases, CASES)) {
     throw new Error("Acceptance manifest must pin one source, install, plan, genesis, deployment, and all cases");
   }

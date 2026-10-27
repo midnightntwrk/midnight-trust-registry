@@ -23,6 +23,29 @@ const manifest = () => ({
   cases: Object.fromEntries(CASES.map((id) => [id, { status: "not-run", evidence: [] }])),
 });
 
+test("acceptance inventory rejects placeholder candidate identities", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-acceptance-identities-"));
+  const script = fileURLToPath(new URL("./check-standalone-acceptance-evidence.mjs", import.meta.url));
+  const run = (...args) => spawnSync(process.execPath, [script, ...args], { encoding: "utf8" });
+  try {
+    for (const [field, value] of [
+      ["sourceRevision", "0".repeat(40)],
+      ["installInventorySha256", "0".repeat(64)],
+      ["signedPlanSha256", "0".repeat(64)],
+      ["genesisHash", `0x${"0".repeat(64)}`],
+      ["contractAddress", `0x${"0".repeat(64)}`],
+    ]) {
+      const candidate = { ...manifest(), [field]: value };
+      await assert.rejects(checkStandaloneAcceptanceEvidence(root, candidate), /must pin one source/u);
+      const result = run("init", root, candidate.sourceRevision, candidate.installInventorySha256,
+        candidate.signedPlanSha256, candidate.genesisHash, candidate.contractAddress);
+      assert.equal(result.status, 1, `${field} accepted by CLI`);
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("strict decision policy requires an ordered, current, source-bound verdict", () => {
   const raw = { path: "L01/receipt.log", sha256: "a".repeat(64) };
   const first = { path: "decisions/L01-first.json", sha256: "b".repeat(64) };

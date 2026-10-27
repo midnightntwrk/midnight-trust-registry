@@ -247,8 +247,9 @@ After deployment and the signed API plan exist, make a private directory and
 initialize an acceptance inventory with the **actual** source revision,
 install-inventory SHA-256, signed-plan SHA-256, reviewed genesis hash, and
 deployed contract address. The final two values must be lowercase `0x`-prefixed
-64-hex-character values. Do not use a node-reported genesis candidate or a
-simulator address as a substitute.
+64-hex-character values. All five identifiers must be nonzero; the initializer
+rejects all-zero placeholders but does not authenticate the supplied values.
+Do not use a node-reported genesis candidate or a simulator address as a substitute.
 
 ```sh
 mkdir -m 700 /absolute/private/acceptance
