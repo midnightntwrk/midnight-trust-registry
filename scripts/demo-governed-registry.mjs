@@ -88,6 +88,7 @@ import { AdversarialMatrix } from "./adversarial-matrix.mjs";
 import { buildActorEvidenceReport } from "./actor-evidence-report.mjs";
 import { runApplicationEvidenceSafetyScenarios } from "./governed-demo-application-evidence-safety.mjs";
 import { runDenialSafetyScenario } from "./governed-demo-denial-safety.mjs";
+import { runHistoricalPolicyHttpChecks } from "./governed-demo-historical-http.mjs";
 import { runMaintainerSafetyScenarios } from "./governed-demo-maintainer-safety.mjs";
 import {
   runHistoricalPolicyClientChecks, runOldPolicyIssuerReplay, runOldPolicyRecognitionReplay,
@@ -214,170 +215,12 @@ const revisedPolicySnapshot = publishSimulatorSnapshot(policyHarness, {
   auditors: [{ fixture: historicalAuditor, label: "historical-auditor" }],
   recognitions: [{ fixture: historicalRecognition, label: "historical-recognition" }],
 }, originalPolicySnapshot);
-// This listener serves the isolated policy harness's archived snapshot, not the later mutable demo server.
-const policyServer = createTrustRegistryApiServer({
-  source: { mode: "memory", loadSnapshot: async () => revisedPolicySnapshot },
+// Keep this listener isolated from the later mutable demo server.
+await runHistoricalPolicyHttpChecks(adversarialMatrix, {
+  originalPolicySnapshot, revisedPolicySnapshot, historicalIssuer, historicalVerifier,
+  historicalAuditor, historicalRecognition, originalAuditorBundle,
+  originalRecognitionBundle, registryDid: policyHarness.registryDid,
 });
-await new Promise((resolve) => policyServer.listen(0, "127.0.0.1", resolve));
-try {
-  const address = policyServer.address();
-  assert.ok(address && typeof address !== "string");
-  const oldEvidence = originalPolicySnapshot.issuerEntries[0]?.evidence;
-  assert.ok(oldEvidence?.authorization);
-  const historicalIssuerEntry = revisedPolicySnapshot.issuerEntries.find((entry) =>
-    entry.authorization.authorizationId === historicalIssuer.authorizationId);
-  assert.equal(historicalIssuerEntry?.authorization.status, "revoked");
-  assert.ok(revisedPolicySnapshot.evidenceArchive.some((bundle) =>
-    bundle.authorization?.authorizationId === oldEvidence.authorization.authorizationId
-      && bundle.epoch.epochId === oldEvidence.epoch.epochId));
-  const historicalInstant = new Date(Date.parse(oldEvidence.epoch.validFrom) + 1).toISOString();
-  assert.ok(Date.parse(historicalInstant) < Date.parse(historicalIssuerEntry.evidence.epoch.validFrom));
-  const response = await fetch(`http://127.0.0.1:${address.port}/v1/authorizations/evaluate/evidence`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      role: "issuer",
-      subjectDid: historicalIssuer.subjectDid,
-      resourceId: historicalIssuer.resourceId,
-      at: historicalInstant,
-    }),
-  });
-  const historicalDecision = await expectHttp(response, 200);
-  assert.equal(historicalDecision.bundle.epoch.epochId, oldEvidence.epoch.epochId);
-  assert.equal(historicalDecision.bundle.policy.version, oldEvidence.policy.version);
-  assert.notEqual(historicalDecision.bundle.policy.version, revisedPolicySnapshot.policy.version);
-  adversarialMatrix.expectDecision(historicalDecision, {
-    id: "issuer-historical-api-after-threshold-change",
-    invariant: "A policy threshold revision retains the old issuer decision at its original epoch",
-    boundary: "api",
-    trusted: true,
-    statusAtTime: "active",
-  });
-  const trqpResponse = await fetch(`http://127.0.0.1:${address.port}/v1/trqp/authorizations/evidence`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      entity_id: historicalIssuer.subjectDid,
-      authority_id: revisedPolicySnapshot.registry.registryDid,
-      action: "issue",
-      resource: historicalIssuer.resourceId,
-      context: { time: historicalInstant },
-    }),
-  });
-  const historicalTrqpDecision = await expectHttp(trqpResponse, 200);
-  assert.equal(historicalTrqpDecision.bundle.epoch.epochId, oldEvidence.epoch.epochId);
-  assert.equal(historicalTrqpDecision.bundle.policy.version, oldEvidence.policy.version);
-  adversarialMatrix.expectDecision(historicalTrqpDecision, {
-    id: "issuer-historical-trqp-after-threshold-change",
-    invariant: "TRQP retains the old issuer policy and epoch after a threshold revision",
-    boundary: "adapter", trusted: historicalDecision.trustedAtTime,
-  });
-  const oldVerifierEvidence = originalPolicySnapshot.verifierEntries[0]?.evidence;
-  assert.ok(oldVerifierEvidence?.authorization);
-  assert.ok(revisedPolicySnapshot.evidenceArchive.some((bundle) =>
-    bundle.authorization?.authorizationId === oldVerifierEvidence.authorization.authorizationId
-      && bundle.epoch.epochId === oldVerifierEvidence.epoch.epochId));
-  const historicalVerifierEntry = revisedPolicySnapshot.verifierEntries.find((entry) =>
-    entry.authorization.authorizationId === historicalVerifier.authorizationId);
-  assert.equal(historicalVerifierEntry?.authorization.status, "revoked");
-  const verifierInstant = new Date(Date.parse(oldVerifierEvidence.epoch.validFrom) + 1).toISOString();
-  assert.ok(Date.parse(verifierInstant) < Date.parse(historicalVerifierEntry.evidence.epoch.validFrom));
-  const verifierResponse = await fetch(`http://127.0.0.1:${address.port}/v1/authorizations/evaluate/evidence`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      role: "verifier",
-      subjectDid: historicalVerifier.subjectDid,
-      resourceId: historicalVerifier.scopeResourceId,
-      at: verifierInstant,
-    }),
-  });
-  const historicalVerifierDecision = await expectHttp(verifierResponse, 200);
-  assert.equal(historicalVerifierDecision.bundle.epoch.epochId, oldVerifierEvidence.epoch.epochId);
-  assert.equal(historicalVerifierDecision.bundle.policy.version, oldVerifierEvidence.policy.version);
-  adversarialMatrix.expectDecision(historicalVerifierDecision, {
-    id: "verifier-historical-api-after-threshold-change",
-    invariant: "A threshold revision and later revocation retain the verifier decision at its original epoch",
-    boundary: "api", trusted: true, statusAtTime: "active",
-  });
-  const verifierTrqpResponse = await fetch(`http://127.0.0.1:${address.port}/v1/trqp/authorizations/evidence`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      entity_id: historicalVerifier.subjectDid,
-      authority_id: revisedPolicySnapshot.registry.registryDid,
-      action: "verify",
-      resource: historicalVerifier.scopeResourceId,
-      context: { time: verifierInstant },
-    }),
-  });
-  const historicalVerifierTrqpDecision = await expectHttp(verifierTrqpResponse, 200);
-  assert.equal(historicalVerifierTrqpDecision.bundle.epoch.epochId, oldVerifierEvidence.epoch.epochId);
-  assert.equal(historicalVerifierTrqpDecision.bundle.policy.version, oldVerifierEvidence.policy.version);
-  adversarialMatrix.expectDecision(historicalVerifierTrqpDecision, {
-    id: "verifier-historical-trqp-after-threshold-change",
-    invariant: "TRQP retains the old verifier policy and epoch after a threshold revision",
-    boundary: "adapter", trusted: historicalVerifierDecision.trustedAtTime,
-  });
-  const auditorAt = new Date(Date.parse(originalAuditorBundle.epoch.validFrom) + 1).toISOString();
-  const auditorDecision = await expectHttp(await fetch(
-    `http://127.0.0.1:${address.port}/v1/authorizations/evaluate/evidence`, {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ role: "auditor", subjectDid: historicalAuditor.subjectDid,
-        resourceId: historicalAuditor.scopeResourceId, at: auditorAt }),
-    },
-  ), 200);
-  assert.equal(auditorDecision.bundle.epoch.epochId, originalAuditorBundle.epoch.epochId);
-  assert.equal(auditorDecision.bundle.policy.version, originalAuditorBundle.policy.version);
-  assert.notEqual(auditorDecision.bundle.policy.version, revisedPolicySnapshot.policy.version);
-  adversarialMatrix.expectDecision(auditorDecision, {
-    id: "auditor-historical-api-after-threshold-change",
-    invariant: "The former auditor policy and epoch remain queryable after threshold revision and revocation",
-    boundary: "api", trusted: true, statusAtTime: "active",
-  });
-  const recognitionAt = new Date(Date.parse(originalRecognitionBundle.epoch.validFrom) + 1).toISOString();
-  const recognitionSelection = {
-    recognizedAuthorityDid: historicalRecognition.recognizedAuthorityDid,
-    recognizedRegistryId: historicalRecognition.recognizedRegistryId,
-    scopeResourceType: historicalRecognition.scopeResourceType,
-    scopeResourceId: historicalRecognition.scopeResourceId,
-    at: recognitionAt,
-  };
-  const recognitionDecision = await expectHttp(await fetch(
-    `http://127.0.0.1:${address.port}/v1/recognitions/evaluate/evidence`, {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify(recognitionSelection),
-    },
-  ), 200);
-  assert.equal(recognitionDecision.bundle.epoch.epochId, originalRecognitionBundle.epoch.epochId);
-  assert.equal(recognitionDecision.bundle.policy.version, originalRecognitionBundle.policy.version);
-  assert.notEqual(recognitionDecision.bundle.policy.version, revisedPolicySnapshot.policy.version);
-  adversarialMatrix.expectDecision(recognitionDecision, {
-    id: "recognition-historical-api-after-threshold-change",
-    invariant: "The former recognition policy and epoch remain queryable after threshold revision and revocation",
-    boundary: "api", trusted: true, statusAtTime: "active",
-  });
-  const recognitionTrqpDecision = await expectHttp(await fetch(
-    `http://127.0.0.1:${address.port}/v1/trqp/recognitions/evidence`, {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ entity_id: historicalRecognition.recognizedAuthorityDid,
-        authority_id: policyHarness.registryDid,
-        action: historicalRecognition.scopeResourceType,
-        resource: historicalRecognition.scopeResourceId,
-        context: { time: recognitionAt,
-          recognized_registry_id: historicalRecognition.recognizedRegistryId } }),
-    },
-  ), 200);
-  assert.equal(recognitionTrqpDecision.bundle.epoch.epochId, originalRecognitionBundle.epoch.epochId);
-  assert.equal(recognitionTrqpDecision.bundle.policy.version, originalRecognitionBundle.policy.version);
-  adversarialMatrix.expectDecision(recognitionTrqpDecision, {
-    id: "recognition-historical-trqp-after-threshold-change",
-    invariant: "TRQP retains the former recognition policy and epoch after threshold revision",
-    boundary: "adapter", trusted: true, recognition: true,
-  });
-} finally {
-  await new Promise((resolve, reject) => policyServer.close((error) => error ? reject(error) : resolve()));
-}
 runHistoricalPolicyClientChecks(adversarialMatrix, policyClient, {
   historicalPolicyBundle, originalVerifierBundle, originalAuditorBundle,
   originalRecognitionBundle, currentPolicyBundle,

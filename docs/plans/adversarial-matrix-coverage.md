@@ -63,7 +63,11 @@ deployed-ledger replay test.
 The same module also owns the post-revision historical client checks: retained
 issuer, verifier, auditor, and recognition evidence, uncommitted policy
 substitutions, superseded current-time use, and tampered Merkle and epoch
-signatures. The historical HTTP/TRQP server checks remain in the demo.
+signatures. The historical HTTP/TRQP checks now run through
+`scripts/governed-demo-historical-http.mjs`, which owns a separate loopback
+listener for the archived policy snapshot and closes it before the later
+mutable actor demo begins. These remain fixture API/adapter checks, not a
+deployed local-ledger readback.
 
 At signed local source `bbb2c456a93aa035ac482d67f945e8cddf6dfb7c`, the
 private archive `artifacts/adversarial-reports/cases-bbb2c456a93aa035ac482d67f945e8cddf6dfb7c.json`
