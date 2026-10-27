@@ -149,11 +149,14 @@ finality, live VC-owned status verification, and the governed ports before
 `A01`-`A04` can pass. Do not use simulator or mock-provider receipts in their
 place.
 Before exposing applicant challenge issuance beyond a trusted local operator,
-the host must also authenticate the applicant and enforce a bounded quota per
-authenticated subject. The reference challenge stores have a global cap and
-private-file checks, but no authenticated admission control; a caller-provided
-DID is not a quota identity. Keep a public challenge route disabled until that
-boundary has its own negative and capacity tests.
+the host must authenticate the applicant and return its verified DID from
+`authorizeRequest`. The challenge service rejects a DID that differs from the
+pending application, and the reference stores enforce a live per-subject quota
+atomically across local processes. This is not a built-in DID authentication
+method: a caller-provided DID or demo header is not a quota identity. The
+packaged local-ledger API has no production applicant port. Keep public
+issuance disabled until a real authenticated host and durable atomic VP
+verification have been independently implemented and tested.
 The [standalone actor host handoff](standalone-actor-host.md) lists the
 required callbacks, result bindings, and negative cases without treating an
 injected test provider as a deployed runtime.

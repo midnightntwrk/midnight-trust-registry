@@ -176,7 +176,8 @@ envelope's `challengeHash` is SHA-256 of the nonce bytes, not a hash of the
 textual hex representation.
 
 The off-ledger challenge store retains only `challengeHash`, trusted issuance
-and expiry instants, a registry/application identity hash for replacement, and
+and expiry instants, a registry/application identity hash for replacement, an
+optional registry-scoped hash of an authenticated applicant DID for quota, and
 a domain-separated binding commitment to registry id, application id, subject DID,
 evidence-verifier DID, role, policy id/version, governed resource type/id, and
 scope commitment. It MUST
@@ -384,6 +385,9 @@ does not itself implement the official VC verifier. The API exposes optional
 trusted host injects an application VP port. That port MUST authenticate and
 authorize the applicant against the pending application before request-body
 parsing or VP work; authentication by an external proxy alone is insufficient.
+For challenge issuance it MUST return the verified applicant DID, which the
+service compares to the pending binding before inserting a subject-quota-bound
+record. Missing or mismatched identity fails closed before insertion.
 The server derives binding and authorized verifier policy from the host, never
 from the applicant's request. It rechecks both just before evidence persistence;
 the host MUST atomically recheck pending status and policy at persistence. These
@@ -442,12 +446,17 @@ and prunes expired records during writes. File reads require one private,
 single-link regular inode opened without following a final-path symlink and
 reject a file changed during the read. This is local file-integrity hardening,
 not proof of the caller's identity. Neither adapter supplies distributed
-storage, crash-durable commits, applicant authentication, a per-authenticated-
-subject quota, or a complete retention/cleanup policy. The global capacity
-limit alone permits one unauthenticated caller to exhaust the store by choosing
-many application IDs. A public challenge route MUST remain disabled until
-authenticated issuance and bounded per-subject admission are implemented and
-tested; hashing the caller-supplied subject DID does not authenticate it.
+storage, crash-durable commits, applicant authentication, or a complete
+retention/cleanup policy. The file and memory adapters now bound live entries
+per authenticated subject hash when the embedding host supplies a verified DID;
+the application VP HTTP route rejects challenge issuance if the authorization
+callback returns no DID or one that differs from the pending binding. The
+default packaged API configures no such host. A caller-provided DID or demo
+header is not authentication; the host MUST verify caller control and enforce
+its session and abuse policy before returning a DID. Public exposure remains
+blocked until that host boundary and durable atomic VP verification are
+independently implemented and tested. A global cap alone would let one actor
+exhaust the store with many application IDs.
 Challenge expiry uses the evidence verifier's off-ledger
 clock. Invalid clock readings and store capacity exhaustion are operational
 errors, not invalid applicant challenges. It is not a claim that the Midnight

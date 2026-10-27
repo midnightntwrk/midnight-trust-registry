@@ -11,6 +11,7 @@ import { z } from "zod";
 import {
   ApplicationChallengeBindingConflictError,
   ApplicationChallengeCapacityError,
+  ApplicationChallengeSubjectCapacityError,
   ApplicationChallengeClockError,
   ApplicationChallengeExpiryError,
   type ApplicationChallengeInsertResult,
@@ -19,6 +20,7 @@ import {
 } from "./application-challenges.js";
 
 const MAX_ENTRIES = 10_000;
+const MAX_PER_SUBJECT = 32;
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_TIMEOUT_MS = 2_147_483_647;
 const LOCK_ATTEMPTS = 100;
@@ -29,6 +31,7 @@ const RecordSchema = z.object({
   challengeHash: HashSchema,
   bindingHash: HashSchema,
   applicationHash: HashSchema,
+  subjectHash: HashSchema.optional(),
   issuedAtMs: TimestampSchema,
   expiresAtMs: TimestampSchema,
 }).strict().refine((record) => record.expiresAtMs > record.issuedAtMs);
@@ -58,9 +61,11 @@ export class InvalidApplicationChallengeFileError extends Error {
 export class FileApplicationChallengeStore implements ApplicationChallengeStore {
   private readonly path: string;
 
-  constructor(path: string, private readonly maxEntries = MAX_ENTRIES) {
+  constructor(path: string, private readonly maxEntries = MAX_ENTRIES,
+    private readonly maxPerSubject = MAX_PER_SUBJECT) {
     if (path.length === 0) throw new RangeError("Application challenge path is invalid");
-    if (!Number.isSafeInteger(maxEntries) || maxEntries < 1 || maxEntries > MAX_ENTRIES) {
+    if (!Number.isSafeInteger(maxEntries) || maxEntries < 1 || maxEntries > MAX_ENTRIES
+      || !Number.isSafeInteger(maxPerSubject) || maxPerSubject < 1) {
       throw new RangeError("Application challenge store capacity is invalid");
     }
     this.path = resolve(path);
@@ -99,6 +104,10 @@ export class FileApplicationChallengeStore implements ApplicationChallengeStore 
       }
       const remaining = live.filter((entry) => entry.applicationHash !== record.applicationHash);
       if (remaining.length >= this.maxEntries) throw new ApplicationChallengeCapacityError();
+      if (record.subjectHash !== undefined
+        && remaining.filter((entry) => entry.subjectHash === record.subjectHash).length >= this.maxPerSubject) {
+        throw new ApplicationChallengeSubjectCapacityError();
+      }
       await this.writeState({ version: 1, records: [...remaining, record] });
       return { inserted: true, supersededPrevious: previous !== undefined };
     });

@@ -579,6 +579,16 @@ authenticated principal to the application and enforce CSRF protection where
 cookie credentials are used. Host the applicant frontend and these routes on
 the same origin or provide a narrowly configured authenticated reverse proxy;
 the reference server does not grant cross-origin browser access to raw VPs.
+For challenge issuance, `authorizeRequest` must return the applicant DID it
+authenticated; `void` or a DID that differs from the pending binding fails
+closed. Returning a caller-provided DID header without verifying control is
+not authentication. The file and memory reference stores limit live challenges
+per registry-scoped authenticated subject hash (default 32) as well as globally
+(default 10,000). A full subject quota returns 429, a changed live binding
+returns 409, and global capacity, clock, or collision failures return stable
+503 problem types. Same-binding retry explicitly supersedes the previous
+challenge. The public route remains blocked until a deployment host supplies
+real authentication, durable atomic VP storage, and abuse controls.
 Challenge issuance accepts only `{}`. Submission
 accepts exactly `{ "nonce": "0x...", "challengeHash": "0x...", "presentation": <VP> }`.
 The server never accepts a caller-supplied binding, policy, verifier list, or

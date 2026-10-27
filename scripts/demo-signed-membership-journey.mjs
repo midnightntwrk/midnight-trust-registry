@@ -323,6 +323,7 @@ const server = createTrustRegistryApiServer({
       if (!authorized(request) || (await registration.readPending(id))?.binding.subjectDid !== participant.subjectDid) {
         throw new Error("Applicant bearer token denied");
       }
+      return participant.subjectDid;
     },
     resolvePendingApplication: async (id) => {
       const pending = await registration.readPending(id);

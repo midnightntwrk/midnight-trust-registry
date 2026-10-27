@@ -110,6 +110,43 @@ describe("file application challenge store", () => {
     });
   });
 
+  it("enforces the authenticated-subject quota across instances and releases it on consume", async () => {
+    const path = await storePath();
+    const first = new FileApplicationChallengeStore(path, 10, 1);
+    const second = new FileApplicationChallengeStore(path, 10, 1);
+    const subjectHash = hash(90);
+    const initial = { ...record(10, 20), subjectHash };
+    const retry = { ...record(11, 20), subjectHash };
+    const next = { ...record(12, 21), subjectHash };
+    await first.insert(initial, START, () => START);
+    expect(await second.insert(retry, START, () => START)).toEqual({ inserted: true, supersededPrevious: true });
+    await expect(first.insert(next, START, () => START)).rejects.toMatchObject({
+      code: "CHALLENGE_SUBJECT_CAPACITY", name: "ApplicationChallengeSubjectCapacityError",
+    });
+    expect(await second.readLive(retry.challengeHash, retry.bindingHash, START)).toEqual(retry);
+    expect(await first.insert({ ...record(13, 22), subjectHash: hash(91) }, START, () => START))
+      .toEqual({ inserted: true, supersededPrevious: false });
+    expect(await second.consume(retry.challengeHash, retry.bindingHash, START)).toBe(true);
+    expect(await first.insert(next, START, () => START)).toEqual({ inserted: true, supersededPrevious: false });
+    expect(JSON.parse(await readFile(path, "utf8")).records).toContainEqual(next);
+  });
+
+  it("admits only one concurrent cross-instance issuance for a quota-one subject", async () => {
+    const path = await storePath();
+    const first = new FileApplicationChallengeStore(path, 10, 1);
+    const second = new FileApplicationChallengeStore(path, 10, 1);
+    const subjectHash = hash(90);
+    const attempts = await Promise.allSettled([
+      first.insert({ ...record(10, 20), subjectHash }, START, () => START),
+      second.insert({ ...record(11, 21), subjectHash }, START, () => START),
+    ]);
+    expect(attempts.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(attempts.filter((result) => result.status === "rejected")[0]).toMatchObject({
+      reason: { code: "CHALLENGE_SUBJECT_CAPACITY" },
+    });
+    expect(JSON.parse(await readFile(path, "utf8")).records).toHaveLength(1);
+  });
+
   it("rejects clock rollback and invalid expiry without consuming or replacing", async () => {
     const path = await storePath();
     const store = new FileApplicationChallengeStore(path);
