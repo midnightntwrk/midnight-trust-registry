@@ -122,6 +122,10 @@ test("API approval-chain export refuses missing or substituted deployment eviden
     ...record.maintenanceAttempt, state: "pending" } }, manifest), /readback/u);
   assert.throws(() => buildStandaloneApiApprovalChain({ ...record, maintenanceAttempt: {
     ...record.maintenanceAttempt, alert: "conflict" } }, manifest), /readback/u);
+  assert.throws(() => buildStandaloneApiApprovalChain({ ...record, maintenanceAttempt: {
+    ...record.maintenanceAttempt, txId: stagedReceipt.txId,
+    reconciliation: { ...record.maintenanceAttempt.reconciliation, txId: stagedReceipt.txId },
+  } }, manifest), /readback/u);
   assert.throws(() => buildStandaloneApiApprovalChain({ ...record,
     committeeDeploymentApproval: { ...committeeDeploymentApproval, documentSha256: "f".repeat(64) } },
   manifest), /digest/u);

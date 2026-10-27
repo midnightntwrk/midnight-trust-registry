@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { committeeMaintenanceUpdateSha256 } from "@midnight-ntwrk/trust-registry-integration";
+
 import { verifyDetachedLocalReviewerSignature } from "./local-reviewer-signature.js";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
@@ -164,8 +166,18 @@ export async function verifyLocalApiApprovalChain(input: {
     || maintenance.committeeDeploymentApprovalSha256 !== deployment.hash
     || typeof maintenance.updateSha256 !== "string" || !SHA256.test(maintenance.updateSha256)
     || typeof maintenance.txId !== "string" || maintenance.txId.length === 0
+    || maintenance.txId === receipt.txId
     || !HASH.test(maintenance.finalizedBlockHash as string)
     || /^0x0{64}$/u.test(maintenance.finalizedBlockHash as string)) {
     throw new Error("Local API approval chain disagrees with the approved deployment or maintenance state");
+  }
+  if (!/^[1-9][0-9]*$/u.test(plan.maintenanceAuthority.counter)
+    || committeeMaintenanceUpdateSha256({
+      contractAddress: plan.contractAddress,
+      committee: plan.maintenanceAuthority.committee,
+      threshold: plan.maintenanceAuthority.threshold,
+      currentCounter: BigInt(plan.maintenanceAuthority.counter) - 1n,
+    }) !== maintenance.updateSha256) {
+    throw new Error("Local API maintenance update differs from the approved committee action");
   }
 }

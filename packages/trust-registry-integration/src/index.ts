@@ -43,6 +43,7 @@ export {
 } from "./public-maintenance-submission.js";
 export type { MaintenanceTransitionJournalEntry } from "./public-maintenance-submission.js";
 export {
+  committeeMaintenanceUpdateSha256,
   reconcileLocalNetworkCommitteeTransition,
   reconcilePublicNetworkCommitteeTransition,
 } from "./public-maintenance-reconciliation.js";

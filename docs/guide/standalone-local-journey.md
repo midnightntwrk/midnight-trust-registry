@@ -113,7 +113,10 @@ they can all run today. The implementation sequence is in
    signed `tr-local-api-runtime-v3` plan must name the exported approval-chain
    path and SHA-256, as well as the approved genesis and deployed contract.
    The API rechecks the embedded detached signatures, signed hash links,
-   custody roster, and committee before serving. Use the same approved
+   custody roster, and committee before serving. It reconstructs the
+   maintenance action digest from the approved contract, committee, threshold,
+   and counter, and rejects a deployment transaction reused as the maintenance
+   receipt. These checks do not independently authenticate finality. Use the same approved
    governance reviewer fingerprint and private public-key keyring in the
    CLI invocation. The local-ledger CLI rejects v2 plans; they are not
    approval-chain evidence. Issue #234

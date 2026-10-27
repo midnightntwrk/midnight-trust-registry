@@ -93,6 +93,7 @@ export function buildStandaloneApiApprovalChain(value, releaseManifestSha256) {
   if (deployed.state !== "observed" || !validLocalDeploymentReceipt(receipt)
     || attempt.state !== "observed" || attempt.alert || observed.status !== "observed"
     || typeof attempt.txId !== "string" || !attempt.txId
+    || attempt.txId === receipt.txId
     || observed.txId !== attempt.txId || typeof observed.finalizedBlockHash !== "string"
     || !HASH.test(observed.finalizedBlockHash) || /^0x0{64}$/u.test(observed.finalizedBlockHash)
     || typeof attempt.updateSha256 !== "string" || !SHA256.test(attempt.updateSha256)

@@ -31,6 +31,27 @@ type ReconciliationInput<Network extends { networkId: string }> = {
   approvedFinalizedBlockHash: string;
 };
 
+/** Reconstruct the exact Compact maintenance action signed by the approved committee. */
+export function committeeMaintenanceUpdateSha256(input: {
+  contractAddress: string;
+  committee: readonly string[];
+  threshold: number;
+  currentCounter: bigint;
+}): string {
+  if (!BLOCK.test(input.contractAddress) || /^0x0{64}$/u.test(input.contractAddress)
+    || input.currentCounter < 0n) {
+    throw new Error("Approved maintenance contract or counter is invalid");
+  }
+  validateMaintenancePolicy({ mode: "committee", verifyingKeys: [...input.committee],
+    threshold: input.threshold });
+  const authority = new ContractMaintenanceAuthority(
+    input.committee.map((key) => key.slice(2)), input.threshold, input.currentCounter + 1n,
+  );
+  const update = new MaintenanceUpdate(input.contractAddress.slice(2),
+    [new ReplaceAuthority(authority)], input.currentCounter);
+  return createHash("sha256").update(update.dataToSign).digest("hex");
+}
+
 /** Reports finalized state only; no result from this function permits an automatic retry. */
 export async function reconcilePublicNetworkCommitteeTransition(
   input: ReconciliationInput<CommitteeTransitionApproval["network"]>,
@@ -72,15 +93,12 @@ async function reconcilePinnedCommitteeTransition(
   validateMaintenancePolicy(approval.maintenancePolicy);
   const expectedCounter = approval.stagedVerifierKeyInstallation
     ? BigInt(Object.keys(approval.releaseManifest.verifierKeySha256).length - 1) : 0n;
-  const authority = new ContractMaintenanceAuthority(
-    approval.maintenancePolicy.verifyingKeys.map((key) => key.slice(2)),
-    approval.maintenancePolicy.threshold,
-    expectedCounter + 1n,
-  );
-  const update = new MaintenanceUpdate(
-    approval.receipt.contractAddress.slice(2), [new ReplaceAuthority(authority)], expectedCounter,
-  );
-  const computedUpdateSha256 = createHash("sha256").update(update.dataToSign).digest("hex");
+  const computedUpdateSha256 = committeeMaintenanceUpdateSha256({
+    contractAddress: approval.receipt.contractAddress,
+    committee: approval.maintenancePolicy.verifyingKeys,
+    threshold: approval.maintenancePolicy.threshold,
+    currentCounter: expectedCounter,
+  });
   if (computedUpdateSha256 !== input.approvedUpdateSha256) {
     throw new Error("Approved maintenance update hash disagrees with the approved committee policy");
   }
