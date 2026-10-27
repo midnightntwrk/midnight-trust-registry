@@ -53,8 +53,9 @@ async function readHealth(path) {
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const before = await file.stat({ bigint: true });
-    if (!before.isFile() || before.size === 0n || before.size > 64n * 1024n) {
-      throw new Error("Health response must be a bounded regular file");
+    if (!before.isFile() || before.size === 0n || before.size > 64n * 1024n
+      || before.nlink !== 1n || (before.mode & 0o077n) !== 0n) {
+      throw new Error("Health response must be a private bounded regular file");
     }
     const bytes = await file.readFile();
     const after = await file.stat({ bigint: true });

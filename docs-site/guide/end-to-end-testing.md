@@ -153,9 +153,14 @@ Before collecting signatures, save the live API `/health` response and check
 that the required proposal ports match the signed plan:
 
 ```sh
+umask 077
 node scripts/check-standalone-actor-capability.mjs \
   /absolute/private/health.json "$SIGNED_PLAN_SHA256" issuer verifier auditor maintainer recognition
 ```
+
+Capture `health.json` as a mode-0600 regular file in a private directory.
+The preflight rejects symlinks, hard links, and group/world-readable files;
+it still cannot independently authenticate the saved response.
 
 A configured port is only a preflight observation, not a successful actor
 transaction. The packaged local-ledger API CLI currently has no production
