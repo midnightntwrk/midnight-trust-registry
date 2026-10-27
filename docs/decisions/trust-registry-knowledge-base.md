@@ -2800,3 +2800,9 @@ boundaries to inspect for #232. It is a checklist, not an attributable human
 verdict. The unpublished local descendants and passing fixture tests do not
 change the published PR checks or the missing signed genesis, authenticated
 deployed readback, offline actor, restore, and VC-owned status evidence.
+
+The journey prerequisite CLI is exercised against a temporary wizard setup
+record, not only a synthetic status object. It exits blocked before genesis
+approval, remains blocked after a node-only observation, and reports a stale
+candidate source revision as the first safe action. This is a fail-closed
+operator preflight test, not a real deployment or actor E2E result.

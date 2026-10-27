@@ -5,6 +5,7 @@ import { chmod, link, lstat, mkdtemp, mkdir, readFile, readdir, rm, symlink, wri
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { sampleSigningKey, signatureVerifyingKey } from "@midnight-ntwrk/compact-runtime";
 import { VerifierKeyInsertionOutcomeUnknownError } from "@midnight-ntwrk/trust-registry-integration";
@@ -513,6 +514,38 @@ test("wizard records staged-byte verification but leaves RC gates open", async (
   assert.equal(status.maintenanceApproval, "pending");
   await writeFile(join(directory, ".setup.lock"), "interrupted");
   assert.equal((await standaloneSetupStatus(directory)).setupLock, "present-inspect-before-removal");
+});
+
+test("journey CLI keeps a prepared or node-observed private setup blocked", async (t) => {
+  const f = await fixture();
+  t.after(() => rm(join(f.directory, ".."), { recursive: true, force: true }));
+  const cli = fileURLToPath(new URL("./check-standalone-journey-prerequisites.mjs", import.meta.url));
+  const check = (expectedSource) => {
+    const result = spawnSync(process.execPath, [cli, f.directory, expectedSource], {
+      encoding: "utf8", timeout: 30_000,
+    });
+    assert.equal(result.status, 2, result.stderr);
+    return JSON.parse(result.stdout);
+  };
+
+  const prepared = check(sourceRevision);
+  assert.equal(prepared.gates.stackObserved, true);
+  assert.equal(prepared.nextSafeAction.gate, "genesisApproved");
+  assert.equal(prepared.actorJourney, "not-run");
+  assert.equal(prepared.releaseQualified, false);
+
+  await observeStandaloneLedger(f.directory, f.pinPath, {
+    preflight: async () => ({ kind: "local-node-observation-only", finalizedBlockHash: `0x${"d".repeat(64)}` }),
+  });
+  const observed = check(sourceRevision);
+  assert.equal(observed.gates.genesisApproved, false);
+  assert.equal(observed.nextSafeAction.gate, "genesisApproved");
+  assert.equal(observed.ledgerPrerequisitesObserved, false);
+
+  const stale = check("b".repeat(40));
+  assert.equal(stale.gates.sourceMatchesCandidate, false);
+  assert.equal(stale.nextSafeAction.gate, "sourceMatchesCandidate");
+  assert.equal(stale.releaseQualified, false);
 });
 
 test("wizard binds bundle verification to the exact inventory bytes", async () => {
