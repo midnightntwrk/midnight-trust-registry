@@ -148,6 +148,9 @@ An embedding host must supply approved immutable provider code, authenticated
 finality, live VC-owned status verification, and the governed ports before
 `A01`-`A04` can pass. Do not use simulator or mock-provider receipts in their
 place.
+The [standalone actor host handoff](standalone-actor-host.md) lists the
+required callbacks, result bindings, and negative cases without treating an
+injected test provider as a deployed runtime.
 For issuer writes, it must also verify the detached reviewer signature on the
 writer annex, bind it to the exact signed API plan and installed provider
 content, require the same verified plan reviewer fingerprint, and initialize

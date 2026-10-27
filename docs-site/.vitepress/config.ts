@@ -40,6 +40,7 @@ export default defineConfig({
         { text: "Quickstart and demo", link: "/guide/quickstart" },
         { text: "Self-hosted standalone", link: "/guide/standalone" },
         { text: "End-to-end testing", link: "/guide/end-to-end-testing" },
+        { text: "Standalone actor host", link: "/guide/standalone-actor-host" },
         { text: "Actors and use cases", link: "/guide/use-cases" },
         { text: "Status and limitations", link: "/guide/status" },
         { text: "Documentation publishing", link: "/guide/publishing" },
