@@ -2818,3 +2818,15 @@ and the local issuer port rejects trusted time just before `verifiedAt`.
 This fixes one #179 trust-decision boundary. Other `Date.parse` uses in
 recognition, policy, and adapter decisions still require the independent
 audit; this slice does not close #179 or prove a deployed actor journey.
+
+## Fractional recognition-assertion boundary
+
+Recognition authority assertions now enforce their 24-hour lifetime at full
+RFC3339 fractional precision. The signed DID assertion verifier likewise
+compares exact expiry with the millisecond trusted evaluation instant, so a
+statement expiring just after that instant remains current, while one expiring
+exactly at it does not. A signed-assertion integration test covers that
+boundary and an overlong lifetime. This narrows #179 but does not address the
+remaining recognition/accreditation, policy, and adapter timestamp decisions.
+The test uses a fixture DID resolver; it is not a standalone deployed-ledger
+actor journey or independent VC status-authority evidence.

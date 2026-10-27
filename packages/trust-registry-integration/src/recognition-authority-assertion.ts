@@ -7,6 +7,7 @@ import {
   HashHexSchema,
   RecognitionAuthorityAssertionSchema,
   SignedRecognitionAuthorityAssertionSchema,
+  compareRfc3339Instants,
   recognitionAuthorityEvidenceCommitment,
   recognitionAuthorityStatementCommitment,
   sha256Hex,
@@ -64,6 +65,9 @@ export async function verifyRecognitionAuthorityAssertion(input: {
   if (!Number.isSafeInteger(expected.evaluatedAtMs) || expected.evaluatedAtMs < 0) {
     throw new Error("Recognition assertion evaluation time is invalid");
   }
+  if (!Number.isFinite(new Date(expected.evaluatedAtMs + MAX_FUTURE_SKEW_MS).getTime())) {
+    throw new Error("Recognition assertion evaluation time is outside the supported range");
+  }
   const challengeHash = HashHexSchema.parse(expected.challengeHash).toLowerCase();
   if (
     statement.targetRegistryId !== expected.targetRegistryId
@@ -77,11 +81,10 @@ export async function verifyRecognitionAuthorityAssertion(input: {
   ) {
     throw new Error("Recognition authority assertion does not match the requested tuple");
   }
-  const issuedAtMs = Date.parse(statement.issuedAt);
-  const expiresAtMs = Date.parse(statement.expiresAt);
-  if (!Number.isFinite(issuedAtMs) || !Number.isFinite(expiresAtMs)
-    || issuedAtMs > expected.evaluatedAtMs + MAX_FUTURE_SKEW_MS
-    || expiresAtMs <= expected.evaluatedAtMs) {
+  const evaluatedAt = new Date(expected.evaluatedAtMs).toISOString();
+  const latestIssuedAt = new Date(expected.evaluatedAtMs + MAX_FUTURE_SKEW_MS).toISOString();
+  if (compareRfc3339Instants(statement.issuedAt, latestIssuedAt) > 0
+    || compareRfc3339Instants(statement.expiresAt, evaluatedAt) <= 0) {
     throw new Error("Recognition authority assertion is not current");
   }
   let didStateVersionId: string | undefined;
