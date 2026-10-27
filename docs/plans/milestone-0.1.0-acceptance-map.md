@@ -28,7 +28,26 @@ currently required packed `reviewer-signature-status.js` file and fails the
 current verifier; it must not be reclassified as current-source evidence.
 No deployed contract, offline actor journey, or release gate was closed by
 this probe.
-The most recent retained pre-deployment bridge observation is **b33**, bound
+The later private `artifacts/standalone-setup/wizard-31f6-1/` packet retains
+a verified six-image v6 install at signed/DCO source
+`31f6c5bbf9d0ddae6be090d7191748dd5cf642c2`, inventory SHA-256
+`cec0e192f26d1e4c013cbf6729f3aeef6eb1aedf3b08ed61b5c5ae17d05fbce2`,
+and an observed three-service internal bridge. The v6 local HTTP/DNS canary
+passed against that live bridge without public Internet. Its node-reported
+genesis candidate has SHA-256
+`4fef60d63a3e3632c3c46c548b91d37d0d695b1413ff26629c5c5d78244c1a32`
+and remains **untrusted**. Separate node, indexer, and proof-server restarts
+preserved the finalized checkpoint hash and advanced the node-reported height
+from 26 to 40. The private status still reports `localLedger: pending`,
+`deployment: pending`, `restartRestore: pending`, and `releaseQualified: false`.
+The newer signed `ed1260a3` source forwards an explicit control subnet through
+the wizard, so even this successful pre-deployment packet is no longer an
+exact-current-head release candidate. No signed genesis approval, deployed
+contract, authenticated finalized readback, actor journey, or restore test
+occurred. Both new projects' containers were stopped with volumes and private
+evidence retained.
+
+The earlier retained pre-deployment bridge observation **b33** was bound
 to signed/DCO source `8957d96d29554e7ed9be9cd692b2a00d7c819e3f` and
 verified v6 install inventory SHA-256
 `7736b31041275795895641b0383c24a21f48c22cf195b35b330c6ef8bb15556e`.
