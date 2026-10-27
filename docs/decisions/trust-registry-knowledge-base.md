@@ -12,6 +12,24 @@ It records the current code surface, validation baseline, dependency posture,
 backlog posture, and the next implementation direction. It is intentionally
 shorter-lived and more action-oriented than the normative specification.
 
+## October 27 2026 Ambiguous Proposal Recovery Boundary
+
+- The local `#220` recovery work can now produce a read-only, versioned v3
+  candidate and verify a detached reviewer signature over a decision bound to
+  that exact candidate and its retained finality-evidence bytes. The candidate
+  includes the last observed governance action's kind and payload hash. A
+  conflicting action is considered only when the observed action count is
+  exactly one beyond the reserved sequence; a later count or the same payload
+  remains inconclusive. Compact regression tests also cover rejection of an
+  old proposal signature after its action sequence is consumed.
+- This is an audit and review handoff, **not** an authenticated proof of
+  finality or non-inclusion. The decision does not mutate the proposal journal,
+  permit retry, deploy a contract, or close #220. A release-capable recovery
+  path still needs an independently reviewed finality policy, a durable
+  tombstone, a locked state transition with restart/replay tests, and human
+  security review. Do not turn a null indexer result or elapsed time into
+  permission to resubmit.
+
 ## October 27 2026 Installer And E2E Boundary
 
 - The installer now uses strictly typechecked policies for its base Compose
