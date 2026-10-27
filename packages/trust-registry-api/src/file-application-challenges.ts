@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { mkdir, open, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { setTimeout as delay } from "node:timers/promises";
@@ -150,25 +151,41 @@ export class FileApplicationChallengeStore implements ApplicationChallengeStore 
   }
 
   private async readState(): Promise<z.infer<typeof StateSchema>> {
-    let info;
+    let handle;
     try {
-      info = await lstat(this.path);
+      handle = await open(this.path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return { version: 1, records: [] };
+      if ((error as NodeJS.ErrnoException).code === "ELOOP") throw new InvalidApplicationChallengeFileError();
       throw error;
     }
-    if (!info.isFile() || (info.mode & 0o077) !== 0 || info.size > MAX_FILE_BYTES) {
-      throw new InvalidApplicationChallengeFileError();
-    }
-    const raw = await readFile(this.path, "utf8");
-    if (Buffer.byteLength(raw, "utf8") > MAX_FILE_BYTES) throw new InvalidApplicationChallengeFileError();
     try {
-      const state: unknown = JSON.parse(raw);
-      const parsed = StateSchema.parse(state);
-      if (parsed.records.length > this.maxEntries) throw new InvalidApplicationChallengeFileError();
-      return parsed;
-    } catch {
-      throw new InvalidApplicationChallengeFileError();
+      const before = await handle.stat({ bigint: true });
+      if (!before.isFile() || before.nlink !== 1n || (before.mode & 0o077n) !== 0n
+        || before.size === 0n || before.size > BigInt(MAX_FILE_BYTES)) {
+        throw new InvalidApplicationChallengeFileError();
+      }
+      const raw = Buffer.alloc(Number(before.size));
+      let offset = 0;
+      while (offset < raw.length) {
+        const { bytesRead } = await handle.read(raw, offset, raw.length - offset, offset);
+        if (bytesRead === 0) throw new InvalidApplicationChallengeFileError();
+        offset += bytesRead;
+      }
+      const after = await handle.stat({ bigint: true });
+      if (BigInt(raw.length) !== before.size || after.dev !== before.dev || after.ino !== before.ino
+        || after.size !== before.size || after.mtimeNs !== before.mtimeNs || after.ctimeNs !== before.ctimeNs) {
+        throw new InvalidApplicationChallengeFileError();
+      }
+      try {
+        const parsed = StateSchema.parse(JSON.parse(raw.toString("utf8")));
+        if (parsed.records.length > this.maxEntries) throw new InvalidApplicationChallengeFileError();
+        return parsed;
+      } catch {
+        throw new InvalidApplicationChallengeFileError();
+      }
+    } finally {
+      await handle.close();
     }
   }
 

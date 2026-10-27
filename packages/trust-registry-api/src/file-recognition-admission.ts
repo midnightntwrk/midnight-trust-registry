@@ -265,21 +265,32 @@ export class FileRecognitionAdmissionStore implements RecognitionAdmissionStore 
   private async readState(): Promise<State> {
     let handle;
     try {
-      handle = await open(this.path, constants.O_RDONLY | constants.O_NOFOLLOW);
+      handle = await open(this.path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return emptyState();
       if ((error as NodeJS.ErrnoException).code === "ELOOP") throw new InvalidRecognitionAdmissionFileError();
       throw error;
     }
     try {
-      const info = await handle.stat();
-      if (!info.isFile() || (info.mode & 0o077) !== 0 || info.size > MAX_FILE_BYTES) {
+      const info = await handle.stat({ bigint: true });
+      if (!info.isFile() || info.nlink !== 1n || (info.mode & 0o077n) !== 0n
+        || info.size === 0n || info.size > BigInt(MAX_FILE_BYTES)) {
         throw new InvalidRecognitionAdmissionFileError();
       }
-      const raw = await handle.readFile({ encoding: "utf8" });
-      if (Buffer.byteLength(raw, "utf8") > MAX_FILE_BYTES) throw new InvalidRecognitionAdmissionFileError();
+      const raw = Buffer.alloc(Number(info.size));
+      let offset = 0;
+      while (offset < raw.length) {
+        const { bytesRead } = await handle.read(raw, offset, raw.length - offset, offset);
+        if (bytesRead === 0) throw new InvalidRecognitionAdmissionFileError();
+        offset += bytesRead;
+      }
+      const after = await handle.stat({ bigint: true });
+      if (BigInt(raw.length) !== info.size || after.dev !== info.dev || after.ino !== info.ino
+        || after.size !== info.size || after.mtimeNs !== info.mtimeNs || after.ctimeNs !== info.ctimeNs) {
+        throw new InvalidRecognitionAdmissionFileError();
+      }
       try {
-        const state = StateSchema.parse(JSON.parse(raw));
+        const state = StateSchema.parse(JSON.parse(raw.toString("utf8")));
         if (state.challenges.length > this.maxEntries || state.accepted.length > this.maxEntries) {
           throw new InvalidRecognitionAdmissionFileError();
         }

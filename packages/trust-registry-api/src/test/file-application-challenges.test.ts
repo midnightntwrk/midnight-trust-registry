@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { link, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -170,6 +170,24 @@ describe("file application challenge store", () => {
       name: "InvalidApplicationChallengeFileError",
     });
     expect((await stat(path)).mode & 0o777).toBe(0o644);
+  });
+
+  it("rejects symbolic and hard links for reads and writes", async () => {
+    for (const makeLink of [symlink, link]) {
+      const path = await storePath();
+      const target = join(dirname(path), "other.json");
+      const contents = JSON.stringify({ version: 1, records: [record(10, 20)] });
+      await writeFile(target, contents, { mode: 0o600 });
+      await makeLink(target, path);
+      const store = new FileApplicationChallengeStore(path);
+      await expect(store.readLive(hash(10), hash(1), START)).rejects.toMatchObject({
+        name: "InvalidApplicationChallengeFileError",
+      });
+      await expect(store.insert(record(11, 21), START, () => START)).rejects.toMatchObject({
+        name: "InvalidApplicationChallengeFileError",
+      });
+      expect(await readFile(target, "utf8")).toBe(contents);
+    }
   });
 
   it("does not remove a stale lock or silently bypass it", async () => {

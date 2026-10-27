@@ -438,10 +438,17 @@ The reference API package exposes an in-memory store for local tests and a
 bounded file-backed store for a single local deployment. The in-memory store
 caps live entries and schedules expiry cleanup; the file-backed store uses
 private atomic file replacement and a cross-process lock for one-use consume,
-and prunes expired records during writes. Neither supplies distributed storage,
-crash-durable commits, applicant authentication, abuse controls, or a complete
-retention/cleanup policy. A public deployment MUST provide and test those
-properties as appropriate to its failure model. Challenge expiry uses the evidence verifier's off-ledger
+and prunes expired records during writes. File reads require one private,
+single-link regular inode opened without following a final-path symlink and
+reject a file changed during the read. This is local file-integrity hardening,
+not proof of the caller's identity. Neither adapter supplies distributed
+storage, crash-durable commits, applicant authentication, a per-authenticated-
+subject quota, or a complete retention/cleanup policy. The global capacity
+limit alone permits one unauthenticated caller to exhaust the store by choosing
+many application IDs. A public challenge route MUST remain disabled until
+authenticated issuance and bounded per-subject admission are implemented and
+tested; hashing the caller-supplied subject DID does not authenticate it.
+Challenge expiry uses the evidence verifier's off-ledger
 clock. Invalid clock readings and store capacity exhaustion are operational
 errors, not invalid applicant challenges. It is not a claim that the Midnight
 contract has a datetime primitive.
