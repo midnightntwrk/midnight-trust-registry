@@ -157,6 +157,11 @@ for (const role of ["issuer", "verifier", "auditor", "maintainer"]) test(`admin 
     proposalSubmissionJournal: journal,
     [scenario.portName]: {
       prepare: async () => scenario.prepare(evidence),
+      preflightSubmission: async (authorizationId, submitted) => {
+        expect(authorizationId).toBe(scenario.id);
+        expect(submitted.commitment).toBe(evidence.commitment);
+        expect(executions).toBe(0);
+      },
       execute: async (_, submitted, signers, verifierSignature) => {
         executions += 1;
         scenario.execute(submitted, signers, verifierSignature);
@@ -190,7 +195,7 @@ for (const role of ["issuer", "verifier", "auditor", "maintainer"]) test(`admin 
     ]));
     await page.locator("[data-proposal-verifier-signature]").fill(hex(encodeJubjubSignature(verifierSignature)));
     await page.locator("[data-proposal-submit] button[type='submit']").click();
-    await expect(page.locator("body")).toContainText("A maintainer vote does not sign the prepared proposal action");
+    await expect(page.locator("body")).toContainText("A maintainer vote does not sign the prepared governed action");
     expect(await journal.read(role, scenario.id)).toBeNull();
     expect(executions).toBe(0);
     await page.locator("[data-proposal-signers]").fill(JSON.stringify([

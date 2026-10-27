@@ -2499,3 +2499,11 @@ one-of-three smoke thresholds, duplicate keys, and duplicate custody roles.
 The wizard's existing approval and recovery suite still passes. This changes
 neither the required detached human signatures nor the pending real local
 deployment and offline actor acceptance gates.
+
+The fixture browser suite had drifted from the API's required side-effect-free
+proposal preflight and from the admin client's health-first loading. Its tests
+now provide the required fixture port, a health response, and the current
+governed-action error text. Applicant test teardown closes browser HTTP
+connections before awaiting server shutdown; a full Chrome run passed all nine
+specs. The browser-inclusive demo command is useful adoption coverage, not
+live local-ledger or egress-denied actor evidence.

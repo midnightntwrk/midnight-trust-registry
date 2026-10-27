@@ -71,6 +71,7 @@
     "ci:build": "pnpm run ci:build:light",
     "demo:smoke": "node scripts/demo-smoke.mjs",
     "test:e2e:demo": "pnpm run demo:membership:smoke && pnpm run demo:smoke",
+    "test:e2e:demo:browser": "pnpm run test:e2e:demo && playwright test",
     "demo:governed:check": "node scripts/check-governed-demo.mjs",
     "demo:signed": "pnpm run build:light && node scripts/demo-signed-journey.mjs",
     "demo:signed-issuer": "pnpm run build:light && node scripts/demo-signed-membership-journey.mjs issuer",

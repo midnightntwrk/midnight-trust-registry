@@ -29,6 +29,11 @@ test("a late governance receipt cannot replace another registry's board", async 
   const postPaths = [];
   const server = createServer(async (request, response) => {
     const path = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+    if (/^\/(a|b)\/health$/u.test(path)) {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ status: "ok", sourceMode: "workspace" }));
+      return;
+    }
     const match = /^\/(a|b)\/v1\/(.*)$/u.exec(path);
     if (match === null) {
       await staticHandler(request, response);

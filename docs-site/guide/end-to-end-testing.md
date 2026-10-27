@@ -25,9 +25,11 @@ ephemeral loopback ports. A passing exit code means those two demo checks
 passed; it does not imply a deployed contract, authenticated finality, live VC
 status, or offline runtime. In an artifact-bearing checkout, **do not run**
 `./run.sh --light`: use a disposable checkout for that prerequisite. For the
-applicant forms in Chrome, optionally run `pnpm run test:browser` in the
-disposable checkout. See the [demo quickstart](quickstart.md) for the
-individual commands and expected behavior.
+applicant and admin flows in a real browser, install Google Chrome and run
+`pnpm run test:e2e:demo:browser`. This reuses the demo command's built assets
+and runs all Playwright specs without invoking the destructive light build.
+It still uses fixture identity/status and simulator governance. See the
+[demo quickstart](quickstart.md) for individual commands and expected behavior.
 
 ## Prepare a standalone run
 

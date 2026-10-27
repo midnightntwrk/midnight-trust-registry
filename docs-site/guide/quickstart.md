@@ -30,6 +30,9 @@ pnpm run demo:signed-maintainer
 loopback ports. Quality CI runs the four journeys together with
 `pnpm run demo:membership:smoke` after the package build; that step does not
 regenerate proving keys. Neither command exercises a deployed local ledger.
+With Google Chrome installed, `pnpm run test:e2e:demo:browser` follows the
+demo checks with the applicant and admin Playwright journeys using the same
+built assets. It does not run `build:light` or qualify standalone deployment.
 
 Each signed journey starts a fresh private operator-workspace file and serves
 its API reads from that file. Governed Compact epoch publication persists the

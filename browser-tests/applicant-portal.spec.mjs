@@ -93,6 +93,7 @@ for (const applicant of cases) {
       await expect(page.locator("[data-application-vp-form]")).toHaveCount(0);
     } finally {
       await page.close();
+      host.server.closeAllConnections();
       await new Promise((resolveClose, reject) => host.server.close((error) => error ? reject(error) : resolveClose()));
     }
   });
