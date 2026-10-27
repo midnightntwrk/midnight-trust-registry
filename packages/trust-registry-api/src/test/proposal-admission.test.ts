@@ -118,6 +118,8 @@ const approvedIssuerPlan = {
   ...localPlan,
   sourceRevision: "a".repeat(40),
   installInventorySha256: "b".repeat(64),
+  notBefore: new Date(Date.now() - 60_000).toISOString(),
+  notAfter: new Date(Date.now() + 86_400_000).toISOString(),
   verifierKeySha256: approvedIssuerImage.verifierKeySha256,
   maintenanceAuthority: { ...approvedIssuerImage.maintenanceAuthority, counter: "3" },
   sequenceTimestamps: Object.fromEntries([0, 1, 2, 3].map((sequence) =>
@@ -271,6 +273,22 @@ describe("local issuer proposal terms", () => {
     const verifyLiveEvidence = vi.fn(async () => {});
     const readTrustedTimeMs = vi.fn(async () => Date.parse("2026-10-13T00:00:02.000Z"));
     const providerContentSha256 = "c".repeat(64);
+    const approvedPlanSha256 = "e".repeat(64);
+    const submissionJournalPath = "/var/lib/trust-registry/issuer-journal.json";
+    const writerApproval = {
+      format: "tr-local-issuer-writer-approval-v1" as const,
+      apiPlanSha256: approvedPlanSha256,
+      sourceRevision: approvedIssuerPlan.sourceRevision,
+      installInventorySha256: approvedIssuerPlan.installInventorySha256,
+      networkId: approvedIssuerPlan.networkId,
+      expectedGenesisHash: approvedIssuerPlan.expectedGenesisHash,
+      contractAddress: approvedIssuerPlan.contractAddress,
+      providerRoot: "/opt/trust-registry/provider",
+      providerContentSha256,
+      submissionJournalPath,
+      notBefore: approvedIssuerPlan.notBefore,
+      notAfter: approvedIssuerPlan.notAfter,
+    };
     const installedProvider = {
       format: "tr-installed-provider-runtime-verification-v1" as const,
       sourceRevision: approvedIssuerPlan.sourceRevision,
@@ -300,7 +318,7 @@ describe("local issuer proposal terms", () => {
     }));
     const port = createBoundLocalIssuerProposalPort({
       plan: approvedIssuerPlan,
-      approvedProviderContentSha256: providerContentSha256,
+      approvedPlanSha256, writerApproval, submissionJournalPath,
       async readCapturedAdmission(applicationId) {
         expect(applicationId).toBe(binding.applicationId);
         return { pending, accepted };
@@ -480,6 +498,15 @@ describe("local issuer proposal terms", () => {
     await expect(port.preflightSubmission!(pending.authorizationId, evidence,
       signers, verifierSignature, context, localTerms)).rejects.toThrow(/provider identity differs/u);
     expect(submitTx).not.toHaveBeenCalled();
+
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse(writerApproval.notAfter) + 1);
+    try {
+      await expect(port.prepare(pending.authorizationId, evidence, localTerms))
+        .rejects.toThrow(/Local issuer writer approval differs/u);
+      expect(submitTx).not.toHaveBeenCalled();
+    } finally {
+      clock.mockRestore();
+    }
   });
 });
 

@@ -135,6 +135,11 @@ An embedding host must supply approved immutable provider code, authenticated
 finality, live VC-owned status verification, and the governed ports before
 `A01`-`A04` can pass. Do not use simulator or mock-provider receipts in their
 place.
+For issuer writes, it must also verify the detached reviewer signature on the
+writer annex, bind it to the exact signed API plan and installed provider
+content, and initialize the API-owned submission journal at the annex's path.
+The opt-in issuer port tests exercise this boundary with injected providers;
+they are not a deployed local-ledger actor journey.
 
 The [read-only qualification observer](standalone.md#continue-to-real-end-to-end-acceptance)
 can validate the approved API's current queries and API-container egress

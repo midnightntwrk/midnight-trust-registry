@@ -206,10 +206,13 @@ The opt-in issuer port now requires its installed-provider check to return the
 verified runtime identity, rather than only succeed without a result. Before
 loading providers, after loading them, and at the transport broadcast guard,
 it compares the returned source revision and install-inventory digest with
-the signed API plan and the content digest with the embedding host's separately
-reviewed provider handoff. A changed provider tree, source, inventory, or
-content pin fails closed. The host must authenticate that reviewed content
-digest and implement the immutable-tree check; the API package cannot infer
-either from a callback result. This narrows provider substitution risk but
-does **not** put the content digest into signed plan v3, authenticate finality,
-or make the packaged CLI writable. Those remain release gates.
+the signed API plan and the content digest with a separately detached-signed
+writer annex. That annex binds the exact signed plan digest, provider root,
+content digest, and API-owned journal path; it cannot outlive the plan. A
+changed provider tree, source, inventory, or content pin fails closed, including
+when the annex expires during a long-running process. The embedding host must
+load and verify the annex, implement the immutable-tree check, and initialize
+the journal at the approved path; the API package cannot infer those from
+callback results. This narrows provider substitution risk but does **not**
+authenticate finality or make the packaged CLI writable. Those remain release
+gates.

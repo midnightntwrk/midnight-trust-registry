@@ -441,14 +441,22 @@ host. It requires a captured pending/accepted application pair, an
 independently authenticated finalized ledger plus matching policy snapshot,
 live DID/VP/VC-status verification and an injected trusted-time source,
 immutable approved
-provider-code checks, and provider loading. It compares the reviewed context
+provider-code checks, and provider loading. The embedding host must verify a
+detached reviewer signature over a canonical `tr-local-issuer-writer-approval-v1`
+annex using `loadApprovedLocalIssuerWriterApproval`. The annex binds the exact
+signed API-plan SHA-256, source, install inventory, network, genesis, contract,
+provider root and content digest, API-owned submission journal path, and a
+validity window within the plan's. The host must initialize the journal at that
+path and provide the verified annex to the factory; constructing an unsigned
+object of the same shape is not an approval. The port rechecks the annex's
+validity during operations and immediately before broadcast. It compares the reviewed context
 before loading a provider, rejects evidence outside its signed validity
 window at each prepare/preflight/execute and again immediately before SDK
 broadcast, repeats the code check around loading, and uses
 the SDK's side-effect-free preflight before the API-owned journal reserves.
 The code check must return the installed-runtime verification report: its
 source revision and inventory digest must match the signed API plan, and its
-content digest must match the separately authenticated reviewed handoff.
+content digest must match the signed writer annex.
 Returning only success without this identity now rejects the submission.
 After reservation it rechecks and submits once without creating a second
 journal. A failure then remains quarantined for operator reconciliation; it

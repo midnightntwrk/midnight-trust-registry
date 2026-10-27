@@ -25,6 +25,10 @@ import {
   prepareBoundLocalIssuerProposal,
   type LocalIssuerProposalTerms,
 } from "./local-issuer-proposal-terms.js";
+import {
+  validateLocalIssuerWriterApproval,
+  type LocalIssuerWriterApproval,
+} from "./local-issuer-writer-approval.js";
 import type { ProposalAdmissionPort } from "./proposal-admission.js";
 
 export type FinalizedIssuerSnapshot = Pick<FinalizedRegistryLedgerView,
@@ -48,8 +52,6 @@ type InstalledProviderVerification = {
   releaseQualified: false;
 };
 
-const SHA256 = /^[0-9a-f]{64}$/u;
-
 export class LocalIssuerEvidenceTimeRejectedError extends Error {
   constructor() {
     super("Accepted issuer evidence is not current at trusted time");
@@ -61,9 +63,13 @@ export class LocalIssuerEvidenceTimeRejectedError extends Error {
 export type LocalIssuerProposalPortDependencies = {
   plan: Pick<LocalLedgerRuntimePlan, "networkId" | "contractAddress" | "expectedGenesisHash"
     | "verifierKeySha256" | "maintenanceAuthority" | "sequenceTimestamps"
-    | "sourceRevision" | "installInventorySha256">;
-  /** Independently reviewed installed-tree digest; the embedding host must authenticate this handoff. */
-  approvedProviderContentSha256: string;
+    | "sourceRevision" | "installInventorySha256" | "notBefore" | "notAfter">;
+  /** Digest returned by verified loading of the exact signed API plan bytes. */
+  approvedPlanSha256: string;
+  /** Must be loaded from a separate, detached-signed writer approval. */
+  writerApproval: LocalIssuerWriterApproval;
+  /** The host must initialize the API-owned journal at this approved path. */
+  submissionJournalPath: string;
   readCapturedAdmission: NonNullable<ProposalAdmissionPort["readCapturedAdmission"]>;
   /** Authenticate finality independently of the SDK submitting provider. */
   readAuthenticatedFinalizedSnapshot(contractAddress: string): Promise<FinalizedIssuerSnapshot>;
@@ -88,22 +94,31 @@ export type LocalIssuerProposalPortDependencies = {
 export function createBoundLocalIssuerProposalPort(
   dependencies: LocalIssuerProposalPortDependencies,
 ): GovernedIssuerProposalPort {
-  if (!SHA256.test(dependencies.approvedProviderContentSha256)
-    || /^0{64}$/u.test(dependencies.approvedProviderContentSha256)) {
-    throw new Error("Issuer provider requires a reviewed content SHA-256");
+  const approval = validateLocalIssuerWriterApproval(dependencies.writerApproval, {
+    plan: dependencies.plan, planSha256: dependencies.approvedPlanSha256,
+  });
+  const assertWriterApprovalCurrent = (): void => {
+    validateLocalIssuerWriterApproval(approval, {
+      plan: dependencies.plan, planSha256: dependencies.approvedPlanSha256,
+    });
+  };
+  if (dependencies.submissionJournalPath !== approval.submissionJournalPath) {
+    throw new Error("Issuer journal path differs from the signed writer approval");
   }
   const assertProviderIdentity = async (): Promise<void> => {
+    assertWriterApprovalCurrent();
     const verified = await dependencies.assertApprovedProviderCode();
     if (verified?.format !== "tr-installed-provider-runtime-verification-v1"
       || verified.sourceRevision !== dependencies.plan.sourceRevision
       || verified.installInventorySha256 !== dependencies.plan.installInventorySha256
-      || verified.contentSha256 !== dependencies.approvedProviderContentSha256
+      || verified.contentSha256 !== approval.providerContentSha256
       || verified.ownership !== "trusted-tree-check-passed"
       || verified.releaseQualified !== false) {
       throw new Error("Installed issuer provider identity differs from the reviewed plan and content pin");
     }
   };
   const readApprovedSnapshot = async (contractAddress: string): Promise<FinalizedIssuerSnapshot> => {
+    assertWriterApprovalCurrent();
     if (contractAddress !== dependencies.plan.contractAddress) {
       throw new Error("Issuer snapshot request differs from the approved contract");
     }
@@ -205,6 +220,7 @@ export function createBoundLocalIssuerProposalPort(
         )) throw new Error("Issuer proposal signing context changed before broadcast");
         await assertProviderIdentity();
         await assertEvidenceCurrent(evidence);
+        assertWriterApprovalCurrent();
       });
     },
   };
