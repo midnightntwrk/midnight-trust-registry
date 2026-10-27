@@ -14,7 +14,7 @@ import { assertOnlyLedgerRoutes, ledgerSubnet, parseCanaryAddress,
 
 const run = promisify(execFile);
 const port = 45987;
-const server = `require('node:net').createServer(socket=>socket.end(
+export const localEgressCanaryServerScript = String.raw`require('node:net').createServer(socket=>socket.end(
   'HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
 )).listen(${port},'0.0.0.0')`;
 
@@ -90,7 +90,7 @@ export async function observeStandaloneLocalEgress(dependencies = {}) {
       "--pull", "never", "--read-only", "--cap-drop", "ALL",
       "--security-opt", "no-new-privileges", "--network", networkName,
       "--network-alias", canaryName, "--entrypoint", "node", apiImage,
-      "-e", server]), "Local canary start");
+      "-e", localEgressCanaryServerScript]), "Local canary start");
     canaryStarted = true;
     const [canary] = JSON.parse(requireSuccess(await command(["inspect", containerName]),
       "Local canary inspection"));

@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { Script } from "node:vm";
 
-import { observeStandaloneLocalEgress } from "./check-standalone-local-egress.mjs";
+import { localEgressCanaryServerScript,
+  observeStandaloneLocalEgress } from "./check-standalone-local-egress.mjs";
 
 const header = "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT";
 const subnetRoute = "eth0\t000015AC\t00000000\t0001\t0\t0\t0\t0000FFFF\t0\t0\t0";
@@ -12,6 +14,12 @@ const expectedTopology = { allowOffline: true, sourceRevision: "c".repeat(40),
   images: [{ role: "node", acceptedIds: [nodeImage] }],
   installRelay: { imageRole: "api" },
   apiRuntime: { imageId: apiImage } };
+
+test("generated canary script is valid Node source with escaped HTTP framing", () => {
+  assert.doesNotThrow(() => new Script(localEgressCanaryServerScript));
+  assert.match(localEgressCanaryServerScript, /\\r\\nContent-Length: 0\\r\\n/u);
+  assert.ok(!localEgressCanaryServerScript.includes("No Content\r\n"));
+});
 
 function harness({ isolatedCurlCode = 7, isolatedDnsCode = 2, canaryImage = apiImage,
   changedNetwork = false, canaryStartCode = 0 } = {}) {
