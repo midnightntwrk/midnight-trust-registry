@@ -128,6 +128,15 @@ the after-reservation form because the HTTP server already reserves before
 calling `execute`. Both forms recheck the finalized ledger and provider
 identity; neither by itself proves that the provider code is pinned or that
 SDK finalization is independently authenticated.
+The provider's in-flight and uncertain-deployment sets guard only the current
+process. Cross-restart quarantine comes from the private proposal journal's
+durable reservation written before SDK submission, not those sets. The issuer
+SDK handoff regression tests reject broadcast when that write fails and keep
+an ambiguous attempt blocked after reopening the journal. A finalized reader
+can reconcile it to `observed`, but another reopen still cannot broadcast the
+same intent. These injected-SDK tests do not exercise an actual process crash,
+deployed ledger, or distinct-project restore; those remain release evidence
+under #219 and #230.
 An opt-in `createBoundLocalIssuerProposalPort` now composes the accepted
 application binder, current policy/ledger preflight, live-evidence callback,
 provider-code check, SDK preflight, and after-reservation execution. Its

@@ -187,6 +187,43 @@ describe("issuer SDK handoff with private journal", () => {
     expect(mocks.submitCallTx).toHaveBeenCalledOnce();
   });
 
+  it("never enters the SDK when the durable reservation cannot be written", async () => {
+    const unavailable = new FileProposalSubmissionJournal(join(directory, "missing", "journal.json"));
+    await expect(submitLocalIssuerProposalCall(input(unavailable))).rejects.toThrow();
+    expect(mocks.submitCallTx).not.toHaveBeenCalled();
+  });
+
+  it("retains an ambiguous attempt until finalized reconciliation, then blocks replay after reopen", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    await journal.bindDeployment(registryLabel, contractAddress, genesisHash);
+    const request = input(journal);
+    const prepared = prepareLocalIssuerProposalCall(request.call,
+      (await request.readFinalizedLedger(contractAddress)).ledger);
+    const eventHash = `0x${Buffer.from(prepared.expectedEventHash).toString("hex")}`;
+    const evidenceCommitment = `0x${Buffer.from(request.call.evidenceHash).toString("hex")}`;
+    mocks.submitCallTx.mockRejectedValueOnce(new Error("response lost after broadcast"));
+    await expect(submitLocalIssuerProposalCall(request))
+      .rejects.toBeInstanceOf(ProposalSubmissionOutcomeUnknownError);
+
+    const restarted = new FileProposalSubmissionJournal(path);
+    await restarted.assertDeploymentBinding(registryLabel, contractAddress, genesisHash);
+    expect((await restarted.reconcile("issuer", authorizationLabel, async () => null)).state)
+      .toBe("reserved");
+    await expect(submitLocalIssuerProposalCall(input(restarted)))
+      .rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
+    expect((await restarted.reconcile("issuer", authorizationLabel,
+      async () => ({ eventHash, evidenceCommitment }))).state).toBe("observed");
+
+    const reopened = new FileProposalSubmissionJournal(path);
+    await reopened.assertDeploymentBinding(registryLabel, contractAddress, genesisHash);
+    expect(await reopened.read("issuer", authorizationLabel)).toMatchObject({
+      state: "observed", eventHash, evidenceCommitment,
+    });
+    await expect(submitLocalIssuerProposalCall(input(reopened)))
+      .rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
+    expect(mocks.submitCallTx).toHaveBeenCalledOnce();
+  });
+
   it("rejects a journal bound to another genesis before reading or reserving", async () => {
     const journal = new FileProposalSubmissionJournal(path);
     await journal.bindDeployment(registryLabel, contractAddress, `0x${"e".repeat(64)}`);
