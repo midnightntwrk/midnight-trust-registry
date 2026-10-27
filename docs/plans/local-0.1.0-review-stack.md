@@ -39,7 +39,8 @@ not a fully green merge gate or release approval.
 The local descendant contains the reviewed groups A-D above #240's published
 head `bbe527cf`, followed by review-plan documentation, current-query
 approval-binding group E, a read-only ambiguous-recovery group F, and an
-adversarial-report hardening group G. They are
+adversarial-report hardening group G, and local-profile/qualification-docs
+group H. They are
 **not published**, and publication requires the user's separate approval. Preserve
 their existing order and review them as context-sized diffs rather than
 opening one PR per commit. Before any publication, fetch the live #240 head and check
@@ -55,6 +56,7 @@ rewrite unpublished work to repair a stale base.
 | E | `8ea73b91` onward (after review-plan docs) | Bind the standalone read-only current-query probe to wizard-approved install inventory, project, network, genesis, and deployment | Reject cross-setup or cross-deployment evidence before egress; no claim of actor writes or independent finality |
 | F | `90eda72b`..`7a472176` | Prove the stale-sequence Compact invariant and bind a read-only recovery candidate to one immediately consumed action | An authenticated finalized action history and safe journal mutator are still absent; never treat a signed review decision as retry permission |
 | G | `7626be30` onward | Reject interrupted adversarial reports and move independent maintainer, denial, and application-evidence safety scenarios out of the monolithic demo | Preserve 198-case demo/isolated parity; fixture cases are not deployed-ledger E2E |
+| H | `e4fceb5b` onward | Use the standalone catalog identity in local finalized readers and clarify operator-node versus independently authenticated finality in the quickstart | Keep the per-installation genesis pin and signed approval gate; profile selection alone is not a deployed or independently finalized E2E result |
 
 For a stacked publication, the first group would target #240, and each later
 group would target the immediately preceding group. The table is a review
