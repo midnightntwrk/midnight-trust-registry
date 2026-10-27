@@ -4,7 +4,7 @@ Issue #229 tracks typed assurance for the self-hosted 0.1.0 installer and
 operator workflow. The existing broad `checkJs` configuration includes the
 wizard and installer but permits implicit `any`; Quality CI now runs it.
 A second, strict no-emit gate runs
-`pnpm run check:security-boundaries-types` for thirty-one privileged boundaries:
+`pnpm run check:security-boundaries-types` for thirty-three privileged boundaries:
 
 | Checked file | Security decision |
 | --- | --- |
@@ -23,6 +23,8 @@ A second, strict no-emit gate runs
 | `scripts/check-published-package-integrity.mjs` | Existing npm-version SHA-512 match before an idempotent publish skip. |
 | `scripts/check-publish-tarball.mjs` | Exact package name/version, size, and digest at the final npm tarball handoff. |
 | `scripts/check-standalone-install.mjs` | Install inventory, pinned OCI archive, Compose, API/portal image, relay, and proof-parameter byte verification. Parsed OCI JSON uses explicitly dynamic callback shapes with runtime validation. |
+| `scripts/build-standalone-install.mjs` | Exact-source install inputs, local pinned-image checks, immutable preflight image-directory selection, and new-bundle construction. |
+| `scripts/load-standalone-install-images.mjs` | Verified archive snapshots and Docker ID/tag matching without a registry pull. |
 | `scripts/standalone-approval-policy.mjs` | Canonical reviewer metadata and release committee/custody validation. |
 | `scripts/check-standalone-actor-capability.mjs` | Fail-closed signed-plan and configured-role preflight before a deployed actor run; does not authenticate finality or execute a transaction. |
 | `scripts/standalone-acceptance-decision-policy.mjs` | Source-bound operator decision history and current evidence coverage. |
@@ -56,7 +58,7 @@ inventory, not a waiver of the release security review.
 | --- | --- | --- |
 | 1 | `scripts/standalone-setup-wizard.mjs`, `scripts/prepare-standalone-genesis-review.mjs` | Signed genesis, committee, deployment, and recovery approval sequencing. Reviewer metadata, committee validation, untrusted genesis-review comparison, packet rendering and private packet I/O, private-file reads, and API approval-chain export are strictly checked; the wizard transitions, thin packet entrypoint, and bundle verifier remain non-strict. |
 | 2 | Provider runtime installation/ownership transfer | The staging shell and install-bundle verifier are now strictly checked; the actual root-owned transfer and independently reviewed content digest remain operator actions. The direct deployment and insertion CLIs are disabled; the wizard imports these functions after approval checks. |
-| 3 | `scripts/build-standalone-install.mjs`, `scripts/load-standalone-install-images.mjs` | Bundle generation and Docker image-load I/O remain non-strict. The install-bundle verifier, base Compose/image-inventory mappings, static portal archive, and runtime healthcheck decisions are strictly checked. Keep hash and path validation identical while typing the remaining I/O shells. |
+| 3 | Installer runtime observations | Bundle generation and Docker image-load I/O now join the strict gate, alongside bundle verification, base Compose/image-inventory mappings, static portal archive, and runtime healthcheck decisions. Docker daemon identity and actual offline behavior still require independent deployment evidence; checked-JS is not that evidence. |
 | 4 | `scripts/check-helm-image-mapping.mjs`, `scripts/observe-helm-runtime.mjs` | Optional Kubernetes mapping and observations; Helm is not a 0.1.0 RC gate. |
 | 5 | `scripts/check-standalone-egress.mjs`, `scripts/check-standalone-local-egress.mjs`, `scripts/check-standalone-api-egress.mjs` | Docker orchestration and live probe observations remain non-strict; the shared route/subnet policy is strictly checked. Keep positive/negative controls and live image identity tests while typing the remaining I/O shells. |
 

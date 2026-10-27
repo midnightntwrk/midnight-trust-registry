@@ -74,6 +74,26 @@ test("preflight checks proof and image inputs without creating an install direct
     await writeFile(join(apiImageDirectory, "api.image.tar"), "archive\n");
     assert.throws(() => validateStandaloneInstallInputs({ ...options, apiImageDirectory },
       revision, inspectImage), /source revision/u);
+    await writeFile(join(apiImageDirectory, "manifest.json"), JSON.stringify({
+      sourceRevision: revision, archiveName: "api.image.tar",
+    }));
+    const staticDirectories = {};
+    for (const role of ["admin", "applicant"]) {
+      const directory = join(root, role);
+      await mkdir(directory);
+      await writeFile(join(directory, "manifest.json"), JSON.stringify({
+        role, sourceRevision: revision, archiveName: `${role}.image.tar`,
+      }));
+      await writeFile(join(directory, `${role}.image.tar`), "archive\n");
+      staticDirectories[`${role}ImageDirectory`] = directory;
+    }
+    assert.throws(() => validateStandaloneInstallInputs({ ...options, apiImageDirectory,
+      adminImageDirectory: staticDirectories.adminImageDirectory }, revision, inspectImage),
+    /requires API, admin, and applicant/u);
+    const selected = { ...options, apiImageDirectory, ...staticDirectories };
+    const selectedPlan = validateStandaloneInstallInputs(selected, revision, inspectImage);
+    selected.applicantImageDirectory = undefined;
+    assert.equal(selectedPlan.applicantImageDirectory, staticDirectories.applicantImageDirectory);
     assert.equal(existsSync(options.outputRoot), false);
   } finally {
     await rm(root, { recursive: true, force: true });

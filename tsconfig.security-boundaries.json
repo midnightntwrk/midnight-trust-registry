@@ -27,6 +27,8 @@
     "scripts/check-published-package-integrity.mjs",
     "scripts/check-publish-tarball.mjs",
     "scripts/check-standalone-install.mjs",
+    "scripts/build-standalone-install.mjs",
+    "scripts/load-standalone-install-images.mjs",
     "scripts/standalone-approval-policy.mjs",
     "scripts/check-standalone-actor-capability.mjs",
     "scripts/standalone-acceptance-decision-policy.mjs",
