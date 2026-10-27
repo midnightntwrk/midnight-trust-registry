@@ -9,21 +9,28 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 import { observeStandaloneTopology, standaloneStackConfig } from "./check-standalone-topology.mjs";
-import { apiEgressCanaryServerScript, apiEgressDnsScript } from "./check-standalone-api-egress.mjs";
+import { apiEgressCanaryServerScript, apiEgressDnsScript, canaryPort as port,
+  dnsCanaryAddress as dnsAddress, dnsCanaryName as canaryName } from "./standalone-egress-canary-scripts.mjs";
 import { assertOnlyLedgerRoutes, hasBroadOutboundRoute, hasValidRouteTable,
   ledgerSubnet, verifiedOfflineEgressTopology } from "./check-standalone-egress.mjs";
 
 const run = promisify(execFile);
-const port = 45987;
 const privateControlSubnet = /^10\.(?:0|[1-9]\d?|1\d\d|2[0-4]\d|25[0-5])\.(?:0|[1-9]\d?|1\d\d|2[0-4]\d|25[0-5])\.0\/24$/u;
 export const localEgressCanaryServerScript = apiEgressCanaryServerScript;
-const dnsAddress = "198.51.100.7";
 const deniedDns = /^denied:(?:ETIMEOUT|ENETUNREACH|EHOSTUNREACH|ECONNREFUSED)$/u;
 
+/** @typedef {{code: number, stdout: string, stderr: string}} DockerResult */
+/** @typedef {(args: string[], allowFailure?: boolean) => Promise<DockerResult>} DockerCommand */
+/** @typedef {{dockerCommand?: DockerCommand,
+ *   observeTopology?: typeof observeStandaloneTopology, env?: NodeJS.ProcessEnv,
+ *   expectedTopology?: Awaited<ReturnType<typeof verifiedOfflineEgressTopology>>}} LocalEgressDependencies */
+
+/** @param {string} output */
 function countCanaryQueries(output) {
   return output.split(/\r?\n/u).filter((line) => line === "tr-offline-dns-query").length;
 }
 
+/** @param {string[]} args @param {boolean} allowFailure */
 async function docker(args, allowFailure = false) {
   try {
     const { stdout, stderr } = await run("docker", args, { timeout: 30_000, maxBuffer: 1024 * 1024 });
@@ -39,11 +46,14 @@ async function docker(args, allowFailure = false) {
   }
 }
 
+/** @param {DockerResult} result @param {string} description */
 function requireSuccess(result, description) {
   if (result.code !== 0) throw new Error(`${description} failed`);
   return result.stdout.trim();
 }
 
+/** @param {DockerCommand} command @param {string} image @param {string} network
+ * @param {string} entrypoint @param {string[]} args */
 async function probe(command, image, network, entrypoint, args) {
   const name = `tr-local-egress-probe-${randomUUID()}`;
   try {
@@ -59,6 +69,7 @@ async function probe(command, image, network, entrypoint, args) {
   }
 }
 
+/** @param {LocalEgressDependencies} dependencies */
 export async function observeStandaloneLocalEgress(dependencies = {}) {
   const command = dependencies.dockerCommand ?? docker;
   const topology = dependencies.observeTopology ?? observeStandaloneTopology;
@@ -94,7 +105,6 @@ export async function observeStandaloneLocalEgress(dependencies = {}) {
   }
   const suffix = randomUUID();
   const networkName = `tr-local-egress-${suffix}`;
-  const canaryName = "tr-offline-canary.invalid";
   const containerName = `tr-local-egress-canary-${suffix}`;
   let networkCreated = false;
   let canaryStarted = false;
@@ -114,7 +124,7 @@ export async function observeStandaloneLocalEgress(dependencies = {}) {
     const [canary] = JSON.parse(requireSuccess(await command(["inspect", containerName]),
       "Local canary inspection"));
     const address = canary?.NetworkSettings?.Networks?.[networkName]?.IPAddress;
-    if (!apiIds.includes(canary?.Image) || isIP(address) !== 4) {
+    if (!apiIds.includes(canary?.Image) || typeof address !== "string" || isIP(address) !== 4) {
       throw new Error("Local canary identity or IPv4 address differs from the verified image");
     }
     const octets = address.split(".").map(Number);
@@ -122,10 +132,12 @@ export async function observeStandaloneLocalEgress(dependencies = {}) {
     if (((numericAddress & subnet.mask) >>> 0) === subnet.address) {
       throw new Error("Local canary overlaps the isolated ledger subnet");
     }
+    /** @param {string} network */
     const routes = async (network) => requireSuccess(await probe(command, nodeImage,
       network, "cat", ["/proc/net/route"]), "Probe route inspection");
     const controlRoute = await routes(networkName);
     const isolatedRoute = await routes(before.networkId);
+    /** @param {string} network */
     const dns = async (network) => probe(command, apiImage, network, "node",
       ["-e", apiEgressDnsScript, address, String(port)]);
     let dnsControlBefore;
@@ -135,7 +147,7 @@ export async function observeStandaloneLocalEgress(dependencies = {}) {
         && dnsControlBefore.stdout.trim() === `resolved:${dnsAddress}`) break;
       await delay(100);
     }
-    if (dnsControlBefore.code !== 0
+    if (!dnsControlBefore || dnsControlBefore.code !== 0
       || dnsControlBefore.stdout.trim() !== `resolved:${dnsAddress}`) {
       throw new Error("Local DNS/UDP positive control did not resolve the canary");
     }
@@ -170,7 +182,7 @@ export async function observeStandaloneLocalEgress(dependencies = {}) {
     }
     if (!hasValidRouteTable(controlRoute) || !hasValidRouteTable(isolatedRoute)
       || !hasBroadOutboundRoute(controlRoute) || hasBroadOutboundRoute(isolatedRoute)
-      || control.code !== 0 || isolated.code !== 7) {
+      || !control || control.code !== 0 || isolated.code !== 7) {
       throw new Error("Local HTTP canary or route isolation check failed");
     }
     if (isolatedDns.code !== 7 || !deniedDns.test(isolatedDns.stdout.trim())

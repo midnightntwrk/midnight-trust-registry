@@ -51,6 +51,8 @@
     "scripts/standalone-egress-route-policy.mjs",
     "scripts/check-standalone-topology.mjs",
     "scripts/check-standalone-egress.mjs",
+    "scripts/standalone-egress-canary-scripts.mjs",
+    "scripts/check-standalone-local-egress.mjs",
     "scripts/runtime-healthcheck.mjs",
     "scripts/static-runtime-archive.mjs",
     "scripts/verify-helm-mapping-signature.mjs"
