@@ -1540,6 +1540,10 @@ public Internet. The probe checks DNS and TCP positive controls on its
 temporary control bridge, then denial from the observed ledger bridge. It
 removes its own canary and bridge afterward; cleanup failure invalidates the
 observation. It does not exercise the running node's application traffic.
+If Docker's default address pools are exhausted, choose an unused private
+`10.x.x.0/24` that does not overlap the ledger bridge or host routes, then set
+`TR_EGRESS_CONTROL_SUBNET` for this one probe. The control network is temporary;
+do not remove or reuse another project's network to make room.
 
 The historical v3-v5 command requires Docker's normal bridge to reach the
 public Internet:

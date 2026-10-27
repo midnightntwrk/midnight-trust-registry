@@ -14,6 +14,7 @@ import { assertOnlyLedgerRoutes, ledgerSubnet, parseCanaryAddress,
 
 const run = promisify(execFile);
 const port = 45987;
+const privateControlSubnet = /^10\.(?:0|[1-9]\d?|1\d\d|2[0-4]\d|25[0-5])\.(?:0|[1-9]\d?|1\d\d|2[0-4]\d|25[0-5])\.0\/24$/u;
 export const localEgressCanaryServerScript = String.raw`require('node:net').createServer(socket=>socket.end(
   'HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
 )).listen(${port},'0.0.0.0')`;
@@ -64,6 +65,10 @@ export async function observeStandaloneLocalEgress(dependencies = {}) {
     throw new Error("Local egress probe requires verified v6 node and API image identities");
   }
   const config = standaloneStackConfig(dependencies.env ?? process.env);
+  const controlSubnet = (dependencies.env ?? process.env).TR_EGRESS_CONTROL_SUBNET;
+  if (controlSubnet !== undefined && !privateControlSubnet.test(controlSubnet)) {
+    throw new Error("TR_EGRESS_CONTROL_SUBNET must be a private canonical 10.x.x.0/24");
+  }
   const before = await topology(config, expected);
   if (!before?.networkId) throw new Error("Ledger network identity was not observed");
   const inspected = JSON.parse(requireSuccess(await command(["network", "inspect", before.networkId]),
@@ -84,7 +89,8 @@ export async function observeStandaloneLocalEgress(dependencies = {}) {
   let observation;
   let failure;
   try {
-    requireSuccess(await command(["network", "create", "--driver", "bridge", networkName]),
+    requireSuccess(await command(["network", "create", "--driver", "bridge",
+      ...(controlSubnet ? ["--subnet", controlSubnet] : []), networkName]),
       "Local control network creation");
     networkCreated = true;
     requireSuccess(await command(["run", "-d", "--rm", "--name", containerName,

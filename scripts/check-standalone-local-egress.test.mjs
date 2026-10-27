@@ -108,3 +108,15 @@ test("offline ledger probe cleans its network after canary startup failure", asy
   assert.ok(setup.calls.some((args) => args[0] === "network" && args[1] === "rm"));
   assert.ok(setup.calls.some((args) => args[0] === "rm" && args[1] === "-f"));
 });
+
+test("offline ledger probe accepts an explicit private control subnet", async () => {
+  const setup = harness();
+  await observeStandaloneLocalEgress({ ...setup, expectedTopology,
+    env: { TR_STACK_NAME: "tr-standalone-local-probe",
+      TR_EGRESS_CONTROL_SUBNET: "10.253.247.0/24" } });
+  const created = setup.calls.find((args) => args[0] === "network" && args[1] === "create");
+  assert.deepEqual(created.slice(2, 6), ["--driver", "bridge", "--subnet", "10.253.247.0/24"]);
+  await assert.rejects(observeStandaloneLocalEgress({ ...harness(), expectedTopology,
+    env: { TR_STACK_NAME: "tr-standalone-local-probe",
+      TR_EGRESS_CONTROL_SUBNET: "8.8.8.0/24" } }), /private canonical/u);
+});
