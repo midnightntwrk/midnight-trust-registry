@@ -19,20 +19,25 @@ part of their current diffs.
 
 The published PRs are draft. Check required CI and review at each exact head;
 the top branch's local tests cannot substitute for the lower PRs' checks.
-As of 2026-10-27, #238's external Opengrep OSS check was red.
+At signed/DCO head `5b6d2851` on 2026-10-27, #238's external Opengrep
+OSS check remained red.
 [Issue #237](https://github.com/midnightntwrk/midnight-trust-registry/issues/237)
 tracks its disposition. Do not hide, waive, or mark the stack ready while
-the five internal WebSocket transport findings or the PGP negative-test marker
-remain unresolved.
-The latter has a local test fix, but it does not clear the published check
-until applied to the owning PR and rerun at its new head.
+the five internal WebSocket transport findings remain unresolved. The earlier
+incomplete PGP negative-test marker was replaced by a generated synthetic
+private export on #238; the later exact-head external scan reported no PGP
+annotation. That fix does not disposition the WebSocket transport risk or the
+independent human security gate #232. The same #238 head also rejects case and
+Unicode-normalized aliases of private acceptance evidence paths. Its focused
+exact-tree tests and read-only Codex delta review found no actionable
+regression; full exact-head CI was still running when this snapshot was taken.
 
 ## Unpublished continuation
 
-There are 51 signed/DCO local implementation commits above #240's published
-head `bbe527cf` through `c786254f`, followed by two review-plan documentation
-commits and the current-query approval-binding slice. They are **not
-published**, and publication requires the user's separate approval. Preserve
+The local descendant contains the reviewed groups A-D above #240's published
+head `bbe527cf`, followed by review-plan documentation, current-query
+approval-binding group E, and a read-only ambiguous-recovery group F. They are
+**not published**, and publication requires the user's separate approval. Preserve
 their existing order and review them as context-sized diffs rather than
 opening one PR per commit. Before any publication, fetch the live #240 head and check
 that it is still the ancestor of the first group; do not force-push or
@@ -45,6 +50,7 @@ rewrite unpublished work to repair a stale base.
 | C | `aba60244`..`bc55a27d` | Genesis-pin and bundle preflight, safe prebuilt demo E2E, journal restart quarantine, operator/security handoff | Exact-source pinning, no destructive Compact rebuild, no simulator-to-deployment promotion, restart ambiguity |
 | D | `50cbd1a5`..`c786254f` | Full-precision application, recognition, lifecycle, challenge, and TRQP evidence time decisions | RFC3339 offsets and long fractions, one-use nonce ordering, historical evidence selection; #179 remains open |
 | E | `8ea73b91` onward (after review-plan docs) | Bind the standalone read-only current-query probe to wizard-approved install inventory, project, network, genesis, and deployment | Reject cross-setup or cross-deployment evidence before egress; no claim of actor writes or independent finality |
+| F | `90eda72b`..`7a472176` | Prove the stale-sequence Compact invariant and bind a read-only recovery candidate to one immediately consumed action | An authenticated finalized action history and safe journal mutator are still absent; never treat a signed review decision as retry permission |
 
 For a stacked publication, the first group would target #240, and each later
 group would target the immediately preceding group. The table is a review
@@ -84,6 +90,14 @@ passed 215 tests at that head. Both are local predeployment suites; neither
 authenticates a deployed actor journey or replaces current-head PR CI.
 #238's unresolved external scan and #232's human security release gate remain
 separate stop conditions.
+Group F's v3 candidate includes the observed last-action kind and payload
+hash and marks later or same-payload history inconclusive. Focused API tests,
+typecheck, docs check, and audit passed locally; the read-only review found no
+blocker after the last-action values were bound into the signed decision.
+The later local acceptance-evidence alias and operator-guide commits overlap
+the branch-owned fixes now published on #238. Reconcile those equivalent
+patches when preparing any subsequent stack update; do not force-push,
+duplicate their effect, or claim deployed E2E from these tests.
 
 ## Release boundary
 
