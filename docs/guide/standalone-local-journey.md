@@ -345,7 +345,10 @@ evidence and run `decide` with the desired verdict; its first decision records
 the previous label and brings the case into the checked decision chain. Do
 not reset or rewrite retained evidence merely to satisfy the new check.
 
-Use a different relative file for each case. If `.acceptance.lock` exists,
+Use a different relative file for each case. The inventory rejects a reused
+path even when names differ only by case or Unicode normalization; do not
+rename one receipt to make it count for two cases. The manifest itself cannot
+be attached as evidence. If `.acceptance.lock` exists,
 check whether an evidence writer is active before removing a stale lock; do
 not start a competing writer. A `pass` must have at least one raw file. Record the
 command, UTC time, checkpoint, operator decision, and relevant transaction or
