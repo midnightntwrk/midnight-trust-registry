@@ -39,6 +39,19 @@ the targeted GitHub Actions scan reported 616 passed, 0 failed. This closes
 the local workflow-input finding, not the exact-head full-scan gate or the
 approval required to publish packages.
 
+At local commit `7bdca4a44bf7b40ef5261746e1303e7cc1b07deb`, a Checkov
+3.2.510 run over a temporary archive of **tracked source only** reported
+Dockerfile 37 passed/0 failed/2 skipped, secrets 0 failed/1 skipped,
+GitHub Actions 616 passed/0 failed, and OpenAPI 5 passed/0 failed. The
+temporary archive was removed after inspection. Checkov could not render the
+Helm chart because its intentionally invalid default image, beneficiary,
+claim, and reviewer-key placeholders do not satisfy the values schema. This
+is a scan-coverage limitation, not a Helm pass or a reason to make unsafe
+defaults deployable. Render and inspect Helm separately with explicit test
+values when that optional deployment surface is reviewed. The tracked-source
+result does not include Opengrep, Trivy, Gitleaks, Zizmor, or a published
+exact-head Scan workflow run.
+
 ## Inspect the remaining scanner output
 
 The internal `ws://` node links in the Compose and Helm configurations are
