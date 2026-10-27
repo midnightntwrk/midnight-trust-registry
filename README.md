@@ -26,6 +26,20 @@ This repository does not own:
 
 ## Documentation Map
 
+Choose the path that matches what you need:
+
+| Goal | Start here | What a successful run proves |
+| --- | --- | --- |
+| Explore the API, portals, and governed use cases on a laptop | [Quickstart and local demo](docs-site/guide/quickstart.md) | Fixture and Compact-simulator behavior; **not** a deployed ledger or release qualification. |
+| Install a self-hosted stack and prepare an offline-runtime run | [Standalone first run](docs-site/guide/standalone.md) | Source-pinned install and isolated local-ledger observations, up to the human approval stop. |
+| Qualify the 0.1.0 local release candidate | [Operator acceptance record](docs/guide/standalone-local-journey.md#operator-acceptance-record) | Only case-by-case evidence from one approved, deployed, finalized source candidate can support a release decision. The full actor journey has **not** been recorded yet. |
+
+The packaged signed local-ledger API currently serves reads but does not wire
+governed writes or a live VC status-authority adapter. Do not substitute demo
+results, mock-provider tests, or a node-reported genesis hash for the
+standalone acceptance cases. Preprod qualification is deferred; Kubernetes
+and Helm are optional and are not 0.1.0 local-RC gates.
+
 - [Documentation site](docs-site/index.md) explains the reference implementation,
   actors, contract, API, flows, and limitations; the GitHub Pages workflow
   publishes it from `develop`.
