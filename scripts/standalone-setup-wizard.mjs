@@ -34,7 +34,7 @@ import {
 import { buildStandaloneApiApprovalChain } from "./standalone-api-approval-chain.mjs";
 export { buildStandaloneApiApprovalChain } from "./standalone-api-approval-chain.mjs";
 import { observeStandaloneRestartSnapshot, readStandaloneRestartEvidence } from "./check-standalone-restart.mjs";
-import { checkLocalLedgerPreflight, validateLocalLedgerPin } from "./local-ledger-preflight.mjs";
+import { checkLocalLedgerPreflight, validateStandaloneGenesisPin } from "./local-ledger-preflight.mjs";
 import {
   loadApprovedMaintenanceMaterial, reconcileLocalDeployment, runLocalDeployment,
   validateLocalDeploymentPlan,
@@ -628,18 +628,11 @@ export async function observeStandaloneLedger(directory, pinPath, dependencies =
     requireVerifiedInventoryBytes(record.install.verified, inventory, record.install.inventorySha256,
       "Installed inventory changed since setup verification");
     const pinBytes = await regularBytes(resolve(pinPath));
-    const pin = validateLocalLedgerPin(parseJsonBytes(pinBytes));
-    if (pin.sourceRevision !== record.sourceRevision) {
-      throw new Error("Genesis pin source revision disagrees with the installed bundle");
-    }
+    const pin = validateStandaloneGenesisPin(parseJsonBytes(pinBytes), record.sourceRevision);
     let installAccess;
     if (record.install.verified?.runtimeComposeSha256) {
       const { config, expectedTopology } = await preparedStandaloneTopology(root, record);
       const directUrl = `http://127.0.0.1:${record.stack.ports.node}`;
-      if (!Array.isArray(pin.allowedHosts) || pin.allowedHosts.length !== 1
-        || pin.allowedHosts[0] !== "127.0.0.1") {
-        throw new Error("Genesis pin must allow only the prepared loopback host");
-      }
       if (pin.rpcUrl === directUrl) {
         const current = await (dependencies.observeTopology ?? observeStandaloneTopology)(config,
           { ...expectedTopology, allowUnpublishedHostPorts: false });

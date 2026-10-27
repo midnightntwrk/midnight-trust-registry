@@ -822,6 +822,17 @@ test("wizard records only selected ledger-bridge topology and egress observation
       preflight: async () => { throw new Error("must not query malformed pin"); },
     }), /exact approved/u);
   }
+  for (const malformed of [
+    { ...pin, allowedHosts: ["node"] },
+    { ...pin, rpcUrl: "http://node:39944" },
+    { ...pin, rpcUrl: "http://127.0.0.1:39944/path" },
+  ]) {
+    await writeFile(f.pinPath, JSON.stringify(malformed));
+    await assert.rejects(observeStandaloneLedger(f.directory, f.pinPath, {
+      observeTopology: async () => { throw new Error("must not inspect Docker for non-loopback pin"); },
+      preflight: async () => { throw new Error("must not query non-loopback pin"); },
+    }), /prepared loopback host/u);
+  }
   await writeFile(f.pinPath, JSON.stringify({ ...pin, rpcUrl: "http://127.0.0.1:39944" }));
   await assert.rejects(observeStandaloneLedger(f.directory, f.pinPath, {
     observeTopology: async () => { throw new Error("effective loopback port is absent"); },

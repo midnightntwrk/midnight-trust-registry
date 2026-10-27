@@ -35,6 +35,27 @@ export function validateLocalLedgerPin(candidate) {
   return /** @type {LocalLedgerPin} */ (/** @type {unknown} */ (candidate));
 }
 
+/** The standalone wizard exposes only its prepared loopback endpoint during installation.
+ * @param {unknown} candidate
+ * @param {string} sourceRevision
+ * @returns {LocalLedgerPin}
+ */
+export function validateStandaloneGenesisPin(candidate, sourceRevision) {
+  const pin = validateLocalLedgerPin(candidate);
+  if (pin.sourceRevision !== sourceRevision) {
+    throw new Error("Genesis pin source revision disagrees with the installed bundle");
+  }
+  if (pin.allowedHosts.length !== 1 || pin.allowedHosts[0] !== "127.0.0.1"
+    || !/^http:\/\/127\.0\.0\.1:([1-9][0-9]*)$/u.test(pin.rpcUrl)) {
+    throw new Error("Genesis pin must allow only the prepared loopback host");
+  }
+  const port = Number(pin.rpcUrl.slice(pin.rpcUrl.lastIndexOf(":") + 1));
+  if (port < 1024 || port > 65535) {
+    throw new Error("Genesis pin must use a valid prepared loopback port");
+  }
+  return pin;
+}
+
 /** Node observation only; an operator must approve the genesis from another channel.
  * @param {unknown} candidate
  * @param {typeof fetch} [fetchImpl]
