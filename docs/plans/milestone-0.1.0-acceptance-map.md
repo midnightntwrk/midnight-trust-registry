@@ -13,6 +13,21 @@ must be reconciled against code and exact-head validation before closure.
 The files below identify where to check behavior; their existence alone does
 not prove every acceptance criterion. In particular, a simulator test is not
 a finalized-network read, and a package smoke is not a live status proof.
+The unpublished `codex/trust-registry-offline-egress-canary` slice at signed/DCO
+`4719b01d` adds a v6-only local HTTP/DNS canary for the ledger bridge, replacing
+the historical public-Internet positive control in the v6 wizard. Focused
+orchestration tests, the standalone topology suite, documentation checks, and
+dependency audit passed. A disposable Docker smoke with previously loaded
+source-pinned node/API images returned HTTP 204 and resolved the canary on its
+control bridge, while a separate internal bridge returned curl code 7 and DNS
+code 2; all smoke resources were removed. This verifies the probe mechanics,
+not an exact-source b23 or current-head ledger observation. Docker's default
+address pools were exhausted on this host, so that smoke used two explicit
+private /24 control subnets. The retained b23 install bundle predates a
+currently required packed `reviewer-signature-status.js` file and fails the
+current verifier; it must not be reclassified as current-source evidence.
+No deployed contract, offline actor journey, or release gate was closed by
+this probe.
 The most recent retained pre-deployment bridge observation is **b33**, bound
 to signed/DCO source `8957d96d29554e7ed9be9cd692b2a00d7c819e3f` and
 verified v6 install inventory SHA-256
