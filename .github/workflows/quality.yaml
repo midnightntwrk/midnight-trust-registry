@@ -127,6 +127,9 @@ jobs:
       - name: Typecheck all workspaces
         run: pnpm run typecheck:light
 
+      - name: Typecheck privileged standalone scripts and strict provider boundaries
+        run: pnpm run check:security-scripts-types && pnpm run check:security-boundaries-types
+
       - name: Publish Turbo task cache from trusted branch
         if: github.event_name == 'push' && steps.turbo-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4

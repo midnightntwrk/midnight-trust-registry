@@ -2483,3 +2483,11 @@ workspace tests include the tampered-byte negative. This narrows the gap
 between the full-set verification and individual publish calls, but does not
 approve the release channel, complete human security review, or eliminate a
 compromised-runner time-of-check/time-of-use window.
+
+Issue #229 now wires the pre-existing broad checked-JS configuration into CI
+and adds a strict CI gate
+for provider inode identity, immutable import confinement, and optional Helm
+signature verification. The remaining non-strict approval, installer,
+maintenance, and release scripts are listed with migration priority and owner in
+`docs/plans/standalone-security-script-typecheck.md`. This does not type the
+large wizard or replace its adversarial tests and independent human review.

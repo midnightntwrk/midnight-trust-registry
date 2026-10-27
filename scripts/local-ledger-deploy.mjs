@@ -77,8 +77,8 @@ async function loadApprovedMaterial(plan, dependencies, approval, factoryName) {
   }
   const providerIdentity = await readApprovedProviderIdentity(plan.providerModulePath, plan.providerModuleSha256);
   if (dependencies.loadProvider === undefined) {
-    assertApprovedProviderTree(plan.providerModulePath, process.env.TR_IMMUTABLE_PROVIDER_ROOT);
-    assertApprovedProviderImportBoundary(process.env.TR_IMMUTABLE_PROVIDER_ROOT);
+    const tree = assertApprovedProviderTree(plan.providerModulePath, process.env.TR_IMMUTABLE_PROVIDER_ROOT);
+    assertApprovedProviderImportBoundary(tree.root);
   }
   setNetworkId(getLocalNetworkProfile().networkId);
   await (dependencies.validateEndpoints ?? createLocalNetworkDeploymentActionReader)(plan.network);
@@ -92,10 +92,12 @@ async function loadApprovedMaterial(plan, dependencies, approval, factoryName) {
   });
   const module = await loadRecheckedApprovedProvider(plan.providerModulePath,
     plan.providerModuleSha256, providerIdentity, dependencies.loadProvider);
-  if (typeof module[factoryName] !== "function") {
+  const factory = module !== null && typeof module === "object" && Object.hasOwn(module, factoryName)
+    ? /** @type {Record<string, unknown>} */ (module)[factoryName] : undefined;
+  if (typeof factory !== "function") {
     throw new Error(`Approved provider module must export ${factoryName}`);
   }
-  const material = await module[factoryName]({
+  const material = await factory({
     network: plan.network, releaseManifest: manifest,
   });
   return { manifest, material };

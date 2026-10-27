@@ -96,6 +96,16 @@ test("maintenance provider loading never calls the deployment key factory", asyn
   assert.equal(deploymentFactoryCalls, 0);
 });
 
+test("provider factory must be an own module export", async () => {
+  await assert.rejects(loadApprovedMaintenanceMaterial(plan, {
+    validateEndpoints: async () => {},
+    observe: async () => {},
+    loadProvider: async () => Object.create({
+      createLocalMaintenanceMaterial: async () => ({ providers: { marker: "inherited" } }),
+    }),
+  }), /must export createLocalMaintenanceMaterial/u);
+});
+
 test("checks module bytes and source before any network or provider call", async () => {
   let called = false;
   const observe = async () => { called = true; };

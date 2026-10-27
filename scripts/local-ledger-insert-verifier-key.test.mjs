@@ -110,6 +110,16 @@ test("real verifier-key insertion stops without an immutable provider root", asy
   }
 });
 
+test("insertion provider factory must be an own module export", async () => {
+  await assert.rejects(runLocalVerifierKeyInsertion(plan, {
+    validateEndpoints: async () => {},
+    observe: async () => {},
+    loadProvider: async () => Object.create({
+      createLocalDeploymentMaterial: async () => ({ providers: { marker: "inherited" } }),
+    }),
+  }), /must export createLocalDeploymentMaterial/u);
+});
+
 test("verifier-key insertion rejects a same-byte provider replacement during preflight", async () => {
   const path = join(root, "replace-insertion-provider.mjs");
   const replacement = join(root, "insertion-replacement.mjs");

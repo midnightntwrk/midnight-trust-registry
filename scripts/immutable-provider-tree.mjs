@@ -5,7 +5,10 @@ import { fileURLToPath } from "node:url";
 
 const MAX_ENTRIES = 500_000;
 const IMPORT_BOUNDARY = Symbol.for("tr.approved-provider-import-boundary");
+/** @typedef {{boundary?: string, trustedUid?: number, maxEntries?: number}} ProviderTreeOptions */
+const importBoundaryState = /** @type {Record<symbol, unknown>} */ (/** @type {unknown} */ (globalThis));
 
+/** @param {string} root @param {string} path */
 function within(root, path) {
   const remainder = relative(root, path);
   return remainder === "" || (remainder !== ".." && !remainder.startsWith(`..${sep}`));
@@ -16,6 +19,8 @@ function within(root, path) {
  * Root and administrative updates are trusted; this protects a non-root runner.
  * This does not itself constrain module resolution; the execution boundary must
  * also reject imports outside this tree before it can qualify a deployment.
+ * @param {string} rootPath
+ * @param {ProviderTreeOptions} [options]
  */
 export function assertImmutableProviderTree(rootPath, options = {}) {
   if (!isAbsolute(rootPath)) throw new Error("Provider code root must be absolute");
@@ -95,6 +100,7 @@ export function assertImmutableProviderTree(rootPath, options = {}) {
 }
 
 /** A missing root is a hard stop for the real CLI, not an implicit dev waiver. */
+/** @param {string} providerPath @param {string | undefined} rootPath @param {ProviderTreeOptions} [options] */
 export function assertApprovedProviderTree(providerPath, rootPath, options = {}) {
   if (typeof process.getuid !== "function" || process.getuid() === 0) {
     throw new Error("Real provider loading must run as a non-root user");
@@ -112,9 +118,11 @@ export function assertApprovedProviderTree(providerPath, rootPath, options = {})
 }
 
 /** Register before loading the CLI entry point so ESM and CJS dependencies are covered. */
+/** @param {string} rootPath */
 export function registerApprovedProviderImportBoundary(rootPath) {
   if (!isAbsolute(rootPath)) throw new Error("Approved import root must be absolute");
   const root = resolve(rootPath);
+  /** @param {string} url */
   const checkUrl = (url) => {
     if (url.startsWith("node:")) return;
     if (!url.startsWith("file:")) {
@@ -135,12 +143,13 @@ export function registerApprovedProviderImportBoundary(rootPath) {
       return nextLoad(url, context);
     },
   });
-  globalThis[IMPORT_BOUNDARY] = root;
+  importBoundaryState[IMPORT_BOUNDARY] = root;
   return hooks;
 }
 
+/** @param {string} rootPath */
 export function assertApprovedProviderImportBoundary(rootPath) {
-  if (!isAbsolute(rootPath) || globalThis[IMPORT_BOUNDARY] !== resolve(rootPath)) {
+  if (!isAbsolute(rootPath) || importBoundaryState[IMPORT_BOUNDARY] !== resolve(rootPath)) {
     throw new Error("Real provider loading requires the approved import preloader");
   }
 }

@@ -77,8 +77,8 @@ export async function runLocalVerifierKeyInsertion(plan, dependencies = {}, mode
   }
   const providerIdentity = await readApprovedProviderIdentity(plan.providerModulePath, plan.providerModuleSha256);
   if (dependencies.loadProvider === undefined) {
-    assertApprovedProviderTree(plan.providerModulePath, process.env.TR_IMMUTABLE_PROVIDER_ROOT);
-    assertApprovedProviderImportBoundary(process.env.TR_IMMUTABLE_PROVIDER_ROOT);
+    const tree = assertApprovedProviderTree(plan.providerModulePath, process.env.TR_IMMUTABLE_PROVIDER_ROOT);
+    assertApprovedProviderImportBoundary(tree.root);
   }
   setNetworkId(getLocalNetworkProfile().networkId);
   await (dependencies.validateEndpoints ?? createLocalNetworkDeploymentActionReader)(plan.network);
@@ -92,10 +92,13 @@ export async function runLocalVerifierKeyInsertion(plan, dependencies = {}, mode
   });
   const module = await loadRecheckedApprovedProvider(plan.providerModulePath,
     plan.providerModuleSha256, providerIdentity, dependencies.loadProvider);
-  if (typeof module.createLocalDeploymentMaterial !== "function") {
+  const factory = module !== null && typeof module === "object"
+    && Object.hasOwn(module, "createLocalDeploymentMaterial")
+    ? /** @type {Record<string, unknown>} */ (module).createLocalDeploymentMaterial : undefined;
+  if (typeof factory !== "function") {
     throw new Error("Approved provider module must export createLocalDeploymentMaterial");
   }
-  const material = await module.createLocalDeploymentMaterial({
+  const material = await factory({
     network: plan.network, releaseManifest: manifest,
   });
   try {

@@ -7,6 +7,7 @@ import { assertStrictDetachedSignatureStatus } from "@midnight-ntwrk/trust-regis
 
 const FINGERPRINT = /^[0-9A-F]{40}$/u;
 
+/** @param {string} output @param {string} signerFingerprint @param {number} [now] */
 export function approvedMappingSigner(output, signerFingerprint, now = Date.now()) {
   if (!FINGERPRINT.test(signerFingerprint)) throw new Error("Invalid mapping signer fingerprint");
   try {
@@ -18,6 +19,7 @@ export function approvedMappingSigner(output, signerFingerprint, now = Date.now(
   return signerFingerprint;
 }
 
+/** @param {string} path @param {number} maxBytes */
 function boundedFile(path, maxBytes) {
   if (!isAbsolute(path)) throw new Error("Helm approval input path must be absolute");
   const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
@@ -40,7 +42,11 @@ function boundedFile(path, maxBytes) {
   }
 }
 
-/** @param {Buffer} receiptBytes */
+/** @param {Buffer} receiptBytes
+ * @param {string} signaturePath
+ * @param {string} keyringPath
+ * @param {string} signerFingerprint
+ */
 export function verifyMappingSignature(receiptBytes, signaturePath, keyringPath, signerFingerprint) {
   if (!Buffer.isBuffer(receiptBytes) || !FINGERPRINT.test(signerFingerprint)) {
     throw new Error("Helm image mapping approval input is invalid");
