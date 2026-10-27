@@ -2484,6 +2484,13 @@ between the full-set verification and individual publish calls, but does not
 approve the release channel, complete human security review, or eliminate a
 compromised-runner time-of-check/time-of-use window.
 
+The publisher now also rejects a failed or empty workspace catalog rather
+than treating process-substitution failure as a successful no-op. Its offline
+shell tests cover missing and existing registry versions, matching and changed
+registry integrity, and uncertain lookups; they stub npm I/O but run the real
+published-byte integrity helper. Exact-head CI, manifest approval, and
+independent release review remain separate gates.
+
 Issue #229 now wires the pre-existing broad checked-JS configuration into CI
 and adds a strict CI gate
 for provider inode identity, immutable import confinement, and optional Helm

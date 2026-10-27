@@ -32,6 +32,11 @@ node --input-type=module -e '
 
 lookup_error="$(mktemp)"
 trap 'rm -f "${lookup_error}"' EXIT
+workspaces="$(node scripts/trust-registry-workspace-catalog.mjs --publish-workspaces)"
+if [[ -z "${workspaces}" ]]; then
+  echo "::error::Publish workspace catalog is empty; refusing publish." >&2
+  exit 1
+fi
 
 while IFS= read -r workspace; do
   if [[ -z "${workspace}" ]]; then
@@ -69,4 +74,4 @@ while IFS= read -r workspace; do
   node scripts/check-publish-tarball.mjs "${manifest_path}" "${tarball}" "${package_name}" "${version}"
   echo "[publish-npm-packages] Publishing tested tarball ${tarball} with npm tag ${npm_tag}"
   npm publish "${tarball}" --ignore-scripts --access public --registry "${registry}" --tag "${npm_tag}"
-done < <(node scripts/trust-registry-workspace-catalog.mjs --publish-workspaces)
+done <<< "${workspaces}"

@@ -81,7 +81,10 @@ If a version already exists during a resumed publish job, the job compares
 the registry's SHA-512 integrity metadata with the exact manifest-checked
 tarball before skipping that immutable version. Missing, weak, or mismatched
 integrity stops the job; a non-404 lookup failure is not treated as permission
-to publish. A matching registry integrity value supports idempotent recovery
+to publish. A failed or empty package catalog also stops the job instead of
+silently succeeding without publishing anything. Offline shell tests cover
+these resume and failure paths without contacting a registry. A matching
+registry integrity value supports idempotent recovery
 from a partial publish, but it does not replace independent approval of the
 manifest or authenticate the registry itself.
 The release owner must still approve the reviewed manifest and channel.
