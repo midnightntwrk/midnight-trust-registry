@@ -2664,3 +2664,12 @@ and provider material as untrusted boundary values and rejects a malformed
 verifier-key catalog before endpoint or provider use. This does not prove a
 key was inserted on a deployed local ledger or that finality is independently
 authenticated.
+
+The local issuer SDK and the generic governed-proposal HTTP preflight now
+apply Compact's distinct-maintainer-public-key quorum rule before an HTTP
+journal reservation. Two registered key IDs backed by one Jubjub public key
+are rejected even when their signatures verify. A synthetic-ledger HTTP test
+uses a real file journal and checks that no reservation or submission occurs;
+it is not a deployed-ledger actor test. This closes a deterministic
+pre-broadcast wedge identified under #220, not the broader audited recovery
+policy for a reservation whose network outcome is unknown.
