@@ -15,6 +15,7 @@ const MAX_COLLISION_ATTEMPTS = 3;
 const MAX_IN_MEMORY_CHALLENGES = 10_000;
 const MAX_CHALLENGES_PER_SUBJECT = 32;
 const MAX_TIMEOUT_MS = 2_147_483_647;
+const MAX_CHALLENGE_RECORD_MS = Date.parse("9999-12-31T23:59:59.999Z");
 const HashSchema = HashHexSchema;
 const NonceSchema = z.string().regex(/^0x[0-9a-f]{64}$/);
 export { ApplicationChallengeBindingSchema };
@@ -312,6 +313,7 @@ export class ApplicationChallengeService {
     if (record === undefined || record.challengeHash !== challengeHash || record.bindingHash !== bindingHash
       || !Number.isSafeInteger(record.issuedAtMs) || !Number.isSafeInteger(record.expiresAtMs)
       || record.issuedAtMs < 0 || record.issuedAtMs > nowMs
+      || record.expiresAtMs > MAX_CHALLENGE_RECORD_MS
       || record.expiresAtMs <= nowMs || record.expiresAtMs <= record.issuedAtMs) {
       throw new ApplicationChallengeClockError("Application challenge store returned an invalid live window");
     }

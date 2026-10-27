@@ -148,6 +148,29 @@ describe("challenge-backed application intake", () => {
     await expect(consumeChallengeAndSubmitApplication(input)).resolves.toBeDefined();
   });
 
+  it("does not consume a challenge for sub-millisecond future or overlong evidence", async () => {
+    const binding = bindingFor("issuer");
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);
+    const issued = await service.issue(binding);
+    const input = intakeInput(binding, service, issued.nonce, issued.challengeHash);
+    const verified = await input.verifyPresentation(input.presentation, { binding });
+
+    input.verifyPresentation.mockResolvedValueOnce({
+      ...verified, verifiedAt: "2026-10-06T00:00:00.0000000001Z",
+    });
+    await expect(consumeChallengeAndSubmitApplication(input)).rejects.toThrow(/not yet valid/u);
+    expect(await service.isLive({ binding, nonce: issued.nonce, challengeHash: issued.challengeHash })).toBe(true);
+
+    input.verifyPresentation.mockResolvedValueOnce({
+      ...verified, expiresAt: "2026-10-07T00:00:00.0000000001Z",
+    });
+    await expect(consumeChallengeAndSubmitApplication(input)).rejects.toThrow(/maximum 24-hour lifetime/u);
+    expect(await service.isLive({ binding, nonce: issued.nonce, challengeHash: issued.challengeHash })).toBe(true);
+    expect(input.signEvidence).not.toHaveBeenCalled();
+
+    await expect(consumeChallengeAndSubmitApplication(input)).resolves.toBeDefined();
+  });
+
   it("does not consume on a failed VP binding, but spends a challenge after signing fails", async () => {
     const binding = bindingFor("issuer");
     const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => START);

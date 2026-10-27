@@ -2806,3 +2806,15 @@ record, not only a synthetic status object. It exits blocked before genesis
 approval, remains blocked after a node-only observation, and reports a stale
 candidate source revision as the first safe action. This is a fail-closed
 operator preflight test, not a real deployment or actor E2E result.
+
+## Fractional application-evidence time boundary
+
+The application-evidence envelope, challenge-backed intake, and local issuer
+writer now compare RFC3339 instants without truncating fractional digits to
+milliseconds. The exact 24-hour evidence lifetime is accepted; an additional
+fractional digit is rejected. Intake rejects a VP verification instant just
+after the trusted evaluation time before consuming the one-use challenge,
+and the local issuer port rejects trusted time just before `verifiedAt`.
+This fixes one #179 trust-decision boundary. Other `Date.parse` uses in
+recognition, policy, and adapter decisions still require the independent
+audit; this slice does not close #179 or prove a deployed actor journey.

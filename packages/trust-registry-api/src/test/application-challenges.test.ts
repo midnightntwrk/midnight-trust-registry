@@ -131,6 +131,24 @@ describe("application challenge lifecycle", () => {
       .rejects.toMatchObject({ code: "CHALLENGE_CLOCK_INVALID", name: "ApplicationChallengeClockError" });
   });
 
+  it("rejects a store expiry beyond the representable RFC3339 range", async () => {
+    let saved: ApplicationChallengeRecord | undefined;
+    const store: ApplicationChallengeStore = {
+      insert: async (record) => {
+        saved = record;
+        return { inserted: true, supersededPrevious: false };
+      },
+      readLive: async () => saved === undefined ? null : {
+        ...saved, expiresAtMs: Number.MAX_SAFE_INTEGER,
+      },
+      consume: async () => false,
+    };
+    const service = new ApplicationChallengeService(store, () => START);
+    const issued = await service.issue(binding);
+    await expect(service.liveWindow({ binding, nonce: issued.nonce, challengeHash: issued.challengeHash }))
+      .rejects.toMatchObject({ code: "CHALLENGE_CLOCK_INVALID", name: "ApplicationChallengeClockError" });
+  });
+
   it("fails closed on clock rollback without spending the live challenge", async () => {
     let now = START;
     const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => now);

@@ -209,7 +209,12 @@ MUST be at or after the stored challenge issuance instant, strictly before
 the stored challenge expiry, and no later than the trusted evaluation instant.
 The evaluation instant itself MUST be inside that half-open challenge window.
 The signed evidence expiry MUST be after verification and no more than 24
-hours later. Evidence may remain valid after the five-minute challenge expires;
+hours later. Time comparisons MUST preserve every supplied fractional second
+digit, including digits beyond milliseconds; rounding an instant into the
+challenge or evidence window MUST NOT make an otherwise premature or expired
+decision valid.
+The exact 24-hour limit is inclusive, but any positive fractional excess is not.
+Evidence may remain valid after the five-minute challenge expires;
 the challenge proves VP freshness, whereas the evidence window bounds later
 governed approval. The service MUST read the window from the challenge store,
 validate its numeric issuance and expiry instants, and fail closed if that
