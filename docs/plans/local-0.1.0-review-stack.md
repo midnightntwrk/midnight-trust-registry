@@ -41,8 +41,8 @@ head `bbe527cf`, followed by review-plan documentation, current-query
 approval-binding group E, a read-only ambiguous-recovery group F, and an
 adversarial-report hardening group G, and local-profile/qualification-docs
 group H, observation-scope guard group I, typed scope-policy group J, and
-current-query process-identity group K, and retained-approval consistency
-group L. They are
+current-query process-identity group K, retained-approval consistency group L,
+and recovery-handoff alignment group M. They are
 **not published**, and publication requires the user's separate approval. Preserve
 their existing order and review them as context-sized diffs rather than
 opening one PR per commit. Before any publication, fetch the live #240 head and check
@@ -63,6 +63,7 @@ rewrite unpublished work to repair a stale base.
 | J | `9044f4d4` onward | Strictly check the pure qualification scope decision and reject malformed/missing child report fields | Remaining probe I/O is non-strict; typed scope checks are not independently authenticated finality or deployed E2E |
 | K | `9f9ff560` onward | Require valid API container/process identity on both current reads around the egress probe, with strict checked-JS and negative tests | This is read-only observer assurance, not a deployed governed actor journey |
 | L | `24dd5acd` onward | Reject corrupted or setup-inconsistent retained genesis, roster, and deployment-bound committee approval evidence; expose an invalid status instead of a verified label | Retained-byte checks do not replace independent GPG trust-anchor verification, signed real chain-spec review, or deployed E2E |
+| M | `8eaf194a` onward | Align operator recovery guidance with the implemented v3 candidate and distinct-reviewer signed decision | The decision verifier does not authenticate finality or release a reservation; #220 and deployed recovery remain open |
 
 For a stacked publication, the first group would target #240, and each later
 group would target the immediately preceding group. The table is a review
