@@ -2739,3 +2739,19 @@ dependency audit passed in the writable checkout. The read-only exact-head
 Codex review found no actionable regression; its temp-file tests could not
 run under its sandbox. None of these results is a deployed local-ledger actor
 journey or independent finality evidence for #219.
+
+## Latest local standalone evidence boundary
+
+At signed/DCO source `7efcf607`, a verified source-matched v6 install and
+dedicated `wizard-7efc-1` setup passed pinned-bundle checks, internal ledger
+topology and local canary denial, and pre-deployment restart continuity.
+The node-reported genesis candidate and proposed pin remain untrusted; the
+journey prerequisite check stopped at the unsigned genesis approval. No
+registry contract was deployed, no independent finality was authenticated,
+and no offline actor or distinct-project restore test ran. The containers
+were stopped without removing their volumes or private evidence. Later
+source changes make the install historical rather than a current-head RC
+candidate. The [acceptance map](../plans/milestone-0.1.0-acceptance-map.md)
+records its inventory and untrusted-candidate digests without publishing the
+private review packet. A new exact-source install and independently signed
+approval are required before live qualification can resume.
