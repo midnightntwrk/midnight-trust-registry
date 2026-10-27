@@ -37,6 +37,7 @@ export default defineConfig({
     sidebar: {
       "/guide/": [{ text: "Guide", items: [
         { text: "Overview", link: "/guide/" },
+        { text: "Start here: try, then qualify", link: "/guide/adoption" },
         { text: "Quickstart and demo", link: "/guide/quickstart" },
         { text: "Self-hosted standalone", link: "/guide/standalone" },
         { text: "End-to-end testing", link: "/guide/end-to-end-testing" },

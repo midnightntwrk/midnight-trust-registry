@@ -27,8 +27,8 @@ features:
 
 The registry answers **who may do what, for which scope, under which policy, at which observed state**. It does not issue VCs, resolve DIDs, hold personal data, or replace credential status checks.
 
-For a quick evaluation, run the [simulator demo](./guide/quickstart.md). For a
-self-hosted install, follow the [standalone first run](./guide/standalone.md),
+For a quick evaluation or a self-hosted install, [start with the two-path adoption guide](./guide/adoption.md).
+For a self-hosted install, follow the [standalone first run](./guide/standalone.md),
 which stops at human approval rather than treating the node's own report as
 trusted genesis evidence. The [operator acceptance record](https://github.com/midnightntwrk/midnight-trust-registry/blob/milestone-0.1.0/docs/guide/standalone-local-journey.md#operator-acceptance-record)
 lists the real deployed actor, egress, recovery, and review cases still needed

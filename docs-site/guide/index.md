@@ -21,6 +21,7 @@ The default identity profile is `did:midnight` with contract-facing JubJub Schno
 
 ## Where to go next
 
+- [Start with the adoption guide](./adoption.md) to choose between a runnable demo and a qualified self-hosted install.
 - [Run a local demo](./quickstart.md) to see a fixture-backed journey.
 - [Read the actor matrix](./use-cases.md) before designing an integration.
 - [Inspect the domain model](../model/index.md) for exact scope and lifecycle rules.
