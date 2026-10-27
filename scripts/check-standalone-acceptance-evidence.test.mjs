@@ -149,11 +149,70 @@ test("inventory is fail-closed and never asserts release qualification", async (
       await writeFile(join(root, `${id}.log`), bytes);
       candidate.cases[id] = { status: "pass", evidence: [{ path: `${id}.log`, sha256: sha(bytes) }] };
     }
-    const complete = await checkStandaloneAcceptanceEvidence(root, candidate);
+    assert.equal((await checkStandaloneAcceptanceEvidence(root, candidate)).completeInventory, false);
+    for (const id of CASES) candidate.cases[id].status = "not-run";
+    await writeFile(join(root, "acceptance.json"), `${JSON.stringify(candidate)}\n`, { mode: 0o600 });
+    for (const id of CASES) {
+      await decideStandaloneAcceptanceCase(root, candidate.sourceRevision, id, "pass",
+        "operator:test", "reviewed-raw-evidence");
+    }
+    const decided = JSON.parse(await readFile(join(root, "acceptance.json"), "utf8"));
+    const complete = await checkStandaloneAcceptanceEvidence(root, decided);
     assert.equal(complete.completeInventory, true);
+    assert.equal(Object.values(complete.decisionBackedCases).every(Boolean), true);
     assert.equal(complete.releaseQualified, false);
+    await writeFile(join(root, "late.log"), "late evidence\n");
+    await attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision, "L01", "late.log");
+    const stale = JSON.parse(await readFile(join(root, "acceptance.json"), "utf8"));
+    assert.equal((await checkStandaloneAcceptanceEvidence(root, stale)).completeInventory, false);
+    await decideStandaloneAcceptanceCase(root, candidate.sourceRevision, "L01", "pass",
+      "operator:test", "reviewed-late-evidence");
     await writeFile(join(root, "L01.log"), "modified\n");
-    await assert.rejects(checkStandaloneAcceptanceEvidence(root, candidate), /SHA-256 mismatch/u);
+    const changed = JSON.parse(await readFile(join(root, "acceptance.json"), "utf8"));
+    await assert.rejects(checkStandaloneAcceptanceEvidence(root, changed), /SHA-256 mismatch/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("inventory rejects a status edit or reordered evidence after an operator decision", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-acceptance-decision-chain-"));
+  try {
+    const candidate = manifest();
+    const bytes = Buffer.from("first receipt\n");
+    await writeFile(join(root, "first.log"), bytes);
+    candidate.cases.L01.evidence.push({ path: "first.log", sha256: sha(bytes) });
+    await writeFile(join(root, "acceptance.json"), `${JSON.stringify(candidate)}\n`, { mode: 0o600 });
+    await decideStandaloneAcceptanceCase(root, candidate.sourceRevision, "L01", "pass",
+      "operator:test", "reviewed-first-receipt");
+    const decided = JSON.parse(await readFile(join(root, "acceptance.json"), "utf8"));
+    decided.cases.L01.status = "fail";
+    await assert.rejects(checkStandaloneAcceptanceEvidence(root, decided), /status differs/u);
+    decided.cases.L01.status = "pass";
+    decided.cases.L01.evidence.reverse();
+    await assert.rejects(checkStandaloneAcceptanceEvidence(root, decided), /decision does not match/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("an older manually labeled case needs a fresh decision before it counts", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-acceptance-first-decision-"));
+  try {
+    const candidate = manifest();
+    const bytes = Buffer.from("legacy receipt\n");
+    await writeFile(join(root, "legacy.log"), bytes);
+    candidate.cases.L01 = { status: "pass", evidence: [{ path: "legacy.log", sha256: sha(bytes) }] };
+    await writeFile(join(root, "acceptance.json"), `${JSON.stringify(candidate)}\n`, { mode: 0o600 });
+    const before = await checkStandaloneAcceptanceEvidence(root, candidate);
+    assert.equal(before.decisionBackedCases.L01, false);
+    const decision = await decideStandaloneAcceptanceCase(root, candidate.sourceRevision, "L01",
+      "pass", "operator:test", "reviewed-legacy-receipt");
+    assert.equal(decision.previousStatus, "pass");
+    const updated = JSON.parse(await readFile(join(root, "acceptance.json"), "utf8"));
+    const after = await checkStandaloneAcceptanceEvidence(root, updated);
+    assert.equal(after.decisionBackedCases.L01, true);
+    assert.equal(after.completeInventory, false);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

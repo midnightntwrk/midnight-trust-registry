@@ -191,7 +191,11 @@ names cases `L01`-`S01`: issuer/verifier/auditor grants, maintainer and
 recognition actions, DID and live VC-status checks, negative authorization
 cases, egress-denied actor work, restart and distinct-project restore, and
 independent human security review. Record each as `pass`, `fail`, or `not-run`
-with raw receipts. After deployment and the signed API plan exist, run the
+with raw receipts. A `pass` label alone does not complete the inventory: attach
+raw evidence, record a current operator decision with `decide`, and re-decide
+if later evidence is attached. The checker verifies the private file and
+decision hash chain, not receipt authenticity or the reviewer's authority.
+After deployment and the signed API plan exist, run the
 read-only API observation against the same setup, verified bundle, and exact
 signed source revision:
 

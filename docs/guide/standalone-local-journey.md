@@ -286,6 +286,18 @@ These records are self-attested,
 not signatures or independent evidence verification. For `S01`, attach the
 non-author human's separately signed security verdict before recording `pass`.
 Never treat a CLI verdict as proof of its underlying receipt or finality.
+The inventory reports `completeInventory: true` only when every case's latest
+`pass` is backed by a private decision record covering the attached evidence.
+If new raw evidence is attached after a `pass`, the case becomes incomplete
+until the operator reviews it and records a new decision. Editing a status
+label in `acceptance.json` is not a substitute for `decide`; the checker
+rejects a label that contradicts the latest decision. These protections catch
+stale or accidental inventory edits, not a malicious operator who controls the
+private evidence directory.
+For an older inventory whose status was entered manually, review the raw
+evidence and run `decide` with the desired verdict; its first decision records
+the previous label and brings the case into the checked decision chain. Do
+not reset or rewrite retained evidence merely to satisfy the new check.
 
 Use a different relative file for each case. If `.acceptance.lock` exists,
 check whether an evidence writer is active before removing a stale lock; do
@@ -304,7 +316,8 @@ the checker rejects a bundle from a different commit instead of validating
 stale acceptance evidence. Exit 2 means at least one case is not `pass`; exit 1
 means the source differs or the inventory or a file is invalid, missing,
 symlinked, or hash-mismatched. Exit 0 means only
-that all case labels are `pass` and every listed file matches its digest. The
+that all cases have current `pass` decisions and every listed file matches
+its digest. The
 report **always** says `releaseQualified: false`: this command cannot verify
 receipt authenticity, ledger finality, the correctness of a human security
 verdict, or the truth of a `pass` label. A second operator must examine the

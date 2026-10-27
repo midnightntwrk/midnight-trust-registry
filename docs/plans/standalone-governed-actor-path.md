@@ -140,6 +140,14 @@ one journal. The callback models a lost provider response; this does not kill
 a process mid-write or exercise a deployed ledger or distinct-project restore.
 An additional child is force-killed after reservation durability but before
 the broadcast callback can write its marker; a fresh child remains blocked.
+The API package's process-restart test also constructs a fresh pinned provider
+on every child launch: an ambiguous issuer attempt blocks both retry and an
+unrelated verifier attempt; a lagging read keeps the reservation, a matching
+observed event permits a different intent but not replay of the issuer intent,
+and a failed journal write never reaches the submission callback. These are
+fresh-process journal and provider-construction tests with injected submission
+callbacks, not evidence that a real provider was restarted or broadcast to a
+deployed local ledger.
 This tests one crash boundary, not every filesystem failure or an actual
 deployed provider restart. Deployed actor and recovery evidence remains open
 under #219 and #230.

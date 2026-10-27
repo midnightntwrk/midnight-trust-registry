@@ -2542,3 +2542,14 @@ negatives cover missing or primitive inputs, malformed observation and image,
 wrong host lists, noncanonical time, and wrong numeric types. This comparison
 still uses values reported by the same node: it is **not** an independent
 chain-spec review, detached human approval, or deployed-ledger evidence.
+
+The standalone acceptance inventory now requires each `pass` case to be
+backed by its latest private operator decision record, with the record's
+prior status and evidence list matching the case history. A raw attachment
+after the decision makes that case incomplete until it is reviewed again.
+This prevents an accidental manual `pass` label or stale decision from
+producing `completeInventory: true`; it does not authenticate the operator,
+receipt, finality, or security verdict. The #230 fresh-process journal and
+provider-construction tests are now explicitly described in the actor-path
+guide, separately from deployed restart/restore acceptance. The standalone
+topology suite (76 tests), documentation build, and low-level audit passed.
