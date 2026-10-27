@@ -6,6 +6,8 @@ import { lstat, mkdir, open, rename, rmdir, unlink, writeFile } from "node:fs/pr
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { assessStandaloneCaseDecisionChain } from "./standalone-acceptance-decision-policy.mjs";
+
 const CASES = ["L01", "L02", "A01", "A02", "A03", "A04", "N01", "O01", "R01", "S01"];
 const SHA256 = /^[0-9a-f]{64}$/u;
 const REVISION = /^[0-9a-f]{40}$/u;
@@ -356,8 +358,7 @@ export async function checkStandaloneAcceptanceEvidence(root, manifest, expected
       || (entry.status === "pass" && !entry.evidence.some((item) => !isDecisionPath(item?.path)))) {
       throw new Error(`${id} requires status pass/fail/not-run and raw evidence for pass`);
     }
-    let lastDecision = null;
-    let lastDecisionIndex = -1;
+    const decisions = [];
     for (const [index, item] of entry.evidence.entries()) {
       if (!exactKeys(item, ["path", "sha256"]) || !SHA256.test(item.sha256)) {
         throw new Error(`${id} evidence requires a relative path and SHA-256`);
@@ -368,30 +369,12 @@ export async function checkStandaloneAcceptanceEvidence(root, manifest, expected
         throw new Error(`${id} evidence SHA-256 mismatch: ${item.path}`);
       }
       if (isDecisionPath(item.path)) {
-        const decision = await readPrivateObservation(root, item.path);
-        if (!exactKeys(decision, ["format", "sourceRevision", "caseId", "previousStatus", "status",
-          "reviewer", "reasonCode", "decidedAt", "evidence", "reviewerAuthenticated",
-          "evidenceContentVerified", "releaseQualified"])
-          || decision.format !== "tr-standalone-case-decision-v1"
-          || decision.sourceRevision !== manifest.sourceRevision || decision.caseId !== id
-          || !["pass", "fail", "not-run"].includes(decision.previousStatus)
-          || (lastDecision !== null && decision.previousStatus !== lastDecision.status)
-          || !["pass", "fail", "not-run"].includes(decision.status)
-          || decision.reviewerAuthenticated !== false
-          || decision.evidenceContentVerified !== false || decision.releaseQualified !== false
-          || JSON.stringify(decision.evidence) !== JSON.stringify(entry.evidence.slice(0, index))) {
-          throw new Error(`${id} decision does not match its case history: ${item.path}`);
-        }
-        lastDecision = decision;
-        lastDecisionIndex = index;
+        decisions.push({ index, path: item.path, record: await readPrivateObservation(root, item.path) });
       }
     }
-    if (lastDecision && entry.status !== lastDecision.status) {
-      throw new Error(`${id} status differs from its latest decision`);
-    }
     cases[id] = entry.status;
-    decisionBackedCases[id] = entry.status === "pass"
-      && lastDecision?.status === "pass" && lastDecisionIndex === entry.evidence.length - 1;
+    decisionBackedCases[id] = assessStandaloneCaseDecisionChain(
+      id, manifest.sourceRevision, entry.status, entry.evidence, decisions);
   }
   return {
     format: "tr-standalone-acceptance-inventory-report-v1",

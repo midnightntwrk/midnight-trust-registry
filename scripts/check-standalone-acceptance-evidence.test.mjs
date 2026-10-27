@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 
 import { assessStandaloneObservationBinding, attachStandaloneAcceptanceEvidence, checkStandaloneAcceptanceEvidence,
   decideStandaloneAcceptanceCase } from "./check-standalone-acceptance-evidence.mjs";
+import { assessStandaloneCaseDecisionChain } from "./standalone-acceptance-decision-policy.mjs";
 
 const CASES = ["L01", "L02", "A01", "A02", "A03", "A04", "N01", "O01", "R01", "S01"];
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -20,6 +21,42 @@ const manifest = () => ({
   genesisHash: `0x${"d".repeat(64)}`,
   contractAddress: `0x${"e".repeat(64)}`,
   cases: Object.fromEntries(CASES.map((id) => [id, { status: "not-run", evidence: [] }])),
+});
+
+test("strict decision policy requires an ordered, current, source-bound verdict", () => {
+  const raw = { path: "L01/receipt.log", sha256: "a".repeat(64) };
+  const first = { path: "decisions/L01-first.json", sha256: "b".repeat(64) };
+  const second = { path: "decisions/L01-second.json", sha256: "c".repeat(64) };
+  const record = (previousStatus, status, evidence) => ({
+    format: "tr-standalone-case-decision-v1", sourceRevision: "a".repeat(40),
+    caseId: "L01", previousStatus, status, reviewer: "operator:test",
+    reasonCode: "reviewed-receipt", decidedAt: "2026-10-27T00:00:00.000Z", evidence,
+    reviewerAuthenticated: false, evidenceContentVerified: false, releaseQualified: false,
+  });
+  const evidence = [raw, first, second];
+  const decisions = [
+    { index: 1, path: first.path, record: record("not-run", "fail", [raw]) },
+    { index: 2, path: second.path, record: record("fail", "pass", [raw, first]) },
+  ];
+  const assess = (status, entries = evidence, history = decisions) =>
+    assessStandaloneCaseDecisionChain("L01", "a".repeat(40), status, entries, history);
+  assert.equal(assess("pass"), true);
+  assert.equal(assess("pass", [...evidence, { path: "L01/late.log", sha256: "d".repeat(64) }]), false);
+  assert.equal(assess("pass", [raw], []), false);
+  assert.throws(() => assess("fail"), /status differs/u);
+  assert.throws(() => assess("pass", evidence, [decisions[1], decisions[0]]), /case history/u);
+  assert.throws(() => assess("pass", evidence, [decisions[0], {
+    ...decisions[1], record: { ...decisions[1].record, previousStatus: "not-run" },
+  }]), /case history/u);
+  for (const invalid of [
+    { ...decisions[0].record, sourceRevision: "f".repeat(40) },
+    { ...decisions[0].record, reviewerAuthenticated: true },
+    { ...decisions[0].record, evidence: [] },
+    { ...decisions[0].record, extra: true },
+  ]) {
+    assert.throws(() => assess("pass", evidence, [{ ...decisions[0], record: invalid }, decisions[1]]),
+      /case history/u);
+  }
 });
 const observation = (candidate) => ({
   format: "tr-standalone-qualification-observation-v1",

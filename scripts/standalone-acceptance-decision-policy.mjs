@@ -1,0 +1,52 @@
+/** @typedef {{path: string, sha256: string}} EvidenceRef */
+/** @typedef {"pass" | "fail" | "not-run"} CaseStatus */
+/** @typedef {{index: number, path: string, record: unknown}} IndexedDecision */
+
+const STATUSES = new Set(["pass", "fail", "not-run"]);
+
+/** @param {unknown} value @param {readonly string[]} keys */
+function exactKeys(value, keys) {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    && Object.keys(value).sort().join("|") === [...keys].sort().join("|");
+}
+
+/**
+ * Checks the self-attested decision history, not signer identity or receipt truth.
+ * @param {string} caseId
+ * @param {string} sourceRevision
+ * @param {CaseStatus} status
+ * @param {readonly EvidenceRef[]} evidence
+ * @param {readonly IndexedDecision[]} decisions
+ */
+export function assessStandaloneCaseDecisionChain(caseId, sourceRevision, status, evidence, decisions) {
+  /** @type {CaseStatus | null} */
+  let previousDecisionStatus = null;
+  let lastDecisionIndex = -1;
+  for (const { index, path, record } of decisions) {
+    if (!Number.isSafeInteger(index) || index <= lastDecisionIndex || index >= evidence.length
+      || evidence[index]?.path !== path
+      || !exactKeys(record, ["format", "sourceRevision", "caseId", "previousStatus", "status",
+        "reviewer", "reasonCode", "decidedAt", "evidence", "reviewerAuthenticated",
+        "evidenceContentVerified", "releaseQualified"])) {
+      throw new Error(`${caseId} decision does not match its case history: ${path}`);
+    }
+    const decision = /** @type {Record<string, unknown>} */ (record);
+    if (decision.format !== "tr-standalone-case-decision-v1"
+      || decision.sourceRevision !== sourceRevision || decision.caseId !== caseId
+      || !STATUSES.has(/** @type {string} */ (decision.previousStatus))
+      || (previousDecisionStatus !== null && decision.previousStatus !== previousDecisionStatus)
+      || !STATUSES.has(/** @type {string} */ (decision.status))
+      || decision.reviewerAuthenticated !== false
+      || decision.evidenceContentVerified !== false || decision.releaseQualified !== false
+      || JSON.stringify(decision.evidence) !== JSON.stringify(evidence.slice(0, index))) {
+      throw new Error(`${caseId} decision does not match its case history: ${path}`);
+    }
+    previousDecisionStatus = /** @type {CaseStatus} */ (decision.status);
+    lastDecisionIndex = index;
+  }
+  if (previousDecisionStatus !== null && status !== previousDecisionStatus) {
+    throw new Error(`${caseId} status differs from its latest decision`);
+  }
+  return status === "pass" && previousDecisionStatus === "pass"
+    && lastDecisionIndex === evidence.length - 1;
+}

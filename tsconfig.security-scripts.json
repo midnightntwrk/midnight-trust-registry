@@ -26,6 +26,7 @@
     "scripts/provider-runtime-content.mjs",
     "scripts/verify-installed-provider-runtime.mjs",
     "scripts/standalone-setup-wizard.mjs",
+    "scripts/standalone-acceptance-decision-policy.mjs",
     "scripts/static-runtime-archive.mjs",
     "scripts/verify-helm-mapping-signature.mjs"
   ]

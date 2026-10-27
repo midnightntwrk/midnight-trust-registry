@@ -4,7 +4,7 @@ Issue #229 tracks typed assurance for the self-hosted 0.1.0 installer and
 operator workflow. The existing broad `checkJs` configuration includes the
 wizard and installer but permits implicit `any`; Quality CI now runs it.
 A second, strict no-emit gate runs
-`pnpm run check:security-boundaries-types` for eight privileged boundaries:
+`pnpm run check:security-boundaries-types` for nine privileged boundaries:
 
 | Checked file | Security decision |
 | --- | --- |
@@ -12,6 +12,7 @@ A second, strict no-emit gate runs
 | `scripts/immutable-provider-tree.mjs` | Root-owned code tree and import confinement. |
 | `scripts/provider-runtime-content.mjs` | Content digest and file continuity during the reviewed provider transfer. |
 | `scripts/standalone-approval-policy.mjs` | Canonical reviewer metadata and release committee/custody validation. |
+| `scripts/standalone-acceptance-decision-policy.mjs` | Source-bound operator decision history and current evidence coverage. |
 | `scripts/standalone-api-approval-chain.mjs` | Exact-byte approval-chain export and deployment/maintenance readback binding. |
 | `scripts/standalone-genesis-review-policy.mjs` | Untrusted candidate and proposed pin comparison against a verified profiled install. |
 | `scripts/standalone-image-reference.mjs` | Shared pinned OCI reference syntax for installer and review policy. |
@@ -37,11 +38,11 @@ inventory, not a waiver of the release security review.
 | 4 | `scripts/check-helm-image-mapping.mjs`, `scripts/observe-helm-runtime.mjs` | Optional Kubernetes mapping and observations; Helm is not a 0.1.0 RC gate. |
 | 5 | `scripts/release-candidate-manifest.mjs`, `scripts/check-publish-tarball.mjs` | Release package and verifier-key hash decisions; manifest-backed publish remains a separate release gate. |
 
-The standalone acceptance inventory checker is now included in the broad
-`checkJs` gate. Its bounded private-file reads, decision-chain checks, and
-candidate identity comparisons remain runtime-tested; its input objects are
-not yet strictly typed, so the broad gate is not a substitute for independent
-review of operator evidence.
+The standalone acceptance inventory checker is included in the broad
+`checkJs` gate. Its decision-chain policy is also in the strict gate; the
+private-file reads and candidate identity comparison remain runtime-tested in
+the non-strict I/O shell. Neither gate authenticates operator evidence or
+replaces independent review.
 
 Each migration should add malformed/missing-field negatives, preserve the
 existing exact-byte and journal behavior, and run its focused tests before

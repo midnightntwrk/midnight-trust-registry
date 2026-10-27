@@ -2559,3 +2559,11 @@ gate in Quality CI. Its private-file and decision-chain tests continue to
 cover runtime behavior. The script's parsed input objects are not yet in the
 strict no-implicit-any boundary, and typechecking does not authenticate an
 operator decision or live ledger receipt.
+
+The decision-chain evaluator has since been extracted into a side-effect-free
+module in the strict no-implicit-any gate. It rejects malformed or reordered
+records, mismatched source and prior status, and a `pass` made stale by later
+evidence. The original CLI continues to own private-file reads and digests.
+This improves reviewability of the acceptance inventory but does not change
+the self-attested nature of decisions or make a fixture browser run a local
+ledger qualification.
