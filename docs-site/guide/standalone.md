@@ -169,6 +169,11 @@ Its `nextSafeAction` identifies the first operator step; `blockedActions`
 lists downstream steps to defer. In particular, do not attempt deployment
 while it reports a source mismatch or unsigned genesis approval. Re-run it
 after each gate rather than executing every listed action at once.
+After genesis approval, the next gate is the separately signed release roster
+and its reviewed deployment plan; the wizard will not reserve deployment
+without them. The later `committeeApproved` gate binds that roster to the
+finalized deployment and requires a distinct signature. Do not interpret an
+approved pre-deployment roster as a completed maintenance transition.
 Even exit 0 is not a full E2E pass: it does not verify the complete key
 inventory, authenticated finality, a signed API plan, actor actions, or
 host/browser egress denial. A setup created from an older source SHA cannot
