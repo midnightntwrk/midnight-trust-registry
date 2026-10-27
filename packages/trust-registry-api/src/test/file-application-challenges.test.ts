@@ -1,9 +1,9 @@
-import { link, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { link, mkdir, mkdtemp, open, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ApplicationChallengeRecord } from "../application-challenges.js";
 import { FileApplicationChallengeStore } from "../file-application-challenges.js";
@@ -60,6 +60,47 @@ describe("file application challenge store", () => {
     expect(results.sort()).toEqual([false, true]);
     expect(await first.consume(challenge.challengeHash, challenge.bindingHash, START)).toBe(false);
     expect(await second.readLive(challenge.challengeHash, challenge.bindingHash, START)).toBeNull();
+  });
+
+  it("retains the previous challenge and cleans up after a failed pre-rename file sync", async () => {
+    const path = await storePath();
+    const store = new FileApplicationChallengeStore(path);
+    const original = record(10, 20);
+    await store.insert(original, START, () => START);
+    const handle = await open(path, "r");
+    const handlePrototype = Object.getPrototypeOf(handle) as { sync: () => Promise<void> };
+    await handle.close();
+    const sync = vi.spyOn(handlePrototype, "sync").mockRejectedValueOnce(new Error("simulated sync failure"));
+    try {
+      await expect(store.insert(record(11, 20), START, () => START))
+        .rejects.toThrow("simulated sync failure");
+    } finally {
+      sync.mockRestore();
+    }
+    expect(await store.readLive(original.challengeHash, original.bindingHash, START)).toEqual(original);
+    expect(await readdir(dirname(path))).toEqual(["challenges.json"]);
+  });
+
+  it("reports an ambiguous consume when parent-directory sync fails after rename", async () => {
+    const path = await storePath();
+    const store = new FileApplicationChallengeStore(path);
+    const challenge = record(10, 20);
+    await store.insert(challenge, START, () => START);
+    const handle = await open(path, "r");
+    const handlePrototype = Object.getPrototypeOf(handle) as { sync: () => Promise<void> };
+    await handle.close();
+    const sync = vi.spyOn(handlePrototype, "sync")
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("simulated directory sync failure"));
+    try {
+      await expect(store.consume(challenge.challengeHash, challenge.bindingHash, START))
+        .rejects.toThrow("simulated directory sync failure");
+      expect(sync).toHaveBeenCalledTimes(2);
+    } finally {
+      sync.mockRestore();
+    }
+    expect(await store.readLive(challenge.challengeHash, challenge.bindingHash, START)).toBeNull();
+    expect(await readdir(dirname(path))).toEqual(["challenges.json"]);
   });
 
   it("supersedes only a live challenge with the same application and binding", async () => {

@@ -627,10 +627,13 @@ instants in a versioned private (`0600`) file. A shared cross-process lock
 serializes replacement and one-use consumption; a second instance can read and
 consume the same challenge, but cannot consume it twice. It fails closed on
 malformed or insecurely permissioned files, bounds capacity, and leaves stale
-locks for operator recovery. Atomic rename does not guarantee crash-durable
-writes, and this adapter does not provide distributed transactions, VP
-verification, applicant authentication, rate limits, or atomic pending-state
-persistence. The packaged API CLI still leaves `applicationVp` unconfigured.
+locks for operator recovery. It syncs the replacement file and parent directory
+around atomic rename for local-filesystem crash durability, assuming the host
+filesystem honors `fsync`. A failed post-rename directory sync is an ambiguous
+write outcome requiring readback. This adapter does not provide distributed
+transactions, VP verification, applicant authentication, rate limits, or
+atomic pending-state persistence. The packaged API CLI still leaves
+`applicationVp` unconfigured.
 
 The optional `POST /v1/pending-applications` accepts an externally signed
 Midnight DID `apply` intent for an issuer, verifier, auditor, or maintainer,

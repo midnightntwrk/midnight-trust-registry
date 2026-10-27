@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { mkdir, open, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, open, rename, rm } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { setTimeout as delay } from "node:timers/promises";
@@ -57,7 +57,7 @@ export class InvalidApplicationChallengeFileError extends Error {
   }
 }
 
-/** Local reference adapter. Atomic rename is not a claim of crash-durable persistence. */
+/** Local file adapter with durable replacement and cross-process write exclusion. */
 export class FileApplicationChallengeStore implements ApplicationChallengeStore {
   private readonly path: string;
 
@@ -199,11 +199,26 @@ export class FileApplicationChallengeStore implements ApplicationChallengeStore 
   }
 
   private async writeState(state: z.infer<typeof StateSchema>): Promise<void> {
-    await mkdir(dirname(this.path), { recursive: true });
+    const directoryPath = dirname(this.path);
+    await mkdir(directoryPath, { recursive: true, mode: 0o700 });
+    const serialized = JSON.stringify(StateSchema.parse(state));
+    if (Buffer.byteLength(serialized, "utf8") > MAX_FILE_BYTES) throw new InvalidApplicationChallengeFileError();
     const temporaryPath = `${this.path}.${randomUUID()}.tmp`;
     try {
-      await writeFile(temporaryPath, JSON.stringify(state), { encoding: "utf8", flag: "wx", mode: 0o600 });
+      const temporary = await open(temporaryPath, "wx", 0o600);
+      try {
+        await temporary.writeFile(serialized);
+        await temporary.sync();
+      } finally {
+        await temporary.close();
+      }
       await rename(temporaryPath, this.path);
+      const directory = await open(directoryPath, "r");
+      try {
+        await directory.sync();
+      } finally {
+        await directory.close();
+      }
     } finally {
       await rm(temporaryPath, { force: true });
     }

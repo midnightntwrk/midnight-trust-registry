@@ -449,9 +449,12 @@ and prunes expired records during writes. File reads require one private,
 single-link regular inode opened without following a final-path symlink and
 reject a file changed during the read. This is local file-integrity hardening,
 not proof of the caller's identity. Neither adapter supplies distributed
-storage, crash-durable commits, applicant authentication, or a complete
-retention/cleanup policy. The file and memory adapters now bound live entries
-per authenticated subject hash when the embedding host supplies a verified DID;
+storage, applicant authentication, or a complete retention/cleanup policy.
+The file adapter syncs its replacement file and parent directory around rename
+for local-filesystem crash durability when the filesystem honors `fsync`; it
+does not atomically commit challenge consumption with accepted VP evidence.
+The file and memory adapters now bound live entries per authenticated subject
+hash when the embedding host supplies a verified DID;
 the application VP HTTP route rejects challenge issuance if the authorization
 callback returns no DID or one that differs from the pending binding. The
 default packaged API configures no such host. A caller-provided DID or demo
