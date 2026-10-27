@@ -51,6 +51,12 @@ test("packet labels self-reported values and independent approval requirements",
   assert.match(packet, /\*\*not\*\* independent evidence/u);
   assert.match(packet, /Never sign this packet/u);
   assert.match(packet, /maintenance roster/u);
+  for (const invalid of ["", "0".repeat(63), "G".repeat(64), "0".repeat(65)]) {
+    assert.throws(() => renderGenesisReviewPacket(evidence, invalid, "2".repeat(64)),
+      /exact candidate and pin digests/u);
+    assert.throws(() => renderGenesisReviewPacket(evidence, "1".repeat(64), invalid),
+      /exact candidate and pin digests/u);
+  }
   for (const invalid of [
     { candidate: { ...candidate, installInventorySha256: "0".repeat(64) } },
     { candidate: { ...candidate, project: "tr-standalone-local-other" } },
