@@ -472,6 +472,9 @@ approval; the plan reviewer must inspect the bytes and sign that exact file
 with their own key. The host must then use the detached-signature loader and
 initialize the approved journal path. This preparation command does not
 configure the packaged CLI writer or qualify a deployed actor journey.
+`node scripts/check-local-issuer-writer-approval.mjs` is a read-only post-signature
+preflight that checks the plan, annex, and installed provider together. Its
+success does not authenticate ledger finality or run an actor transaction.
 The final local clock check cannot prove that a transaction reaches a finalized
 block before evidence expiry; a deployment must enforce its approved
 transition-time policy using authenticated ledger evidence.

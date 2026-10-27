@@ -162,6 +162,18 @@ those exact bytes with their own GPG key; the embedding host must verify that
 detached signature and the plan-reviewer identity before use. Never place a
 private signing key in the install bundle or repository. This is preparation,
 not an `A01` pass or independent finality evidence.
+After the human has reviewed and signed those exact bytes, run the read-only
+preflight against the signed plan, detached signatures, and installed provider:
+
+```sh
+node scripts/check-local-issuer-writer-approval.mjs \
+  "$SIGNED_PLAN" "$PLAN_SIGNATURE" "$SIGNED_WRITER_APPROVAL" \
+  "$WRITER_SIGNATURE" "$REVIEWER_KEYRING" "$REVIEWER_FINGERPRINT"
+```
+
+Its success verifies the approval and installed-provider pins only. The
+report explicitly leaves `actorJourney` and `independentFinality` unverified;
+the host must still assemble and qualify a live writer before `A01` can pass.
 
 The [read-only qualification observer](standalone.md#continue-to-real-end-to-end-acceptance)
 can validate the approved API's current queries and API-container egress
