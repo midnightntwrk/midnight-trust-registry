@@ -28,7 +28,7 @@ async function boundedRpcResult(response: Response): Promise<unknown> {
       if (done) break;
       size += value.byteLength;
       if (size > MAX_RPC_RESPONSE_BYTES) {
-        await reader.cancel().catch(() => {});
+        void reader.cancel().catch(() => {});
         throw new Error("Finality RPC response exceeds the size limit");
       }
       chunks.push(value);

@@ -161,6 +161,24 @@ describe("RPC finalized checkpoint source", () => {
     expect(cancelled).toBe(true);
   });
 
+  it("fails promptly when cancelling an oversized stream never completes", async () => {
+    let cancelled = false;
+    const oversized = new ReadableStream({
+      start(controller) { controller.enqueue(new Uint8Array(8 * 1024 + 1)); },
+      cancel() {
+        cancelled = true;
+        return new Promise<void>(() => {});
+      },
+    });
+    const source = createLocalRpcFinalizedCheckpointSource({
+      rpcUrl: "http://node:9944", allowedHosts: ["node"],
+      expectedGenesisHash: GENESIS,
+      fetchImpl: fixture([new Response(oversized)]).fetchImpl,
+    });
+    await expect(source.readCurrentFinalizedCheckpoint()).rejects.toThrow(/size limit/u);
+    expect(cancelled).toBe(true);
+  }, 1000);
+
   it("rejects malformed UTF-8 and invalid JSON from the finality endpoint", async () => {
     for (const bytes of [new Uint8Array([0xff]), new TextEncoder().encode("{not json")]) {
       const source = createLocalRpcFinalizedCheckpointSource({
