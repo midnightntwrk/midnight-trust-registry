@@ -64,9 +64,15 @@ predeployment checks, **not** installed-ledger actor E2E, authenticated
 finality, or a human security verdict. PR publication or changed heads still
 require fresh applicable CI and review.
 Read-only Codex CLI review of group E through `c0d15413` found no actionable
-regression. Its local standalone topology suite passed 91 tests, and docs,
-security-boundary typechecks, and dependency audit passed. These are
-predeployment checks only.
+regression. A later review of the inventory-binding addition found two real
+gaps: the reported digest came only from the supplied bundle, not the signed
+API plan, and saved acceptance evidence did not bind its nested digest fields.
+Both were fixed by `8b0fe879`; a second read-only review of that exact code
+found no actionable regression. The local standalone topology suite passed
+92 tests, 19 focused API tests and API typecheck passed after rebuilding the
+domain package, and docs, security-boundary typecheck, and dependency audit
+passed. These are predeployment checks only. A published PR still requires
+fresh exact-head CI and review.
 #238's unresolved external scan and #232's human security release gate remain
 separate stop conditions.
 
