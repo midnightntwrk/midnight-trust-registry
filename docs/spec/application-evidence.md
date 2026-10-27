@@ -450,8 +450,9 @@ single-link regular inode opened without following a final-path symlink and
 reject a file changed during the read. This is local file-integrity hardening,
 not proof of the caller's identity. Neither adapter supplies distributed
 storage, applicant authentication, or a complete retention/cleanup policy.
-The file adapter syncs its replacement file and parent directory around rename
-for local-filesystem crash durability when the filesystem honors `fsync`; it
+The file adapter requires a pre-provisioned, durably synced store directory,
+then syncs its replacement file and that directory around rename when the
+local filesystem honors `fsync`; it
 does not atomically commit challenge consumption with accepted VP evidence.
 The file and memory adapters now bound live entries per authenticated subject
 hash when the embedding host supplies a verified DID;

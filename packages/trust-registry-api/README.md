@@ -627,9 +627,12 @@ instants in a versioned private (`0600`) file. A shared cross-process lock
 serializes replacement and one-use consumption; a second instance can read and
 consume the same challenge, but cannot consume it twice. It fails closed on
 malformed or insecurely permissioned files, bounds capacity, and leaves stale
-locks for operator recovery. It syncs the replacement file and parent directory
-around atomic rename for local-filesystem crash durability, assuming the host
-filesystem honors `fsync`. A failed post-rename directory sync is an ambiguous
+locks for operator recovery. The operator must pre-provision and durably sync
+the store directory before use; the adapter rejects a missing directory and
+rechecks its inode under the write lock instead of creating one during issuance.
+On a local filesystem that
+honors `fsync`, it then syncs the replacement file and existing directory
+around atomic rename. A failed post-rename directory sync is an ambiguous
 write outcome requiring readback. This adapter does not provide distributed
 transactions, VP verification, applicant authentication, rate limits, or
 atomic pending-state persistence. The packaged API CLI still leaves

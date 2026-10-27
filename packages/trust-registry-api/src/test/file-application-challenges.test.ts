@@ -103,6 +103,17 @@ describe("file application challenge store", () => {
     expect(await readdir(dirname(path))).toEqual(["challenges.json"]);
   });
 
+  it("refuses a missing store directory instead of creating an unsynced parent", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "tr-file-challenges-missing-"));
+    directories.push(directory);
+    const path = join(directory, "missing", "challenges.json");
+    const store = new FileApplicationChallengeStore(path);
+    await expect(store.insert(record(10, 20), START, () => START)).rejects.toMatchObject({
+      name: "InvalidApplicationChallengeFileError",
+    });
+    await expect(stat(dirname(path))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("supersedes only a live challenge with the same application and binding", async () => {
     const path = await storePath();
     const first = new FileApplicationChallengeStore(path);

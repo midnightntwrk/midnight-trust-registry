@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { mkdir, open, rename, rm } from "node:fs/promises";
+import { open, rename, rm } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { setTimeout as delay } from "node:timers/promises";
@@ -57,7 +57,7 @@ export class InvalidApplicationChallengeFileError extends Error {
   }
 }
 
-/** Local file adapter with durable replacement and cross-process write exclusion. */
+/** Local file adapter with fsync-backed replacement and cross-process write exclusion. */
 export class FileApplicationChallengeStore implements ApplicationChallengeStore {
   private readonly path: string;
 
@@ -148,15 +148,36 @@ export class FileApplicationChallengeStore implements ApplicationChallengeStore 
   }
 
   private async withWrite<T>(operation: () => Promise<T>): Promise<T> {
+    const directoryIdentity = await this.directoryIdentity();
     for (let attempt = 0; attempt < LOCK_ATTEMPTS; attempt += 1) {
       try {
-        return await withExclusiveWorkspaceWrite(this.path, operation);
+        return await withExclusiveWorkspaceWrite(this.path, async () => {
+          const lockedIdentity = await this.directoryIdentity();
+          if (lockedIdentity !== directoryIdentity) throw new InvalidApplicationChallengeFileError();
+          return operation();
+        });
       } catch (error) {
         if (!(error instanceof WorkspaceMutationLockedError) || attempt === LOCK_ATTEMPTS - 1) throw error;
         await delay(LOCK_RETRY_MS);
       }
     }
     throw new WorkspaceMutationLockedError();
+  }
+
+  private async directoryIdentity(): Promise<string> {
+    let directory;
+    try {
+      directory = await open(dirname(this.path), constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+    } catch {
+      throw new InvalidApplicationChallengeFileError();
+    }
+    try {
+      const state = await directory.stat({ bigint: true });
+      if (!state.isDirectory()) throw new InvalidApplicationChallengeFileError();
+      return `${state.dev}:${state.ino}`;
+    } finally {
+      await directory.close();
+    }
   }
 
   private async readState(): Promise<z.infer<typeof StateSchema>> {
@@ -200,7 +221,6 @@ export class FileApplicationChallengeStore implements ApplicationChallengeStore 
 
   private async writeState(state: z.infer<typeof StateSchema>): Promise<void> {
     const directoryPath = dirname(this.path);
-    await mkdir(directoryPath, { recursive: true, mode: 0o700 });
     const serialized = JSON.stringify(StateSchema.parse(state));
     if (Buffer.byteLength(serialized, "utf8") > MAX_FILE_BYTES) throw new InvalidApplicationChallengeFileError();
     const temporaryPath = `${this.path}.${randomUUID()}.tmp`;
