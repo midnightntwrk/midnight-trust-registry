@@ -29,6 +29,16 @@ offline actor or restore test ran. Current local source has advanced past
 exact-head release candidate. The earlier checkpoints below are retained
 only as an audit trail.
 
+At signed local source `ef6a9644`, the safe prebuilt regression lane found
+all 66 full proof circuits and passed 349 integration, 109 API integration,
+59 applicant, and 25 admin tests. The fixture demo passed four signed role
+journeys plus CLI/API and both UI smoke surfaces; Playwright passed 10
+fixture-browser cases. The standalone topology lane passed 89 isolated
+orchestration tests. These checks did not authenticate the provenance of the
+retained proof artifacts, deploy a contract, run a wallet or actor against
+the ledger, or prove host-wide egress denial. They must not be entered as
+`L01`-`S01` deployed acceptance results.
+
 The open [0.1.0 issues](https://github.com/midnightntwrk/midnight-trust-registry/milestone/1)
 must be reconciled against code and exact-head validation before closure.
 The files below identify where to check behavior; their existence alone does
