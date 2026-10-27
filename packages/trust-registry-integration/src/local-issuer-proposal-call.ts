@@ -288,8 +288,26 @@ const submitPreparedLocalIssuerProposal = async (
   input: LocalIssuerProposalSubmissionInput,
   prepared: LocalIssuerProposalCallContext,
   compiledContract: ReturnType<typeof compiledStagedVerifierKeyContract>,
+  assertReadyBeforeBroadcast?: () => Promise<void>,
 ): Promise<{ eventHash: string }> => {
-  const result = await submitCallTx(input.providers, {
+  const guardedProvider = input.providers.midnightProvider as typeof input.providers.midnightProvider & {
+    submitTxWithBroadcastGuard?: (
+      tx: Parameters<typeof input.providers.midnightProvider.submitTx>[0], guard: () => Promise<void>,
+    ) => ReturnType<typeof input.providers.midnightProvider.submitTx>;
+  };
+  if (assertReadyBeforeBroadcast !== undefined
+    && typeof guardedProvider.submitTxWithBroadcastGuard !== "function") {
+    throw new Error("Issuer submission requires a pinned provider with a transport broadcast guard");
+  }
+  const providers = assertReadyBeforeBroadcast === undefined ? input.providers : {
+    ...input.providers,
+    midnightProvider: {
+      submitTx: async (tx: Parameters<typeof input.providers.midnightProvider.submitTx>[0]) => {
+        return guardedProvider.submitTxWithBroadcastGuard!(tx, assertReadyBeforeBroadcast);
+      },
+    },
+  };
+  const result = await submitCallTx(providers, {
     compiledContract,
     contractAddress: input.call.contractAddress.slice(2),
     privateStateId: "trustRegistryPrivateState",
@@ -323,8 +341,7 @@ export async function executeLocalIssuerProposalAfterReservation(
   assertReadyBeforeBroadcast?: () => Promise<void>,
 ): Promise<{ eventHash: string }> {
   const { prepared, compiledContract } = await preflightLocalIssuerProposalSubmission(input);
-  await assertReadyBeforeBroadcast?.();
-  return submitPreparedLocalIssuerProposal(input, prepared, compiledContract);
+  return submitPreparedLocalIssuerProposal(input, prepared, compiledContract, assertReadyBeforeBroadcast);
 }
 
 /** The journal reserves before SDK submission; SDK finalization is not independent readback. */

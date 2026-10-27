@@ -2443,6 +2443,8 @@ path but does not establish trustworthy clock provenance; that remains a
 deployment-owned, independently reviewed dependency.
 The after-reservation SDK handoff now accepts an optional late readiness
 check. The local issuer port uses it to resample trusted time after SDK
-preflight, before the first broadcast; expiry leaves the durable reservation
+proving and pinned-node authentication, just before the transport send.
+The guarded path requires a pinned provider that supports this check;
+expiry before submission leaves the durable reservation
 for explicit reconciliation. This narrows but does not close the gap between
 local preflight time and a finalized ledger transition.

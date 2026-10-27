@@ -11,8 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - require an injected trusted-time source for the opt-in local issuer proposal
   port, pass its reading to live evidence verification, and reject expired or
-  not-yet-valid accepted evidence before provider use and again just before
-  SDK broadcast after journal reservation. The signed-plan CLI remains
+  not-yet-valid accepted evidence before provider use and again at the pinned
+  transport send boundary after journal reservation. The signed-plan CLI remains
   read-only; this is not deployed actor evidence
 - add an experimental Node-only local issuer submitter that checks node and
   indexer genesis, binds the SDK provider pair, and owns a non-reconnecting

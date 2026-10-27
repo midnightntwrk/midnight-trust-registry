@@ -108,7 +108,11 @@ const awaitNodeFinality = (extrinsic: SubmissionExtrinsic, signal: AbortSignal):
 
 /** Node-only prototype; final release still requires deployed-ledger qualification. */
 export function createPinnedLocalSubmissionProvider(config: PinnedLocalSubmissionConfig): {
-  midnightProvider: MidnightProvider;
+  midnightProvider: MidnightProvider & {
+    submitTxWithBroadcastGuard: (
+      tx: Parameters<MidnightProvider["submitTx"]>[0], guard: () => Promise<void>,
+    ) => ReturnType<MidnightProvider["submitTx"]>;
+  };
   publicDataProvider: RegistryProviders["publicDataProvider"];
   readSubmissionProviderIdentity: (providers: RegistryProviders) => Promise<{
     contractAddress: string; genesisHash: string;
@@ -232,41 +236,50 @@ export function createPinnedLocalSubmissionProvider(config: PinnedLocalSubmissio
     }
   };
 
-  const midnightProvider: MidnightProvider = {
-    async submitTx(tx) {
-      assertUsable();
-      const txId = tx.identifiers()[0];
-      if (!txId) throw new Error("Finalized Midnight transaction has no identifier");
-      const serialized = `0x${Buffer.from(tx.serialize()).toString("hex")}`;
-      let attemptedBroadcast = false;
-      let reservedTarget = false;
-      try {
-        const result = await withPinnedNode(async (api, signal) => {
-          signal.throwIfAborted();
-          if (!api.isConnected) throw new Error("Local submission node disconnected before broadcast");
-          const midnight: unknown = Reflect.get(api.tx, "midnight");
-          if (midnight === null || typeof midnight !== "object"
-            || !("sendMnTransaction" in midnight)
-            || typeof midnight.sendMnTransaction !== "function") {
-            throw new Error("Local node does not expose Midnight transaction submission");
-          }
-          assertUsable();
-          inFlightDeployments.add(deploymentKey);
-          reservedTarget = true;
-          const extrinsic = midnight.sendMnTransaction(serialized) as SubmissionExtrinsic;
-          attemptedBroadcast = true;
-          await awaitNodeFinality(extrinsic, signal);
-          return txId;
-        }, submissionDeadlineMs);
-        if (reservedTarget) inFlightDeployments.delete(deploymentKey);
+  const submitTransaction = async (
+    tx: Parameters<MidnightProvider["submitTx"]>[0], guard?: () => Promise<void>,
+  ): ReturnType<MidnightProvider["submitTx"]> => {
+    assertUsable();
+    const txId = tx.identifiers()[0];
+    if (!txId) throw new Error("Finalized Midnight transaction has no identifier");
+    const serialized = `0x${Buffer.from(tx.serialize()).toString("hex")}`;
+    let attemptedBroadcast = false;
+    let reservedTarget = false;
+    try {
+      const result = await withPinnedNode(async (api, signal) => {
+        signal.throwIfAborted();
+        if (!api.isConnected) throw new Error("Local submission node disconnected before broadcast");
+        const midnight: unknown = Reflect.get(api.tx, "midnight");
+        if (midnight === null || typeof midnight !== "object"
+          || !("sendMnTransaction" in midnight)
+          || typeof midnight.sendMnTransaction !== "function") {
+          throw new Error("Local node does not expose Midnight transaction submission");
+        }
         assertUsable();
-        return result;
-      } catch (error) {
-        if (attemptedBroadcast) uncertainDeployments.add(deploymentKey);
-        if (reservedTarget) inFlightDeployments.delete(deploymentKey);
-        throw error;
-      }
-    },
+        await guard?.();
+        signal.throwIfAborted();
+        assertUsable();
+        inFlightDeployments.add(deploymentKey);
+        reservedTarget = true;
+        const extrinsic = midnight.sendMnTransaction(serialized) as SubmissionExtrinsic;
+        attemptedBroadcast = true;
+        await awaitNodeFinality(extrinsic, signal);
+        return txId;
+      }, submissionDeadlineMs);
+      if (reservedTarget) inFlightDeployments.delete(deploymentKey);
+      assertUsable();
+      return result;
+    } catch (error) {
+      if (attemptedBroadcast) uncertainDeployments.add(deploymentKey);
+      if (reservedTarget) inFlightDeployments.delete(deploymentKey);
+      throw error;
+    }
+  };
+  const midnightProvider = {
+    submitTx: (tx: Parameters<MidnightProvider["submitTx"]>[0]) => submitTransaction(tx),
+    submitTxWithBroadcastGuard: (
+      tx: Parameters<MidnightProvider["submitTx"]>[0], guard: () => Promise<void>,
+    ) => submitTransaction(tx, guard),
   };
 
   return {

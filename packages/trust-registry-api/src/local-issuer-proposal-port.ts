@@ -36,6 +36,13 @@ type CapturedIssuerAdmission = Awaited<ReturnType<NonNullable<ProposalAdmissionP
 type SubmissionProviders = Pick<LocalIssuerProposalSubmissionInput,
   "providers" | "readSubmissionProviderIdentity">;
 
+export class LocalIssuerEvidenceTimeRejectedError extends Error {
+  constructor() {
+    super("Accepted issuer evidence is not current at trusted time");
+    this.name = "LocalIssuerEvidenceTimeRejectedError";
+  }
+}
+
 /** These dependencies must be implemented by a deployment-specific, independently reviewed adapter. */
 export type LocalIssuerProposalPortDependencies = {
   plan: Pick<LocalLedgerRuntimePlan, "networkId" | "contractAddress" | "expectedGenesisHash">;
@@ -65,9 +72,12 @@ export function createBoundLocalIssuerProposalPort(
 ): GovernedIssuerProposalPort {
   const assertEvidenceCurrent = async (evidence: ApplicationEvidenceSubmission): Promise<number> => {
     const trustedTimeMs = await dependencies.readTrustedTimeMs();
-    if (!Number.isSafeInteger(trustedTimeMs) || trustedTimeMs < Date.parse(evidence.envelope.verifiedAt)
+    if (!Number.isSafeInteger(trustedTimeMs)) {
+      throw new Error("Trusted time source returned an invalid value");
+    }
+    if (trustedTimeMs < Date.parse(evidence.envelope.verifiedAt)
       || trustedTimeMs >= Date.parse(evidence.envelope.expiresAt)) {
-      throw new Error("Accepted issuer evidence is not current at trusted time");
+      throw new LocalIssuerEvidenceTimeRejectedError();
     }
     return trustedTimeMs;
   };

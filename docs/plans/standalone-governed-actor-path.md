@@ -144,7 +144,9 @@ accepted application evidence before its verified-at time or at/after expiry
 on every prepare, preflight, and execute. The same sampled time is passed to
 the live evidence callback; this explicit guard does not authenticate that
 callback or make the host clock a trusted source. Execution samples trusted
-time again after the SDK preflight, immediately before broadcast. Finalized
+time after SDK proving/balancing and pinned-node genesis verification,
+immediately before the transport send. This guarded path fails closed when
+the approved provider lacks transport-level guard support. Finalized
 inclusion may still occur later; the host needs an approved, independently
 authenticated transition-time policy before claiming `A01`.
 The private file admission store now captures pending and accepted records

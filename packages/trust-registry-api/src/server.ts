@@ -6,6 +6,7 @@ import { buildSnapshotSummary } from "@midnight-ntwrk/trust-registry-cli";
 import { DecisionEvidenceSchema, SignedPendingApplicationSchema } from "@midnight-ntwrk/trust-registry-domain";
 import { encodeCompactActionKind } from "@midnight-ntwrk/trust-registry-contract";
 import { EvidenceVerifierDidResolutionUnavailableError } from "@midnight-ntwrk/trust-registry-integration";
+import { LocalIssuerEvidenceTimeRejectedError } from "./local-issuer-proposal-port.js";
 
 import {
   TrustRegistryTrqpAdapter,
@@ -741,6 +742,10 @@ const mapGovernedMembershipError = (error: unknown, problemBaseUri: string): nev
 };
 
 const mapGovernedIssuerProposalError = (error: unknown, problemBaseUri: string): never => {
+  if (error instanceof LocalIssuerEvidenceTimeRejectedError) {
+    throw jsonProblem(problemBaseUri, "issuer-evidence-not-current", 409,
+      "issuer evidence not current");
+  }
   if (error instanceof GovernedIssuerProposalRejectedError) {
     const unknown = error.reason === "unknown-authorization";
     throw jsonProblem(problemBaseUri, unknown ? "authorization-not-found" : "governed-proposal-rejected",

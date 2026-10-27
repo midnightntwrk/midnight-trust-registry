@@ -99,6 +99,21 @@ describe("pinned local submission provider", () => {
     } as never)).rejects.toThrow(/not using the pinned/u);
   });
 
+  it("rechecks guarded submission after node authentication and before transport send", async () => {
+    const pinned = createPinnedLocalSubmissionProvider(config);
+    const guard = vi.fn(async () => {
+      expect(getBlockHash).toHaveBeenCalledWith(0);
+      throw new Error("evidence expired during connection");
+    });
+    await expect(pinned.midnightProvider.submitTxWithBroadcastGuard(transaction, guard))
+      .rejects.toThrow(/evidence expired during connection/u);
+    expect(guard).toHaveBeenCalledOnce();
+    expect(sendMnTransaction).not.toHaveBeenCalled();
+    await expect(pinned.midnightProvider.submitTxWithBroadcastGuard(transaction, async () => {}))
+      .resolves.toBe("tx-issuer");
+    expect(sendMnTransaction).toHaveBeenCalledOnce();
+  });
+
   it("bounds the SDK indexer wait while preserving other provider methods", async () => {
     const pinned = createPinnedLocalSubmissionProvider({ ...config, indexerWatchDeadlineMs: 10 });
     const sibling = createPinnedLocalSubmissionProvider(config);

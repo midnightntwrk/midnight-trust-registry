@@ -28,8 +28,14 @@ import {
   type AcceptedApplicationEvidence,
 } from "../proposal-admission.js";
 import { bindAcceptedLocalIssuerProposalTerms, prepareBoundLocalIssuerProposal } from "../local-issuer-proposal-terms.js";
-import { createBoundLocalIssuerProposalPort } from "../local-issuer-proposal-port.js";
+import { createBoundLocalIssuerProposalPort, LocalIssuerEvidenceTimeRejectedError } from "../local-issuer-proposal-port.js";
 import type { PendingApplicationRecord } from "../pending-application-registration.js";
+
+const submitCallTx = vi.hoisted(() => vi.fn());
+vi.mock("@midnight-ntwrk/midnight-js-contracts", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@midnight-ntwrk/midnight-js-contracts")>(),
+  submitCallTx,
+}));
 
 const scope = {
   version: "tr-scope-v1",
@@ -243,8 +249,14 @@ describe("local issuer proposal terms", () => {
     const verifyLiveEvidence = vi.fn(async () => {});
     const readTrustedTimeMs = vi.fn(async () => Date.parse("2026-10-13T00:00:02.000Z"));
     const assertApprovedProviderCode = vi.fn(async () => {});
+    const submitTx = vi.fn(async (_tx: unknown) => "tx-should-not-broadcast");
+    const submitTxWithBroadcastGuard = vi.fn(async (tx, guard) => {
+      await guard();
+      return submitTx(tx);
+    });
     const loadApprovedSubmissionProviders = vi.fn(async () => ({
-      providers: {} as never, readSubmissionProviderIdentity: async () => ({
+      providers: { midnightProvider: { submitTx, submitTxWithBroadcastGuard } } as never,
+      readSubmissionProviderIdentity: async () => ({
         contractAddress: localPlan.contractAddress, genesisHash: localPlan.expectedGenesisHash,
       }),
     }));
@@ -328,14 +340,18 @@ describe("local issuer proposal terms", () => {
     expect(loadApprovedSubmissionProviders).toHaveBeenCalledOnce();
     readTrustedTimeMs.mockResolvedValueOnce(Number.NaN);
     await expect(port.execute(pending.authorizationId, evidence,
-      signers, verifierSignature, localTerms)).rejects.toThrow(/not current at trusted time/u);
+      signers, verifierSignature, localTerms)).rejects.toThrow(/invalid value/u);
     expect(loadApprovedSubmissionProviders).toHaveBeenCalledOnce();
 
     readTrustedTimeMs.mockResolvedValueOnce(Date.parse("2026-10-13T00:00:02.000Z"));
     readTrustedTimeMs.mockResolvedValueOnce(Date.parse(evidence.envelope.expiresAt));
+    submitCallTx.mockImplementationOnce(async (providers) =>
+      providers.midnightProvider.submitTx({} as never));
     await expect(port.execute(pending.authorizationId, evidence,
       signers, verifierSignature, localTerms)).rejects.toThrow(/not current at trusted time/u);
     expect(loadApprovedSubmissionProviders).toHaveBeenCalledTimes(2);
+    expect(submitCallTx).toHaveBeenCalledOnce();
+    expect(submitTx).not.toHaveBeenCalled();
   });
 });
 
@@ -370,11 +386,13 @@ describe("proposal admission", () => {
       async readFinalizedProposalLedger() { throw new Error("unused"); },
     };
     const observed: unknown[] = [];
+    let rejectEvidenceTime = false;
     const bytes = new Uint8Array(32).fill(1);
     const server = createTrustRegistryApiServer({
       source,
       governedIssuerProposals: {
         async prepare(_authorizationId, _evidence, terms) {
+          if (rejectEvidenceTime) throw new LocalIssuerEvidenceTimeRejectedError();
           observed.push(terms);
           return {
             registryId: bytes, networkIdCommitment: bytes, contractAddress: bytes,
@@ -409,6 +427,10 @@ describe("proposal admission", () => {
       expect(observed).toEqual([]);
       expect((await post({ evidence, terms: localTerms })).status).toBe(200);
       expect(observed).toEqual([localTerms]);
+      rejectEvidenceTime = true;
+      const rejected = await post({ evidence, terms: localTerms });
+      expect(rejected.status).toBe(409);
+      expect(await rejected.json()).toMatchObject({ title: "issuer evidence not current" });
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
