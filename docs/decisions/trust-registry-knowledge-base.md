@@ -1,7 +1,7 @@
 # Trust Registry Knowledge Base
 
 Status: working knowledge snapshot
-Updated: 2026-10-24
+Updated: 2026-10-27
 
 ## Purpose
 
@@ -11,6 +11,32 @@ This document is the repo-local execution snapshot for
 It records the current code surface, validation baseline, dependency posture,
 backlog posture, and the next implementation direction. It is intentionally
 shorter-lived and more action-oriented than the normative specification.
+
+## October 27 2026 Installer And E2E Boundary
+
+- The installer now uses one strictly typechecked policy for its base Compose
+  project, three service roles, and digest-pinned image references. Malformed
+  YAML shapes, extra roles, and floating image tags fail the focused tests.
+  The install verifier still checks the Compose file's exact bytes against the
+  inventory. This proves a staged bundle constraint, not Docker's merged
+  runtime topology or a deployed ledger. The rest of the bundle verifier and
+  wizard I/O remain on the tracked non-strict type-migration list (#229).
+- The local-only 0.1.0 E2E acceptance procedure remains
+  [standalone-local-journey](../guide/standalone-local-journey.md). No actor
+  journey has been recorded against a deployed, independently finalized
+  standalone contract with egress denied. Do not relabel simulator, Playwright,
+  packed-consumer, or injected-provider checks as that evidence (#219).
+- The installed `@midnight-ntwrk/credential-compact` package does not expose a
+  live status-authority verifier. The sibling status-registry package is
+  private, so this repository cannot supply a supported VC-owned adapter by
+  importing its source. #90 remains open until a versioned, consumable VC
+  package and approved verification profile are available. A fixture status
+  response must not be promoted into production non-revocation evidence.
+- The real signed genesis/committee approval, authenticated finality and
+  deployment readback, audited ambiguous-proposal recovery (#220), egress-denied
+  actor journeys, deployed restart/restore, and independent human security
+  review (#232) still gate the local RC. #198 stays draft; Preprod and Helm are
+  deferred or optional, respectively.
 
 ## October 24 2026 API Egress Probe Checkpoint
 

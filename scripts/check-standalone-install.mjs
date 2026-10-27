@@ -12,6 +12,7 @@ import { verifyReleaseCandidateArtifacts } from "./release-candidate-manifest.mj
 import { matchesApprovedRuntimeHealthcheck } from "./runtime-healthcheck.mjs";
 import { staticImageIdentityFromArchive, validateStaticImageManifest } from "./static-runtime-archive.mjs";
 import { STANDALONE_IMAGE_REFERENCE } from "./standalone-image-reference.mjs";
+import { pinnedStandaloneImagePolicy } from "./standalone-compose-image-policy.mjs";
 export { STANDALONE_IMAGE_REFERENCE } from "./standalone-image-reference.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
@@ -21,18 +22,7 @@ const IMAGE_ID = /^sha256:[0-9a-f]{64}$/u;
 const FINGERPRINT = /^[0-9A-F]{40}$/u;
 
 export function pinnedStandaloneImages(composeSource) {
-  const compose = yaml.load(composeSource);
-  if (compose?.name !== "${TR_STACK_NAME:-tr-standalone-local-smoke}"
-    || Object.keys(compose?.services ?? {}).sort().join("\0") !== [...ROLES].sort().join("\0")) {
-    throw new Error("Standalone Compose must name the dedicated project and exactly three services");
-  }
-  return ROLES.map((role) => {
-    const reference = compose.services[role]?.image;
-    if (typeof reference !== "string" || !STANDALONE_IMAGE_REFERENCE.test(reference)) {
-      throw new Error(`Standalone image is not digest pinned: ${role}`);
-    }
-    return { role, reference };
-  });
+  return pinnedStandaloneImagePolicy(yaml.load(composeSource));
 }
 export const STANDALONE_PROOF_PARAMETER_PATHS = Object.freeze([
   ...[10, 11, 12, 13, 14, 15].map((k) => `bls_midnight_2p${k}`),
