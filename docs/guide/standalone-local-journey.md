@@ -180,6 +180,11 @@ they can all run today. The implementation sequence is in
    cases for wrong authority, stale plan, revoked/suspended authorization,
    substituted evidence, and unavailable local status. Browser/API success
    alone is not ledger success. The full actor path is tracked in issue #219.
+   Before soliciting signatures, capture the API health response from its
+   isolated container and run `check-standalone-actor-capability.mjs` as shown
+   in the [first-run guide](../../docs-site/guide/standalone.md#check-the-actor-port-before-preparing-signatures).
+   A missing issuer port or mismatched signed-plan digest is an early stop,
+   not a failed on-ledger action. A passing port check is not `A01` evidence.
 8. **Restart and restore.** Restart node, indexer, prover, API, and portals
    independently with egress still denied. Show the same deployment and
    historical ledger state at new finalized checkpoints. Restore a backup in

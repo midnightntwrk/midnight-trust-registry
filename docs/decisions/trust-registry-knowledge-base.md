@@ -2420,3 +2420,17 @@ exact-source verified bundle and human-signed genesis/maintenance approvals,
 then real deployed readback, live status authority, egress-denied actor cases,
 restart/restore, and independent human security review. Keep #198 draft and
 the local 0.1.0 RC unqualified until those gates are evidenced.
+
+### Pre-actor API capability observation, 2026-10-27
+
+Before collecting issuer signatures for a standalone run, the operator can
+capture `/health` inside the dedicated API container and check it against the
+reviewed signed-plan SHA-256. The new bounded-file checker rejects non-local
+sources, malformed or zero finalized hashes, unknown or repeated roles, and
+missing requested ports. The currently packaged read-only CLI reports no
+issuer port, so this check exits 2 rather than inviting a doomed `A01` run.
+Even exit 0 proves only configured port presence; it does not authenticate
+the saved health response, finality, live VC status, or an actor transaction.
+The operator guide now expands source-scoped image tags correctly instead of
+using a literal `SOURCE_SHA` placeholder. Standalone topology tests and the
+docs build passed; no release evidence or genesis approval was inferred.

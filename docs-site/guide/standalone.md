@@ -62,9 +62,9 @@ node scripts/standalone-setup-wizard.mjs prepare-stack "$SETUP" "$PROJECT" 39944
 node scripts/load-standalone-install-images.mjs "$INSTALL"
 
 # Copy the exact node, indexer, and proof-server tags returned by the loader.
-export TR_NODE_IMAGE=tr-standalone/node:sha-SOURCE_SHA
-export TR_INDEXER_IMAGE=tr-standalone/indexer:sha-SOURCE_SHA
-export TR_PROOF_SERVER_IMAGE=tr-standalone/proof-server:sha-SOURCE_SHA
+export TR_NODE_IMAGE="tr-standalone/node:sha-$SOURCE_SHA"
+export TR_INDEXER_IMAGE="tr-standalone/indexer:sha-$SOURCE_SHA"
+export TR_PROOF_SERVER_IMAGE="tr-standalone/proof-server:sha-$SOURCE_SHA"
 docker compose --env-file "$SETUP/stack.env" -p "$PROJECT" \
   -f "$INSTALL/compose.yml" -f "$INSTALL/compose.offline.yml" config -q
 docker compose --env-file "$SETUP/stack.env" -p "$PROJECT" \
@@ -245,3 +245,35 @@ bundle, with a non-author human security verdict. The current read-only API
 profile cannot by itself complete the write-dependent actor cases. Keep the
 promotion PR draft until its local-only scope and all release gates are
 explicitly updated and independently reviewed.
+
+## Check the actor port before preparing signatures
+
+Once a signed-plan API is running, capture its health response **inside the
+dedicated API container** and compare it with the reviewed plan digest. This
+is an early stop check for case `A01`, not an end-to-end test. The packaged
+read-only CLI currently reports no governed proposal ports, so it is expected
+to exit 2 until a reviewed writer is installed. Do not try to work around a
+missing port with a simulator or mock provider.
+
+```sh
+umask 077
+API_CONTAINER=$(docker compose --env-file "$SETUP/stack.env" -p "$PROJECT" \
+  -f "$INSTALL/compose.yml" -f "$INSTALL/compose.offline.yml" \
+  -f "$INSTALL/compose.api.yml" ps -q api)
+test -n "$API_CONTAINER"
+docker exec "$API_CONTAINER" node -e \
+  'fetch("http://127.0.0.1:4400/health", {signal: AbortSignal.timeout(5000)})
+    .then(async (response) => { if (!response.ok) throw Error("API health failed");
+      process.stdout.write(await response.text()); })
+    .catch((error) => { console.error(error.message); process.exitCode = 1; })' \
+  > "$EVIDENCE_DIR/api-health.json"
+pnpm check:standalone-actor-capability \
+  "$EVIDENCE_DIR/api-health.json" "$SIGNED_PLAN_SHA256" issuer
+```
+
+Exit 0 means only that the issuer port is configured on an API reporting the
+reviewed plan and a nonzero finalized checkpoint. It does not verify the port's
+implementation, the saved health response's independent authenticity,
+live status authority, authenticated finality, transaction,
+or current authorization. Preserve the output as a pre-actor observation;
+`A01` remains `not-run` until the actual signed, finalized journey completes.
