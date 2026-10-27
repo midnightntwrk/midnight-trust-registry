@@ -1768,7 +1768,41 @@ test("committee transition requires signed approval of this finalized deployment
   await writeFile(recordPath, JSON.stringify(record));
   await assert.rejects(prepareStandaloneCommitteeTransition(f.directory, f.requestPath, {
     verifyBundle: f.verifyBundle, prepareTransition: async () => assert.fail("changed approval"),
-  }), /Signed committee deployment binding disagrees/u);
+  }), /Stored committee deployment approval evidence is incomplete or changed/u);
+});
+
+test("stored deployment-bound committee signature corruption blocks status and transition", async () => {
+  const f = await committeeTransitionFixture();
+  const recordPath = join(f.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  record.committeeDeploymentApproval.signatureBase64 = Buffer.from("changed binding signature").toString("base64");
+  await writeFile(recordPath, JSON.stringify(record));
+  const status = await standaloneSetupStatus(f.directory);
+  assert.equal(status.maintenanceApproval, "invalid-approval-evidence-investigate");
+  await assert.rejects(prepareStandaloneCommitteeTransition(f.directory, f.requestPath, {
+    verifyBundle: f.verifyBundle,
+    prepareTransition: async () => assert.fail("changed binding reached provider"),
+  }), /Stored committee deployment approval evidence is incomplete or changed/u);
+});
+
+test("rewritten deployment-bound approval cannot name a different finalized contract", async () => {
+  const f = await committeeTransitionFixture();
+  const recordPath = join(f.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  const approval = JSON.parse(Buffer.from(
+    record.committeeDeploymentApproval.documentBase64, "base64",
+  ).toString("utf8"));
+  approval.deploymentReceipt.contractAddress = `0x${"f".repeat(64)}`;
+  const changed = Buffer.from(`${JSON.stringify(approval, null, 2)}\n`);
+  record.committeeDeploymentApproval.documentBase64 = changed.toString("base64");
+  record.committeeDeploymentApproval.documentSha256 = createHash("sha256").update(changed).digest("hex");
+  await writeFile(recordPath, JSON.stringify(record));
+  assert.equal((await standaloneSetupStatus(f.directory)).maintenanceApproval,
+    "invalid-approval-evidence-investigate");
+  await assert.rejects(prepareStandaloneCommitteeTransition(f.directory, f.requestPath, {
+    verifyBundle: f.verifyBundle,
+    prepareTransition: async () => assert.fail("changed binding reached provider"),
+  }), /Signed committee deployment binding disagrees with current setup state/u);
 });
 
 test("deployment binding rejects a wrong contract or governance reviewer before signature verification", async () => {

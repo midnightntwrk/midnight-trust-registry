@@ -15,8 +15,9 @@ an old bundle against a newer source commit. The reviewer independently checks
 the commit and bundle bytes, rather than trusting a node-reported hash or a
 wizard status label. Record the source SHA and inventory digest in the verdict.
 
-The wizard checks retained genesis and committee approval document/signature
-digests and setup bindings before deployment, and reports
+The wizard checks retained genesis, roster, and deployment-bound committee
+approval document/signature digests and setup bindings before the associated
+deployment or transition action, and reports
 `invalid-approval-evidence-investigate` on a mismatch. This detects local
 evidence corruption; it does **not** reverify GPG against an independently
 pinned reviewer key on each status read or establish that the reviewer approved

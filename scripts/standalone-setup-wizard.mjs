@@ -1489,6 +1489,42 @@ function readStoredCommitteeApproval(record, legacyReadOnly = false) {
   }
   return signedApproval;
 }
+function readStoredCommitteeDeploymentApproval(record, releaseManifestSha256 = /** @type {string | null} */ (null)) {
+  const stored = record.committeeDeploymentApproval;
+  const receipt = record.deployment?.result?.receipt;
+  const document = Buffer.from(stored?.documentBase64 ?? "", "base64");
+  const signature = Buffer.from(stored?.signatureBase64 ?? "", "base64");
+  if (document.length === 0 || document.length > 32 * 1024
+    || signature.length === 0 || signature.length > 64 * 1024
+    || sha256(document) !== stored?.documentSha256
+    || sha256(signature) !== stored?.signatureSha256
+    || stored?.verification !== "detached-signature-verified-against-operator-pinned-key"
+    || !FINGERPRINT.test(stored?.reviewerFingerprint ?? "")
+    || !validLocalDeploymentReceipt(receipt)) {
+    throw new Error("Stored committee deployment approval evidence is incomplete or changed");
+  }
+  const binding = parseCanonicalSignedJson(document, "Stored committee deployment approval");
+  const receiptFields = ["blockHash", "blockHeight", "contractAddress", "networkId", "txId"];
+  if (!exactFields(binding, ["approvedAt", "committeeApprovalSha256", "deploymentPlanSha256",
+    "deploymentReceipt", "expectedGenesisHash", "format", "releaseManifestSha256",
+    "reviewedReference", "reviewerFingerprint", "sourceRevision"])
+    || binding.format !== "tr-local-committee-deployment-approval-v1"
+    || binding.sourceRevision !== record.sourceRevision
+    || binding.committeeApprovalSha256 !== record.committeeApproval?.documentSha256
+    || binding.deploymentPlanSha256 !== record.deployment?.planSha256
+    || !SHA256.test(binding.releaseManifestSha256)
+    || (releaseManifestSha256 !== null && binding.releaseManifestSha256 !== releaseManifestSha256)
+    || binding.expectedGenesisHash !== record.ledgerObservation?.expectedGenesisHash
+    || binding.reviewerFingerprint !== record.committeeApproval?.reviewerFingerprint
+    || binding.reviewerFingerprint !== stored.reviewerFingerprint
+    || binding.approvedAt !== stored.approvedAt
+    || binding.reviewedReference !== stored.reviewedReference
+    || !exactFields(binding.deploymentReceipt, receiptFields)
+    || receiptFields.some((field) => binding.deploymentReceipt[field] !== receipt[field])) {
+    throw new Error("Signed committee deployment binding disagrees with current setup state");
+  }
+  return binding;
+}
 const bytes32 = (value) => {
   if (!HASH.test(value) || /^0x0{64}$/u.test(value)) {
     throw new Error("Committee transition request contains an invalid public commitment");
@@ -1534,26 +1570,7 @@ async function readApprovedCommitteeTransition(record, requestPath, dependencies
       throw new Error("Staged deployment manifest has an invalid source or format");
     }
     if (record.committeeDeploymentApproval) {
-      const bindingBytes = Buffer.from(record.committeeDeploymentApproval.documentBase64 ?? "", "base64");
-      const binding = parseCanonicalSignedJson(bindingBytes, "Stored committee deployment approval");
-      const receiptFields = ["blockHash", "blockHeight", "contractAddress", "networkId", "txId"];
-      if (sha256(bindingBytes) !== record.committeeDeploymentApproval.documentSha256
-        || !exactFields(binding, ["approvedAt", "committeeApprovalSha256", "deploymentPlanSha256",
-          "deploymentReceipt", "expectedGenesisHash", "format", "releaseManifestSha256",
-          "reviewedReference", "reviewerFingerprint", "sourceRevision"])
-        || binding.format !== "tr-local-committee-deployment-approval-v1"
-        || binding.sourceRevision !== record.sourceRevision
-        || binding.committeeApprovalSha256 !== record.committeeApproval.documentSha256
-        || binding.deploymentPlanSha256 !== record.deployment.planSha256
-        || binding.releaseManifestSha256 !== sha256(manifestBytes)
-        || binding.expectedGenesisHash !== record.ledgerObservation.expectedGenesisHash
-        || binding.reviewerFingerprint !== record.committeeApproval.reviewerFingerprint
-        || binding.approvedAt !== record.committeeDeploymentApproval.approvedAt
-        || binding.reviewedReference !== record.committeeDeploymentApproval.reviewedReference
-        || !exactFields(binding.deploymentReceipt, receiptFields)
-        || receiptFields.some((field) => binding.deploymentReceipt[field] !== receipt[field])) {
-        throw new Error("Signed committee deployment binding disagrees with current setup state");
-      }
+      readStoredCommitteeDeploymentApproval(record, sha256(manifestBytes));
     }
     const catalog = Object.keys(manifest.verifierKeySha256 ?? {});
     const expectedInsertions = catalog.filter((name) => name !== staged.initialVerifierKeyName).sort();
@@ -2039,6 +2056,13 @@ export async function standaloneSetupStatus(directory) {
   if (record.setupId && record.committeeApproval) {
     try {
       readStoredCommitteeApproval(record);
+    } catch {
+      committeeApprovalConsistent = false;
+    }
+  }
+  if (record.setupId && record.committeeDeploymentApproval && committeeApprovalConsistent) {
+    try {
+      readStoredCommitteeDeploymentApproval(record);
     } catch {
       committeeApprovalConsistent = false;
     }
