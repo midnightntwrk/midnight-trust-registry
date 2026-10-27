@@ -6,6 +6,17 @@ import { fileURLToPath } from "node:url";
 import { standaloneSetupStatus } from "./standalone-setup-wizard.mjs";
 
 const SHA = /^[0-9a-f]{40}$/u;
+const NEXT_ACTION = Object.freeze({
+  sourceMatchesCandidate: "Build and verify a new exact-source install; never reuse an older setup as qualification evidence.",
+  setupUnlocked: "Inspect the active setup lock and its owner before resuming; do not remove it blindly.",
+  installStaged: "Verify and stage the pinned install inventory and image bytes for this source revision.",
+  stackObserved: "Start the dedicated local-ledger stack and observe its isolated bridge and pinned images.",
+  genesisApproved: "Independently review the real chain specification, then sign the exact genesis approval with the reviewer key.",
+  deploymentObserved: "Deploy through the approved provider and record finalized constructor and contract readback.",
+  recordedKeyInsertionsReconciled: "Reconcile every staged verifier-key insertion against finalized deployment readback.",
+  committeeApproved: "Approve and sign the release committee roster, threshold, public keys, and custody roles.",
+  maintenanceObserved: "Transition to the approved committee and record finalized authority and counter readback.",
+});
 
 /** Only checks wizard-recorded prerequisites, not an actor run or independent finality. */
 export function assessStandaloneJourneyPrerequisites(status, expectedSourceRevision = null) {
@@ -40,6 +51,7 @@ export function assessStandaloneJourneyPrerequisites(status, expectedSourceRevis
     expectedSourceRevision,
     gates,
     missing,
+    nextActions: missing.map((gate) => ({ gate, action: NEXT_ACTION[gate] })),
     ledgerPrerequisitesObserved: missing.length === 0,
     completeVerifierKeyInventory: "not-verified",
     actorJourney: "not-run",

@@ -18,6 +18,7 @@ test("only reports wizard ledger prerequisites, never actor or release qualifica
   const report = assessStandaloneJourneyPrerequisites(approved);
   assert.equal(report.ledgerPrerequisitesObserved, true);
   assert.deepEqual(report.missing, []);
+  assert.deepEqual(report.nextActions, []);
   assert.equal(report.actorJourney, "not-run");
   assert.equal(report.completeVerifierKeyInventory, "not-verified");
   assert.equal(report.independentFinality, "not-verified");
@@ -32,6 +33,8 @@ test("fails closed for missing approval, unresolved key or alert", () => {
   });
   assert.equal(report.ledgerPrerequisitesObserved, false);
   assert.deepEqual(report.missing, ["genesisApproved", "recordedKeyInsertionsReconciled", "maintenanceObserved"]);
+  assert.deepEqual(report.nextActions.map(({ gate }) => gate), report.missing);
+  assert.match(report.nextActions[0].action, /Independently review the real chain specification/u);
 });
 
 test("empty key evidence and active setup lock block the journey", () => {
@@ -50,6 +53,7 @@ test("candidate source revision must match the retained install setup", () => {
   const stale = assessStandaloneJourneyPrerequisites(approved, "b".repeat(40));
   assert.equal(stale.gates.sourceMatchesCandidate, false);
   assert.deepEqual(stale.missing, ["sourceMatchesCandidate"]);
+  assert.match(stale.nextActions[0].action, /never reuse an older setup/u);
   assert.equal(stale.ledgerPrerequisitesObserved, false);
   assert.throws(() => assessStandaloneJourneyPrerequisites(approved, "bad"),
     /Expected candidate source revision/u);

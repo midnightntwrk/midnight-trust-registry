@@ -61,7 +61,10 @@ node scripts/check-standalone-journey-prerequisites.mjs "$SETUP" "$SOURCE_SHA"
 
 Exit 2 means prerequisites are missing. Exit 0 means **only** that the wizard
 has recorded its ledger prerequisites; it does not authenticate finality,
-enable governed writes, or pass any actor case.
+enable governed writes, or pass any actor case. The report pairs each missing
+gate with a `nextActions` entry. If `sourceMatchesCandidate` is false, start a
+new exact-source setup rather than reusing evidence from the older install.
+Do not remove an active setup lock or sign an approval on an operator's behalf.
 
 ## Run and record the real use case
 

@@ -2448,3 +2448,20 @@ The guarded path requires a pinned provider that supports this check;
 expiry before submission leaves the durable reservation
 for explicit reconciliation. This narrows but does not close the gap between
 local preflight time and a finalized ledger transition.
+
+### Standalone adopter test boundary, 2026-10-27
+
+At the local writer-plan-identity head, all four signed membership demo
+journeys and the API/UI demo smoke passed, as did 75 standalone topology
+tests. The membership journeys use the Compact simulator and fixture-backed
+identity/status inputs; the topology suite tests checkers and simulated
+boundaries. Neither is a deployed local-ledger actor E2E run.
+
+The retained b26 private setup belongs to an older source revision. Its
+wizard status has no approved genesis, deployment, reconciled verifier keys,
+or maintenance transition. The candidate-scoped journey prerequisite check
+therefore exits 2. Its `nextActions` field now gives the operator a specific
+step for each missing gate without changing `releaseQualified: false` or
+claiming that a recorded prerequisite proves independent finality. A future
+exact-source setup, human-signed approvals, reviewed writer dependencies,
+live VC status authority, and real offline actor receipts remain necessary.
