@@ -162,6 +162,12 @@ export function assessStandaloneObservationBinding(manifest, observation) {
     || query.planSha256 !== manifest.signedPlanSha256
     || query.planExpectedGenesisHash !== manifest.genesisHash
     || query.planContractAddress !== manifest.contractAddress
+    || query.apiEgressCanaryDenied !== true
+    || query.apiDnsCanaryDenied !== true
+    || query.actorJourneys !== "not-run"
+    || query.hostAndBrowserEgress !== "not-verified"
+    || query.independentFinality !== "not-verified"
+    || query.planToDeploymentBinding !== "not-verified"
     || query.releaseQualified !== false) {
     throw new Error("Observed current query differs from acceptance plan or deployment");
   }
@@ -175,6 +181,8 @@ export function assessStandaloneObservationBinding(manifest, observation) {
     || restart.apiContainerId !== query.apiContainerId
     || restart.planSha256 !== query.planSha256
     || restart.selectedStateSha256 !== query.selectedStateSha256
+    || restart.apiEgressCanaryDenied !== true
+    || restart.apiDnsCanaryDenied !== true
     || restart.releaseQualified !== false)) {
     throw new Error("API restart observation differs from the current-query observation");
   }

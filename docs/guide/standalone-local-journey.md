@@ -388,6 +388,9 @@ node scripts/check-standalone-acceptance-evidence.mjs observe \
 
 The second command compares the report's source, inventory, signed API-plan
 hash, approved genesis, and deployed contract with the acceptance candidate.
+It also rejects nested read-only reports that claim actor success, independent
+finality, host/browser egress verification, or a release verdict, and requires
+the API TCP/DNS canary-denial observations to remain present.
 It exits 0 only for a matching read-only observation, 2 for an observation
 stopped before the API probe, and 1 for invalid or mixed-candidate evidence.
 It requires a private regular file, does not change `acceptance.json`, and
