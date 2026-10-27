@@ -201,3 +201,15 @@ Compact ledger, and finalized block hash from one bounded read, then adds
 the reviewer-signed genesis pin at the plan wrapper. This avoids mixing two
 checkpoints while preparing issuer signatures. It remains a pinned local-node
 observation, not independently authenticated finality or a wired CLI writer.
+
+The opt-in issuer port now requires its installed-provider check to return the
+verified runtime identity, rather than only succeed without a result. Before
+loading providers, after loading them, and at the transport broadcast guard,
+it compares the returned source revision and install-inventory digest with
+the signed API plan and the content digest with the embedding host's separately
+reviewed provider handoff. A changed provider tree, source, inventory, or
+content pin fails closed. The host must authenticate that reviewed content
+digest and implement the immutable-tree check; the API package cannot infer
+either from a callback result. This narrows provider substitution risk but
+does **not** put the content digest into signed plan v3, authenticate finality,
+or make the packaged CLI writable. Those remain release gates.

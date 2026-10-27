@@ -39,6 +39,17 @@ type CapturedIssuerAdmission = Awaited<ReturnType<NonNullable<ProposalAdmissionP
 type SubmissionProviders = Pick<LocalIssuerProposalSubmissionInput,
   "providers" | "readSubmissionProviderIdentity">;
 
+type InstalledProviderVerification = {
+  format: "tr-installed-provider-runtime-verification-v1";
+  sourceRevision: string;
+  installInventorySha256: string;
+  contentSha256: string;
+  ownership: "trusted-tree-check-passed";
+  releaseQualified: false;
+};
+
+const SHA256 = /^[0-9a-f]{64}$/u;
+
 export class LocalIssuerEvidenceTimeRejectedError extends Error {
   constructor() {
     super("Accepted issuer evidence is not current at trusted time");
@@ -49,7 +60,10 @@ export class LocalIssuerEvidenceTimeRejectedError extends Error {
 /** These dependencies must be implemented by a deployment-specific, independently reviewed adapter. */
 export type LocalIssuerProposalPortDependencies = {
   plan: Pick<LocalLedgerRuntimePlan, "networkId" | "contractAddress" | "expectedGenesisHash"
-    | "verifierKeySha256" | "maintenanceAuthority" | "sequenceTimestamps">;
+    | "verifierKeySha256" | "maintenanceAuthority" | "sequenceTimestamps"
+    | "sourceRevision" | "installInventorySha256">;
+  /** Independently reviewed installed-tree digest; the embedding host must authenticate this handoff. */
+  approvedProviderContentSha256: string;
   readCapturedAdmission: NonNullable<ProposalAdmissionPort["readCapturedAdmission"]>;
   /** Authenticate finality independently of the SDK submitting provider. */
   readAuthenticatedFinalizedSnapshot(contractAddress: string): Promise<FinalizedIssuerSnapshot>;
@@ -63,7 +77,7 @@ export type LocalIssuerProposalPortDependencies = {
     trustedTimeMs: number;
   }): Promise<void>;
   /** Recheck the immutable installed provider tree and exact-source digest before every SDK use. */
-  assertApprovedProviderCode(): Promise<void>;
+  assertApprovedProviderCode(): Promise<InstalledProviderVerification>;
   loadApprovedSubmissionProviders(): Promise<SubmissionProviders>;
 };
 
@@ -74,6 +88,21 @@ export type LocalIssuerProposalPortDependencies = {
 export function createBoundLocalIssuerProposalPort(
   dependencies: LocalIssuerProposalPortDependencies,
 ): GovernedIssuerProposalPort {
+  if (!SHA256.test(dependencies.approvedProviderContentSha256)
+    || /^0{64}$/u.test(dependencies.approvedProviderContentSha256)) {
+    throw new Error("Issuer provider requires a reviewed content SHA-256");
+  }
+  const assertProviderIdentity = async (): Promise<void> => {
+    const verified = await dependencies.assertApprovedProviderCode();
+    if (verified?.format !== "tr-installed-provider-runtime-verification-v1"
+      || verified.sourceRevision !== dependencies.plan.sourceRevision
+      || verified.installInventorySha256 !== dependencies.plan.installInventorySha256
+      || verified.contentSha256 !== dependencies.approvedProviderContentSha256
+      || verified.ownership !== "trusted-tree-check-passed"
+      || verified.releaseQualified !== false) {
+      throw new Error("Installed issuer provider identity differs from the reviewed plan and content pin");
+    }
+  };
   const readApprovedSnapshot = async (contractAddress: string): Promise<FinalizedIssuerSnapshot> => {
     if (contractAddress !== dependencies.plan.contractAddress) {
       throw new Error("Issuer snapshot request differs from the approved contract");
@@ -143,9 +172,9 @@ export function createBoundLocalIssuerProposalPort(
       evidenceVerifierSignature,
       signers,
     };
-    await dependencies.assertApprovedProviderCode();
+    await assertProviderIdentity();
     const providers = await dependencies.loadApprovedSubmissionProviders();
-    await dependencies.assertApprovedProviderCode();
+    await assertProviderIdentity();
     return {
       prepared,
       input: {
@@ -174,7 +203,7 @@ export function createBoundLocalIssuerProposalPort(
           serializeGovernedIssuerProposal(prepared.signingContext),
           serializeGovernedIssuerProposal(current.signingContext),
         )) throw new Error("Issuer proposal signing context changed before broadcast");
-        await dependencies.assertApprovedProviderCode();
+        await assertProviderIdentity();
         await assertEvidenceCurrent(evidence);
       });
     },

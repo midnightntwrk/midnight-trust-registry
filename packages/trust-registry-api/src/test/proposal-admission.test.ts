@@ -116,6 +116,8 @@ const approvedIssuerImage = {
 };
 const approvedIssuerPlan = {
   ...localPlan,
+  sourceRevision: "a".repeat(40),
+  installInventorySha256: "b".repeat(64),
   verifierKeySha256: approvedIssuerImage.verifierKeySha256,
   maintenanceAuthority: { ...approvedIssuerImage.maintenanceAuthority, counter: "3" },
   sequenceTimestamps: Object.fromEntries([0, 1, 2, 3].map((sequence) =>
@@ -268,7 +270,16 @@ describe("local issuer proposal terms", () => {
 
     const verifyLiveEvidence = vi.fn(async () => {});
     const readTrustedTimeMs = vi.fn(async () => Date.parse("2026-10-13T00:00:02.000Z"));
-    const assertApprovedProviderCode = vi.fn(async () => {});
+    const providerContentSha256 = "c".repeat(64);
+    const installedProvider = {
+      format: "tr-installed-provider-runtime-verification-v1" as const,
+      sourceRevision: approvedIssuerPlan.sourceRevision,
+      installInventorySha256: approvedIssuerPlan.installInventorySha256,
+      contentSha256: providerContentSha256,
+      ownership: "trusted-tree-check-passed" as const,
+      releaseQualified: false as const,
+    };
+    const assertApprovedProviderCode = vi.fn(async () => installedProvider);
     const submitTx = vi.fn(async (_tx: unknown) => "tx-should-not-broadcast");
     const submitTxWithBroadcastGuard = vi.fn(async (tx, guard) => {
       await guard();
@@ -289,6 +300,7 @@ describe("local issuer proposal terms", () => {
     }));
     const port = createBoundLocalIssuerProposalPort({
       plan: approvedIssuerPlan,
+      approvedProviderContentSha256: providerContentSha256,
       async readCapturedAdmission(applicationId) {
         expect(applicationId).toBe(binding.applicationId);
         return { pending, accepted };
@@ -304,6 +316,7 @@ describe("local issuer proposal terms", () => {
     expect(verifyLiveEvidence).toHaveBeenCalledOnce();
     expect(assertApprovedProviderCode).not.toHaveBeenCalled();
     expect(loadApprovedSubmissionProviders).not.toHaveBeenCalled();
+
     await expect(port.prepare("issuer:wrong", evidence, localTerms))
       .rejects.toThrow(/authorization does not match/u);
 
@@ -312,6 +325,17 @@ describe("local issuer proposal terms", () => {
       { ...context, actionSequence: 4n }, localTerms)).rejects.toThrow(/context is stale/u);
     expect(assertApprovedProviderCode).not.toHaveBeenCalled();
     expect(loadApprovedSubmissionProviders).not.toHaveBeenCalled();
+
+    for (const changed of [
+      { sourceRevision: "d".repeat(40) },
+      { installInventorySha256: "d".repeat(64) },
+      { contentSha256: "d".repeat(64) },
+    ]) {
+      assertApprovedProviderCode.mockResolvedValueOnce({ ...installedProvider, ...changed });
+      await expect(port.preflightSubmission!(pending.authorizationId, evidence, [], signature,
+        context, localTerms)).rejects.toThrow(/provider identity differs/u);
+      expect(loadApprovedSubmissionProviders).not.toHaveBeenCalled();
+    }
 
     assertApprovedProviderCode.mockRejectedValueOnce(new Error("installed provider digest changed"));
     await expect(port.preflightSubmission!(pending.authorizationId, evidence, [], signature,
@@ -327,7 +351,7 @@ describe("local issuer proposal terms", () => {
     });
     await expect(port.prepare(pending.authorizationId, evidence, localTerms))
       .rejects.toThrow(/approved deployment/u);
-    expect(verifyLiveEvidence).toHaveBeenCalledTimes(3);
+    expect(verifyLiveEvidence).toHaveBeenCalledTimes(6);
     readAuthenticatedFinalizedSnapshot.mockResolvedValueOnce({
       ...approvedIssuerImage,
       contractAddress: localPlan.contractAddress,
@@ -337,7 +361,7 @@ describe("local issuer proposal terms", () => {
     });
     await expect(port.prepare(pending.authorizationId, evidence, localTerms))
       .rejects.toThrow(/approved deployment/u);
-    expect(verifyLiveEvidence).toHaveBeenCalledTimes(3);
+    expect(verifyLiveEvidence).toHaveBeenCalledTimes(6);
     for (const [changed, message] of [
       [{ networkId: "preview" }, /Finalized registry identity/u],
       [{ verifierKeySha256: { issuer: "b".repeat(64) } }, /verifier-key catalog/u],
@@ -356,7 +380,7 @@ describe("local issuer proposal terms", () => {
       await expect(port.prepare(pending.authorizationId, evidence, localTerms))
         .rejects.toThrow(message);
     }
-    expect(verifyLiveEvidence).toHaveBeenCalledTimes(3);
+    expect(verifyLiveEvidence).toHaveBeenCalledTimes(6);
     verifyLiveEvidence.mockRejectedValueOnce(new Error("live status authority unavailable"));
     await expect(port.prepare(pending.authorizationId, evidence, localTerms))
       .rejects.toThrow(/live status authority unavailable/u);
@@ -374,7 +398,7 @@ describe("local issuer proposal terms", () => {
     await expect(port.preflightSubmission!(pending.authorizationId, evidence,
       signers, verifierSignature, context, localTerms)).resolves.toBeUndefined();
     expect(loadApprovedSubmissionProviders).toHaveBeenCalledOnce();
-    expect(assertApprovedProviderCode).toHaveBeenCalledTimes(3);
+    expect(assertApprovedProviderCode).toHaveBeenCalledTimes(6);
 
     readTrustedTimeMs.mockResolvedValueOnce(Date.parse(evidence.envelope.expiresAt));
     await expect(port.preflightSubmission!(pending.authorizationId, evidence,
@@ -449,6 +473,12 @@ describe("local issuer proposal terms", () => {
     });
     await expect(port.preflightSubmission!(pending.authorizationId, evidence,
       signers, verifierSignature, context, localTerms)).rejects.toThrow(/verifier-key catalog/u);
+    expect(submitTx).not.toHaveBeenCalled();
+
+    assertApprovedProviderCode.mockResolvedValueOnce(installedProvider)
+      .mockResolvedValueOnce({ ...installedProvider, contentSha256: "d".repeat(64) });
+    await expect(port.preflightSubmission!(pending.authorizationId, evidence,
+      signers, verifierSignature, context, localTerms)).rejects.toThrow(/provider identity differs/u);
     expect(submitTx).not.toHaveBeenCalled();
   });
 });

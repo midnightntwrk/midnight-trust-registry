@@ -446,6 +446,10 @@ before loading a provider, rejects evidence outside its signed validity
 window at each prepare/preflight/execute and again immediately before SDK
 broadcast, repeats the code check around loading, and uses
 the SDK's side-effect-free preflight before the API-owned journal reserves.
+The code check must return the installed-runtime verification report: its
+source revision and inventory digest must match the signed API plan, and its
+content digest must match the separately authenticated reviewed handoff.
+Returning only success without this identity now rejects the submission.
 After reservation it rechecks and submits once without creating a second
 journal. A failure then remains quarantined for operator reconciliation; it
 is not permission to retry. The factory does not supply those trusted
