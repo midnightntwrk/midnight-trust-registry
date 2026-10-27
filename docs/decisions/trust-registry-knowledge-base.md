@@ -2619,3 +2619,14 @@ plan merely because contract and genesis still match. The reader callback
 must still independently authenticate finality; the packaged CLI does not
 instantiate the writer, and these injected-dependency tests are not a live
 standalone actor journey.
+
+The local API v3 approval-chain verifier now requires the genesis approval's
+detached GPG signature to use the same pinned reviewer fingerprint as the
+committee, deployment approval, and signed API plan. A second valid public key
+in the keyring can no longer become the genesis trust anchor merely by being
+named in an otherwise valid approval entry. The focused test signs a substitute
+genesis document with a real second GPG key and confirms rejection; the full
+API test suite passed. This is one #234 identity link, not proof that the
+maintenance readback is independently finalized, that the deployment is
+qualified, or that the human security review is complete. A future reviewer
+rotation needs an explicit signed protocol rather than a silent keyring change.
