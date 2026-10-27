@@ -13,7 +13,24 @@ must be reconciled against code and exact-head validation before closure.
 The files below identify where to check behavior; their existence alone does
 not prove every acceptance criterion. In particular, a simulator test is not
 a finalized-network read, and a package smoke is not a live status proof.
-The latest retained verified-staged install is b22, pinned to signed source
+The latest retained exact-source smoke is **b28**, at signed/DCO source
+`a87a0b28f0e32d65b05bd6ddb4d5de1e8ec9b4d5`. Its verified v6 install
+inventory SHA-256 is
+`5ba6e2a72a07efa828d77bef126a25c8364dbc3f3cc445f0291f37d156c79596`.
+The isolated node/indexer/prover bridge was healthy, a pre-deployment restart
+checkpoint advanced, and its untrusted genesis candidate and proposed pin
+were retained in private `artifacts/standalone-setup/wizard-b28/`. A separate
+provenance comparison matched the pinned node image's packaged genesis inputs
+to the public 1.0.0 source release; it did **not** independently derive or
+approve the genesis hash. The b28 containers are stopped, and their volumes
+and private evidence remain intact. No signed genesis approval, deployed
+contract, finalized contract readback, approved maintenance transition, or
+offline actor journey has occurred. The source revision of this document is
+newer than b28; that install cannot be presented as an exact-head candidate.
+
+The historical checkpoints in the table and paragraphs below remain as an
+audit trail, not as current-head release evidence.
+An earlier retained verified-staged install is b22, pinned to signed source
 `9c7d4f5fcddb80464787ba30af2d4d8e6db897c6`. Its inventory and release
 manifest SHA-256 values are `66e288fc7ecfd04c2ac11b4f644f3f77a308fb5850a08ecd7ca7b20b1b9d0ed0`
 and `ea7b0c01d7e430dfd436bbe522daed074c0f3ffa6f3f0ba5048b48b9afdaa08e`.

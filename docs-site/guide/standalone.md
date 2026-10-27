@@ -78,11 +78,32 @@ The candidate file is explicitly **untrusted**. Compare its hash to an
 independently reviewed chain specification. The human reviewer, not the
 installer or an AI agent, signs the exact genesis approval bytes with their
 own GPG key. A ticket ID is optional; the reviewed chain-spec digest is not.
-The \`standalone\` profile uses Midnight's local ledger network ID
-\`undeployed\`; that ID is not a Trust Registry deployment status and does
+The `standalone` profile uses Midnight's local ledger network ID
+`undeployed`; that ID is not a Trust Registry deployment status and does
 not replace the per-installation genesis pin or finalized contract receipt.
 Likewise, governance must approve real maintenance public keys, threshold,
 and custody roles. A 1-of-3 development smoke roster is not release approval.
+
+### Review the node's genesis provenance
+
+The reviewer needs a source independent of the running node and its review
+packet. For the currently bundled Midnight node 1.0.0 image, start with the
+[official source release](https://github.com/midnightntwrk/midnight-node/releases/tag/node-1.0.0)
+and its configuration inputs. Authenticate the release commit and the pinned
+image digest through channels the operator controls, then compare the image's
+`dev` configuration and `undeployed` genesis input bytes with that source.
+The image's `GIT_CONTENT_HASH` identifies a source **tree**, not a commit;
+check the tree of the authenticated release commit rather than treating the
+environment variable as a signature. A matching Docker tag is not sufficient
+because tags can move; use the manifest digest from the verified install.
+
+This comparison establishes which published inputs the image packaged, not
+the expected genesis hash. Independently derive or verify that hash from the
+reviewed chain specification, compare it with the proposed pin, and record
+the reviewed specification's immutable reference and digest before signing.
+Running a second command in the same node image or accepting the node's RPC
+report is not independent verification. If no independent derivation is
+available, leave the wizard unsigned and the deployment gate open.
 
 To prepare a private review packet, follow the
 [verified temporary relay procedure](https://github.com/midnightntwrk/midnight-trust-registry/blob/milestone-0.1.0/docs/guide/standalone-offline-runtime.md#first-run-setup-wizard-initial-slice),
