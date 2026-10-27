@@ -54,6 +54,30 @@ exact-head Scan workflow run.
 
 ## Inspect the remaining scanner output
 
+At draft #238 head `5b6d2851`, the external Opengrep OSS check reported five
+`Insecure WebSocket Detected` findings: two node URL variables in
+`deploy/standalone/compose.yml`, two corresponding variables in
+`charts/trust-registry-standalone/templates/indexer.yaml`, and the local
+runtime guide's example connection. The earlier PGP negative-test marker is
+absent from this exact-head report. The internal aggregate Scan workflow and
+Trivy, Gitleaks, Checkov, and Zizmor passed, but none of those results waives
+the separate red Opengrep check.
+
+| Surface | Reviewer evidence before disposition | Stop condition |
+| --- | --- | --- |
+| Local Compose node-to-indexer WebSockets | Inspect the rendered project and running network/port attachments. The node, indexer, and proof server join the internal bridge, and node RPC is also published on `127.0.0.1`; verify the host binding stays loopback-only, all bridge members and host-local clients are trusted, and the bridge passes a positive-control and denied-egress probe. Confirm the operator controls Docker access and no untrusted container joins the bridge. | An untrusted bridge member or host-local process can reach RPC, the port binds a non-loopback interface, or measured isolation differs from the approved topology. |
+| Optional Helm node-to-indexer WebSockets | Review rendered Service and NetworkPolicy objects, namespace labels and admission controls, then test policy enforcement on the intended CNI with both allowed and denied peers. This cluster check is **not** a local Compose RC prerequisite. | The CNI ignores the policy, another workload can impersonate an allowed peer, or the rendered policy is not the observed policy. Do not claim Helm deployment qualified from template tests. |
+| Runtime guide example | Confirm the example is explicitly scoped to the private local bridge and does not teach an externally reachable plaintext endpoint. | The documented address can be reached from an untrusted network or reused as a public-network default. |
+
+Plaintext on a private bridge still exposes traffic to a compromised peer or
+host administrator; NetworkPolicy is not encryption. The independent human
+reviewer must record whether that residual risk is acceptable for the
+self-hosted, operator-controlled local RC, name the owner and compensating
+controls, and require a transport change if the isolation evidence fails.
+Keep #238 draft and #237/#232 open until the red check has an explicit,
+reviewed disposition under repository policy. Do not change `ws://` to
+`wss://` without a working TLS listener and verified certificate trust.
+
 The internal `ws://` node links in the Compose and Helm configurations are
 on isolated service networks, not public endpoints. Their inline Opengrep
 exceptions are scoped to those exact links; verify Docker's internal bridge
