@@ -10,12 +10,19 @@ import { validateLocalIssuerWriterApproval } from "../packages/trust-registry-ap
 import { verifyInstalledProviderRuntime } from "./verify-installed-provider-runtime.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
+/** @typedef {{outputDirectory: string, planPath: string, signaturePath: string,
+ * keyringDirectory: string, reviewerFingerprint: string, providerRoot: string,
+ * reviewedContentSha256: string, submissionJournalPath: string}} WriterReviewInput */
+/** @typedef {{loadPlan?: typeof loadApprovedLocalLedgerRuntimePlanWithDigest,
+ * verifyProvider?: typeof verifyInstalledProviderRuntime}} WriterReviewDependencies */
+/** @param {string} parent @param {string} path */
 const within = (parent, path) => {
   const child = relative(parent, path);
   return child === "" || (child !== ".." && !child.startsWith(`..${sep}`));
 };
 
 /** Writes review bytes only. Approval, signing, and deployment are separate human actions. */
+/** @param {WriterReviewInput} input @param {WriterReviewDependencies} [dependencies] */
 export async function prepareLocalIssuerWriterReview(input, dependencies = {}) {
   const { outputDirectory, providerRoot, submissionJournalPath } = input;
   if (![outputDirectory, providerRoot, submissionJournalPath].every((path) =>
