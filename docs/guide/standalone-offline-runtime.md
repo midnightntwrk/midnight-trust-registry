@@ -56,8 +56,9 @@ topology is needed before cluster use. Plan verification also needs a writable
 The staged install directory must contain `install-inventory.json`, the
 release-candidate package manifest and its ten tarballs, separate OCI image
 archives for node, indexer, and proof server, and the proof server's verified
-Ledger 8 public-parameter cache. Use this shape, replacing every
-placeholder with approved exact values:
+Ledger 8 public-parameter cache. The following is a **historical v3
+ledger-only excerpt**, not a template for a complete 0.1.0 actor candidate.
+Use the builder below to generate a v6 inventory; do not hand-edit it.
 
 ```json
 {
@@ -101,6 +102,12 @@ placeholder with approved exact values:
   }
 }
 ```
+
+A complete v6 candidate additionally pins the API and both portals under
+`apiRuntime` and `portalRuntimes`, the API Compose overlay under
+`runtimeCompose`, and the installation relay under `installRelay`. The
+verifier requires exact archive and manifest hashes for each image. A v3
+ledger-only inventory cannot start the local API or qualify actor journeys.
 
 From a clean, GPG-signed and DCO-signed source commit with full generated
 contract artifacts already present, run `pnpm run artifacts:standalone-install`.
