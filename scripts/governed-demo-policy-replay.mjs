@@ -206,3 +206,97 @@ export function runRevisedPolicyRoleReplays(matrix, harness, client, second, thi
     boundary: "integration",
   });
 }
+
+export function runHistoricalPolicyClientChecks(matrix, client, {
+  historicalPolicyBundle, originalVerifierBundle, originalAuditorBundle,
+  originalRecognitionBundle, currentPolicyBundle,
+}, changeLastHexNibble) {
+  matrix.expectVerified(() => client.verifyIssuerAuthorizationBundle(historicalPolicyBundle, {}), {
+    id: "issuer-history-survives-threshold-change",
+    invariant: "Old issuer authorization remains verifiable under its original policy snapshot",
+    boundary: "client",
+  });
+  matrix.expectVerified(() => client.verifyVerifierAuthorizationBundle(originalVerifierBundle, {}), {
+    id: "verifier-history-survives-threshold-change",
+    invariant: "Old verifier authorization remains verifiable under its original policy snapshot",
+    boundary: "client",
+  });
+  matrix.expectVerified(() => client.verifyAuditorAuthorizationBundle(originalAuditorBundle, {}), {
+    id: "auditor-history-survives-threshold-change",
+    invariant: "Old auditor authorization remains verifiable under its original policy snapshot",
+    boundary: "client",
+  });
+  matrix.expectVerified(() => client.verifyRecognitionBundle(originalRecognitionBundle, {}), {
+    id: "recognition-history-survives-threshold-change",
+    invariant: "Old recognition remains verifiable under its original policy snapshot",
+    boundary: "client",
+  });
+  matrix.expectThrown(() => client.verifyAuditorAuthorizationBundle(
+    { ...originalAuditorBundle, policy: { ...originalAuditorBundle.policy, version: "v9" } }, {},
+  ), {
+    id: "auditor-uncommitted-policy-version",
+    invariant: "An auditor cannot substitute an uncommitted policy version after threshold revision",
+    boundary: "client", messagePattern: /not committed to the ledger/iu,
+    category: "uncommitted-policy-version-rejected",
+  });
+  matrix.expectThrown(() => client.verifyRecognitionBundle(
+    { ...originalRecognitionBundle, policy: { ...originalRecognitionBundle.policy, version: "v9" } }, {},
+  ), {
+    id: "recognition-uncommitted-policy-version",
+    invariant: "A recognition cannot substitute an uncommitted policy version after threshold revision",
+    boundary: "client", messagePattern: /not committed to the ledger/iu,
+    category: "uncommitted-policy-version-rejected",
+  });
+  matrix.expectVerified(() => client.verifyIssuerAuthorizationBundle(currentPolicyBundle, {}), {
+    id: "issuer-current-policy-after-threshold-change",
+    invariant: "New issuer authorization verifies under the revised policy snapshot",
+    boundary: "client",
+  });
+  matrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(
+    historicalPolicyBundle, { evaluationTime: currentPolicyBundle.policy.effectiveFrom },
+  ), {
+    id: "issuer-old-policy-current-time-replay",
+    invariant: "Historical issuer evidence cannot establish trust after its policy is superseded",
+    boundary: "client",
+    messagePattern: /policy snapshot is superseded/iu,
+    category: "superseded-policy-rejected",
+  });
+  matrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(
+    { ...historicalPolicyBundle, policy: { ...historicalPolicyBundle.policy, version: "v9" } }, {},
+  ), {
+    id: "issuer-uncommitted-policy-version",
+    invariant: "Changing the evidence policy version cannot create an uncommitted authorization",
+    boundary: "client",
+    messagePattern: /not committed to the ledger/iu,
+    category: "uncommitted-policy-version-rejected",
+  });
+  matrix.expectThrown(() => client.verifyIssuerAuthorizationBundle({
+    ...historicalPolicyBundle,
+    inclusionProof: {
+      ...historicalPolicyBundle.inclusionProof,
+      path: [changeLastHexNibble(historicalPolicyBundle.inclusionProof.path[0])],
+    },
+  }, {}), {
+    id: "issuer-historical-proof-tampered-after-policy-revision",
+    invariant: "A threshold revision cannot make a tampered old-policy Merkle proof valid",
+    boundary: "client",
+    messagePattern: /event sibling/iu,
+    category: "historical-merkle-path-rejected",
+  });
+  const historicalEpochSignature = historicalPolicyBundle.epoch.maintainerSignatures[0];
+  assert.ok(historicalEpochSignature);
+  const alteredEpochSignature = `0x${historicalEpochSignature.signature[2] === "0" ? "1" : "0"}${historicalEpochSignature.signature.slice(3)}`;
+  matrix.expectThrown(() => client.verifyIssuerAuthorizationBundle({
+    ...historicalPolicyBundle,
+    epoch: {
+      ...historicalPolicyBundle.epoch,
+      maintainerSignatures: [{ ...historicalEpochSignature, signature: alteredEpochSignature }],
+    },
+  }, {}), {
+    id: "issuer-historical-epoch-signature-tampered",
+    invariant: "A policy revision cannot make a forged historical epoch signature valid",
+    boundary: "client",
+    messagePattern: /invalid/iu,
+    category: "historical-epoch-signature-rejected",
+  });
+}

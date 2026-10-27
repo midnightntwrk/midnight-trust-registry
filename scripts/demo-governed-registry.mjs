@@ -90,7 +90,8 @@ import { runApplicationEvidenceSafetyScenarios } from "./governed-demo-applicati
 import { runDenialSafetyScenario } from "./governed-demo-denial-safety.mjs";
 import { runMaintainerSafetyScenarios } from "./governed-demo-maintainer-safety.mjs";
 import {
-  runOldPolicyIssuerReplay, runOldPolicyRecognitionReplay, runRevisedPolicyRoleReplays,
+  runHistoricalPolicyClientChecks, runOldPolicyIssuerReplay, runOldPolicyRecognitionReplay,
+  runRevisedPolicyRoleReplays,
 } from "./governed-demo-policy-replay.mjs";
 import { TrustRegistryTrqpAdapter, verifyTrqpRecognitionEvidenceFromApi } from "../adapters/trqp/dist/index.js";
 
@@ -377,104 +378,10 @@ try {
 } finally {
   await new Promise((resolve, reject) => policyServer.close((error) => error ? reject(error) : resolve()));
 }
-adversarialMatrix.expectVerified(() => policyClient.verifyIssuerAuthorizationBundle(
-  historicalPolicyBundle, {},
-), {
-  id: "issuer-history-survives-threshold-change",
-  invariant: "Old issuer authorization remains verifiable under its original policy snapshot",
-  boundary: "client",
-});
-adversarialMatrix.expectVerified(() => policyClient.verifyVerifierAuthorizationBundle(
-  originalVerifierBundle, {},
-), {
-  id: "verifier-history-survives-threshold-change",
-  invariant: "Old verifier authorization remains verifiable under its original policy snapshot",
-  boundary: "client",
-});
-adversarialMatrix.expectVerified(() => policyClient.verifyAuditorAuthorizationBundle(
-  originalAuditorBundle, {},
-), {
-  id: "auditor-history-survives-threshold-change",
-  invariant: "Old auditor authorization remains verifiable under its original policy snapshot",
-  boundary: "client",
-});
-adversarialMatrix.expectVerified(() => policyClient.verifyRecognitionBundle(
-  originalRecognitionBundle, {},
-), {
-  id: "recognition-history-survives-threshold-change",
-  invariant: "Old recognition remains verifiable under its original policy snapshot",
-  boundary: "client",
-});
-adversarialMatrix.expectThrown(() => policyClient.verifyAuditorAuthorizationBundle(
-  { ...originalAuditorBundle, policy: { ...originalAuditorBundle.policy, version: "v9" } }, {},
-), {
-  id: "auditor-uncommitted-policy-version",
-  invariant: "An auditor cannot substitute an uncommitted policy version after threshold revision",
-  boundary: "client", messagePattern: /not committed to the ledger/iu,
-  category: "uncommitted-policy-version-rejected",
-});
-adversarialMatrix.expectThrown(() => policyClient.verifyRecognitionBundle(
-  { ...originalRecognitionBundle, policy: { ...originalRecognitionBundle.policy, version: "v9" } }, {},
-), {
-  id: "recognition-uncommitted-policy-version",
-  invariant: "A recognition cannot substitute an uncommitted policy version after threshold revision",
-  boundary: "client", messagePattern: /not committed to the ledger/iu,
-  category: "uncommitted-policy-version-rejected",
-});
-adversarialMatrix.expectVerified(() => policyClient.verifyIssuerAuthorizationBundle(
-  currentPolicyBundle, {},
-), {
-  id: "issuer-current-policy-after-threshold-change",
-  invariant: "New issuer authorization verifies under the revised policy snapshot",
-  boundary: "client",
-});
-adversarialMatrix.expectThrown(() => policyClient.verifyIssuerAuthorizationBundle(
-  historicalPolicyBundle, { evaluationTime: currentPolicyBundle.policy.effectiveFrom },
-), {
-  id: "issuer-old-policy-current-time-replay",
-  invariant: "Historical issuer evidence cannot establish trust after its policy is superseded",
-  boundary: "client",
-  messagePattern: /policy snapshot is superseded/iu,
-  category: "superseded-policy-rejected",
-});
-adversarialMatrix.expectThrown(() => policyClient.verifyIssuerAuthorizationBundle(
-  { ...historicalPolicyBundle, policy: { ...historicalPolicyBundle.policy, version: "v9" } }, {},
-), {
-  id: "issuer-uncommitted-policy-version",
-  invariant: "Changing the evidence policy version cannot create an uncommitted authorization",
-  boundary: "client",
-  messagePattern: /not committed to the ledger/iu,
-  category: "uncommitted-policy-version-rejected",
-});
-adversarialMatrix.expectThrown(() => policyClient.verifyIssuerAuthorizationBundle({
-  ...historicalPolicyBundle,
-  inclusionProof: {
-    ...historicalPolicyBundle.inclusionProof,
-    path: [changeLastHexNibble(historicalPolicyBundle.inclusionProof.path[0])],
-  },
-}, {}), {
-  id: "issuer-historical-proof-tampered-after-policy-revision",
-  invariant: "A threshold revision cannot make a tampered old-policy Merkle proof valid",
-  boundary: "client",
-  messagePattern: /event sibling/iu,
-  category: "historical-merkle-path-rejected",
-});
-const historicalEpochSignature = historicalPolicyBundle.epoch.maintainerSignatures[0];
-assert.ok(historicalEpochSignature);
-const alteredEpochSignature = `0x${historicalEpochSignature.signature[2] === "0" ? "1" : "0"}${historicalEpochSignature.signature.slice(3)}`;
-adversarialMatrix.expectThrown(() => policyClient.verifyIssuerAuthorizationBundle({
-  ...historicalPolicyBundle,
-  epoch: {
-    ...historicalPolicyBundle.epoch,
-    maintainerSignatures: [{ ...historicalEpochSignature, signature: alteredEpochSignature }],
-  },
-}, {}), {
-  id: "issuer-historical-epoch-signature-tampered",
-  invariant: "A policy revision cannot make a forged historical epoch signature valid",
-  boundary: "client",
-  messagePattern: /invalid/iu,
-  category: "historical-epoch-signature-rejected",
-});
+runHistoricalPolicyClientChecks(adversarialMatrix, policyClient, {
+  historicalPolicyBundle, originalVerifierBundle, originalAuditorBundle,
+  originalRecognitionBundle, currentPolicyBundle,
+}, changeLastHexNibble);
 runRevisedPolicyRoleReplays(adversarialMatrix, policyHarness, policyClient,
   policySecond, policyThird, formerPolicyCommitment, signCompact);
 
