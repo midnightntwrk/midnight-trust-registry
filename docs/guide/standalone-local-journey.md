@@ -171,6 +171,9 @@ they can all run today. The implementation sequence is in
    slice, not release qualification. Set `TR_STACK_NAME` to the wizard's
    approved project; the command also matches its inventory, Docker network,
    approved genesis, and deployed contract to the running signed API plan.
+   The aggregate rejects a child result that changes its unobserved actor,
+   independent-finality, host/browser egress, or plan-to-deployment scope
+   markers; a successful read-only observation cannot promote those gates.
 
    ```sh
    pnpm observe:standalone-qualification \

@@ -38,6 +38,12 @@ const query = {
   planExpectedGenesisHash: genesisHash,
   planSha256: "c".repeat(64),
   selectedStateSha256: "d".repeat(64),
+  apiEgressCanaryDenied: true,
+  apiDnsCanaryDenied: true,
+  actorJourneys: "not-run",
+  hostAndBrowserEgress: "not-verified",
+  independentFinality: "not-verified",
+  planToDeploymentBinding: "not-verified",
   releaseQualified: false,
 };
 const restart = {
@@ -48,6 +54,8 @@ const restart = {
   apiContainerId: query.apiContainerId,
   planSha256: query.planSha256,
   selectedStateSha256: query.selectedStateSha256,
+  apiEgressCanaryDenied: true,
+  apiDnsCanaryDenied: true,
   releaseQualified: false,
 };
 
@@ -116,6 +124,21 @@ test("observes read-only current queries without an implicit restart", async () 
   assert.equal(report.releaseQualified, false);
 });
 
+test("rejects child reports that imply unobserved actor, finality, or egress evidence", async () => {
+  for (const mutation of [
+    { apiEgressCanaryDenied: false },
+    { apiDnsCanaryDenied: false },
+    { actorJourneys: "observed" },
+    { hostAndBrowserEgress: "verified" },
+    { independentFinality: "verified" },
+    { planToDeploymentBinding: "verified" },
+  ]) {
+    await assert.rejects(observeStandaloneQualification("/setup", "/bundle", source,
+      { env: { TR_STACK_NAME: project } },
+      dependencies({ query: async () => ({ ...query, ...mutation }) })), /disagrees/u);
+  }
+});
+
 test("opt-in API restart must preserve the observed plan and selected state", async () => {
   const report = await observeStandaloneQualification("/setup", "/bundle", source,
     { apiRestart: true, env: { TR_STACK_NAME: project } }, dependencies());
@@ -125,7 +148,8 @@ test("opt-in API restart must preserve the observed plan and selected state", as
     dependencies({ restart: async () => ({ ...restart, planSha256: "f".repeat(64) }) })),
   /incompatible/u);
   for (const mutation of [{ apiContainerId: "7".repeat(64) },
-    { networkId: "8".repeat(64) }, { installInventorySha256: "0".repeat(64) }]) {
+    { networkId: "8".repeat(64) }, { installInventorySha256: "0".repeat(64) },
+    { apiEgressCanaryDenied: false }, { apiDnsCanaryDenied: false }]) {
     await assert.rejects(observeStandaloneQualification("/setup", "/bundle", source,
       { apiRestart: true, env: { TR_STACK_NAME: project } },
       dependencies({ restart: async () => ({ ...restart, ...mutation }) })), /incompatible/u);

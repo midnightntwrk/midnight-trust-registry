@@ -61,6 +61,12 @@ export async function observeStandaloneQualification(setupDirectory, bundle, sou
     || report.currentQuery.networkId !== status.stackNetworkId
     || report.currentQuery.planContractAddress !== status.deployedContractAddress
     || report.currentQuery.planExpectedGenesisHash !== status.approvedGenesisHash
+    || report.currentQuery.apiEgressCanaryDenied !== true
+    || report.currentQuery.apiDnsCanaryDenied !== true
+    || report.currentQuery.actorJourneys !== "not-run"
+    || report.currentQuery.hostAndBrowserEgress !== "not-verified"
+    || report.currentQuery.independentFinality !== "not-verified"
+    || report.currentQuery.planToDeploymentBinding !== "not-verified"
     || report.currentQuery.releaseQualified !== false) {
     throw new Error("Current-query observer disagrees with the approved setup deployment");
   }
@@ -74,6 +80,8 @@ export async function observeStandaloneQualification(setupDirectory, bundle, sou
       || report.apiRestart.networkId !== report.currentQuery.networkId
       || report.apiRestart.planSha256 !== report.currentQuery.planSha256
       || report.apiRestart.selectedStateSha256 !== report.currentQuery.selectedStateSha256
+      || report.apiRestart.apiEgressCanaryDenied !== true
+      || report.apiRestart.apiDnsCanaryDenied !== true
       || report.apiRestart.releaseQualified !== false) {
       throw new Error("API restart observer returned an incompatible result");
     }
