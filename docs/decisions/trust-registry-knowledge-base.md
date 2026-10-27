@@ -2830,3 +2830,13 @@ boundary and an overlong lifetime. This narrows #179 but does not address the
 remaining recognition/accreditation, policy, and adapter timestamp decisions.
 The test uses a fixture DID resolver; it is not a standalone deployed-ledger
 actor journey or independent VC status-authority evidence.
+
+## Domain record chronology precision
+
+The shared lifecycle and effective-window validators now use the exact
+RFC3339 instant comparator instead of `Date.parse` millisecond truncation.
+Policy, participant, authorization, and recognition schemas reject reversed
+sub-millisecond chronology while accepting equivalent offset spellings.
+Regression tests exercise a 10-digit fraction and malformed timestamps.
+Other trust-decision and adapter sites remain in the #179 audit; this domain
+validator fix is not a deployed standalone E2E result.
