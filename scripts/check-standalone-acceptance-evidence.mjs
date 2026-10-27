@@ -155,6 +155,7 @@ export function assessStandaloneObservationBinding(manifest, observation) {
     || observation.prerequisites.missing.length !== 0
     || query?.format !== "tr-standalone-current-query-journey-v2"
     || query.sourceRevision !== manifest.sourceRevision
+    || query.installInventorySha256 !== manifest.installInventorySha256
     || !SHA256.test(query.networkId ?? "")
     || !SHA256.test(query.apiContainerId ?? "")
     || !SHA256.test(query.selectedStateSha256 ?? "")
@@ -168,6 +169,8 @@ export function assessStandaloneObservationBinding(manifest, observation) {
   if (restart !== "not-run" && (query === "not-run"
     || restart?.format !== "tr-standalone-api-restart-observation-v1"
     || restart.sourceRevision !== manifest.sourceRevision
+    || restart.installInventorySha256 !== manifest.installInventorySha256
+    || restart.installInventorySha256 !== query.installInventorySha256
     || restart.networkId !== query.networkId
     || restart.apiContainerId !== query.apiContainerId
     || restart.planSha256 !== query.planSha256

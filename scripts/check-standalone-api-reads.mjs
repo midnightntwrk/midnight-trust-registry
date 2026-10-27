@@ -51,6 +51,7 @@ function checkedCurrentReadReport(stdout) {
     || report.apiOrigin !== "http://127.0.0.1:4400"
     || !/^[0-9a-f]{40}$/u.test(report.planSourceRevision ?? "")
     || !/^[0-9a-f]{64}$/u.test(report.planSha256 ?? "")
+    || !SHA256.test(report.planInstallInventorySha256 ?? "")
     || !/^0x[0-9a-f]{64}$/u.test(report.planContractAddress ?? "")
     || /^0x0{64}$/u.test(report.planContractAddress)
     || !/^0x[0-9a-f]{64}$/u.test(report.planExpectedGenesisHash ?? "")
@@ -96,6 +97,9 @@ export async function probeStandaloneApiCurrentReads(bundle, env = process.env, 
   if (current.planSourceRevision !== before.sourceRevision) {
     throw new Error("Signed API plan source differs from the verified running image");
   }
+  if (current.planInstallInventorySha256 !== before.installInventorySha256) {
+    throw new Error("Signed API plan install inventory differs from the verified running image bundle");
+  }
   const after = checkedTopology(await observe(bundle, env));
   if (before.apiContainerId !== after.apiContainerId
     || before.apiStartedAt !== after.apiStartedAt
@@ -112,7 +116,7 @@ export async function probeStandaloneApiCurrentReads(bundle, env = process.env, 
     apiStartedAt: before.apiStartedAt,
     apiRestartCount: before.apiRestartCount,
     networkId: before.networkId,
-    installInventorySha256: before.installInventorySha256,
+    installInventorySha256: current.planInstallInventorySha256,
     planSha256: current.planSha256,
     planContractAddress: current.planContractAddress,
     planExpectedGenesisHash: current.planExpectedGenesisHash,

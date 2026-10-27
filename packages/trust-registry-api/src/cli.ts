@@ -464,6 +464,7 @@ export const runTrustRegistryApiCli = async (
       expectedPlanSha256: planSha256 });
     process.stdout.write(`${JSON.stringify({ ...result, planSourceRevision: plan.sourceRevision,
       planSha256, planNotAfter: plan.notAfter,
+      planInstallInventorySha256: plan.installInventorySha256,
       planContractAddress: plan.contractAddress,
       planExpectedGenesisHash: plan.expectedGenesisHash }, null, 2)}\n`);
     return;

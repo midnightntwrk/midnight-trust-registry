@@ -23,6 +23,7 @@ const report = {
   apiOrigin: "http://127.0.0.1:4400",
   planSourceRevision: sourceRevision,
   planSha256: "d".repeat(64),
+  planInstallInventorySha256: topology.installInventorySha256,
   planContractAddress: `0x${"a".repeat(64)}`,
   planExpectedGenesisHash: `0x${"b".repeat(64)}`,
   selectedStateSha256: "f".repeat(64),
@@ -94,6 +95,7 @@ test("rejects malformed and source-mismatched packaged readback", async () => {
   const observe = async () => topology;
   for (const stdout of ["not-json", JSON.stringify({ ...report, releaseQualified: true }),
     JSON.stringify({ ...report, format: "tr-local-api-current-read-observation-v1" }),
+    JSON.stringify({ ...report, planInstallInventorySha256: "bad" }),
     JSON.stringify({ ...report, planContractAddress: `0x${"0".repeat(64)}` }),
     JSON.stringify({ ...report, planExpectedGenesisHash: "invalid" }),
     JSON.stringify({ ...report, planSourceRevision: "b".repeat(40) })]) {
@@ -101,6 +103,14 @@ test("rejects malformed and source-mismatched packaged readback", async () => {
       observe, execDocker: async () => stdout,
     }), /did not return JSON|invalid report|source differs/u);
   }
+});
+
+test("rejects a signed plan for a different verified install inventory", async () => {
+  await assert.rejects(probeStandaloneApiCurrentReads("/bundle", env, {
+    observe: async () => topology,
+    execDocker: async () => JSON.stringify({ ...report,
+      planInstallInventorySha256: "8".repeat(64) }),
+  }), /plan install inventory differs/u);
 });
 
 test("rejects a replaced container or network after the HTTP probe", async () => {
