@@ -3258,6 +3258,16 @@ test("detached GPG verification accepts only the pinned signing key and exact by
   const publicExport = join(root, "reviewer-public.asc");
   await writeFile(publicExport, armoredPublicKey, { mode: 0o600 });
   await verifyDetachedReviewerSignature(document, signature, publicExport, fingerprint, approvedAt);
+  const longTemp = join(root, "long-configured-temporary-directory-for-gpg-armored-import");
+  await mkdir(longTemp);
+  const previousTemp = process.env.TMPDIR;
+  try {
+    process.env.TMPDIR = longTemp;
+    await verifyDetachedReviewerSignature(document, signature, publicExport, fingerprint, approvedAt);
+  } finally {
+    if (previousTemp === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = previousTemp;
+  }
   await assert.rejects(verifyDetachedReviewerSignature(document, signature, publicExport, "B".repeat(40), approvedAt),
     /does not match/u);
   const invalidExport = join(root, "invalid-public.asc");

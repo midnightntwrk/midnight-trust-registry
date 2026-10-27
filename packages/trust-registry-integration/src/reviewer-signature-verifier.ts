@@ -28,10 +28,20 @@ export function verifyDetachedReviewerBytes(input: {
   }
   const gpg = ["/usr/bin/gpg", "/opt/homebrew/bin/gpg", "/usr/local/bin/gpg"].find(existsSync);
   if (gpg === undefined) throw new Error("A trusted GPG executable is required");
-  // Armored-key import may start a macOS GPG agent with a short socket-path limit.
-  const tempRoot = process.platform === "darwin" && input.publicKeyFormat === "armored"
-    && tmpdir().length > 55 ? "/tmp" : tmpdir();
-  const temporary = mkdtempSync(join(tempRoot, "tr-reviewer-verifier-"));
+  // Armored-key import may start a GPG agent with a short socket-path limit.
+  const configuredTempRoot = tmpdir();
+  let temporary: string;
+  if (input.publicKeyFormat === "armored" && configuredTempRoot.length > 55) {
+    try {
+      temporary = mkdtempSync(join("/tmp", "tr-reviewer-verifier-"));
+    } catch (error) {
+      if (!error || typeof error !== "object" || !("code" in error)
+        || !["EACCES", "EPERM", "EROFS", "ENOENT"].includes(String(error.code))) throw error;
+      temporary = mkdtempSync(join(configuredTempRoot, "tr-reviewer-verifier-"));
+    }
+  } else {
+    temporary = mkdtempSync(join(configuredTempRoot, "tr-reviewer-verifier-"));
+  }
   const env = { PATH: "/usr/bin:/bin", HOME: temporary, LC_ALL: "C" };
   try {
     const document = join(temporary, "document.json");
