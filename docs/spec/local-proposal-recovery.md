@@ -10,8 +10,18 @@ The API writes a deployment-bound `reserved` attempt to its private proposal
 journal before calling the submission provider. A lost response can mean that
 the action was never broadcast, is still pending, was finalized, or was
 finalized but is temporarily invisible to a lagging reader. The provider's
-in-memory guards do not survive restart. A null current-record lookup, a
+in-memory `inFlightDeployments` and `uncertainDeployments` guards only protect
+one process; they do not survive restart. Governed API submission must reopen
+the same deployment-bound journal and refuse a second broadcast while the
+attempt is `reserved` or otherwise unresolved. A failed durable reservation
+must stop before provider submission. A null current-record lookup, a
 timeout, or a provider error cannot distinguish these outcomes.
+
+The mocked-node restart test recreates the pinned provider module after a
+lost response and confirms that the reopened journal prevents a second
+broadcast. Separate HTTP tests restart the API listener, and journal tests
+require finalized reconciliation before another action is admitted. These
+mechanics tests do not prove live local-ledger finality or recovery.
 
 The current `inspect-local-proposal-recovery` and signed-decision verifier
 are **read-only review aids**. A `sequence-invalidated-record-absent` report

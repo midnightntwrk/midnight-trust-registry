@@ -31,10 +31,23 @@ import {
   ProposalSubmissionOutcomeUnknownError,
 } from "../proposal-submission-journal.js";
 
-const mocks = vi.hoisted(() => ({ submitCallTx: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  submitCallTx: vi.fn(), createApi: vi.fn(), connect: vi.fn(), disconnect: vi.fn(), indexer: vi.fn(),
+}));
 vi.mock("@midnight-ntwrk/midnight-js-contracts", async (importOriginal) => ({
   ...await importOriginal<typeof import("@midnight-ntwrk/midnight-js-contracts")>(),
   submitCallTx: mocks.submitCallTx,
+}));
+vi.mock("../../../trust-registry-integration/node_modules/@polkadot/api", () => ({
+  ApiPromise: { create: mocks.createApi },
+  WsProvider: class {
+    isConnected = true;
+    connect = mocks.connect;
+    disconnect = mocks.disconnect;
+  },
+}));
+vi.mock("../../../trust-registry-integration/node_modules/@midnight-ntwrk/midnight-js-indexer-public-data-provider", () => ({
+  indexerPublicDataProvider: mocks.indexer,
 }));
 
 const registryLabel = "registry:issuer-journal";
@@ -185,6 +198,62 @@ describe("issuer SDK handoff with private journal", () => {
     await expect(submitLocalIssuerProposalCall(input(reopened)))
       .rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
     expect(mocks.submitCallTx).toHaveBeenCalledOnce();
+  });
+
+  it("uses the persisted reservation after the pinned provider loses its process-local guards", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    await journal.bindDeployment(registryLabel, contractAddress, genesisHash);
+    const broadcast = vi.fn(() => ({ send: async () => vi.fn() }));
+    mocks.connect.mockResolvedValue(undefined);
+    mocks.disconnect.mockResolvedValue(undefined);
+    mocks.createApi.mockImplementation(async () => ({
+      isConnected: true,
+      rpc: { chain: { getBlockHash: async () => ({ toHex: () => genesisHash }) } },
+      tx: { midnight: { sendMnTransaction: broadcast } },
+      disconnect: mocks.disconnect,
+    }));
+    mocks.indexer.mockReturnValue({ watchForTxData: vi.fn(), queryContractState: vi.fn() });
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      data: { block: { height: 0, hash: genesisHash.slice(2) } },
+    })));
+    try {
+      const config = {
+        nodeWsUrl: "ws://node:9944", indexerHttpUrl: "http://node:8088/graphql",
+        indexerWsUrl: "ws://node:8088/graphql/ws", allowedHosts: ["node"],
+        contractAddress, expectedGenesisHash: genesisHash, submissionDeadlineMs: 10,
+      };
+      const firstFactory = await import("../../../trust-registry-integration/src/local-pinned-submission-provider.js");
+      const first = firstFactory.createPinnedLocalSubmissionProvider(config);
+      const request = (provider: typeof first, submissionJournal: FileProposalSubmissionJournal) => ({
+        ...input(submissionJournal),
+        providers: { midnightProvider: provider.midnightProvider,
+          publicDataProvider: provider.publicDataProvider } as unknown as Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"],
+        readSubmissionProviderIdentity: provider.readSubmissionProviderIdentity,
+      });
+      mocks.submitCallTx.mockImplementation(async (providers: Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"]) => {
+        await providers.midnightProvider.submitTx({
+          identifiers: () => ["tx-ambiguous"], serialize: () => new Uint8Array([1, 2, 3]),
+        } as never);
+        throw new Error("response lost after broadcast");
+      });
+      const firstOutcome = await submitLocalIssuerProposalCall(request(first, journal)).catch((error: unknown) => error);
+      expect(mocks.connect).toHaveBeenCalled();
+      expect(firstOutcome).toBeInstanceOf(ProposalSubmissionOutcomeUnknownError);
+      expect(broadcast).toHaveBeenCalledOnce();
+      expect(await journal.read("issuer", authorizationLabel)).toMatchObject({ state: "reserved" });
+      expect(() => firstFactory.createPinnedLocalSubmissionProvider(config)).toThrow(/restart/u);
+
+      vi.resetModules();
+      const restartedFactory = await import("../../../trust-registry-integration/src/local-pinned-submission-provider.js");
+      const restarted = restartedFactory.createPinnedLocalSubmissionProvider(config);
+      const reopened = new FileProposalSubmissionJournal(path);
+      await expect(submitLocalIssuerProposalCall(request(restarted, reopened)))
+        .rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
+      expect(broadcast).toHaveBeenCalledOnce();
+      expect(mocks.submitCallTx).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("never enters the SDK when the durable reservation cannot be written", async () => {

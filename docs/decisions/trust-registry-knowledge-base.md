@@ -2770,3 +2770,20 @@ stale prebuilt contract stops before a journey rather than silently selecting
 a destructive light build. This prevents stale package results and protects
 artifact-bearing checkouts; the check does not independently authenticate
 generated-code provenance or turn fixture E2E into deployed-ledger evidence.
+
+## Journal authority after provider restart
+
+Issue #230 isolates a restart safety invariant from the larger deployed
+recovery gate. The pinned provider's in-memory deployment sets are only
+same-process guards; the private, deployment-bound proposal journal is the
+cross-restart authority. The issuer SDK integration test now loses a mocked
+node submission response, resets the provider module, opens the same journal,
+and verifies that a newly constructed provider cannot cause a second
+broadcast. Existing API HTTP tests separately recreate the listener and
+proposal port; journal tests cover write failure and finalized reconciliation.
+Both restart scenarios now run in the API light test lane with injected
+node/ledger state, alongside the journal write-failure and reconciliation
+suite. They do not use a public or deployed local network.
+No test in this group establishes a deployed ledger, authentic finality, or
+permission to clear an unobserved reservation. The #220 recovery proof and
+#219 offline actor qualification remain open.
