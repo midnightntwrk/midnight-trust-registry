@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { encodeCompactActionKind } from "@midnight-ntwrk/trust-registry-contract";
@@ -13,6 +13,7 @@ import { assessProposalRecoveryCandidate } from "../proposal-recovery-candidate.
 import { draftProposalRecoveryDecision } from "../proposal-recovery-decision.js";
 import { FileProposalSubmissionJournal, proposalJournalBindingDigest,
   ProposalSubmissionAlreadyPendingError, ProposalSubmissionOutcomeUnknownError,
+  ProposalSubmissionCapacityError,
   type ProposalReservationContext } from "../proposal-submission-journal.js";
 
 const hash = (byte: string) => `0x${byte.repeat(64)}`;
@@ -149,6 +150,68 @@ describe("audited proposal reservation abandonment", () => {
       await expect(compacted.executeOnce("issuer", authorizationId, evidenceCommitment,
         async () => { throw new Error("must not execute after compaction"); }, context))
         .rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
+
+      // A journal admitted by older code may have no room to grow its active segment.
+      const legacyPath = join(root, "legacy-near-capacity.json");
+      const legacy = new FileProposalSubmissionJournal(legacyPath);
+      await legacy.bindDeployment(harness.registryId, contractAddress, genesisHash);
+      const legacyId = "issuer:legacy-near-capacity";
+      const legacyContext = { ...context,
+        actionSequence: harness.simulator.getLedger().governanceActionCount.toString() };
+      await expect(legacy.executeOnce("issuer", legacyId, evidenceCommitment,
+        async () => { throw new Error("legacy response lost"); }, legacyContext))
+        .rejects.toBeInstanceOf(ProposalSubmissionOutcomeUnknownError);
+      const legacyState = JSON.parse(await readFile(legacyPath, "utf8")) as {
+        version: number; attempts: Array<Record<string, unknown>>;
+      };
+      let size = Buffer.byteLength(JSON.stringify(legacyState));
+      for (let index = 0; legacyState.attempts.length < 10_000; index += 1) {
+        const entry = {
+          role: "issuer", authorizationId: `old-${String(index).padStart(5, "0")}${"x".repeat(220)}`,
+          evidenceCommitment, state: "observed", eventHash: hash("f"),
+          reservationContext: legacyContext,
+        };
+        const growth = Buffer.byteLength(JSON.stringify(entry)) + 1;
+        if (size + growth > 4 * 1024 * 1024 - 400) break;
+        legacyState.attempts.push(entry);
+        size += growth;
+      }
+      expect(size).toBeGreaterThan(4 * 1024 * 1024 - 1_200);
+      await writeFile(legacyPath, JSON.stringify(legacyState), { mode: 0o600 });
+      harness.proposeMaintainer(createMaintainerScenarioFixture("abandonment-legacy-advancer"));
+      const legacyBound = await legacy.readBoundAttempt(harness.registryId, contractAddress,
+        genesisHash, "issuer", legacyId);
+      const legacyCandidate = await assessProposalRecoveryCandidate({
+        attempt: legacyBound.attempt!, view: view(), registryId: harness.registryId,
+        contractAddress, planExpectedGenesisHash: genesisHash,
+        planSourceRevision: input.planSourceRevision, approvedPlanSha256: input.approvedPlanSha256,
+        journalBindingDigest: legacyBound.bindingDigest,
+      });
+      const legacyDecisionPath = join(root, "legacy-decision.json");
+      const legacySignaturePath = join(root, "legacy-decision.sig");
+      await writeFile(legacyDecisionPath, await draftProposalRecoveryDecision({
+        candidate: legacyCandidate, finalityEvidencePath,
+        evidenceReference: "test:legacy-review-bundle", reviewerFingerprint: fingerprint!,
+        planReviewerFingerprint: input.planReviewerFingerprint,
+      }));
+      execFileSync("gpg", ["--homedir", signer, "--batch", "--detach-sign", "--output",
+        legacySignaturePath, legacyDecisionPath]);
+      await expect(legacy.abandonInvalidatedReservation({ ...input,
+        authorizationId: legacyId, decisionPath: legacyDecisionPath,
+        signaturePath: legacySignaturePath,
+      })).resolves.toMatchObject({ state: "abandoned" });
+      expect((await legacy.inspectCapacity()).archivedEntries).toBe(1);
+      const reopenedLegacy = new FileProposalSubmissionJournal(legacyPath);
+      await reopenedLegacy.assertDeploymentBinding(harness.registryId, contractAddress, genesisHash);
+      expect((await reopenedLegacy.read("issuer", legacyId))?.state).toBe("abandoned");
+      await expect(reopenedLegacy.executeOnce("issuer", legacyId, evidenceCommitment,
+        async () => { throw new Error("legacy ID must not replay"); }, legacyContext))
+        .rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
+      await expect(reopenedLegacy.executeOnce("issuer", "issuer:capacity-headroom", evidenceCommitment,
+        async () => { throw new Error("must reject before execution"); }, {
+          ...legacyContext, actionSequence: harness.simulator.getLedger().governanceActionCount.toString(),
+        })).rejects.toBeInstanceOf(ProposalSubmissionCapacityError);
+      expect(await reopenedLegacy.read("issuer", "issuer:capacity-headroom")).toBeNull();
     } finally {
       spawnSync("gpgconf", ["--homedir", signer, "--kill", "gpg-agent"], { stdio: "ignore" });
       await rm(root, { recursive: true, force: true });

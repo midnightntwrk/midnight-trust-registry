@@ -94,6 +94,11 @@ unblocking a different proposal, and fail closed on a crash or changed
 checkpoint. Archive rotation, capacity accounting, backup, and restore must
 preserve and revalidate the tombstone. No HTTP request may supply its own
 proof verdict or select a new journal to bypass this rule.
+New reservations leave bounded room for their terminal record. An older
+near-capacity active segment can instead commit the tombstone in a new archive
+segment and remove only that exact reservation from the active segment in one
+manifest update. A full archive catalog still fails closed and requires
+operator capacity review; deleting segments is not recovery.
 
 The test callback uses an injected simulator view and is **not** an
 independent finality authenticator. No production implementation of the

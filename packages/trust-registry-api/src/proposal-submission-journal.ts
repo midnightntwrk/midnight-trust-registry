@@ -20,6 +20,8 @@ const MAX_ENTRIES = 10_000;
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_MANIFEST_BYTES = 1024 * 1024;
 const MAX_ARCHIVES = 64;
+// Upper bound for the recovery record's fixed digests, timestamps, and 512-byte reference.
+const MAX_ABANDONMENT_OVERHEAD_BYTES = 2 * 1024;
 const Bytes32Schema = z.string().regex(/^0x[0-9a-f]{64}$/u);
 const CanonicalActionSequencePattern = /^(0|[1-9][0-9]{0,19})$/u;
 const ActionSequenceSchema = z.string()
@@ -318,7 +320,9 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
         attempts: [...projectedAttempts, { ...key, state: "submitted", eventHash: `0x${"0".repeat(64)}`,
           ...(context === undefined ? {} : { reservationContext: context }) }],
       }), "utf8");
-      if (submittedSize > MAX_FILE_BYTES) throw new ProposalSubmissionCapacityError();
+      if (submittedSize + (context === undefined ? 0 : MAX_ABANDONMENT_OVERHEAD_BYTES) > MAX_FILE_BYTES) {
+        throw new ProposalSubmissionCapacityError();
+      }
       await this.writeActive(storage, StateSchema.parse({
         ...storage.active, attempts,
       }));
@@ -468,7 +472,7 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
         recordedAt: new Date(input.now ?? Date.now()).toISOString(),
         finalizedBlockHash: candidate.finalizedBlockHash,
       };
-      await this.writeActive(storage, StateSchema.parse(storage.active));
+      await this.writeAbandoned(storage, StateSchema.parse(storage.active), attempt);
       return structuredClone(attempt);
     });
   }
@@ -782,6 +786,33 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
     const active = await this.writeSegment(state);
     await this.writeManifest({ ...storage.manifest, active });
     await rm(join(dirname(this.path), storage.manifest.active.file), { force: true });
+  }
+
+  /** Preserve old near-capacity journals by committing the tombstone as an archive segment. */
+  private async writeAbandoned(
+    storage: JournalStorage, state: JournalState, abandoned: ProposalSubmissionAttempt,
+  ): Promise<void> {
+    if (Buffer.byteLength(JSON.stringify(state), "utf8") <= MAX_FILE_BYTES) {
+      await this.writeActive(storage, state);
+      return;
+    }
+    if ((storage.manifest?.archives.length ?? 0) >= MAX_ARCHIVES) {
+      throw new ProposalSubmissionCapacityError();
+    }
+    const archive = await this.writeSegment(StateSchema.parse({ version: 1, attempts: [abandoned] }));
+    const active = await this.writeSegment(StateSchema.parse({
+      version: 1,
+      attempts: state.attempts.filter((entry) => entry.role !== abandoned.role
+        || entry.authorizationId !== abandoned.authorizationId),
+    }));
+    await this.writeManifest(ManifestSchema.parse({
+      version: 2,
+      archives: [...(storage.manifest?.archives ?? []), archive],
+      active,
+    }));
+    if (storage.manifest !== null) {
+      await rm(join(dirname(this.path), storage.manifest.active.file), { force: true });
+    }
   }
 
   private async writeState(state: JournalState): Promise<void> {
