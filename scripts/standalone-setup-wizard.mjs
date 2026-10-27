@@ -34,7 +34,7 @@ import {
 import { buildStandaloneApiApprovalChain } from "./standalone-api-approval-chain.mjs";
 export { buildStandaloneApiApprovalChain } from "./standalone-api-approval-chain.mjs";
 import { observeStandaloneRestartSnapshot, readStandaloneRestartEvidence } from "./check-standalone-restart.mjs";
-import { checkLocalLedgerPreflight } from "./local-ledger-preflight.mjs";
+import { checkLocalLedgerPreflight, validateLocalLedgerPin } from "./local-ledger-preflight.mjs";
 import {
   loadApprovedMaintenanceMaterial, reconcileLocalDeployment, runLocalDeployment,
   validateLocalDeploymentPlan,
@@ -628,7 +628,7 @@ export async function observeStandaloneLedger(directory, pinPath, dependencies =
     requireVerifiedInventoryBytes(record.install.verified, inventory, record.install.inventorySha256,
       "Installed inventory changed since setup verification");
     const pinBytes = await regularBytes(resolve(pinPath));
-    const pin = parseJsonBytes(pinBytes);
+    const pin = validateLocalLedgerPin(parseJsonBytes(pinBytes));
     if (pin.sourceRevision !== record.sourceRevision) {
       throw new Error("Genesis pin source revision disagrees with the installed bundle");
     }

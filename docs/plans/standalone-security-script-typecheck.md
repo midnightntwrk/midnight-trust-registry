@@ -10,7 +10,7 @@ A second, strict no-emit gate runs
 | --- | --- |
 | `scripts/approved-provider-identity.mjs` | Hash and inode continuity across provider loading. |
 | `scripts/immutable-provider-tree.mjs` | Root-owned code tree and import confinement. |
-| `scripts/local-ledger-preflight.mjs` | Exact-field local genesis pin validation before any node observation; its output remains node-reported and unapproved. |
+| `scripts/local-ledger-preflight.mjs` | Reusable exact-field local genesis pin validation before wizard access-path selection or node observation; its output remains node-reported and unapproved. |
 | `scripts/local-ledger-deploy.mjs` | Typed deployment/reconciliation shell, staged versus full submission inputs, and early manifest catalog validation; provider factory output remains a reviewed dynamic-code boundary. |
 | `scripts/local-ledger-insert-verifier-key.mjs` | Typed staged key-insertion/reconciliation shell, approved deployment receipt comparison, and early manifest catalog validation. |
 | `scripts/local-deployment-plan-policy.mjs` | Exact source, network, provider, and journal fields before deployment or key insertion. |

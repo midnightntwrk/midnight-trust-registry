@@ -810,6 +810,19 @@ test("wizard records only selected ledger-bridge topology and egress observation
     observeTopology: async () => { throw new Error("must not inspect Docker after Compose drift"); },
   }), /Runtime Compose changed/u);
   await writeFile(composePath, preparedCompose);
+  for (const malformed of [
+    { ...pin, networkId: "preprod" },
+    { ...pin, expectedGenesisHash: `0x${"0".repeat(64)}` },
+    { ...pin, allowedHosts: ["127.0.0.1", null] },
+    { ...pin, unreviewed: true },
+  ]) {
+    await writeFile(f.pinPath, JSON.stringify(malformed));
+    await assert.rejects(observeStandaloneLedger(f.directory, f.pinPath, {
+      observeTopology: async () => { throw new Error("must not inspect Docker for malformed pin"); },
+      preflight: async () => { throw new Error("must not query malformed pin"); },
+    }), /exact approved/u);
+  }
+  await writeFile(f.pinPath, JSON.stringify({ ...pin, rpcUrl: "http://127.0.0.1:39944" }));
   await assert.rejects(observeStandaloneLedger(f.directory, f.pinPath, {
     observeTopology: async () => { throw new Error("effective loopback port is absent"); },
     preflight: async () => { throw new Error("must not query genesis"); },

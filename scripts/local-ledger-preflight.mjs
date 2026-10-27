@@ -15,11 +15,11 @@ const FIELDS = ["allowedHosts", "expectedGenesisHash", "format", "networkId", "r
 /** @param {unknown} value @returns {value is Record<string, unknown>} */
 const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 
-/** Node observation only; an operator must approve the genesis from another channel.
+/** Validate exact proposed pin bytes before any topology or node observation.
  * @param {unknown} candidate
- * @param {typeof fetch} [fetchImpl]
+ * @returns {LocalLedgerPin}
  */
-export async function checkLocalLedgerPreflight(candidate, fetchImpl) {
+export function validateLocalLedgerPin(candidate) {
   if (!isRecord(candidate)
     || Object.keys(candidate).sort().join("\0") !== FIELDS.join("\0")
     || candidate.format !== "tr-local-ledger-pin-v1"
@@ -32,7 +32,15 @@ export async function checkLocalLedgerPreflight(candidate, fetchImpl) {
     || candidate.allowedHosts.some((host) => typeof host !== "string" || host.length === 0)) {
     throw new Error("Local ledger preflight requires an exact approved network, source, and genesis pin");
   }
-  const plan = /** @type {LocalLedgerPin} */ (/** @type {unknown} */ (candidate));
+  return /** @type {LocalLedgerPin} */ (/** @type {unknown} */ (candidate));
+}
+
+/** Node observation only; an operator must approve the genesis from another channel.
+ * @param {unknown} candidate
+ * @param {typeof fetch} [fetchImpl]
+ */
+export async function checkLocalLedgerPreflight(candidate, fetchImpl) {
+  const plan = validateLocalLedgerPin(candidate);
   const source = createLocalRpcFinalizedCheckpointSource({
     rpcUrl: plan.rpcUrl,
     expectedGenesisHash: plan.expectedGenesisHash,
