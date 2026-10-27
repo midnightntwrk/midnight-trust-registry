@@ -11,6 +11,7 @@ const NEXT_ACTION = Object.freeze({
   committeeApproved: "Approve and sign the release committee roster, threshold, public keys, and custody roles.",
   maintenanceObserved: "Transition to the approved committee and record finalized authority and counter readback.",
 });
+const GATE_ORDER = Object.keys(NEXT_ACTION);
 
 /** @param {unknown} value @returns {value is Record<string, unknown>} */
 const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
@@ -55,8 +56,9 @@ export function assessStandaloneJourneyPrerequisites(status, expectedSourceRevis
       && status.maintenanceLastReadback === "observed"
       && status.maintenanceTransitionAlert === null,
   };
-  const missing = /** @type {Array<keyof typeof NEXT_ACTION>} */ (Object.keys(NEXT_ACTION))
+  const missing = /** @type {Array<keyof typeof NEXT_ACTION>} */ (GATE_ORDER)
     .filter((gate) => gates[gate] === false);
+  const firstMissing = missing[0] ?? null;
   return {
     format: "tr-standalone-journey-prerequisites-v1",
     sourceRevision: status.sourceRevision,
@@ -64,6 +66,12 @@ export function assessStandaloneJourneyPrerequisites(status, expectedSourceRevis
     gates,
     missing,
     nextActions: missing.map((gate) => ({ gate, action: NEXT_ACTION[gate] })),
+    nextSafeAction: firstMissing === null ? null : {
+      gate: firstMissing, action: NEXT_ACTION[firstMissing],
+    },
+    blockedActions: missing.slice(1).map((gate) => ({
+      gate, blockedBy: firstMissing,
+    })),
     ledgerPrerequisitesObserved: missing.length === 0,
     completeVerifierKeyInventory: "not-verified",
     actorJourney: "not-run",

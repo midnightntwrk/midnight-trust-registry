@@ -21,6 +21,8 @@ test("only reports wizard ledger prerequisites, never actor or release qualifica
   assert.equal(report.ledgerPrerequisitesObserved, true);
   assert.deepEqual(report.missing, []);
   assert.deepEqual(report.nextActions, []);
+  assert.equal(report.nextSafeAction, null);
+  assert.deepEqual(report.blockedActions, []);
   assert.equal(report.actorJourney, "not-run");
   assert.equal(report.completeVerifierKeyInventory, "not-verified");
   assert.equal(report.independentFinality, "not-verified");
@@ -37,6 +39,11 @@ test("fails closed for missing approval, unresolved key or alert", () => {
   assert.deepEqual(report.missing, ["genesisApproved", "recordedKeyInsertionsReconciled", "maintenanceObserved"]);
   assert.deepEqual(report.nextActions.map(({ gate }) => gate), report.missing);
   assert.match(report.nextActions[0].action, /Independently review the real chain specification/u);
+  assert.equal(report.nextSafeAction.gate, "genesisApproved");
+  assert.deepEqual(report.blockedActions, [
+    { gate: "recordedKeyInsertionsReconciled", blockedBy: "genesisApproved" },
+    { gate: "maintenanceObserved", blockedBy: "genesisApproved" },
+  ]);
 });
 
 test("empty key evidence and active setup lock block the journey", () => {
@@ -65,9 +72,27 @@ test("candidate source revision must match the retained install setup", () => {
   assert.equal(stale.gates.sourceMatchesCandidate, false);
   assert.deepEqual(stale.missing, ["sourceMatchesCandidate"]);
   assert.match(stale.nextActions[0].action, /never reuse an older setup/u);
+  assert.equal(stale.nextSafeAction.gate, "sourceMatchesCandidate");
   assert.equal(stale.ledgerPrerequisitesObserved, false);
   assert.throws(() => assessStandaloneJourneyPrerequisites(approved, "bad"),
     /Expected candidate source revision/u);
+});
+
+test("does not present deployment as the first safe action before approvals", () => {
+  const report = assessStandaloneJourneyPrerequisites({
+    ...approved,
+    localLedger: "node-observed-not-independently-approved",
+    deployment: "pending",
+    stagedVerifierKeys: [],
+    maintenanceApproval: "pending",
+    maintenanceTransition: "pending",
+  }, "b".repeat(40));
+  assert.equal(report.nextSafeAction.gate, "sourceMatchesCandidate");
+  assert.deepEqual(report.blockedActions.map(({ gate }) => gate), [
+    "genesisApproved", "deploymentObserved", "recordedKeyInsertionsReconciled",
+    "committeeApproved", "maintenanceObserved",
+  ]);
+  assert.equal(report.releaseQualified, false);
 });
 
 test("rejects malformed status rather than implying a clean run", () => {

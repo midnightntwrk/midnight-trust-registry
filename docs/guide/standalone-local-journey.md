@@ -152,6 +152,12 @@ they can all run today. The implementation sequence is in
    gate; rebuild and review a source-matched bundle rather than reusing the
    old deployment evidence. Exit code 2 lists missing gates; exit code 0
    means only that wizard-recorded ledger prerequisites are present. It does
+   not authorize deployment. Use `nextSafeAction` for the first step in the
+   operator sequence; `blockedActions` names later steps to defer until that
+   first gate is resolved. For example, an older setup's source mismatch
+   takes precedence over genesis approval or deployment. Re-run the check
+   after each completed step rather than treating `nextActions` as a list of
+   commands that can all run immediately. It does
    not verify the complete
    verifier-key inventory, signed API plan, authenticated finality, egress
    denial, an actor action, or release readiness.
