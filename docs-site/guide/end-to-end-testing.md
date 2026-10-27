@@ -31,6 +31,7 @@ bundle must be preserved.
 pnpm install --frozen-lockfile
 ./run.sh --light
 pnpm run test:e2e:demo
+pnpm exec playwright test
 ```
 
 `test:e2e:demo` runs signed issuer, verifier, auditor, and maintainer Compact
@@ -40,8 +41,9 @@ passed; it does not imply a deployed contract, authenticated finality, live VC
 status, or offline runtime. In an artifact-bearing checkout, **do not run**
 `./run.sh --light`: use a disposable checkout for that prerequisite. For the
 applicant and admin flows in a real browser, install Google Chrome and run
-`pnpm run test:e2e:demo:browser`. This reuses the demo command's built assets
-and runs all Playwright specs without invoking the destructive light build.
+the Playwright command above (or `pnpm run test:e2e:demo:browser` to rerun both
+lanes). If the browser is unavailable, report that lane as **not run** rather
+than passed. Neither result is a standalone `A01`-`O01` verdict.
 CI installs Playwright-pinned Chromium instead of Google Chrome. Both variants
 still use fixture identity/status and simulator governance; a green CI browser
 step is **not** standalone deployment evidence. The browser suite also checks
@@ -58,6 +60,8 @@ The first 0.1.0 candidate targets a self-hosted Midnight ledger whose
 public networks are not acceptance requirements. Use an isolated Docker
 project and private evidence directory; do not reuse another project's node,
 wallet, containers, or volumes.
+
+Start with the [operator quickstart](https://github.com/midnightntwrk/midnight-trust-registry/blob/milestone-0.1.0/docs/guide/standalone-local-journey.md), not the demo commands. Keep one private candidate record with the full signed source SHA, install-inventory SHA-256, approved genesis hash, deployed contract address, signed API-plan SHA-256, and local stack project. If any identity changes, start a new candidate rather than joining receipts from two runs.
 
 1. Verify the GPG-signed source commit and independently approved digest of
    its exact-source install inventory. Then run
@@ -83,6 +87,8 @@ Check the recorded prerequisite gates before starting an actor run:
 ```sh
 SOURCE_SHA="$(git rev-parse HEAD)"
 SETUP=/absolute/private/setup
+INSTALL=/absolute/verified-bundle
+node scripts/check-standalone-install.mjs "$INSTALL" "$SOURCE_SHA"
 node scripts/standalone-setup-wizard.mjs status "$SETUP"
 node scripts/check-standalone-journey-prerequisites.mjs "$SETUP" "$SOURCE_SHA"
 ```
@@ -92,6 +98,8 @@ has recorded its ledger prerequisites; it does not authenticate finality,
 enable governed writes, or pass any actor case. The report pairs each missing
 gate with a `nextActions` entry. If `sourceMatchesCandidate` is false, start a
 new exact-source setup rather than reusing evidence from the older install.
+Exit 1 means the input or setup could not be checked; do not interpret it as
+a missing gate that can be waived.
 The preflight also rejects approval labels without a nonzero approved genesis
 hash or deployed contract address, and duplicate or unnamed staged verifier
 keys. It still does not compare that key list with the complete release
