@@ -84,7 +84,10 @@ recovery decision would need independently authenticated finality and the
 action recorded at the reserved sequence, prove that its exact kind and
 payload differ, and preserve the original authorization ID and decision in
 the private journal. A null indexer result, elapsed time, or this simulator
-test cannot release a reservation. No such recovery command exists yet.
+test cannot release a reservation. Read-only v3 candidate inspection and a
+distinct-reviewer signed-decision draft/verification command now exist, but
+they neither authenticate finality nor mutate the journal. There is still no
+safe command to release or abandon the reserved attempt.
 - Restart and distinct-project restore retain deployment, journal, and current
   state; an ambiguous write is reconciled only under independently reviewed
   evidence. Host, wallet, browser, API, proof-server, and container egress

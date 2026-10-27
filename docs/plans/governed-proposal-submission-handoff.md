@@ -167,32 +167,42 @@ payload hash alongside new API-created reservations. These bytes are audit
 metadata, not independently authenticated ledger evidence or permission to
 recover. One candidate recovery proof would require a finalized checkpoint
 where the governance sequence has advanced past the signed sequence and the
-append-only proposal record for this authorization is absent. No such
-non-inclusion proof, operator decision, or recovery operation is implemented.
+append-only proposal record for this authorization is absent. The signed
+review-decision format exists, but independent non-inclusion proof and a
+journal recovery operation are not implemented.
 Legacy reservations without the context must remain blocked unless a
 separately reviewed proof applies; a null indexer read or elapsed time alone
 is never enough.
 The read-only `trust-registry-api inspect-local-proposal-recovery` command
 accepts the signed local runtime plan and a deployment-bound private journal.
 It compares one reserved attempt with one pinned finalized ledger view. It
-reports a review candidate only when the stored signed action sequence is
-strictly below the finalized governance action count and the proposal record
-is absent in that same view. A recorded action kind that is not the Compact
-proposal kind for the attempt's role now fails report generation; a
-well-formed but cross-role context cannot become a review candidate. The v2
+reports a v3 review candidate only when the finalized governance count is
+exactly the reserved sequence plus one, the proposal record is absent, and
+the finalized last action's kind or payload hash differs from the reserved
+action. A later count is inconclusive because last-action fields no longer
+prove what consumed that sequence. A recorded action kind that is not the
+Compact proposal kind for the attempt's role fails report generation; a
+well-formed but cross-role context cannot become a review candidate. The v3
 report binds the registry ID, contract address,
 signed-plan expected genesis and source-revision pins (not independently
 attested by this report), the exact approved plan SHA-256, original action tuple,
 canonical digest of the read journal entry, private journal deployment-binding
 digest, and checkpoint hash. A later recovery implementation
 must recheck that entry digest under the journal lock before any decision.
-Matching or conflicting records, a live or ahead-of-finality sequence, legacy context, or a
-non-reserved attempt remain blocked. The report always says `retryPermitted: false` and
-`releaseQualified: false`. This is an operator audit input, not independently
-authenticated non-inclusion, an approval signature, a recovery decision, or
-a journal mutation. A compromised or incomplete indexer can still lie about
-absence; #220 remains open until that trust boundary, audited release record,
-replay prevention, recovery tests, and independent security review are done.
+Matching or conflicting records, a live or ahead-of-finality sequence, legacy
+context, or a non-reserved attempt remain blocked. The report always says
+`retryPermitted: false` and `releaseQualified: false`. It is an operator audit
+input, not independently authenticated non-inclusion or a journal mutation.
+The CLI can now draft and verify a distinct reviewer's exact-byte detached
+signature on a v3 `abandon-invalidated-action` decision. It binds the candidate,
+private journal and plan digests, reserved action, immediately consuming
+different action, and a hash of separately supplied finality evidence. That
+verification still reports `finalityAuthenticated: false` and
+`retryPermitted: false`; it does not authenticate the evidence, change the
+journal, or unblock a proposal. A compromised or incomplete indexer can still
+lie about absence. #220 remains open until the independent finality proof,
+audited tombstone, replay prevention, recovery tests, and human security review
+are complete.
 The Compact simulator regression exercises the sequence-invalidated premise:
 after a different authorized action advances `governanceActionCount`, the
 original signed issuer proposal fails, leaves its proposal record absent, and

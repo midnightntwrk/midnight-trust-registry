@@ -254,8 +254,12 @@ they can all run today. The implementation sequence is in
    historical ledger state at new finalized checkpoints. Restore a backup in
    a distinct isolated project and reject stale/conflicting checkpoints.
    Quarantine ambiguous submissions; do not treat an empty indexer read as
-   permission to retry. For an opt-in **API-only** restart observation, after
-   the signed-plan current-query probe passes, run:
+   permission to retry. The proposal-recovery CLI may inspect a v3 candidate
+   and verify a distinct reviewer's signed decision, but it cannot authenticate
+   finality or clear a reserved journal entry. Preserve that entry and stop
+   if the operator cannot prove the original action is invalidated at an
+   independently authenticated checkpoint. For an opt-in **API-only** restart
+   observation, after the signed-plan current-query probe passes, run:
 
    ```sh
    pnpm observe:standalone-api-restart /absolute/private/setup /absolute/verified-bundle
