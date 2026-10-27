@@ -32,6 +32,7 @@
     "scripts/standalone-approval-policy.mjs",
     "scripts/check-standalone-actor-capability.mjs",
     "scripts/standalone-api-egress-policy.mjs",
+    "scripts/standalone-docker-probe-command.mjs",
     "scripts/standalone-acceptance-decision-policy.mjs",
     "scripts/prepare-standalone-genesis-review.mjs",
     "scripts/standalone-api-approval-chain.mjs",

@@ -1,21 +1,19 @@
 #!/usr/bin/env node
 
-import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { isIP } from "node:net";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
-import { promisify } from "node:util";
 
 import { observeStandaloneApiRuntime } from "./check-standalone-api-runtime.mjs";
 import { ledgerSubnet } from "./check-standalone-egress.mjs";
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { validateApiEgressProbe } from "./standalone-api-egress-policy.mjs";
+import { executeDockerProbe, requireDockerProbeSuccess } from "./standalone-docker-probe-command.mjs";
 
 export { validateApiEgressProbe } from "./standalone-api-egress-policy.mjs";
 
-const run = promisify(execFile);
 const canaryPort = 45987;
 const dnsCanaryName = "tr-offline-canary.invalid";
 const dnsCanaryAddress = "198.51.100.7";
@@ -44,28 +42,8 @@ const connectionScript = `const net=require('node:net');const socket=net.connect
 export const apiEgressDnsScript = `const resolver=new (require('node:dns')).Resolver({timeout:1500,tries:1});resolver.setServers([process.argv[1]+':'+process.argv[2]]);resolver.resolve4('${dnsCanaryName}',(error,addresses)=>{if(error){console.log('denied:'+error.code);process.exitCode=7}else{console.log('resolved:'+addresses[0])}})`;
 const routeScript = "process.stdout.write(require('node:fs').readFileSync('/proc/net/route','utf8'))";
 
-async function docker(args, allowFailure = false) {
-  try {
-    const { stdout, stderr } = await run("docker", args, { timeout: 20_000, maxBuffer: 1024 * 1024 });
-    return { code: 0, stdout, stderr };
-  } catch (error) {
-    if (allowFailure && error && typeof error === "object" && "code" in error
-      && typeof error.code === "number" && Number.isInteger(error.code)) {
-      return { code: error.code,
-        stdout: "stdout" in error && typeof error.stdout === "string" ? error.stdout : "",
-        stderr: "stderr" in error && typeof error.stderr === "string" ? error.stderr : "" };
-    }
-    throw error;
-  }
-}
-
-function requireSuccess(result, description) {
-  if (result.code !== 0) throw new Error(`${description} failed`);
-  return result.stdout.trim();
-}
-
 export async function observeStandaloneApiEgress(bundle, env = process.env, dependencies = {}) {
-  const command = dependencies.dockerCommand ?? docker;
+  const command = dependencies.dockerCommand ?? executeDockerProbe;
   const observe = dependencies.observeApiRuntime ?? observeStandaloneApiRuntime;
   const verify = dependencies.verifyBundle ?? verifyStandaloneInstallBundle;
   const verified = await verify(resolve(bundle));
@@ -77,7 +55,7 @@ export async function observeStandaloneApiEgress(bundle, env = process.env, depe
     || !before.apiContainerId || !before.networkId) {
     throw new Error("API topology does not match the verified install");
   }
-  const inspected = JSON.parse(requireSuccess(await command(["network", "inspect", before.networkId]),
+  const inspected = JSON.parse(requireDockerProbeSuccess(await command(["network", "inspect", before.networkId]),
     "API network inspection"));
   const subnet = ledgerSubnet(inspected?.[0], before.networkId);
   const name = `tr-api-egress-canary-${randomUUID()}`;
@@ -86,12 +64,12 @@ export async function observeStandaloneApiEgress(bundle, env = process.env, depe
   let observation;
   let failure;
   try {
-    requireSuccess(await command(["run", "-d", "--rm", "--name", name, "--pull", "never",
+    requireDockerProbeSuccess(await command(["run", "-d", "--rm", "--name", name, "--pull", "never",
       "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
       "--network", "bridge", "--entrypoint", "node", image, "-e", apiEgressCanaryServerScript]),
     "Bridge canary start");
     canaryStarted = true;
-    const [canary] = JSON.parse(requireSuccess(await command(["inspect", name]), "Bridge canary inspection"));
+    const [canary] = JSON.parse(requireDockerProbeSuccess(await command(["inspect", name]), "Bridge canary inspection"));
     const canaryAddress = canary?.NetworkSettings?.Networks?.bridge?.IPAddress;
     if (typeof canaryAddress !== "string" || isIP(canaryAddress) !== 4) {
       throw new Error("Bridge canary address is unavailable");
@@ -106,7 +84,7 @@ export async function observeStandaloneApiEgress(bundle, env = process.env, depe
       if (controlBefore.code === 0 && controlBefore.stdout.trim() === "connected") break;
       await delay(100);
     }
-    const routeTable = requireSuccess(await command(["exec", before.apiContainerId,
+    const routeTable = requireDockerProbeSuccess(await command(["exec", before.apiContainerId,
       "node", "-e", routeScript]), "API route inspection");
     const isolated = await command(["exec", before.apiContainerId, ...connect], true);
     const controlAfter = await command(controlArgs, true);
