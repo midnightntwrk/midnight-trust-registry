@@ -1577,6 +1577,67 @@ test("wizard rejects a changed deployment genesis before reserving", async () =>
   assert.equal((await standaloneSetupStatus(directory)).deployment, "pending");
 });
 
+test("stored genesis approval corruption blocks status and deployment before provider execution", async () => {
+  for (const field of ["documentBase64", "signatureBase64"]) {
+    const f = await fixture();
+    await observeStandaloneLedger(f.directory, f.pinPath,
+      { preflight: async () => ({ kind: "local-node-observation-only" }) });
+    await approve(f);
+    await approveCommittee(f);
+    const recordPath = join(f.directory, "setup-record.json");
+    const record = JSON.parse(await readFile(recordPath, "utf8"));
+    record.genesisApproval[field] = Buffer.from("changed approval evidence").toString("base64");
+    await writeFile(recordPath, JSON.stringify(record));
+    const status = await standaloneSetupStatus(f.directory);
+    assert.equal(status.localLedger, "invalid-approval-evidence-investigate");
+    assert.equal(status.approvedGenesisHash, null);
+    assert.equal(status.releaseQualified, false);
+    await assert.rejects(attemptStandaloneDeployment(f.directory, f.planPath, {
+      verifyBundle: f.verifyBundle,
+      deploy: async () => assert.fail("changed approval reached provider"),
+    }), /Stored genesis approval evidence is incomplete or changed/u);
+    assert.equal((await standaloneSetupStatus(f.directory)).deployment, "pending");
+  }
+});
+
+test("a rewritten retained genesis document cannot approve a different observed ledger", async () => {
+  const f = await fixture();
+  await observeStandaloneLedger(f.directory, f.pinPath,
+    { preflight: async () => ({ kind: "local-node-observation-only" }) });
+  await approve(f);
+  const recordPath = join(f.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  const approval = JSON.parse(Buffer.from(record.genesisApproval.documentBase64, "base64").toString("utf8"));
+  approval.expectedGenesisHash = `0x${"e".repeat(64)}`;
+  const changed = Buffer.from(`${JSON.stringify(approval, null, 2)}\n`);
+  record.genesisApproval.documentBase64 = changed.toString("base64");
+  record.genesisApproval.documentSha256 = createHash("sha256").update(changed).digest("hex");
+  await writeFile(recordPath, JSON.stringify(record));
+  assert.equal((await standaloneSetupStatus(f.directory)).localLedger,
+    "invalid-approval-evidence-investigate");
+  await assert.rejects(approveCommittee(f), /Stored genesis approval disagrees with the setup/u);
+});
+
+test("stored committee signature corruption blocks status and deployment", async () => {
+  const f = await fixture();
+  await observeStandaloneLedger(f.directory, f.pinPath,
+    { preflight: async () => ({ kind: "local-node-observation-only" }) });
+  await approve(f);
+  await approveCommittee(f);
+  const recordPath = join(f.directory, "setup-record.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  record.committeeApproval.signatureBase64 = Buffer.from("changed committee signature").toString("base64");
+  await writeFile(recordPath, JSON.stringify(record));
+  const status = await standaloneSetupStatus(f.directory);
+  assert.equal(status.maintenanceApproval, "invalid-approval-evidence-investigate");
+  assert.equal(status.releaseQualified, false);
+  await assert.rejects(attemptStandaloneDeployment(f.directory, f.planPath, {
+    verifyBundle: f.verifyBundle,
+    deploy: async () => assert.fail("changed committee signature reached provider"),
+  }), /Stored committee approval signature evidence is incomplete or changed/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).deployment, "pending");
+});
+
 async function stagedFixture(manifest) {
   const f = manifest ? await fixture("tr-standalone-install-v3", manifest) : await fixture();
   await observeStandaloneLedger(f.directory, f.pinPath, {
@@ -2069,7 +2130,7 @@ test("legacy maintenance attempts remain read-only reconcilable without retrospe
   );
   assert.equal(result.status, "observed");
   assert.equal((await standaloneSetupStatus(f.directory)).maintenanceApproval,
-    "roster-signature-verified-deployment-binding-pending");
+    "invalid-approval-evidence-investigate");
   await assert.rejects(prepareStandaloneCommitteeTransition(f.directory, f.requestPath, {
     verifyBundle: f.verifyBundle,
     prepareTransition: async () => assert.fail("legacy prepare"),

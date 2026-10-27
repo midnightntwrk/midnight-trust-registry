@@ -944,6 +944,7 @@ export async function approveStandaloneCommittee(
   return withLock(directory, async (root) => {
     const { record } = await readRecord(root);
     if (!record.genesisApproval) throw new Error("Approve the local genesis before proposing a release committee");
+    if (record.setupId) readStoredGenesisApproval(record);
     if (record.committeeApproval || record.deployment) {
       throw new Error("Committee roster approval is already recorded or deployment reserved");
     }
@@ -1154,6 +1155,7 @@ export async function attemptStandaloneDeployment(directory, planPath, dependenc
     if (!record.setupId) {
       throw new Error("Legacy setup cannot submit a deployment without a setup-bound approval");
     }
+    readStoredGenesisApproval(record);
     if (!record.committeeApproval) {
       throw new Error("Approve the release maintenance committee before reserving deployment");
     }
@@ -1412,8 +1414,49 @@ const exactFields = (value, fields) => value !== null && typeof value === "objec
   && !Array.isArray(value)
   && Object.keys(value).sort().join("\0") === [...fields].sort().join("\0");
 
+function readStoredGenesisApproval(record) {
+  const stored = record.genesisApproval;
+  const document = Buffer.from(stored?.documentBase64 ?? "", "base64");
+  const signature = Buffer.from(stored?.signatureBase64 ?? "", "base64");
+  if (document.length === 0 || document.length > 32 * 1024
+    || signature.length === 0 || signature.length > 64 * 1024
+    || sha256(document) !== stored?.documentSha256
+    || sha256(signature) !== stored?.signatureSha256
+    || stored?.verification !== "detached-signature-verified-against-operator-pinned-key"
+    || !FINGERPRINT.test(stored?.reviewerFingerprint ?? "")) {
+    throw new Error("Stored genesis approval evidence is incomplete or changed");
+  }
+  const approval = parseCanonicalSignedJson(document, "Stored genesis approval");
+  if (!exactFields(approval, ["approvedAt", "expectedGenesisHash", "format", "installInventorySha256",
+    "networkId", "pinSha256", "reviewedReference", "reviewerFingerprint", "rpcUrl", "setupId",
+    "sourceRevision", "stackProject"])
+    || approval.format !== "tr-local-genesis-approval-v1"
+    || approval.sourceRevision !== record.sourceRevision
+    || approval.setupId !== record.setupId
+    || approval.stackProject !== record.stack?.project
+    || approval.installInventorySha256 !== record.install?.inventorySha256
+    || approval.networkId !== STANDALONE_PROFILE.networkId
+    || approval.pinSha256 !== record.ledgerObservation?.pinSha256
+    || approval.expectedGenesisHash !== record.ledgerObservation?.expectedGenesisHash
+    || approval.rpcUrl !== record.ledgerObservation?.rpcUrl
+    || approval.reviewerFingerprint !== stored.reviewerFingerprint
+    || approval.approvedAt !== stored.approvedAt
+    || approval.reviewedReference !== stored.reviewedReference) {
+    throw new Error("Stored genesis approval disagrees with the setup and observed ledger");
+  }
+  return approval;
+}
+
 function readStoredCommitteeApproval(record, legacyReadOnly = false) {
+  if (!legacyReadOnly && record.setupId) readStoredGenesisApproval(record);
   const approvalBytes = Buffer.from(record.committeeApproval.documentBase64 ?? "", "base64");
+  const signatureBytes = Buffer.from(record.committeeApproval.signatureBase64 ?? "", "base64");
+  if (!legacyReadOnly && (signatureBytes.length === 0 || signatureBytes.length > 64 * 1024
+    || sha256(signatureBytes) !== record.committeeApproval.signatureSha256
+    || record.committeeApproval.verification !== "detached-signature-verified-against-operator-pinned-key"
+    || !FINGERPRINT.test(record.committeeApproval.reviewerFingerprint ?? ""))) {
+    throw new Error("Stored committee approval signature evidence is incomplete or changed");
+  }
   // Historical attempts may be reconciled forensically, but never prepared or submitted again.
   const signedApproval = legacyReadOnly
     ? JSON.parse(approvalBytes.toString("utf8"))
@@ -1984,6 +2027,22 @@ export async function exportStandaloneApiApprovalChain(directory) {
 
 export async function standaloneSetupStatus(directory) {
   const { root, record } = await readRecord(directory);
+  let genesisApprovalConsistent = true;
+  if (record.setupId && record.genesisApproval) {
+    try {
+      readStoredGenesisApproval(record);
+    } catch {
+      genesisApprovalConsistent = false;
+    }
+  }
+  let committeeApprovalConsistent = true;
+  if (record.setupId && record.committeeApproval) {
+    try {
+      readStoredCommitteeApproval(record);
+    } catch {
+      committeeApprovalConsistent = false;
+    }
+  }
   let restartObservation;
   try {
     restartObservation = await readStandaloneRestartEvidence(root, {
@@ -2007,21 +2066,25 @@ export async function standaloneSetupStatus(directory) {
     installInventorySha256: record.install.inventorySha256,
     stackProject: record.stack?.project ?? null,
     stackNetworkId: record.stack?.observation?.topology?.networkId ?? null,
-    approvedGenesisHash: record.ledgerObservation?.expectedGenesisHash ?? null,
+    approvedGenesisHash: record.genesisApproval && genesisApprovalConsistent
+      ? record.ledgerObservation?.expectedGenesisHash ?? null : null,
     deployedContractAddress: record.deployment?.state === "observed"
       ? record.deployment.result?.receipt?.contractAddress ?? null : null,
     install: "verified-staged-bytes-only",
     stackConfiguration: record.stack?.observation ? "observed-ledger-bridge-only"
       : record.stack ? "prepared-runtime-unobserved" : "pending",
-    localLedger: record.genesisApproval ? "operator-pinned-reviewer-signature-verified"
+    localLedger: record.genesisApproval ? genesisApprovalConsistent
+      ? "operator-pinned-reviewer-signature-verified" : "invalid-approval-evidence-investigate"
       : record.ledgerObservation ? "node-observed-not-independently-approved" : "pending",
     deployment: record.deployment?.state ?? "pending",
     stagedVerifierKeys: Object.entries(record.verifierKeyInsertions ?? {})
       .map(([circuitName, entry]) => ({ circuitName, state: entry.state })),
     setupLock: lockPresent ? "present-inspect-before-removal" : "absent",
-    maintenanceApproval: record.committeeDeploymentApproval
-      ? "deployment-bound-roster-signature-verified-transition-pending"
-      : record.committeeApproval ? "roster-signature-verified-deployment-binding-pending" : "pending",
+    maintenanceApproval: record.committeeApproval && !committeeApprovalConsistent
+      ? "invalid-approval-evidence-investigate"
+      : record.committeeDeploymentApproval
+        ? "deployment-bound-roster-signature-verified-transition-pending"
+        : record.committeeApproval ? "roster-signature-verified-deployment-binding-pending" : "pending",
     maintenanceTransition: record.maintenanceAttempt?.state ?? "pending",
     maintenanceTransitionAlert: record.maintenanceAttempt?.alert ?? null,
     maintenanceLastReadback: record.maintenanceAttempt?.reconciliation?.status ?? null,

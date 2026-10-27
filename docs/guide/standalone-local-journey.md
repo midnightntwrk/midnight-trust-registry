@@ -111,6 +111,11 @@ they can all run today. The implementation sequence is in
    before the remaining verifier-key insertions. Reconcile every key before
    transitioning maintenance authority; neither signature substitutes for
    the other.
+   If `status` reports `invalid-approval-evidence-investigate` for local ledger
+   or maintenance approval, stop. Preserve the setup directory and signed
+   evidence for investigation; do not edit the record or regenerate an approval
+   to bypass the mismatch. The status check compares retained bytes and setup
+   bindings, but does not independently authenticate the reviewer key.
 4. **Deploy and reconcile once.** Stage the exact signed source and verified
    packages with `stage-provider-runtime.mjs`; independently record its source,
    inventory, and content digests. Transfer it to a new root-owned code tree

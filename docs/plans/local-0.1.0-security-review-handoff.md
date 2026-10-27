@@ -15,6 +15,15 @@ an old bundle against a newer source commit. The reviewer independently checks
 the commit and bundle bytes, rather than trusting a node-reported hash or a
 wizard status label. Record the source SHA and inventory digest in the verdict.
 
+The wizard checks retained genesis and committee approval document/signature
+digests and setup bindings before deployment, and reports
+`invalid-approval-evidence-investigate` on a mismatch. This detects local
+evidence corruption; it does **not** reverify GPG against an independently
+pinned reviewer key on each status read or establish that the reviewer approved
+the actual chain specification. The reviewer must inspect the original exact
+signed bytes and external trust anchor. Preserve mismatched evidence rather
+than repairing a record in place.
+
 ```sh
 git verify-commit "$SOURCE_SHA"
 git show -s --format='%H%n%B' "$SOURCE_SHA"
