@@ -67,12 +67,13 @@ describe("audited proposal reservation abandonment", () => {
       const input = {
         registryId: harness.registryId, contractAddress, expectedGenesisHash: genesisHash,
         planSourceRevision: "f".repeat(40), approvedPlanSha256: "7".repeat(64),
-        planReviewerFingerprint: "A".repeat(40), role: "issuer" as const, authorizationId,
+        role: "issuer" as const, authorizationId,
         decisionPath, signaturePath, finalityEvidencePath, keyringDirectory: keyring,
         reviewerFingerprint: fingerprint!,
         authenticateFinality: async (bytes: Buffer) => ({
           evidenceSha256: digest(bytes), genesisHash,
           planSourceRevision: "f".repeat(40), approvedPlanSha256: "7".repeat(64),
+          verifiedPlanReviewerFingerprint: "A".repeat(40),
           view: view(), originalActionRejected: true as const,
         }),
       };
@@ -96,13 +97,14 @@ describe("audited proposal reservation abandonment", () => {
       }));
       await writeFile(decisionPath, await draftProposalRecoveryDecision({
         candidate, finalityEvidencePath, evidenceReference: "test:review-bundle",
-        reviewerFingerprint: fingerprint!, planReviewerFingerprint: input.planReviewerFingerprint,
+        reviewerFingerprint: fingerprint!, planReviewerFingerprint: "A".repeat(40),
       }));
       execFileSync("gpg", ["--homedir", signer, "--batch", "--detach-sign", "--output",
         signaturePath, decisionPath]);
       await expect(journal.abandonInvalidatedReservation({ ...input,
         authenticateFinality: async () => ({ evidenceSha256: "0".repeat(64), genesisHash,
           planSourceRevision: input.planSourceRevision, approvedPlanSha256: input.approvedPlanSha256,
+          verifiedPlanReviewerFingerprint: "A".repeat(40),
           view: view(), originalActionRejected: true as const }),
       })).rejects.toThrow();
       await expect(journal.abandonInvalidatedReservation({ ...input,
@@ -112,8 +114,16 @@ describe("audited proposal reservation abandonment", () => {
         authenticateFinality: async (bytes: Buffer) => ({ evidenceSha256: digest(bytes),
           genesisHash, planSourceRevision: input.planSourceRevision,
           approvedPlanSha256: input.approvedPlanSha256,
+          verifiedPlanReviewerFingerprint: "A".repeat(40),
           view: view(), originalActionRejected: false as unknown as true }),
       })).rejects.toThrow();
+      await expect(journal.abandonInvalidatedReservation({ ...input,
+        authenticateFinality: async (bytes: Buffer) => ({ evidenceSha256: digest(bytes),
+          genesisHash, planSourceRevision: input.planSourceRevision,
+          approvedPlanSha256: input.approvedPlanSha256,
+          verifiedPlanReviewerFingerprint: fingerprint!,
+          view: view(), originalActionRejected: true as const }),
+      })).rejects.toThrow(/distinct from the API-plan reviewer/u);
       expect((await journal.read("issuer", authorizationId))?.state).toBe("reserved");
       const abandoned = await journal.abandonInvalidatedReservation(input);
       expect(abandoned).toMatchObject({ state: "abandoned", eventHash: null,
@@ -192,7 +202,7 @@ describe("audited proposal reservation abandonment", () => {
       await writeFile(legacyDecisionPath, await draftProposalRecoveryDecision({
         candidate: legacyCandidate, finalityEvidencePath,
         evidenceReference: "test:legacy-review-bundle", reviewerFingerprint: fingerprint!,
-        planReviewerFingerprint: input.planReviewerFingerprint,
+        planReviewerFingerprint: "A".repeat(40),
       }));
       execFileSync("gpg", ["--homedir", signer, "--batch", "--detach-sign", "--output",
         legacySignaturePath, legacyDecisionPath]);

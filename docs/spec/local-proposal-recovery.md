@@ -82,7 +82,8 @@ The file journal now has an opt-in `abandonInvalidatedReservation` method
 that can atomically turn `reserved` into a terminal `abandoned` tombstone. It
 requires a distinct reviewer's exact signed decision and a deployment-owned
 callback that authenticates the same retained finality-evidence bytes, the
-approved genesis and finalized ledger view, and rejection of the original
+approved genesis, signed API-plan digest and its verified signer, finalized
+ledger view, and rejection of the original
 Compact action. The method checks the one-step action-counter invalidation
 under the existing journal lock. It retains the original authorization ID,
 evidence commitment, reservation context, attempt digest, approved decision

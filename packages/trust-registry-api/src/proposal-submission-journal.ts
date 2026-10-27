@@ -394,7 +394,6 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
     expectedGenesisHash: string;
     planSourceRevision: string;
     approvedPlanSha256: string;
-    planReviewerFingerprint: string;
     role: GovernedProposalSubmissionRole;
     authorizationId: string;
     decisionPath: string;
@@ -407,6 +406,7 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
       genesisHash: string;
       planSourceRevision: string;
       approvedPlanSha256: string;
+      verifiedPlanReviewerFingerprint: string;
       view: FinalizedRegistryLedgerView;
       originalActionRejected: true;
     }>;
@@ -437,6 +437,7 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
         || authenticated.genesisHash !== binding.expectedGenesisHash
         || authenticated.planSourceRevision !== input.planSourceRevision
         || authenticated.approvedPlanSha256 !== input.approvedPlanSha256
+        || !/^[0-9A-F]{40}$/u.test(authenticated.verifiedPlanReviewerFingerprint)
         || authenticated.originalActionRejected !== true) {
         throw new ProposalSubmissionConflictError();
       }
@@ -455,7 +456,7 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
         decisionPath: input.decisionPath, signaturePath: input.signaturePath,
         finalityEvidencePath: input.finalityEvidencePath, keyringDirectory: input.keyringDirectory,
         reviewerFingerprint: input.reviewerFingerprint,
-        planReviewerFingerprint: input.planReviewerFingerprint,
+        planReviewerFingerprint: authenticated.verifiedPlanReviewerFingerprint,
         candidate, ...(input.now === undefined ? {} : { now: input.now }),
       });
       if (approved.decision.finalityEvidenceSha256 !== evidenceSha256) {
