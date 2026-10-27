@@ -38,7 +38,8 @@ not a fully green merge gate or release approval.
 
 The local descendant contains the reviewed groups A-D above #240's published
 head `bbe527cf`, followed by review-plan documentation, current-query
-approval-binding group E, and a read-only ambiguous-recovery group F. They are
+approval-binding group E, a read-only ambiguous-recovery group F, and an
+adversarial-report hardening group G. They are
 **not published**, and publication requires the user's separate approval. Preserve
 their existing order and review them as context-sized diffs rather than
 opening one PR per commit. Before any publication, fetch the live #240 head and check
@@ -53,6 +54,7 @@ rewrite unpublished work to repair a stale base.
 | D | `50cbd1a5`..`c786254f` | Full-precision application, recognition, lifecycle, challenge, and TRQP evidence time decisions | RFC3339 offsets and long fractions, one-use nonce ordering, historical evidence selection; #179 remains open |
 | E | `8ea73b91` onward (after review-plan docs) | Bind the standalone read-only current-query probe to wizard-approved install inventory, project, network, genesis, and deployment | Reject cross-setup or cross-deployment evidence before egress; no claim of actor writes or independent finality |
 | F | `90eda72b`..`7a472176` | Prove the stale-sequence Compact invariant and bind a read-only recovery candidate to one immediately consumed action | An authenticated finalized action history and safe journal mutator are still absent; never treat a signed review decision as retry permission |
+| G | `7626be30` onward | Make the isolated adversarial report reject interrupted runner output; continue #216 runner extraction before publication | A partial TAP stream must never become archived case evidence; fixture cases are not deployed-ledger E2E |
 
 For a stacked publication, the first group would target #240, and each later
 group would target the immediately preceding group. The table is a review
@@ -108,6 +110,11 @@ the exact Compose bridge membership and host-loopback node RPC exposure for
 the five remaining WebSocket findings. This is a review input, not a scanner
 waiver: #238 remains draft with external Opengrep OSS red, and #232 requires
 an independent human disposition of the observed transport boundary.
+The new local group G starts above F at signed/DCO commit `7626be30`.
+Its runner regression tests passed 6/6 and the full isolated report completed
+198/198 cases. This hardens report integrity but does not finish #216's
+remaining demo extraction or qualify a deployed actor journey. Hold group G
+locally until it is a coherent review-sized slice and publication is approved.
 
 ## Release boundary
 
