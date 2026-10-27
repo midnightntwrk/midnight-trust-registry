@@ -34,13 +34,17 @@ pnpm run test:e2e:demo
 pnpm exec playwright test
 ```
 
-`test:e2e:demo` runs signed issuer, verifier, auditor, and maintainer Compact
-simulator journeys, then starts the fixture API and both served UIs on
-ephemeral loopback ports. A passing exit code means those two demo checks
-passed; it does not imply a deployed contract, authenticated finality, live VC
+`test:e2e:demo` first checks that prebuilt Compact output contains the current
+source and contract module, then rebuilds the TypeScript and UI workspaces
+without regenerating Compact keys. It runs signed issuer, verifier, auditor,
+and maintainer Compact simulator journeys, then starts the fixture API and
+both served UIs on ephemeral loopback ports. A passing exit code means those
+two demo checks passed; it does not imply a deployed contract, authenticated finality, live VC
 status, or offline runtime. In an artifact-bearing checkout, **do not run**
-`./run.sh --light`: use a disposable checkout for that prerequisite. For the
-applicant and admin flows in a real browser, install Google Chrome and run
+`./run.sh --light`: use a disposable checkout for that prerequisite. The demo
+command fails if the required prebuilt Compact output is absent or stale;
+it never repairs it by invoking `build:light`. For the applicant and admin
+flows in a real browser, install Google Chrome and run
 the Playwright command above (or `pnpm run test:e2e:demo:browser` to rerun both
 lanes). If the browser is unavailable, report that lane as **not run** rather
 than passed. Neither result is a standalone `A01`-`O01` verdict.

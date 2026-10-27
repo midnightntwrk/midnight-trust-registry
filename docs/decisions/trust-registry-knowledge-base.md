@@ -2755,3 +2755,16 @@ candidate. The [acceptance map](../plans/milestone-0.1.0-acceptance-map.md)
 records its inventory and untrusted-candidate digests without publishing the
 private review packet. A new exact-source install and independently signed
 approval are required before live qualification can resume.
+
+## Demo E2E build safety
+
+The demo E2E command previously ran its four signed simulator journeys before
+building the packages they imported. Individual demo and browser aliases also
+used `build:light`, which removes full generated Compact output. The shared
+prebuilt-runtime build now checks the copied Compact source and generated
+contract-module presence, rebuilds only TypeScript/UI workspaces, and is used
+by those documented commands and the prebuilt integration lane. A missing or
+stale prebuilt contract stops before a journey rather than silently selecting
+a destructive light build. This prevents stale package results and protects
+artifact-bearing checkouts; the check does not independently authenticate
+generated-code provenance or turn fixture E2E into deployed-ledger evidence.
