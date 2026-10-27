@@ -42,11 +42,14 @@ export type LocalIssuerProposalPortDependencies = {
   readCapturedAdmission: NonNullable<ProposalAdmissionPort["readCapturedAdmission"]>;
   /** Authenticate finality independently of the SDK submitting provider. */
   readAuthenticatedFinalizedSnapshot(contractAddress: string): Promise<FinalizedIssuerSnapshot>;
-  /** Resolve DID, VP, VC status authority, challenge, and trusted time from live local services. */
+  /** Return trusted time for each prepare/preflight/execute, not the API host clock. */
+  readTrustedTimeMs(): Promise<number>;
+  /** Resolve DID, VP, VC status authority, and challenge from live local services at this trusted time. */
   verifyLiveEvidence(input: CapturedIssuerAdmission & {
     terms: LocalIssuerProposalTerms;
     submittedEvidence: ApplicationEvidenceSubmission;
     snapshot: FinalizedIssuerSnapshot;
+    trustedTimeMs: number;
   }): Promise<void>;
   /** Recheck the immutable installed provider tree and exact-source digest before every SDK use. */
   assertApprovedProviderCode(): Promise<void>;
@@ -81,7 +84,12 @@ export function createBoundLocalIssuerProposalPort(
       terms, ...admission, submittedEvidence, plan: dependencies.plan,
       policySnapshot: snapshot.policySnapshot, ledger: snapshot.ledger,
     });
-    await dependencies.verifyLiveEvidence({ terms, ...admission, submittedEvidence, snapshot });
+    const trustedTimeMs = await dependencies.readTrustedTimeMs();
+    if (!Number.isSafeInteger(trustedTimeMs) || trustedTimeMs < Date.parse(submittedEvidence.envelope.verifiedAt)
+      || trustedTimeMs >= Date.parse(submittedEvidence.envelope.expiresAt)) {
+      throw new Error("Accepted issuer evidence is not current at trusted time");
+    }
+    await dependencies.verifyLiveEvidence({ terms, ...admission, submittedEvidence, snapshot, trustedTimeMs });
     return prepared;
   };
 

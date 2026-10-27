@@ -139,6 +139,11 @@ adapter, approved immutable provider loader, signed write-plan pins,
 finalized proposal resolution, and a full offline actor run. If state changes
 after HTTP preflight but before the reserved execution, the journal retains
 the reservation for explicit reconciliation rather than silently retrying.
+The port now separately requires a deployment-trusted time source and rejects
+accepted application evidence before its verified-at time or at/after expiry
+on every prepare, preflight, and execute. The same sampled time is passed to
+the live evidence callback; this explicit guard does not authenticate that
+callback or make the host clock a trusted source.
 The private file admission store now captures pending and accepted records
 from one validated persisted-state read. HTTP admission prefers that captured
 pair when the port supports it, and the issuer-port assembly requires it;

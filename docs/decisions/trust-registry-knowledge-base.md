@@ -2434,3 +2434,10 @@ the saved health response, finality, live VC status, or an actor transaction.
 The operator guide now expands source-scoped image tags correctly instead of
 using a literal `SOURCE_SHA` placeholder. Standalone topology tests and the
 docs build passed; no release evidence or genesis approval was inferred.
+
+The opt-in issuer port also requires an injected trusted-time reading on each
+prepare, preflight, and execute. It rejects accepted evidence outside the
+signed verified-at/expiry window before provider loading, and passes the
+same reading to the live evidence verifier. This closes an adapter omission
+path but does not establish trustworthy clock provenance; that remains a
+deployment-owned, independently reviewed dependency.

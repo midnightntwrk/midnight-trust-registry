@@ -241,6 +241,7 @@ describe("local issuer proposal terms", () => {
     } })).toThrow(/No current evidence-verifier key/u);
 
     const verifyLiveEvidence = vi.fn(async () => {});
+    const readTrustedTimeMs = vi.fn(async () => Date.parse("2026-10-13T00:00:02.000Z"));
     const assertApprovedProviderCode = vi.fn(async () => {});
     const loadApprovedSubmissionProviders = vi.fn(async () => ({
       providers: {} as never, readSubmissionProviderIdentity: async () => ({
@@ -260,6 +261,7 @@ describe("local issuer proposal terms", () => {
         return { pending, accepted };
       },
       readAuthenticatedFinalizedSnapshot,
+      readTrustedTimeMs,
       verifyLiveEvidence,
       assertApprovedProviderCode,
       loadApprovedSubmissionProviders,
@@ -319,6 +321,15 @@ describe("local issuer proposal terms", () => {
       signers, verifierSignature, context, localTerms)).resolves.toBeUndefined();
     expect(loadApprovedSubmissionProviders).toHaveBeenCalledOnce();
     expect(assertApprovedProviderCode).toHaveBeenCalledTimes(3);
+
+    readTrustedTimeMs.mockResolvedValueOnce(Date.parse(evidence.envelope.expiresAt));
+    await expect(port.preflightSubmission!(pending.authorizationId, evidence,
+      signers, verifierSignature, context, localTerms)).rejects.toThrow(/not current at trusted time/u);
+    expect(loadApprovedSubmissionProviders).toHaveBeenCalledOnce();
+    readTrustedTimeMs.mockResolvedValueOnce(Number.NaN);
+    await expect(port.execute(pending.authorizationId, evidence,
+      signers, verifierSignature, localTerms)).rejects.toThrow(/not current at trusted time/u);
+    expect(loadApprovedSubmissionProviders).toHaveBeenCalledOnce();
   });
 });
 
