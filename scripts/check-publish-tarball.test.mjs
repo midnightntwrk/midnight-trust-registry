@@ -42,6 +42,13 @@ test("publish gate checks one manifest-pinned tarball and rejects tampering", as
       packages: [entry, entry] }));
     await assert.rejects(checkPublishTarball(manifestPath, tarballPath, entry.name, entry.version),
       /not uniquely pinned/u);
+    for (const malformed of [null, 7, { ...entry, sha256: 7 },
+      { ...entry, sizeBytes: "20" }, { ...entry, sizeBytes: 0 }]) {
+      await writeFile(manifestPath, JSON.stringify({ format: "tr-release-candidate-manifest-v2",
+        packages: [malformed] }));
+      await assert.rejects(checkPublishTarball(manifestPath, tarballPath, entry.name, entry.version),
+        /not uniquely pinned/u);
+    }
     await writeFile(manifestPath, JSON.stringify({ format: "tr-release-candidate-manifest-v2",
       packages: [entry] }));
     await rm(tarballPath);
