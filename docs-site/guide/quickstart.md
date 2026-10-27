@@ -2,6 +2,12 @@
 
 This is a **local reference journey**. Its operator workspace and Compact simulator do not constitute a live network deployment.
 
+For a self-hosted installation, start with the
+[standalone first-run guide](standalone.md) instead. Its ledger-bridge smoke is
+also not an end-to-end acceptance run: the deployed actor cases and their
+required evidence are listed in the
+[operator acceptance record](https://github.com/midnightntwrk/midnight-trust-registry/blob/milestone-0.1.0/docs/guide/standalone-local-journey.md#operator-acceptance-record).
+
 ## Prerequisites
 
 - Node.js 24 and pnpm 10.34.1 or later.

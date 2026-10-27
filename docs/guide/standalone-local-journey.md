@@ -5,6 +5,9 @@ qualification run. Installation may use the network; the runtime may not.
 Preprod, Preview, Mainnet, Kubernetes, and Helm are not 0.1.0 local-RC gates.
 The detailed procedures and threat model are in
 [Standalone Offline Runtime Qualification](standalone-offline-runtime.md).
+The [security-scan disposition](security-scan-disposition.md) explains how to
+reproduce the older draft's scanner findings; only an exact-head full scan can
+clear that gate for a new candidate.
 
 **Current state:** the repository has simulator-backed actor journeys, API
 integration tests, pinned-install checks, and pre-deployment local-ledger
