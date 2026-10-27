@@ -31,6 +31,7 @@
     "scripts/load-standalone-install-images.mjs",
     "scripts/standalone-approval-policy.mjs",
     "scripts/check-standalone-actor-capability.mjs",
+    "scripts/standalone-api-egress-policy.mjs",
     "scripts/standalone-acceptance-decision-policy.mjs",
     "scripts/standalone-api-approval-chain.mjs",
     "scripts/standalone-genesis-review-policy.mjs",

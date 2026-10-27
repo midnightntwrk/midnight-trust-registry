@@ -9,8 +9,11 @@ import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 
 import { observeStandaloneApiRuntime } from "./check-standalone-api-runtime.mjs";
-import { assertOnlyLedgerRoutes, ledgerSubnet } from "./check-standalone-egress.mjs";
+import { ledgerSubnet } from "./check-standalone-egress.mjs";
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
+import { validateApiEgressProbe } from "./standalone-api-egress-policy.mjs";
+
+export { validateApiEgressProbe } from "./standalone-api-egress-policy.mjs";
 
 const run = promisify(execFile);
 const canaryPort = 45987;
@@ -40,8 +43,6 @@ server.on('message',(query,remote)=>{
 const connectionScript = `const net=require('node:net');const socket=net.connect(Number(process.argv[2]),process.argv[1]);socket.setTimeout(3000);socket.on('connect',()=>{console.log('connected');socket.end()});socket.on('timeout',()=>socket.destroy(Object.assign(new Error('timeout'),{code:'ETIMEDOUT'})));socket.on('error',error=>{console.log('denied:'+error.code);process.exitCode=7})`;
 export const apiEgressDnsScript = `const resolver=new (require('node:dns')).Resolver({timeout:1500,tries:1});resolver.setServers([process.argv[1]+':'+process.argv[2]]);resolver.resolve4('${dnsCanaryName}',(error,addresses)=>{if(error){console.log('denied:'+error.code);process.exitCode=7}else{console.log('resolved:'+addresses[0])}})`;
 const routeScript = "process.stdout.write(require('node:fs').readFileSync('/proc/net/route','utf8'))";
-const deniedCodes = new Set(["ENETUNREACH", "EHOSTUNREACH", "ETIMEDOUT"]);
-const deniedDnsCodes = new Set(["ETIMEOUT", "ENETUNREACH", "EHOSTUNREACH"]);
 
 async function docker(args, allowFailure = false) {
   try {
@@ -61,36 +62,6 @@ async function docker(args, allowFailure = false) {
 function requireSuccess(result, description) {
   if (result.code !== 0) throw new Error(`${description} failed`);
   return result.stdout.trim();
-}
-
-export function validateApiEgressProbe(input) {
-  const { subnet, routeTable, canaryAddress, controlBefore, isolated, controlAfter,
-    dnsControlBefore, dnsIsolated, dnsControlAfter } = input;
-  if (isIP(canaryAddress) !== 4) throw new Error("Canary address is not IPv4");
-  const address = canaryAddress.split(".").reduce((value, octet) =>
-    ((value << 8) | Number(octet)) >>> 0, 0);
-  if (((address & subnet.mask) >>> 0) === subnet.address) {
-    throw new Error("Canary is inside the API's isolated subnet");
-  }
-  assertOnlyLedgerRoutes(routeTable, subnet);
-  if (controlBefore.code !== 0 || controlBefore.stdout.trim() !== "connected"
-    || controlAfter.code !== 0 || controlAfter.stdout.trim() !== "connected") {
-    throw new Error("Bridge canary positive control was not reachable throughout the probe");
-  }
-  if (isolated.code !== 7 || !deniedCodes.has(isolated.stdout.trim().replace(/^denied:/u, ""))
-    || !isolated.stdout.trim().startsWith("denied:")) {
-    throw new Error("Running API container did not show an outbound route denial");
-  }
-  for (const control of [dnsControlBefore, dnsControlAfter]) {
-    if (control?.code !== 0 || control.stdout.trim() !== `resolved:${dnsCanaryAddress}`) {
-      throw new Error("Bridge DNS positive control did not resolve the local canary");
-    }
-  }
-  if (dnsIsolated?.code !== 7
-    || !dnsIsolated.stdout.trim().startsWith("denied:")
-    || !deniedDnsCodes.has(dnsIsolated.stdout.trim().slice("denied:".length))) {
-    throw new Error("Running API container did not deny the bridge DNS canary route");
-  }
 }
 
 export async function observeStandaloneApiEgress(bundle, env = process.env, dependencies = {}) {
