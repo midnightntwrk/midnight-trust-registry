@@ -68,6 +68,11 @@ signatures. The historical HTTP/TRQP checks now run through
 listener for the archived policy snapshot and closes it before the later
 mutable actor demo begins. These remain fixture API/adapter checks, not a
 deployed local-ledger readback.
+`scripts/policy-replay-isolation.test.mjs` separately proves that snapshot
+publication advances its own simulator action count, while old-policy
+signatures are rejected and current-policy signatures succeed for the exact
+same prepared payload and sequence on a different harness. It runs in the
+demo-smoke lane but is not a 199th adversarial matrix case.
 
 At signed local source `bbb2c456a93aa035ac482d67f945e8cddf6dfb7c`, the
 private archive `artifacts/adversarial-reports/cases-bbb2c456a93aa035ac482d67f945e8cddf6dfb7c.json`
