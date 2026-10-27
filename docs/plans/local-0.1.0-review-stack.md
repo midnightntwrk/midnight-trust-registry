@@ -27,11 +27,32 @@ remain unresolved.
 The latter has a local test fix, but it does not clear the published check
 until applied to the owning PR and rerun at its new head.
 
-Further signed/DCO local slices are stacked above #240, including prebuilt
-demo/E2E build safety, journal restart quarantine, and the real synthetic GPG
-private-export negative test. They are **not published**. Inspect the live Git
-graph and working-tree status before grouping or propagating them; never
-rewrite or discard unpublished commits to make the stack appear clean.
+## Unpublished continuation
+
+There are 51 signed/DCO local commits above #240's published head
+`bbe527cf` through `c786254f`. They are **not published**, and publication
+requires the user's separate approval. Preserve their existing order and
+review them as four contiguous, context-sized diffs rather than opening one
+PR per commit. Before any publication, fetch the live #240 head and check
+that it is still the ancestor of the first group; do not force-push or
+rewrite unpublished work to repair a stale base.
+
+| Group | Local commit range | Proposed focus | Required review emphasis |
+| --- | --- | --- | --- |
+| A | `4bae0f32`..`31ef0672` | Durable applicant challenge state, duplicate-key quorum rejection, recovery reviewer and genesis/governance reviewer boundaries | Atomic issuance and consumption, replay, signer distinctness, no recovery waiver |
+| B | `91c5a941`..`8fba8e05` | Static archive and Compose typing, verified v6 install and isolated egress canaries, predeployment evidence limits | Loaded-image identity, route isolation, DNS/TCP positive controls, no claim of actor or host egress |
+| C | `aba60244`..`bc55a27d` | Genesis-pin and bundle preflight, safe prebuilt demo E2E, journal restart quarantine, operator/security handoff | Exact-source pinning, no destructive Compact rebuild, no simulator-to-deployment promotion, restart ambiguity |
+| D | `50cbd1a5`..`c786254f` | Full-precision application, recognition, lifecycle, challenge, and TRQP evidence time decisions | RFC3339 offsets and long fractions, one-use nonce ordering, historical evidence selection; #179 remains open |
+
+For a stacked publication, the first group would target #240, and each later
+group would target the immediately preceding group. The table is a review
+plan, **not** an authorization to push, create PRs, mark drafts ready, merge,
+or claim exact-head CI. Verify GPG/DCO, focused and applicable full checks,
+and independent current-head review for each group after publication. The
+read-only local Codex review through `c786254f` found no actionable
+regression in group D, but later commits or PR rebases require a fresh review.
+#238's unresolved external scan and #232's human security release gate remain
+separate stop conditions.
 
 ## Release boundary
 
