@@ -13,7 +13,7 @@ evidence. Passing the demo path does not advance the standalone release gate.
 | Try the product flows without a ledger | `pnpm run test:e2e:demo` | The four signed role journeys and fixture API/UI smoke completed in a Compact simulator. |
 | Exercise the demo in a browser | `pnpm run test:e2e:demo:browser` | The same demo plus applicant/admin Playwright flows completed against fixture services. |
 | Check a real standalone candidate before actor testing | `node scripts/check-standalone-journey-prerequisites.mjs "$SETUP" "$SOURCE_SHA"` | Exit 0: the wizard recorded the prerequisite ledger observations for this exact source. Exit 2: stop and follow `nextActions`. |
-| Record a deployed candidate's operator-reviewed cases | `node scripts/check-standalone-acceptance-evidence.mjs "$ACCEPTANCE" "$SOURCE_SHA"` | Exit 0: all case decisions and evidence digests are present; receipt authenticity, finality, and the security verdict still need independent review. |
+| Record a deployed candidate's operator-reviewed cases | `node scripts/check-standalone-acceptance-evidence.mjs "$ACCEPTANCE" "$SOURCE_SHA"` | Exit 0: all cases have a current decision-backed operator `pass`; exit 2: a case is failed, not run, or needs a fresh decision. Inspect `operatorFailedCases`, `notRunCases`, and `decisionBackedCases`; receipt authenticity, finality, and the security verdict still need independent review. |
 
 There is deliberately no green standalone actor-E2E shortcut. A demo result,
 successful prerequisite check, or complete evidence inventory cannot substitute
@@ -226,6 +226,12 @@ The full `attach` and `decide` procedure is in the
 The independent human security assessment remains a release gate. Keep draft
 promotion #198 draft until the local-only scope and all release gates are
 explicitly updated and satisfied.
+`completeInventory` and the command's exit code describe current,
+decision-backed operator passes, not independent verification.
+`operatorFailedCases` and `notRunCases` identify unfinished or disputed cases;
+`allOperatorCasesPassed` is false when any case is failed, not run, or lacks a
+current decision. `releaseQualified` remains false even when every operator
+case is recorded as `pass`.
 
 ## What a new adopter can claim
 
