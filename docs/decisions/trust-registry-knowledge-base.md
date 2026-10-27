@@ -2491,6 +2491,13 @@ registry integrity, and uncertain lookups; they stub npm I/O but run the real
 published-byte integrity helper. Exact-head CI, manifest approval, and
 independent release review remain separate gates.
 
+The application-status HTTP transport caps its signed-attestation response at
+64 KiB before JSON parsing, including when the authority omits or understates
+Content-Length. Oversized and invalid UTF-8 responses fail closed. This
+hardens the governed issuer evidence intake against untrusted status responses;
+it is not a VC-owned live status-authority deployment, authenticated ledger
+finality, or standalone actor-journey evidence.
+
 Issue #229 now wires the pre-existing broad checked-JS configuration into CI
 and adds a strict CI gate
 for provider inode identity, immutable import confinement, and optional Helm

@@ -148,4 +148,74 @@ describe("HTTP application status authority adapter", () => {
     });
     await expect(droppedBody(request)).rejects.toBeInstanceOf(ApplicationVpDependencyUnavailableError);
   });
+
+  it("bounds declared and streamed status responses before parsing untrusted JSON", async () => {
+    const scenario = await createApplicationVpScenarioFixture();
+    const request = {
+      material: scenario.material,
+      binding: scenario.fixtureStatusPolicyBinding,
+      nonce: VP_FIXTURE_NONCE,
+      evaluatedAtMs: VP_FIXTURE_TIME_MS,
+    };
+    const declaredOversize = createHttpApplicationStatusSource({
+      endpointUrl,
+      resolver: scenario.input.resolver,
+      fetchImpl: async () => new Response("{}", {
+        status: 200, headers: { "content-length": "65537" },
+      }),
+    });
+    await expect(declaredOversize(request)).rejects.toThrow(/size limit/u);
+
+    let cancelled = false;
+    const streamedOversize = createHttpApplicationStatusSource({
+      endpointUrl,
+      resolver: scenario.input.resolver,
+      fetchImpl: async () => new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array(65536));
+          controller.enqueue(new Uint8Array(1));
+        },
+        cancel() { cancelled = true; },
+      }), { status: 200, headers: { "content-length": "1" } }),
+    });
+    await expect(streamedOversize(request)).rejects.toThrow(/size limit/u);
+    expect(cancelled).toBe(true);
+    await expect(verifyApplicationVp({
+      ...scenario.input,
+      family: {
+        ...scenario.input.family,
+        assertStatusActive: (material: typeof scenario.material,
+          binding: typeof scenario.fixtureStatusPolicyBinding,
+          context: { nonce: string; evaluatedAtMs: number }) =>
+          streamedOversize({ material, binding, ...context }),
+      },
+    })).rejects.toMatchObject({ category: "ineligible" });
+
+    const invalidUtf8 = createHttpApplicationStatusSource({
+      endpointUrl,
+      resolver: scenario.input.resolver,
+      fetchImpl: async () => new Response(new Uint8Array([0xff]), { status: 200 }),
+    });
+    await expect(invalidUtf8(request)).rejects.toThrow();
+  });
+
+  it("classifies a bodyless successful status response as ineligible, not retryable", async () => {
+    const scenario = await createApplicationVpScenarioFixture();
+    const status = createHttpApplicationStatusSource({
+      endpointUrl,
+      resolver: scenario.input.resolver,
+      fetchImpl: async () => new Response(null, { status: 204 }),
+    });
+    const input = {
+      ...scenario.input,
+      family: {
+        ...scenario.input.family,
+        assertStatusActive: (material: typeof scenario.material,
+          binding: typeof scenario.fixtureStatusPolicyBinding,
+          context: { nonce: string; evaluatedAtMs: number }) =>
+          status({ material, binding, ...context }),
+      },
+    };
+    await expect(verifyApplicationVp(input)).rejects.toMatchObject({ category: "ineligible" });
+  });
 });
