@@ -1788,6 +1788,12 @@ read, and a failed journal write prevents the first callback. This verifies
 the journal boundary, not a real node broadcast, local-ledger restart, or
 non-inclusion. Preserve the original journal and its binding sidecar across
 service restart and backup/restore.
+The HTTP integration regression separately closes and recreates its listener,
+server options, proposal port, and file-journal instance after an ambiguous
+issuer submission. A duplicate request remains blocked before the new port
+can execute, and only matching finalized reconciliation changes the journal
+state. Its ledger and submission are synthetic; it does not qualify deployed
+restart or restore.
 The current issuer and HTTP quorum preflights reject duplicate maintainer
 public keys even when key IDs differ; the HTTP regression uses a real file
 journal and confirms rejection before reservation. This does not make every

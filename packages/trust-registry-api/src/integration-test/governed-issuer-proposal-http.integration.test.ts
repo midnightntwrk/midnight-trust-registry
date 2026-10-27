@@ -127,28 +127,10 @@ describe("Compact-backed issuer proposals over HTTP", () => {
     let eventHash: string | undefined;
     let executions = 0;
     let preflights = 0;
-    const serverOptions: Parameters<typeof createTrustRegistryApiServer>[0] = {
-      localPlanSha256: "d".repeat(64),
-      source: {
-        mode: "local-ledger", localDeploymentBinding: { contractAddress, expectedGenesisHash: genesisHash },
-        loadSnapshot: async () => operatorSnapshot,
-        readFinalizedProposalLedger: async () => {
-          if (!finalizedLedgerAvailable) throw new Error("finalized ledger unavailable");
-          return finalizedLedger;
-        },
-      },
-      proposalAdmission: {
-        resolvePendingApplication: async () => ({
-          authorizationId: issuer.authorizationId, binding, status: "pending", createdAt: "2026-05-20T00:00:00.000Z",
-        }),
-        resolveAcceptedEvidence: async () => ({
-          evidence,
-          receipt: { receiptId: `0x${"b2".repeat(32)}`, evidenceCommitment: evidence.commitment,
-            acceptedAt: "2026-05-20T00:01:00.000Z" },
-        }),
-      },
-      proposalSubmissionJournal: journal,
-      governedIssuerProposals: {
+    let portInstances = 0;
+    const createProposalPort = (): NonNullable<Parameters<typeof createTrustRegistryApiServer>[0]["governedIssuerProposals"]> => {
+      portInstances += 1;
+      return {
         prepare: async () => harness.prepareIssuerProposalAction(issuer, evidence),
         preflightSubmission: async (_authorizationId, _evidence, signers, signature, context) => {
           preflights += 1;
@@ -175,9 +157,32 @@ describe("Compact-backed issuer proposals over HTTP", () => {
         resolve: async (authorizationId) => resolveCompactProposalObservation(
           async () => finalizedLedger, harness.registryId, "issuer", authorizationId,
         ),
-      },
+      };
     };
-    let server = createTrustRegistryApiServer(serverOptions);
+    const createServerOptions = (submissionJournal: FileProposalSubmissionJournal): Parameters<typeof createTrustRegistryApiServer>[0] => ({
+      localPlanSha256: "d".repeat(64),
+      source: {
+        mode: "local-ledger", localDeploymentBinding: { contractAddress, expectedGenesisHash: genesisHash },
+        loadSnapshot: async () => operatorSnapshot,
+        readFinalizedProposalLedger: async () => {
+          if (!finalizedLedgerAvailable) throw new Error("finalized ledger unavailable");
+          return finalizedLedger;
+        },
+      },
+      proposalAdmission: {
+        resolvePendingApplication: async () => ({
+          authorizationId: issuer.authorizationId, binding, status: "pending", createdAt: "2026-05-20T00:00:00.000Z",
+        }),
+        resolveAcceptedEvidence: async () => ({
+          evidence,
+          receipt: { receiptId: `0x${"b2".repeat(32)}`, evidenceCommitment: evidence.commitment,
+            acceptedAt: "2026-05-20T00:01:00.000Z" },
+        }),
+      },
+      proposalSubmissionJournal: submissionJournal,
+      governedIssuerProposals: createProposalPort(),
+    });
+    let server = createTrustRegistryApiServer(createServerOptions(journal));
     try {
       await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
       const address = server.address();
@@ -297,8 +302,7 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
       const reopenedJournal = new FileProposalSubmissionJournal(journalPath);
       await reopenedJournal.assertDeploymentBinding(harness.registryId, contractAddress, genesisHash);
-      serverOptions.proposalSubmissionJournal = reopenedJournal;
-      server = createTrustRegistryApiServer(serverOptions);
+      server = createTrustRegistryApiServer(createServerOptions(reopenedJournal));
       await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
       const restartedAddress = server.address();
       if (restartedAddress === null || typeof restartedAddress === "string") {
@@ -307,6 +311,7 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       endpoint = `http://127.0.0.1:${restartedAddress.port}/v1/governed/issuer/${issuer.authorizationId}/proposal`;
       const duplicate = await post("submit", request);
       expect(duplicate.status).toBe(409);
+      expect(portInstances).toBe(2);
       expect(executions).toBe(1);
       await expect(reopenedJournal.executeOnce("verifier", "another-authorization", evidence.commitment,
         async () => { executions += 1; return { eventHash: `0x${"cd".repeat(32)}` }; }, {
