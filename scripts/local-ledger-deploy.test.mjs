@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { FileDeploymentAttemptJournal } from "@midnight-ntwrk/trust-registry-integration";
 
@@ -13,6 +15,7 @@ import {
 } from "./local-ledger-deploy.mjs";
 
 const root = await mkdtemp(join(tmpdir(), "tr-local-deploy-plan-"));
+
 after(() => rm(root, { recursive: true, force: true }));
 const sourceRevision = "a".repeat(40);
 const modulePath = join(root, "provider.mjs");
@@ -288,4 +291,13 @@ test("read-only staged reconciliation binds the original journal and receipt", a
     ...approval, expectedDeploymentReceipt: submitted,
   }), /journal lost the setup-recorded receipt/u);
   assert.deepEqual(steps, ["endpoints", "genesis", "journal", "stop"]);
+});
+
+test("direct deployment CLI refuses an unapproved plan before submission", () => {
+  const result = spawnSync(process.execPath,
+    [fileURLToPath(new URL("./local-ledger-deploy.mjs", import.meta.url)), join(root, "missing-plan.json")],
+    { encoding: "utf8" });
+  assert.equal(result.status, 2, result.stderr);
+  assert.match(result.stderr, /Direct deployment is disabled/u);
+  assert.equal(result.stdout, "");
 });

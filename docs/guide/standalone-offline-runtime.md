@@ -603,11 +603,14 @@ policy. Do not use that smoke result to close the RC maintenance gate. The
 final threshold, three distinct public keys, custody assignments, and human
 approval remain required before a release-qualified transition.
 
-### Local deployment operator CLI
+### Local deployment material (wizard only)
 
-`node scripts/local-ledger-deploy.mjs <approved-plan.json>` is a guarded entry
-point for a **real** local-ledger submission. Build the integration package and
-verify the installed release artifact first. The plan is a private, absolute
+The standalone wizard is the supported entry point for a **real** local-ledger
+submission. The lower-level deployment and verifier-key scripts can be imported
+by the wizard, but direct CLI invocation is disabled because a standalone JSON
+plan does not prove the wizard's signed genesis and committee approvals. Build
+the integration package and verify the installed release artifact first. The
+plan is a private, absolute
 path JSON file with exactly these fields (replace every placeholder):
 
 ```json
@@ -658,7 +661,8 @@ provider loader:
 ```sh
 export TR_IMMUTABLE_PROVIDER_ROOT=/absolute/root-owned/trust-registry-install
 export NODE_OPTIONS="--import=$TR_IMMUTABLE_PROVIDER_ROOT/scripts/approved-provider-preload.mjs"
-node "$TR_IMMUTABLE_PROVIDER_ROOT/scripts/local-ledger-deploy.mjs" /absolute/private/approved-plan.json
+node "$TR_IMMUTABLE_PROVIDER_ROOT/scripts/standalone-setup-wizard.mjs" deploy \
+  /absolute/private/setup-directory /absolute/private/approved-plan.json
 ```
 
 The preloader rejects file imports outside the tree and non-file imports other
@@ -759,8 +763,8 @@ first. The development-only public genesis wallet and 1-of-3 committee remain
 unsuitable for release approval.
 
 For a staged deployment with a finalized receipt, insert one remaining key at
-a time with `node scripts/local-ledger-insert-verifier-key.mjs
-<approved-insertion-plan.json>`. Each key uses the fixed private journal path
+a time through `node scripts/standalone-setup-wizard.mjs insert-key
+<private-setup-dir> <approved-insertion-plan.json>`. Each key uses the fixed private journal path
 `verifier-<circuitName>.json` beside the deployment journal; never reuse or
 rename a prior insertion journal. The circuit must be the next absent name in
 sorted release-catalog order. The helper prepares the compiled circuit and
@@ -784,7 +788,7 @@ insertion plan contains:
 }
 ```
 
-The CLI checks the original staged deployment approval and receipt, the local
+The wizard-controlled helper checks the original staged deployment approval and receipt, the local
 genesis, the entire installed key catalog, and the finalized pre-insertion
 image. It rejects changed or unexpected operations and changed bootstrap
 authority, then durably reserves this circuit's attempt before calling the
@@ -792,8 +796,9 @@ Midnight SDK. It stores the public finalized transaction receipt and reads the
 post-insertion image. `verified` means this circuit and the previously
 installed subset match the pinned key hashes in the observed finalized image;
 it does **not** mean the full catalog, committee, or RC is qualified. If the
-readback lags, run the same plan with `--reconcile`, which never submits.
-The CLI exits nonzero for pending, absent, mismatched, or ambiguous outcomes,
+readback lags, use `standalone-setup-wizard.mjs reconcile-key` with the same
+setup directory and plan; that command never submits. The wizard exits nonzero
+for pending, absent, mismatched, or ambiguous outcomes,
 while still printing any public receipt it recovered.
 `observed-without-receipt` means a key appeared after an ambiguous submission;
 human transaction attribution and recovery approval are required. Do not
@@ -802,7 +807,7 @@ reconciled. `absent` only means a key is not yet visible after an attempt with
 no receipt; it does not prove the transaction was never submitted. A successful
 receipt with lagging readback remains `pending`. `failed-on-chain` retains the
 public transaction receipt and requires operator investigation; neither state
-authorizes deleting a journal or retrying automatically. The CLI's provider
+authorizes deleting a journal or retrying automatically. The provider
 module remains privileged and must be pinned,
 reviewed, and run with egress controls. A verified full-key image, approved
 committee transition, actor journeys, and independent security review are
@@ -1328,9 +1333,9 @@ deployment receipt and `staged-bootstrap-pending` finalized readback. It binds
 the insertion plan to the exact approved source, genesis, RPC and indexer
 endpoints, provider module hash, staged initial key, original deployment
 journal, and verified bundle manifest before making a separate one-attempt
-reservation. The insertion CLI rechecks the manifest bytes and compares the
+reservation. The imported insertion helper rechecks the manifest bytes and compares the
 journal's deployment receipt with the wizard's recorded receipt before any
-submission. The underlying insertion CLI still checks the live finalized
+submission. It also checks the live finalized
 image and per-circuit journal. A pending, failed, or ambiguous key blocks the
 next key; use `reconcile-key` with the **same plan** for read-only observation.
 Neither command deletes a reservation or authorizes a retry. The wizard reports

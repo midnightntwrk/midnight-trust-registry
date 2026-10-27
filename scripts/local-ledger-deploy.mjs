@@ -211,15 +211,6 @@ export async function reconcileLocalDeployment(plan, dependencies = {}, approval
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (process.argv.length !== 3) {
-    throw new Error("Usage: node scripts/local-ledger-deploy.mjs <approved-plan.json>");
-  }
-  try {
-    const plan = JSON.parse((await regularFile(resolve(process.argv[2]))).toString("utf8"));
-    console.log(JSON.stringify(await runLocalDeployment(plan)));
-  } catch {
-    // SDK errors can contain wallet internals. Preserve the journal and avoid printing a private cause.
-    console.error("Local deployment failed or has unknown outcome; inspect the private journal and finalized chain before retrying");
-    process.exitCode = 1;
-  }
+  console.error("Direct deployment is disabled: use standalone-setup-wizard.mjs deploy with signed setup approvals");
+  process.exitCode = 2;
 }

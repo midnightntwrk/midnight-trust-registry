@@ -13,7 +13,6 @@ import {
   getLocalNetworkProfile,
   reconcileLocalVerifierKeyInsertion,
   submitLocalVerifierKeyInsertion,
-  VerifierKeyInsertionOutcomeUnknownError,
 } from "@midnight-ntwrk/trust-registry-integration";
 
 import { checkLocalLedgerPreflight } from "./local-ledger-preflight.mjs";
@@ -160,23 +159,6 @@ export async function runLocalVerifierKeyInsertion(plan, dependencies = {}, mode
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (process.argv.length < 3 || process.argv.length > 4
-    || (process.argv[3] !== undefined && process.argv[3] !== "--reconcile")) {
-    throw new Error("Usage: node scripts/local-ledger-insert-verifier-key.mjs <approved-plan.json> [--reconcile]");
-  }
-  try {
-    const plan = JSON.parse((await regularFile(resolve(process.argv[2]))).toString("utf8"));
-    const result = await runLocalVerifierKeyInsertion(
-      plan, {}, process.argv[3] === "--reconcile" ? "reconcile" : "submit",
-    );
-    console.log(JSON.stringify(result));
-    const status = result.readbackStatus ?? result.readback?.status;
-    if (status !== "verified") process.exitCode = 2;
-  } catch (error) {
-    if (error instanceof VerifierKeyInsertionOutcomeUnknownError && error.receipt) {
-      console.log(JSON.stringify({ kind: "local-verifier-key-insertion-error", receipt: error.receipt }));
-    }
-    console.error("Verifier-key insertion is incomplete or ambiguous; preserve journals and inspect finalized state");
-    process.exitCode = 1;
-  }
+  console.error("Direct verifier-key insertion is disabled: use standalone-setup-wizard.mjs insert-key or reconcile-key with signed setup approvals");
+  process.exitCode = 2;
 }

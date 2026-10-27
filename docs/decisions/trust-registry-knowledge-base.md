@@ -2465,3 +2465,12 @@ step for each missing gate without changing `releaseQualified: false` or
 claiming that a recorded prerequisite proves independent finality. A future
 exact-source setup, human-signed approvals, reviewed writer dependencies,
 live VC status authority, and real offline actor receipts remain necessary.
+
+The lower-level deployment and verifier-key modules previously also accepted
+direct CLI invocation with an arbitrary JSON plan. Those paths checked plan
+shape, provider bytes, and the immutable import boundary, but did not first
+verify the wizard's signed genesis and committee approval chain. Direct
+invocation now exits before reading a plan or submitting. The wizard remains
+the supported operator entry point and imports the same lower-level functions
+only after its retained approval checks. This closes an accidental adoption
+bypass, not the separate authenticated-finality or provider-code review gates.

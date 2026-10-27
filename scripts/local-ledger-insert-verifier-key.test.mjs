@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { FileVerifierKeyInsertionJournal } from "@midnight-ntwrk/trust-registry-integration";
 
@@ -12,6 +14,7 @@ import {
 } from "./local-ledger-insert-verifier-key.mjs";
 
 const root = await mkdtemp(join(tmpdir(), "tr-local-key-plan-"));
+
 after(() => rm(root, { recursive: true, force: true }));
 const sourceRevision = "a".repeat(40);
 const modulePath = join(root, "provider.mjs");
@@ -186,4 +189,14 @@ test("wizard approval rejects changed manifest or deployment receipt before inse
   });
   assert.equal(result.readbackStatus, "verified");
   assert.deepEqual(steps, ["endpoints", "genesis", "provider", "deployment-journal", "submit", "stop"]);
+});
+
+test("direct key-insertion CLI refuses an unapproved plan before submission", () => {
+  const result = spawnSync(process.execPath,
+    [fileURLToPath(new URL("./local-ledger-insert-verifier-key.mjs", import.meta.url)),
+      join(root, "missing-plan.json")],
+    { encoding: "utf8" });
+  assert.equal(result.status, 2, result.stderr);
+  assert.match(result.stderr, /Direct verifier-key insertion is disabled/u);
+  assert.equal(result.stdout, "");
 });
