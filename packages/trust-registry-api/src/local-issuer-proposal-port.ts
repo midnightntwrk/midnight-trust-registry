@@ -21,8 +21,7 @@ import {
   prepareBoundLocalIssuerProposal,
   type LocalIssuerProposalTerms,
 } from "./local-issuer-proposal-terms.js";
-import type { AcceptedApplicationEvidence } from "./proposal-admission.js";
-import type { PendingApplicationRecord } from "./pending-application-registration.js";
+import type { ProposalAdmissionPort } from "./proposal-admission.js";
 
 type FinalizedIssuerSnapshot = {
   contractAddress: string;
@@ -31,10 +30,7 @@ type FinalizedIssuerSnapshot = {
   ledger: TrustRegistryContract.Ledger;
 };
 
-type CapturedIssuerAdmission = {
-  pending: PendingApplicationRecord | null;
-  accepted: AcceptedApplicationEvidence | null;
-};
+type CapturedIssuerAdmission = Awaited<ReturnType<NonNullable<ProposalAdmissionPort["readCapturedAdmission"]>>>;
 
 type SubmissionProviders = Pick<LocalIssuerProposalSubmissionInput,
   "providers" | "readSubmissionProviderIdentity">;
@@ -42,7 +38,7 @@ type SubmissionProviders = Pick<LocalIssuerProposalSubmissionInput,
 /** These dependencies must be implemented by a deployment-specific, independently reviewed adapter. */
 export type LocalIssuerProposalPortDependencies = {
   plan: Pick<LocalLedgerRuntimePlan, "networkId" | "contractAddress" | "expectedGenesisHash">;
-  readCapturedAdmission(applicationId: string): Promise<CapturedIssuerAdmission>;
+  readCapturedAdmission: NonNullable<ProposalAdmissionPort["readCapturedAdmission"]>;
   /** Authenticate finality independently of the SDK submitting provider. */
   readAuthenticatedFinalizedSnapshot(contractAddress: string): Promise<FinalizedIssuerSnapshot>;
   /** Resolve DID, VP, VC status authority, challenge, and trusted time from live local services. */

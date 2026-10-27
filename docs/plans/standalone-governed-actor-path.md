@@ -139,3 +139,8 @@ adapter, approved immutable provider loader, signed write-plan pins,
 finalized proposal resolution, and a full offline actor run. If state changes
 after HTTP preflight but before the reserved execution, the journal retains
 the reservation for explicit reconciliation rather than silently retrying.
+The private file admission store now captures pending and accepted records
+from one validated persisted-state read. HTTP admission prefers that captured
+pair when the port supports it, and the issuer-port assembly requires it;
+legacy two-method adapters remain compatible but must not be mistaken for an
+atomic production admission source.

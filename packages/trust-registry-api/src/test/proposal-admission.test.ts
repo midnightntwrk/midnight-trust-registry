@@ -312,6 +312,24 @@ describe("local issuer proposal terms", () => {
 });
 
 describe("proposal admission", () => {
+  it("prefers one captured admission pair over separately fetched revisions", async () => {
+    const resolvePendingApplication = vi.fn(async () => { throw new Error("separate pending read must not run"); });
+    const resolveAcceptedEvidence = vi.fn(async () => { throw new Error("separate accepted read must not run"); });
+    const readCapturedAdmission = vi.fn(async (): Promise<{
+      pending: PendingApplicationRecord | null;
+      accepted: AcceptedApplicationEvidence | null;
+    }> => ({ pending, accepted }));
+    await expect(assertProposalAdmission({ resolvePendingApplication, resolveAcceptedEvidence,
+      readCapturedAdmission }, "issuer", pending.authorizationId, evidence)).resolves.toBeUndefined();
+    expect(readCapturedAdmission).toHaveBeenCalledExactlyOnceWith(binding.applicationId);
+    expect(resolvePendingApplication).not.toHaveBeenCalled();
+    expect(resolveAcceptedEvidence).not.toHaveBeenCalled();
+    readCapturedAdmission.mockResolvedValueOnce({ pending: null, accepted });
+    await expect(assertProposalAdmission({ resolvePendingApplication, resolveAcceptedEvidence,
+      readCapturedAdmission }, "issuer", pending.authorizationId, evidence))
+      .rejects.toBeInstanceOf(ProposalAdmissionRejectedError);
+  });
+
   it("requires and forwards explicit issuer terms in local-ledger prepare", async () => {
     type Options = Parameters<typeof createTrustRegistryApiServer>[0];
     const source: Options["source"] = {
