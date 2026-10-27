@@ -10,8 +10,12 @@ const MAX_RPC_RESPONSE_BYTES = 8 * 1024;
 
 async function boundedRpcResult(response: Response): Promise<unknown> {
   const declaredLength = response.headers.get("content-length");
-  if (declaredLength !== null && (!/^\d+$/u.test(declaredLength)
-    || Number(declaredLength) > MAX_RPC_RESPONSE_BYTES)) {
+  if (declaredLength !== null && !/^\d+$/u.test(declaredLength)) {
+    void response.body?.cancel().catch(() => {});
+    throw new Error("Finality RPC response has malformed Content-Length");
+  }
+  if (declaredLength !== null && Number(declaredLength) > MAX_RPC_RESPONSE_BYTES) {
+    void response.body?.cancel().catch(() => {});
     throw new Error("Finality RPC response exceeds the size limit");
   }
   const reader = response.body?.getReader();
@@ -24,7 +28,7 @@ async function boundedRpcResult(response: Response): Promise<unknown> {
       if (done) break;
       size += value.byteLength;
       if (size > MAX_RPC_RESPONSE_BYTES) {
-        await reader.cancel();
+        await reader.cancel().catch(() => {});
         throw new Error("Finality RPC response exceeds the size limit");
       }
       chunks.push(value);
@@ -106,7 +110,10 @@ function createPinnedCheckpointSource(
       redirect: "error",
       signal: AbortSignal.timeout(15_000),
     });
-    if (!response.ok) throw new Error("Finality RPC request failed");
+    if (!response.ok) {
+      void response.body?.cancel().catch(() => {});
+      throw new Error("Finality RPC request failed");
+    }
     const body = await boundedRpcResult(response);
     if (body === null || typeof body !== "object" || Array.isArray(body)
       || !("jsonrpc" in body) || body.jsonrpc !== "2.0"

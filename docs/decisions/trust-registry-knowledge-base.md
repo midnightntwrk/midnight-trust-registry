@@ -2498,8 +2498,9 @@ hardens the governed issuer evidence intake against untrusted status responses;
 it is not a VC-owned live status-authority deployment, authenticated ledger
 finality, or standalone actor-journey evidence.
 
-The local RPC checkpoint reader now caps each genesis/finalized-head JSON-RPC
-response at 8 KiB and rejects malformed UTF-8 or JSON before accepting a hash.
+The RPC checkpoint reader (local and public) now caps each
+genesis/finalized-head JSON-RPC response at 8 KiB and rejects malformed UTF-8
+or JSON before accepting a hash.
 The limit applies even without an honest Content-Length header. This prevents
 an unbounded node response from exhausting the actor host; a pinned local node
 is still not an independently authenticated finality source.

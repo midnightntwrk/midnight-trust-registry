@@ -107,7 +107,9 @@ describe("RPC finalized checkpoint source", () => {
 
   it("rejects a declared oversized response before reading its body", async () => {
     let pulled = false;
-    const body = new ReadableStream({ pull() { pulled = true; } }, { highWaterMark: 0 });
+    let cancelled = false;
+    const body = new ReadableStream({ pull() { pulled = true; }, cancel() { cancelled = true; } },
+      { highWaterMark: 0 });
     const source = createLocalRpcFinalizedCheckpointSource({
       rpcUrl: "http://node:9944", allowedHosts: ["node"],
       expectedGenesisHash: GENESIS,
@@ -115,6 +117,48 @@ describe("RPC finalized checkpoint source", () => {
     });
     await expect(source.readCurrentFinalizedCheckpoint()).rejects.toThrow(/size limit/u);
     expect(pulled).toBe(false);
+    expect(cancelled).toBe(true);
+  });
+
+  it.each([
+    ["malformed Content-Length", 200, { "content-length": "8, 8" }, /malformed Content-Length/u],
+    ["HTTP failure", 502, {}, /request failed/u],
+  ])("cancels %s response bodies", async (_label, status, headers, failure) => {
+    let cancelled = false;
+    const body = new ReadableStream({ cancel() { cancelled = true; } }, { highWaterMark: 0 });
+    const source = createLocalRpcFinalizedCheckpointSource({
+      rpcUrl: "http://node:9944", allowedHosts: ["node"],
+      expectedGenesisHash: GENESIS,
+      fetchImpl: fixture([new Response(body, { status, headers })]).fetchImpl,
+    });
+    await expect(source.readCurrentFinalizedCheckpoint()).rejects.toThrow(failure);
+    expect(cancelled).toBe(true);
+  });
+
+  it("accepts exactly 8 KiB and cancels oversized public RPC streams", async () => {
+    const valid = JSON.stringify({ jsonrpc: "2.0", id: 1, result: GENESIS });
+    const exact = valid.padEnd(8 * 1024, " ");
+    const accepted = createRpcFinalizedCheckpointSource({
+      networkId: "preview", rpcUrl: "https://rpc.preview.midnight.network",
+      expectedGenesisHash: GENESIS,
+      fetchImpl: fixture([new Response(exact), response({ jsonrpc: "2.0", id: 1, result: FINALIZED })]).fetchImpl,
+    });
+    await expect(accepted.readCurrentFinalizedCheckpoint()).resolves.toEqual({
+      networkId: "preview", blockHash: FINALIZED.slice(2),
+    });
+
+    let cancelled = false;
+    const oversized = new ReadableStream({
+      start(controller) { controller.enqueue(new Uint8Array(8 * 1024 + 1)); },
+      cancel() { cancelled = true; },
+    });
+    const rejected = createRpcFinalizedCheckpointSource({
+      networkId: "preview", rpcUrl: "https://rpc.preview.midnight.network",
+      expectedGenesisHash: GENESIS,
+      fetchImpl: fixture([new Response(oversized)]).fetchImpl,
+    });
+    await expect(rejected.readCurrentFinalizedCheckpoint()).rejects.toThrow(/size limit/u);
+    expect(cancelled).toBe(true);
   });
 
   it("rejects malformed UTF-8 and invalid JSON from the finality endpoint", async () => {
