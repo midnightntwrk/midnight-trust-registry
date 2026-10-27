@@ -16,12 +16,41 @@ const sha256Pattern = /^[0-9a-f]{64}$/u;
 const apiHealthcheck = ["CMD", "node", "-e",
   "fetch('http://127.0.0.1:4400/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"];
 
+/**
+ * Docker inspect JSON is untrusted; these shapes support static checking,
+ * while the comparisons below remain the runtime admission boundary.
+ * @typedef {{Name: string, Id: string, Internal: boolean, Driver: string,
+ *   EnableIPv6: boolean, Labels?: Record<string, string>,
+ *   Containers?: Record<string, unknown>}} DockerNetwork
+ * @typedef {{Id: string, Image: string, RestartCount: number,
+ *   Config: {Image: string, Labels: Record<string, string>, Env?: string[],
+ *     User?: string, Entrypoint?: string[], Cmd?: string[],
+ *     Healthcheck?: {Test?: string[]}},
+ *   State?: {Running?: boolean, Paused?: boolean, StartedAt?: string,
+ *     Health?: {Status?: string}},
+ *   NetworkSettings?: {Networks?: Record<string, {NetworkID: string}>,
+ *     Ports?: Record<string, unknown>},
+ *   HostConfig?: {ReadonlyRootfs?: boolean, Privileged?: boolean,
+ *     CapDrop?: string[], SecurityOpt?: string[], PidsLimit?: number,
+ *     Init?: boolean, PidMode?: string, IpcMode?: string, UsernsMode?: string,
+ *     UTSMode?: string, CgroupnsMode?: string, CapAdd?: string[],
+ *     Devices?: unknown[], DeviceRequests?: unknown[],
+ *     Sysctls?: Record<string, string>, ExtraHosts?: string[],
+ *     PortBindings?: Record<string, unknown>, Tmpfs?: Record<string, string>},
+ *   Mounts?: {Type: string, Source: string, Destination: string, RW: boolean}[]}} DockerContainer
+ * @typedef {{project: string, sourceRevision: string, inventorySha256: string,
+ *   uid: string, gid: string, reviewerFingerprint: string, approvalDir: string,
+ *   composeFiles: string[], apiImageEnv: string[],
+ *   apiRuntime: {imageId: string, configId: string},
+ *   images: {role: string, acceptedIds: string[]}[]}} ExpectedApiRuntime
+ */
+
+/** @param {DockerContainer} container @param {string} role
+ * @param {ExpectedApiRuntime} expected */
 function requireContainerImage(container, role, expected) {
-  const verified = role === "api" ? expected.apiRuntime
-    : expected.images.find((image) => image.role === role);
   const acceptedIds = role === "api"
-    ? [verified?.imageId, verified?.configId]
-    : verified?.acceptedIds;
+    ? [expected.apiRuntime.imageId, expected.apiRuntime.configId]
+    : expected.images.find((image) => image.role === role)?.acceptedIds;
   if (typeof container.Image !== "string"
     || !Array.isArray(acceptedIds) || !acceptedIds.includes(container.Image)
     || container.Config?.Image !== `tr-standalone/${role}:sha-${expected.sourceRevision}`) {
@@ -29,6 +58,7 @@ function requireContainerImage(container, role, expected) {
   }
 }
 
+/** @param {string[] | undefined} entries */
 function normalizedEnvironment(entries) {
   if (!Array.isArray(entries) || entries.some((entry) =>
     typeof entry !== "string" || !/^[A-Za-z_][A-Za-z_0-9]*=/u.test(entry))) {
@@ -41,7 +71,9 @@ function normalizedEnvironment(entries) {
   return [...entries].sort();
 }
 
-/** A Docker topology observation only; it never approves a plan or proves finality. */
+/** A Docker topology observation only; it never approves a plan or proves finality.
+ * @param {DockerNetwork | null} network @param {DockerContainer[]} containers
+ * @param {ExpectedApiRuntime | null} expected */
 export function checkStandaloneApiRuntime(network, containers, expected) {
   const config = standaloneStackConfig({ TR_STACK_NAME: expected?.project });
   if (!expected || !/^[0-9a-f]{40}$/u.test(expected.sourceRevision)
@@ -69,6 +101,7 @@ export function checkStandaloneApiRuntime(network, containers, expected) {
   if (!Array.isArray(containers) || containers.length !== services.length) {
     throw new Error("API runtime project must have exactly four services");
   }
+  /** @type {Map<string, DockerContainer>} */
   const byRole = new Map();
   for (const container of containers) {
     const labels = container.Config?.Labels;
@@ -82,7 +115,7 @@ export function checkStandaloneApiRuntime(network, containers, expected) {
     requireContainerImage(container, role, expected);
     const networks = container.NetworkSettings?.Networks;
     if (Object.keys(networks ?? {}).length !== 1
-      || networks[config.network]?.NetworkID !== network.Id) {
+      || networks?.[config.network]?.NetworkID !== network.Id) {
       throw new Error("API runtime service has a non-internal network attachment");
     }
     byRole.set(role, container);
@@ -97,6 +130,7 @@ export function checkStandaloneApiRuntime(network, containers, expected) {
     throw new Error("API runtime ledger network has an extra or missing attachment");
   }
   const api = byRole.get("api");
+  if (!api) throw new Error("API runtime service set is incomplete");
   const labels = api.Config.Labels;
   if (typeof api.State?.StartedAt !== "string"
     || !Number.isFinite(Date.parse(api.State.StartedAt))
@@ -174,11 +208,13 @@ export function checkStandaloneApiRuntime(network, containers, expected) {
   };
 }
 
+/** @param {string[]} args */
 async function docker(args) {
   const { stdout } = await run("docker", args, { timeout: 20_000, maxBuffer: 8 * 1024 * 1024 });
   return stdout;
 }
 
+/** @param {string} bundle @param {NodeJS.ProcessEnv} env */
 export async function observeStandaloneApiRuntime(bundle, env = process.env) {
   const root = await realpath(resolve(bundle));
   const verified = await verifyStandaloneInstallBundle(root);
@@ -189,6 +225,10 @@ export async function observeStandaloneApiRuntime(bundle, env = process.env) {
     || !env.TR_API_APPROVAL_DIR.startsWith("/")
     || env.TR_API_APPROVAL_DIR === "/") {
     throw new Error("Approved API runtime directory must be explicit and absolute");
+  }
+  if (typeof env.TR_API_UID !== "string" || typeof env.TR_API_GID !== "string"
+    || typeof env.TR_API_REVIEWER_FINGERPRINT !== "string") {
+    throw new Error("Approved API runtime identity is incomplete");
   }
   const approvalPath = resolve(env.TR_API_APPROVAL_DIR);
   const approvalStat = await lstat(approvalPath);

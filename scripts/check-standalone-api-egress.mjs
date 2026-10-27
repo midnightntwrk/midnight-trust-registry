@@ -20,6 +20,12 @@ export { apiEgressCanaryServerScript, apiEgressDnsScript } from "./standalone-eg
 const connectionScript = `const net=require('node:net');const socket=net.connect(Number(process.argv[2]),process.argv[1]);socket.setTimeout(3000);socket.on('connect',()=>{console.log('connected');socket.end()});socket.on('timeout',()=>socket.destroy(Object.assign(new Error('timeout'),{code:'ETIMEDOUT'})));socket.on('error',error=>{console.log('denied:'+error.code);process.exitCode=7})`;
 const routeScript = "process.stdout.write(require('node:fs').readFileSync('/proc/net/route','utf8'))";
 
+/** @typedef {{dockerCommand?: typeof executeDockerProbe,
+ *   observeApiRuntime?: typeof observeStandaloneApiRuntime,
+ *   verifyBundle?: typeof verifyStandaloneInstallBundle}} ApiEgressDependencies */
+
+/** @param {string} bundle @param {NodeJS.ProcessEnv} env
+ * @param {ApiEgressDependencies} dependencies */
 export async function observeStandaloneApiEgress(bundle, env = process.env, dependencies = {}) {
   const command = dependencies.dockerCommand ?? executeDockerProbe;
   const observe = dependencies.observeApiRuntime ?? observeStandaloneApiRuntime;
@@ -79,6 +85,9 @@ export async function observeStandaloneApiEgress(bundle, env = process.env, depe
     const dnsIsolated = await command(["exec", before.apiContainerId,
       "node", "-e", apiEgressDnsScript, canaryAddress, String(canaryPort)], true);
     const dnsControlAfter = await command(dnsControlArgs, true);
+    if (!controlBefore || !dnsControlBefore) {
+      throw new Error("API canary positive control was not observed");
+    }
     validateApiEgressProbe({ subnet, routeTable, canaryAddress,
       controlBefore, isolated, controlAfter, dnsControlBefore, dnsIsolated, dnsControlAfter });
     const after = await observe(bundle, env);

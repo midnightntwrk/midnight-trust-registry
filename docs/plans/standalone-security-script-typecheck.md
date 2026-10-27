@@ -4,7 +4,7 @@ Issue #229 tracks typed assurance for the self-hosted 0.1.0 installer and
 operator workflow. The existing broad `checkJs` configuration includes the
 wizard and installer but permits implicit `any`; Quality CI now runs it.
 A second, strict no-emit gate runs
-`pnpm run check:security-boundaries-types` for forty-four privileged boundaries:
+`pnpm run check:security-boundaries-types` for forty-six privileged boundaries:
 
 | Checked file | Security decision |
 | --- | --- |
@@ -47,6 +47,8 @@ A second, strict no-emit gate runs
 | `scripts/check-standalone-egress.mjs` | Checked Docker command/result handoff and verified-bundle topology binding; the canary probe is limited observation, not general egress or actor evidence. |
 | `scripts/standalone-egress-canary-scripts.mjs` | One shared source for the offline HTTP and DNS/UDP canary programs used by API and ledger probes. |
 | `scripts/check-standalone-local-egress.mjs` | Checked local positive/negative canary probe command/result handoff and cleanup; a passing probe does not establish full host or actor egress denial. |
+| `scripts/check-standalone-api-runtime.mjs` | Checked Docker API-container topology, pinned image/env/command, approval mount, process identity, and non-public listener decisions. Parsed Docker JSON remains untrusted. |
+| `scripts/check-standalone-api-egress.mjs` | Checked API canary positive/negative control orchestration and cleanup. It does not establish full DNS isolation, independent finality, or actor egress denial. |
 | `scripts/standalone-api-egress-policy.mjs` | Requires live positive controls and confined API routes, and accepts only specified TCP and DNS route-denial results. Docker probe orchestration and broader protocol coverage remain outside this typed decision. |
 | `scripts/standalone-docker-probe-command.mjs` | Strictly typed Docker command result and zero-exit enforcement for the API egress observer. Live Docker/network observation remains outside this helper. |
 | `scripts/runtime-healthcheck.mjs` | Exact runtime healthcheck shape for the API and static portals. |
@@ -71,7 +73,7 @@ inventory, not a waiver of the release security review.
 | 2 | Provider runtime installation/ownership transfer | The staging shell and install-bundle verifier are now strictly checked; the actual root-owned transfer and independently reviewed content digest remain operator actions. The direct deployment and insertion CLIs are disabled; the wizard imports these functions after approval checks. |
 | 3 | Installer runtime observations | Bundle generation and Docker image-load I/O now join the strict gate, alongside bundle verification, base Compose/image-inventory mappings, static portal archive, and runtime healthcheck decisions. Docker daemon identity and actual offline behavior still require independent deployment evidence; checked-JS is not that evidence. |
 | 4 | `scripts/check-helm-image-mapping.mjs`, `scripts/observe-helm-runtime.mjs` | Optional Kubernetes mapping and observations; Helm is not a 0.1.0 RC gate. |
-| 5 | `scripts/check-standalone-api-egress.mjs` | Ledger topology, internal canary, and disposable local positive/negative egress observers join the strict gate. The API probe orchestration remains non-strict; it imports an untyped runtime observer, so adding its entire shell requires typing that dependency without blanket `any` assertions. Keep live image identity and route-denial tests. |
+| 5 | Runtime egress observations beyond the dedicated API/ledger probes | Ledger topology, internal canary, disposable local positive/negative egress, API runtime identity, and API route probes join the strict gate. Host, wallet, browser, backup, and actual actor egress still require measured deployed evidence; checked-JS does not prove them. |
 | 6 | `scripts/observe-standalone-qualification.mjs`, `scripts/check-standalone-current-query-journey.mjs`, `scripts/check-standalone-api-restart.mjs` | The aggregate's scope decision and current-query process-identity decision are strictly checked, but Docker/runtime probe I/O and report identity assembly remain non-strict. Keep exact-source, install, deployment, and container identity negatives while typing the remaining shells. |
 
 The standalone acceptance inventory checker and its manifest-shape and
