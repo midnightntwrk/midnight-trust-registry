@@ -2389,3 +2389,34 @@ unpublished signed/DCO branches. Focused observer/acceptance tests, the API's
 256-test suite, integration profile tests, typecheck, lint, docs build, and
 dependency audit passed in the writable checkout. Neither change provides a
 deployed actor journey or clears #219, #220, or the release security gates.
+
+### Local issuer proposal assembly, 2026-10-27
+
+The local-only issuer path now has a reviewer-visible terms binder, an unsigned
+Compact signing context from the selected policy and current verifier key, a
+side-effect-free SDK submission preflight, and an opt-in API issuer-port
+assembly. The assembly requires a captured pending/accepted admission pair,
+live DID/VP/VC-status and trusted-time verification, a finalized policy/ledger
+reader, and immutable provider-code checks. The packaged signed-plan CLI does
+not instantiate it and remains read-only. A failure after the API journal
+reserves an attempt remains quarantined for explicit recovery; it must not
+trigger an automatic retry.
+
+The private admission store now reads the pending and accepted records from
+one validated file state, and HTTP admission prefers that captured pair.
+The local-ledger source now returns the policy snapshot, Compact ledger, and
+finalized block hash from one bounded read; the approved-plan wrapper adds
+its signed genesis pin. These changes prevent mixed record/checkpoint reads,
+but do not independently authenticate local-node finality or provide a live
+VC-owned status adapter. The injected-port tests, 261 API tests, 104 API
+integration tests, build/typecheck/lint, docs checks, and low-level dependency
+audit passed locally at this stage. They are not a deployed offline E2E run.
+
+The dedicated b26 setup remained pre-deployment at inspection: no approved
+genesis, contract address, reconciled verifier keys, or maintenance transition;
+its install candidate also predates the new source. Do not reuse that setup as
+qualification evidence for these commits. The next candidate needs a new
+exact-source verified bundle and human-signed genesis/maintenance approvals,
+then real deployed readback, live status authority, egress-denied actor cases,
+restart/restore, and independent human security review. Keep #198 draft and
+the local 0.1.0 RC unqualified until those gates are evidenced.
