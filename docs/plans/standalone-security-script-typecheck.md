@@ -4,7 +4,7 @@ Issue #229 tracks typed assurance for the self-hosted 0.1.0 installer and
 operator workflow. The existing broad `checkJs` configuration includes the
 wizard and installer but permits implicit `any`; Quality CI now runs it.
 A second, strict no-emit gate runs
-`pnpm run check:security-boundaries-types` for thirty-six privileged boundaries:
+`pnpm run check:security-boundaries-types` for thirty-seven privileged boundaries:
 
 | Checked file | Security decision |
 | --- | --- |
@@ -32,6 +32,7 @@ A second, strict no-emit gate runs
 | `scripts/standalone-genesis-review-policy.mjs` | Untrusted candidate and proposed pin comparison against a verified profiled install. |
 | `scripts/standalone-genesis-review-packet.mjs` | Typed rendering of the untrusted human genesis review packet; its digests and contents cannot become an approval. |
 | `scripts/standalone-genesis-review-io.mjs` | Private packet input reads, verified-bundle handoff, and non-overwriting output bytes. The bundle verifier itself remains non-strict. |
+| `scripts/prepare-standalone-genesis-review.mjs` | Strictly typed packet entrypoint and injectable verified-bundle callback; it does not independently approve the proposed pin. |
 | `scripts/standalone-journey-prerequisites-policy.mjs` | Fail-closed wizard-status gate decisions before an offline actor run. |
 | `scripts/standalone-qualification-scope-policy.mjs` | Rejects current-query and API-restart child reports that claim unobserved actor, finality, host/browser egress, deployment binding, or release qualification. |
 | `scripts/standalone-current-query-process-policy.mjs` | Requires a valid container ID, process start time, and restart count before the current-query observer compares reads around egress. |
@@ -59,7 +60,7 @@ inventory, not a waiver of the release security review.
 
 | Priority | Files | Reason to retain until typed |
 | --- | --- | --- |
-| 1 | `scripts/standalone-setup-wizard.mjs`, `scripts/prepare-standalone-genesis-review.mjs` | Signed genesis, committee, deployment, and recovery approval sequencing. Reviewer metadata, committee validation, untrusted genesis-review comparison, packet rendering and private packet I/O, private-file reads, and API approval-chain export are strictly checked; the wizard transitions, thin packet entrypoint, and bundle verifier remain non-strict. |
+| 1 | `scripts/standalone-setup-wizard.mjs` | Signed genesis, committee, deployment, and recovery approval sequencing. Reviewer metadata, committee validation, untrusted genesis-review comparison, packet rendering and private packet I/O, packet entrypoint, private-file reads, and API approval-chain export are strictly checked; the wizard transitions remain non-strict. |
 | 2 | Provider runtime installation/ownership transfer | The staging shell and install-bundle verifier are now strictly checked; the actual root-owned transfer and independently reviewed content digest remain operator actions. The direct deployment and insertion CLIs are disabled; the wizard imports these functions after approval checks. |
 | 3 | Installer runtime observations | Bundle generation and Docker image-load I/O now join the strict gate, alongside bundle verification, base Compose/image-inventory mappings, static portal archive, and runtime healthcheck decisions. Docker daemon identity and actual offline behavior still require independent deployment evidence; checked-JS is not that evidence. |
 | 4 | `scripts/check-helm-image-mapping.mjs`, `scripts/observe-helm-runtime.mjs` | Optional Kubernetes mapping and observations; Helm is not a 0.1.0 RC gate. |
@@ -71,6 +72,14 @@ The standalone acceptance inventory checker is included in the broad
 private-file reads and candidate identity comparison remain runtime-tested in
 the non-strict I/O shell. Neither gate authenticates operator evidence or
 replaces independent review.
+
+The next acceptance-checker migration should define a runtime-validated
+manifest/case/evidence schema before adding its 450-line I/O shell to the
+strict gate. A direct strict-gate probe found implicit input types and
+untyped per-case maps across attachment, operator verdict, and observation
+binding. Do not satisfy the gate with blanket `any` assertions over parsed
+private evidence; preserve malformed-input negatives and the existing
+source-bound decision-chain tests.
 
 The journey-prerequisite policy is strictly checked separately from its CLI
 adapter, which imports the still non-strict wizard. The policy rejects
