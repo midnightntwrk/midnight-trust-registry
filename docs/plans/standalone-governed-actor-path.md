@@ -20,19 +20,30 @@ Compact preflight, provider-identity comparison, and a one-attempt durable
 journal, plus a pinned local submission-provider prototype. Its existing
 tests use injected readers/providers. None of these is wired to the signed
 production API plan, and they do not prove a deployed actor journey.
+The opt-in `createBoundLocalIssuerProposalPort` now validates a separate
+`tr-local-issuer-writer-approval-v1` annex against the exact signed API plan
+digest and reviewer, source/inventory, network/genesis/contract, bounded
+validity interval, immutable provider content digest, and journal path. It
+rechecks that annex and installed provider identity around proposal work.
+The CLI neither loads this annex nor supplies the required authenticated
+finalized reader, trusted time, captured admission, live DID/VC/status
+verification, and approved submission provider. A signed annex by itself
+must not turn `GET /health` into write readiness or make a fixture port
+qualify as a production actor path.
 `GET /health` lists configured proposal-port roles; port presence is a
 configuration observation, not an authenticated write or release verdict.
 
 ## Implementation order
 
-1. **Bind the writer to the approved installation.** Extend the signed local
-   API plan with an exact provider-module digest, immutable installed root,
-   deployment/chain identity, and private journal location. Load only that
-   source-matched provider code, verify it before startup and each submission,
-   and keep wallet secrets outside the plan, logs, and HTTP responses. Refuse
-   writes if the provider identity, finalized reader, signed plan, or runtime
-   image disagree. Reuse the existing root-owned provider verification path;
-   a writable development checkout is not an approved writer.
+1. **Install the reviewed writer boundary.** The separate signed issuer-writer
+   annex and opt-in port cover the plan/provider/journal binding in injected
+   tests; do not replace that annex with an unsigned CLI flag. An operator
+   host must load and verify the annex, transfer provider code to a root-owned
+   immutable tree, supply the approved provider from that tree, and recheck
+   its content before each SDK use. It must bind the journal and running API
+   image to the same signed plan and deployment. Wallet secrets remain outside
+   plans, logs, and HTTP responses. A writable development checkout or a
+   merely present proposal port is not an approved writer.
 2. **Bind admission to current evidence.** Configure pending-application and
    accepted-evidence persistence for the same signed deployment. Verify the
    actual local DID resolver, VC status authority, challenge, applicant
@@ -51,8 +62,11 @@ configuration observation, not an authenticated write or release verdict.
    with a side-effect-free preflight, current finalized reader, one-attempt
    journal, approved provider, and finalized resolution. Prepare and submit
    must reject stale plan, scope, evidence key, signer set, nonce/sequence, or
-   provider identity before broadcast. Ambiguous submission remains reserved
-   under #220; no blind retry or automatic journal release.
+   provider identity before broadcast. The signed CLI currently constructs
+   none of this port's deployment-owned dependencies, so it must continue to
+   return 503 for writes until an independently reviewed adapter supplies
+   them all. Ambiguous submission remains reserved under #220; no blind retry
+   or automatic journal release.
 5. **Expand actor coverage.** Add verifier, auditor, maintainer, recognition,
    and governed decision adapters using the same deployment, provider, and
    recovery invariants. A partial issuer path must not be reported as the
