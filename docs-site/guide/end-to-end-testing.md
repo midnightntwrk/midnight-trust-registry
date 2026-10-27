@@ -44,6 +44,11 @@ applicant and admin flows in a real browser, install Google Chrome and run
 the Playwright command above (or `pnpm run test:e2e:demo:browser` to rerun both
 lanes). If the browser is unavailable, report that lane as **not run** rather
 than passed. Neither result is a standalone `A01`-`O01` verdict.
+If full Compact outputs already exist in an artifact-bearing checkout, use
+`pnpm run integration:prebuilt` for the package and simulator integration lane.
+It checks all 66 full proof circuits, rebuilds only TypeScript/UI packages, and
+does not call the Compact build or remove its `dist` tree. It does not establish
+the provenance of those artifacts or count as a deployed standalone actor run.
 CI installs Playwright-pinned Chromium instead of Google Chrome. Both variants
 still use fixture identity/status and simulator governance; a green CI browser
 step is **not** standalone deployment evidence. The browser suite also checks

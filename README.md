@@ -41,6 +41,10 @@ fixture API/UI, not standalone deployment. See the end-to-end guide for the
 separate local-ledger acceptance stop gates.
 With Google Chrome available, `pnpm run test:e2e:demo:browser` also runs the
 applicant and admin browser specs without a destructive light rebuild.
+In a checkout retaining full Compact proving artifacts, use
+`pnpm run integration:prebuilt` for the package and simulator integration lane;
+it verifies the existing 66-circuit output and rebuilds TypeScript/UI packages
+without recompiling Compact. Neither command is deployed-ledger evidence.
 
 The packaged signed local-ledger API currently serves reads but does not wire
 governed writes or a live VC status-authority adapter. Do not substitute demo

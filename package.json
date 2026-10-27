@@ -56,6 +56,7 @@
     "check:adversarial-parity": "node scripts/check-adversarial-parity.mjs",
     "check:action-kind-parity": "node scripts/check-action-kind-parity.mjs",
     "integration": "turbo run integration --continue && turbo run build --filter=@midnight-ntwrk/trust-registry-trqp-adapter --only && node scripts/demo-governed-registry.mjs && node scripts/demo-auditor-admission.mjs smoke && node scripts/demo-signed-membership-journey.mjs issuer && node scripts/demo-signed-membership-journey.mjs verifier && node scripts/demo-signed-membership-journey.mjs auditor && node scripts/demo-signed-membership-journey.mjs maintainer && node scripts/demo-signed-journey.mjs && pnpm run contract:check-full-artifacts",
+    "integration:prebuilt": "bash scripts/integration-prebuilt.sh",
     "integration:light": "rm -rf contracts/trust-registry/dist && turbo run integration:light --continue && turbo run build:light --filter=@midnight-ntwrk/trust-registry-trqp-adapter --only && node scripts/demo-governed-registry.mjs && node scripts/demo-auditor-admission.mjs smoke && node scripts/demo-signed-membership-journey.mjs issuer && node scripts/demo-signed-membership-journey.mjs verifier && node scripts/demo-signed-membership-journey.mjs auditor && node scripts/demo-signed-membership-journey.mjs maintainer && node scripts/demo-signed-journey.mjs",
     "lint": "turbo run lint --continue",
     "typecheck": "turbo run typecheck --continue && pnpm run typecheck:security-scripts",
