@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const workflow = readFileSync(join(root, ".github/workflows/publish.yml"), "utf8");
+const publisher = readFileSync(join(root, "scripts/publish-npm-packages.sh"), "utf8");
 const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
 
 function run(script, args) {
@@ -46,4 +47,5 @@ test("publish workflow binds signed source, manifest verification and tested tar
   }
   assert.doesNotMatch(workflow, /run: node scripts\/release-set-version\.mjs --version "\$VERSION"\s*$/mu);
   assert.match(workflow, /MANIFEST_PATH: artifacts\/npm-release\.manifest\.json/u);
+  assert.match(publisher, /node scripts\/check-publish-tarball\.mjs "\$\{manifest_path\}" "\$\{tarball\}"/u);
 });

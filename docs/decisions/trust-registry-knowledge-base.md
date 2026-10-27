@@ -2474,3 +2474,12 @@ invocation now exits before reading a plan or submitting. The wizard remains
 the supported operator entry point and imports the same lower-level functions
 only after its retained approval checks. This closes an accidental adoption
 bypass, not the separate authenticated-finality or provider-code review gates.
+
+The local manifest-backed publish workflow now rechecks each tarball's
+manifest-pinned size and SHA-256 immediately before handing that tarball to
+`npm publish`. A streaming file checker rejects missing, linked,
+duplicate-manifest, truncated, and same-size altered inputs. Artifact
+workspace tests include the tampered-byte negative. This narrows the gap
+between the full-set verification and individual publish calls, but does not
+approve the release channel, complete human security review, or eliminate a
+compromised-runner time-of-check/time-of-use window.

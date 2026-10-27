@@ -63,6 +63,7 @@ while IFS= read -r workspace; do
     continue
   fi
 
+  node scripts/check-publish-tarball.mjs "${manifest_path}" "${tarball}" "${package_name}" "${version}"
   echo "[publish-npm-packages] Publishing tested tarball ${tarball} with npm tag ${npm_tag}"
   npm publish "${tarball}" --ignore-scripts --access public --registry "${registry}" --tag "${npm_tag}"
 done < <(node scripts/trust-registry-workspace-catalog.mjs --publish-workspaces)
