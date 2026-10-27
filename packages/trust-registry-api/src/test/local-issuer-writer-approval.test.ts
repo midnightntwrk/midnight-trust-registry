@@ -22,8 +22,10 @@ const fixture = () => {
     notAfter: new Date(Date.now() + 3_600_000).toISOString(),
   };
   const planSha256 = "e".repeat(64);
+  const approvedPlanReviewerFingerprint = "A".repeat(40);
   const approval = {
     format: "tr-local-issuer-writer-approval-v1", apiPlanSha256: planSha256,
+    reviewerFingerprint: approvedPlanReviewerFingerprint,
     sourceRevision: plan.sourceRevision, installInventorySha256: plan.installInventorySha256,
     networkId: plan.networkId, expectedGenesisHash: plan.expectedGenesisHash,
     contractAddress: plan.contractAddress,
@@ -32,15 +34,16 @@ const fixture = () => {
     submissionJournalPath: "/var/lib/trust-registry/issuer-journal.json",
     notBefore: plan.notBefore, notAfter: plan.notAfter,
   };
-  return { plan, planSha256, approval };
+  return { plan, planSha256, approvedPlanReviewerFingerprint, approval };
 };
 
 it("binds the writer annex to one signed plan, reviewed tree, and outside journal", () => {
-  const { plan, planSha256, approval } = fixture();
-  const binding = { plan, planSha256 };
+  const { plan, planSha256, approvedPlanReviewerFingerprint, approval } = fixture();
+  const binding = { plan, planSha256, approvedPlanReviewerFingerprint };
   expect(validateLocalIssuerWriterApproval(approval, binding)).toEqual(approval);
   for (const changed of [
     { apiPlanSha256: "1".repeat(64) },
+    { reviewerFingerprint: "B".repeat(40) },
     { sourceRevision: "1".repeat(40) },
     { installInventorySha256: "1".repeat(64) },
     { networkId: "preview" },
@@ -79,6 +82,7 @@ it("loads only the exact detached-signed writer annex", async () => {
     execFileSync("gpg", ["--homedir", verifier, "--batch", "--import"],
       { input: publicKey, stdio: ["pipe", "pipe", "pipe"] });
     const { plan, planSha256, approval } = fixture();
+    approval.reviewerFingerprint = fingerprint!;
     const approvalPath = join(root, "writer.json");
     const signaturePath = join(root, "writer.sig");
     const bytes = `${JSON.stringify(approval, null, 2)}\n`;
@@ -86,10 +90,13 @@ it("loads only the exact detached-signed writer annex", async () => {
     execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--detach-sign",
       "--output", signaturePath, approvalPath]);
     const input = { approvalPath, signaturePath, keyringDirectory: verifier,
-      reviewerFingerprint: fingerprint!, plan, planSha256 };
+      approvedPlanReviewerFingerprint: fingerprint!, plan, planSha256 };
     const loaded = await loadApprovedLocalIssuerWriterApproval(input);
     expect(loaded.approval).toEqual(approval);
     expect(loaded.approvalSha256).toBe(sha256(bytes));
+    await expect(loadApprovedLocalIssuerWriterApproval({ ...input,
+      approvedPlanReviewerFingerprint: "B".repeat(40) }))
+      .rejects.toThrow(/approved detached reviewer signature/u);
     await writeFile(approvalPath, `${JSON.stringify({ ...approval,
       providerContentSha256: "1".repeat(64) }, null, 2)}\n`);
     await expect(loadApprovedLocalIssuerWriterApproval(input))

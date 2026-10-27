@@ -444,7 +444,7 @@ immutable approved
 provider-code checks, and provider loading. The embedding host must verify a
 detached reviewer signature over a canonical `tr-local-issuer-writer-approval-v1`
 annex using `loadApprovedLocalIssuerWriterApproval`. The annex binds the exact
-signed API-plan SHA-256, source, install inventory, network, genesis, contract,
+signed API-plan SHA-256 and its verified reviewer fingerprint, source, install inventory, network, genesis, contract,
 provider root and content digest, API-owned submission journal path, and a
 validity window within the plan's. The host must initialize the journal at that
 path and provide the verified annex to the factory; constructing an unsigned

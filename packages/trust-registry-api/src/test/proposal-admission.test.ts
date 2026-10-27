@@ -274,10 +274,12 @@ describe("local issuer proposal terms", () => {
     const readTrustedTimeMs = vi.fn(async () => Date.parse("2026-10-13T00:00:02.000Z"));
     const providerContentSha256 = "c".repeat(64);
     const approvedPlanSha256 = "e".repeat(64);
+    const approvedPlanReviewerFingerprint = "A".repeat(40);
     const submissionJournalPath = "/var/lib/trust-registry/issuer-journal.json";
     const writerApproval = {
       format: "tr-local-issuer-writer-approval-v1" as const,
       apiPlanSha256: approvedPlanSha256,
+      reviewerFingerprint: approvedPlanReviewerFingerprint,
       sourceRevision: approvedIssuerPlan.sourceRevision,
       installInventorySha256: approvedIssuerPlan.installInventorySha256,
       networkId: approvedIssuerPlan.networkId,
@@ -318,7 +320,7 @@ describe("local issuer proposal terms", () => {
     }));
     const port = createBoundLocalIssuerProposalPort({
       plan: approvedIssuerPlan,
-      approvedPlanSha256, writerApproval, submissionJournalPath,
+      approvedPlanSha256, approvedPlanReviewerFingerprint, writerApproval, submissionJournalPath,
       async readCapturedAdmission(applicationId) {
         expect(applicationId).toBe(binding.applicationId);
         return { pending, accepted };

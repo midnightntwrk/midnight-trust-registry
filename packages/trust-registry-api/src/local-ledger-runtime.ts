@@ -210,7 +210,7 @@ type ApprovedLocalLedgerRuntimePlanInput = {
 
 export async function loadApprovedLocalLedgerRuntimePlanWithDigest(
   input: ApprovedLocalLedgerRuntimePlanInput,
-): Promise<{ plan: LocalLedgerRuntimePlan; planSha256: string }> {
+): Promise<{ plan: LocalLedgerRuntimePlan; planSha256: string; reviewerFingerprint: string }> {
   const planBytes = await readBoundedLocalApprovalFile(input.planPath, 1024 * 1024);
   await verifyDetachedLocalReviewerSignature({
     documentBytes: planBytes,
@@ -284,7 +284,7 @@ export async function loadApprovedLocalLedgerRuntimePlanWithDigest(
       keyringDirectory: input.keyringDirectory,
       governanceReviewerFingerprint: input.reviewerFingerprint });
   }
-  return { plan, planSha256: digest(planBytes) };
+  return { plan, planSha256: digest(planBytes), reviewerFingerprint: input.reviewerFingerprint };
 }
 
 export async function loadApprovedLocalLedgerRuntimePlan(

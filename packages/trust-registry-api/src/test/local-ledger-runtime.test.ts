@@ -320,6 +320,7 @@ describe("approved local-ledger API runtime", () => {
       expect(await loadApprovedLocalLedgerRuntimePlanWithDigest(input)).toEqual({
         plan: candidate,
         planSha256: sha256(await readFile(planPath)),
+        reviewerFingerprint: fingerprint,
       });
       await writeFile(planPath, `${JSON.stringify(candidate).replace('"networkId":"undeployed"',
         '"networkId":"preprod","networkId":"undeployed"')}\n`);

@@ -7,10 +7,12 @@ import { readBoundedLocalApprovalFile, verifyDetachedLocalReviewerSignature } fr
 const SHA256 = /^[0-9a-f]{64}$/u;
 const REVISION = /^[0-9a-f]{40}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
+const FINGERPRINT = /^[A-F0-9]{40}$/u;
 
 export type LocalIssuerWriterApproval = Readonly<{
   format: "tr-local-issuer-writer-approval-v1";
   apiPlanSha256: string;
+  reviewerFingerprint: string;
   sourceRevision: string;
   installInventorySha256: string;
   networkId: string;
@@ -27,6 +29,7 @@ type Binding = {
   plan: Pick<LocalLedgerRuntimePlan, "sourceRevision" | "installInventorySha256" | "networkId"
     | "expectedGenesisHash" | "contractAddress" | "notBefore" | "notAfter">;
   planSha256: string;
+  approvedPlanReviewerFingerprint: string;
 };
 
 const canonicalTime = (value: unknown): number => {
@@ -42,7 +45,7 @@ export function validateLocalIssuerWriterApproval(
     throw new Error("Local issuer writer approval must be an object");
   }
   const approval = value as Record<string, unknown>;
-  const keys = ["format", "apiPlanSha256", "sourceRevision", "installInventorySha256",
+  const keys = ["format", "apiPlanSha256", "reviewerFingerprint", "sourceRevision", "installInventorySha256",
     "networkId", "expectedGenesisHash", "contractAddress", "providerRoot",
     "providerContentSha256", "submissionJournalPath", "notBefore", "notAfter"];
   const root = approval.providerRoot;
@@ -51,6 +54,9 @@ export function validateLocalIssuerWriterApproval(
     || approval.format !== "tr-local-issuer-writer-approval-v1"
     || typeof binding.planSha256 !== "string" || !SHA256.test(binding.planSha256)
     || approval.apiPlanSha256 !== binding.planSha256
+    || typeof binding.approvedPlanReviewerFingerprint !== "string"
+    || !FINGERPRINT.test(binding.approvedPlanReviewerFingerprint)
+    || approval.reviewerFingerprint !== binding.approvedPlanReviewerFingerprint
     || typeof approval.sourceRevision !== "string" || !REVISION.test(approval.sourceRevision)
     || approval.sourceRevision !== binding.plan.sourceRevision
     || approval.installInventorySha256 !== binding.plan.installInventorySha256
@@ -80,12 +86,11 @@ export async function loadApprovedLocalIssuerWriterApproval(input: Binding & {
   approvalPath: string;
   signaturePath: string;
   keyringDirectory: string;
-  reviewerFingerprint: string;
 }): Promise<{ approval: LocalIssuerWriterApproval; approvalSha256: string }> {
   const bytes = await readBoundedLocalApprovalFile(input.approvalPath, 64 * 1024);
   await verifyDetachedLocalReviewerSignature({
     documentBytes: bytes, signaturePath: input.signaturePath,
-    keyringDirectory: input.keyringDirectory, reviewerFingerprint: input.reviewerFingerprint,
+    keyringDirectory: input.keyringDirectory, reviewerFingerprint: input.approvedPlanReviewerFingerprint,
     description: "Local issuer writer approval",
   });
   const raw = bytes.toString("utf8");

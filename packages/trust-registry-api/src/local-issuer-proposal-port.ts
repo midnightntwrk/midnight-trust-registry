@@ -66,6 +66,8 @@ export type LocalIssuerProposalPortDependencies = {
     | "sourceRevision" | "installInventorySha256" | "notBefore" | "notAfter">;
   /** Digest returned by verified loading of the exact signed API plan bytes. */
   approvedPlanSha256: string;
+  /** Reviewer identity returned by verification of that same signed API plan. */
+  approvedPlanReviewerFingerprint: string;
   /** Must be loaded from a separate, detached-signed writer approval. */
   writerApproval: LocalIssuerWriterApproval;
   /** The host must initialize the API-owned journal at this approved path. */
@@ -96,10 +98,12 @@ export function createBoundLocalIssuerProposalPort(
 ): GovernedIssuerProposalPort {
   const approval = validateLocalIssuerWriterApproval(dependencies.writerApproval, {
     plan: dependencies.plan, planSha256: dependencies.approvedPlanSha256,
+    approvedPlanReviewerFingerprint: dependencies.approvedPlanReviewerFingerprint,
   });
   const assertWriterApprovalCurrent = (): void => {
     validateLocalIssuerWriterApproval(approval, {
       plan: dependencies.plan, planSha256: dependencies.approvedPlanSha256,
+      approvedPlanReviewerFingerprint: dependencies.approvedPlanReviewerFingerprint,
     });
   };
   if (dependencies.submissionJournalPath !== approval.submissionJournalPath) {

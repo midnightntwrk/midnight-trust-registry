@@ -137,7 +137,8 @@ finality, live VC-owned status verification, and the governed ports before
 place.
 For issuer writes, it must also verify the detached reviewer signature on the
 writer annex, bind it to the exact signed API plan and installed provider
-content, and initialize the API-owned submission journal at the annex's path.
+content, require the same verified plan reviewer fingerprint, and initialize
+the API-owned submission journal at the annex's path.
 The opt-in issuer port tests exercise this boundary with injected providers;
 they are not a deployed local-ledger actor journey.
 

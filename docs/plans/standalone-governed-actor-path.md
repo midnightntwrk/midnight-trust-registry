@@ -207,7 +207,8 @@ verified runtime identity, rather than only succeed without a result. Before
 loading providers, after loading them, and at the transport broadcast guard,
 it compares the returned source revision and install-inventory digest with
 the signed API plan and the content digest with a separately detached-signed
-writer annex. That annex binds the exact signed plan digest, provider root,
+writer annex. That annex binds the exact signed plan digest and its verified
+reviewer fingerprint, provider root,
 content digest, and API-owned journal path; it cannot outlive the plan. A
 changed provider tree, source, inventory, or content pin fails closed, including
 when the annex expires during a long-running process. The embedding host must
