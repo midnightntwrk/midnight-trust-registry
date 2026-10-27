@@ -55,12 +55,10 @@ export async function observeStandaloneLocalEgress(dependencies = {}) {
   const command = dependencies.dockerCommand ?? docker;
   const topology = dependencies.observeTopology ?? observeStandaloneTopology;
   const expected = dependencies.expectedTopology;
-  const apiImage = expected?.apiRuntime?.configId;
+  const apiIds = [expected?.apiRuntime?.configId, expected?.apiRuntime?.imageId];
   const node = expected?.images?.find((entry) => entry.role === "node");
   if (!expected?.allowOffline || !expected?.sourceRevision || !expected?.installRelay
-    || !apiImage
-    || !/^sha256:[0-9a-f]{64}$/u.test(apiImage)
-    || !/^sha256:[0-9a-f]{64}$/u.test(expected.apiRuntime.imageId)
+    || apiIds.some((id) => !/^sha256:[0-9a-f]{64}$/u.test(id ?? ""))
     || !node?.acceptedIds?.length) {
     throw new Error("Local egress probe requires verified v6 node and API image identities");
   }
@@ -79,6 +77,12 @@ export async function observeStandaloneLocalEgress(dependencies = {}) {
     "Node image inspection");
   if (!node.acceptedIds.includes(nodeImage)) {
     throw new Error("Running node image differs from the verified bundle");
+  }
+  const apiTag = `tr-standalone/api:sha-${expected.sourceRevision}`;
+  const apiImage = requireSuccess(await command(["image", "inspect", "--format", "{{.Id}}", apiTag]),
+    "API image inspection");
+  if (!apiIds.includes(apiImage)) {
+    throw new Error("Loaded API image differs from the verified bundle");
   }
   const suffix = randomUUID();
   const networkName = `tr-local-egress-${suffix}`;
@@ -102,7 +106,7 @@ export async function observeStandaloneLocalEgress(dependencies = {}) {
     const [canary] = JSON.parse(requireSuccess(await command(["inspect", containerName]),
       "Local canary inspection"));
     const address = canary?.NetworkSettings?.Networks?.[networkName]?.IPAddress;
-    if (canary?.Image !== apiImage || isIP(address) !== 4) {
+    if (!apiIds.includes(canary?.Image) || isIP(address) !== 4) {
       throw new Error("Local canary identity or IPv4 address differs from the verified image");
     }
     const octets = address.split(".").map(Number);

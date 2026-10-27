@@ -22,7 +22,8 @@ test("generated canary script is valid Node source with escaped HTTP framing", (
   assert.ok(!localEgressCanaryServerScript.includes("No Content\r\n"));
 });
 
-function harness({ isolatedCurlCode = 7, isolatedDnsCode = 2, canaryImage = apiImage,
+function harness({ isolatedCurlCode = 7, isolatedDnsCode = 2, canaryImage,
+  loadedApiImage = apiImage,
   changedNetwork = false, canaryStartCode = 0 } = {}) {
   const calls = [];
   let observations = 0;
@@ -39,11 +40,14 @@ function harness({ isolatedCurlCode = 7, isolatedDnsCode = 2, canaryImage = apiI
     }
     if (args[0] === "network" && args[1] === "rm") return { code: 0, stdout: "" };
     if (args[0] === "rm") return { code: 0, stdout: "" };
+    if (args[0] === "image" && args[1] === "inspect") {
+      return { code: 0, stdout: `${loadedApiImage}\n` };
+    }
     if (args[0] === "inspect" && args[1] === "--format") {
       return { code: 0, stdout: `${nodeImage}\n` };
     }
     if (args[0] === "inspect") return { code: 0, stdout: JSON.stringify([{
-      Image: canaryImage, NetworkSettings: { Networks: {
+      Image: canaryImage ?? loadedApiImage, NetworkSettings: { Networks: {
         [controlNetwork]: { IPAddress: "172.31.0.7" },
       } },
     }]) };
@@ -99,6 +103,19 @@ test("offline ledger probe rejects leakage and changed identities", async () => 
     expectedTopology: { ...expectedTopology, apiRuntime: null } }), /verified v6/u);
   await assert.rejects(observeStandaloneLocalEgress({ ...harness(),
     expectedTopology: { ...expectedTopology, installRelay: null } }), /verified v6/u);
+  const unapproved = harness({ loadedApiImage: nodeImage });
+  await assert.rejects(observeStandaloneLocalEgress({ ...unapproved, expectedTopology }),
+    /Loaded API image differs/u);
+  assert.ok(!unapproved.calls.some((args) => args[0] === "network" && args[1] === "create"));
+});
+
+test("offline ledger probe accepts the verified OCI index ID loaded by Docker", async () => {
+  const setup = harness({ loadedApiImage: apiIndex });
+  const result = await observeStandaloneLocalEgress({ ...setup, expectedTopology,
+    env: { TR_STACK_NAME: "tr-standalone-local-probe" } });
+  assert.equal(result.canaryImage, apiIndex);
+  const canaryRun = setup.calls.find((args) => args[0] === "run" && args.includes("-d"));
+  assert.ok(canaryRun.includes(apiIndex));
 });
 
 test("offline ledger probe cleans its network after canary startup failure", async () => {
