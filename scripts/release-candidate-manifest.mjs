@@ -52,6 +52,17 @@ const assertExactTarballs = (artifactDir, filenames) => {
   }
 };
 
+/** @param {string} path */
+const packedTarballSize = (path) => {
+  if (!existsSync(path)) throw new Error(`Packed artifact is missing or empty: ${path}`);
+  const file = lstatSync(path);
+  if (!file.isFile() || file.nlink !== 1) {
+    throw new Error(`Packed artifact must be a single-link regular file: ${path}`);
+  }
+  if (file.size === 0) throw new Error(`Packed artifact is missing or empty: ${path}`);
+  return file.size;
+};
+
 /** @param {string} tarball */
 export function packedEntries(tarball) {
   const paths = run("tar", ["-tzf", tarball]).split("\n").filter(Boolean);
@@ -117,9 +128,7 @@ export function buildReleaseCandidateManifest(input) {
     }
     const filename = packedFilename(manifest.name, manifest.version);
     const path = join(artifactDir, filename);
-    if (!existsSync(path) || statSync(path).size === 0) {
-      throw new Error(`${workspace}: packed artifact is missing or empty: ${filename}`);
-    }
+    const sizeBytes = packedTarballSize(path);
     const entries = packedEntries(path);
     assertCanonicalPackedPaths(entries);
     assertRequiredPackedPaths(entries, workspace);
@@ -130,7 +139,7 @@ export function buildReleaseCandidateManifest(input) {
       version: manifest.version,
       publication: publish.includes(workspace) ? "npm" : "local-only",
       filename,
-      sizeBytes: statSync(path).size,
+      sizeBytes,
       sha256: sha256(path),
     };
   });
@@ -291,7 +300,7 @@ export function verifyReleaseCandidateArtifacts(manifest, artifactDir, workspace
     seen.add(entry.workspace);
     filenames.add(entry.filename);
     const path = join(artifactDir, entry.filename);
-    if (!existsSync(path) || statSync(path).size !== entry.sizeBytes || sha256(path) !== entry.sha256) {
+    if (packedTarballSize(path) !== entry.sizeBytes || sha256(path) !== entry.sha256) {
       throw new Error(`Release candidate artifact hash or size mismatch: ${entry.filename}`);
     }
     const entries = packedEntries(path);
