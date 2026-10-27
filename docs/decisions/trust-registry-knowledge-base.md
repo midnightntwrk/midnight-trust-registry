@@ -2506,6 +2506,12 @@ maintenance, and release scripts are listed with migration priority and owner in
 `docs/plans/standalone-security-script-typecheck.md`. This does not type the
 large wizard or replace its adversarial tests and independent human review.
 
+Provider staging now delegates its expected-workspace, unique archive-name,
+and SHA-256 catalog decision to a strictly checked pure policy. Malformed and
+duplicate catalog entries are rejected before extraction. The staging I/O
+shell and its installer dependencies remain outside the strict gate; this
+does not qualify the install or prove any deployed actor journey.
+
 The wizard's canonical reviewer metadata and release committee/custody
 validation now live in a strictly checked, side-effect-free policy module.
 Direct negatives cover noncanonical/missing fields, synthetic references,

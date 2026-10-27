@@ -20,6 +20,7 @@
     "scripts/local-verifier-key-insertion-plan-policy.mjs",
     "scripts/package-contents-policy.mjs",
     "scripts/provider-runtime-content.mjs",
+    "scripts/provider-stage-package-policy.mjs",
     "scripts/release-candidate-manifest.mjs",
     "scripts/check-published-package-integrity.mjs",
     "scripts/check-publish-tarball.mjs",

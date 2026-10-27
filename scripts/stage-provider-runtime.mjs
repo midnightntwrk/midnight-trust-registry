@@ -11,12 +11,12 @@ import { fileURLToPath } from "node:url";
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { assertImmutableProviderTree } from "./immutable-provider-tree.mjs";
 import { providerRuntimeContent } from "./provider-runtime-content.mjs";
+import { providerStagePackageEntries } from "./provider-stage-package-policy.mjs";
 import { assertCanonicalPackedPaths, packedEntries } from "./release-candidate-manifest.mjs";
 import { artifactWorkspaces } from "./trust-registry-workspace-catalog.mjs";
 
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SHA = /^[0-9a-f]{40}$/u;
-const ARCHIVE_NAME = /^[a-z0-9][a-z0-9.-]*\.tgz$/u;
 const REQUIRED_ENTRYPOINTS = ["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml",
   "scripts/approved-provider-preload.mjs",
   "scripts/immutable-provider-tree.mjs", "scripts/local-ledger-deploy.mjs",
@@ -100,19 +100,6 @@ async function assertExtractedSource(root, expected) {
   }
 }
 
-function packageEntries(manifest, expectedWorkspaces) {
-  const packages = manifest?.packages;
-  if (!Array.isArray(packages) || packages.length !== expectedWorkspaces.length
-    || new Set(packages.map((item) => item?.workspace)).size !== packages.length
-    || new Set(packages.map((item) => item?.filename)).size !== packages.length
-    || packages.some((item) => !item || !expectedWorkspaces.includes(item.workspace)
-      || typeof item.filename !== "string" || !ARCHIVE_NAME.test(item.filename)
-      || !/^[0-9a-f]{64}$/u.test(item.sha256 ?? ""))) {
-    throw new Error("Verified bundle has an incomplete or unsafe provider package catalog");
-  }
-  return packages;
-}
-
 async function sha256File(path) {
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(path)) hash.update(chunk);
@@ -156,7 +143,7 @@ export async function stageProviderRuntime(bundleDirectory, destination, depende
   if (manifest.sourceRevision !== sourceRevision) {
     throw new Error("Release manifest does not match the signed source commit");
   }
-  const packages = packageEntries(manifest, dependencies.expectedWorkspaces ?? artifactWorkspaces);
+  const packages = providerStagePackageEntries(manifest, dependencies.expectedWorkspaces ?? artifactWorkspaces);
   if (verified.packageCount !== undefined && verified.packageCount !== packages.length) {
     throw new Error("Verified bundle package count differs from the release manifest");
   }
