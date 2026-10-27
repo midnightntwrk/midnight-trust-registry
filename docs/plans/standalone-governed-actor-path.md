@@ -134,9 +134,11 @@ durable reservation written before SDK submission, not those sets. The issuer
 SDK handoff regression tests reject broadcast when that write fails and keep
 an ambiguous attempt blocked after reopening the journal. A finalized reader
 can reconcile it to `observed`, but another reopen still cannot broadcast the
-same intent. These injected-SDK tests do not exercise an actual process crash,
-deployed ledger, or distinct-project restore; those remain release evidence
-under #219 and #230.
+same intent. The light preflight lane also runs the reservation, blocked retry,
+reconciliation, and blocked replay in four independent Node processes against
+one journal. The callback models a lost provider response; this does not kill
+a process mid-write or exercise a deployed ledger or distinct-project restore.
+Those remain release evidence under #219 and #230.
 An opt-in `createBoundLocalIssuerProposalPort` now composes the accepted
 application binder, current policy/ledger preflight, live-evidence callback,
 provider-code check, SDK preflight, and after-reservation execution. Its
