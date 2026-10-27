@@ -54,7 +54,7 @@ rewrite unpublished work to repair a stale base.
 | D | `50cbd1a5`..`c786254f` | Full-precision application, recognition, lifecycle, challenge, and TRQP evidence time decisions | RFC3339 offsets and long fractions, one-use nonce ordering, historical evidence selection; #179 remains open |
 | E | `8ea73b91` onward (after review-plan docs) | Bind the standalone read-only current-query probe to wizard-approved install inventory, project, network, genesis, and deployment | Reject cross-setup or cross-deployment evidence before egress; no claim of actor writes or independent finality |
 | F | `90eda72b`..`7a472176` | Prove the stale-sequence Compact invariant and bind a read-only recovery candidate to one immediately consumed action | An authenticated finalized action history and safe journal mutator are still absent; never treat a signed review decision as retry permission |
-| G | `7626be30` onward | Reject interrupted adversarial reports and move independent maintainer and denial safety scenarios out of the monolithic demo | Preserve 198-case demo/isolated parity; fixture cases are not deployed-ledger E2E |
+| G | `7626be30` onward | Reject interrupted adversarial reports and move independent maintainer, denial, and application-evidence safety scenarios out of the monolithic demo | Preserve 198-case demo/isolated parity; fixture cases are not deployed-ledger E2E |
 
 For a stacked publication, the first group would target #240, and each later
 group would target the immediately preceding group. The table is a review
@@ -112,11 +112,11 @@ waiver: #238 remains draft with external Opengrep OSS red, and #232 requires
 an independent human disposition of the observed transport boundary.
 The new local group G starts above F at signed/DCO commit `7626be30`.
 Its runner regression tests passed 6/6 and the full isolated report completed
-198/198 cases. The next local refactor moved seven maintainer and denial
-cases to named fixture modules; the governed demo and exact 198/198 case-ID
-parity still pass. This hardens report integrity and begins the remaining
-#216 demo extraction, but does not finish that issue or qualify a deployed
-actor journey. Hold group G
+198/198 cases. The next local refactors moved nine maintainer, denial, and
+application-evidence cases to named fixture modules; the governed demo and
+exact 198/198 case-ID parity still pass. This hardens report integrity and
+begins the remaining #216 demo extraction, but does not finish that issue or
+qualify a deployed actor journey. Hold group G
 locally until it is a coherent review-sized slice and publication is approved.
 
 ## Release boundary

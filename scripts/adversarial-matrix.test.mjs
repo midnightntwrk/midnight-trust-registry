@@ -2,6 +2,17 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { AdversarialMatrix } from "./adversarial-matrix.mjs";
+import { runApplicationEvidenceSafetyScenarios } from "./governed-demo-application-evidence-safety.mjs";
+
+test("runs signed application-evidence safety cases independently of the governed demo", () => {
+  const matrix = new AdversarialMatrix();
+  runApplicationEvidenceSafetyScenarios(matrix);
+  assert.deepEqual(matrix.report().summary, { total: 2, passed: 2, failed: 0 });
+  assert.deepEqual(matrix.report().cases.map(({ id }) => id), [
+    "issuer-signed-wrong-policy-id",
+    "issuer-expired-signed-application-evidence",
+  ]);
+});
 
 test("records checked problem types and scrubbed client rejection categories", async () => {
   const matrix = new AdversarialMatrix();

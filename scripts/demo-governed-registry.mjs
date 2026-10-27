@@ -86,6 +86,7 @@ import {
 } from "../packages/trust-registry-api/dist/index.js";
 import { AdversarialMatrix } from "./adversarial-matrix.mjs";
 import { buildActorEvidenceReport } from "./actor-evidence-report.mjs";
+import { runApplicationEvidenceSafetyScenarios } from "./governed-demo-application-evidence-safety.mjs";
 import { runDenialSafetyScenario } from "./governed-demo-denial-safety.mjs";
 import { runMaintainerSafetyScenarios } from "./governed-demo-maintainer-safety.mjs";
 import { TrustRegistryTrqpAdapter, verifyTrqpRecognitionEvidenceFromApi } from "../adapters/trqp/dist/index.js";
@@ -143,56 +144,7 @@ runMaintainerSafetyScenarios(adversarialMatrix, signCompact);
 const { denialEventHash, deniedIssuer, deniedBundle, replacementIssuer, replacementProposalEventHash } =
   runDenialSafetyScenario(adversarialMatrix, signCompact);
 
-const evidenceHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-evidence-boundaries");
-const policyIdIssuer = createIssuerScenarioFixture("governed-demo-wrong-policy-id");
-const expiringIssuer = createIssuerScenarioFixture("governed-demo-expired-evidence");
-const policyIdEvidence = evidenceHarness.createApplicationEvidence({
-  applicationId: policyIdIssuer.authorizationId,
-  subjectDid: policyIdIssuer.subjectDid,
-  role: "issuer",
-  scope: createIssuerAuthorizationScopeFixture(policyIdIssuer),
-  governedResource: { type: "credentialFamily", id: policyIdIssuer.resourceId },
-});
-const wrongPolicyEnvelope = { ...policyIdEvidence.envelope, policyId: "policy:wrong:v1" };
-const wrongPolicyCommitment = computeApplicationEvidenceCommitment(wrongPolicyEnvelope);
-const wrongPolicyEvidence = {
-  envelope: wrongPolicyEnvelope,
-  commitment: wrongPolicyCommitment,
-  signature: evidenceHarness.signApplicationEvidenceCommitment(wrongPolicyCommitment),
-};
-assert.equal(evidenceHarness.verifyApplicationEvidenceSignature(
-  wrongPolicyEvidence.commitment,
-  wrongPolicyEvidence.signature,
-  evidenceHarness.evidenceVerifier,
-), true);
-const evidenceActionsBeforeRejections = evidenceHarness.simulator.getLedger().governanceActionCount;
-adversarialMatrix.expectThrown(() => evidenceHarness.proposeIssuerWithApplicationEvidence(
-  policyIdIssuer, wrongPolicyEvidence,
-), {
-  id: "issuer-signed-wrong-policy-id",
-  invariant: "Even validly signed applicant evidence cannot substitute another governance policy ID",
-  boundary: "integration",
-  messagePattern: /policyId does not match/iu,
-  category: "policy-id-mismatch",
-});
-const expiringEvidence = evidenceHarness.createApplicationEvidence({
-  applicationId: expiringIssuer.authorizationId,
-  subjectDid: expiringIssuer.subjectDid,
-  role: "issuer",
-  scope: createIssuerAuthorizationScopeFixture(expiringIssuer),
-  governedResource: { type: "credentialFamily", id: expiringIssuer.resourceId },
-});
-evidenceHarness.advanceEvidenceTimeBy(24 * 60 * 60 * 1000 + 1);
-adversarialMatrix.expectThrown(() => evidenceHarness.proposeIssuerWithApplicationEvidence(
-  expiringIssuer, expiringEvidence,
-), {
-  id: "issuer-expired-signed-application-evidence",
-  invariant: "A validly signed evidence receipt expires before a later governed transition",
-  boundary: "integration",
-  messagePattern: /evidence is expired/iu,
-  category: "expired-application-evidence",
-});
-assert.equal(evidenceHarness.simulator.getLedger().governanceActionCount, evidenceActionsBeforeRejections);
+runApplicationEvidenceSafetyScenarios(adversarialMatrix);
 
 const policyHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-policy-replay");
 const policySecond = createMaintainerScenarioFixture("governed-demo-policy-second");
