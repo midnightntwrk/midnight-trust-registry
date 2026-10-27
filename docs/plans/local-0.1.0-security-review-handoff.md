@@ -76,3 +76,12 @@ Critical/high fixes require re-review at the new exact head. Do not put private
 keys, wallet seeds, credentials, or private setup files into a PR or issue.
 The release owner records the verdict on #232; an AI-authored summary cannot
 close that human gate.
+
+For first-run approval signatures, the wizard's exported verifier reads bounded
+document and signature bytes without following final symlinks, then verifies
+private snapshots with a constrained GPG process. The ordinary wizard approval
+path also snapshots the bytes it parses and retains. The API and optional Helm
+mapping use the same strict status policy, but their verifier implementations
+are not yet one shared module; [#235](https://github.com/midnightntwrk/midnight-trust-registry/issues/235)
+tracks that remaining convergence and adversarial review. These local tests
+do not authenticate the genesis source, the human reviewer, or ledger finality.

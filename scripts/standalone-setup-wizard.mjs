@@ -710,6 +710,11 @@ export async function verifyDetachedReviewerSignature(
   documentPath, signaturePath, keyringDirectory, expectedFingerprint, approvedAt,
 ) {
   if (!FINGERPRINT.test(expectedFingerprint)) throw new Error("Reviewer signing-key fingerprint must be canonical");
+  const documentBytes = await regularBytes(resolve(documentPath));
+  const signatureBytes = await regularBytes(resolve(signaturePath));
+  if (documentBytes.length > 32 * 1024 || signatureBytes.length > 64 * 1024) {
+    throw new Error("Reviewer approval document or signature exceeds the bounded evidence size");
+  }
   const publicKeySource = resolve(keyringDirectory);
   const sourceStat = await lstat(publicKeySource);
   const armoredExport = sourceStat.isFile();
@@ -746,6 +751,10 @@ export async function verifyDetachedReviewerSignature(
     const gpg = ["/usr/bin/gpg", "/opt/homebrew/bin/gpg", "/usr/local/bin/gpg"].find(existsSync);
     if (!gpg) throw new Error("A trusted GPG executable is required for reviewer approval");
     const verificationEnv = { PATH: "/usr/bin:/bin", HOME: temporary, LC_ALL: "C" };
+    const documentSnapshot = join(temporary, "approval.json");
+    const signatureSnapshot = join(temporary, "approval.sig");
+    await writeFile(documentSnapshot, documentBytes, { flag: "wx", mode: 0o600 });
+    await writeFile(signatureSnapshot, signatureBytes, { flag: "wx", mode: 0o600 });
     const keyring = join(temporary, "pubring.kbx");
     if (armoredExport) {
       const exportPath = join(temporary, "reviewer-public.asc");
@@ -758,7 +767,7 @@ export async function verifyDetachedReviewerSignature(
     const { stdout } = await execFileAsync(gpg, [
       "--batch", "--no-options", "--no-auto-key-retrieve", "--trust-model", "always",
       "--no-default-keyring", "--homedir", temporary, "--keyring", keyring,
-      "--status-fd=1", "--verify", signaturePath, documentPath,
+      "--status-fd=1", "--verify", signatureSnapshot, documentSnapshot,
     ], { timeout: 30_000, maxBuffer: 1024 * 1024, env: verificationEnv });
     assertDetachedReviewerSignatureStatus(stdout, expectedFingerprint, approvedAt);
   } finally {

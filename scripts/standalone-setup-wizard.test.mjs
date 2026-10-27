@@ -3225,6 +3225,14 @@ test("detached GPG verification accepts only the pinned signing key and exact by
   await writeFile(document, '{"format":"tr-local-genesis-approval-v1"}\n');
   execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--detach-sign", "--output", signature, document]);
   await verifyDetachedReviewerSignature(document, signature, verifier, fingerprint, approvedAt);
+  const linkedDocument = join(root, "linked-approval.json");
+  const linkedSignature = join(root, "linked-approval.sig");
+  await symlink(document, linkedDocument);
+  await symlink(signature, linkedSignature);
+  await assert.rejects(verifyDetachedReviewerSignature(linkedDocument, signature,
+    verifier, fingerprint, approvedAt));
+  await assert.rejects(verifyDetachedReviewerSignature(document, linkedSignature,
+    verifier, fingerprint, approvedAt));
   const fakeBin = join(root, "fake-bin");
   await mkdir(fakeBin);
   const marker = join(root, "path-gpg-called");
