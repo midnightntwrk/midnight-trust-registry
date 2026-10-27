@@ -260,7 +260,7 @@ export async function loadApprovedLocalLedgerRuntimePlanWithDigest(
         `images/${role}.manifest.json`, `images/${role}.image.tar`))
       || Object.keys(inventory.portalRuntimes ?? {}).sort().join(",") !== "admin,applicant"))
     || (installFormat === "tr-standalone-install-v6"
-      && (inventory.installRelay?.path !== "install-relay.py"
+      && (inventory.installRelay?.path !== "install-relay.mjs"
         || !["node", "api"].includes(inventory.installRelay.imageRole)
         || typeof inventory.installRelay.sha256 !== "string"
         || !SHA256.test(inventory.installRelay.sha256)))) {

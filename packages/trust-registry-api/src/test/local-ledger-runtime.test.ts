@@ -371,7 +371,7 @@ describe("approved local-ledger API runtime", () => {
       const v6 = { format: "tr-standalone-install-v6", sourceRevision, ...manifestPin,
         apiRuntime,
         portalRuntimes: { admin: portalPin("admin"), applicant: portalPin("applicant") },
-        installRelay: { path: "install-relay.py", sha256: "d".repeat(64), imageRole: "node" } };
+        installRelay: { path: "install-relay.mjs", sha256: "d".repeat(64), imageRole: "node" } };
       const signInventory = async (value: object) => {
         const bytes = JSON.stringify(value);
         await writeFile(candidate.installInventoryPath, bytes);
@@ -429,7 +429,7 @@ describe("approved local-ledger API runtime", () => {
       await signInventory({ ...v6, installRelay: { ...v6.installRelay, sha256: ["d".repeat(64)] } });
       await expect(loadApprovedLocalLedgerRuntimePlan(input))
         .rejects.toThrow(/approved install artifacts/u);
-      await signInventory({ ...v6, installRelay: { ...v6.installRelay, path: "../install-relay.py" } });
+      await signInventory({ ...v6, installRelay: { ...v6.installRelay, path: "../install-relay.mjs" } });
       await expect(loadApprovedLocalLedgerRuntimePlan(input))
         .rejects.toThrow(/approved install artifacts/u);
       await signInventory({ ...v6, installRelay: { ...v6.installRelay, imageRole: "indexer" } });

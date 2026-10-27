@@ -16,7 +16,7 @@ const targets = { node: "9944/tcp", indexer: "8088/tcp", "proof-server": "6300/t
 const ports = { node: "29944", indexer: "28088", "proof-server": "26300" };
 const relayTargets = { node: "30944/tcp", indexer: "38088/tcp", "proof-server": "36300/tcp" };
 const relayPorts = { node: "60944", indexer: "60888", "proof-server": "60630" };
-const bundle = { installRelay: { path: "/private/bundle/install-relay.py", sha256: "b".repeat(64),
+const bundle = { installRelay: { path: "/private/bundle/install-relay.mjs", sha256: "b".repeat(64),
   imageRole: "node", image: { role: "node", reference, acceptedIds: [digest] } },
   images: [{ role: "node", reference, acceptedIds: [digest] }] };
 const network = { Name: config.network, Id: "ledger-id", Internal: true,
@@ -43,13 +43,13 @@ const bindings = Object.fromEntries(services.map((service) => [relayTargets[serv
   [{ HostIp: "127.0.0.1", HostPort: relayPorts[service] }]]));
 const relay = {
   Id: "relay-id", Name: `/${config.project}-install-relay`, Image: digest,
-  Config: { Image: reference, Entrypoint: ["/usr/bin/python3"], Cmd: ["/relay.py"],
+  Config: { Image: reference, Entrypoint: ["node"], Cmd: ["/relay.mjs"],
     Labels: {}, Env: [], User: "root" },
   State: { Running: true }, HostConfig: { PortBindings: bindings },
   NetworkSettings: { Networks: { bridge: { NetworkID: "bridge-id" },
     [config.network]: { NetworkID: "ledger-id" } }, Ports: structuredClone(bindings) },
   Mounts: [{ Type: "bind", Source: bundle.installRelay.path,
-    Destination: "/relay.py", RW: false }],
+    Destination: "/relay.mjs", RW: false }],
 };
 const baseImage = { Id: digest, Config: { Env: [], User: "root" } };
 const checkStandaloneInstallRelay = (network, ledgerContainers, candidate, config, verified) =>
@@ -93,7 +93,7 @@ test("relay identity, mount, network, and effective ports fail closed", () => {
   assert.throws(() => checkStandaloneInstallRelay(network, containers, changedImage, config, bundle),
     /identity or entrypoint/u);
   const injectedEnvironment = structuredClone(relay);
-  injectedEnvironment.Config.Env = ["PYTHONPATH=/tmp/override"];
+  injectedEnvironment.Config.Env = ["NODE_OPTIONS=--import=/tmp/override.mjs"];
   assert.throws(() => checkStandaloneInstallRelay(network, containers, injectedEnvironment,
     config, bundle), /identity or entrypoint/u);
   const inheritedHealthcheck = structuredClone(relay);
@@ -148,7 +148,7 @@ test("relay identity, mount, network, and effective ports fail closed", () => {
 test("live relay observation hashes both host and running mount bytes", async () => {
   const root = await mkdtemp(join(tmpdir(), "tr-relay-check-"));
   try {
-    const path = join(root, "install-relay.py");
+    const path = join(root, "install-relay.mjs");
     const bytes = Buffer.from("# pinned relay\n");
     const sha256 = createHash("sha256").update(bytes).digest("hex");
     await writeFile(path, bytes);
@@ -160,7 +160,7 @@ test("live relay observation hashes both host and running mount bytes", async ()
       if (args[0] === "network") return JSON.stringify([network]);
       if (args[0] === "image") return JSON.stringify([baseImage]);
       if (args[0] === "exec") {
-        assert.deepEqual(args.slice(0, 5), ["exec", "relay-id", "/usr/bin/python3", "-I", "-c"]);
+        assert.deepEqual(args.slice(0, 4), ["exec", "relay-id", "node", "-e"]);
         return `${sha256}\n`;
       }
       if (args[0] === "inspect" && args[1] === "--type") return JSON.stringify([running]);
@@ -183,7 +183,7 @@ test("live relay observation hashes both host and running mount bytes", async ()
 test("live API relay observation inspects the verified API image tag", async () => {
   const root = await mkdtemp(join(tmpdir(), "tr-api-relay-check-"));
   try {
-    const path = join(root, "install-relay.py");
+    const path = join(root, "install-relay.mjs");
     const bytes = Buffer.from("# pinned API relay\n");
     const sha256 = createHash("sha256").update(bytes).digest("hex");
     await writeFile(path, bytes);
