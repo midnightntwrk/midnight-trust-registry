@@ -51,6 +51,16 @@ or claim exact-head CI. Verify GPG/DCO, focused and applicable full checks,
 and independent current-head review for each group after publication. The
 read-only local Codex review through `c786254f` found no actionable
 regression in group D, but later commits or PR rebases require a fresh review.
+Read-only Codex CLI reviews of group A at `31ef0672`, group B at
+`8fba8e05`, and group C at `bc55a27d` also reported no actionable
+regressions. Group B's reviewer ran focused egress/image-policy tests and
+the strict security-boundary typecheck. Group C's reviewer could not run
+temporary-file tests in its read-only sandbox, so a separate writable run at
+that exact local endpoint passed 41 install, acceptance, journey-prerequisite,
+and writer-review tests plus `test:e2e:demo`. Those results are fixture and
+predeployment checks, **not** installed-ledger actor E2E, authenticated
+finality, or a human security verdict. PR publication or changed heads still
+require fresh applicable CI and review.
 #238's unresolved external scan and #232's human security release gate remain
 separate stop conditions.
 
