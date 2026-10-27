@@ -120,7 +120,21 @@ it("verifies signed standalone approvals and rejects substitution", async () => 
     const alternateGenesis = await signed({ ...genesisDocument,
       reviewerFingerprint: alternateFingerprint }, "alternate-genesis", alternateFingerprint);
     await expect(verify({ ...chain, genesisApproval: alternateGenesis }))
-      .rejects.toThrow(/Genesis approval has no approved reviewer identity/u);
+      .rejects.toThrow(/approved deployment or maintenance state/u);
+    const alternateCommittee = await signed({
+      ...JSON.parse(Buffer.from(committeeApproval.documentBase64, "base64").toString("utf8")),
+      genesisApprovalSha256: alternateGenesis.documentSha256,
+    }, "alternate-committee");
+    const alternateDeployment = await signed({
+      ...JSON.parse(Buffer.from(committeeDeploymentApproval.documentBase64, "base64").toString("utf8")),
+      committeeApprovalSha256: alternateCommittee.documentSha256,
+    }, "alternate-deployment");
+    const alternateChain = { ...chain, genesisApproval: alternateGenesis,
+      committeeApproval: alternateCommittee,
+      committeeDeploymentApproval: alternateDeployment,
+      maintenanceReadback: { ...chain.maintenanceReadback,
+        committeeDeploymentApprovalSha256: alternateDeployment.documentSha256 } };
+    await expect(verify(alternateChain)).resolves.toBeUndefined();
     await expect(verify({ ...chain, contractAddress: `0x${"0".repeat(64)}` }))
       .rejects.toThrow(/contractAddress/u);
     await expect(verify({ ...chain, committeeApproval: { ...committeeApproval,
@@ -166,6 +180,13 @@ it("verifies signed standalone approvals and rejects substitution", async () => 
     await signRuntime(runtime);
     await expect(load()).resolves.toMatchObject({ format: "tr-local-api-runtime-v3",
       contractAddress });
+    const alternateChainBytes = Buffer.from(`${JSON.stringify(alternateChain)}\n`);
+    await writeFile(chainPath, alternateChainBytes);
+    await signRuntime({ ...runtime, approvalChainSha256: sha256(alternateChainBytes) });
+    await expect(load()).resolves.toMatchObject({ format: "tr-local-api-runtime-v3",
+      contractAddress });
+    await writeFile(chainPath, chainBytes);
+    await signRuntime(runtime);
     const legacy = Object.fromEntries(Object.entries(runtime)
       .filter(([key]) => key !== "approvalChainPath" && key !== "approvalChainSha256"));
     await signRuntime({ ...legacy, format: "tr-local-api-runtime-v2" });

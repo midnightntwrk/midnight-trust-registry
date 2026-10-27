@@ -91,8 +91,8 @@ export async function verifyLocalApiApprovalChain(input: {
     });
     return { document, hash: entry.documentSha256 as string };
   };
-  const genesis = await readApproval(chain.genesisApproval, "Genesis approval",
-    input.governanceReviewerFingerprint);
+  // Governance signs the genesis approval digest below; its signer may be a separate reviewer.
+  const genesis = await readApproval(chain.genesisApproval, "Genesis approval");
   const committee = await readApproval(chain.committeeApproval, "Committee approval",
     input.governanceReviewerFingerprint);
   const deployment = await readApproval(chain.committeeDeploymentApproval,
