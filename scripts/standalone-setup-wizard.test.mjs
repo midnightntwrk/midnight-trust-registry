@@ -1805,6 +1805,28 @@ test("rewritten deployment-bound approval cannot name a different finalized cont
   }), /Signed committee deployment binding disagrees with current setup state/u);
 });
 
+test("status rejects a deployment-bound approval with a substituted manifest digest or missing roster", async () => {
+  const f = await committeeTransitionFixture();
+  const recordPath = join(f.directory, "setup-record.json");
+  const original = JSON.parse(await readFile(recordPath, "utf8"));
+  const changed = structuredClone(original);
+  const approval = JSON.parse(Buffer.from(
+    changed.committeeDeploymentApproval.documentBase64, "base64",
+  ).toString("utf8"));
+  approval.releaseManifestSha256 = "f".repeat(64);
+  const bytes = Buffer.from(`${JSON.stringify(approval, null, 2)}\n`);
+  changed.committeeDeploymentApproval.documentBase64 = bytes.toString("base64");
+  changed.committeeDeploymentApproval.documentSha256 = createHash("sha256").update(bytes).digest("hex");
+  await writeFile(recordPath, JSON.stringify(changed));
+  assert.equal((await standaloneSetupStatus(f.directory)).maintenanceApproval,
+    "invalid-approval-evidence-investigate");
+
+  delete original.committeeApproval;
+  await writeFile(recordPath, JSON.stringify(original));
+  assert.equal((await standaloneSetupStatus(f.directory)).maintenanceApproval,
+    "invalid-approval-evidence-investigate");
+});
+
 test("deployment binding rejects a wrong contract or governance reviewer before signature verification", async () => {
   const f = await committeeTransitionFixture();
   const recordPath = join(f.directory, "setup-record.json");

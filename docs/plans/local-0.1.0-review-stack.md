@@ -62,7 +62,7 @@ rewrite unpublished work to repair a stale base.
 | I | `be2f3cb0` onward | Reject aggregate qualification reports whose child probes imply actor, finality, host/browser egress, or deployment-binding evidence they did not collect | Keep the observer read-only and `releaseQualified: false`; no fixture report substitutes for a signed deployed-ledger run |
 | J | `9044f4d4` onward | Strictly check the pure qualification scope decision and reject malformed/missing child report fields | Remaining probe I/O is non-strict; typed scope checks are not independently authenticated finality or deployed E2E |
 | K | `9f9ff560` onward | Require valid API container/process identity on both current reads around the egress probe, with strict checked-JS and negative tests | This is read-only observer assurance, not a deployed governed actor journey |
-| L | `24dd5acd` | Reject corrupted or setup-inconsistent retained genesis and committee approval evidence before deployment; expose an invalid status instead of a verified label | Retained-byte checks do not replace independent GPG trust-anchor verification, signed real chain-spec review, or deployed E2E |
+| L | `24dd5acd` onward | Reject corrupted or setup-inconsistent retained genesis, roster, and deployment-bound committee approval evidence; expose an invalid status instead of a verified label | Retained-byte checks do not replace independent GPG trust-anchor verification, signed real chain-spec review, or deployed E2E |
 
 For a stacked publication, the first group would target #240, and each later
 group would target the immediately preceding group. The table is a review
@@ -143,3 +143,12 @@ finalized deployment and readback, egress-denied actor journeys, deployed
 restart and restore, VC-owned live status authority, and independent review
 remain outstanding. Preserve generated Compact keys, verified install bundles,
 private setup evidence, and ledger volumes while preparing those runs.
+
+Group L's local wizard and journey-prerequisite tests passed 120/120 after
+its retained-evidence checks. Strict security-script typing, docs checks,
+and dependency audit passed. A read-only Codex review identified two status
+gaps for the deployment-bound approval (manifest digest and missing roster);
+both were fixed, and a second read-only review found no further actionable
+regression. The reviewer sandbox could not create test fixtures, so these
+test results are from the separate writable local run. Neither review nor
+fixture test authenticates a human signature or qualifies a deployed ledger.

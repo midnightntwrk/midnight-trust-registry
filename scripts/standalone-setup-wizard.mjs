@@ -5,7 +5,7 @@ import { execFile } from "node:child_process";
 import { constants, existsSync } from "node:fs";
 import { link, open, lstat, mkdir, mkdtemp, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -1489,7 +1489,7 @@ function readStoredCommitteeApproval(record, legacyReadOnly = false) {
   }
   return signedApproval;
 }
-function readStoredCommitteeDeploymentApproval(record, releaseManifestSha256 = /** @type {string | null} */ (null)) {
+function readStoredCommitteeDeploymentApproval(record, releaseManifestSha256) {
   const stored = record.committeeDeploymentApproval;
   const receipt = record.deployment?.result?.receipt;
   const document = Buffer.from(stored?.documentBase64 ?? "", "base64");
@@ -1513,7 +1513,7 @@ function readStoredCommitteeDeploymentApproval(record, releaseManifestSha256 = /
     || binding.committeeApprovalSha256 !== record.committeeApproval?.documentSha256
     || binding.deploymentPlanSha256 !== record.deployment?.planSha256
     || !SHA256.test(binding.releaseManifestSha256)
-    || (releaseManifestSha256 !== null && binding.releaseManifestSha256 !== releaseManifestSha256)
+    || binding.releaseManifestSha256 !== releaseManifestSha256
     || binding.expectedGenesisHash !== record.ledgerObservation?.expectedGenesisHash
     || binding.reviewerFingerprint !== record.committeeApproval?.reviewerFingerprint
     || binding.reviewerFingerprint !== stored.reviewerFingerprint
@@ -2062,7 +2062,28 @@ export async function standaloneSetupStatus(directory) {
   }
   if (record.setupId && record.committeeDeploymentApproval && committeeApprovalConsistent) {
     try {
-      readStoredCommitteeDeploymentApproval(record);
+      const inventory = await regularBytes(join(record.install.bundle, "install-inventory.json"));
+      if (sha256(inventory) !== record.install.inventorySha256) {
+        throw new Error("Installed inventory changed since deployment approval");
+      }
+      const pin = parseJsonBytes(inventory);
+      if (typeof pin.packageManifest !== "string" || pin.packageManifest.length === 0
+        || isAbsolute(pin.packageManifest) || pin.packageManifest.includes("\\")
+        || pin.packageManifest.split("/").some((part) => part === ".." || part === "." || part === "")) {
+        throw new Error("Installed release manifest path is unsafe");
+      }
+      const bundleRoot = await realpath(record.install.bundle);
+      const manifestPath = join(bundleRoot, pin.packageManifest);
+      const resolvedManifest = await realpath(manifestPath);
+      if (!resolvedManifest.startsWith(`${bundleRoot}${sep}`)) {
+        throw new Error("Installed release manifest escaped the bundle");
+      }
+      const manifest = await regularBytes(manifestPath);
+      if (!SHA256.test(pin.packageManifestSha256 ?? "")
+        || sha256(manifest) !== pin.packageManifestSha256) {
+        throw new Error("Installed release manifest changed since deployment approval");
+      }
+      readStoredCommitteeDeploymentApproval(record, sha256(manifest));
     } catch {
       committeeApprovalConsistent = false;
     }
@@ -2104,7 +2125,8 @@ export async function standaloneSetupStatus(directory) {
     stagedVerifierKeys: Object.entries(record.verifierKeyInsertions ?? {})
       .map(([circuitName, entry]) => ({ circuitName, state: entry.state })),
     setupLock: lockPresent ? "present-inspect-before-removal" : "absent",
-    maintenanceApproval: record.committeeApproval && !committeeApprovalConsistent
+    maintenanceApproval: (record.committeeApproval || record.committeeDeploymentApproval)
+      && !committeeApprovalConsistent
       ? "invalid-approval-evidence-investigate"
       : record.committeeDeploymentApproval
         ? "deployment-bound-roster-signature-verified-transition-pending"
