@@ -65,6 +65,38 @@ afterEach(async () => {
 });
 
 describe("signed local proposal reconciliation CLI", () => {
+  it("uses one verified finalized ledger view for archive compaction", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    await journal.bindDeployment("registry:local", `0x${"a".repeat(64)}`, genesisHash);
+    for (const [role, id] of [["issuer", authorizationId], ["verifier", "verifier:local:2"]] as const) {
+      await journal.executeOnce(role, id, evidenceCommitment,
+        async () => ({ eventHash }), reservationContext);
+      await journal.reconcile(role, id, async () => ({ eventHash, evidenceCommitment }));
+      await journal.rotateObserved(async () => ({ eventHash, evidenceCommitment }));
+    }
+    const ledger = { verified: true };
+    const readFinalizedProposalLedger = vi.fn().mockResolvedValue(ledger);
+    mocks.createSource.mockResolvedValueOnce({
+      loadSnapshot: vi.fn().mockResolvedValue({ registry: { registryId: "registry:local" } }),
+      readFinalizedProposalLedger,
+    });
+    mocks.resolveProposal.mockImplementation(async (reader: () => Promise<unknown>) => {
+      expect(await reader()).toBe(ledger);
+      return { eventHash, evidenceCommitment };
+    });
+
+    await runTrustRegistryApiCli(["compact-local-proposal-journal", ...args().slice(1, 9),
+      "--submission-journal", path]);
+
+    expect(mocks.resolveProposal).toHaveBeenCalledTimes(2);
+    expect(readFinalizedProposalLedger).toHaveBeenCalledTimes(1);
+    expect(await journal.inspectCapacity()).toMatchObject({ archiveCount: 1, archivedEntries: 2 });
+    expect(JSON.parse(output.join(""))).toMatchObject({
+      format: "tr-local-proposal-journal-compaction-v1", before: 2, after: 1,
+      independentFinality: "not-verified", retryPermitted: false, releaseQualified: false,
+    });
+  });
+
   it("marks a submitted attempt observed only after exact verified ledger evidence", async () => {
     const journal = new FileProposalSubmissionJournal(path);
     await journal.bindDeployment("registry:local", `0x${"a".repeat(64)}`, genesisHash);

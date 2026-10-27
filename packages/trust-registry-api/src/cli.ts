@@ -558,9 +558,12 @@ export const runTrustRegistryApiCli = async (
     await journal.assertDeploymentBinding(
       snapshot.registry.registryId, plan.contractAddress, plan.expectedGenesisHash,
     );
+    let finalizedLedger: ReturnType<FinalizedProposalLedgerReader> | undefined;
+    const readFinalizedLedger = (): ReturnType<FinalizedProposalLedgerReader> =>
+      finalizedLedger ??= source.readFinalizedProposalLedger();
     const result = await journal.compactObservedArchives(async (role, id) => {
       const proposal = await resolveCompactProposalEvidenceSnapshot(
-        source.readFinalizedProposalLedger, snapshot.registry.registryId, role, id,
+        readFinalizedLedger, snapshot.registry.registryId, role, id,
         Buffer.from(plan.contractAddress.slice(2), "hex"),
       );
       return proposal === null ? null : {
