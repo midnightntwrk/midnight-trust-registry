@@ -2880,3 +2880,31 @@ step after the older within the same millisecond, with IDs arranged to favor
 the older one under the former `Date.parse` sort. These tests narrow #179's
 historical evidence-selection risk but use synthetic operator snapshots, not
 an authenticated local-ledger history or deployed actor E2E evidence.
+
+## Policy replay isolation and current E2E boundary
+
+The unpublished local policy-replay slices extracted old-policy signer checks
+and historical HTTP checks from the governed demo into focused helpers. A
+separate regression runs snapshot publication and policy replay in different
+simulator harnesses, so the snapshot's governance actions cannot accidentally
+advance the replay sequence. It verifies that old-policy signatures fail for
+the prepared issuer decision without creating an authorization, while fresh
+signatures for the same payload and sequence succeed. The isolated adversarial
+runner also rejects a TAP subtest attributed to a different case ID or more
+than one top-level outcome. Local validation recorded 198 individually
+attributed adversarial cases, 235 demo-smoke tests, the four signed simulator
+role journeys, ten fixture-browser tests, and the prebuilt integration lane
+with all 66 full proof circuits. These are regression and fixture results,
+not a deployed standalone E2E run or release qualification.
+
+The private b23 setup remains pre-deployment and is tied to older source
+`6a5b2529`; its node-reported genesis candidate is unapproved. No current
+source-matched, human-signed genesis approval or authenticated finalized
+contract readback exists. The packaged local API is read-only and has no
+qualified governed-write actor host or VC-owned live status adapter. The next
+real E2E attempt must start from a new exact-source install, independent
+genesis and committee approvals, and a live finalized deployment; it must
+then record actor writes and reads with runtime egress denied, followed by
+deployed restart/restore and independent human security review. None of the
+local regression results above can be attached as a passing `A01`-`S01`
+acceptance case.

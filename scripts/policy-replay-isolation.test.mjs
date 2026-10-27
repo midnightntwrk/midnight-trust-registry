@@ -54,6 +54,9 @@ test("snapshot publication cannot confound isolated old-policy signature replay"
   const prepared = replayHarness.prepareIssuerDecisionAction(current, "approve");
   const sequence = replayHarness.simulator.getLedger().governanceActionCount;
   assert.equal(prepared.actionSequence, sequence);
+  const pendingAuthorization = structuredClone(replayHarness.simulator.getIssuerAuthorization(
+    current.authorizationIdCommitment,
+  ));
   const oldSignature = signAction(replayHarness, second, prepared, formerPolicy);
   const oldCoSignature = signAction(replayHarness, third, prepared, formerPolicy);
   assert.throws(() => replayHarness.simulator.authorizeIssuerAuthorization(
@@ -61,6 +64,9 @@ test("snapshot publication cannot confound isolated old-policy signature replay"
     current.authorizationIdCommitment, prepared.evidenceHash, [oldCoSignature],
   ), /Invalid Jubjub Schnorr signature/u);
   assert.equal(replayHarness.simulator.getLedger().governanceActionCount, sequence);
+  assert.deepEqual(replayHarness.simulator.getIssuerAuthorization(
+    current.authorizationIdCommitment,
+  ), pendingAuthorization);
 
   const currentPolicy = replayHarness.simulator.getLedger().governancePolicyCommitment;
   const signature = signAction(replayHarness, second, prepared, currentPolicy);
@@ -70,4 +76,7 @@ test("snapshot publication cannot confound isolated old-policy signature replay"
     current.authorizationIdCommitment, prepared.evidenceHash, [coSignature],
   );
   assert.equal(replayHarness.simulator.getLedger().governanceActionCount, sequence + 1n);
+  assert.notDeepEqual(replayHarness.simulator.getIssuerAuthorization(
+    current.authorizationIdCommitment,
+  ), pendingAuthorization);
 });
