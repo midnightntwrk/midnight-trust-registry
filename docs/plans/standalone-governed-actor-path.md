@@ -168,6 +168,13 @@ otherwise configured port without that digest and exposes it in health for
 the operator's capability preflight. This is a startup identity check, **not**
 signature verification by the server; the host must verify the actual signed
 bytes before constructing the port or listener.
+The issuer port now compares every authenticated snapshot it consumes, including
+SDK preflight and execution rereads, with the signed plan's network and
+contract, verifier-key catalog, maintenance committee/threshold/counter, and
+complete governance sequence timestamp count. A newly finalized governance
+action therefore stops the old writer until the operator manually reviews,
+re-signs, and restarts with a fresh plan. These comparisons do not authenticate
+the snapshot callback or configure the packaged CLI writer.
 
 The port separately requires a deployment-trusted time source and rejects
 accepted application evidence before its verified-at time or at/after expiry

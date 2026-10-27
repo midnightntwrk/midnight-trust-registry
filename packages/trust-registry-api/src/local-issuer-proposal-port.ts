@@ -1,9 +1,9 @@
 import type { ApplicationEvidenceSubmission, GovernancePolicySnapshot } from "@midnight-ntwrk/trust-registry-domain";
 import type { TrustRegistryJubjubSignature } from "@midnight-ntwrk/trust-registry-contract";
-import { TrustRegistryContract } from "@midnight-ntwrk/trust-registry-contract";
 import {
   executeLocalIssuerProposalAfterReservation,
   preflightLocalIssuerProposalSubmission,
+  type FinalizedRegistryLedgerView,
   type LocalIssuerProposalCall,
   type LocalIssuerProposalSubmissionInput,
 } from "@midnight-ntwrk/trust-registry-integration";
@@ -15,7 +15,11 @@ import {
   type GovernedIssuerProposalPort,
 } from "./governed-issuer-proposals.js";
 import type { GovernedMembershipSigner } from "./governed-membership-actions.js";
-import type { LocalLedgerRuntimePlan } from "./local-ledger-runtime.js";
+import {
+  assertApprovedDeploymentImage,
+  assertApprovedPlanCoversGovernanceCount,
+  type LocalLedgerRuntimePlan,
+} from "./local-ledger-runtime.js";
 import {
   LocalIssuerProposalTermsSchema,
   prepareBoundLocalIssuerProposal,
@@ -23,12 +27,11 @@ import {
 } from "./local-issuer-proposal-terms.js";
 import type { ProposalAdmissionPort } from "./proposal-admission.js";
 
-export type FinalizedIssuerSnapshot = {
-  contractAddress: string;
+export type FinalizedIssuerSnapshot = Pick<FinalizedRegistryLedgerView,
+  "networkId" | "contractAddress" | "verifierKeySha256" | "maintenanceAuthority" | "ledger"> & {
   genesisHash: string;
   finalizedBlockHash: string;
   policySnapshot: GovernancePolicySnapshot;
-  ledger: TrustRegistryContract.Ledger;
 };
 
 type CapturedIssuerAdmission = Awaited<ReturnType<NonNullable<ProposalAdmissionPort["readCapturedAdmission"]>>>;
@@ -45,7 +48,8 @@ export class LocalIssuerEvidenceTimeRejectedError extends Error {
 
 /** These dependencies must be implemented by a deployment-specific, independently reviewed adapter. */
 export type LocalIssuerProposalPortDependencies = {
-  plan: Pick<LocalLedgerRuntimePlan, "networkId" | "contractAddress" | "expectedGenesisHash">;
+  plan: Pick<LocalLedgerRuntimePlan, "networkId" | "contractAddress" | "expectedGenesisHash"
+    | "verifierKeySha256" | "maintenanceAuthority" | "sequenceTimestamps">;
   readCapturedAdmission: NonNullable<ProposalAdmissionPort["readCapturedAdmission"]>;
   /** Authenticate finality independently of the SDK submitting provider. */
   readAuthenticatedFinalizedSnapshot(contractAddress: string): Promise<FinalizedIssuerSnapshot>;
@@ -70,6 +74,22 @@ export type LocalIssuerProposalPortDependencies = {
 export function createBoundLocalIssuerProposalPort(
   dependencies: LocalIssuerProposalPortDependencies,
 ): GovernedIssuerProposalPort {
+  const readApprovedSnapshot = async (contractAddress: string): Promise<FinalizedIssuerSnapshot> => {
+    if (contractAddress !== dependencies.plan.contractAddress) {
+      throw new Error("Issuer snapshot request differs from the approved contract");
+    }
+    const snapshot = await dependencies.readAuthenticatedFinalizedSnapshot(contractAddress);
+    if (snapshot.contractAddress !== dependencies.plan.contractAddress
+      || snapshot.genesisHash !== dependencies.plan.expectedGenesisHash
+      || !/^0x[0-9a-f]{64}$/u.test(snapshot.finalizedBlockHash)
+      || /^0x0{64}$/u.test(snapshot.finalizedBlockHash)) {
+      throw new Error("Authenticated issuer ledger does not match the approved deployment");
+    }
+    assertApprovedDeploymentImage(dependencies.plan, snapshot);
+    assertApprovedPlanCoversGovernanceCount(dependencies.plan, snapshot.ledger.governanceActionCount);
+    return snapshot;
+  };
+
   const assertEvidenceCurrent = async (evidence: ApplicationEvidenceSubmission): Promise<number> => {
     const trustedTimeMs = await dependencies.readTrustedTimeMs();
     if (!Number.isSafeInteger(trustedTimeMs)) {
@@ -92,13 +112,7 @@ export function createBoundLocalIssuerProposalPort(
       throw new Error("Issuer proposal authorization does not match reviewed terms");
     }
     const admission = await dependencies.readCapturedAdmission(terms.applicationId);
-    const snapshot = await dependencies.readAuthenticatedFinalizedSnapshot(dependencies.plan.contractAddress);
-    if (snapshot.contractAddress !== dependencies.plan.contractAddress
-      || snapshot.genesisHash !== dependencies.plan.expectedGenesisHash
-      || !/^0x[0-9a-f]{64}$/u.test(snapshot.finalizedBlockHash)
-      || /^0x0{64}$/u.test(snapshot.finalizedBlockHash)) {
-      throw new Error("Authenticated issuer ledger does not match the approved deployment");
-    }
+    const snapshot = await readApprovedSnapshot(dependencies.plan.contractAddress);
     const prepared = prepareBoundLocalIssuerProposal({
       terms, ...admission, submittedEvidence, plan: dependencies.plan,
       policySnapshot: snapshot.policySnapshot, ledger: snapshot.ledger,
@@ -137,7 +151,7 @@ export function createBoundLocalIssuerProposalPort(
       input: {
         call, expectedGenesisHash: dependencies.plan.expectedGenesisHash, ...providers,
         readFinalizedLedger: async (contractAddress) => {
-          const snapshot = await dependencies.readAuthenticatedFinalizedSnapshot(contractAddress);
+          const snapshot = await readApprovedSnapshot(contractAddress);
           return { contractAddress: snapshot.contractAddress, genesisHash: snapshot.genesisHash, ledger: snapshot.ledger };
         },
       },

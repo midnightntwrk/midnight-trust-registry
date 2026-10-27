@@ -2609,3 +2609,13 @@ historical node-hosted bundles for audit and checks the new API image identity,
 entrypoint, mount, effective loopback ports, and network attachments. These
 are implementation and pre-deployment compatibility findings, not a deployed
 contract, independent finality, offline actor, or release approval.
+
+The opt-in local issuer writer now requires its authenticated snapshot reader
+to return the same deployment image checked by the read-only signed API plan:
+network, contract, full verifier-key hashes, maintenance authority and
+governance action count. It checks these on preparation and every SDK reread,
+so a governance mutation cannot be submitted under a stale manually signed
+plan merely because contract and genesis still match. The reader callback
+must still independently authenticate finality; the packaged CLI does not
+instantiate the writer, and these injected-dependency tests are not a live
+standalone actor journey.

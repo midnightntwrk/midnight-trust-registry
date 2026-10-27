@@ -28,7 +28,11 @@ import {
   type AcceptedApplicationEvidence,
 } from "../proposal-admission.js";
 import { bindAcceptedLocalIssuerProposalTerms, prepareBoundLocalIssuerProposal } from "../local-issuer-proposal-terms.js";
-import { createBoundLocalIssuerProposalPort, LocalIssuerEvidenceTimeRejectedError } from "../local-issuer-proposal-port.js";
+import {
+  createBoundLocalIssuerProposalPort,
+  LocalIssuerEvidenceTimeRejectedError,
+  type FinalizedIssuerSnapshot,
+} from "../local-issuer-proposal-port.js";
 import type { PendingApplicationRecord } from "../pending-application-registration.js";
 
 const submitCallTx = vi.hoisted(() => vi.fn());
@@ -101,6 +105,22 @@ const localPlan = {
   contractAddress: `0x${"7".repeat(64)}`,
   expectedGenesisHash: `0x${"8".repeat(64)}`,
 } as const;
+const approvedIssuerImage = {
+  networkId: localPlan.networkId,
+  verifierKeySha256: { issuer: "a".repeat(64) },
+  maintenanceAuthority: {
+    committee: [`0x${"1".repeat(64)}`, `0x${"2".repeat(64)}`, `0x${"3".repeat(64)}`],
+    threshold: 2,
+    counter: 3n,
+  },
+};
+const approvedIssuerPlan = {
+  ...localPlan,
+  verifierKeySha256: approvedIssuerImage.verifierKeySha256,
+  maintenanceAuthority: { ...approvedIssuerImage.maintenanceAuthority, counter: "3" },
+  sequenceTimestamps: Object.fromEntries([0, 1, 2, 3].map((sequence) =>
+    [sequence.toString(), `2026-10-13T00:00:0${sequence}.000Z`])),
+};
 const currentPolicy = {
   registryId: binding.registryId,
   policyId: binding.policyId,
@@ -260,14 +280,15 @@ describe("local issuer proposal terms", () => {
         contractAddress: localPlan.contractAddress, genesisHash: localPlan.expectedGenesisHash,
       }),
     }));
-    const readAuthenticatedFinalizedSnapshot = vi.fn(async () => ({
+    const readAuthenticatedFinalizedSnapshot = vi.fn(async (): Promise<FinalizedIssuerSnapshot> => ({
+      ...approvedIssuerImage,
       contractAddress: localPlan.contractAddress,
       genesisHash: localPlan.expectedGenesisHash,
       finalizedBlockHash: `0x${"a".repeat(64)}`,
       policySnapshot, ledger,
     }));
     const port = createBoundLocalIssuerProposalPort({
-      plan: localPlan,
+      plan: approvedIssuerPlan,
       async readCapturedAdmission(applicationId) {
         expect(applicationId).toBe(binding.applicationId);
         return { pending, accepted };
@@ -298,6 +319,7 @@ describe("local issuer proposal terms", () => {
     expect(loadApprovedSubmissionProviders).not.toHaveBeenCalled();
 
     readAuthenticatedFinalizedSnapshot.mockResolvedValueOnce({
+      ...approvedIssuerImage,
       contractAddress: localPlan.contractAddress,
       genesisHash: `0x${"9".repeat(64)}`,
       finalizedBlockHash: `0x${"a".repeat(64)}`,
@@ -307,6 +329,7 @@ describe("local issuer proposal terms", () => {
       .rejects.toThrow(/approved deployment/u);
     expect(verifyLiveEvidence).toHaveBeenCalledTimes(3);
     readAuthenticatedFinalizedSnapshot.mockResolvedValueOnce({
+      ...approvedIssuerImage,
       contractAddress: localPlan.contractAddress,
       genesisHash: localPlan.expectedGenesisHash,
       finalizedBlockHash: `0x${"0".repeat(64)}`,
@@ -314,6 +337,25 @@ describe("local issuer proposal terms", () => {
     });
     await expect(port.prepare(pending.authorizationId, evidence, localTerms))
       .rejects.toThrow(/approved deployment/u);
+    expect(verifyLiveEvidence).toHaveBeenCalledTimes(3);
+    for (const [changed, message] of [
+      [{ networkId: "preview" }, /Finalized registry identity/u],
+      [{ verifierKeySha256: { issuer: "b".repeat(64) } }, /verifier-key catalog/u],
+      [{ maintenanceAuthority: { ...approvedIssuerImage.maintenanceAuthority, counter: 4n } },
+        /maintenance authority/u],
+      [{ ledger: { ...ledger, governanceActionCount: 4n } }, /sequence timestamps/u],
+    ] as const) {
+      readAuthenticatedFinalizedSnapshot.mockResolvedValueOnce({
+        ...approvedIssuerImage, ...changed,
+        contractAddress: localPlan.contractAddress,
+        genesisHash: localPlan.expectedGenesisHash,
+        finalizedBlockHash: `0x${"a".repeat(64)}`,
+        policySnapshot,
+        ledger: "ledger" in changed ? changed.ledger : ledger,
+      });
+      await expect(port.prepare(pending.authorizationId, evidence, localTerms))
+        .rejects.toThrow(message);
+    }
     expect(verifyLiveEvidence).toHaveBeenCalledTimes(3);
     verifyLiveEvidence.mockRejectedValueOnce(new Error("live status authority unavailable"));
     await expect(port.prepare(pending.authorizationId, evidence, localTerms))
@@ -362,16 +404,19 @@ describe("local issuer proposal terms", () => {
     expect(submitTx).not.toHaveBeenCalled();
 
     readAuthenticatedFinalizedSnapshot.mockResolvedValueOnce({
+      ...approvedIssuerImage,
       contractAddress: localPlan.contractAddress,
       genesisHash: localPlan.expectedGenesisHash,
       finalizedBlockHash: `0x${"a".repeat(64)}`,
       policySnapshot, ledger,
     }).mockResolvedValueOnce({
+      ...approvedIssuerImage,
       contractAddress: localPlan.contractAddress,
       genesisHash: localPlan.expectedGenesisHash,
       finalizedBlockHash: `0x${"a".repeat(64)}`,
       policySnapshot, ledger,
     }).mockResolvedValueOnce({
+      ...approvedIssuerImage,
       contractAddress: localPlan.contractAddress,
       genesisHash: localPlan.expectedGenesisHash,
       finalizedBlockHash: `0x${"b".repeat(64)}`,
@@ -380,7 +425,7 @@ describe("local issuer proposal terms", () => {
     submitCallTx.mockImplementationOnce(async (providers) =>
       providers.midnightProvider.submitTx({} as never));
     await expect(port.execute(pending.authorizationId, evidence,
-      signers, verifierSignature, localTerms)).rejects.toThrow(/context changed before broadcast/u);
+      signers, verifierSignature, localTerms)).rejects.toThrow(/sequence timestamps/u);
     expect(submitTx).not.toHaveBeenCalled();
 
     readTrustedTimeMs.mockResolvedValueOnce(Date.parse("2026-10-13T00:00:02.000Z"))
@@ -390,6 +435,20 @@ describe("local issuer proposal terms", () => {
       providers.midnightProvider.submitTx({} as never));
     await expect(port.execute(pending.authorizationId, evidence,
       signers, verifierSignature, localTerms)).rejects.toThrow(/not current at trusted time/u);
+    expect(submitTx).not.toHaveBeenCalled();
+
+    readAuthenticatedFinalizedSnapshot.mockResolvedValueOnce({
+      ...approvedIssuerImage, contractAddress: localPlan.contractAddress,
+      genesisHash: localPlan.expectedGenesisHash, finalizedBlockHash: `0x${"a".repeat(64)}`,
+      policySnapshot, ledger,
+    }).mockResolvedValueOnce({
+      ...approvedIssuerImage, verifierKeySha256: { issuer: "b".repeat(64) },
+      contractAddress: localPlan.contractAddress,
+      genesisHash: localPlan.expectedGenesisHash, finalizedBlockHash: `0x${"b".repeat(64)}`,
+      policySnapshot, ledger,
+    });
+    await expect(port.preflightSubmission!(pending.authorizationId, evidence,
+      signers, verifierSignature, context, localTerms)).rejects.toThrow(/verifier-key catalog/u);
     expect(submitTx).not.toHaveBeenCalled();
   });
 });
