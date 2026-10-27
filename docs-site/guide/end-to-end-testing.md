@@ -142,6 +142,27 @@ the API-owned submission journal at the annex's path.
 The opt-in issuer port tests exercise this boundary with injected providers;
 they are not a deployed local-ledger actor journey.
 
+When a reviewed v3 API plan and immutable provider installation exist, draft
+the issuer-writer approval for the embedding host in a private directory:
+
+```sh
+pnpm --filter @midnight-ntwrk/trust-registry-api build
+node scripts/prepare-local-issuer-writer-review.mjs \
+  "$PRIVATE_REVIEW_DIR" "$SIGNED_PLAN" "$PLAN_SIGNATURE" "$REVIEWER_KEYRING" \
+  "$REVIEWER_FINGERPRINT" "$INSTALLED_PROVIDER_ROOT" \
+  "$INDEPENDENTLY_REVIEWED_PROVIDER_CONTENT_SHA256" "$ABSOLUTE_JOURNAL_PATH"
+```
+
+The content digest must come from an independently reviewed handoff, never
+from trusting the installed tree's own report. The command verifies the plan
+signature and provider bytes, then writes `issuer-writer-approval.unsigned.json`
+without overwriting existing review bytes. It does not sign the file or turn
+on a writer. After reviewing every field, the human plan reviewer may sign
+those exact bytes with their own GPG key; the embedding host must verify that
+detached signature and the plan-reviewer identity before use. Never place a
+private signing key in the install bundle or repository. This is preparation,
+not an `A01` pass or independent finality evidence.
+
 The [read-only qualification observer](standalone.md#continue-to-real-end-to-end-acceptance)
 can validate the approved API's current queries and API-container egress
 denial after deployment. It cannot submit a governed action or prove host,

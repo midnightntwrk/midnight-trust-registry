@@ -463,6 +463,15 @@ journal. A failure then remains quarantined for operator reconciliation; it
 is not permission to retry. The factory does not supply those trusted
 dependencies, finalized proposal resolution, or a production CLI writer.
 Injected-provider tests are not deployed standalone E2E evidence.
+For a future embedding host, `node scripts/prepare-local-issuer-writer-review.mjs`
+at repository root can draft the exact unsigned writer annex after verifying a
+signed v3 API plan and immutable installed provider against an **independently
+reviewed** content digest. It creates a mode-0600 file in an existing, owned
+mode-0700 directory and refuses to overwrite it. The output is not an
+approval; the plan reviewer must inspect the bytes and sign that exact file
+with their own key. The host must then use the detached-signature loader and
+initialize the approved journal path. This preparation command does not
+configure the packaged CLI writer or qualify a deployed actor journey.
 The final local clock check cannot prove that a transaction reaches a finalized
 block before evidence expiry; a deployment must enforce its approved
 transition-time policy using authenticated ledger evidence.
