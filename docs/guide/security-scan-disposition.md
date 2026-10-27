@@ -29,6 +29,16 @@ The fixture-only `CKV_SECRET_6` skip covers a repeated-character public test
 fingerprint, not a credential. Do not expand these skips to other files or
 checks. Re-evaluate them if the image builders or fixture change.
 
+The full tracked-source Checkov run also found `CKV_GHA_7` on the package
+publish and published-smoke workflows. Their dispatch inputs previously let
+an operator choose the npm registry; on the publish job that could redirect
+the npm token. Both workflows now have empty dispatch inputs, use the fixed
+public npm registry, and derive only a `0.1.0-rcN` version from committed
+`package.json`. The publisher uses the fixed `next` tag. On this local slice,
+the targeted GitHub Actions scan reported 616 passed, 0 failed. This closes
+the local workflow-input finding, not the exact-head full-scan gate or the
+approval required to publish packages.
+
 ## Inspect the remaining scanner output
 
 The internal `ws://` node links in the Compose and Helm configurations are

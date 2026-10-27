@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const workflow = readFileSync(join(root, ".github/workflows/publish.yml"), "utf8");
+const smokeWorkflow = readFileSync(join(root, ".github/workflows/release-smoke.yml"), "utf8");
 const publisher = readFileSync(join(root, "scripts/publish-npm-packages.sh"), "utf8");
 const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
 
@@ -32,6 +33,7 @@ test("local clean-consumer smoke refuses tarballs without a manifest", () => {
 
 test("publish workflow binds signed source, manifest verification and tested tarballs", () => {
   const required = [
+    "select-publish-version.mjs --github-output",
     "release-set-version.mjs --version \"$VERSION\" --check",
     "--artifact-dir artifacts/npm-release",
     "--output artifacts/npm-release.manifest.json",
@@ -50,4 +52,15 @@ test("publish workflow binds signed source, manifest verification and tested tar
   assert.match(publisher, /node scripts\/check-publish-tarball\.mjs "\$\{manifest_path\}" "\$\{tarball\}"/u);
   assert.match(publisher, /npm view "\$\{package_name\}@\$\{version\}" dist --json/u);
   assert.match(publisher, /node scripts\/check-published-package-integrity\.mjs "\$\{tarball\}" "\$\{published_dist\}"/u);
+});
+
+test("manual package workflows cannot redirect credentials or select uncommitted release bytes", () => {
+  for (const source of [workflow, smokeWorkflow]) {
+    assert.match(source, /workflow_dispatch: \{\}/u);
+    assert.doesNotMatch(source, /\binputs\.|github\.event\.inputs|registry:\s*\$\{\{/u);
+    assert.match(source, /select-publish-version\.mjs --github-output/u);
+    assert.match(source, /REGISTRY: https:\/\/registry\.npmjs\.org/u);
+  }
+  assert.match(workflow, /NPM_TAG: next/u);
+  assert.match(workflow, /registry-url: https:\/\/registry\.npmjs\.org/u);
 });
