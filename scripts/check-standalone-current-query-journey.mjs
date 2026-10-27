@@ -12,9 +12,9 @@ const SHA256 = /^[0-9a-f]{64}$/u;
 const BLOCK_HASH = /^0x[0-9a-f]{64}$/u;
 const ROLES = ["issuer", "verifier", "auditor", "recognition"];
 
-function checkedRead(report, sourceRevision) {
+function checkedRead(report, status) {
   if (report?.format !== "tr-standalone-api-current-read-probe-v4"
-    || report.releaseQualified !== false || report.sourceRevision !== sourceRevision
+    || report.releaseQualified !== false || report.sourceRevision !== status.sourceRevision
     || report.routeReadback !== "same-container-signed-plan-current-only"
     || !SHA256.test(report.planSha256 ?? "")
     || !BLOCK_HASH.test(report.planContractAddress ?? "")
@@ -33,6 +33,10 @@ function checkedRead(report, sourceRevision) {
       && Number.isSafeInteger(report.resolvedLookups?.[role])
       && report.resolvedLookups[role] > 0)) {
     throw new Error("Live current-query readback is incomplete or has no resolved actor role");
+  }
+  if (report.planContractAddress !== status.deployedContractAddress
+    || report.planExpectedGenesisHash !== status.approvedGenesisHash) {
+    throw new Error("Live signed API plan differs from the approved wizard deployment or genesis");
   }
   return report;
 }
@@ -64,9 +68,9 @@ export async function observeStandaloneCurrentQueryJourney(setupDirectory, bundl
 
   const read = dependencies.read ?? probeStandaloneApiCurrentReads;
   const egress = dependencies.egress ?? observeStandaloneApiEgress;
-  const first = checkedRead(await read(bundle, env), status.sourceRevision);
+  const first = checkedRead(await read(bundle, env), status);
   const denial = checkedEgress(await egress(bundle, env), first);
-  const second = checkedRead(await read(bundle, env), status.sourceRevision);
+  const second = checkedRead(await read(bundle, env), status);
   if (second.apiContainerId !== first.apiContainerId
     || second.apiStartedAt !== first.apiStartedAt
     || second.apiRestartCount !== first.apiRestartCount

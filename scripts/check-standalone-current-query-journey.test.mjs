@@ -85,6 +85,21 @@ test("missing wizard approval stops before touching the running API", async () =
   assert.equal(called, false);
 });
 
+test("signed API plan must match the wizard-approved genesis and deployment before egress", async () => {
+  for (const mismatch of [
+    { approvedGenesisHash: `0x${"e".repeat(64)}` },
+    { deployedContractAddress: `0x${"e".repeat(64)}` },
+  ]) {
+    let egressCalled = false;
+    await assert.rejects(observeStandaloneCurrentQueryJourney("/setup", "/bundle", {},
+      dependencies({
+        setupStatus: async () => ({ ...status, ...mismatch }),
+        egress: async () => { egressCalled = true; return egress; },
+      })), /differs from the approved wizard deployment or genesis/u);
+    assert.equal(egressCalled, false);
+  }
+});
+
 test("rejects an empty or mocked actor selection", async () => {
   await assert.rejects(observeStandaloneCurrentQueryJourney("/setup", "/bundle", {},
     dependencies({ read: async () => ({ ...read, resolvedLookups: { ...roles, issuer: 0 } }) })),
@@ -98,14 +113,17 @@ test("rejects egress denial without positive controls", async () => {
 });
 
 test("rejects a swapped signed plan, selected state, or API container between reads", async () => {
-  for (const mutation of [{ planSha256: "e".repeat(64) },
-    { planContractAddress: `0x${"e".repeat(64)}` },
-    { planExpectedGenesisHash: `0x${"d".repeat(64)}` },
-    { selectedStateSha256: "f".repeat(64) }, { apiContainerId: "f".repeat(64) }]) {
+  for (const [mutation, expectedError] of [
+    [{ planSha256: "e".repeat(64) }, /changed during egress probe/u],
+    [{ planContractAddress: `0x${"e".repeat(64)}` }, /differs from the approved wizard/u],
+    [{ planExpectedGenesisHash: `0x${"d".repeat(64)}` }, /differs from the approved wizard/u],
+    [{ selectedStateSha256: "f".repeat(64) }, /changed during egress probe/u],
+    [{ apiContainerId: "f".repeat(64) }, /changed during egress probe/u],
+  ]) {
     let reads = 0;
     await assert.rejects(observeStandaloneCurrentQueryJourney("/setup", "/bundle", {},
       dependencies({ read: async () => { reads += 1; return reads === 1 ? read : { ...read, ...mutation }; } })),
-    /changed during egress probe/u);
+    expectedError);
   }
 });
 
