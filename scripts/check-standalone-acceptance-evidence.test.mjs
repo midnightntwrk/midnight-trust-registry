@@ -238,9 +238,14 @@ test("attaches raw evidence without changing an operator verdict or claiming qua
       "A01", "../outside.log"), /relative path/u);
     await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
       "A01", "acceptance.json"), /cannot be attached as its own evidence/u);
+    await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
+      "A01", "ACCEPTANCE.JSON"), /cannot be attached as its own evidence/u);
     assert.deepEqual(JSON.parse(await readFile(join(root, "acceptance.json"), "utf8")), updated);
     const selfReferential = structuredClone(updated);
     selfReferential.cases.A01.evidence = [{ path: "acceptance.json", sha256: sha(await readFile(join(root, "acceptance.json"))) }];
+    await assert.rejects(checkStandaloneAcceptanceEvidence(root, selfReferential),
+      /cannot be attached as its own evidence/u);
+    selfReferential.cases.A01.evidence[0].path = "ACCEPTANCE.JSON";
     await assert.rejects(checkStandaloneAcceptanceEvidence(root, selfReferential),
       /cannot be attached as its own evidence/u);
   } finally {
