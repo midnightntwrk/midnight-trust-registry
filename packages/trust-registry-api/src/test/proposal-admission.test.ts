@@ -352,6 +352,36 @@ describe("local issuer proposal terms", () => {
     expect(loadApprovedSubmissionProviders).toHaveBeenCalledTimes(2);
     expect(submitCallTx).toHaveBeenCalledOnce();
     expect(submitTx).not.toHaveBeenCalled();
+
+    verifyLiveEvidence.mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("live status revoked before broadcast"));
+    submitCallTx.mockImplementationOnce(async (providers) =>
+      providers.midnightProvider.submitTx({} as never));
+    await expect(port.execute(pending.authorizationId, evidence,
+      signers, verifierSignature, localTerms)).rejects.toThrow(/live status revoked before broadcast/u);
+    expect(submitTx).not.toHaveBeenCalled();
+
+    readAuthenticatedFinalizedSnapshot.mockResolvedValueOnce({
+      contractAddress: localPlan.contractAddress,
+      genesisHash: localPlan.expectedGenesisHash,
+      finalizedBlockHash: `0x${"a".repeat(64)}`,
+      policySnapshot, ledger,
+    }).mockResolvedValueOnce({
+      contractAddress: localPlan.contractAddress,
+      genesisHash: localPlan.expectedGenesisHash,
+      finalizedBlockHash: `0x${"a".repeat(64)}`,
+      policySnapshot, ledger,
+    }).mockResolvedValueOnce({
+      contractAddress: localPlan.contractAddress,
+      genesisHash: localPlan.expectedGenesisHash,
+      finalizedBlockHash: `0x${"b".repeat(64)}`,
+      policySnapshot, ledger: { ...ledger, governanceActionCount: 4n },
+    });
+    submitCallTx.mockImplementationOnce(async (providers) =>
+      providers.midnightProvider.submitTx({} as never));
+    await expect(port.execute(pending.authorizationId, evidence,
+      signers, verifierSignature, localTerms)).rejects.toThrow(/context changed before broadcast/u);
+    expect(submitTx).not.toHaveBeenCalled();
   });
 });
 

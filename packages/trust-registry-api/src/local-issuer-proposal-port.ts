@@ -153,9 +153,14 @@ export function createBoundLocalIssuerProposalPort(
       await preflightLocalIssuerProposalSubmission(input);
     },
     async execute(authorizationId, evidence, signers, signature, terms) {
-      const { input } = await submissionInput(authorizationId, evidence, signers, signature, terms);
+      const { prepared, input } = await submissionInput(authorizationId, evidence, signers, signature, terms);
       return executeLocalIssuerProposalAfterReservation(input, async () => {
-        await assertEvidenceCurrent(evidence);
+        const current = await loadPrepared(authorizationId, evidence, terms);
+        if (!sameGovernedIssuerProposal(
+          serializeGovernedIssuerProposal(prepared.signingContext),
+          serializeGovernedIssuerProposal(current.signingContext),
+        )) throw new Error("Issuer proposal signing context changed before broadcast");
+        await dependencies.assertApprovedProviderCode();
       });
     },
   };

@@ -161,16 +161,20 @@ the operator's capability preflight. This is a startup identity check, **not**
 signature verification by the server; the host must verify the actual signed
 bytes before constructing the port or listener.
 
-The port now separately requires a deployment-trusted time source and rejects
+The port separately requires a deployment-trusted time source and rejects
 accepted application evidence before its verified-at time or at/after expiry
 on every prepare, preflight, and execute. The same sampled time is passed to
 the live evidence callback; this explicit guard does not authenticate that
-callback or make the host clock a trusted source. Execution samples trusted
-time after SDK proving/balancing and pinned-node genesis verification,
-immediately before the transport send. This guarded path fails closed when
-the approved provider lacks transport-level guard support. Finalized
-inclusion may still occur later; the host needs an approved, independently
-authenticated transition-time policy before claiming `A01`.
+callback or make the host clock a trusted source. After SDK proving/balancing
+and pinned-node genesis verification, the transport broadcast guard repeats
+the captured-admission, authenticated-ledger, trusted-time, and live-evidence
+checks. It rejects a changed signing context and rechecks approved provider
+code before sending. A revoked status or advanced governance sequence at
+that point blocks broadcast, but leaves the durable reservation for explicit
+reconciliation. The guard fails closed when the provider lacks transport-level
+guard support. A change after the guard or delayed finalized inclusion remains
+possible; the host needs an approved, independently authenticated
+transition-time policy before claiming `A01`.
 The private file admission store now captures pending and accepted records
 from one validated persisted-state read. HTTP admission prefers that captured
 pair when the port supports it, and the issuer-port assembly requires it;
