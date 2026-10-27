@@ -1,4 +1,5 @@
 const SHA = /^[0-9a-f]{40}$/u;
+const HASH = /^0x[0-9a-f]{64}$/u;
 const NEXT_ACTION = Object.freeze({
   sourceMatchesCandidate: "Build and verify a new exact-source install; never reuse an older setup as qualification evidence.",
   setupUnlocked: "Inspect the active setup lock and its owner before resuming; do not remove it blindly.",
@@ -13,6 +14,9 @@ const NEXT_ACTION = Object.freeze({
 
 /** @param {unknown} value @returns {value is Record<string, unknown>} */
 const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+/** @param {unknown} value */
+const nonzeroHash = (value) => typeof value === "string"
+  && HASH.test(value) && !/^0x0{64}$/u.test(value);
 
 /** Only checks wizard-recorded prerequisites, not an actor run or independent finality.
  * @param {unknown} status
@@ -35,10 +39,16 @@ export function assessStandaloneJourneyPrerequisites(status, expectedSourceRevis
     setupUnlocked: status.setupLock === "absent",
     installStaged: status.install === "verified-staged-bytes-only",
     stackObserved: status.stackConfiguration === "observed-ledger-bridge-only",
-    genesisApproved: status.localLedger === "operator-pinned-reviewer-signature-verified",
-    deploymentObserved: status.deployment === "observed",
+    genesisApproved: status.localLedger === "operator-pinned-reviewer-signature-verified"
+      && nonzeroHash(status.approvedGenesisHash),
+    deploymentObserved: status.deployment === "observed"
+      && nonzeroHash(status.deployedContractAddress),
     recordedKeyInsertionsReconciled: status.stagedVerifierKeys.length > 0
-      && status.stagedVerifierKeys.every((entry) => isRecord(entry) && entry.state === "verified"),
+      && status.stagedVerifierKeys.every((entry) => isRecord(entry)
+        && typeof entry.circuitName === "string" && entry.circuitName.length > 0
+        && entry.state === "verified")
+      && new Set(status.stagedVerifierKeys.map((entry) => entry.circuitName)).size
+        === status.stagedVerifierKeys.length,
     committeeApproved: status.maintenanceApproval
       === "deployment-bound-roster-signature-verified-transition-pending",
     maintenanceObserved: status.maintenanceTransition === "observed"

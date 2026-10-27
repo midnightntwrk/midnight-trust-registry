@@ -8,7 +8,9 @@ const approved = {
   setupLock: "absent", install: "verified-staged-bytes-only",
   stackConfiguration: "observed-ledger-bridge-only",
   localLedger: "operator-pinned-reviewer-signature-verified",
+  approvedGenesisHash: `0x${"1".repeat(64)}`,
   deployment: "observed", stagedVerifierKeys: [{ circuitName: "test", state: "verified" }],
+  deployedContractAddress: `0x${"2".repeat(64)}`,
   maintenanceApproval: "deployment-bound-roster-signature-verified-transition-pending",
   maintenanceTransition: "observed", maintenanceLastReadback: "observed",
   maintenanceTransitionAlert: null,
@@ -44,6 +46,15 @@ test("empty key evidence and active setup lock block the journey", () => {
   assert.deepEqual(report.missing, ["setupUnlocked", "recordedKeyInsertionsReconciled"]);
 });
 
+test("approval labels without pinned identities cannot open the actor prerequisite gate", () => {
+  for (const value of [null, undefined, "bad", `0x${"0".repeat(64)}`]) {
+    const missingGenesis = assessStandaloneJourneyPrerequisites({ ...approved, approvedGenesisHash: value });
+    assert.deepEqual(missingGenesis.missing, ["genesisApproved"]);
+    const missingContract = assessStandaloneJourneyPrerequisites({ ...approved, deployedContractAddress: value });
+    assert.deepEqual(missingContract.missing, ["deploymentObserved"]);
+  }
+});
+
 test("candidate source revision must match the retained install setup", () => {
   const matching = assessStandaloneJourneyPrerequisites(approved, "a".repeat(40));
   assert.equal(matching.expectedSourceRevision, "a".repeat(40));
@@ -72,8 +83,10 @@ test("rejects malformed status rather than implying a clean run", () => {
     /Invalid standalone wizard status/u);
 });
 
-test("malformed verifier-key evidence cannot satisfy the recorded-insertions gate", () => {
-  for (const stagedVerifierKeys of [[null], ["verified"], [{}], [{ state: "pending" }]]) {
+test("malformed or duplicate verifier-key evidence cannot satisfy the recorded-insertions gate", () => {
+  for (const stagedVerifierKeys of [[null], ["verified"], [{}], [{ state: "pending" }],
+    [{ state: "verified" }], [{ circuitName: "test", state: "verified" },
+      { circuitName: "test", state: "verified" }]]) {
     const report = assessStandaloneJourneyPrerequisites({ ...approved, stagedVerifierKeys });
     assert.deepEqual(report.missing, ["recordedKeyInsertionsReconciled"]);
     assert.equal(report.ledgerPrerequisitesObserved, false);

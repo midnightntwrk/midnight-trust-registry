@@ -89,6 +89,10 @@ has recorded its ledger prerequisites; it does not authenticate finality,
 enable governed writes, or pass any actor case. The report pairs each missing
 gate with a `nextActions` entry. If `sourceMatchesCandidate` is false, start a
 new exact-source setup rather than reusing evidence from the older install.
+The preflight also rejects approval labels without a nonzero approved genesis
+hash or deployed contract address, and duplicate or unnamed staged verifier
+keys. It still does not compare that key list with the complete release
+manifest or independently authenticate a receipt.
 Do not change `SOURCE_SHA` to the older setup's revision just to make this
 check pass: the source, install bundle, API plan, and acceptance inventory must
 identify the same candidate. This command is safe to rerun and does not deploy

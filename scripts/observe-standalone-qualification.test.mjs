@@ -22,7 +22,7 @@ const status = {
   stackConfiguration: "observed-ledger-bridge-only",
   localLedger: "operator-pinned-reviewer-signature-verified",
   deployment: "observed",
-  stagedVerifierKeys: [{ state: "verified" }],
+  stagedVerifierKeys: [{ circuitName: "test", state: "verified" }],
   maintenanceApproval: "deployment-bound-roster-signature-verified-transition-pending",
   maintenanceTransition: "observed",
   maintenanceLastReadback: "observed",
