@@ -382,6 +382,10 @@ describe("approved local-ledger API runtime", () => {
       await signInventory(v6);
       expect((await loadApprovedLocalLedgerRuntimePlan({ ...input, requireApiRuntimePin: true }))
         .sourceRevision).toBe(sourceRevision);
+      await signInventory({ ...v6, installRelay: { ...v6.installRelay, imageRole: "api" } });
+      expect((await loadApprovedLocalLedgerRuntimePlan({ ...input, requireApiRuntimePin: true }))
+        .sourceRevision).toBe(sourceRevision);
+      await signInventory(v6);
       await writeFile(planPath, `${JSON.stringify({ ...candidate,
         installInventorySha256: sha256(JSON.stringify(v6)),
         verifierKeySha256: { first: "4".repeat(64), second: verifierKeySha256.second } })}\n`);

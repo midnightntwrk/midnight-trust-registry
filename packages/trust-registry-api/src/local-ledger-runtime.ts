@@ -261,7 +261,7 @@ export async function loadApprovedLocalLedgerRuntimePlanWithDigest(
       || Object.keys(inventory.portalRuntimes ?? {}).sort().join(",") !== "admin,applicant"))
     || (installFormat === "tr-standalone-install-v6"
       && (inventory.installRelay?.path !== "install-relay.py"
-        || inventory.installRelay.imageRole !== "node"
+        || !["node", "api"].includes(inventory.installRelay.imageRole)
         || typeof inventory.installRelay.sha256 !== "string"
         || !SHA256.test(inventory.installRelay.sha256)))) {
     throw new Error("Local API runtime inventory or release manifest disagrees with approved install artifacts");

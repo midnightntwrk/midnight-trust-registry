@@ -400,6 +400,15 @@ test("v6 pins the installation relay script beside the complete runtime", async 
     const verified = await verifyStandaloneInstallBundle(root, () => {});
     assert.equal(verified.installRelay.sha256, sha(relay));
     assert.equal(verified.installRelay.image.reference, reference("node"));
+    inventory.installRelay.imageRole = "api";
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    const apiRelay = await verifyStandaloneInstallBundle(root, () => {});
+    assert.equal(apiRelay.installRelay.imageRole, "api");
+    assert.equal(apiRelay.installRelay.image.reference,
+      `tr-standalone/api:sha-${inventory.sourceRevision}`);
+    assert.ok(apiRelay.installRelay.image.acceptedIds.includes(apiRelay.apiRuntime.configId));
+    inventory.installRelay.imageRole = "node";
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
     assert.equal(verified.runtimeApiComposeSha256, null);
     const apiCompose = Buffer.from("services:\n  api:\n    profiles: [runtime]\n");
     await writeFile(join(root, "compose.api.yml"), apiCompose);

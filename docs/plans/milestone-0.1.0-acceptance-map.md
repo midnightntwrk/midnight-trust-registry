@@ -27,6 +27,15 @@ and private evidence remain intact. No signed genesis approval, deployed
 contract, finalized contract readback, approved maintenance transition, or
 offline actor journey has occurred. The source revision of this document is
 newer than b28; that install cannot be presented as an exact-head candidate.
+The b28 node image also predates the official 1.0.400 ledger-8 security fix;
+the current source pin uses the 1.0.400 arm64 digest. This change needs a fresh
+source-matched install and compatibility smoke, not a reinterpretation of b28.
+An isolated pre-deployment compatibility smoke with the new node and existing
+indexer/proof images reached healthy services and answered GraphQL. The fresh
+node reported a different untrusted genesis despite identical packaged `dev`
+genesis input hashes. Its private observation is
+`artifacts/standalone-setup/node-1.0.400-smoke.md`. This is neither a signed
+genesis approval nor a deployed contract or actor journey.
 
 The historical checkpoints in the table and paragraphs below remain as an
 audit trail, not as current-head release evidence.

@@ -24,17 +24,22 @@ function hostPort(binding) {
 export function checkStandaloneInstallRelay(network, ledgerContainers, relay, config, verified,
   expectedTopology, baseImage) {
   const pin = verified?.installRelay;
-  const node = verified?.images?.find((image) => image.role === "node");
-  if (!pin || !node || !node.acceptedIds?.includes(baseImage?.Id)
+  const image = pin?.image;
+  const baseHealthcheck = baseImage?.Config?.Healthcheck ?? null;
+  const relayHealthcheck = relay?.Config?.Healthcheck ?? null;
+  const expectedHealthcheck = pin?.imageRole === "api"
+    ? { ...baseHealthcheck, Test: ["NONE"] } : baseHealthcheck;
+  if (!pin || !["node", "api"].includes(pin.imageRole)
+    || !image || image.role !== pin.imageRole
+    || !image.acceptedIds?.includes(baseImage?.Id)
     || JSON.stringify(relay?.Config?.Env ?? []) !== JSON.stringify(baseImage?.Config?.Env ?? [])
     || relay?.Config?.User !== baseImage?.Config?.User
     || relay?.Name !== `/${config.project}-install-relay`
     || relay.State?.Running !== true || relay.State?.Paused === true
-    || relay.Config?.Image !== node.reference || !node.acceptedIds?.includes(relay.Image)
+    || relay.Config?.Image !== image.reference || !image.acceptedIds?.includes(relay.Image)
     || JSON.stringify(relay.Config?.Entrypoint) !== JSON.stringify(["/usr/bin/python3"])
     || JSON.stringify(relay.Config?.Cmd) !== JSON.stringify(["/relay.py"])
-    || JSON.stringify(relay.Config?.Healthcheck ?? null)
-      !== JSON.stringify(baseImage?.Config?.Healthcheck ?? null)
+    || JSON.stringify(relayHealthcheck) !== JSON.stringify(expectedHealthcheck)
     || (relay.Config?.Env ?? []).some((entry) =>
       /^(?:PYTHON[A-Z_]*|LD_PRELOAD|LD_LIBRARY_PATH)=/u.test(entry))
     || relay.Config?.Labels?.["com.docker.compose.project"] !== undefined) {
@@ -109,9 +114,9 @@ export async function observeStandaloneInstallRelay(config, verified, expectedTo
   const [relay] = JSON.parse(await runDocker(["inspect", "--type", "container",
     `${config.project}-install-relay`]));
   const containers = JSON.parse(await runDocker(["inspect", ...ids]));
-  const nodeImage = verified.images.find((image) => image.role === "node");
-  if (!nodeImage) throw new Error("Verified install bundle has no node image pin");
-  const [baseImage] = JSON.parse(await runDocker(["image", "inspect", nodeImage.reference]));
+  const image = pin.image;
+  if (!image) throw new Error("Verified install bundle has no installation relay image pin");
+  const [baseImage] = JSON.parse(await runDocker(["image", "inspect", image.reference]));
   const observation = checkStandaloneInstallRelay(network, containers, relay, config, verified,
     expectedTopology, baseImage);
   const mountedHash = (await runDocker(["exec", relay.Id, "/usr/bin/python3", "-I", "-c",

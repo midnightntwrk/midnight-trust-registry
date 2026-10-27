@@ -65,6 +65,7 @@ node scripts/load-standalone-install-images.mjs "$INSTALL"
 export TR_NODE_IMAGE="tr-standalone/node:sha-$SOURCE_SHA"
 export TR_INDEXER_IMAGE="tr-standalone/indexer:sha-$SOURCE_SHA"
 export TR_PROOF_SERVER_IMAGE="tr-standalone/proof-server:sha-$SOURCE_SHA"
+export TR_API_IMAGE="tr-standalone/api:sha-$SOURCE_SHA"
 docker compose --env-file "$SETUP/stack.env" -p "$PROJECT" \
   -f "$INSTALL/compose.yml" -f "$INSTALL/compose.offline.yml" config -q
 docker compose --env-file "$SETUP/stack.env" -p "$PROJECT" \
@@ -87,8 +88,8 @@ and custody roles. A 1-of-3 development smoke roster is not release approval.
 ### Review the node's genesis provenance
 
 The reviewer needs a source independent of the running node and its review
-packet. For the currently bundled Midnight node 1.0.0 image, start with the
-[official source release](https://github.com/midnightntwrk/midnight-node/releases/tag/node-1.0.0)
+packet. For the currently pinned Midnight node 1.0.400 image, start with the
+[official source release](https://github.com/midnightntwrk/midnight-node/releases/tag/node-1.0.400)
 and its configuration inputs. Authenticate the release commit and the pinned
 image digest through channels the operator controls, then compare the image's
 `dev` configuration and `undeployed` genesis input bytes with that source.
@@ -96,6 +97,13 @@ The image's `GIT_CONTENT_HASH` identifies a source **tree**, not a commit;
 check the tree of the authenticated release commit rather than treating the
 environment variable as a signature. A matching Docker tag is not sufficient
 because tags can move; use the manifest digest from the verified install.
+The older 1.0.0 image is retained only in historical smoke evidence. It
+predates the ledger-8 security fix described in the 1.0.400 release notes
+and is not an acceptable new RC install pin.
+Even identical packaged `dev` genesis input files do not guarantee the same
+genesis hash across node binaries: the 1.0.400 upgrade changed the hash
+reported by a fresh local node. Never carry an older setup's pin or approval
+forward to a new node image.
 
 This comparison establishes which published inputs the image packaged, not
 the expected genesis hash. Independently derive or verify that hash from the

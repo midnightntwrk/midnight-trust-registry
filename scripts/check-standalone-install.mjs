@@ -397,15 +397,21 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
   if (inventory.format === "tr-standalone-install-v6") {
     if (inventory.installRelay?.path !== "install-relay.py"
       || !SHA256.test(inventory.installRelay.sha256)
-      || inventory.installRelay.imageRole !== "node") {
+      || !["node", "api"].includes(inventory.installRelay.imageRole)) {
       throw new Error("Standalone installation relay pin is missing or malformed");
     }
     const relayPath = await regularBundleFile(root, inventory.installRelay.path);
     if (await sha256(relayPath) !== inventory.installRelay.sha256) {
       throw new Error("Standalone installation relay bytes disagree with the install pin");
     }
+    const relayImage = inventory.installRelay.imageRole === "node"
+      ? verifiedImages.find((image) => image.role === "node")
+      : apiRuntime === null ? null
+        : { role: "api", reference: `tr-standalone/api:sha-${inventory.sourceRevision}`,
+          acceptedIds: [apiRuntime.configId, apiRuntime.imageId] };
+    if (!relayImage) throw new Error("Standalone installation relay image pin is missing");
     installRelay = { path: relayPath, sha256: inventory.installRelay.sha256,
-      image: verifiedImages.find((image) => image.role === "node") };
+      imageRole: inventory.installRelay.imageRole, image: relayImage };
   }
   const proofDirectory = bundlePath(root, inventory.proofParameters.directory);
   if (!(await lstat(proofDirectory)).isDirectory()) {

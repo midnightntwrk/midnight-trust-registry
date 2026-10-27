@@ -5,7 +5,7 @@ name: ${TR_STACK_NAME:-tr-standalone-local-smoke}
 
 services:
   node:
-    image: midnightntwrk/midnight-node@sha256:c3e46f8beff308b352813cd8904f6480c331504e09060abd671b8a32e1255220
+    image: midnightntwrk/midnight-node@sha256:eeaf8e3c5b6bb4a6eb53daa3d15c66e68e751014890fb76f42f3c021da7cebf5
     platform: linux/arm64
     ports:
       - "127.0.0.1:${TR_NODE_PORT:-29944}:9944"

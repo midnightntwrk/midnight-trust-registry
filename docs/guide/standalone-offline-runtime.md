@@ -396,8 +396,10 @@ It rechecks the bundle, snapshots and hashes each archive in a private
 temporary directory, loads those snapshots without pulling, verifies each Docker
 image ID against the archived config bytes, and creates source-SHA-scoped
 local tags. Reject a tag already bound to different bytes. Set
-`TR_NODE_IMAGE`, `TR_INDEXER_IMAGE`, and `TR_PROOF_SERVER_IMAGE` to the returned
-tags. Then use **both verified bundle copies**, not mutable checkout files,
+`TR_NODE_IMAGE`, `TR_INDEXER_IMAGE`, `TR_PROOF_SERVER_IMAGE`, and `TR_API_IMAGE`
+to the returned tags. The API tag also hosts the installation-only relay;
+its normal API healthcheck is disabled only for that relay container. Then use
+**both verified bundle copies**, not mutable checkout files,
 with `docker compose -f <verified-bundle>/compose.yml -f
 <verified-bundle>/compose.offline.yml up --pull never -d --wait`; the overlay
 sets `pull_policy: never` for every image. Do this
@@ -1408,7 +1410,7 @@ the 1-of-3 transition and release approvals remain separate, open gates.
 The dedicated internal Docker network used in development does not expose its
 configured loopback ports to the host on the tested Docker Desktop setup.
 For an **online installation or deployment window only**, run a temporary
-fixed-destination relay using the already pinned node image, then attach that
+fixed-destination relay using the already verified, loaded API image, then attach that
 one container to the selected internal ledger network. The relay has no configurable
 upstream destinations. Select three unused host loopback ports distinct from
 both Compose projects' published ports; the example below uses `40944` for
@@ -1425,12 +1427,13 @@ fails the live relay gate.
 export TR_STACK_NAME=tr-standalone-local-qualification
 export TR_RELAY_NAME="${TR_STACK_NAME}-install-relay"
 docker run -d --pull=never --name "$TR_RELAY_NAME" --network bridge \
+  --no-healthcheck \
   --publish 127.0.0.1:40944:30944 \
   --publish 127.0.0.1:48088:38088 \
   --publish 127.0.0.1:46300:36300 \
   --mount type=bind,src="<verified-v6-bundle>/install-relay.py",dst=/relay.py,readonly \
   --entrypoint /usr/bin/python3 \
-  midnightntwrk/midnight-node@sha256:c3e46f8beff308b352813cd8904f6480c331504e09060abd671b8a32e1255220 \
+  "$TR_API_IMAGE" \
   /relay.py
 docker network connect "${TR_STACK_NAME}_ledger" "$TR_RELAY_NAME"
 # Perform approved installation/deployment checks, then remove the access path.

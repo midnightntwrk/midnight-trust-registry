@@ -2590,3 +2590,22 @@ tarball and malformed metadata negatives cover this idempotent resume path.
 This closes an artifact-byte gap in #236 locally; exact-head protected CI,
 release-owner approval, and independent review remain required before the
 release gate can be considered satisfied.
+
+The local standalone node pin was advanced from 1.0.0 to the arm64 manifest of
+the official 1.0.400 security release. The latter includes the ledger-8.1.3
+canonical contract-call fix; retaining 1.0.0 as the next RC install would miss
+that patch. A disposable three-service bridge showed node, existing indexer,
+and proof server healthy, with indexer GraphQL reachable. A node-only restart
+preserved its self-reported genesis and an earlier block. Despite matching
+hashes for the `dev` configuration and packaged `undeployed` genesis inputs,
+the fresh node reported a **different genesis hash** from the old b28 node.
+The prior proposed pin cannot be reused; the complete new chain specification
+needs independent review and a new human signature. The test project and its
+fresh volumes were removed; b28 private evidence and volumes were retained.
+Node 1.0.400 lacks Python, so new v6 bundles host the pinned installation
+relay in the separately verified API image with its normal API healthcheck
+disabled for that one temporary container. The relay verifier still accepts
+historical node-hosted bundles for audit and checks the new API image identity,
+entrypoint, mount, effective loopback ports, and network attachments. These
+are implementation and pre-deployment compatibility findings, not a deployed
+contract, independent finality, offline actor, or release approval.
