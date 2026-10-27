@@ -25,6 +25,7 @@ export { regularBytes } from "./standalone-private-file-bytes.mjs";
 import { checkHelmImageMapping } from "./check-helm-image-mapping.mjs";
 import { pinnedStandaloneImages } from "./build-standalone-install.mjs";
 import { observeStandaloneEgress } from "./check-standalone-egress.mjs";
+import { observeStandaloneLocalEgress } from "./check-standalone-local-egress.mjs";
 import { observeStandaloneInstallRelay } from "./check-standalone-install-relay.mjs";
 import { observeStandaloneTopology, standaloneStackConfig } from "./check-standalone-topology.mjs";
 import {
@@ -398,6 +399,7 @@ async function preparedStandaloneTopology(root, record) {
       ...(record.install.verified?.runtimeComposeSha256 ? {
         sourceRevision: record.install.verified.sourceRevision,
         images: record.install.verified.images,
+        apiRuntime: record.install.verified.apiRuntime,
         allowOffline: true,
         composeFiles: [join(record.install.bundle, "compose.yml"),
           join(record.install.bundle, "compose.offline.yml")],
@@ -433,7 +435,8 @@ export async function observeStandaloneStack(directory, dependencies = {}) {
     const { config, expectedTopology } = await preparedStandaloneTopology(root, record);
     const topology = await (dependencies.observeTopology ?? observeStandaloneTopology)(config,
       expectedTopology);
-    const egress = await (dependencies.observeEgress ?? observeStandaloneEgress)({
+    const egress = await (dependencies.observeEgress ?? (expectedTopology.apiRuntime
+      ? observeStandaloneLocalEgress : observeStandaloneEgress))({
       env: {
         TR_STACK_NAME: config.project,
         COMPOSE_PROJECT_NAME: config.project,
