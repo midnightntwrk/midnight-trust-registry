@@ -4,12 +4,13 @@ Issue #229 tracks typed assurance for the self-hosted 0.1.0 installer and
 operator workflow. The existing broad `checkJs` configuration includes the
 wizard and installer but permits implicit `any`; Quality CI now runs it.
 A second, strict no-emit gate runs
-`pnpm run check:security-boundaries-types` for nineteen privileged boundaries:
+`pnpm run check:security-boundaries-types` for twenty privileged boundaries:
 
 | Checked file | Security decision |
 | --- | --- |
 | `scripts/approved-provider-identity.mjs` | Hash and inode continuity across provider loading. |
 | `scripts/immutable-provider-tree.mjs` | Root-owned code tree and import confinement. |
+| `scripts/local-ledger-preflight.mjs` | Exact-field local genesis pin validation before any node observation; its output remains node-reported and unapproved. |
 | `scripts/local-deployment-plan-policy.mjs` | Exact source, network, provider, and journal fields before deployment or key insertion. |
 | `scripts/local-verifier-key-insertion-plan-policy.mjs` | Exact verifier-key insertion approval and fixed per-circuit journal path. |
 | `scripts/package-contents-policy.mjs` | Full Compact proof-circuit name and artifact completeness decisions. |
