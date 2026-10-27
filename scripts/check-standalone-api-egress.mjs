@@ -48,8 +48,11 @@ async function docker(args, allowFailure = false) {
     const { stdout, stderr } = await run("docker", args, { timeout: 20_000, maxBuffer: 1024 * 1024 });
     return { code: 0, stdout, stderr };
   } catch (error) {
-    if (allowFailure && Number.isInteger(error.code)) {
-      return { code: error.code, stdout: error.stdout ?? "", stderr: error.stderr ?? "" };
+    if (allowFailure && error && typeof error === "object" && "code" in error
+      && typeof error.code === "number" && Number.isInteger(error.code)) {
+      return { code: error.code,
+        stdout: "stdout" in error && typeof error.stdout === "string" ? error.stdout : "",
+        stderr: "stderr" in error && typeof error.stderr === "string" ? error.stderr : "" };
     }
     throw error;
   }
@@ -109,6 +112,8 @@ export async function observeStandaloneApiEgress(bundle, env = process.env, depe
   const name = `tr-api-egress-canary-${randomUUID()}`;
   const image = verified.apiRuntime.imageId;
   let canaryStarted = false;
+  let observation;
+  let failure;
   try {
     requireSuccess(await command(["run", "-d", "--rm", "--name", name, "--pull", "never",
       "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
@@ -157,7 +162,7 @@ export async function observeStandaloneApiEgress(bundle, env = process.env, depe
       || after.sourceRevision !== before.sourceRevision) {
       throw new Error("API container or network changed during the egress probe");
     }
-    return {
+    observation = {
       kind: "standalone-api-egress-observation",
       observedAt: new Date().toISOString(),
       sourceRevision: verified.sourceRevision,
@@ -174,12 +179,16 @@ export async function observeStandaloneApiEgress(bundle, env = process.env, depe
       scope: "running API TCP and DNS/UDP routes to one local bridge canary; Docker DNS recursion, other protocols, host ingress, and actor journeys not verified",
       releaseQualified: false,
     };
+  } catch (error) {
+    failure = error;
   } finally {
-    const cleanup = await command(["rm", "-f", name], true);
+    const cleanup = await command(["rm", "-f", name], true).catch(() => ({ code: -1 }));
     if (canaryStarted && cleanup.code !== 0) {
-      throw new Error("Could not remove the dedicated API egress canary");
+      failure = new Error("Could not remove the dedicated API egress canary", { cause: failure });
     }
   }
+  if (failure) throw failure;
+  return observation;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -189,7 +198,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     }
     console.log(JSON.stringify(await observeStandaloneApiEgress(process.argv[2])));
   } catch (error) {
-    console.error(`Dedicated API egress probe inconclusive: ${error.message}`);
+    console.error(`Dedicated API egress probe inconclusive: ${error instanceof Error ? error.message : String(error)}`);
     process.exitCode = 1;
   }
 }

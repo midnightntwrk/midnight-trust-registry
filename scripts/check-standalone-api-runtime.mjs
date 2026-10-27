@@ -228,7 +228,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     }
     console.log(JSON.stringify(await observeStandaloneApiRuntime(process.argv[2])));
   } catch (error) {
-    console.error(`Dedicated API runtime topology could not be verified: ${error.message}`);
+    console.error(`Dedicated API runtime topology could not be verified: ${error instanceof Error ? error.message : String(error)}`);
     process.exitCode = 1;
   }
 }

@@ -29,8 +29,11 @@ async function docker(args, allowFailure = false) {
     const { stdout, stderr } = await run("docker", args, { timeout: 30_000, maxBuffer: 1024 * 1024 });
     return { code: 0, stdout, stderr };
   } catch (error) {
-    if (allowFailure && Number.isInteger(error.code)) {
-      return { code: error.code, stdout: error.stdout ?? "", stderr: error.stderr ?? "" };
+    if (allowFailure && error && typeof error === "object" && "code" in error
+      && typeof error.code === "number" && Number.isInteger(error.code)) {
+      return { code: error.code,
+        stdout: "stdout" in error && typeof error.stdout === "string" ? error.stdout : "",
+        stderr: "stderr" in error && typeof error.stderr === "string" ? error.stderr : "" };
     }
     throw error;
   }
@@ -215,7 +218,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const expectedTopology = await verifiedOfflineEgressTopology(process.argv[2]);
     console.log(JSON.stringify(await observeStandaloneLocalEgress({ expectedTopology })));
   } catch (error) {
-    console.error(`Local egress probe inconclusive: ${error.message}`);
+    console.error(`Local egress probe inconclusive: ${error instanceof Error ? error.message : String(error)}`);
     process.exitCode = 1;
   }
 }
