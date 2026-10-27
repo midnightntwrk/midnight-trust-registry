@@ -946,6 +946,9 @@ same node's self-report. The reviewer must verify the
 chain-spec provenance and proposed pin before the separate `observe` command;
 the same relay identity and ports must be restored and reverified for that
 observation. A pre-existing proposal is not replaced automatically.
+Collect the candidate **before** attaching the relay: its direct-container
+topology check permits exactly the node, indexer, and proof server. An extra
+relay attachment is a stop condition, not a reason to bypass that check.
 
 After the untrusted proposal exists, run
 `pnpm prepare:standalone-genesis-review /absolute/private/setup-directory`.

@@ -490,8 +490,17 @@ export async function collectStandaloneGenesisCandidate(directory, dependencies 
       || record.ledgerObservation || record.genesisApproval || record.deployment) {
       throw new Error("Collect a candidate only from an observed stack before recording a genesis pin");
     }
-    const snapshot = await (dependencies.observeSnapshot ?? observeStandaloneRestartSnapshot)(root,
-      { allowUnpublishedHostPorts: true });
+    let snapshot;
+    try {
+      snapshot = await (dependencies.observeSnapshot ?? observeStandaloneRestartSnapshot)(root,
+        { allowUnpublishedHostPorts: true });
+    } catch (error) {
+      if (error instanceof Error
+        && error.message === "Dedicated ledger network has a missing or extra container attachment") {
+        throw new Error("Genesis collection requires only the three ledger containers; inspect attachments and remove any verified temporary install relay before retrying", { cause: error });
+      }
+      throw error;
+    }
     if (snapshot.project !== record.stack.project
       || snapshot.sourceRevision !== record.sourceRevision
       || snapshot.installInventorySha256 !== record.install.inventorySha256

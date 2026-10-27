@@ -855,6 +855,12 @@ test("genesis candidate is untrusted, non-overwriting, and cannot approve the no
     finalizedHash: `0x${"d".repeat(64)}`, finalizedHeight: 11,
     observedAt: "2026-10-20T00:00:00.000Z" };
   await assert.rejects(collectStandaloneGenesisCandidate(f.directory, {
+    observeSnapshot: async () => {
+      throw new Error("Dedicated ledger network has a missing or extra container attachment");
+    },
+  }), /inspect attachments and remove any verified temporary install relay/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).localLedger, "pending");
+  await assert.rejects(collectStandaloneGenesisCandidate(f.directory, {
     observeSnapshot: async () => ({ ...observed, sourceRevision: "f".repeat(40) }),
   }), /candidate disagrees/u);
   await assert.rejects(collectStandaloneGenesisCandidate(f.directory, {

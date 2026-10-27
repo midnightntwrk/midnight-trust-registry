@@ -75,6 +75,13 @@ node scripts/standalone-setup-wizard.mjs collect-genesis-candidate "$SETUP"
 node scripts/standalone-setup-wizard.mjs status "$SETUP"
 ```
 
+Collect the candidate with **only** the node, indexer, and proof-server
+attached to the dedicated ledger bridge. If an installation-only relay was
+used for another check, stop and remove it first; the collector rejects an
+extra attachment. Reattach the verified relay only later for the optional
+`draft-genesis-pin` loopback RPC check, then remove it again before continuing
+offline observations. Never remove an unknown container without inspecting it.
+
 The candidate file is explicitly **untrusted**. Compare its hash to an
 independently reviewed chain specification. The human reviewer, not the
 installer or an AI agent, signs the exact genesis approval bytes with their
