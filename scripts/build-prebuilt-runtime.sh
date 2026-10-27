@@ -19,10 +19,16 @@ if [[ -L "$source_managed" || -L "$(dirname "$source_managed")" ]]; then
   echo "Generated contract source must not be a symlink." >&2
   exit 1
 fi
-if [[ ! -e "$source_managed" ]]; then
-  mkdir -p "$(dirname "$source_managed")"
-  cp -R "$dist_managed" "$source_managed"
-fi
+mkdir -p "$source_managed"
+# Fill missing generated files, but never overwrite a conflicting source copy.
+find "$dist_managed" -type f -print0 | while IFS= read -r -d '' generated_file; do
+  relative_file=${generated_file#"$dist_managed"/}
+  source_file_path="$source_managed/$relative_file"
+  if [[ ! -e "$source_file_path" ]]; then
+    mkdir -p "$(dirname "$source_file_path")"
+    cp "$generated_file" "$source_file_path"
+  fi
+done
 if ! diff -qr "$source_managed" "$dist_managed" >/dev/null; then
   echo "Generated contract source differs from preserved dist artifacts; prepare a source-matched bundle." >&2
   exit 1

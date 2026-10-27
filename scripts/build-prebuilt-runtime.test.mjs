@@ -34,17 +34,21 @@ function fixture() {
   const distFile = join(root, contract, "dist/trust-registry.compact");
   const managedFile = join(root, contract, "dist/managed/trust-registry/contract/index.js");
   const sourceManagedFile = join(root, contract, "src/managed/trust-registry/contract/index.js");
+  const sourceManagedDeclaration = join(root, contract, "src/managed/trust-registry/contract/index.d.ts");
+  const distManagedDeclaration = join(root, contract, "dist/managed/trust-registry/contract/index.d.ts");
   for (const file of [sourceFile, distFile, managedFile]) mkdirSync(dirname(file), { recursive: true });
   writeFileSync(sourceFile, "pragma language_version >= 0.20.0;\n");
   writeFileSync(distFile, readFileSync(sourceFile));
   writeFileSync(managedFile, "// fixture\n");
+  writeFileSync(distManagedDeclaration, "export declare const fixture: true;\n");
   const fakePnpm = join(bin, "pnpm");
   writeFileSync(fakePnpm, "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$FAKE_PNPM_LOG\"\nexit \"${FAKE_PNPM_EXIT:-0}\"\n");
   chmodSync(fakePnpm, 0o755);
   const run = (extraEnv = {}) => spawnSync("bash", [script], { encoding: "utf8", env: {
     ...process.env, PATH: `${bin}:${process.env.PATH}`, FAKE_PNPM_LOG: log, ...extraEnv,
   } });
-  return { root, sourceFile, distFile, managedFile, sourceManagedFile, log, run };
+  return { root, sourceFile, distFile, managedFile, sourceManagedFile, sourceManagedDeclaration,
+    distManagedDeclaration, log, run };
 }
 
 test("demo E2E rebuilds current workspaces without a destructive Compact build", () => {
@@ -53,6 +57,7 @@ test("demo E2E rebuilds current workspaces without a destructive Compact build",
     const result = f.run();
     assert.equal(result.status, 0, result.stderr);
     assert.equal(readFileSync(f.sourceManagedFile, "utf8"), readFileSync(f.managedFile, "utf8"));
+    assert.equal(readFileSync(f.sourceManagedDeclaration, "utf8"), readFileSync(f.distManagedDeclaration, "utf8"));
     const calls = readFileSync(f.log, "utf8").trim().split("\n");
     assert.equal(calls.length, 2);
     assert.equal(calls[0], "--filter @midnight-ntwrk/trust-registry-contract exec tsc -p tsconfig.build.json");
@@ -62,6 +67,20 @@ test("demo E2E rebuilds current workspaces without a destructive Compact build",
     assert.match(calls[1], /--filter @midnight-ntwrk\/trust-registry-trqp-adapter /u);
     assert.match(calls[1], / run build$/u);
     assert.doesNotMatch(calls.join(" "), /build:light|compact:light|clean/u);
+  } finally {
+    rmSync(f.root, { recursive: true, force: true });
+  }
+});
+
+test("demo E2E restores missing declarations without replacing generated source", () => {
+  const f = fixture();
+  try {
+    mkdirSync(dirname(f.sourceManagedFile), { recursive: true });
+    writeFileSync(f.sourceManagedFile, readFileSync(f.managedFile));
+    const result = f.run();
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(readFileSync(f.sourceManagedDeclaration, "utf8"), readFileSync(f.distManagedDeclaration, "utf8"));
+    assert.equal(readFileSync(f.sourceManagedFile, "utf8"), readFileSync(f.managedFile, "utf8"));
   } finally {
     rmSync(f.root, { recursive: true, force: true });
   }
