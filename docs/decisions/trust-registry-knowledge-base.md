@@ -2641,3 +2641,13 @@ uses a realistic nonempty catalog and adds an early-denial case. Strict
 typechecking does not prove that a dynamically loaded provider is benign or
 that its output is a finalized ledger result; immutable installation, signed
 approval, and live reconciliation remain separate gates.
+
+The staged verifier-key insertion shell is also in the strict type gate. Its
+plan type no longer intersects incompatible deployment and insertion format
+literals; the checked code narrows an approved staged receipt before
+comparing it to the setup record and routes submit versus read-only
+reconciliation through distinct typed functions. It treats parsed manifests
+and provider material as untrusted boundary values and rejects a malformed
+verifier-key catalog before endpoint or provider use. This does not prove a
+key was inserted on a deployed local ledger or that finality is independently
+authenticated.

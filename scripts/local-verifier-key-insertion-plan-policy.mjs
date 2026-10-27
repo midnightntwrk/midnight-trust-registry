@@ -8,8 +8,9 @@ const FIELDS = ["circuitName", "deploymentJournalPath", "format", "initialVerifi
   "journalPath", "network", "providerModulePath", "providerModuleSha256",
   "releaseManifestPath", "sourceRevision"];
 
-/** @typedef {ReturnType<typeof validateLocalDeploymentPlan> & {
- * circuitName: string, deploymentJournalPath: string, initialVerifierKeyName: string
+/** @typedef {Omit<ReturnType<typeof validateLocalDeploymentPlan>, "format" | "initialVerifierKeyName"> & {
+ * format: "tr-local-verifier-key-insertion-plan-v1", circuitName: string,
+ * deploymentJournalPath: string, initialVerifierKeyName: string
  * }} LocalVerifierKeyInsertionPlan */
 
 /** @param {unknown} value @returns {value is Record<string, unknown>} */

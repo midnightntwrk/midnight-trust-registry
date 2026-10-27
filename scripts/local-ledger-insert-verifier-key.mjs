@@ -22,6 +22,22 @@ import { validateLocalVerifierKeyInsertionPlan } from "./local-verifier-key-inse
 
 export { validateLocalVerifierKeyInsertionPlan };
 
+/** @typedef {ReturnType<typeof validateLocalVerifierKeyInsertionPlan>} InsertionPlan */
+/** @typedef {Parameters<typeof submitLocalVerifierKeyInsertion>[0]} InsertionInput */
+/** @typedef {Pick<InsertionInput, "bootstrap" | "providers" | "contractMaintenanceSigningKey"> &
+ * {stop?: () => Promise<void>}} InsertionMaterial */
+/** @typedef {{validateEndpoints?: typeof createLocalNetworkDeploymentActionReader,
+ * observe?: typeof checkLocalLedgerPreflight,
+ * loadProvider?: (modulePath: string) => Promise<unknown>,
+ * inspectDeployment?: FileDeploymentAttemptJournal["inspectApproved"],
+ * reconcile?: typeof reconcileLocalVerifierKeyInsertion,
+ * submit?: typeof submitLocalVerifierKeyInsertion}} InsertionDependencies */
+/** @typedef {{expectedReleaseManifestSha256?: string,
+ * expectedDeploymentReceipt?: Partial<InsertionInput["receipt"]>}} InsertionApproval */
+/** @param {unknown} value @returns {value is Record<string, unknown>} */
+const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+
+/** @param {string} path */
 async function regularFile(path) {
   const stat = await lstat(path);
   if (!stat.isFile() || stat.size === 0 || stat.size > 16 * 1024 * 1024) {
@@ -30,6 +46,10 @@ async function regularFile(path) {
   return readFile(path);
 }
 
+/** @param {InsertionPlan} plan
+ * @param {InsertionDependencies} [dependencies]
+ * @param {"submit" | "reconcile"} [mode]
+ * @param {InsertionApproval} [approval] */
 export async function runLocalVerifierKeyInsertion(plan, dependencies = {}, mode = "submit", approval = {}) {
   validateLocalVerifierKeyInsertionPlan(plan);
   if (mode !== "submit" && mode !== "reconcile") throw new Error("Unsupported insertion mode");
@@ -38,11 +58,18 @@ export async function runLocalVerifierKeyInsertion(plan, dependencies = {}, mode
     && createHash("sha256").update(manifestBytes).digest("hex") !== approval.expectedReleaseManifestSha256) {
     throw new Error("Release manifest bytes changed after setup approval");
   }
-  const manifest = JSON.parse(manifestBytes.toString("utf8"));
-  if (manifest?.format !== "tr-release-candidate-manifest-v2"
-    || manifest.sourceRevision !== plan.sourceRevision) {
+  const parsedManifest = /** @type {unknown} */ (JSON.parse(manifestBytes.toString("utf8")));
+  if (!isRecord(parsedManifest) || parsedManifest.format !== "tr-release-candidate-manifest-v2"
+    || parsedManifest.sourceRevision !== plan.sourceRevision) {
     throw new Error("Approved source SHA disagrees with the release manifest");
   }
+  if (!isRecord(parsedManifest.verifierKeySha256)
+    || Object.keys(parsedManifest.verifierKeySha256).length === 0
+    || Object.entries(parsedManifest.verifierKeySha256).some(([name, hash]) =>
+      name.length === 0 || typeof hash !== "string" || !/^[0-9a-f]{64}$/u.test(hash))) {
+    throw new Error("Release manifest verifier-key catalog is malformed");
+  }
+  const manifest = /** @type {InsertionInput["releaseManifest"]} */ (parsedManifest);
   const providerIdentity = await readApprovedProviderIdentity(plan.providerModulePath, plan.providerModuleSha256);
   if (dependencies.loadProvider === undefined) {
     const tree = assertApprovedProviderTree(plan.providerModulePath, process.env.TR_IMMUTABLE_PROVIDER_ROOT);
@@ -66,49 +93,54 @@ export async function runLocalVerifierKeyInsertion(plan, dependencies = {}, mode
   if (typeof factory !== "function") {
     throw new Error("Approved provider module must export createLocalDeploymentMaterial");
   }
-  const material = await factory({
+  const material = await /** @type {(input: {network: InsertionPlan["network"],
+   * releaseManifest: InsertionInput["releaseManifest"]}) => Promise<unknown>} */ (factory)({
     network: plan.network, releaseManifest: manifest,
   });
   try {
-    if (!material || typeof material !== "object" || !material.bootstrap
+    if (!isRecord(material) || !material.bootstrap
       || !material.providers || !material.contractMaintenanceSigningKey) {
       throw new Error("Provider module did not return bootstrap, providers, and maintenance signing key");
     }
+    const approvedMaterial = /** @type {InsertionMaterial} */ (material);
     const deployment = await (dependencies.inspectDeployment ?? (async (intent) =>
       new FileDeploymentAttemptJournal(plan.deploymentJournalPath).inspectApproved(intent)))({
       network: plan.network,
-      bootstrap: material.bootstrap,
+      bootstrap: approvedMaterial.bootstrap,
       releaseManifest: manifest,
-      contractMaintenanceSigningKey: material.contractMaintenanceSigningKey,
+      contractMaintenanceSigningKey: approvedMaterial.contractMaintenanceSigningKey,
       sourceRevision: plan.sourceRevision,
       initialVerifierKeyName: plan.initialVerifierKeyName,
     });
-    if (deployment?.submitted === null || deployment?.submitted === undefined) {
+    const submitted = deployment?.submitted;
+    if (deployment === null || submitted === null || submitted === undefined) {
       throw new Error("A finalized staged deployment receipt is required before key insertion");
     }
-    if (approval.expectedDeploymentReceipt
-      && ["networkId", "contractAddress", "txId", "blockHash", "blockHeight"]
-        .some((field) => deployment.submitted[field] !== approval.expectedDeploymentReceipt[field])) {
+    const expectedReceipt = approval.expectedDeploymentReceipt;
+    const receiptFields = /** @type {const} */ (["networkId", "contractAddress", "txId",
+      "blockHash", "blockHeight"]);
+    if (expectedReceipt && receiptFields.some((field) =>
+      submitted[field] !== expectedReceipt[field])) {
       throw new Error("Deployment journal receipt disagrees with the setup-approved receipt");
     }
     const receipt = {
-      networkId: deployment.submitted.networkId,
-      contractAddress: deployment.submitted.contractAddress,
-      txId: deployment.submitted.txId,
-      blockHash: deployment.submitted.blockHash,
-      blockHeight: deployment.submitted.blockHeight,
+      networkId: submitted.networkId,
+      contractAddress: submitted.contractAddress,
+      txId: submitted.txId,
+      blockHash: submitted.blockHash,
+      blockHeight: submitted.blockHeight,
     };
     const input = {
       network: plan.network,
       sourceRevision: plan.sourceRevision,
       receipt,
-      bootstrap: material.bootstrap,
+      bootstrap: approvedMaterial.bootstrap,
       releaseManifest: manifest,
       bootstrapMaintenanceVerifyingKey: deployment.reservation.bootstrapMaintenanceVerifyingKey,
       circuitName: plan.circuitName,
       journal: new FileVerifierKeyInsertionJournal(plan.journalPath),
-      providers: material.providers,
-      contractMaintenanceSigningKey: material.contractMaintenanceSigningKey,
+      providers: approvedMaterial.providers,
+      contractMaintenanceSigningKey: approvedMaterial.contractMaintenanceSigningKey,
     };
     if (mode === "reconcile") {
       const readback = await (dependencies.reconcile ?? reconcileLocalVerifierKeyInsertion)(input);
@@ -119,7 +151,7 @@ export async function runLocalVerifierKeyInsertion(plan, dependencies = {}, mode
     return { kind: "local-verifier-key-insertion-observation", circuitName: plan.circuitName,
       receipt: result.receipt, readbackStatus: result.readback };
   } finally {
-    if (typeof material?.stop === "function") {
+    if (isRecord(material) && typeof material.stop === "function") {
       try {
         await material.stop();
       } catch {
