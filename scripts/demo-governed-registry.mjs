@@ -89,6 +89,7 @@ import { buildActorEvidenceReport } from "./actor-evidence-report.mjs";
 import { runApplicationEvidenceSafetyScenarios } from "./governed-demo-application-evidence-safety.mjs";
 import { runDenialSafetyScenario } from "./governed-demo-denial-safety.mjs";
 import { runMaintainerSafetyScenarios } from "./governed-demo-maintainer-safety.mjs";
+import { runOldPolicyIssuerReplay, runOldPolicyRecognitionReplay } from "./governed-demo-policy-replay.mjs";
 import { TrustRegistryTrqpAdapter, verifyTrqpRecognitionEvidenceFromApi } from "../adapters/trqp/dist/index.js";
 
 const asHex = (value) => `0x${Buffer.from(value).toString("hex")}`;
@@ -188,80 +189,10 @@ adversarialMatrix.expectThrown(() => policyHarness.prepareIssuerDecisionAction(
 });
 assert.equal(policyHarness.simulator.getLedger().governanceActionCount, policyActionCountBeforeReplay);
 policyHarness.proposeIssuer(currentPolicyIssuer, [policySecond]);
-const currentPolicyAction = policyHarness.prepareIssuerDecisionAction(currentPolicyIssuer, "approve");
-const oldPolicySignature = signCompact(policySecond, currentPolicyAction, policyHarness, formerPolicyCommitment);
-const oldPolicyCoSignature = signCompact(policyThird, currentPolicyAction, policyHarness, formerPolicyCommitment);
-const policyActionCountBeforeSignatureReplay = policyHarness.simulator.getLedger().governanceActionCount;
-adversarialMatrix.expectThrown(() => policyHarness.simulator.authorizeIssuerAuthorization(
-  oldPolicySignature.keyId,
-  oldPolicySignature.publicKey,
-  oldPolicySignature.signature,
-  currentPolicyIssuer.authorizationIdCommitment,
-  currentPolicyAction.evidenceHash,
-  [oldPolicyCoSignature],
-), {
-  id: "compact-old-policy-signature-replay",
-  invariant: "Former-policy signatures cannot authorize the same payload and sequence under the revised policy",
-  boundary: "compact",
-  messagePattern: /Invalid Jubjub Schnorr signature/u,
-  category: "old-policy-signature-rejected",
-});
-assert.equal(policyHarness.simulator.getLedger().governanceActionCount, policyActionCountBeforeSignatureReplay);
-const currentPolicySignature = signCompact(policySecond, currentPolicyAction, policyHarness);
-const currentPolicyCoSignature = signCompact(policyThird, currentPolicyAction, policyHarness);
-policyHarness.simulator.authorizeIssuerAuthorization(
-  currentPolicySignature.keyId,
-  currentPolicySignature.publicKey,
-  currentPolicySignature.signature,
-  currentPolicyIssuer.authorizationIdCommitment,
-  currentPolicyAction.evidenceHash,
-  [currentPolicyCoSignature],
-);
-assert.equal(policyHarness.simulator.getLedger().governanceActionCount,
-  policyActionCountBeforeSignatureReplay + 1n);
-policyHarness.activateIssuer(currentPolicyIssuer, [policySecond]);
-const currentPolicyBundle = policyHarness.evaluateCurrentIssuerDecision(currentPolicyIssuer);
-const recognitionReplay = createRecognitionScenarioFixture("governed-demo-recognition-policy-replay");
-const recognitionProposal = policyHarness.prepareRecognitionProposalAction(recognitionReplay);
-const recognitionProposalEvidence = policyHarness.signRecognitionProposalEvidence(recognitionProposal);
-const recognitionProposalCount = policyHarness.simulator.getLedger().governanceActionCount;
-adversarialMatrix.expectThrown(() => policyHarness.executeRecognitionProposalWithSignatures(
-  recognitionReplay,
-  [signCompact(policySecond, recognitionProposal, policyHarness, formerPolicyCommitment),
-    signCompact(policyThird, recognitionProposal, policyHarness, formerPolicyCommitment)],
-  recognitionProposalEvidence,
-  recognitionProposal,
-), {
-  id: "compact-recognition-proposal-old-policy-signature-replay",
-  invariant: "A recognition proposal with a current payload cannot reuse former-policy maintainer signatures",
-  boundary: "compact", messagePattern: /Invalid Jubjub Schnorr signature/u,
-  category: "old-policy-signature-rejected",
-});
-assert.equal(policyHarness.simulator.getLedger().governanceActionCount, recognitionProposalCount);
-policyHarness.executeRecognitionProposalWithSignatures(
-  recognitionReplay,
-  [signCompact(policySecond, recognitionProposal, policyHarness),
-    signCompact(policyThird, recognitionProposal, policyHarness)],
-  recognitionProposalEvidence,
-  recognitionProposal,
-);
-const recognitionApproval = policyHarness.prepareRecognitionDecisionAction(recognitionReplay, "approve");
-const recognitionApprovalCount = policyHarness.simulator.getLedger().governanceActionCount;
-adversarialMatrix.expectThrown(() => policyHarness.executeRecognitionDecisionWithSignatures(
-  recognitionReplay, "approve",
-  [signCompact(policySecond, recognitionApproval, policyHarness, formerPolicyCommitment),
-    signCompact(policyThird, recognitionApproval, policyHarness, formerPolicyCommitment)],
-), {
-  id: "compact-recognition-approval-old-policy-signature-replay",
-  invariant: "A recognition approval with a current payload cannot reuse former-policy maintainer signatures",
-  boundary: "compact", messagePattern: /Invalid Jubjub Schnorr signature/u,
-  category: "old-policy-signature-rejected",
-});
-assert.equal(policyHarness.simulator.getLedger().governanceActionCount, recognitionApprovalCount);
-policyHarness.executeRecognitionDecisionWithSignatures(recognitionReplay, "approve", [
-  signCompact(policySecond, recognitionApproval, policyHarness),
-  signCompact(policyThird, recognitionApproval, policyHarness),
-]);
+const currentPolicyBundle = runOldPolicyIssuerReplay(adversarialMatrix, policyHarness,
+  currentPolicyIssuer, policySecond, policyThird, formerPolicyCommitment, signCompact);
+runOldPolicyRecognitionReplay(adversarialMatrix, policyHarness,
+  policySecond, policyThird, formerPolicyCommitment, signCompact);
 const historicalPolicyBundle = policyHarness.buildIssuerHistoricalEvidence(historicalIssuer);
 assert.equal(originalPolicyBundle.policy.version, historicalPolicyBundle.policy.version);
 assert.notEqual(historicalPolicyBundle.policy.version, currentPolicyBundle.policy.version);
