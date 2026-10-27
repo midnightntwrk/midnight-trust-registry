@@ -390,6 +390,7 @@ describe("proposal admission", () => {
     const bytes = new Uint8Array(32).fill(1);
     const server = createTrustRegistryApiServer({
       source,
+      localPlanSha256: "d".repeat(64),
       governedIssuerProposals: {
         async prepare(_authorizationId, _evidence, terms) {
           if (rejectEvidenceTime) throw new LocalIssuerEvidenceTimeRejectedError();

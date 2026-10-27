@@ -154,6 +154,13 @@ adapter, approved immutable provider loader, signed write-plan pins,
 finalized proposal resolution, and a full offline actor run. If state changes
 after HTTP preflight but before the reserved execution, the journal retains
 the reservation for explicit reconciliation rather than silently retrying.
+An embedding host that supplies a local-ledger governed proposal port must
+also supply the digest of its verified signed API plan. The server rejects an
+otherwise configured port without that digest and exposes it in health for
+the operator's capability preflight. This is a startup identity check, **not**
+signature verification by the server; the host must verify the actual signed
+bytes before constructing the port or listener.
+
 The port now separately requires a deployment-trusted time source and rejects
 accepted application evidence before its verified-at time or at/after expiry
 on every prepare, preflight, and execute. The same sampled time is passed to

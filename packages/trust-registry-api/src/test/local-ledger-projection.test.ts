@@ -640,7 +640,10 @@ describe("local ledger-bound API source", () => {
       readFinalizedProposalLedger: finalizedReader })).toThrow(/membership proposals require side-effect-free/u);
     expect(() => createTrustRegistryApiServer({ source: boundSource, governedIssuerProposals: issuerPort,
       proposalSubmissionJournal: boundJournal, proposalAdmission: admission,
-      readFinalizedProposalLedger: finalizedReader })).not.toThrow();
+      readFinalizedProposalLedger: finalizedReader })).toThrow(/caller-verified signed-plan digest/u);
+    expect(() => createTrustRegistryApiServer({ source: boundSource, governedIssuerProposals: issuerPort,
+      proposalSubmissionJournal: boundJournal, proposalAdmission: admission,
+      readFinalizedProposalLedger: finalizedReader, localPlanSha256: "d".repeat(64) })).not.toThrow();
   });
 
   it("re-reads the finalized view for every HTTP query and fails closed", async () => {

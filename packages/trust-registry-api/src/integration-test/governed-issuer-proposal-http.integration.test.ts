@@ -128,6 +128,7 @@ describe("Compact-backed issuer proposals over HTTP", () => {
     let executions = 0;
     let preflights = 0;
     const serverOptions: Parameters<typeof createTrustRegistryApiServer>[0] = {
+      localPlanSha256: "d".repeat(64),
       source: {
         mode: "local-ledger", localDeploymentBinding: { contractAddress, expectedGenesisHash: genesisHash },
         loadSnapshot: async () => operatorSnapshot,
@@ -327,6 +328,7 @@ describe("Compact-backed issuer proposals over HTTP", () => {
     const reader = vi.fn(async () => harness.simulator.getLedger());
     const resolve = vi.fn(async () => { throw new Error("untrusted port resolver"); });
     const serverFor = (sourceGenesisHash: string) => createTrustRegistryApiServer({
+      localPlanSha256: "d".repeat(64),
       source: {
         mode: "local-ledger", localDeploymentBinding: { contractAddress, expectedGenesisHash: sourceGenesisHash },
         loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "synthetic-local-readback" }),

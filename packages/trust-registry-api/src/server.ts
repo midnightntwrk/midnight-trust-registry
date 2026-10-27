@@ -238,7 +238,7 @@ class HttpProblem extends Error {
 
 export type TrustRegistryApiServerOptions = {
   source: TrustRegistryApiStateSource;
-  /** Digest of the signed local plan bytes verified when this server started. */
+  /** The embedding host must verify the signed plan; this server checks only the supplied digest's shape. */
   localPlanSha256?: string;
   corsPolicy?: "public" | "none";
   clock?: () => string;
@@ -886,6 +886,11 @@ export const createTrustRegistryApiServer = (
       options.governedAuditorProposals, options.governedMaintainerProposals]
       .some((port) => port !== undefined && typeof port.preflightSubmission !== "function")) {
     throw new Error("Journaled membership proposals require side-effect-free submission preflight");
+  }
+  if (options.source.mode === "local-ledger"
+    && (hasMembershipProposalPort || options.governedRecognitionProposals !== undefined)
+    && options.localPlanSha256 === undefined) {
+    throw new Error("Local-ledger governed proposal ports require a caller-verified signed-plan digest");
   }
   const problemBaseUri = options.problemBaseUri ?? DEFAULT_PROBLEM_BASE;
   const requireCompleteHistoricalProjection = (): void => {
