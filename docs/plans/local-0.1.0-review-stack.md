@@ -29,11 +29,12 @@ until applied to the owning PR and rerun at its new head.
 
 ## Unpublished continuation
 
-There are 51 signed/DCO local commits above #240's published head
-`bbe527cf` through `c786254f`. They are **not published**, and publication
-requires the user's separate approval. Preserve their existing order and
-review them as four contiguous, context-sized diffs rather than opening one
-PR per commit. Before any publication, fetch the live #240 head and check
+There are 51 signed/DCO local implementation commits above #240's published
+head `bbe527cf` through `c786254f`, followed by two review-plan documentation
+commits and the current-query approval-binding slice. They are **not
+published**, and publication requires the user's separate approval. Preserve
+their existing order and review them as context-sized diffs rather than
+opening one PR per commit. Before any publication, fetch the live #240 head and check
 that it is still the ancestor of the first group; do not force-push or
 rewrite unpublished work to repair a stale base.
 
@@ -43,6 +44,7 @@ rewrite unpublished work to repair a stale base.
 | B | `91c5a941`..`8fba8e05` | Static archive and Compose typing, verified v6 install and isolated egress canaries, predeployment evidence limits | Loaded-image identity, route isolation, DNS/TCP positive controls, no claim of actor or host egress |
 | C | `aba60244`..`bc55a27d` | Genesis-pin and bundle preflight, safe prebuilt demo E2E, journal restart quarantine, operator/security handoff | Exact-source pinning, no destructive Compact rebuild, no simulator-to-deployment promotion, restart ambiguity |
 | D | `50cbd1a5`..`c786254f` | Full-precision application, recognition, lifecycle, challenge, and TRQP evidence time decisions | RFC3339 offsets and long fractions, one-use nonce ordering, historical evidence selection; #179 remains open |
+| E | `8ea73b91`..`c0d15413` (after review-plan docs) | Bind the standalone read-only current-query probe to wizard-approved project, network, genesis, and deployment | Reject cross-setup or cross-deployment evidence before egress; no claim of actor writes or independent finality |
 
 For a stacked publication, the first group would target #240, and each later
 group would target the immediately preceding group. The table is a review
@@ -61,6 +63,10 @@ and writer-review tests plus `test:e2e:demo`. Those results are fixture and
 predeployment checks, **not** installed-ledger actor E2E, authenticated
 finality, or a human security verdict. PR publication or changed heads still
 require fresh applicable CI and review.
+Read-only Codex CLI review of group E through `c0d15413` found no actionable
+regression. Its local standalone topology suite passed 91 tests, and docs,
+security-boundary typechecks, and dependency audit passed. These are
+predeployment checks only.
 #238's unresolved external scan and #232's human security release gate remain
 separate stop conditions.
 
