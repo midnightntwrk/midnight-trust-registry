@@ -30,7 +30,11 @@ applicant and admin flows in a real browser, install Google Chrome and run
 and runs all Playwright specs without invoking the destructive light build.
 CI installs Playwright-pinned Chromium instead of Google Chrome. Both variants
 still use fixture identity/status and simulator governance; a green CI browser
-step is **not** standalone deployment evidence. See the
+step is **not** standalone deployment evidence. The browser suite also checks
+that the local-ledger admin view hides fixture mutation controls and discards
+an exact-ID result when a mocked API checkpoint changes mid-request. This is
+a UI fail-closed regression, not a deployed-ledger or authenticated-finality
+test. See the
 [demo quickstart](quickstart.md) for individual commands and expected behavior.
 
 ## Prepare a standalone run
