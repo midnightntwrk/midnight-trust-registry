@@ -1,7 +1,7 @@
 # Local proposal reservation recovery
 
-Status: **proposed safety contract for issue #220**, not an implemented
-recovery procedure or release approval. The first 0.1.0 RC targets a
+Status: **partially implemented safety contract for issue #220**, not an
+operator recovery procedure or release approval. The first 0.1.0 RC targets a
 self-hosted local ledger. This document does not qualify a public network.
 
 ## Why an unknown outcome stays blocked
@@ -76,11 +76,15 @@ account, the safe outcome is a permanently blocked reservation until a
 separately reviewed protocol-level invalidation or recovery mechanism exists.
 Do not infer non-inclusion by searching a bounded time window.
 
-## Required journal transition, not yet implemented
+## Internal journal transition, not an operator command
 
-After independent review of the proof format and exact-head code, a future
-operator-only transition may atomically turn `reserved` into a terminal
-`abandoned` tombstone. It must retain the original authorization ID,
+The file journal now has an opt-in `abandonInvalidatedReservation` method
+that can atomically turn `reserved` into a terminal `abandoned` tombstone. It
+requires a distinct reviewer's exact signed decision and a deployment-owned
+callback that authenticates the same retained finality-evidence bytes, the
+approved genesis and finalized ledger view, and rejection of the original
+Compact action. The method checks the one-step action-counter invalidation
+under the existing journal lock. It retains the original authorization ID,
 evidence commitment, reservation context, attempt digest, approved decision
 digest, evidence reference, reviewer identity, and decision time. It must
 never make the same role/authorization ID replayable. The transition must
@@ -91,8 +95,14 @@ checkpoint. Archive rotation, capacity accounting, backup, and restore must
 preserve and revalidate the tombstone. No HTTP request may supply its own
 proof verdict or select a new journal to bypass this rule.
 
-The transition is deliberately absent today. A signed review decision does
-**not** authorize manual JSON edits, journal deletion, a reset, or a retry.
+The test callback uses an injected simulator view and is **not** an
+independent finality authenticator. No production implementation of the
+callback, complete-action proof format, or deployed Compact stale-action
+check has been reviewed; the packaged CLI and HTTP service do not expose
+this transition. A signed review decision alone does **not** authorize manual
+JSON edits, journal deletion, a reset, or a retry. Issue #220 and the human
+security gate remain open until the real local-ledger proof and operator path
+are reviewed and exercised.
 
 ## Acceptance tests for the future implementation
 

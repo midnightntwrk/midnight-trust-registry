@@ -99,9 +99,11 @@ action recorded at the reserved sequence, prove that its exact kind and
 payload differ, and preserve the original authorization ID and decision in
 the private journal. A null indexer result, elapsed time, or this simulator
 test cannot release a reservation. Read-only v3 candidate inspection and a
-distinct-reviewer signed-decision draft/verification command now exist, but
-they neither authenticate finality nor mutate the journal. There is still no
-safe command to release or abandon the reserved attempt.
+distinct-reviewer signed-decision draft/verification command now exist.
+The journal library has an internal tombstone transition requiring an injected
+finality and stale-action authenticator, but no reviewed production adapter
+or operator command supplies it. The signed decision by itself cannot release
+the reservation.
 - Restart and distinct-project restore retain deployment, journal, and current
   state; an ambiguous write is reconciled only under independently reviewed
   evidence. Host, wallet, browser, API, proof-server, and container egress
