@@ -2852,3 +2852,13 @@ Out-of-range stored window timestamps fail before conversion. Persisted
 admission expiry remains conservatively rounded down to milliseconds. These
 tests use a fixture DID resolver and in-memory challenge store, so they do not
 establish a deployed standalone actor journey or close #179's wider audit.
+
+## TRQP evidence epoch order beyond milliseconds
+
+The API source now sorts matching authorization and recognition bundles by
+their full RFC3339 epoch start before using epoch ID as a tie-breaker. Two
+source-level regressions place the newer bundle only one 10-digit fractional
+step after the older within the same millisecond, with IDs arranged to favor
+the older one under the former `Date.parse` sort. These tests narrow #179's
+historical evidence-selection risk but use synthetic operator snapshots, not
+an authenticated local-ledger history or deployed actor E2E evidence.

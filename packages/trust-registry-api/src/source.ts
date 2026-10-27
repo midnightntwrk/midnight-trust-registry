@@ -627,7 +627,7 @@ const authorizationEvidenceAtTime = (
   const candidates = [inspection.entry.evidence, ...snapshot.evidenceArchive]
     .filter((bundle) => bundleAvailableAt(bundle, snapshot, at))
     .sort((left, right) =>
-      Date.parse(right.epoch.validFrom) - Date.parse(left.epoch.validFrom)
+      compareRfc3339Instants(right.epoch.validFrom, left.epoch.validFrom)
       || right.epoch.epochId.localeCompare(left.epoch.epochId));
   for (const bundle of candidates) {
     const authorization = bundle.authorization;
@@ -648,7 +648,7 @@ const recognitionEvidenceAtTime = (
   const candidates = [inspection.entry.evidence, ...snapshot.evidenceArchive]
     .filter((bundle) => bundleAvailableAt(bundle, snapshot, at))
     .sort((left, right) =>
-      Date.parse(right.epoch.validFrom) - Date.parse(left.epoch.validFrom)
+      compareRfc3339Instants(right.epoch.validFrom, left.epoch.validFrom)
       || right.epoch.epochId.localeCompare(left.epoch.epochId));
   for (const bundle of candidates) {
     const recognition = bundle.recognition;
