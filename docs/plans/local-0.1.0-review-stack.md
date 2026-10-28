@@ -28,6 +28,17 @@ integrate #238's branch-owned changes into #239 and then #240, without
 rewriting unpublished work; rerun applicable exact-head CI and review on
 each updated PR. Do not publish local continuation groups onto a stale top
 head, and do not mark #238 ready while its external scan is unresolved.
+Local-only integration completed on 2026-10-28: signed/DCO merge `04d5e37d`
+combines the current #238 head with #239, and signed/DCO merge `cc7c081b`
+combines that result with #240. Both combined trees passed 117 focused setup
+and acceptance tests, docs checks, dependency audit, and `./run.sh --light`
+(20/20 tasks); read-only Codex reviews found no actionable merge regression.
+The #240 tree also passed 198/198 adversarial parity and packed consumer smoke.
+Signed/DCO merge `b29a1d65` brings this restacked ancestry under the local
+unpublished continuation without changing its file tree. These local branches
+have not been pushed, so the published PRs still have stale heads and must run
+their own exact-head CI and review if publication is approved. None of these
+tests is a deployed standalone actor journey or an external scan disposition.
 At signed/DCO head `5b6d2851` on 2026-10-27, #238's external Opengrep
 OSS check remained red.
 [Issue #237](https://github.com/midnightntwrk/midnight-trust-registry/issues/237)
@@ -161,9 +172,9 @@ hash and marks later or same-payload history inconclusive. Focused API tests,
 typecheck, docs check, and audit passed locally; the read-only review found no
 blocker after the last-action values were bound into the signed decision.
 The later local acceptance-evidence alias and operator-guide commits overlap
-the branch-owned fixes now published on #238. Reconcile those equivalent
-patches when preparing any subsequent stack update; do not force-push,
-duplicate their effect, or claim deployed E2E from these tests.
+the branch-owned fixes now published on #238. The local ancestry-only merge
+above reconciles those equivalent patches without a duplicate file change;
+do not force-push or claim deployed E2E from these tests.
 At local head `aaaeec39`, the acceptance and journey-prerequisite focused
 tests passed 25/25, `pnpm run docs-check` passed, and
 `pnpm audit --audit-level low` found no known vulnerabilities. The
