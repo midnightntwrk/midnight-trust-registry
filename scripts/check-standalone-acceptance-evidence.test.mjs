@@ -402,9 +402,11 @@ test("attaches raw evidence without changing an operator verdict or claiming qua
     assert.equal(updated.cases.L01.status, "not-run");
     assert.equal((await checkStandaloneAcceptanceEvidence(root, updated)).completeInventory, false);
     await writeFile(join(root, "L01/public.log"), "public receipt\n", { mode: 0o644 });
+    await chmod(join(root, "L01/public.log"), 0o644);
     await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
       "A01", "L01/public.log"), /private nonempty bounded regular file/u);
     await mkdir(join(root, "public-parent"), { mode: 0o755 });
+    await chmod(join(root, "public-parent"), 0o755);
     await writeFile(join(root, "public-parent/receipt.log"), "private file\n", { mode: 0o600 });
     await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
       "A01", "public-parent/receipt.log"), /private real directory/u);
