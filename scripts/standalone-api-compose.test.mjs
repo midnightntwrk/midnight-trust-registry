@@ -5,6 +5,28 @@ import { test } from "node:test";
 
 import yaml from "js-yaml";
 
+test("plaintext node WebSockets remain confined to the local ledger bridge", async () => {
+  const base = yaml.load(await readFile(
+    fileURLToPath(new URL("../deploy/standalone/compose.yml", import.meta.url)), "utf8"));
+  const offline = yaml.load(await readFile(
+    fileURLToPath(new URL("../deploy/standalone/compose.offline.yml", import.meta.url)), "utf8"));
+  assert.deepEqual(Object.keys(base.services).sort(), ["indexer", "node", "proof-server"]);
+  assert.equal(base.networks.ledger.internal, true);
+  for (const service of Object.values(base.services)) {
+    assert.deepEqual(service.networks, ["ledger"]);
+  }
+  assert.deepEqual(base.services.node.ports, ["127.0.0.1:${TR_NODE_PORT:-29944}:9944"]);
+  assert.deepEqual(base.services.indexer.ports, ["127.0.0.1:${TR_INDEXER_PORT:-28088}:8088"]);
+  assert.deepEqual(base.services["proof-server"].ports, ["127.0.0.1:${TR_PROOF_PORT:-26300}:6300"]);
+  assert.equal(base.services.indexer.environment.APP__INFRA__NODE__URL, "ws://node:9944");
+  assert.equal(base.services.indexer.environment.APP__INFRA__SPO_NODE__URL, "ws://node:9944");
+  assert.deepEqual(Object.keys(offline.services).sort(), ["indexer", "node", "proof-server"]);
+  for (const service of Object.values(offline.services)) {
+    assert.deepEqual(Object.keys(service).sort(), ["image", "pull_policy"]);
+    assert.equal(service.pull_policy, "never");
+  }
+});
+
 test("optional API overlay stays on the internal ledger network and requires signed runtime inputs", async () => {
   const base = yaml.load(await readFile(
     fileURLToPath(new URL("../deploy/standalone/compose.yml", import.meta.url)), "utf8"));

@@ -74,6 +74,12 @@ host administrator; NetworkPolicy is not encryption. The independent human
 reviewer must record whether that residual risk is acceptable for the
 self-hosted, operator-controlled local RC, name the owner and compensating
 controls, and require a transport change if the isolation evidence fails.
+The source-level `standalone-api-compose.test.mjs` now pins the internal bridge,
+the three bridge members, the loopback-only published ports, and the two
+node-to-indexer WebSocket endpoints; it also rejects an offline overlay that
+adds ports, networks, or pulls. This catches topology drift but does not prove
+the rendered project or running host is isolated. The live positive-control
+and denied-egress probes and independent reviewer disposition remain required.
 Keep #238 draft and #237/#232 open until the red check has an explicit,
 reviewed disposition under repository policy. Do not change `ws://` to
 `wss://` without a working TLS listener and verified certificate trust.
