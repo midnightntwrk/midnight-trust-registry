@@ -11,7 +11,7 @@ evidence. Passing the demo path does not advance the standalone release gate.
 | Goal | Run | Passing result means |
 | --- | --- | --- |
 | Try the product flows without a ledger | `pnpm run test:e2e:demo` | The four signed role journeys and fixture API/UI smoke completed in a Compact simulator. |
-| Exercise the demo in a browser | `pnpm run test:e2e:demo:browser` | The same demo plus applicant/admin Playwright flows completed against fixture services. |
+| Exercise the demo in a browser | `pnpm run test:e2e:demo:browser` | The same demo plus applicant/admin Playwright flows completed against fixture services; the test context blocked and reported non-loopback browser requests. |
 | Check submission restart quarantine without a live network | `pnpm --filter @midnight-ntwrk/trust-registry-api run test:light` | The journal write, mocked-node/provider restart, and fixture API-listener restart tests passed; this is not deployed-ledger recovery evidence. |
 | Check a real standalone candidate before actor testing | `node scripts/check-standalone-journey-prerequisites.mjs "$SETUP" "$SOURCE_SHA"` | Exit 0: the wizard recorded the prerequisite ledger observations for this exact source. Exit 2: stop and follow `nextActions`. |
 | Record a deployed candidate's operator-reviewed cases | `node scripts/check-standalone-acceptance-evidence.mjs "$ACCEPTANCE" "$SOURCE_SHA"` | Exit 0: all cases have a current decision-backed operator `pass`; exit 2: a case is failed, not run, or needs a fresh decision. Inspect `operatorFailedCases`, `notRunCases`, and `decisionBackedCases`; receipt authenticity, finality, and the security verdict still need independent review. |
@@ -64,7 +64,11 @@ step is **not** standalone deployment evidence. The browser suite also checks
 that the local-ledger admin view hides fixture mutation controls and discards
 an exact-ID result when a mocked API checkpoint changes mid-request. This is
 a UI fail-closed regression, not a deployed-ledger or authenticated-finality
-test. See the
+test. Its Playwright context blocks service workers and audits HTTP and
+WebSocket requests, failing if any non-loopback origin is attempted. That
+guard covers only requests visible to this fixture browser context; it does
+not prove host, wallet, prover, container, or deployed-browser egress denial.
+See the
 [demo quickstart](quickstart.md) for individual commands and expected behavior.
 
 ## Prepare a standalone run

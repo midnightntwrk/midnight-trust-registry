@@ -1,0 +1,57 @@
+import assert from "node:assert/strict";
+
+import { expect, test as base } from "@playwright/test";
+
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
+const NETWORK_PROTOCOLS = new Set(["http:", "https:", "ws:", "wss:"]);
+const LOCAL_PROTOCOLS = new Set(["about:", "blob:", "data:"]);
+
+export function isLocalBrowserUrl(value) {
+  try {
+    const url = new URL(value);
+    return LOCAL_PROTOCOLS.has(url.protocol)
+      || (NETWORK_PROTOCOLS.has(url.protocol) && LOOPBACK_HOSTS.has(url.hostname));
+  } catch {
+    return false;
+  }
+}
+
+const requestOrigin = (value) => {
+  try {
+    const url = new URL(value);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    return "invalid-url";
+  }
+};
+
+export async function installOfflineBrowserAudit(context) {
+  const externalOrigins = new Set();
+  const record = (url) => {
+    if (!isLocalBrowserUrl(url)) externalOrigins.add(requestOrigin(url));
+  };
+  context.on("request", (request) => record(request.url()));
+  await context.route("**/*", (route) => {
+    const url = route.request().url();
+    if (isLocalBrowserUrl(url)) return route.continue();
+    record(url);
+    return route.abort("blockedbyclient");
+  });
+  await context.routeWebSocket("**/*", (route) => {
+    const url = route.url();
+    if (isLocalBrowserUrl(url)) return route.connectToServer();
+    record(url);
+    return route.close();
+  });
+  return () => assert.deepEqual([...externalOrigins], [],
+    "Fixture browser attempted external network access");
+}
+
+export { expect };
+export const test = base.extend({
+  page: async ({ page }, use) => {
+    const assertNoExternalRequests = await installOfflineBrowserAudit(page.context());
+    await use(page);
+    assertNoExternalRequests();
+  },
+});

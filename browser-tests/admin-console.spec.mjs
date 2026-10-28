@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { resolve } from "node:path";
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./offline-browser-fixture.mjs";
 
 import { createStaticAssetHandler } from "../scripts/serve-static.mjs";
 
