@@ -177,6 +177,10 @@ Issuer, verifier, and recognition consumer-evidence fixture checks now run
 through a named module as well, including the existing tampered Merkle path,
 wrong resource scope, and recognition-as-issuer rejection cases. This is
 fixture/API-client coverage, not a deployed standalone relying-party run.
+The verifier, auditor, and maintainer proposal fixture loop is separately
+isolated with its quorum and evidence/scope-substitution cases beside each
+successful proposal and observed receipt. This still uses the simulator-backed
+demo; it is not a deployed actor submission or authenticated finality proof.
 These refactors harden report integrity and advance the remaining #216 demo
 extraction, but do not finish that issue or
 qualify a deployed actor journey. Hold group G
