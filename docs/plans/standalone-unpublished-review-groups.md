@@ -38,6 +38,22 @@ deployed standalone evidence. No candidate was pushed; obtain explicit push
 approval, then recheck live parent heads and run exact-head CI and review.
 Issue #241 is not a waiver for #237, #232, or the operator release gates.
 
+Two further **unpublished** signed/DCO commits form a direct local chain above
+the final candidate and do not change published PR heads:
+
+| Local branch | Head | Scope and evidence |
+| --- | --- | --- |
+| `codex/trust-registry-exact-fields-boundaries` | `e1e035b1` | Delimiter-safe genesis pin/review, deployment/insertion plans, signed wizard approvals and key insertions, and release committee checks. Wizard/packet 111/111, focused policy 10/10, strict typecheck, docs, and audit passed. |
+| `codex/trust-registry-profile-field-validation` | `7ef4ebea` | Internal set-equality helper for network-profile and verifier-key catalogs. Package typecheck and lint, 34 focused tests, docs, and audit passed. |
+
+A read-only Codex CLI review of the cumulative diff from `5265bd03` to
+`7ef4ebea` found no actionable regression. This is not a non-author human
+security verdict, exact-head hosted CI, or deployed E2E evidence. At the
+live published #238 head `97e59c5e`, Opengrep OSS remains red on five internal
+plaintext WebSocket findings; the aggregate scan is green. Issue #237 and
+human review #232 require a real risk disposition, not a scanner waiver by
+follow-up issue. No local branch was pushed or merged.
+
 The validation above is local and scoped, not exact-head CI or independent
 review. The final fixture E2E lane is not a deployed-ledger actor journey.
 In this review checkout, `pnpm run test:standalone-topology` passes 121/121,
