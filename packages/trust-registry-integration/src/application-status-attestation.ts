@@ -120,6 +120,7 @@ export function createAttestedApplicationStatusSource(input: {
     if (compareRfc3339Instants(statement.observedAt, latestObservation) > 0
       || compareRfc3339Instants(statement.observedAt, oldestObservation) < 0
       || compareRfc3339Instants(statement.expiresAt, evaluatedAt) <= 0
+      || compareRfc3339Instants(statement.expiresAt, statement.observedAt) <= 0
       || !isRfc3339DurationWithinSeconds(statement.observedAt, statement.expiresAt, 5 * 60)) {
       throw new Error("Application status attestation is not current");
     }

@@ -152,6 +152,10 @@ describe("DID-signed application status attestation", () => {
     ["fractionally overlong", {
       expiresAt: new Date(VP_FIXTURE_TIME_MS + 5 * 60_000).toISOString().replace(".000Z", ".0000001Z"),
     }],
+    ["zero-length future window", {
+      observedAt: new Date(VP_FIXTURE_TIME_MS + 60_000).toISOString(),
+      expiresAt: new Date(VP_FIXTURE_TIME_MS + 60_000).toISOString(),
+    }],
   ])("rejects a %s re-signed observation", async (_label, change) => {
     const { source, request, replace, statement } = await fixture();
     replace({ ...statement, ...change });
