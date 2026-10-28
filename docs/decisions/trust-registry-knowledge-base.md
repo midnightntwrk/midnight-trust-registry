@@ -2614,7 +2614,8 @@ the remaining wizard orchestration.
 
 The wizard's canonical signed-JSON and exact-field checks now also live in a
 strictly checked pure policy. Direct tests reject duplicate keys, altered
-whitespace, malformed UTF-8, missing fields, and extra fields; the existing
+whitespace, malformed UTF-8, missing fields, extra fields, and delimiter-key
+collisions; the existing
 wizard suite retains detached-signature and setup-binding tests. Parsing
 canonical bytes does not verify the signer or establish an approved genesis.
 

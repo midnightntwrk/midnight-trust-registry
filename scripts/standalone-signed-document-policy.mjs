@@ -20,6 +20,9 @@ export function parseCanonicalSignedJson(bytes, label) {
  * @returns {boolean}
  */
 export function exactFields(value, fields) {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    && Object.keys(value).sort().join("\0") === [...fields].sort().join("\0");
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const keys = Object.keys(value);
+  const expected = new Set(fields);
+  return keys.length === expected.size && expected.size === fields.length
+    && keys.every((key) => expected.has(key));
 }

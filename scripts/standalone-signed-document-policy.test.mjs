@@ -26,4 +26,6 @@ test("exact field shape rejects missing, extra, and non-record values", () => {
   for (const value of [null, [], "a", { a: 1 }, { a: 1, b: 2, c: 3 }]) {
     assert.equal(exactFields(value, ["a", "b"]), false);
   }
+  assert.equal(exactFields({ "a\u0000b": 1 }, ["a", "b"]), false);
+  assert.equal(exactFields({ a: 1 }, ["a", "a"]), false);
 });
