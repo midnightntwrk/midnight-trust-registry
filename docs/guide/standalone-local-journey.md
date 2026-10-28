@@ -362,6 +362,22 @@ evidence inventory cannot prevent an operator from revoking a verdict.
 These records are self-attested,
 not signatures or independent evidence verification. For `S01`, attach the
 non-author human's separately signed security verdict before recording `pass`.
+The reviewer may sign a private `tr-local-security-verdict-v1` JSON document
+with `sourceRevision`, `installInventorySha256`, `signedPlanSha256`,
+`genesisHash`, `contractAddress`, `reviewerFingerprint`, `reviewedAt`,
+`scope: "self-hosted-local-0.1.0"`, and `outcome: "approve"` or `"reject"`.
+Attach both exact document and detached signature as raw `S01` evidence, then
+verify using a reviewer fingerprint pinned **outside** the evidence bundle:
+
+```sh
+node scripts/check-standalone-security-verdict.mjs "$EVIDENCE" "$SOURCE_SHA" \
+  verdict.json "$REVIEWER_PUBLIC_KEY" verdict.sig "$PINNED_REVIEWER_FINGERPRINT"
+```
+
+This checks the detached signature and exact candidate binding only. It does
+not establish that the key belongs to an independent human, that findings were
+resolved, or that any deployed receipt is authentic. The release owner must
+review those facts and retain the attributable finding disposition under #232.
 Never treat a CLI verdict as proof of its underlying receipt or finality.
 The inventory reports `completeInventory: true` only when every case's latest
 `pass` is backed by a private decision record covering the attached evidence.

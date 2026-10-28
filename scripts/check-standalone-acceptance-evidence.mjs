@@ -100,7 +100,7 @@ async function digestEvidence(root, path) {
 }
 
 /** @param {string} root */
-async function readAcceptanceManifest(root) {
+export async function readAcceptanceManifest(root) {
   const file = await open(join(root, "acceptance.json"),
     constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
@@ -123,7 +123,7 @@ async function readAcceptanceManifest(root) {
 }
 
 /** @param {string} root @param {string} path */
-async function readPrivateObservation(root, path) {
+export async function readPrivateObservation(root, path) {
   const absolute = evidencePath(root, path);
   let parent = root;
   const rootStat = await lstat(root);

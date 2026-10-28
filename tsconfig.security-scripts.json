@@ -21,6 +21,7 @@
     "scripts/check-published-package-integrity.mjs",
     "scripts/check-local-issuer-writer-approval.mjs",
     "scripts/check-standalone-acceptance-evidence.mjs",
+    "scripts/check-standalone-security-verdict.mjs",
     "scripts/immutable-provider-tree.mjs",
     "scripts/local-ledger-deploy.mjs",
     "scripts/local-ledger-insert-verifier-key.mjs",
