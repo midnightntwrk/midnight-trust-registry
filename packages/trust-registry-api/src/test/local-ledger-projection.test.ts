@@ -700,6 +700,18 @@ describe("local ledger-bound API source", () => {
       expect(await healthy.json()).toMatchObject({ status: "ok", sourceMode: "local-ledger",
         configuredGovernedProposalRoles: [] });
       expect(readCount).toBe(1);
+      for (const role of ["issuer", "verifier", "auditor", "maintainer", "recognition"] as const) {
+        for (const action of ["prepare", "submit"] as const) {
+          const response = await fetch(`${url}/v1/governed/${role}/unconfigured/proposal/${action}`, {
+            method: "POST", headers: { "content-type": "application/json" }, body: "{}",
+          });
+          expect(response.status, `${role} ${action}`).toBe(503);
+          expect(response.headers.get("cache-control")).toBe("no-store");
+          expect(await response.json()).toMatchObject({ status: 503,
+            type: expect.stringMatching(/governed-proposal-unavailable$/u) });
+        }
+      }
+      expect(readCount).toBe(1);
       const malformedRequest = await fetch(`${url}/v1/trqp/authorizations/query`, {
         method: "POST",
         headers: { "content-type": "application/json" },

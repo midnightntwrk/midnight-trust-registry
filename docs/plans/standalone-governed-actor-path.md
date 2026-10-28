@@ -14,6 +14,11 @@ admission port, governed proposal ports, a submitting provider, or a governed
 membership-action adapter. Governed proposal writes therefore return 503;
 the health response establishes current-read availability, not write
 readiness. The standalone current-query observer is intentionally read-only.
+The local-ledger HTTP regression checks that issuer, verifier, auditor,
+maintainer, and recognition proposal prepare/submit routes all return 503
+when their production ports are absent, even while health and current reads
+are available. This is fail-closed coverage, not a substitute for wiring the
+approved writer or running an actor case on the deployed ledger.
 
 The integration package has a `submitLocalIssuerProposalCall` path with
 Compact preflight, provider-identity comparison, and a one-attempt durable
