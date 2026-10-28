@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstat, mkdtemp, mkdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { link, lstat, mkdtemp, mkdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -302,6 +302,21 @@ test("rejects Unicode aliases that resolve to one evidence file", async (t) => {
     await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
       "S01", "\u03c2.log"), /reused/u);
     assert.deepEqual(JSON.parse(await readFile(join(root, "acceptance.json"), "utf8")), candidate);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects hard-link aliases of one evidence file", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-acceptance-hardlink-alias-"));
+  try {
+    const bytes = "operator receipt\n";
+    await writeFile(join(root, "first.log"), bytes);
+    await link(join(root, "first.log"), join(root, "second.log"));
+    const candidate = manifest();
+    candidate.cases.L01.evidence = [{ path: "first.log", sha256: sha(bytes) }];
+    candidate.cases.S01.evidence = [{ path: "second.log", sha256: sha(bytes) }];
+    await assert.rejects(checkStandaloneAcceptanceEvidence(root, candidate), /reused/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
