@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { createHash } from "node:crypto";
 import { lstat } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,9 +8,8 @@ import { fileURLToPath } from "node:url";
 import {
   checkStandaloneAcceptanceEvidence,
   readAcceptanceManifest,
-  readPrivateObservation,
 } from "./check-standalone-acceptance-evidence.mjs";
-import { verifyDetachedReviewerSignature } from "./standalone-setup-wizard.mjs";
+import { regularBytes, verifyDetachedReviewerSignatureBytes } from "./standalone-setup-wizard.mjs";
 
 const FINGERPRINT = /^[0-9A-F]{40}$/u;
 
@@ -22,11 +22,11 @@ const FINGERPRINT = /^[0-9A-F]{40}$/u;
  * @param {string} signaturePath
  * @param {string} publicKeyPath
  * @param {string} expectedFingerprint Pinned by the release owner outside the verdict bundle.
- * @param {typeof verifyDetachedReviewerSignature} [verifySignature]
+ * @param {typeof verifyDetachedReviewerSignatureBytes} [verifySignature]
  */
 export async function checkStandaloneSecurityVerdict(
   root, sourceRevision, verdictPath, signaturePath, publicKeyPath, expectedFingerprint,
-  verifySignature = verifyDetachedReviewerSignature,
+  verifySignature = verifyDetachedReviewerSignatureBytes,
 ) {
   if (!FINGERPRINT.test(expectedFingerprint)) throw new Error("Expected reviewer fingerprint must be canonical");
   const stat = await lstat(root);
@@ -37,11 +37,24 @@ export async function checkStandaloneSecurityVerdict(
   await checkStandaloneAcceptanceEvidence(root, manifest, sourceRevision);
   const paths = new Set(manifest.cases.S01.evidence.map((item) => item.path));
   if (verdictPath === signaturePath || !paths.has(verdictPath) || !paths.has(signaturePath)
+    || verdictPath.includes("/") || signaturePath.includes("/")
     || verdictPath.toLowerCase().startsWith("decisions/")
     || signaturePath.toLowerCase().startsWith("decisions/")) {
-    throw new Error("Verdict and detached signature must be distinct raw S01 attachments");
+    throw new Error("Verdict and detached signature must be distinct flat raw S01 attachments");
   }
-  const verdict = await readPrivateObservation(root, verdictPath);
+  const documentBytes = await regularBytes(resolve(root, verdictPath), { privateFile: true });
+  const signatureBytes = await regularBytes(resolve(root, signaturePath), { privateFile: true });
+  const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
+  if (digest(documentBytes) !== manifest.cases.S01.evidence.find((item) => item.path === verdictPath)?.sha256
+    || digest(signatureBytes) !== manifest.cases.S01.evidence.find((item) => item.path === signaturePath)?.sha256) {
+    throw new Error("Security verdict bytes changed after acceptance inventory validation");
+  }
+  const raw = documentBytes.toString("utf8");
+  const verdict = JSON.parse(raw);
+  if (!Buffer.from(raw, "utf8").equals(documentBytes)
+    || raw !== `${JSON.stringify(verdict, null, 2)}\n`) {
+    throw new Error("Security verdict must use canonical signed JSON without duplicate keys");
+  }
   const expectedKeys = ["format", "sourceRevision", "installInventorySha256", "signedPlanSha256",
     "genesisHash", "contractAddress", "reviewerFingerprint", "reviewedAt", "scope", "outcome"];
   if (!verdict || typeof verdict !== "object" || Array.isArray(verdict)
@@ -58,7 +71,7 @@ export async function checkStandaloneSecurityVerdict(
     || typeof verdict.reviewedAt !== "string" || !Number.isFinite(Date.parse(verdict.reviewedAt))) {
     throw new Error("Security verdict does not bind the selected standalone candidate");
   }
-  await verifySignature(resolve(root, verdictPath), resolve(root, signaturePath),
+  await verifySignature(documentBytes, signatureBytes,
     publicKeyPath, expectedFingerprint, verdict.reviewedAt);
   return {
     format: "tr-local-security-verdict-check-v1",

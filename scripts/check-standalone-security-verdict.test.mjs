@@ -35,7 +35,7 @@ const verdict = {
 test("signed S01 verdict is bound to raw attachments and exact candidate without qualifying release", async () => {
   const root = await mkdtemp(join(tmpdir(), "tr-security-verdict-"));
   try {
-    const document = `${JSON.stringify(verdict)}\n`;
+    const document = `${JSON.stringify(verdict, null, 2)}\n`;
     const signature = "test-detached-signature\n";
     const manifest = {
       ...base,
@@ -58,20 +58,25 @@ test("signed S01 verdict is bound to raw attachments and exact candidate without
     assert.equal(report.outcome, "approve");
     assert.equal(report.reviewerIndependence, "not-verified");
     assert.equal(report.releaseQualified, false);
-    assert.deepEqual(calls[0], [join(root, "verdict.json"), join(root, "verdict.sig"),
+    assert.deepEqual(calls[0], [Buffer.from(document), Buffer.from(signature),
       "/trusted/reviewer.asc", fingerprint, verdict.reviewedAt]);
     await assert.rejects(check("verdict.sig", "verdict.json"), /not valid JSON/u);
-    await assert.rejects(check("verdict.json", "missing.sig"), /distinct raw S01 attachments/u);
+    await assert.rejects(check("verdict.json", "missing.sig"), /distinct flat raw S01 attachments/u);
     await assert.rejects(check("verdict.json", "verdict.sig", "B".repeat(40)),
       /selected standalone candidate/u);
     assert.equal(calls.length, 1);
 
-    const stale = `${JSON.stringify({ ...verdict, contractAddress: `0x${"1".repeat(64)}` })}\n`;
+    const stale = `${JSON.stringify({ ...verdict, contractAddress: `0x${"1".repeat(64)}` }, null, 2)}\n`;
     await write("verdict.json", stale);
     await assert.rejects(check(), /evidence SHA-256 mismatch/u);
     manifest.cases.S01.evidence[0].sha256 = sha(stale);
     await write("acceptance.json", `${JSON.stringify(manifest)}\n`);
     await assert.rejects(check(), /selected standalone candidate/u);
+    const ambiguous = document.replace('"outcome": "approve"', '"outcome": "reject", "outcome": "approve"');
+    await write("verdict.json", ambiguous);
+    manifest.cases.S01.evidence[0].sha256 = sha(ambiguous);
+    await write("acceptance.json", `${JSON.stringify(manifest)}\n`);
+    await assert.rejects(check(), /canonical signed JSON without duplicate keys/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -80,7 +85,7 @@ test("signed S01 verdict is bound to raw attachments and exact candidate without
 test("the signature verifier failure is not converted into a security approval", async () => {
   const root = await mkdtemp(join(tmpdir(), "tr-security-verdict-failure-"));
   try {
-    const document = `${JSON.stringify(verdict)}\n`;
+    const document = `${JSON.stringify(verdict, null, 2)}\n`;
     const signature = "invalid\n";
     const cases = Object.fromEntries(ACCEPTANCE_CASES.map((id) => [id, { status: "not-run", evidence: [] }]));
     cases.S01.evidence = [

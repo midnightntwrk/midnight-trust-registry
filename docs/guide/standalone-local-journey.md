@@ -366,6 +366,9 @@ The reviewer may sign a private `tr-local-security-verdict-v1` JSON document
 with `sourceRevision`, `installInventorySha256`, `signedPlanSha256`,
 `genesisHash`, `contractAddress`, `reviewerFingerprint`, `reviewedAt`,
 `scope: "self-hosted-local-0.1.0"`, and `outcome: "approve"` or `"reject"`.
+Encode it as canonical two-space-indented JSON with one trailing newline;
+duplicate keys or alternate encodings are rejected. Keep the verdict and its
+signature as separate flat private files in the acceptance directory.
 Attach both exact document and detached signature as raw `S01` evidence, then
 verify using a reviewer fingerprint pinned **outside** the evidence bundle:
 

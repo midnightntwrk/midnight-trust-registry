@@ -709,12 +709,19 @@ export function assertDetachedReviewerSignatureStatus(
 export async function verifyDetachedReviewerSignature(
   documentPath, signaturePath, keyringDirectory, expectedFingerprint, approvedAt,
 ) {
+  const documentBytes = await regularBytes(resolve(documentPath));
+  const signatureBytes = await regularBytes(resolve(signaturePath));
+  await verifyDetachedReviewerSignatureBytes(documentBytes, signatureBytes,
+    keyringDirectory, expectedFingerprint, approvedAt);
+}
+
+export async function verifyDetachedReviewerSignatureBytes(
+  documentBytes, signatureBytes, keyringDirectory, expectedFingerprint, approvedAt,
+) {
   if (!FINGERPRINT.test(expectedFingerprint)) throw new Error("Reviewer signing-key fingerprint must be canonical");
   if (typeof approvedAt !== "string" || !Number.isFinite(Date.parse(approvedAt))) {
     throw new Error("Detached approval signature does not match the pinned reviewer key");
   }
-  const documentBytes = await regularBytes(resolve(documentPath));
-  const signatureBytes = await regularBytes(resolve(signaturePath));
   if (documentBytes.length > 32 * 1024 || signatureBytes.length > 64 * 1024) {
     throw new Error("Reviewer approval document or signature exceeds the bounded evidence size");
   }
