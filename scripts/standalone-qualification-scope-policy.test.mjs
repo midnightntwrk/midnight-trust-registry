@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  API_RESTART_SCOPE,
+  CURRENT_QUERY_SCOPE,
   assertApiRestartScope,
   assertCurrentQueryScope,
 } from "./standalone-qualification-scope-policy.mjs";
@@ -22,6 +24,7 @@ const current = {
   releaseQualified: false,
   apiEgressCanaryDenied: true,
   apiDnsCanaryDenied: true,
+  scope: CURRENT_QUERY_SCOPE,
   actorJourneys: "not-run",
   hostAndBrowserEgress: "not-verified",
   independentFinality: "not-verified",
@@ -34,6 +37,7 @@ const restart = {
   releaseQualified: false,
   apiEgressCanaryDenied: true,
   apiDnsCanaryDenied: true,
+  scope: API_RESTART_SCOPE,
 };
 
 test("accepts only the limited scope actually reported by the probes", () => {

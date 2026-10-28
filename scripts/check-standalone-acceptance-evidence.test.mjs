@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { assessStandaloneObservationBinding, attachStandaloneAcceptanceEvidence, checkStandaloneAcceptanceEvidence,
   decideStandaloneAcceptanceCase, recordEvidenceFileIdentity } from "./check-standalone-acceptance-evidence.mjs";
 import { assessStandaloneCaseDecisionChain } from "./standalone-acceptance-decision-policy.mjs";
+import { API_RESTART_SCOPE, CURRENT_QUERY_SCOPE } from "./standalone-qualification-scope-policy.mjs";
 
 const CASES = ["L01", "L02", "A01", "A02", "A03", "A04", "N01", "O01", "R01", "S01"];
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -119,6 +120,7 @@ const observation = (candidate) => ({
     ambiguousLookups: { issuer: 0, verifier: 0, auditor: 0 },
     apiEgressCanaryDenied: true,
     apiDnsCanaryDenied: true,
+    scope: CURRENT_QUERY_SCOPE,
     actorJourneys: "not-run",
     hostAndBrowserEgress: "not-verified",
     independentFinality: "not-verified",
@@ -182,6 +184,7 @@ test("read-only observation binds to one acceptance candidate without passing ca
     selectedStateSha256: observed.currentQuery.selectedStateSha256,
     apiEgressCanaryDenied: true,
     apiDnsCanaryDenied: true,
+    scope: API_RESTART_SCOPE,
     releaseQualified: false,
   };
   assert.equal(assessStandaloneObservationBinding(candidate,

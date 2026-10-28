@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import { observeStandaloneQualification } from "./observe-standalone-qualification.mjs";
 import { assessStandaloneObservationBinding } from "./check-standalone-acceptance-evidence.mjs";
+import { API_RESTART_SCOPE, CURRENT_QUERY_SCOPE } from "./standalone-qualification-scope-policy.mjs";
 
 const source = "a".repeat(40);
 const install = { sourceRevision: source, inventorySha256: "b".repeat(64),
@@ -49,6 +50,7 @@ const query = {
   ambiguousLookups: { issuer: 0, verifier: 0, auditor: 0 },
   apiEgressCanaryDenied: true,
   apiDnsCanaryDenied: true,
+  scope: CURRENT_QUERY_SCOPE,
   actorJourneys: "not-run",
   hostAndBrowserEgress: "not-verified",
   independentFinality: "not-verified",
@@ -65,6 +67,7 @@ const restart = {
   selectedStateSha256: query.selectedStateSha256,
   apiEgressCanaryDenied: true,
   apiDnsCanaryDenied: true,
+  scope: API_RESTART_SCOPE,
   releaseQualified: false,
 };
 

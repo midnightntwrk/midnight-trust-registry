@@ -47,7 +47,7 @@ function hasConsistentLookupCounts(report) {
 export function assertCurrentQueryScope(report) {
   if (!isRecord(report)
     || Object.keys(report).some((key) => !CURRENT_QUERY_KEYS.has(key))
-    || (report.scope !== undefined && report.scope !== CURRENT_QUERY_SCOPE)
+    || report.scope !== CURRENT_QUERY_SCOPE
     || report.format !== "tr-standalone-current-query-journey-v2"
     || !matches(report.sourceRevision, SHA)
     || !matches(report.apiContainerId, SHA256)
@@ -81,7 +81,7 @@ export function assertCurrentQueryScope(report) {
 export function assertApiRestartScope(report) {
   if (!isRecord(report)
     || Object.keys(report).some((key) => !API_RESTART_KEYS.has(key))
-    || (report.scope !== undefined && report.scope !== API_RESTART_SCOPE)
+    || report.scope !== API_RESTART_SCOPE
     || report.releaseQualified !== false
     || report.apiEgressCanaryDenied !== true
     || report.apiDnsCanaryDenied !== true) {
