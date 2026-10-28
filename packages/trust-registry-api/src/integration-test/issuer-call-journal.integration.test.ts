@@ -344,6 +344,20 @@ describe("issuer SDK handoff with private journal", () => {
     expect(mocks.submitCallTx).not.toHaveBeenCalled();
   });
 
+  it("rejects an under-threshold Compact action before reserving the real journal", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    await journal.bindDeployment(registryLabel, contractAddress, genesisHash);
+    const request = input(journal);
+    const finalized = await request.readFinalizedLedger(contractAddress);
+    const ledger = { ...finalized.ledger, maintainerThreshold: 2n } as TrustRegistryContract.Ledger;
+    await expect(submitLocalIssuerProposalCall({
+      ...request,
+      readFinalizedLedger: async () => ({ ...finalized, ledger }),
+    })).rejects.toThrow(/signer count does not satisfy/u);
+    expect(await journal.read("issuer", authorizationLabel)).toBeNull();
+    expect(mocks.submitCallTx).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["registry", "registry:other", contractAddress],
     ["contract", registryLabel, `0x${"b".repeat(64)}`],
