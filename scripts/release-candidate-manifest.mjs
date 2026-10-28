@@ -224,6 +224,10 @@ export function assertCanonicalPackedPaths(paths) {
   if (new Set(normalized).size !== listed.length) {
     throw new Error("Packed package contains duplicate archive paths");
   }
+  const portable = normalized.map((path) => path.normalize("NFC").toLowerCase());
+  if (new Set(portable).size !== listed.length) {
+    throw new Error("Packed package contains case or Unicode alias archive paths");
+  }
   for (const path of listed) {
     if (!path.startsWith("package/") || /[\\\x00-\x1f\x7f]/u.test(path)) {
       throw new Error("Packed package contains non-canonical archive paths");

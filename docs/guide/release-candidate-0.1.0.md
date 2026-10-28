@@ -67,6 +67,10 @@ finalized on-chain verifier-key catalog with this mapping and confirms its
 initial single-key maintenance authority at the same checkpoint. This is not
 an independent local-ledger readback or approval of that authority model;
 the local maintenance transition remains blocking. The manifest alone cannot certify the deployed code.
+The pack verifier also rejects archive entries that collide after case or
+Unicode normalization, so a tarball cannot extract different bytes under the
+same name on a case-insensitive operator host. This is a portability and
+integrity check, not a signature on the manifest.
 A matching tarball digest does not by itself prove that every
 generated file was built from the recorded
 source revision: run the full build and pack on the clean, signed candidate
