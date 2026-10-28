@@ -2974,3 +2974,15 @@ runtime scope validators reject malformed or inflated evidence. This reduces
 type drift, but it does not prove Docker's effective isolation, independently
 authenticate finality, run a governed actor, or satisfy the human security
 review. Those release gates remain open.
+
+## Issuer writer-annex time source
+
+The opt-in issuer proposal port now checks the signed writer annex's validity
+window against the same deployment-owned trusted-time result used for the
+accepted evidence at prepare, preflight, execute, and pre-broadcast recheck.
+The host clock remains an additional startup/fast-fail check, not a way to
+extend the annex if it rolls backward. Focused tests cover a trusted time
+before `notBefore` and after `notAfter` while the host clock and accepted
+evidence would otherwise allow preparation. This still uses injected time,
+ledger, and status dependencies; it does not supply the production adapter
+or a deployed local actor journey required by #219.

@@ -130,15 +130,13 @@ export type LocalIssuerProposalPortDependencies = {
 export function createBoundLocalIssuerProposalPort(
   dependencies: LocalIssuerProposalPortDependencies,
 ): GovernedIssuerProposalPort {
-  const approval = validateLocalIssuerWriterApproval(dependencies.writerApproval, {
+  const approvalBinding = {
     plan: dependencies.plan, planSha256: dependencies.approvedPlanSha256,
     approvedPlanReviewerFingerprint: dependencies.approvedPlanReviewerFingerprint,
-  });
+  };
+  const approval = validateLocalIssuerWriterApproval(dependencies.writerApproval, approvalBinding);
   const assertWriterApprovalCurrent = (): void => {
-    validateLocalIssuerWriterApproval(approval, {
-      plan: dependencies.plan, planSha256: dependencies.approvedPlanSha256,
-      approvedPlanReviewerFingerprint: dependencies.approvedPlanReviewerFingerprint,
-    });
+    validateLocalIssuerWriterApproval(approval, approvalBinding);
   };
   if (dependencies.submissionJournalPath !== approval.submissionJournalPath) {
     throw new Error("Issuer journal path differs from the signed writer approval");
@@ -175,6 +173,7 @@ export function createBoundLocalIssuerProposalPort(
   const assertEvidenceCurrent = async (evidence: ApplicationEvidenceSubmission): Promise<number> => {
     const trustedTimeMs = await dependencies.readTrustedTimeMs();
     assertIssuerEvidenceCurrentAtTrustedTime(evidence.envelope, trustedTimeMs);
+    validateLocalIssuerWriterApproval(approval, approvalBinding, trustedTimeMs);
     return trustedTimeMs;
   };
 
