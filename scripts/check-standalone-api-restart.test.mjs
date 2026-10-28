@@ -12,6 +12,8 @@ const initial = {
   installInventorySha256: "9".repeat(64),
   apiStartedAt: "2026-01-01T00:00:00.000Z",
   apiRestartCount: 0,
+  approvalMountReadOnly: true,
+  trustAnchorMountReadOnly: true,
 };
 const resumed = { ...initial, apiStartedAt: "2026-01-01T00:01:00.000Z", apiRestartCount: 1 };
 const journey = {
@@ -71,6 +73,15 @@ test("refuses to restart when the preflight did not prove API egress denial", as
   let restarted = false;
   await assert.rejects(observeStandaloneApiRestart("/setup", "/bundle", {}, dependencies({
     journey: async () => ({ ...journey, apiDnsCanaryDenied: false }),
+    restart: async () => { restarted = true; },
+  })), /do not match/u);
+  assert.equal(restarted, false);
+});
+
+test("refuses to restart when the protected anchor mount is not observed", async () => {
+  let restarted = false;
+  await assert.rejects(observeStandaloneApiRestart("/setup", "/bundle", {}, dependencies({
+    observe: async () => ({ ...initial, trustAnchorMountReadOnly: false }),
     restart: async () => { restarted = true; },
   })), /do not match/u);
   assert.equal(restarted, false);

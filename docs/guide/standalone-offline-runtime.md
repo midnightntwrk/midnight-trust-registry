@@ -213,8 +213,10 @@ node scripts/check-standalone-api-runtime.mjs <verified-install-bundle>
 ```
 
 It rejects a different local API image or process environment, command,
-operator-supplied reviewer fingerprint, approval and anchor mounts, published port, extra
-network attachment, or weakened API container security settings. For the
+operator-supplied reviewer fingerprint, approval and anchor mounts, published
+port, extra network attachment, or weakened API container security settings.
+The topology report records separate read-only observations for both mounts;
+current-read and API-restart probes require both. For the
 three ledger services it checks image identity, health when configured, and
 network membership; their separate topology and egress observers remain
 required. The fingerprint comparison is to the operator's input, not an

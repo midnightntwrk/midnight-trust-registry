@@ -28,6 +28,7 @@ function checkedTopology(report) {
   if (report?.kind !== "standalone-api-runtime-topology-observation"
     || report.releaseQualified !== false
     || report.approvalMountReadOnly !== true
+    || report.trustAnchorMountReadOnly !== true
     || report.internalNetworkOnly !== true
     || report.hostPortPublished !== false
     || !CONTAINER_ID.test(report.apiContainerId ?? "")

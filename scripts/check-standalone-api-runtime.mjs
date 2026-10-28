@@ -206,6 +206,7 @@ export function checkStandaloneApiRuntime(network, containers, expected) {
     installInventorySha256: expected.inventorySha256,
     imageIdsMatched: true,
     approvalMountReadOnly: true,
+    trustAnchorMountReadOnly: true,
     internalNetworkOnly: true,
     hostPortPublished: false,
     finalizedReadback: "not-verified",

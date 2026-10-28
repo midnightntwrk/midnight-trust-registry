@@ -4,7 +4,8 @@ const SHA256 = /^[0-9a-f]{64}$/u;
 /** @typedef {{
  * kind?: string, releaseQualified?: boolean, apiContainerId?: string,
  * networkId?: string, sourceRevision?: string, installInventorySha256?: string,
- * apiStartedAt?: string, apiRestartCount?: number
+ * apiStartedAt?: string, apiRestartCount?: number,
+ * approvalMountReadOnly?: boolean, trustAnchorMountReadOnly?: boolean
  * }} ApiTopology */
 /** @typedef {{
  * format?: string, releaseQualified?: boolean, apiContainerId?: string,
@@ -18,6 +19,8 @@ const SHA256 = /^[0-9a-f]{64}$/u;
 export function matchingApiTopology(topology, journey) {
   return topology?.kind === "standalone-api-runtime-topology-observation"
     && topology.releaseQualified === false
+    && topology.approvalMountReadOnly === true
+    && topology.trustAnchorMountReadOnly === true
     && topology.apiContainerId === journey.apiContainerId
     && topology.networkId === journey.networkId
     && topology.sourceRevision === journey.sourceRevision
