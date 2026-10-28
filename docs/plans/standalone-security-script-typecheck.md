@@ -39,7 +39,7 @@ plus one ambient declaration:
 | `scripts/standalone-genesis-review-io.mjs` | Private packet input reads, verified-bundle handoff, and non-overwriting output bytes. The bundle verifier itself remains non-strict. |
 | `scripts/prepare-standalone-genesis-review.mjs` | Strictly typed packet entrypoint and injectable verified-bundle callback; it does not independently approve the proposed pin. |
 | `scripts/standalone-journey-prerequisites-policy.mjs` | Fail-closed wizard-status gate decisions before an offline actor run. |
-| `scripts/standalone-qualification-scope-policy.mjs` | Rejects current-query and API-restart child reports that claim unobserved actor, finality, host/browser egress, deployment binding, or release qualification. |
+| `scripts/standalone-qualification-scope-policy.mjs` | Rejects malformed current-query identity, plan and selected-state digests, finalized checkpoint shapes, and child reports that claim unobserved actor, finality, host/browser egress, deployment binding, or release qualification. The checkpoints remain node-reported, not independently authenticated finality. |
 | `scripts/standalone-current-query-process-policy.mjs` | Requires a valid container ID, process start time, and restart count before the current-query observer compares reads around egress. |
 | `scripts/standalone-current-query-report-policy.mjs` | Validates the signed-plan current-read report, wizard deployment identity, actor-role counts, and API egress result before combining two live observations. The orchestrator and underlying Docker probes remain separate runtime boundaries. |
 | `scripts/standalone-private-file-bytes.mjs` | Bounded, no-follow reads of private setup and approval evidence with inode and ownership continuity. |
