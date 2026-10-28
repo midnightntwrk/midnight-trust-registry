@@ -3067,3 +3067,12 @@ fields. This is a correctness hardening of exact-field predicates, not proof
 that the old behavior bypassed approval, nor a claim that every delimiter
 comparison in the repository has been migrated. The local wizard and policy
 tests passed; exact-head CI and independent security review remain required.
+
+The integration package now has a separate internal exact-field-name helper for
+profile and verifier-key catalogs. The profile validator, release-manifest
+catalog preflight, and finalized-image catalog comparison use set equality
+instead of joining attacker-controlled names with a delimiter. A focused
+regression rejects a NUL-containing field name and a duplicate expected
+schema. This does not make a node-reported profile or verifier-key hash an
+independent trust anchor; the operator still must approve the chain and
+verify installed and finalized bytes against the pinned manifest.

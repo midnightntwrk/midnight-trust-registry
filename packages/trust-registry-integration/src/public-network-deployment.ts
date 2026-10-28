@@ -9,6 +9,7 @@ import type { SigningKey } from "@midnight-ntwrk/midnight-js-protocol/compact-ru
 import { bytes32Commitment, bytes32Hex } from "@midnight-ntwrk/trust-registry-client";
 import { MaintainerStatus, TrustRegistryContract, trustRegistryWitnesses, type TrustRegistryPrivateState } from "@midnight-ntwrk/trust-registry-contract";
 
+import { hasExactFieldNames } from "./exact-field-names.js";
 import {
   FinalizedDeploymentImageInvalidError,
   type FinalizedRegistryBootstrapReader,
@@ -94,7 +95,7 @@ const verifierKeyCatalog = (manifest: ReleaseVerifierKeyManifest): {
   const names = Object.keys(new TrustRegistryContract.Contract(trustRegistryWitnesses).provableCircuits).sort();
   if (manifest?.format !== "tr-release-candidate-manifest-v2"
     || hashes === null || typeof hashes !== "object" || Array.isArray(hashes)
-    || Object.keys(hashes).sort().join("\0") !== names.join("\0")
+    || !hasExactFieldNames(hashes, names)
     || names.some((name) => !/^[0-9a-f]{64}$/u.test(hashes[name] ?? ""))) {
     throw new Error("Release manifest has an invalid or incomplete verifier-key catalog");
   }
@@ -134,7 +135,7 @@ const matchesMaintenancePolicy = (
 const matchesVerifierKeys = (
   state: FinalizedRegistryDeploymentImage,
   catalog: ReturnType<typeof verifierKeyCatalog>,
-): boolean => Object.keys(state.verifierKeySha256).sort().join("\0") === catalog.names.join("\0")
+): boolean => hasExactFieldNames(state.verifierKeySha256, catalog.names)
   && catalog.names.every((name) => state.verifierKeySha256[name] === catalog.hashes[name]);
 
 export const matchesPinnedRegistryImage = (input: {
