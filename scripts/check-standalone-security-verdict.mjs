@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   checkStandaloneAcceptanceEvidence,
+  digestEvidence,
   readAcceptanceManifest,
 } from "./check-standalone-acceptance-evidence.mjs";
 import { regularBytes, verifyDetachedReviewerSignatureBytes } from "./standalone-setup-wizard.mjs";
@@ -82,9 +83,9 @@ export async function checkStandaloneSecurityVerdict(
   }
   await verifySignature(documentBytes, signatureBytes,
     publicKeyPath, expectedFingerprint, verdict.reviewedAt);
-  const findingsBytes = await regularBytes(resolve(root, verdict.findingsPath), { privateFile: true });
-  if (digest(findingsBytes) !== verdict.findingsSha256
-    || digest(findingsBytes) !== manifest.cases.S01.evidence.find((item) =>
+  const findingsDigest = await digestEvidence(root, verdict.findingsPath);
+  if (findingsDigest !== verdict.findingsSha256
+    || findingsDigest !== manifest.cases.S01.evidence.find((item) =>
       item.path === verdict.findingsPath)?.sha256) {
     throw new Error("Signed security findings digest differs from attached report bytes");
   }

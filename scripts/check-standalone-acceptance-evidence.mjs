@@ -58,7 +58,7 @@ function evidencePath(root, path) {
 }
 
 /** @param {string} root @param {string} path */
-async function digestEvidence(root, path) {
+export async function digestEvidence(root, path) {
   const absolute = evidencePath(root, path);
   let parent = root;
   const rootStat = await lstat(root);

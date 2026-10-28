@@ -124,6 +124,33 @@ test("the signature verifier failure is not converted into a security approval",
   }
 });
 
+test("a private findings report above 16 MiB uses the acceptance evidence limit", async () => {
+  const root = await mkdtemp("/tmp/tr-sv-large-");
+  try {
+    const largeFindings = Buffer.alloc(17 * 1024 * 1024, 0x41);
+    const largeVerdict = `${JSON.stringify({ ...verdict,
+      findingsSha256: sha(largeFindings) }, null, 2)}\n`;
+    const signature = "test-detached-signature\n";
+    const cases = Object.fromEntries(ACCEPTANCE_CASES.map((id) => [id, { status: "not-run", evidence: [] }]));
+    cases.S01.evidence = [
+      { path: "verdict.json", sha256: sha(largeVerdict) },
+      { path: "verdict.sig", sha256: sha(signature) },
+      { path: "findings.md", sha256: sha(largeFindings) },
+    ];
+    await writeFile(join(root, "findings.md"), largeFindings, { mode: 0o600 });
+    await writeFile(join(root, "verdict.json"), largeVerdict, { mode: 0o600 });
+    await writeFile(join(root, "verdict.sig"), signature, { mode: 0o600 });
+    await writeFile(join(root, "acceptance.json"), `${JSON.stringify({ ...base, cases })}\n`,
+      { mode: 0o600 });
+    const report = await checkStandaloneSecurityVerdict(root, sourceRevision, "verdict.json",
+      "verdict.sig", "/trusted/reviewer.asc", fingerprint, async () => {});
+    assert.equal(report.findingsDigestBound, true);
+    assert.equal(report.releaseQualified, false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("CLI verifies a real detached GPG verdict and rejects substitution", async (t) => {
   assert.equal(spawnSync("gpg", ["--version"], { stdio: "ignore" }).status, 0,
     "GPG is required for signed security-review verification");
