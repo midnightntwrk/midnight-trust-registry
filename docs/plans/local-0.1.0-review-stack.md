@@ -19,6 +19,15 @@ part of their current diffs.
 
 The published PRs are draft. Check required CI and review at each exact head;
 the top branch's local tests cannot substitute for the lower PRs' checks.
+On 2026-10-28, #238's live head was `5b6d2851`, but #239's recorded base
+commit was still the earlier #238 head `53ce87c9`; #239 and #240 heads
+remained `b723a84b` and `bbe527cf`. A read-only merge-tree calculation of
+the current #238 and #239 heads found no textual conflict. It did not update
+either PR or validate the combined tree. Before progressing the queue, safely
+integrate #238's branch-owned changes into #239 and then #240, without
+rewriting unpublished work; rerun applicable exact-head CI and review on
+each updated PR. Do not publish local continuation groups onto a stale top
+head, and do not mark #238 ready while its external scan is unresolved.
 At signed/DCO head `5b6d2851` on 2026-10-27, #238's external Opengrep
 OSS check remained red.
 [Issue #237](https://github.com/midnightntwrk/midnight-trust-registry/issues/237)
