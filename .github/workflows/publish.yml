@@ -259,10 +259,7 @@ jobs:
       - name: Match reviewed manifest digest
         env:
           PREPARED_MANIFEST_SHA256: ${{ needs.prepare.outputs.manifest_sha256 }}
-        run: |
-          [[ "$PREPARED_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]
-          printf '%s  %s\n' "$PREPARED_MANIFEST_SHA256" \
-            artifacts/npm-release.manifest.json | sha256sum --check --status
+        run: node scripts/check-reviewed-manifest-digest.mjs artifacts/npm-release.manifest.json "$PREPARED_MANIFEST_SHA256"
 
       - name: Verify manifest and exact release tarballs after approval
         env:

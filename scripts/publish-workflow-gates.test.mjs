@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -81,11 +83,43 @@ test("release bytes are prepared before the protected publish approval", () => {
     previous = position;
   }
   assert.match(publish.steps.find((step) => step.name === "Match reviewed manifest digest").run,
-    /sha256sum --check --status/u);
+    /check-reviewed-manifest-digest\.mjs artifacts\/npm-release\.manifest\.json/u);
   assert.match(publish.steps.find((step) => step.name === "Verify manifest and exact release tarballs after approval").run,
     /--verify artifacts\/npm-release\.manifest\.json/u);
   assert.match(publish.steps.find((step) => step.name === "Rebuild full Compact artifacts for source verification").run,
     /pnpm run build/u);
+});
+
+test("protected publish rejects a changed reviewed manifest digest", () => {
+  const parsed = yaml.load(workflow);
+  const check = parsed.jobs.publish.steps.find((step) => step.name === "Match reviewed manifest digest");
+  assert.match(check.run, /check-reviewed-manifest-digest\.mjs/u);
+  const directory = mkdtempSync(join(tmpdir(), "tr-reviewed-manifest-"));
+  try {
+    mkdirSync(join(directory, "artifacts"));
+    const manifest = join(directory, "artifacts/npm-release.manifest.json");
+    const original = Buffer.from('{"format":"tr-release-candidate-manifest-v2"}\n');
+    writeFileSync(manifest, original);
+    const digest = createHash("sha256").update(original).digest("hex");
+    const verify = (expected) => spawnSync(process.execPath,
+      [join(root, "scripts/check-reviewed-manifest-digest.mjs"), manifest, expected],
+      { cwd: directory, encoding: "utf8" });
+    assert.equal(verify(digest).status, 0);
+    writeFileSync(manifest, Buffer.from(original.toString().replace("v2", "v3")));
+    assert.notEqual(verify(digest).status, 0, "same-length manifest mutation must fail");
+    assert.notEqual(verify("not-a-digest").status, 0, "malformed job output must fail");
+    writeFileSync(manifest, original);
+    const linked = join(directory, "artifacts/linked-manifest.json");
+    symlinkSync(manifest, linked);
+    assert.notEqual(spawnSync(process.execPath,
+      [join(root, "scripts/check-reviewed-manifest-digest.mjs"), linked, digest],
+      { encoding: "utf8" }).status, 0, "symlinked manifest must fail");
+    rmSync(linked);
+    linkSync(manifest, linked);
+    assert.notEqual(verify(digest).status, 0, "hard-linked manifest must fail");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("manual package workflows cannot redirect credentials or select uncommitted release bytes", () => {
