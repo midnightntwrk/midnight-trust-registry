@@ -8,7 +8,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { assessStandaloneObservationBinding, attachStandaloneAcceptanceEvidence, checkStandaloneAcceptanceEvidence,
-  decideStandaloneAcceptanceCase } from "./check-standalone-acceptance-evidence.mjs";
+  decideStandaloneAcceptanceCase, recordEvidenceFileIdentity } from "./check-standalone-acceptance-evidence.mjs";
 import { assessStandaloneCaseDecisionChain } from "./standalone-acceptance-decision-policy.mjs";
 
 const CASES = ["L01", "L02", "A01", "A02", "A03", "A04", "N01", "O01", "R01", "S01"];
@@ -549,4 +549,12 @@ test("rejects hard-link aliases of one evidence file", async () => {
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("file identity guard rejects reused inode independent of filesystem aliasing", () => {
+  const seen = new Set();
+  recordEvidenceFileIdentity(seen, "1:42", "first.log");
+  assert.throws(() => recordEvidenceFileIdentity(seen, "1:42", "second.log"), /reused/u);
+  recordEvidenceFileIdentity(seen, "1:43", "third.log");
+  assert.deepEqual([...seen], ["1:42", "1:43"]);
 });

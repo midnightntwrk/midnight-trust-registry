@@ -75,6 +75,11 @@ async function digestEvidence(root, path) {
   }
 }
 
+export function recordEvidenceFileIdentity(seenFiles, fileId, path) {
+  if (seenFiles.has(fileId)) throw new Error(`Evidence reused across cases: ${path}`);
+  seenFiles.add(fileId);
+}
+
 async function readAcceptanceManifest(root) {
   const file = await open(join(root, "acceptance.json"),
     constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
@@ -376,9 +381,8 @@ export async function checkStandaloneAcceptanceEvidence(root, manifest, expected
       const identity = item.path.normalize("NFC").toLowerCase();
       if (seen.has(identity)) throw new Error(`Evidence reused across cases: ${item.path}`);
       const evidence = await digestEvidence(root, item.path);
-      if (seenFiles.has(evidence.fileId)) throw new Error(`Evidence reused across cases: ${item.path}`);
+      recordEvidenceFileIdentity(seenFiles, evidence.fileId, item.path);
       seen.add(identity);
-      seenFiles.add(evidence.fileId);
       if (evidence.sha256 !== item.sha256) {
         throw new Error(`${id} evidence SHA-256 mismatch: ${item.path}`);
       }
