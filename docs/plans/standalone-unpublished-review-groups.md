@@ -63,9 +63,9 @@ runtime-topology branch adds a separate typed wrapper and restores both type
 gates. **Do not publish `e1e035b1` as a standalone PR head**; group the local
 exact-field commits through the final tested head and obtain exact-head CI.
 
-The current grouped local continuation is `codex/trust-registry-recovery-scan-signed`
-(read its live tip; code checkpoint `4ecf4e29`), a direct descendant of the
-final #241 candidate. It contains
+The recovery-scan continuation is `codex/trust-registry-recovery-scan-signed`
+(`02349039`; code checkpoint `4ecf4e29`), a direct descendant of the final
+#241 candidate. It contains
 `7ef4ebea` (profile/catalog keys), `96e8a374` (runtime topology names),
 `5a37bee1` (acceptance and S01 verdict fields), `ce527d58` (release/install
 asset names), and `4ecf4e29` (strictly typed read-only deployment scan).
@@ -76,6 +76,22 @@ security type gates, docs, and audit also passed. A read-only Codex CLI
 review of the scanner slice found no actionable regression, but its sandbox
 could not create temporary test files. These are local checks, not hosted
 exact-head CI or the independent human release verdict.
+
+Two more signed/DCO branches continue this same local stack above
+`02349039`, without changing the published #238-#240 heads:
+
+| Local branch | Head | Scope and validation |
+| --- | --- | --- |
+| `codex/trust-registry-acceptance-guide-contract` | `796a8dc3` | CI test keeps the operator `L01`-`S01` table aligned with the acceptance manifest catalog and preserves the fixture/deployed-evidence disclaimer. `./run.sh --light` 20/20, local preflight 233/233, adversarial parity 198/198, and audit passed. |
+| `codex/trust-registry-committee-request-policy` | `b03ae63a` | Strict checked-JS request policy validates maintenance-transition shape, source, public commitments, counters, and expiration before Compact input construction. The focused policy tests 3/3, wizard tests 109/109, both security type gates, docs, `./run.sh --light` 20/20, and audit passed. Read-only Codex CLI review found no actionable regression; its sandbox could not create wizard test files, so the local 109/109 result is the test evidence. |
+
+Both heads have verified GPG signatures and DCO trailers, and the current
+checkout is clean. These are unpublished candidates, not current-head hosted
+CI or deployed local-ledger evidence. Do not publish until the requested
+approval arrives. As of this handoff the host has under 10 GiB free;
+artifact-bearing worktrees contain generated keys, bundles, and private setup
+evidence, while the smaller old worktrees have dirty or unpublished work.
+Do not run another full rebuild or delete those resources to make room.
 
 Do **not** publish the old `codex/trust-registry-runtime-name-sets` tip
 `70408bcc`: `git verify-commit` reports a BAD signature despite its commit
