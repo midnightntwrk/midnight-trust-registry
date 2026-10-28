@@ -7,40 +7,16 @@ import { promisify } from "node:util";
 
 import { observeStandaloneApiRuntime } from "./check-standalone-api-runtime.mjs";
 import { observeStandaloneCurrentQueryJourney } from "./check-standalone-current-query-journey.mjs";
+import { assertApiRestartContinuity, assertApiRestartPreflight,
+  isResumedApiProcess } from "./standalone-api-restart-policy.mjs";
 
 const run = promisify(execFile);
-const CONTAINER_ID = /^[0-9a-f]{64}$/u;
-const SHA256 = /^[0-9a-f]{64}$/u;
 
 async function restartContainer(id) {
   await run("docker", ["restart", id], { timeout: 60_000, maxBuffer: 1024 * 1024 });
 }
 
 const delay = (ms) => new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
-
-function matchingTopology(topology, journey) {
-  return topology?.kind === "standalone-api-runtime-topology-observation"
-    && topology.releaseQualified === false
-    && topology.apiContainerId === journey.apiContainerId
-    && topology.networkId === journey.networkId
-    && topology.sourceRevision === journey.sourceRevision
-    && SHA256.test(topology.installInventorySha256 ?? "")
-    && topology.installInventorySha256 === journey.installInventorySha256
-    && CONTAINER_ID.test(topology.apiContainerId ?? "")
-    && typeof topology.apiStartedAt === "string"
-    && Number.isFinite(Date.parse(topology.apiStartedAt))
-    && Number.isSafeInteger(topology.apiRestartCount)
-    && topology.apiRestartCount >= 0;
-}
-
-function sameProcess(left, right) {
-  return left.apiContainerId === right.apiContainerId
-    && left.networkId === right.networkId
-    && left.sourceRevision === right.sourceRevision
-    && left.installInventorySha256 === right.installInventorySha256
-    && left.apiStartedAt === right.apiStartedAt
-    && left.apiRestartCount === right.apiRestartCount;
-}
 
 /** Opt-in API process restart observation; not node recovery or independent finality. */
 export async function observeStandaloneApiRestart(setupDirectory, bundle, env = process.env,
@@ -51,20 +27,14 @@ export async function observeStandaloneApiRestart(setupDirectory, bundle, env = 
   const wait = dependencies.wait ?? delay;
   const before = await journey(setupDirectory, bundle, env);
   const initial = await observe(bundle, env);
-  if (before?.format !== "tr-standalone-current-query-journey-v2"
-    || before.releaseQualified !== false || before.apiEgressCanaryDenied !== true
-    || before.apiDnsCanaryDenied !== true || !matchingTopology(initial, before)) {
-    throw new Error("Approved current-query journey and running API container do not match");
-  }
+  assertApiRestartPreflight(before, initial);
 
   await restart(initial.apiContainerId);
   let resumed;
   for (let attempt = 0; attempt < 30; attempt += 1) {
     try {
       const candidate = await observe(bundle, env);
-      if (matchingTopology(candidate, before) && candidate.apiContainerId === initial.apiContainerId
-        && candidate.apiRestartCount === initial.apiRestartCount + 1
-        && candidate.apiStartedAt !== initial.apiStartedAt) {
+      if (isResumedApiProcess(candidate, before, initial)) {
         resumed = candidate;
         break;
       }
@@ -78,19 +48,7 @@ export async function observeStandaloneApiRestart(setupDirectory, bundle, env = 
   }
   const after = await journey(setupDirectory, bundle, env);
   const finalTopology = await observe(bundle, env);
-  if (after?.format !== before.format || after.releaseQualified !== false
-    || after.apiEgressCanaryDenied !== true || after.apiDnsCanaryDenied !== true
-    || !matchingTopology(finalTopology, after) || !sameProcess(resumed, finalTopology)
-    || before.sourceRevision !== after.sourceRevision
-    || before.apiContainerId !== after.apiContainerId
-    || before.networkId !== after.networkId
-    || before.installInventorySha256 !== after.installInventorySha256
-    || before.planSha256 !== after.planSha256
-    || before.selectedStateSha256 !== after.selectedStateSha256
-    || before.registryId !== after.registryId
-    || before.currentEpochId !== after.currentEpochId) {
-    throw new Error("API signed plan, selected state, or container changed across restart");
-  }
+  assertApiRestartContinuity(before, after, resumed, finalTopology);
   return {
     format: "tr-standalone-api-restart-observation-v1",
     sourceRevision: before.sourceRevision,

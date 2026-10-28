@@ -4,7 +4,7 @@ Issue #229 tracks typed assurance for the self-hosted 0.1.0 installer and
 operator workflow. The existing broad `checkJs` configuration includes the
 wizard and installer but permits implicit `any`; Quality CI now runs it.
 A second, strict no-emit gate runs
-`pnpm run check:security-boundaries-types` for fifty script boundaries
+`pnpm run check:security-boundaries-types` for fifty-one script boundaries
 plus one ambient declaration:
 
 | Checked file | Security decision |
@@ -42,6 +42,7 @@ plus one ambient declaration:
 | `scripts/standalone-qualification-scope-policy.mjs` | Rejects malformed current-query identity, plan and selected-state digests, finalized checkpoint shapes, and child reports that claim unobserved actor, finality, host/browser egress, deployment binding, or release qualification. The checkpoints remain node-reported, not independently authenticated finality. |
 | `scripts/standalone-current-query-process-policy.mjs` | Requires a valid container ID, process start time, and restart count before the current-query observer compares reads around egress. |
 | `scripts/standalone-current-query-report-policy.mjs` | Validates the signed-plan current-read report, wizard deployment identity, actor-role counts, API egress result, and continuity of process, plan, selected state, and role counts across two reads. The orchestrator and underlying Docker probes remain separate runtime boundaries. |
+| `scripts/standalone-api-restart-policy.mjs` | Checks the first read against the running API process, exactly one observed restart, and the final signed-plan/state identity. Docker restart, polling, and deployed recovery remain separate runtime boundaries. |
 | `scripts/standalone-private-file-bytes.mjs` | Bounded, no-follow reads of private setup and approval evidence with inode and ownership continuity. |
 | `scripts/standalone-image-reference.mjs` | Shared pinned OCI reference syntax for installer and review policy. |
 | `scripts/standalone-compose-image-policy.mjs` | Exact base Compose project, role map, and digest-pinned image decisions before inventory comparison. It does not validate overlays or deployed topology. |
