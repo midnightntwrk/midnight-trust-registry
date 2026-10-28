@@ -355,15 +355,17 @@ either issue. The live #238 Opengrep WebSocket finding and human review #232
 remain independent stop conditions.
 
 The next unpublished [#216](https://github.com/midnightntwrk/midnight-trust-registry/issues/216)
-report-integrity slice, signed/DCO `eb72a044`, rejects a parity report when
-either the isolated runner or governed demo claims zero failures while its
-per-case outcomes contain a failure. Before the fix, that inconsistent input
-could produce a success-shaped parity result. Fifteen focused report tests,
-the full 198/198 case-ID parity run, dependency audit, and `./run.sh --light`
-(20/20 tasks) passed. A read-only Codex commit review found no actionable
-regression; its sandbox could not create temporary test fixtures, so the
-focused and light results are from the writable checkout. This hardens the
-fixture matrix, not deployed standalone E2E or the #237/#232 release gates.
+report-integrity slice, signed/DCO `eb72a044` and `39a3880e`, rejects both
+parity and archive reports when either the isolated runner or governed demo
+claims zero failures while its per-case outcomes contain a failure. Before
+the fix, contradictory input could produce a success-shaped parity result
+or a misleading archive. The count check is now shared by both paths.
+Sixteen focused report tests, full 198/198 case-ID parity in the light lane,
+dependency audit, and `./run.sh --light` (20/20 tasks) passed. Read-only Codex
+reviews of both code commits found no actionable regression; their sandboxes
+could not create temporary test fixtures, so the focused and light results
+are from the writable checkout. This hardens the fixture matrix, not deployed
+standalone E2E or the #237/#232 release gates.
 
 ## Release boundary
 
