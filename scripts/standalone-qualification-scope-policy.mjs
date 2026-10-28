@@ -5,10 +5,11 @@ const isRecord = (value) => value !== null && typeof value === "object" && !Arra
 function hasConsistentLookupCounts(report) {
   if (!isRecord(report) || !isRecord(report.counts)
     || !isRecord(report.resolvedLookups) || !isRecord(report.ambiguousLookups)) return false;
+  const { counts, resolvedLookups, ambiguousLookups } = report;
   return ["issuer", "verifier", "auditor", "recognition"].every((role) => {
-    const count = report.counts[role];
-    const resolved = report.resolvedLookups[role];
-    const ambiguous = report.ambiguousLookups[role];
+    const count = counts[role];
+    const resolved = resolvedLookups[role];
+    const ambiguous = ambiguousLookups[role];
     return typeof count === "number" && Number.isSafeInteger(count) && count > 0
       && typeof resolved === "number" && Number.isSafeInteger(resolved)
       && resolved > 0 && resolved <= count

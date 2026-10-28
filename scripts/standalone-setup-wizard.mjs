@@ -15,13 +15,17 @@ import {
   getLocalNetworkProfile,
   VerifierKeyInsertionOutcomeUnknownError,
 } from "@midnight-ntwrk/trust-registry-integration";
-import { assertStrictDetachedSignatureStatus } from "@midnight-ntwrk/trust-registry-integration/reviewer-signature-status";
-import { verifyDetachedReviewerBytes } from "@midnight-ntwrk/trust-registry-integration/reviewer-signature-verifier";
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { regularBytes } from "./standalone-private-file-bytes.mjs";
 export { regularBytes } from "./standalone-private-file-bytes.mjs";
+import { verifyDetachedReviewerSignature } from "./standalone-reviewer-signature.mjs";
+export {
+  assertDetachedReviewerSignatureStatus,
+  verifyDetachedReviewerSignature,
+  verifyDetachedReviewerSignatureBytes,
+} from "./standalone-reviewer-signature.mjs";
 import { checkHelmImageMapping } from "./check-helm-image-mapping.mjs";
 import { pinnedStandaloneImages } from "./build-standalone-install.mjs";
 import { observeStandaloneEgress } from "./check-standalone-egress.mjs";
@@ -692,76 +696,6 @@ export async function observeStandaloneLedger(directory, pinPath, dependencies =
     await writeRecord(root, record);
     return record.ledgerObservation;
   });
-}
-
-export function assertDetachedReviewerSignatureStatus(
-  output, expectedFingerprint, approvedAt, now = Date.now(),
-) {
-  try {
-    if (typeof approvedAt !== "string") throw new Error("Approval timestamp is required");
-    assertStrictDetachedSignatureStatus({ output, exitStatus: 0,
-      expectedPrimaryFingerprint: expectedFingerprint, approvedAt, now });
-  } catch {
-    throw new Error("Detached approval signature does not match the pinned reviewer key");
-  }
-}
-
-export async function verifyDetachedReviewerSignature(
-  documentPath, signaturePath, keyringDirectory, expectedFingerprint, approvedAt,
-) {
-  const documentBytes = await regularBytes(resolve(documentPath));
-  const signatureBytes = await regularBytes(resolve(signaturePath));
-  await verifyDetachedReviewerSignatureBytes(documentBytes, signatureBytes,
-    keyringDirectory, expectedFingerprint, approvedAt);
-}
-
-export async function verifyDetachedReviewerSignatureBytes(
-  documentBytes, signatureBytes, keyringDirectory, expectedFingerprint, approvedAt,
-) {
-  if (!FINGERPRINT.test(expectedFingerprint)) throw new Error("Reviewer signing-key fingerprint must be canonical");
-  if (typeof approvedAt !== "string" || !Number.isFinite(Date.parse(approvedAt))) {
-    throw new Error("Detached approval signature does not match the pinned reviewer key");
-  }
-  if (documentBytes.length > 32 * 1024 || signatureBytes.length > 64 * 1024) {
-    throw new Error("Reviewer approval document or signature exceeds the bounded evidence size");
-  }
-  const publicKeySource = resolve(keyringDirectory);
-  const sourceStat = await lstat(publicKeySource);
-  const armoredExport = sourceStat.isFile();
-  const keyboxPath = armoredExport ? publicKeySource
-    : join(await privateDirectory(publicKeySource), "pubring.kbx");
-  let keybox;
-  try {
-    keybox = await open(keyboxPath,
-      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-  } catch (error) {
-    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
-      throw new Error("Reviewer keyring needs pubring.kbx; export and import the public key into a pre-created private directory");
-    }
-    throw error;
-  }
-  let publicKeys;
-  try {
-    const stat = await keybox.stat();
-    if (!stat.isFile() || stat.size === 0 || stat.size > 8 * 1024 * 1024
-      || (typeof process.getuid === "function" && stat.uid !== process.getuid())) {
-      throw new Error("Reviewer public keyring must be an owned bounded regular file");
-    }
-    publicKeys = await keybox.readFile();
-    if (publicKeys.length !== stat.size) throw new Error("Reviewer public keyring changed during read");
-  } finally {
-    await keybox.close();
-  }
-  if (armoredExport && !publicKeys.toString("utf8").startsWith("-----BEGIN PGP PUBLIC KEY BLOCK-----\n")) {
-    throw new Error("Reviewer key file must be an armored public-key export");
-  }
-  try {
-    verifyDetachedReviewerBytes({ documentBytes, signatureBytes, publicKeyBytes: publicKeys,
-      publicKeyFormat: armoredExport ? "armored" : "keybox",
-      expectedPrimaryFingerprint: expectedFingerprint, approvedAt });
-  } catch {
-    throw new Error("Detached approval signature does not match the pinned reviewer key");
-  }
 }
 
 export async function draftStandaloneGenesisApproval(directory, proposal) {

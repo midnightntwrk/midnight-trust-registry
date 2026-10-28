@@ -10,7 +10,8 @@ import {
   digestEvidence,
   readAcceptanceManifest,
 } from "./check-standalone-acceptance-evidence.mjs";
-import { regularBytes, verifyDetachedReviewerSignatureBytes } from "./standalone-setup-wizard.mjs";
+import { regularBytes } from "./standalone-private-file-bytes.mjs";
+import { verifyDetachedReviewerSignatureBytes } from "./standalone-reviewer-signature.mjs";
 
 const FINGERPRINT = /^[0-9A-F]{40}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
@@ -47,6 +48,7 @@ export async function checkStandaloneSecurityVerdict(
   }
   const documentBytes = await regularBytes(resolve(root, verdictPath), { privateFile: true });
   const signatureBytes = await regularBytes(resolve(root, signaturePath), { privateFile: true });
+  /** @param {Buffer} bytes */
   const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
   if (digest(documentBytes) !== manifest.cases.S01.evidence.find((item) => item.path === verdictPath)?.sha256
     || digest(signatureBytes) !== manifest.cases.S01.evidence.find((item) => item.path === signaturePath)?.sha256) {

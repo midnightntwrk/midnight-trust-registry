@@ -4,7 +4,7 @@ Issue #229 tracks typed assurance for the self-hosted 0.1.0 installer and
 operator workflow. The existing broad `checkJs` configuration includes the
 wizard and installer but permits implicit `any`; Quality CI now runs it.
 A second, strict no-emit gate runs
-`pnpm run check:security-boundaries-types` for forty-six privileged boundaries:
+`pnpm run check:security-boundaries-types` for forty-eight privileged boundaries:
 
 | Checked file | Security decision |
 | --- | --- |
@@ -30,6 +30,8 @@ A second, strict no-emit gate runs
 | `scripts/standalone-acceptance-decision-policy.mjs` | Source-bound operator decision history and current evidence coverage. |
 | `scripts/standalone-acceptance-manifest-policy.mjs` | Strictly typed shape and source/deployment identity validation for untrusted acceptance manifests; it does not authenticate attached evidence. |
 | `scripts/check-standalone-acceptance-evidence.mjs` | Strictly checked private-file I/O, attachment and verdict sequencing, observation binding, and exact-byte evidence hashing. Runtime validation remains mandatory for parsed JSON. |
+| `scripts/check-standalone-security-verdict.mjs` | Strictly checked S01 candidate, signed findings digest, and detached-signature byte handoff. It does not verify reviewer independence or finding truth. |
+| `scripts/standalone-reviewer-signature.mjs` | Shared strict detached-signature wrapper for wizard and S01, including private reviewer-key readback and pinned primary fingerprint. The wizard retains its public exports. |
 | `scripts/standalone-api-approval-chain.mjs` | Exact-byte approval-chain export and deployment/maintenance readback binding. |
 | `scripts/standalone-genesis-review-policy.mjs` | Untrusted candidate and proposed pin comparison against a verified profiled install. |
 | `scripts/standalone-genesis-review-packet.mjs` | Typed rendering of the untrusted human genesis review packet; its digests and contents cannot become an approval. |
