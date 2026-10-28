@@ -10,21 +10,25 @@ import { observeStandaloneApiRuntime } from "./check-standalone-api-runtime.mjs"
 const run = promisify(execFile);
 const CONTAINER_ID = /^[0-9a-f]{64}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
+/** @param {unknown} value */
 const canonicalTimestamp = (value) => {
   const parsed = typeof value === "string" ? Date.parse(value) : Number.NaN;
   return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
 };
 
+/** @param {string[]} args */
 async function docker(args) {
   const { stdout } = await run("docker", args, { timeout: 180_000,
     maxBuffer: 1024 * 1024 });
   return stdout;
 }
 
+/** @param {Awaited<ReturnType<typeof observeStandaloneApiRuntime>>} report */
 function checkedTopology(report) {
   if (report?.kind !== "standalone-api-runtime-topology-observation"
     || report.releaseQualified !== false
     || report.approvalMountReadOnly !== true
+    || report.trustAnchorMountReadOnly !== true
     || report.internalNetworkOnly !== true
     || report.hostPortPublished !== false
     || !CONTAINER_ID.test(report.apiContainerId ?? "")
@@ -39,6 +43,7 @@ function checkedTopology(report) {
   return report;
 }
 
+/** @param {string} stdout */
 function checkedCurrentReadReport(stdout) {
   let report;
   try {
@@ -79,19 +84,25 @@ function checkedCurrentReadReport(stdout) {
   return report;
 }
 
-/** Same-container readback only; the node/indexer finality trust boundary is unchanged. */
+/**
+ * Same-container readback only; the node/indexer finality trust boundary is unchanged.
+ * @param {string} bundle
+ * @param {NodeJS.ProcessEnv} [env]
+ * @param {{ observe?: typeof observeStandaloneApiRuntime, execDocker?: (args: string[]) => Promise<string> }} [dependencies]
+ */
 export async function probeStandaloneApiCurrentReads(bundle, env = process.env, dependencies = {}) {
   const observe = dependencies.observe ?? observeStandaloneApiRuntime;
   const execDocker = dependencies.execDocker ?? docker;
   const before = checkedTopology(await observe(bundle, env));
-  if (!/^[0-9A-F]{40}$/u.test(env.TR_API_REVIEWER_FINGERPRINT ?? "")) {
+  const reviewerFingerprint = env.TR_API_REVIEWER_FINGERPRINT;
+  if (typeof reviewerFingerprint !== "string" || !/^[0-9A-F]{40}$/u.test(reviewerFingerprint)) {
     throw new Error("Approved API reviewer fingerprint is missing");
   }
   const args = ["exec", before.apiContainerId, "node", "/app/bin/trust-registry-api.mjs",
     "observe-local-ledger-api", "--local-ledger-plan", "/run/trust-registry/api-plan.json",
     "--local-ledger-signature", "/run/trust-registry/api-plan.sig",
     "--local-ledger-keyring", "/run/trust-registry/reviewer-keyring",
-    "--local-ledger-reviewer", env.TR_API_REVIEWER_FINGERPRINT,
+    "--local-ledger-reviewer", reviewerFingerprint,
     "--api-origin", "http://127.0.0.1:4400"];
   const current = checkedCurrentReadReport(await execDocker(args));
   if (current.planSourceRevision !== before.sourceRevision) {
@@ -145,7 +156,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     }
     console.log(JSON.stringify(await probeStandaloneApiCurrentReads(process.argv[2])));
   } catch (error) {
-    console.error(`Standalone API current-read probe failed: ${error.message}`);
+    console.error(`Standalone API current-read probe failed: ${error instanceof Error ? error.message : "unknown error"}`);
     process.exitCode = 1;
   }
 }

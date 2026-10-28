@@ -4,7 +4,7 @@ Issue #229 tracks typed assurance for the self-hosted 0.1.0 installer and
 operator workflow. The existing broad `checkJs` configuration includes the
 wizard and installer but permits implicit `any`; Quality CI now runs it.
 A second, strict no-emit gate runs
-`pnpm run check:security-boundaries-types` for forty-nine script boundaries
+`pnpm run check:security-boundaries-types` for fifty-one script boundaries
 plus one ambient declaration:
 
 | Checked file | Security decision |
@@ -41,7 +41,8 @@ plus one ambient declaration:
 | `scripts/standalone-journey-prerequisites-policy.mjs` | Fail-closed wizard-status gate decisions before an offline actor run. |
 | `scripts/standalone-qualification-scope-policy.mjs` | Rejects malformed current-query identity, plan and selected-state digests, finalized checkpoint shapes, and child reports that claim unobserved actor, finality, host/browser egress, deployment binding, or release qualification. The checkpoints remain node-reported, not independently authenticated finality. |
 | `scripts/standalone-current-query-process-policy.mjs` | Requires a valid container ID, process start time, and restart count before the current-query observer compares reads around egress. |
-| `scripts/standalone-current-query-report-policy.mjs` | Validates the signed-plan current-read report, wizard deployment identity, actor-role counts, and API egress result before combining two live observations. The orchestrator and underlying Docker probes remain separate runtime boundaries. |
+| `scripts/standalone-current-query-report-policy.mjs` | Validates the signed-plan current-read report, wizard deployment identity, actor-role counts, API egress result, and continuity of process, plan, selected state, and role counts across two reads. The orchestrator and underlying Docker probes remain separate runtime boundaries. |
+| `scripts/standalone-api-restart-policy.mjs` | Checks the first read against the running API process, exactly one observed restart, and the final signed-plan/state identity. Docker restart, polling, and deployed recovery remain separate runtime boundaries. |
 | `scripts/standalone-private-file-bytes.mjs` | Bounded, no-follow reads of private setup and approval evidence with inode and ownership continuity. |
 | `scripts/standalone-image-reference.mjs` | Shared pinned OCI reference syntax for installer and review policy. |
 | `scripts/standalone-compose-image-policy.mjs` | Exact base Compose project, role map, and digest-pinned image decisions before inventory comparison. It does not validate overlays or deployed topology. |
@@ -52,6 +53,7 @@ plus one ambient declaration:
 | `scripts/standalone-egress-canary-scripts.mjs` | One shared source for the offline HTTP and DNS/UDP canary programs used by API and ledger probes. |
 | `scripts/check-standalone-local-egress.mjs` | Checked local positive/negative canary probe command/result handoff and cleanup; a passing probe does not establish full host or actor egress denial. |
 | `scripts/check-standalone-api-runtime.mjs` | Checked Docker API-container topology, pinned image/env/command, approval mount, process identity, and non-public listener decisions. Parsed Docker JSON remains untrusted. |
+| `scripts/check-standalone-api-reads.mjs` | Strictly checked current-read probe input and injected dependencies, with a validated reviewer fingerprint before Docker execution. The packaged API JSON is runtime-validated but remains untrusted; this probe does not independently authenticate finality. |
 | `scripts/check-standalone-api-egress.mjs` | Checked API canary positive/negative control orchestration and cleanup. It does not establish full DNS isolation, independent finality, or actor egress denial. |
 | `scripts/standalone-api-egress-policy.mjs` | Requires live positive controls and confined API routes, and accepts only specified TCP and DNS route-denial results. Docker probe orchestration and broader protocol coverage remain outside this typed decision. |
 | `scripts/standalone-docker-probe-command.mjs` | Strictly typed Docker command result and zero-exit enforcement for the API egress observer. Live Docker/network observation remains outside this helper. |
@@ -77,8 +79,8 @@ inventory, not a waiver of the release security review.
 | 2 | Provider runtime installation/ownership transfer | The staging shell and install-bundle verifier are now strictly checked; the actual root-owned transfer and independently reviewed content digest remain operator actions. The direct deployment and insertion CLIs are disabled; the wizard imports these functions after approval checks. |
 | 3 | Installer runtime observations | Bundle generation and Docker image-load I/O now join the strict gate, alongside bundle verification, base Compose/image-inventory mappings, static portal archive, and runtime healthcheck decisions. Docker daemon identity and actual offline behavior still require independent deployment evidence; checked-JS is not that evidence. |
 | 4 | `scripts/check-helm-image-mapping.mjs`, `scripts/observe-helm-runtime.mjs` | Optional Kubernetes mapping and observations; Helm is not a 0.1.0 RC gate. |
-| 5 | Runtime egress observations beyond the dedicated API/ledger probes | Ledger topology, internal canary, disposable local positive/negative egress, API runtime identity, and API route probes join the strict gate. Host, wallet, browser, backup, and actual actor egress still require measured deployed evidence; checked-JS does not prove them. |
-| 6 | `scripts/observe-standalone-qualification.mjs`, `scripts/check-standalone-current-query-journey.mjs`, `scripts/check-standalone-api-restart.mjs` | The aggregate's scope decision and current-query process/report decisions are strictly checked, but Docker/runtime probe I/O and report assembly remain non-strict. Keep exact-source, install, deployment, and container identity negatives while typing the remaining shells. |
+| 5 | Runtime egress observations beyond the dedicated API/ledger probes | Ledger topology and rendered Compose preflight are explicit broad checked-JS roots; the internal canary, disposable local positive/negative egress, API runtime identity, and API route probes are checked through their import graph. Host, wallet, browser, backup, and actual actor egress still require measured deployed evidence; checked-JS does not prove them. |
+| 6 | `scripts/observe-standalone-qualification.mjs`, `scripts/check-standalone-current-query-journey.mjs`, `scripts/check-standalone-api-restart.mjs` | The aggregate and restart observer are explicit broad checked-JS roots, alongside the current-query observer and imported read/prerequisite adapters. The aggregate's scope decision is strictly checked, and its child reports are narrowed only after runtime scope validation; Docker/runtime probe I/O and report assembly remain non-strict. Keep exact-source, install, deployment, and container identity negatives while typing the remaining shells. |
 
 The standalone acceptance inventory checker and its manifest-shape and
 decision-chain policies now join the strict gate. Runtime tests still check

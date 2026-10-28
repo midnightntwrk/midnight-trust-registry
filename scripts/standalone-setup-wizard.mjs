@@ -35,8 +35,8 @@ import { observeStandaloneTopology, standaloneStackConfig } from "./check-standa
 import {
   canonicalReviewerMetadata, reviewerProposal, validateReleaseCommittee,
 } from "./standalone-approval-policy.mjs";
-import { buildStandaloneApiApprovalChain } from "./standalone-api-approval-chain.mjs";
-export { buildStandaloneApiApprovalChain } from "./standalone-api-approval-chain.mjs";
+import { buildStandaloneApiApprovalChain, buildStandaloneApiTrustAnchor } from "./standalone-api-approval-chain.mjs";
+export { buildStandaloneApiApprovalChain, buildStandaloneApiTrustAnchor } from "./standalone-api-approval-chain.mjs";
 import { observeStandaloneRestartSnapshot, readStandaloneRestartEvidence } from "./check-standalone-restart.mjs";
 import { checkLocalLedgerPreflight, validateStandaloneGenesisPin } from "./local-ledger-preflight.mjs";
 import {
@@ -1969,8 +1969,27 @@ export async function exportStandaloneApiApprovalChain(directory) {
     const manifest = await verifiedPackageManifestBytes(record.install.bundle, inventory, verified);
     const chain = buildStandaloneApiApprovalChain(record, sha256(manifest));
     const output = join(root, "api-approval-chain.json");
-    await writePrivateSnapshot(output, Buffer.from(`${JSON.stringify(chain, null, 2)}\n`));
-    return { path: output, sha256: sha256(await regularBytes(output, { privateFile: true })) };
+    const chainBytes = Buffer.from(`${JSON.stringify(chain, null, 2)}\n`);
+    const anchor = buildStandaloneApiTrustAnchor(chain, chainBytes);
+    const anchorOutput = join(root, "api-trust-anchor.candidate.json");
+    for (const path of [output, anchorOutput]) {
+      try {
+        await lstat(path);
+        throw new Error(`API approval export already exists: ${path}`);
+      } catch (error) {
+        if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+      }
+    }
+    await writePrivateSnapshot(anchorOutput, Buffer.from(`${JSON.stringify(anchor, null, 2)}\n`));
+    try {
+      await writePrivateSnapshot(output, chainBytes);
+    } catch (error) {
+      await unlink(anchorOutput);
+      throw error;
+    }
+    return { path: output, sha256: sha256(await regularBytes(output, { privateFile: true })),
+      trustAnchorCandidatePath: anchorOutput,
+      trustAnchorCandidateSha256: sha256(await regularBytes(anchorOutput, { privateFile: true })) };
   });
 }
 
@@ -2054,6 +2073,7 @@ export async function standaloneSetupStatus(directory) {
       ? "operator-pinned-reviewer-signature-verified" : "invalid-approval-evidence-investigate"
       : record.ledgerObservation ? "node-observed-not-independently-approved" : "pending",
     deployment: record.deployment?.state ?? "pending",
+    initialVerifierKeyName: record.deployment?.stagedPlan?.initialVerifierKeyName ?? null,
     stagedVerifierKeys: Object.entries(record.verifierKeyInsertions ?? {})
       .map(([circuitName, entry]) => ({ circuitName, state: entry.state })),
     setupLock: lockPresent ? "present-inspect-before-removal" : "absent",

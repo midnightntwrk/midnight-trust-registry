@@ -85,3 +85,24 @@ export function checkedCurrentQueryEgress(report, first) {
   }
   return /** @type {EgressReport} */ (candidate);
 }
+
+/** @param {CurrentReadReport} first @param {CurrentReadReport} second */
+export function assertStableCurrentReads(first, second) {
+  if (second.apiContainerId !== first.apiContainerId
+    || second.apiStartedAt !== first.apiStartedAt
+    || second.apiRestartCount !== first.apiRestartCount
+    || second.networkId !== first.networkId
+    || second.installInventorySha256 !== first.installInventorySha256
+    || second.planSha256 !== first.planSha256
+    || second.planContractAddress !== first.planContractAddress
+    || second.planExpectedGenesisHash !== first.planExpectedGenesisHash
+    || second.selectedStateSha256 !== first.selectedStateSha256
+    || second.registryId !== first.registryId
+    || second.currentEpochId !== first.currentEpochId
+    || ROLES.some((role) => second.counts[role] !== first.counts[role]
+      || second.resolvedLookups[role] !== first.resolvedLookups[role])
+    || AUTHORIZATION_ROLES.some((role) =>
+      second.ambiguousLookups[role] !== first.ambiguousLookups[role])) {
+    throw new Error("Current-query install, deployment, signed plan, or selected actor reads changed during egress probe");
+  }
+}

@@ -94,6 +94,22 @@ rejections now run through `scripts/governed-demo-public-lookup-safety.mjs`.
 Their independent named cases remain in `scripts/adversarial-api.test.mjs`
 and `scripts/adversarial-recognition.test.mjs`; the extraction changes no
 public API or deployed-ledger claim.
+The issuer suspend/revoke journey, historical active controls, TRQP decisions,
+and VC consumer status updates now run through
+`scripts/governed-demo-issuer-temporal.mjs`. It publishes both simulator
+snapshots through the outer demo's callback so the API reads the updated
+state; replacing that callback with a local snapshot would make the HTTP
+assertions stale. The case IDs and final actor report remain unchanged, and
+the isolated matrix remains the independent failure-accounting lane. This is
+still fixture and simulator evidence, not a deployed lifecycle observation.
+The verifier, auditor, and recognition suspend/revoke loop now runs through
+`scripts/governed-demo-other-temporal.mjs`. It retains the role-specific
+historical API/TRQP decisions, recognition evidence verification, and verifier
+VC consumer status updates. The demo supplies the snapshot-publication
+callback so each subsequent HTTP read observes the changed simulator state.
+The final `otherTemporalChecks` and verifier lifecycle report keep the same
+shape; isolated case-ID parity must still pass before treating this as a
+behavior-preserving extraction.
 
 At signed local source `bbb2c456a93aa035ac482d67f945e8cddf6dfb7c`, the
 private archive `artifacts/adversarial-reports/cases-bbb2c456a93aa035ac482d67f945e8cddf6dfb7c.json`

@@ -2755,16 +2755,20 @@ policy for a reservation whose network outcome is unknown.
 
 ## Local proposal recovery proof boundary
 
-Issue #220 remains a local RC safety/liveness gate. The current recovery
-candidate and detached-signed decision are read-only: even a later governance
-counter and absent current proposal record cannot prove the original action
-did not execute. The [recovery specification](../spec/local-proposal-recovery.md)
-requires independently authenticated complete action history, proof that the
-original signed sequence is no longer executable, a separate human reviewer,
-and a durable non-replayable journal tombstone before another proposal can
-proceed. None of those requirements may be replaced by a null indexer read,
-timeout, or new journal path. Synthetic tests of the candidate remain
-non-deployment evidence.
+Issue #220 remains a local RC safety/liveness gate. The candidate and
+detached-signed decision verifier are read-only, but the opt-in file journal
+now has an internal abandonment transition. It rechecks the exact reserved
+attempt under the existing lock, requires a deployment-owned finality callback
+and a distinct reviewer's signed decision, and durably records a terminal
+tombstone that blocks replay of the original ID. Focused tests cover
+simulator-injected invalidation, competing journal instances, late receipts,
+rotation, restart, and a later different proposal. The callback used by those
+tests is not a production finality authenticator. The packaged API/CLI exposes
+no approved operator recovery command, and there is no reviewed complete
+action-history proof or deployed Compact stale-action check. The
+[recovery specification](../spec/local-proposal-recovery.md) requires those
+independent proofs and human review before a real reservation can be released.
+A null indexer read, timeout, or new journal path cannot substitute for them.
 
 ## Static runtime archive type boundary
 
@@ -2948,3 +2952,90 @@ then record actor writes and reads with runtime egress denied, followed by
 deployed restart/restore and independent human security review. None of the
 local regression results above can be attached as a passing `A01`-`S01`
 acceptance case.
+
+## Acceptance decision-history metadata
+
+The local acceptance inventory now rejects malformed reviewer identifiers,
+reason codes, noncanonical decision timestamps, and a decision timestamp that
+precedes an earlier decision in the same case. A legacy case labeled before
+the decision-chain feature may still record its prior label in its first
+decision; the new decision is required before that case counts as
+decision-backed. These checks preserve a coherent local audit trail but do
+not authenticate the operator, receipts, finality, or human security verdict.
+
+## Standalone qualification observer type boundary
+
+The broad checked-JS CI gate now names the ledger topology, rendered Compose,
+aggregate qualification, and API restart observers directly. Its three egress
+probe modules were already included transitively; direct roots make the other
+entry points explicit rather than depending on incidental imports. The
+aggregate starts with unknown child results and narrows them only after the
+runtime scope validators reject malformed or inflated evidence. This reduces
+type drift, but it does not prove Docker's effective isolation, independently
+authenticate finality, run a governed actor, or satisfy the human security
+review. Those release gates remain open.
+
+## Issuer writer-annex time source
+
+The opt-in issuer proposal port now checks the signed writer annex's validity
+window against the same deployment-owned trusted-time result used for the
+accepted evidence at prepare, preflight, execute, and pre-broadcast recheck.
+The host clock remains an additional startup/fast-fail check, not a way to
+extend the annex if it rolls backward. Focused tests cover a trusted time
+before `notBefore` and after `notAfter` while the host clock and accepted
+evidence would otherwise allow preparation. This still uses injected time,
+ledger, and status dependencies; it does not supply the production adapter
+or a deployed local actor journey required by #219.
+
+## Reviewed npm artifact handoff
+
+The local #236 publish workflow separates release-byte preparation from the
+protected npm publication job. Preparation builds the exact signed source,
+generates and verifies the release manifest against the complete packed
+tarball set, runs a clean-consumer smoke, and uploads the tarballs and manifest.
+Its job output and summary identify the source revision, version, and manifest
+SHA-256 before `npm-publish` approval is requested. The protected job downloads
+that artifact, checks the recorded manifest digest, rebuilds full Compact
+outputs from the same source, verifies the manifest and tarballs again, and
+reruns the consumer smoke before publishing. The publisher separately checks
+each tarball immediately before its registry operation.
+
+This is a byte-integrity and review-order gate, not proof of an independently
+approved release. GitHub must have required reviewers configured on the
+`npm-publish` environment; workflow YAML cannot impose them. The release
+owner must inspect the prepared artifact and its digest before approval, and
+the publish runner remains inside the trusted computing base after the final
+check. No npm publish or exact-head hosted CI has run for this unpublished
+slice. It does not satisfy the signed local genesis, finalized deployment,
+offline actor E2E, recovery, VC status-authority, or human security gates.
+
+## Standalone verifier catalog before actor reads
+
+The aggregate standalone observer now obtains the verifier-key names from the
+verified install manifest and compares that complete set to the wizard's
+staged deployment key and recorded insertion names. It stops before a live
+API read if a key is missing, extra, substituted, or not reconciled. Pending
+insertions remain an incomplete prerequisite rather than a passing result.
+The report labels a match as bundle-to-wizard recorded consistency only;
+independent finalized on-ledger key readback remains required for `L01`.
+
+## Installed provider dependency integrity
+
+The provider staging test now installs a transitive module under
+`node_modules`, transfers the stage into the install-verifier fixture, and
+proves that changing that dependency fails the externally pinned content
+digest. The installed-runtime verifier also reads `provider-stage.json` from
+a bounded no-follow regular descriptor and rejects linked or oversized
+reports. These checks support the immutable code-tree alternative in #233,
+but a root-owned source-matched install and real SDK-backed run have not been
+observed on this host. The root administrator and any root-managed update
+remain in the trusted computing base; this is not a release security verdict.
+
+## Acceptance binder catalog scope
+
+The acceptance evidence binder now checks the aggregate observer's recorded
+verifier-key catalog marker. A pending report must leave it unverified; a
+report with current API reads must retain the precise bundle-to-wizard
+consistency marker. A cross-module fixture test passes the aggregate output
+through the binder and confirms that neither component changes an acceptance
+case or asserts independent finality. It is not deployed standalone evidence.

@@ -147,3 +147,44 @@ export function buildStandaloneApiApprovalChain(value, releaseManifestSha256) {
     },
   };
 }
+
+/**
+ * A first-run pin candidate for operator review and protected installation.
+ * The API must verify an independently installed copy; this private export is
+ * not itself a trusted runtime anchor.
+ * @param {ReturnType<typeof buildStandaloneApiApprovalChain>} chain
+ * @param {Buffer} chainBytes
+ */
+export function buildStandaloneApiTrustAnchor(chain, chainBytes) {
+  const parsed = parseCanonicalSignedJson(chainBytes, "API approval chain");
+  if (JSON.stringify(parsed) !== JSON.stringify(chain)
+    || chain.format !== "tr-local-api-approval-chain-v1"
+    || !SOURCE_REVISION.test(chain.sourceRevision)
+    || !SHA256.test(chain.installInventorySha256)
+    || !SHA256.test(chain.releaseManifestSha256)
+    || typeof chain.expectedGenesisHash !== "string" || !HASH.test(chain.expectedGenesisHash)
+    || typeof chain.contractAddress !== "string" || !HASH.test(chain.contractAddress)) {
+    throw new Error("API trust anchor requires exact exported approval-chain bytes");
+  }
+  const genesis = approval(chain.genesisApproval, "Genesis");
+  const committee = approval(chain.committeeApproval, "Committee");
+  const deployment = approval(chain.committeeDeploymentApproval, "Deployment");
+  if (committee.parsed.genesisApprovalSha256 !== genesis.documentSha256
+    || deployment.parsed.committeeApprovalSha256 !== committee.documentSha256
+    || committee.reviewerFingerprint !== deployment.reviewerFingerprint) {
+    throw new Error("API trust anchor reviewer chain is inconsistent");
+  }
+  return {
+    format: "tr-local-api-trust-anchor-v1",
+    sourceRevision: chain.sourceRevision,
+    installInventorySha256: chain.installInventorySha256,
+    releaseManifestSha256: chain.releaseManifestSha256,
+    networkId: chain.networkId,
+    expectedGenesisHash: chain.expectedGenesisHash,
+    contractAddress: chain.contractAddress,
+    approvalChainSha256: sha256(chainBytes),
+    genesisApprovalSha256: genesis.documentSha256,
+    genesisReviewerFingerprint: genesis.reviewerFingerprint,
+    governanceReviewerFingerprint: committee.reviewerFingerprint,
+  };
+}

@@ -3,6 +3,11 @@ import { describe, expect, it } from "vitest";
 import { parseTrustRegistryApiCliArgs } from "../cli.js";
 
 describe("API CLI binding", () => {
+  it("documents the mandatory protected v3 anchor in help", () => {
+    expect(() => parseTrustRegistryApiCliArgs(["--help"]))
+      .toThrow(/All v3 local-ledger commands require TR_API_TRUST_ANCHOR_PATH/u);
+  });
+
   const localArgs = ["serve", "--local-ledger-plan", "/run/api-plan.json",
     "--local-ledger-signature", "/run/api-plan.sig",
     "--local-ledger-keyring", "/run/keyring",

@@ -15,6 +15,7 @@ const topology = {
   apiRestartCount: 0,
   networkId: "n".repeat(64),
   approvalMountReadOnly: true,
+  trustAnchorMountReadOnly: true,
   internalNetworkOnly: true,
   hostPortPublished: false,
 };
@@ -87,6 +88,9 @@ test("does not exec when topology or reviewer input is invalid", async () => {
   }), /topology observation is incomplete/u);
   await assert.rejects(probeStandaloneApiCurrentReads("/bundle", {
     TR_API_REVIEWER_FINGERPRINT: "bad",
+  }, { observe: async () => topology, execDocker }), /fingerprint is missing/u);
+  await assert.rejects(probeStandaloneApiCurrentReads("/bundle", {
+    TR_API_REVIEWER_FINGERPRINT: 42,
   }, { observe: async () => topology, execDocker }), /fingerprint is missing/u);
   assert.equal(execCount, 0);
 });
@@ -178,6 +182,10 @@ test("rejects invalid report time, expired observation, and incomplete topology"
   }
   await assert.rejects(probeStandaloneApiCurrentReads("/bundle", env, {
     observe: async () => ({ ...topology, approvalMountReadOnly: false }),
+    execDocker: async () => JSON.stringify(report),
+  }), /topology observation is incomplete/u);
+  await assert.rejects(probeStandaloneApiCurrentReads("/bundle", env, {
+    observe: async () => ({ ...topology, trustAnchorMountReadOnly: false }),
     execDocker: async () => JSON.stringify(report),
   }), /topology observation is incomplete/u);
   await assert.rejects(probeStandaloneApiCurrentReads("/bundle", env, {

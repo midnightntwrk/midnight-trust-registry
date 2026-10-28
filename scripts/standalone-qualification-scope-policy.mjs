@@ -30,6 +30,7 @@ function hasConsistentLookupCounts(report) {
 
 /** A read-only API probe cannot upgrade unobserved release gates.
  * @param {unknown} report
+ * @returns {asserts report is Record<string, unknown>}
  */
 export function assertCurrentQueryScope(report) {
   if (!isRecord(report)
@@ -61,6 +62,7 @@ export function assertCurrentQueryScope(report) {
 
 /** A container restart proves only the recorded API egress checks.
  * @param {unknown} report
+ * @returns {asserts report is Record<string, unknown>}
  */
 export function assertApiRestartScope(report) {
   if (!isRecord(report)

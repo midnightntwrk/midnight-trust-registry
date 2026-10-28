@@ -50,6 +50,45 @@ export type ApprovalChainPlanPins = {
   maintenanceAuthority: { committee: readonly string[]; threshold: number; counter: string };
 };
 
+/** Verify a first-run pin independently supplied by the operator, not by the API plan. */
+export function assertLocalApiTrustAnchor(input: {
+  anchorBytes: Buffer;
+  chainBytes: Buffer;
+  plan: ApprovalChainPlanPins;
+  governanceReviewerFingerprint: string;
+}): void {
+  const anchor = canonicalJson(input.anchorBytes, "Local API trust anchor");
+  const chain = canonicalJson(input.chainBytes, "Local API approval chain");
+  if (!exact(anchor, ["format", "sourceRevision", "installInventorySha256",
+    "releaseManifestSha256", "networkId", "expectedGenesisHash", "contractAddress",
+    "approvalChainSha256", "genesisApprovalSha256", "genesisReviewerFingerprint",
+    "governanceReviewerFingerprint"])
+    || anchor.format !== "tr-local-api-trust-anchor-v1"
+    || typeof anchor.approvalChainSha256 !== "string"
+    || !SHA256.test(anchor.approvalChainSha256)
+    || anchor.approvalChainSha256 !== digest(input.chainBytes)
+    || typeof anchor.genesisApprovalSha256 !== "string"
+    || !SHA256.test(anchor.genesisApprovalSha256)
+    || typeof anchor.genesisReviewerFingerprint !== "string"
+    || !FINGERPRINT.test(anchor.genesisReviewerFingerprint)
+    || typeof anchor.governanceReviewerFingerprint !== "string"
+    || !FINGERPRINT.test(anchor.governanceReviewerFingerprint)
+    || anchor.governanceReviewerFingerprint !== input.governanceReviewerFingerprint
+    || !exact(chain.genesisApproval, ["documentBase64", "documentSha256",
+      "signatureBase64", "signatureSha256", "reviewerFingerprint"])
+    || !exact(chain.committeeApproval, ["documentBase64", "documentSha256",
+      "signatureBase64", "signatureSha256", "reviewerFingerprint"])
+    || chain.genesisApproval.documentSha256 !== anchor.genesisApprovalSha256
+    || chain.genesisApproval.reviewerFingerprint !== anchor.genesisReviewerFingerprint
+    || chain.committeeApproval.reviewerFingerprint !== anchor.governanceReviewerFingerprint
+    || ["sourceRevision", "installInventorySha256", "releaseManifestSha256",
+      "networkId", "expectedGenesisHash", "contractAddress"].some((key) =>
+      anchor[key] !== input.plan[key as keyof ApprovalChainPlanPins]
+      || chain[key] !== anchor[key])) {
+    throw new Error("Local API approval chain differs from the protected first-run trust anchor");
+  }
+}
+
 export async function verifyLocalApiApprovalChain(input: {
   chainBytes: Buffer;
   plan: ApprovalChainPlanPins;

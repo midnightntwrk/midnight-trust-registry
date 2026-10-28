@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { chmod, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmod, cp, link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -18,6 +18,8 @@ function run(file, args, cwd) {
     assert.deepEqual(args, ["install", "--frozen-lockfile", "--ignore-scripts",
       "--package-import-method=copy"]);
     assert.equal(JSON.parse(readFileSync(join(cwd, "packages/demo/package.json"), "utf8")).source, true);
+    mkdirSync(join(cwd, "node_modules/demo-helper"), { recursive: true });
+    writeFileSync(join(cwd, "node_modules/demo-helper/index.js"), "module.exports = 'approved';\n");
     return "";
   }
   return execFileSync(file, args, { cwd, encoding: "utf8" }).trim();
@@ -96,6 +98,47 @@ test("verifies a copied install against externally reviewed stage digests", () =
 
   await writeFile(join(installed, "packages/demo/dist/entry.js"), "tampered\n");
   await assert.rejects(verifyInstalledProviderRuntime(installed, expected, options), /differs from the reviewed stage/u);
+}));
+
+test("rejects mutation of an installed transitive dependency", () => fixture(async ({
+  bundle, destination, parent, revision, dependencies,
+}) => {
+  const staged = await stageProviderRuntime(bundle, destination, dependencies);
+  const installed = join(parent, "installed");
+  await cp(destination, installed, { recursive: true });
+  const expected = { sourceRevision: revision, inventorySha256: HASH,
+    contentSha256: staged.contentSha256 };
+  const options = { boundary: parent, trustedUid: process.getuid() };
+  await verifyInstalledProviderRuntime(installed, expected, options);
+  await writeFile(join(installed, "node_modules/demo-helper/index.js"), "module.exports = 'changed';\n");
+  await assert.rejects(verifyInstalledProviderRuntime(installed, expected, options),
+    /differs from the reviewed stage/u);
+}));
+
+test("rejects a linked or oversized installed stage report", () => fixture(async ({
+  bundle, destination, parent, revision, dependencies,
+}) => {
+  const staged = await stageProviderRuntime(bundle, destination, dependencies);
+  const installed = join(parent, "installed");
+  await cp(destination, installed, { recursive: true });
+  const expected = { sourceRevision: revision, inventorySha256: HASH,
+    contentSha256: staged.contentSha256 };
+  const options = { boundary: parent, trustedUid: process.getuid() };
+  const report = join(installed, "provider-stage.json");
+  const original = await readFile(report);
+  await rm(report);
+  await symlink("package.json", report);
+  await assert.rejects(verifyInstalledProviderRuntime(installed, expected, options));
+  await rm(report);
+  await writeFile(report, original);
+  const alias = join(installed, "stage-report-link.json");
+  await link(report, alias);
+  await assert.rejects(verifyInstalledProviderRuntime(installed, expected, options),
+    /non-regular or hard-linked entry|bounded single-link regular file/u);
+  await rm(alias);
+  await writeFile(report, Buffer.alloc(64 * 1024 + 1));
+  await assert.rejects(verifyInstalledProviderRuntime(installed, expected, options),
+    /bounded single-link regular file/u);
 }));
 
 test("rejects a substituted stage report even if installed files are unchanged", () => fixture(async ({

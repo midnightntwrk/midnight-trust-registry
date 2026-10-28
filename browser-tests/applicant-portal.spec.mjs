@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./offline-browser-fixture.mjs";
 
 import { applicationDraft, demoRegistryId, presentationForNonce, signDigest, startHost } from "../scripts/demo-auditor-admission.mjs";
 

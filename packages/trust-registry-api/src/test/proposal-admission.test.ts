@@ -119,7 +119,7 @@ const approvedIssuerPlan = {
   ...localPlan,
   sourceRevision: "a".repeat(40),
   installInventorySha256: "b".repeat(64),
-  notBefore: new Date(Date.now() - 60_000).toISOString(),
+  notBefore: "2026-10-13T00:00:00.000Z",
   notAfter: new Date(Date.now() + 86_400_000).toISOString(),
   verifierKeySha256: approvedIssuerImage.verifierKeySha256,
   maintenanceAuthority: { ...approvedIssuerImage.maintenanceAuthority, counter: "3" },
@@ -350,6 +350,36 @@ describe("local issuer proposal terms", () => {
     expect(context).toEqual(prepared.signingContext);
     expect(verifyLiveEvidence).toHaveBeenCalledOnce();
     expect(assertApprovedProviderCode).not.toHaveBeenCalled();
+    expect(loadApprovedSubmissionProviders).not.toHaveBeenCalled();
+
+    const hostClock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-13T00:03:00.000Z"));
+    try {
+      const expiredWriterPort = createBoundLocalIssuerProposalPort({
+        plan: approvedIssuerPlan, approvedPlanSha256, approvedPlanReviewerFingerprint,
+        writerApproval: { ...writerApproval, notAfter: "2026-10-13T00:04:00.000Z" },
+        submissionJournalPath,
+        async readCapturedAdmission() { return { pending, accepted }; },
+        readAuthenticatedFinalizedSnapshot, readTrustedTimeMs, verifyLiveEvidence,
+        assertApprovedProviderCode, loadApprovedSubmissionProviders,
+      });
+      readTrustedTimeMs.mockResolvedValueOnce(Date.parse("2026-10-13T00:04:30.000Z"));
+      await expect(expiredWriterPort.prepare(pending.authorizationId, evidence, localTerms))
+        .rejects.toThrow(/writer approval differs/u);
+      const earlyWriterPort = createBoundLocalIssuerProposalPort({
+        plan: approvedIssuerPlan, approvedPlanSha256, approvedPlanReviewerFingerprint,
+        writerApproval: { ...writerApproval, notBefore: "2026-10-13T00:02:00.000Z" },
+        submissionJournalPath,
+        async readCapturedAdmission() { return { pending, accepted }; },
+        readAuthenticatedFinalizedSnapshot, readTrustedTimeMs, verifyLiveEvidence,
+        assertApprovedProviderCode, loadApprovedSubmissionProviders,
+      });
+      readTrustedTimeMs.mockResolvedValueOnce(Date.parse("2026-10-13T00:01:00.000Z"));
+      await expect(earlyWriterPort.prepare(pending.authorizationId, evidence, localTerms))
+        .rejects.toThrow(/writer approval differs/u);
+    } finally {
+      hostClock.mockRestore();
+    }
+    expect(verifyLiveEvidence).toHaveBeenCalledOnce();
     expect(loadApprovedSubmissionProviders).not.toHaveBeenCalled();
 
     await expect(port.prepare("issuer:wrong", evidence, localTerms))

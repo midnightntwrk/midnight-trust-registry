@@ -10,6 +10,7 @@ const imageId = (role) => `sha256:${({ api: "a", node: "b", indexer: "c",
   "proof-server": "d" })[role].repeat(64)}`;
 const expected = {
   project, sourceRevision, approvalDir: "/private/approved-api",
+  trustAnchorFile: "/etc/trust-registry-first-run-anchor.json",
   inventorySha256: "f".repeat(64),
   uid: "501", gid: "20", reviewerFingerprint: "A".repeat(40),
   composeFiles: ["/bundle/compose.yml", "/bundle/compose.offline.yml", "/bundle/compose.api.yml"],
@@ -35,7 +36,8 @@ const container = (role) => ({
       "com.docker.compose.service": role,
       "com.docker.compose.project.config_files": expected.composeFiles.join(","),
     },
-    ...(role === "api" ? { User: "501:20", Env: [...expected.apiImageEnv],
+    ...(role === "api" ? { User: "501:20", Env: [...expected.apiImageEnv,
+      "TR_API_TRUST_ANCHOR_PATH=/etc/trust-registry-first-run-anchor.json"],
       Entrypoint: ["node", "/app/bin/trust-registry-api.mjs"], Cmd: command,
       Healthcheck: { Test: healthcheck } } : {}),
   },
@@ -49,7 +51,9 @@ const container = (role) => ({
   NetworkSettings: { Networks: { [ledger]: { NetworkID: "ledger-id" } },
     Ports: role === "api" ? { "4400/tcp": null } : {} },
   Mounts: role === "api" ? [{ Type: "bind", Source: expected.approvalDir,
-    Destination: "/run/trust-registry", RW: false }] : [],
+    Destination: "/run/trust-registry", RW: false },
+  { Type: "bind", Source: expected.trustAnchorFile,
+    Destination: "/etc/trust-registry-first-run-anchor.json", RW: false }] : [],
 });
 const containers = ["api", "indexer", "node", "proof-server"].map(container);
 const network = { Name: ledger, Id: "ledger-id", Internal: true, Driver: "bridge",
@@ -70,7 +74,8 @@ test("reports a topology observation without a release or finality claim", () =>
     apiStartedAt: "2026-10-24T11:00:00Z", apiRestartCount: 0,
     sourceRevision, installInventorySha256: expected.inventorySha256,
     imageIdsMatched: true,
-    approvalMountReadOnly: true, internalNetworkOnly: true,
+    approvalMountReadOnly: true, trustAnchorMountReadOnly: true,
+    internalNetworkOnly: true,
     hostPortPublished: false, finalizedReadback: "not-verified",
     egressDenied: "not-verified", actorJourneys: "not-run",
     releaseQualified: false,
@@ -92,6 +97,8 @@ test("rejects image, command, identity, and Compose input drift", () => {
     /process environment differs/u);
   assert.throws(drift((_network, items) => { items[0].Config.Env.push("NODE_ENV=development"); }),
     /duplicate variables/u);
+  assert.throws(drift((_network, items) => { items[0].Config.Env = [...expected.apiImageEnv]; }),
+    /process environment differs/u);
 });
 
 test("rejects writable approval data, privilege drift, and host publishing", () => {
@@ -99,6 +106,10 @@ test("rejects writable approval data, privilege drift, and host publishing", () 
     /approval mount/u);
   assert.throws(drift((_network, items) => { items[0].Mounts[0].Source = "/other"; }),
     /approval mount/u);
+  assert.throws(drift((_network, items) => { items[0].Mounts[1].RW = true; }),
+    /trust anchor mount/u);
+  assert.throws(drift((_network, items) => { items[0].Mounts[1].Source = "/other"; }),
+    /trust anchor mount/u);
   assert.throws(drift((_network, items) => { items[0].HostConfig.ReadonlyRootfs = false; }),
     /privileges/u);
   assert.throws(drift((_network, items) => { items[0].HostConfig.PidMode = "host"; }),
@@ -160,5 +171,8 @@ test("rejects incomplete caller pins", () => {
   }), /inputs are incomplete/u);
   assert.throws(() => checkStandaloneApiRuntime(network, containers, {
     ...expected, approvalDir: "/",
+  }), /inputs are incomplete/u);
+  assert.throws(() => checkStandaloneApiRuntime(network, containers, {
+    ...expected, trustAnchorFile: "relative.json",
   }), /inputs are incomplete/u);
 });
