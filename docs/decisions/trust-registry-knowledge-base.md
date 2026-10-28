@@ -2755,16 +2755,20 @@ policy for a reservation whose network outcome is unknown.
 
 ## Local proposal recovery proof boundary
 
-Issue #220 remains a local RC safety/liveness gate. The current recovery
-candidate and detached-signed decision are read-only: even a later governance
-counter and absent current proposal record cannot prove the original action
-did not execute. The [recovery specification](../spec/local-proposal-recovery.md)
-requires independently authenticated complete action history, proof that the
-original signed sequence is no longer executable, a separate human reviewer,
-and a durable non-replayable journal tombstone before another proposal can
-proceed. None of those requirements may be replaced by a null indexer read,
-timeout, or new journal path. Synthetic tests of the candidate remain
-non-deployment evidence.
+Issue #220 remains a local RC safety/liveness gate. The candidate and
+detached-signed decision verifier are read-only, but the opt-in file journal
+now has an internal abandonment transition. It rechecks the exact reserved
+attempt under the existing lock, requires a deployment-owned finality callback
+and a distinct reviewer's signed decision, and durably records a terminal
+tombstone that blocks replay of the original ID. Focused tests cover
+simulator-injected invalidation, competing journal instances, late receipts,
+rotation, restart, and a later different proposal. The callback used by those
+tests is not a production finality authenticator. The packaged API/CLI exposes
+no approved operator recovery command, and there is no reviewed complete
+action-history proof or deployed Compact stale-action check. The
+[recovery specification](../spec/local-proposal-recovery.md) requires those
+independent proofs and human review before a real reservation can be released.
+A null indexer read, timeout, or new journal path cannot substitute for them.
 
 ## Static runtime archive type boundary
 

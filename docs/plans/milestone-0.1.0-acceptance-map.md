@@ -292,16 +292,20 @@ A bound journal with a missing state file now rejects writes instead of
 starting empty, and a running instance detects loss of its checked binding.
 Loss of both files across process restart still requires independent durable
 recovery evidence and cannot be treated as a fresh installation.
-The local read-only draft/verify commands and signed recovery-decision parser
-now bind the exact review candidate,
-reviewer key, draft time, and retained finality-evidence bytes. Its result
-explicitly marks finality unverified, release unqualified, and retry forbidden.
-It neither authenticates chain finality nor changes journal state. A future
-release path must independently authenticate finality and re-assess the exact
-candidate under the journal lock before any state change. #220 remains open:
-an independently reviewed finality policy, durable tombstone, operator command,
-restart/replay tests, and security review are still required before any
-reservation can be released.
+The local draft/verify commands bind the exact review candidate, distinct
+reviewer key, draft time, and retained finality-evidence bytes. Verification
+alone marks finality unverified, release unqualified, and retry forbidden.
+The opt-in `FileProposalSubmissionJournal.abandonInvalidatedReservation`
+method now re-assesses the candidate under its journal lock, requires a
+deployment-owned finality authenticator and the exact detached-signed
+decision, and durably retains a terminal, non-replayable tombstone. Local
+tests cover competing journal instances, late receipts, rotation, restart,
+and a new proposal without replay of the original ID. The authenticator in
+those tests supplies an injected simulator view, not independent local-ledger
+finality. No reviewed production authenticator, complete-action proof format,
+deployed stale-action check, or operator CLI/HTTP path exists. #220 remains
+open; neither a signed decision nor the local unit tests authorize release
+of a real reservation, and the `R01` recovery gate is still unproven.
 
 ## Next Local Qualification Sequence
 
