@@ -15,6 +15,18 @@ const services = ["indexer", "node", "proof-server"];
 const ports = { indexer: [8088, "28088"], node: [9944, "29944"],
   "proof-server": [6300, "26300"] };
 
+/** The render check must not inherit an operator's real Compose project or ports.
+ * @param {NodeJS.ProcessEnv} inherited */
+export function syntheticRenderEnvironment(inherited = process.env) {
+  return { ...inherited, COMPOSE_PROJECT_NAME: project, TR_STACK_NAME: project,
+    TR_NODE_PORT: "29944", TR_INDEXER_PORT: "28088", TR_PROOF_PORT: "26300",
+    TR_NETWORK_ID: "undeployed", TR_INDEXER_PASSWORD: "synthetic-render-only",
+    TR_INDEXER_SECRET: "synthetic-render-only", TR_PROOF_PARAMS_DIR: "/tmp",
+    TR_NODE_IMAGE: "tr-standalone/node:synthetic-render-only",
+    TR_INDEXER_IMAGE: "tr-standalone/indexer:synthetic-render-only",
+    TR_PROOF_SERVER_IMAGE: "tr-standalone/proof-server:synthetic-render-only" };
+}
+
 /** @param {Record<string, any>} config @param {boolean} offline */
 export function checkRenderedStandaloneCompose(config, offline) {
   assert.equal(config.name, project);
@@ -42,11 +54,7 @@ export function checkRenderedStandaloneCompose(config, offline) {
 
 /** @param {boolean} offline */
 async function render(offline) {
-  const env = { ...process.env, TR_STACK_NAME: project, TR_NETWORK_ID: "undeployed",
-    TR_INDEXER_PASSWORD: "synthetic-render-only", TR_INDEXER_SECRET: "synthetic-render-only",
-    TR_PROOF_PARAMS_DIR: "/tmp", TR_NODE_IMAGE: "tr-standalone/node:synthetic-render-only",
-    TR_INDEXER_IMAGE: "tr-standalone/indexer:synthetic-render-only",
-    TR_PROOF_SERVER_IMAGE: "tr-standalone/proof-server:synthetic-render-only" };
+  const env = syntheticRenderEnvironment();
   const args = ["compose", "-f", compose];
   if (offline) args.push("-f", offlineCompose);
   args.push("config", "--format", "json");

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { checkRenderedStandaloneCompose } from "./check-standalone-compose-render.mjs";
+import { checkRenderedStandaloneCompose, syntheticRenderEnvironment } from "./check-standalone-compose-render.mjs";
 
 const base = () => ({
   name: "tr-standalone-local-rendercheck",
@@ -19,6 +19,17 @@ const base = () => ({
 
 test("render policy accepts the isolated offline topology", () => {
   checkRenderedStandaloneCompose(base(), true);
+});
+
+test("synthetic render inputs ignore inherited project and ports", () => {
+  const env = syntheticRenderEnvironment({ COMPOSE_PROJECT_NAME: "other-project",
+    TR_STACK_NAME: "other-project", TR_NODE_PORT: "39944",
+    TR_INDEXER_PORT: "38088", TR_PROOF_PORT: "36300" });
+  assert.equal(env.COMPOSE_PROJECT_NAME, "tr-standalone-local-rendercheck");
+  assert.equal(env.TR_STACK_NAME, "tr-standalone-local-rendercheck");
+  assert.equal(env.TR_NODE_PORT, "29944");
+  assert.equal(env.TR_INDEXER_PORT, "28088");
+  assert.equal(env.TR_PROOF_PORT, "26300");
 });
 
 test("render policy rejects an extra peer, public port, or external bridge", () => {

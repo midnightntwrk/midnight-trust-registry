@@ -319,6 +319,13 @@ published or merged.
 The current local continuation has not been pushed. Recheck live #238-#240
 heads, restack safely, obtain exact-head CI and independent review, and keep
 #238 draft until its external Opengrep failure has a reviewed disposition.
+The first whole-range review of this operator-assurance group found that the
+synthetic rendered-Compose preflight inherited real `TR_*_PORT` values and
+could fail without any Compose source change. The preflight now pins its
+synthetic project and all three ports; a conflicting-environment CLI run,
+four focused policy tests, the 113-case topology suite, and checked-JS gate
+passed. Re-review this corrected group at its final local tip before
+publication; the fix is not a disposition of the plaintext transport risk.
 The release still requires human-signed real genesis and roster approvals,
 authenticated finalized deployment, live actor/status adapters, offline
 journeys and recovery, and human security review.
