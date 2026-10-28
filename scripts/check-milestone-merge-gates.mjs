@@ -58,13 +58,14 @@ export function evaluateMilestoneMergeGate({ pull, commits, checks, statuses, re
   }
   if (!Array.isArray(statuses) || statuses.some((status) => (status?.sha != null && status.sha !== head)
     || typeof status.context !== "string" || status.context.length === 0
+    || !Number.isSafeInteger(status.id) || status.id < 1
     || !Number.isFinite(Date.parse(status.created_at)))) {
     fail("exact-head commit statuses are unavailable or malformed");
   }
   const latestStatuses = new Map();
   for (const status of statuses) {
     const prior = latestStatuses.get(status.context);
-    if (prior === undefined || Date.parse(status.created_at) > Date.parse(prior.created_at)) {
+    if (prior === undefined || status.id > prior.id) {
       latestStatuses.set(status.context, status);
     }
   }
