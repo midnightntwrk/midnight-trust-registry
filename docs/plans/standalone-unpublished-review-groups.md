@@ -17,7 +17,7 @@ above the live draft #240 head `8dc05ec7`. The original unpublished branch
 | Local operator core | `codex/trust-registry-review-live240-core` (`f7d2efa9`) | Draft #240 | 92 topology tests, docs check, audit. |
 | Qualification and recovery | `codex/trust-registry-review-live240-qualification` (`caaec744`) | Local operator core | 97 topology tests, docs check, audit. |
 | Adoption and evidence | `codex/trust-registry-review-live240-adoption` (`d8179c82`) | Qualification and recovery | 111 topology tests, docs check, audit; merge retained the inode guard and private-file fixture requirements from live #240. |
-| Final security and E2E hardening | `codex/trust-registry-review-live240-final` (`78d0c624`) | Adoption and evidence | 121 topology tests, 290 API unit tests, typecheck, docs check, audit, four simulator-backed membership journeys, CLI/API/UI fixture smoke, and 11 Playwright fixture-browser cases. |
+| Final security and E2E hardening | `codex/trust-registry-review-live240-final` (`364f936f`; validated code at parent `78d0c624`) | Adoption and evidence | 121 topology tests, 290 API unit tests, typecheck, docs check, audit, four simulator-backed membership journeys, CLI/API/UI fixture smoke, and 11 Playwright fixture-browser cases at the validated parent. The tip only updates this handoff document. |
 
 The validation above is local and scoped, not exact-head CI or independent
 review. The final fixture E2E lane is not a deployed-ledger actor journey.
@@ -26,6 +26,27 @@ and package checks without destroying artifact-bearing checkouts, obtain
 independent exact-head review, and retain #238's external scanner failure as
 an unresolved security disposition under #237/#232. Do not merge or promote
 #198 on the strength of this stack.
+
+## Release-gate handoff
+
+The following work cannot be inferred from the passing local test lanes. Keep
+each gate open until an operator records evidence against one exact source,
+install inventory, genesis, contract address, and signed API plan. The
+[operator acceptance record](../guide/standalone-local-journey.md#operator-acceptance-record)
+defines the case IDs and required raw receipts.
+
+| Gate | Who must act | Stop condition |
+| --- | --- | --- |
+| Approved local chain and committee | Independent operator and governance key holders | Node-reported genesis or a development 1-of-3 roster is not approval. The operator must review real chain-spec evidence and sign the exact approval bytes; governance must approve the release roster and custody roles. |
+| Finalized deployment and current reads | Funded local-ledger operator | Pre-deployment bridge continuity and simulator results do not authenticate finality or read back a deployed contract and all verifier keys. |
+| Live actor and offline journeys | Deployment integrator and operator | The packaged API CLI is read-only. Approved provider code, governed-write ports, a VC-owned live status authority, and egress-denied actor receipts are still required. |
+| Recovery and security disposition | Backup operator and non-author human reviewer | API restart probes are not distinct-project deployed restore. Issue #232 requires a human verdict, and #237 requires disposition of the external scan before release. |
+
+The operator can run fixture tests and inspect this stack now, but must not
+record any `L01`-`S01` acceptance case as passed from those results. A signed
+genesis approval or security verdict is a human action; do not generate either
+on the reviewer's behalf. Kubernetes and public-network deployment are not
+part of this local 0.1.0 RC gate.
 
 ## Why Group the Work
 
