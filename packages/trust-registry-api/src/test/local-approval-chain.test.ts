@@ -137,6 +137,14 @@ it("verifies signed standalone approvals and rejects substitution", async () => 
     await expect(verify(alternateChain)).resolves.toBeUndefined();
     await expect(verify({ ...chain, contractAddress: `0x${"0".repeat(64)}` }))
       .rejects.toThrow(/contractAddress/u);
+    const otherReceipt = await signed({
+      ...JSON.parse(Buffer.from(committeeDeploymentApproval.documentBase64, "base64").toString("utf8")),
+      deploymentReceipt: { ...receipt, contractAddress: `0x${"a".repeat(64)}` },
+    }, "other-receipt");
+    await expect(verify({ ...chain, committeeDeploymentApproval: otherReceipt,
+      maintenanceReadback: { ...chain.maintenanceReadback,
+        committeeDeploymentApprovalSha256: otherReceipt.documentSha256 } }))
+      .rejects.toThrow(/approved deployment or maintenance state/u);
     await expect(verify({ ...chain, committeeApproval: { ...committeeApproval,
       signatureBase64: genesisApproval.signatureBase64 } }))
       .rejects.toThrow(/SHA-256/u);
@@ -180,6 +188,10 @@ it("verifies signed standalone approvals and rejects substitution", async () => 
     await signRuntime(runtime);
     await expect(load()).resolves.toMatchObject({ format: "tr-local-api-runtime-v3",
       contractAddress });
+    await signRuntime({ ...runtime, maintenanceAuthority: {
+      committee: [committee[0]], threshold: 1, counter: "1" } });
+    await expect(load()).rejects.toThrow(/lacks exact approved local pins/u);
+    await signRuntime(runtime);
     const alternateChainBytes = Buffer.from(`${JSON.stringify(alternateChain)}\n`);
     await writeFile(chainPath, alternateChainBytes);
     await signRuntime({ ...runtime, approvalChainSha256: sha256(alternateChainBytes) });
