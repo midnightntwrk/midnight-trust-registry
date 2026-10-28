@@ -21,6 +21,17 @@ requires a reviewed security disposition; a green aggregate scan is not a
 waiver. The later local review groups and recovery fixes are unpublished, so
 their tests do not change those PR heads or CI results.
 
+At signed/DCO local source `3fddcac5623b58cfecdd672cefa557ef3b691b20`,
+`pnpm run test:e2e:demo:browser` passed the four simulator-backed membership
+journeys, fixture CLI/API and UI smoke, and 11 Playwright cases on
+2026-10-28. `pnpm run test:standalone-topology` separately passed 117/117.
+These are implementation and fixture/topology checks only. They did not
+deploy or read back a finalized standalone contract, exercise a live
+VC-owned status authority, deny egress for deployed actors, or restore a
+deployed registry. They do not pass any `L01`-`S01` acceptance case. This
+documentation update is newer than the tested source and must be retested
+as part of an exact-source release candidate.
+
 At signed/DCO local source `27f873601bc168859b470c858aa06fd23e47a7c3`,
 `pnpm run test:e2e:demo:browser` exited 0 on 2026-10-28. The four signed
 membership simulator journeys, fixture API/UI smoke, and all 10 Playwright
