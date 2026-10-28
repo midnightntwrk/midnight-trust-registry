@@ -12,6 +12,7 @@ import { assertCurrentQueryProcessIdentity } from "./standalone-current-query-pr
 const SHA256 = /^[0-9a-f]{64}$/u;
 const BLOCK_HASH = /^0x[0-9a-f]{64}$/u;
 const ROLES = ["issuer", "verifier", "auditor", "recognition"];
+const AUTHORIZATION_ROLES = ["issuer", "verifier", "auditor"];
 
 function checkedRead(report, status) {
   assertCurrentQueryProcessIdentity(report);
@@ -34,7 +35,11 @@ function checkedRead(report, status) {
     || !ROLES.every((role) => Number.isSafeInteger(report.counts?.[role])
       && report.counts[role] > 0
       && Number.isSafeInteger(report.resolvedLookups?.[role])
-      && report.resolvedLookups[role] > 0)) {
+      && report.resolvedLookups[role] > 0
+      && report.resolvedLookups[role] <= report.counts[role])
+    || !AUTHORIZATION_ROLES.every((role) => Number.isSafeInteger(report.ambiguousLookups?.[role])
+      && report.ambiguousLookups[role] >= 0
+      && report.ambiguousLookups[role] <= report.counts[role])) {
     throw new Error("Live current-query readback is incomplete or has no resolved actor role");
   }
   if (report.planContractAddress !== status.deployedContractAddress
@@ -94,7 +99,9 @@ export async function observeStandaloneCurrentQueryJourney(setupDirectory, bundl
     || second.registryId !== first.registryId
     || second.currentEpochId !== first.currentEpochId
     || ROLES.some((role) => second.counts[role] !== first.counts[role]
-      || second.resolvedLookups[role] !== first.resolvedLookups[role])) {
+      || second.resolvedLookups[role] !== first.resolvedLookups[role])
+    || AUTHORIZATION_ROLES.some((role) =>
+      second.ambiguousLookups[role] !== first.ambiguousLookups[role])) {
     throw new Error("Current-query install, deployment, signed plan, or selected actor reads changed during egress probe");
   }
   return {
@@ -112,6 +119,7 @@ export async function observeStandaloneCurrentQueryJourney(setupDirectory, bundl
     finalizedCheckpoints: [first.sourceFinalizedBlockHash, second.sourceFinalizedBlockHash],
     counts: first.counts,
     resolvedLookups: first.resolvedLookups,
+    ambiguousLookups: first.ambiguousLookups,
     apiEgressCanaryDenied: true,
     apiDnsCanaryDenied: true,
     scope: "Live signed-plan current-only API role and recognition queries with API-container TCP/DNS canary denial; not a governed mutation or complete actor journey",

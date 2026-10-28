@@ -103,6 +103,9 @@ const observation = (candidate) => ({
     planExpectedGenesisHash: candidate.genesisHash,
     planContractAddress: candidate.contractAddress,
     selectedStateSha256: "2".repeat(64),
+    counts: { issuer: 1, verifier: 1, auditor: 1, recognition: 1 },
+    resolvedLookups: { issuer: 1, verifier: 1, auditor: 1, recognition: 1 },
+    ambiguousLookups: { issuer: 0, verifier: 0, auditor: 0 },
     apiEgressCanaryDenied: true,
     apiDnsCanaryDenied: true,
     actorJourneys: "not-run",
@@ -149,6 +152,9 @@ test("read-only observation binds to one acceptance candidate without passing ca
     { hostAndBrowserEgress: "verified" },
     { independentFinality: "verified" },
     { planToDeploymentBinding: "verified" },
+    { ambiguousLookups: undefined },
+    { ambiguousLookups: { issuer: 0, verifier: 2, auditor: 0 } },
+    { resolvedLookups: { issuer: 2, verifier: 1, auditor: 1, recognition: 1 } },
   ]) {
     assert.throws(() => assessStandaloneObservationBinding(candidate,
       { ...observed, currentQuery: { ...observed.currentQuery, ...change } }), /differs/u);

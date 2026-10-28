@@ -229,8 +229,13 @@ they can all run today. The implementation sequence is in
    selected-state SHA-256 to stay fixed around a positive-control TCP and
    DNS egress-denial probe of the same API container. Save its JSON output
    with the raw probe logs in the private evidence directory. An exit code 0
-   is **read-only API runtime evidence**, not a governed-write actor journey:
-   the check does not authenticate node/indexer finality, cover host/browser
+   is **read-only API runtime evidence**, not a governed-write actor journey.
+   Inspect `counts`, `resolvedLookups`, and `ambiguousLookups` together.
+   An ambiguous issuer, verifier, or auditor lookup is a fail-closed 409,
+   not a successful authorization; the observer retains those counts and
+   rejects a change in them during the egress probe. The acceptance binder
+   rejects a report that omits or contradicts them. The check does not
+   authenticate node/indexer finality, cover host/browser
    egress, independently authenticate the deployment/finality evidence (#234),
    or close release gates.
 7. **Disconnect external egress, then run the actor use case.** Keep the local

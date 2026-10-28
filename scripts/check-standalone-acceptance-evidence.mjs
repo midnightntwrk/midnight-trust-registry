@@ -23,7 +23,9 @@ const MAX_DECISIONS_PER_CASE = 64;
  *   networkId?: string, apiContainerId?: string, selectedStateSha256?: string, planSha256?: string,
  *   planExpectedGenesisHash?: string, planContractAddress?: string, apiEgressCanaryDenied?: boolean,
  *   apiDnsCanaryDenied?: boolean, actorJourneys?: string, hostAndBrowserEgress?: string,
- *   independentFinality?: string, planToDeploymentBinding?: string, releaseQualified?: boolean }} QueryObservation */
+ *   independentFinality?: string, planToDeploymentBinding?: string, releaseQualified?: boolean,
+ *   counts?: Record<string, number>, resolvedLookups?: Record<string, number>,
+ *   ambiguousLookups?: Record<string, number> }} QueryObservation */
 /** @typedef {{ format?: string, sourceRevision?: string, installInventorySha256?: string,
  *   networkId?: string, apiContainerId?: string, selectedStateSha256?: string, planSha256?: string,
  *   apiEgressCanaryDenied?: boolean, apiDnsCanaryDenied?: boolean, releaseQualified?: boolean }} RestartObservation */
@@ -157,6 +159,23 @@ export async function readPrivateObservation(root, path) {
   }
 }
 
+/** @param {QueryObservation} query */
+function hasConsistentLookupCounts(query) {
+  const roles = ["issuer", "verifier", "auditor", "recognition"];
+  const counts = query.counts;
+  const resolved = query.resolvedLookups;
+  const ambiguous = query.ambiguousLookups;
+  if (!counts || !resolved || !ambiguous) return false;
+  return roles.every((role) => Number.isSafeInteger(counts[role])
+    && counts[role] > 0
+    && Number.isSafeInteger(resolved[role])
+    && resolved[role] > 0
+    && resolved[role] <= counts[role]
+    && (role === "recognition" || (Number.isSafeInteger(ambiguous[role])
+      && ambiguous[role] >= 0
+      && ambiguous[role] <= counts[role])));
+}
+
 /** Binds a read-only observer report to one acceptance candidate; never passes a case. */
 /** @param {AcceptanceManifest} manifest @param {QualificationObservation | null | undefined} observation */
 export function assessStandaloneObservationBinding(manifest, observation) {
@@ -196,6 +215,7 @@ export function assessStandaloneObservationBinding(manifest, observation) {
     || query.planContractAddress !== manifest.contractAddress
     || query.apiEgressCanaryDenied !== true
     || query.apiDnsCanaryDenied !== true
+    || !hasConsistentLookupCounts(query)
     || query.actorJourneys !== "not-run"
     || query.hostAndBrowserEgress !== "not-verified"
     || query.independentFinality !== "not-verified"
