@@ -3054,3 +3054,16 @@ report with current API reads must retain the precise bundle-to-wizard
 consistency marker. A cross-module fixture test passes the aggregate output
 through the binder and confirms that neither component changes an acceptance
 case or asserts independent finality. It is not deployed standalone evidence.
+
+## Exact-field checks beyond signed wizard documents
+
+The local follow-on to #241 also removes NUL-delimited field-name comparison
+from the wizard's remaining genesis-candidate, signed genesis/committee approval,
+and verifier-key insertion checks, plus the genesis pin/review, deployment and
+insertion plan, and release committee validators. These decisions now use the
+shared set-equality helper. An adversarial reviewer-proposal test demonstrates
+that a field named `extensionA\u0000extensionB` cannot stand in for two expected
+fields. This is a correctness hardening of exact-field predicates, not proof
+that the old behavior bypassed approval, nor a claim that every delimiter
+comparison in the repository has been migrated. The local wizard and policy
+tests passed; exact-head CI and independent security review remain required.

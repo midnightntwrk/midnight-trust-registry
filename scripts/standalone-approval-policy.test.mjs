@@ -32,6 +32,13 @@ test("reviewer metadata requires exact canonical fields and a bounded human revi
   }
 });
 
+test("reviewer proposal rejects a delimiter-collided field schema", () => {
+  const extendedFields = [...fields, "extensionA", "extensionB"];
+  assert.throws(() => reviewerProposal({
+    ...reviewer, "extensionA\u0000extensionB": true,
+  }, extendedFields, now), /Canonical reviewer metadata/u);
+});
+
 test("release committee binds distinct usable keys to distinct custodian roles", () => {
   const keys = Array.from({ length: 3 }, () => `0x${signatureVerifyingKey(sampleSigningKey())}`);
   const policy = { mode: "committee", threshold: 2, verifyingKeys: keys };

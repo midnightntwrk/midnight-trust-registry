@@ -1,7 +1,7 @@
 /**
  * @param {unknown} value
  * @param {readonly string[]} fields
- * @returns {boolean}
+ * @returns {value is Record<string, unknown>}
  */
 export function exactFields(value, fields) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;

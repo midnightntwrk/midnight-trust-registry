@@ -521,11 +521,11 @@ export async function draftStandaloneGenesisPin(directory, dependencies = {}) {
     const candidate = parseJsonBytes(candidateBytes);
     if (!Buffer.from(`${JSON.stringify(candidate, null, 2)}\n`).equals(candidateBytes)
       || candidate?.format !== "tr-local-genesis-candidate-v1"
-      || Object.keys(candidate).sort().join("\0") !== [
+      || !exactFields(candidate, [
         "format", "installInventorySha256", "networkId", "nodeReportedFinalizedBlockHash",
         "nodeReportedFinalizedHeight", "nodeReportedGenesisHash", "observedAt",
         "observerSha256", "project", "sourceRevision", "status",
-      ].sort().join("\0")
+      ])
       || candidate.status !== "untrusted-node-observation-independent-review-required"
       || candidate.sourceRevision !== record.sourceRevision
       || candidate.installInventorySha256 !== record.install.inventorySha256
@@ -829,7 +829,7 @@ export async function approveStandaloneGenesis(
       "networkId", "pinSha256", "reviewedReference", "reviewerFingerprint", "rpcUrl", "setupId",
       "sourceRevision", "stackProject"];
     if (approval === null || typeof approval !== "object" || Array.isArray(approval)
-      || Object.keys(approval).sort().join("\0") !== expectedFields.join("\0")
+      || !exactFields(approval, expectedFields)
       || approval.format !== "tr-local-genesis-approval-v1"
       || approval.sourceRevision !== record.sourceRevision
       || !record.setupId || approval.setupId !== record.setupId
@@ -884,7 +884,7 @@ export async function approveStandaloneCommittee(
       "maintenancePolicy", "networkId", "providerModuleSha256", "reviewedReference",
       "reviewerFingerprint", "sourceRevision"];
     if (approval === null || typeof approval !== "object" || Array.isArray(approval)
-      || Object.keys(approval).sort().join("\0") !== expectedFields.join("\0")
+      || !exactFields(approval, expectedFields)
       || approval.format !== "tr-local-committee-approval-v2"
       || !SHA256.test(approval.deploymentPlanSha256)
       || !SHA256.test(approval.providerModuleSha256)
@@ -1496,7 +1496,7 @@ async function readApprovedCommitteeTransition(record, requestPath, dependencies
     const expectedInsertions = catalog.filter((name) => name !== staged.initialVerifierKeyName).sort();
     const insertions = record.verifierKeyInsertions ?? {};
     if (catalog.length < 2 || !catalog.includes(staged.initialVerifierKeyName)
-      || Object.keys(insertions).sort().join("\0") !== expectedInsertions.join("\0")
+      || !exactFields(insertions, expectedInsertions)
       || expectedInsertions.some((name) => insertions[name].state !== "verified")) {
       throw new Error("Every staged verifier key must have verified finalized readback");
     }
