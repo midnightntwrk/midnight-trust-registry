@@ -130,8 +130,10 @@ maintenance transition. A status label is not an independent GPG or finality
 verification.
 The preflight also rejects approval labels without a nonzero approved genesis
 hash or deployed contract address, and duplicate or unnamed staged verifier
-keys. It still does not compare that key list with the complete release
-manifest or independently authenticate a receipt.
+keys. This preflight does not compare that list with the complete release
+manifest or independently authenticate a receipt. The separate aggregate
+observer compares the recorded key catalog with the verified install bundle;
+that comparison is still not an on-chain key readback.
 Do not change `SOURCE_SHA` to the older setup's revision just to make this
 check pass: the source, install bundle, API plan, and acceptance inventory must
 identify the same candidate. This command is safe to rerun and does not deploy
@@ -141,6 +143,27 @@ No standalone actor E2E command is currently green by design: the packaged
 local-ledger API is read-only, and the issuer/verifier/auditor/maintainer ports
 are not supplied by a qualified embedding host. Stop at this preflight rather
 than recording the simulator command above as an `A01`-`O01` pass.
+
+Once the approved read-only API is running, bind its aggregate observation to
+the same private acceptance candidate. Use the full selected source revision
+and retain the raw probe output for operator review:
+
+```sh
+umask 077
+node scripts/observe-standalone-qualification.mjs \
+  "$SETUP" "$INSTALL" "$SOURCE_SHA" \
+  > /absolute/private/acceptance/read-only-observation.json
+node scripts/check-standalone-acceptance-evidence.mjs observe \
+  /absolute/private/acceptance "$SOURCE_SHA" read-only-observation.json
+```
+
+The binder rejects a missing or overstated verifier-key catalog marker and
+mixed source, inventory, plan, genesis, or contract identities. Exit 0 means
+only that a matching **read-only** observation was bound; exit 2 means the API
+probe was blocked by prerequisites. It does not pass an acceptance case or
+authenticate finality, actor actions, or the report itself. See the
+[operator acceptance record](https://github.com/midnightntwrk/midnight-trust-registry/blob/milestone-0.1.0/docs/guide/standalone-local-journey.md#bind-a-read-only-observation-to-this-candidate)
+for the full evidence boundary.
 
 ## Run and record the real use case
 
