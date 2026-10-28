@@ -202,16 +202,18 @@ wizard's genesis or maintenance approvals and cannot qualify the local RC.
 
 Once a **new exact-source bundle pins `compose.api.yml`** and the human-signed
 plan has been independently approved, the operator can run the read-only API
-topology observer with `TR_STACK_NAME`, `TR_API_APPROVAL_DIR`, `TR_API_UID`,
-`TR_API_GID`, and `TR_API_REVIEWER_FINGERPRINT` set to the same values used for
-the API Compose start:
+topology observer with `TR_STACK_NAME`, `TR_API_APPROVAL_DIR`,
+`TR_API_TRUST_ANCHOR_FILE`, `TR_API_UID`, `TR_API_GID`, and
+`TR_API_REVIEWER_FINGERPRINT` set to the same values used for the API Compose
+start. The anchor must be an independently reviewed root-owned file outside
+the operator-writable approval directory:
 
 ```sh
 node scripts/check-standalone-api-runtime.mjs <verified-install-bundle>
 ```
 
 It rejects a different local API image or process environment, command,
-operator-supplied reviewer fingerprint, approval mount, published port, extra
+operator-supplied reviewer fingerprint, approval and anchor mounts, published port, extra
 network attachment, or weakened API container security settings. For the
 three ledger services it checks image identity, health when configured, and
 network membership; their separate topology and egress observers remain
@@ -268,8 +270,9 @@ ordinary bridge, without depending on public Internet availability:
 node scripts/check-standalone-api-egress.mjs <verified-install-bundle>
 ```
 
-Use the same `TR_STACK_NAME`, `TR_API_APPROVAL_DIR`, `TR_API_UID`, `TR_API_GID`,
-and `TR_API_REVIEWER_FINGERPRINT` as for the topology observer. The probe
+Use the same `TR_STACK_NAME`, `TR_API_APPROVAL_DIR`,
+`TR_API_TRUST_ANCHOR_FILE`, `TR_API_UID`, `TR_API_GID`, and
+`TR_API_REVIEWER_FINGERPRINT` as for the topology observer. The probe
 requires the verified bundle and pinned running API image, confirms a
 same-image positive control can reach the temporary TCP and DNS/UDP canary,
 checks the running API's route table and denial of both canary routes, and

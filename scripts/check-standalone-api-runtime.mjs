@@ -2,7 +2,7 @@
 
 import { execFile } from "node:child_process";
 import { lstat, realpath } from "node:fs/promises";
-import { resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -40,6 +40,7 @@ const apiHealthcheck = ["CMD", "node", "-e",
  *   Mounts?: {Type: string, Source: string, Destination: string, RW: boolean}[]}} DockerContainer
  * @typedef {{project: string, sourceRevision: string, inventorySha256: string,
  *   uid: string, gid: string, reviewerFingerprint: string, approvalDir: string,
+ *   trustAnchorFile: string,
  *   composeFiles: string[], apiImageEnv: string[],
  *   apiRuntime: {imageId: string, configId: string},
  *   images: {role: string, acceptedIds: string[]}[]}} ExpectedApiRuntime
@@ -83,6 +84,7 @@ export function checkStandaloneApiRuntime(network, containers, expected) {
     || !fingerprintPattern.test(expected.reviewerFingerprint)
     || typeof expected.approvalDir !== "string" || !expected.approvalDir.startsWith("/")
     || expected.approvalDir === "/"
+    || typeof expected.trustAnchorFile !== "string" || !isAbsolute(expected.trustAnchorFile)
     || !Array.isArray(expected.composeFiles) || expected.composeFiles.length !== 3
     || !expected.composeFiles.every((file) => typeof file === "string" && file.startsWith("/"))
     || !expected.apiRuntime?.imageId || !expected.apiRuntime?.configId
@@ -138,7 +140,8 @@ export function checkStandaloneApiRuntime(network, containers, expected) {
     throw new Error("API runtime start and restart evidence is unavailable");
   }
   if (JSON.stringify(normalizedEnvironment(api.Config.Env))
-    !== JSON.stringify(normalizedEnvironment(expected.apiImageEnv))) {
+    !== JSON.stringify(normalizedEnvironment([...expected.apiImageEnv,
+      "TR_API_TRUST_ANCHOR_PATH=/etc/trust-registry-first-run-anchor.json"]))) {
     throw new Error("API runtime process environment differs from the verified image");
   }
   if (labels["com.docker.compose.project.config_files"] !== expected.composeFiles.join(",")
@@ -176,17 +179,21 @@ export function checkStandaloneApiRuntime(network, containers, expected) {
   const tmpfsOptions = host.Tmpfs?.["/tmp"]?.split(",");
   const allowedTmpfsOptions = new Set(["rw", "nosuid", "nodev", "noexec",
     "size=33554432", "size=32m"]);
-  if (api.Mounts?.length !== 1 || api.Mounts[0].Type !== "bind"
-    || api.Mounts[0].Source !== expected.approvalDir
-    || api.Mounts[0].Destination !== "/run/trust-registry"
-    || api.Mounts[0].RW !== false
+  const mounts = new Map(api.Mounts?.map((mount) => [mount.Destination, mount]));
+  const approvalMount = mounts.get("/run/trust-registry");
+  const anchorMount = mounts.get("/etc/trust-registry-first-run-anchor.json");
+  if (api.Mounts?.length !== 2 || mounts.size !== 2
+    || approvalMount?.Type !== "bind" || approvalMount.Source !== expected.approvalDir
+    || approvalMount.RW !== false
+    || anchorMount?.Type !== "bind" || anchorMount.Source !== expected.trustAnchorFile
+    || anchorMount.RW !== false
     || Object.keys(host.Tmpfs ?? {}).length !== 1
     || !Array.isArray(tmpfsOptions) || tmpfsOptions.length !== 5
     || new Set(tmpfsOptions).size !== 5
     || !tmpfsOptions.every((option) => allowedTmpfsOptions.has(option))
     || !["rw", "nosuid", "nodev", "noexec"].every((option) =>
       tmpfsOptions.includes(option))) {
-    throw new Error("API runtime approval mount or temporary filesystem differs from the pinned overlay");
+    throw new Error("API runtime approval mount, trust anchor mount, or temporary filesystem differs from the pinned overlay");
   }
   return {
     kind: "standalone-api-runtime-topology-observation",
@@ -227,7 +234,9 @@ export async function observeStandaloneApiRuntime(bundle, env = process.env) {
     throw new Error("Approved API runtime directory must be explicit and absolute");
   }
   if (typeof env.TR_API_UID !== "string" || typeof env.TR_API_GID !== "string"
-    || typeof env.TR_API_REVIEWER_FINGERPRINT !== "string") {
+    || typeof env.TR_API_REVIEWER_FINGERPRINT !== "string"
+    || typeof env.TR_API_TRUST_ANCHOR_FILE !== "string"
+    || !isAbsolute(env.TR_API_TRUST_ANCHOR_FILE)) {
     throw new Error("Approved API runtime identity is incomplete");
   }
   const approvalPath = resolve(env.TR_API_APPROVAL_DIR);
@@ -259,6 +268,7 @@ export async function observeStandaloneApiRuntime(bundle, env = process.env) {
     composeFiles: ["compose.yml", "compose.offline.yml", "compose.api.yml"]
       .map((name) => `${root}/${name}`),
     approvalDir: approvalPath,
+    trustAnchorFile: resolve(env.TR_API_TRUST_ANCHOR_FILE),
     uid: env.TR_API_UID,
     gid: env.TR_API_GID,
     reviewerFingerprint: env.TR_API_REVIEWER_FINGERPRINT,

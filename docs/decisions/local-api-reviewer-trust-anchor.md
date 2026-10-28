@@ -1,31 +1,29 @@
 # Local API Reviewer Trust Anchor
 
-Status: candidate export, exact-byte comparator, and protected-file reader
-implemented locally; API loader enforcement and release qualification remain open.
+Status: candidate export and API loader enforcement implemented locally;
+installed-runtime verification, reviewer rotation, and release qualification remain open.
 
 The local API runtime plan is signed, and its v3 approval chain verifies
-genesis, committee, and deployment approval signatures. The plan loader
-currently accepts the governance reviewer fingerprint and keyring from API
-startup arguments. A replacement plan and approval chain signed by a newly
-selected reviewer can therefore be accepted if the startup arguments are
-also replaced. The current chain test intentionally demonstrates this case.
-Signature validity alone is not proof that the reviewer was approved at first
-setup.
+genesis, committee, and deployment approval signatures. The plan loader also
+accepts the governance reviewer fingerprint and keyring from API startup
+arguments. Without an independently installed anchor, a replacement plan and
+approval chain signed by a newly selected reviewer could be accepted if those
+arguments were also replaced. Signature validity alone is not proof that the
+reviewer was approved at first setup.
 
 The wizard's `export-api-approval-chain` command now emits a private
 `api-trust-anchor.candidate.json` beside the exact chain. It pins that chain's
 SHA-256, the genesis approval digest, both reviewer fingerprints, and the
 source/install/network/genesis/contract identity. This is a review candidate,
-not an API trust anchor: the API does not yet require a protected installed
-copy, and this producer-side export cannot establish independent finality.
-The API package has an opt-in comparator that rejects a self-consistent
-replacement chain against the original anchor bytes. The production loader
-does not yet read a protected anchor or invoke that comparator; tests of the
-comparator must not be counted as installed-runtime enforcement.
+not an API trust anchor until an independently reviewed copy is installed.
+This producer-side export cannot establish independent finality. The v3 API
+loader requires `TR_API_TRUST_ANCHOR_PATH`, reads the protected installed
+copy, and compares it to the approval chain before accepting the plan. It
+rejects a self-consistent replacement chain against the original anchor.
 The protected-file reader requires a root-owned regular file under root-owned,
 non-group/world-writable ancestors, with no symlink or hard-link replacement.
 The file must live outside the API's writable-to-the-operator approval bind
-mount. The reader is not yet called by the API loader.
+mount. Unit tests of the reader and loader are not installed-runtime evidence.
 
 For the self-hosted 0.1.0 RC, first setup must produce an operator-protected
 trust-anchor record outside the API runtime plan. It must pin the independently

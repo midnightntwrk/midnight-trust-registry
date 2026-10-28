@@ -2,6 +2,11 @@
 
 This versioned chart is an **install template**, not 0.1.0 qualification
 evidence. It targets an isolated, arm64, self-hosted local Midnight ledger.
+The runtime template is not currently deployable: it does not stage the
+root-owned first-run trust anchor required by the API's v3 plan loader, and
+its short Service names do not satisfy the approved endpoint profile. Keep
+this optional Helm path out of 0.1.0 RC qualification until both are fixed
+and tested on a real cluster.
 In its default `bootstrap` phase it creates node, indexer, and prover. After
 genesis and maintenance approval, `deploymentPhase: runtime` adds the API and
 two portals, for six single-replica Deployments and six private ClusterIP
@@ -338,10 +343,13 @@ private volume. An expired or stale plan fails closed; Helm does not renew or
 revoke it. This manual rotation has not been qualified in a live local actor
 journey.
 
-The API init container idempotently copies projected Secret symlinks into a
+The API init container currently copies projected Secret symlinks into a
 private memory-backed volume as UID 1000 with mode 0600; the reviewer keyring
 directory becomes 0700. This is required because the API refuses symlinked
-approval files. The API then starts in signed, read-only local-ledger mode
+approval files. It does not yet stage the separately protected trust anchor,
+so the v3 API loader fails closed rather than starting in this chart. Once
+that gap is fixed and independently tested, the API is intended to start in
+signed, read-only local-ledger mode
 with explicit `--cluster-bind` and `--serve-portals`. The API image must
 contain both portal asset sets under `/app/portals`; it refuses to start if
 either entry point is missing. For private applicant journeys, `/admin/`,

@@ -175,7 +175,16 @@ they can all run today. The implementation sequence is in
    fingerprints, source, install, network, genesis, and contract. Store both
    printed SHA-256 digests with the operator evidence. The candidate is **not**
    a trusted runtime anchor until independently reviewed and installed under
-   operator-protected ownership; the current API does not yet enforce it.
+   operator-protected ownership. The v3 API loader requires an independently
+   reviewed installed copy; do not point it at the candidate in the
+   operator-writable setup directory. Install the exact approved candidate
+   as a root-owned regular file under root-owned, non-group/world-writable
+   directories, with no symlink or hard link. Keep its digest in the operator
+   evidence. For direct API CLI and writer preflight invocations, set
+   `TR_API_TRUST_ANCHOR_PATH` to that absolute path. For the Compose API
+   overlay, set `TR_API_TRUST_ANCHOR_FILE` to the host path; the overlay mounts
+   it read-only at `/etc/trust-registry-first-run-anchor.json`. Its ownership
+   and ancestor permissions must pass the loader's check inside the container.
    This is an **export, not API-side verification**. The command fails on pending,
    conflicting, or incomplete readback. It does not establish independent
    finality or qualify a release.
@@ -248,8 +257,9 @@ they can all run today. The implementation sequence is in
    verifier-key inventory, signed API plan, authenticated finality, egress
    denial, an actor action, or release readiness.
    Once the approved API is actually running, run the read-only current-query
-   slice with the same `TR_STACK_NAME`, `TR_API_APPROVAL_DIR`, `TR_API_UID`,
-   `TR_API_GID`, and `TR_API_REVIEWER_FINGERPRINT` used to start it:
+   slice with the same `TR_STACK_NAME`, `TR_API_APPROVAL_DIR`,
+   `TR_API_TRUST_ANCHOR_FILE`, `TR_API_UID`, `TR_API_GID`, and
+   `TR_API_REVIEWER_FINGERPRINT` used to start it:
 
    ```sh
    pnpm observe:standalone-current-query /absolute/private/setup /absolute/verified-bundle

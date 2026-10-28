@@ -35,7 +35,7 @@ test("optional API overlay stays on the internal ledger network and requires sig
   assert.equal(base.networks.ledger.internal, true);
   assert.deepEqual(Object.keys(overlay.services), ["api"]);
   const api = overlay.services.api;
-  assert.deepEqual(Object.keys(api).sort(), ["cap_drop", "command", "depends_on", "expose",
+  assert.deepEqual(Object.keys(api).sort(), ["cap_drop", "command", "depends_on", "environment", "expose",
     "healthcheck", "image", "init", "networks", "pids_limit", "profiles", "pull_policy",
     "read_only", "security_opt", "tmpfs", "user", "volumes"].sort());
   assert.deepEqual(api.profiles, ["runtime"]);
@@ -53,9 +53,15 @@ test("optional API overlay stays on the internal ledger network and requires sig
   assert.equal(api.ports, undefined);
   assert.ok(base.services.node.healthcheck);
   assert.ok(base.services.indexer.healthcheck);
+  assert.deepEqual(api.environment, {
+    TR_API_TRUST_ANCHOR_PATH: "/etc/trust-registry-first-run-anchor.json",
+  });
   assert.deepEqual(api.volumes, [{ type: "bind",
     source: "${TR_API_APPROVAL_DIR:?private approved runtime directory required}",
     target: "/run/trust-registry", read_only: true,
+    bind: { create_host_path: false } }, { type: "bind",
+    source: "${TR_API_TRUST_ANCHOR_FILE:?root-owned first-run trust anchor required}",
+    target: "/etc/trust-registry-first-run-anchor.json", read_only: true,
     bind: { create_host_path: false } }]);
   assert.deepEqual(api.command, ["serve", "--local-ledger-plan", "/run/trust-registry/api-plan.json",
     "--local-ledger-signature", "/run/trust-registry/api-plan.sig", "--local-ledger-keyring",
