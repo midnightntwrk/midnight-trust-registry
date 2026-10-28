@@ -111,6 +111,9 @@ const observation = (candidate) => ({
     planExpectedGenesisHash: candidate.genesisHash,
     planContractAddress: candidate.contractAddress,
     selectedStateSha256: "2".repeat(64),
+    registryId: "test-registry",
+    currentEpochId: "test-epoch",
+    finalizedCheckpoints: [`0x${"3".repeat(64)}`, `0x${"4".repeat(64)}`],
     counts: { issuer: 1, verifier: 1, auditor: 1, recognition: 1 },
     resolvedLookups: { issuer: 1, verifier: 1, auditor: 1, recognition: 1 },
     ambiguousLookups: { issuer: 0, verifier: 0, auditor: 0 },
@@ -189,6 +192,11 @@ test("read-only observation binds to one acceptance candidate without passing ca
     { ...observed, apiRestart: { ...restart, installInventorySha256: "9".repeat(64) } }), /differs/u);
   assert.throws(() => assessStandaloneObservationBinding(candidate,
     { ...observed, apiRestart: { ...restart, apiDnsCanaryDenied: false } }), /differs/u);
+  assert.throws(() => assessStandaloneObservationBinding(candidate,
+    { ...observed, currentQuery: { ...observed.currentQuery,
+      governedActorJourneys: "passed" } }), /differs/u);
+  assert.throws(() => assessStandaloneObservationBinding(candidate,
+    { ...observed, apiRestart: { ...restart, independentFinality: "verified" } }), /differs/u);
   const pending = { ...observed, prerequisites: { ...observed.prerequisites,
     ledgerPrerequisitesObserved: false, missing: ["deploymentObserved"] }, currentQuery: "not-run",
     recordedVerifierKeyCatalog: "not-verified" };

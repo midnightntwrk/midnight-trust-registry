@@ -221,7 +221,10 @@ they can all run today. The implementation sequence is in
    approved genesis, and deployed contract to the running signed API plan.
    The aggregate rejects a child result that changes its unobserved actor,
    independent-finality, host/browser egress, or plan-to-deployment scope
-   markers; a successful read-only observation cannot promote those gates.
+   markers. Unknown child-report fields and altered scope prose are rejected,
+   and the acceptance binder repeats the same scope checks before attaching
+   the report. This prevents a read-only observation from promoting those
+   gates; it does not authenticate the report or ledger finality.
    The current-query probe also requires a valid API container identity,
    process start time, and restart count on both reads around its egress
    test; missing process identity makes the observation inconclusive.

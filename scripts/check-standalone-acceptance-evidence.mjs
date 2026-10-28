@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import { assessStandaloneCaseDecisionChain } from "./standalone-acceptance-decision-policy.mjs";
 import { ACCEPTANCE_CASES, parseStandaloneAcceptanceManifest } from "./standalone-acceptance-manifest-policy.mjs";
+import { assertApiRestartScope, assertCurrentQueryScope } from "./standalone-qualification-scope-policy.mjs";
 
 const CASES = ACCEPTANCE_CASES;
 const SHA256 = /^[0-9a-f]{64}$/u;
@@ -183,6 +184,16 @@ function hasConsistentLookupCounts(query) {
       && ambiguous[role] <= counts[role])));
 }
 
+/** @param {unknown} report @param {(value: unknown) => void} check */
+function hasObserverScope(report, check) {
+  try {
+    check(report);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Binds a read-only observer report to one acceptance candidate; never passes a case. */
 /** @param {AcceptanceManifest} manifest @param {QualificationObservation | null | undefined} observation */
 export function assessStandaloneObservationBinding(manifest, observation) {
@@ -215,6 +226,7 @@ export function assessStandaloneObservationBinding(manifest, observation) {
     || observation.recordedVerifierKeyCatalog
       !== "bundle-and-wizard-records-match-not-independent-finality"
     || query?.format !== "tr-standalone-current-query-journey-v2"
+    || !hasObserverScope(query, assertCurrentQueryScope)
     || query.sourceRevision !== manifest.sourceRevision
     || query.installInventorySha256 !== manifest.installInventorySha256
     || !SHA256.test(query.networkId ?? "")
@@ -236,6 +248,7 @@ export function assessStandaloneObservationBinding(manifest, observation) {
   const restart = observation.apiRestart;
   if (restart !== "not-run" && (query === "not-run"
     || restart?.format !== "tr-standalone-api-restart-observation-v1"
+    || !hasObserverScope(restart, assertApiRestartScope)
     || restart.sourceRevision !== manifest.sourceRevision
     || restart.installInventorySha256 !== manifest.installInventorySha256
     || restart.installInventorySha256 !== query.installInventorySha256

@@ -4,6 +4,18 @@ const SHA = /^[0-9a-f]{40}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
 const BLOCK_HASH = /^0x[0-9a-f]{64}$/u;
 const ZERO_BLOCK_HASH = /^0x0{64}$/u;
+export const CURRENT_QUERY_SCOPE = "Live signed-plan current-only API role and recognition queries with API-container TCP/DNS canary denial; not a governed mutation or complete actor journey";
+export const API_RESTART_SCOPE = "Same pinned API container and selected current state survived one restart with API-container egress denial; not node, wallet, browser, backup/restore, governed-write, or independently authenticated finality evidence";
+const CURRENT_QUERY_KEYS = new Set(["format", "sourceRevision", "apiContainerId", "networkId",
+  "installInventorySha256", "planSha256", "selectedStateSha256", "planContractAddress",
+  "planExpectedGenesisHash", "registryId", "currentEpochId", "finalizedCheckpoints",
+  "counts", "resolvedLookups", "ambiguousLookups", "apiEgressCanaryDenied",
+  "apiDnsCanaryDenied", "scope", "actorJourneys", "hostAndBrowserEgress",
+  "independentFinality", "planToDeploymentBinding", "releaseQualified"]);
+const API_RESTART_KEYS = new Set(["format", "sourceRevision", "apiContainerId", "networkId",
+  "installInventorySha256", "planSha256", "selectedStateSha256", "beforeStartedAt",
+  "afterStartedAt", "beforeRestartCount", "afterRestartCount", "finalizedCheckpoints",
+  "apiEgressCanaryDenied", "apiDnsCanaryDenied", "scope", "releaseQualified"]);
 
 /** @param {unknown} value @param {RegExp} pattern */
 const matches = (value, pattern) => typeof value === "string" && pattern.test(value);
@@ -34,6 +46,8 @@ function hasConsistentLookupCounts(report) {
  */
 export function assertCurrentQueryScope(report) {
   if (!isRecord(report)
+    || Object.keys(report).some((key) => !CURRENT_QUERY_KEYS.has(key))
+    || (report.scope !== undefined && report.scope !== CURRENT_QUERY_SCOPE)
     || report.format !== "tr-standalone-current-query-journey-v2"
     || !matches(report.sourceRevision, SHA)
     || !matches(report.apiContainerId, SHA256)
@@ -66,6 +80,8 @@ export function assertCurrentQueryScope(report) {
  */
 export function assertApiRestartScope(report) {
   if (!isRecord(report)
+    || Object.keys(report).some((key) => !API_RESTART_KEYS.has(key))
+    || (report.scope !== undefined && report.scope !== API_RESTART_SCOPE)
     || report.releaseQualified !== false
     || report.apiEgressCanaryDenied !== true
     || report.apiDnsCanaryDenied !== true) {

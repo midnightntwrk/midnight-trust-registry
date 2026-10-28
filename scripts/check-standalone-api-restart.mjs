@@ -9,6 +9,7 @@ import { observeStandaloneApiRuntime } from "./check-standalone-api-runtime.mjs"
 import { observeStandaloneCurrentQueryJourney } from "./check-standalone-current-query-journey.mjs";
 import { assertApiRestartContinuity, assertApiRestartPreflight,
   isResumedApiProcess } from "./standalone-api-restart-policy.mjs";
+import { API_RESTART_SCOPE } from "./standalone-qualification-scope-policy.mjs";
 
 const run = promisify(execFile);
 
@@ -64,7 +65,7 @@ export async function observeStandaloneApiRestart(setupDirectory, bundle, env = 
     finalizedCheckpoints: [...before.finalizedCheckpoints, ...after.finalizedCheckpoints],
     apiEgressCanaryDenied: true,
     apiDnsCanaryDenied: true,
-    scope: "Same pinned API container and selected current state survived one restart with API-container egress denial; not node, wallet, browser, backup/restore, governed-write, or independently authenticated finality evidence",
+    scope: API_RESTART_SCOPE,
     releaseQualified: false,
   };
 }

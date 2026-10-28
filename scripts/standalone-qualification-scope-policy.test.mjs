@@ -51,6 +51,10 @@ test("rejects missing, malformed, or upgraded current-query scope fields", () =>
   })]) {
     assert.throws(() => assertCurrentQueryScope(report), /evidence scope/u);
   }
+  for (const report of [
+    { ...current, governedActorJourneys: "passed" },
+    { ...current, scope: "Finalized actor journey passed" },
+  ]) assert.throws(() => assertCurrentQueryScope(report), /evidence scope/u);
 });
 
 test("rejects malformed finality checkpoints and incomplete runtime identity", () => {
@@ -77,4 +81,9 @@ test("rejects missing, malformed, or upgraded API restart scope fields", () => {
   })]) {
     assert.throws(() => assertApiRestartScope(report), /evidence scope/u);
   }
+  for (const report of [
+    { ...restart, actorJourneys: "passed" },
+    { ...restart, independentFinality: "verified" },
+    { ...restart, scope: "Deployed recovery and restore passed" },
+  ]) assert.throws(() => assertApiRestartScope(report), /evidence scope/u);
 });

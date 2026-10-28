@@ -8,6 +8,7 @@ import { observeStandaloneApiEgress } from "./check-standalone-api-egress.mjs";
 import { probeStandaloneApiCurrentReads } from "./check-standalone-api-reads.mjs";
 import { standaloneSetupStatus } from "./standalone-setup-wizard.mjs";
 import { assertStableCurrentReads, checkedCurrentRead, checkedCurrentQueryEgress } from "./standalone-current-query-report-policy.mjs";
+import { CURRENT_QUERY_SCOPE } from "./standalone-qualification-scope-policy.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
 
@@ -50,7 +51,7 @@ export async function observeStandaloneCurrentQueryJourney(setupDirectory, bundl
     ambiguousLookups: first.ambiguousLookups,
     apiEgressCanaryDenied: true,
     apiDnsCanaryDenied: true,
-    scope: "Live signed-plan current-only API role and recognition queries with API-container TCP/DNS canary denial; not a governed mutation or complete actor journey",
+    scope: CURRENT_QUERY_SCOPE,
     actorJourneys: "not-run",
     hostAndBrowserEgress: "not-verified",
     independentFinality: "not-verified",
