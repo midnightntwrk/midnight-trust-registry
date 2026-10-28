@@ -74,8 +74,8 @@ commit history: `codex/trust-registry-review-group-core-restacked-local`
 (`67212c1e`) descends from the validated #240 restack `cc7c081b`;
 `codex/trust-registry-review-group-qualification-restacked-local`
 (`a2d4c2a2`) descends from that core ref; and
-`codex/trust-registry-review-group-adoption-restacked-local` (`506537e0`)
-descends from the qualification ref. All three merge commits are GPG-signed
+`codex/trust-registry-review-group-adoption-restacked-local` initially reached
+`506537e0` above the qualification ref. All three merge commits are GPG-signed
 and DCO-signed. The core merge added the #238 acceptance-path alias fix and
 its 15 focused acceptance tests passed. The later two merges changed no file
 content relative to their first parents; the adoption tree had previously
@@ -93,6 +93,13 @@ passed 136 focused acceptance, security-verdict, egress, and wizard tests.
 The documentation check and `pnpm audit --audit-level low` passed there too.
 This review and test evidence does not clear #238's external scan, replace
 exact-head PR CI, or prove deployed standalone actor journeys.
+Later signed/DCO local commits recorded that review, hardened aggregate
+current-query evidence shape, and extracted the policy-revision/atomic-recovery
+fixture scenario under #216. The latter retained six case IDs, passed the
+governed demo, 198/198 adversarial parity, 240 isolated demo-smoke tests,
+`./run.sh --light` (20/20 tasks), and dependency audit. Its exact-commit
+read-only Codex review at `9dbbffad` found no actionable regression. The
+governed demo remains sequential and these cases are not deployed-ledger E2E.
 
 The top group passed a local full light gate (20/20), focused wizard and
 security-signature tests, strict security-boundary typecheck, docs check, and
