@@ -74,7 +74,7 @@ commit history: `codex/trust-registry-review-group-core-restacked-local`
 (`67212c1e`) descends from the validated #240 restack `cc7c081b`;
 `codex/trust-registry-review-group-qualification-restacked-local`
 (`a2d4c2a2`) descends from that core ref; and
-`codex/trust-registry-review-group-adoption-restacked-local` (`e9f0a626`)
+`codex/trust-registry-review-group-adoption-restacked-local` (`506537e0`)
 descends from the qualification ref. All three merge commits are GPG-signed
 and DCO-signed. The core merge added the #238 acceptance-path alias fix and
 its 15 focused acceptance tests passed. The later two merges changed no file
@@ -83,6 +83,16 @@ passed the full light, fixture E2E, and browser gates. These refs are not
 published. Recheck live remote heads and run exact-head CI and review after
 any approved push; local ancestry and tests do not clear #238's external scan
 or the local release evidence gates.
+
+On 2026-10-28, read-only Codex CLI reviewed each complete restacked group
+against its local parent (`cc7c081b` to `67212c1e`, `67212c1e` to
+`a2d4c2a2`, and `a2d4c2a2` to `506537e0`). No actionable regression was
+reported. The reviewer sandbox could not create temporary directories for
+filesystem-dependent tests; a separate writable run at the adoption head
+passed 136 focused acceptance, security-verdict, egress, and wizard tests.
+The documentation check and `pnpm audit --audit-level low` passed there too.
+This review and test evidence does not clear #238's external scan, replace
+exact-head PR CI, or prove deployed standalone actor journeys.
 
 The top group passed a local full light gate (20/20), focused wizard and
 security-signature tests, strict security-boundary typecheck, docs check, and
