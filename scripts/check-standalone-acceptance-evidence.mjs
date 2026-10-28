@@ -17,6 +17,14 @@ const MAX_FILE_BYTES = 32 * 1024 * 1024;
 const MAX_MANIFEST_BYTES = 1024 * 1024;
 const MAX_RAW_EVIDENCE_PER_CASE = 32;
 const MAX_DECISIONS_PER_CASE = 64;
+const OBSERVATION_KEYS = ["format", "sourceRevision", "inventorySha256", "prerequisites",
+  "currentQuery", "recordedVerifierKeyCatalog", "apiRestart", "governedActorJourneys",
+  "independentFinality", "fullEgressDenial", "deployedRecovery", "independentSecurityReview",
+  "releaseQualified"];
+const PREREQUISITE_KEYS = ["format", "sourceRevision", "expectedSourceRevision", "gates",
+  "missing", "nextActions", "nextSafeAction", "blockedActions",
+  "ledgerPrerequisitesObserved", "completeVerifierKeyInventory", "actorJourney",
+  "signedApiPlan", "egressDenied", "independentFinality", "releaseQualified"];
 /** @typedef {ReturnType<typeof parseStandaloneAcceptanceManifest>} AcceptanceManifest */
 /** @typedef {{ format?: string, sourceRevision?: string, expectedSourceRevision?: string,
  *   releaseQualified?: boolean, ledgerPrerequisitesObserved?: boolean, missing?: unknown[] }} PrerequisiteObservation */
@@ -197,7 +205,9 @@ function hasObserverScope(report, check) {
 /** Binds a read-only observer report to one acceptance candidate; never passes a case. */
 /** @param {AcceptanceManifest} manifest @param {QualificationObservation | null | undefined} observation */
 export function assessStandaloneObservationBinding(manifest, observation) {
-  if (observation?.format !== "tr-standalone-qualification-observation-v1"
+  if (!exactKeys(observation, OBSERVATION_KEYS)
+    || !exactKeys(observation?.prerequisites, PREREQUISITE_KEYS)
+    || observation?.format !== "tr-standalone-qualification-observation-v1"
     || observation.sourceRevision !== manifest.sourceRevision
     || observation.inventorySha256 !== manifest.installInventorySha256
     || observation.releaseQualified !== false

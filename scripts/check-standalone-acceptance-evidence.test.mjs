@@ -98,8 +98,17 @@ const observation = (candidate) => ({
     format: "tr-standalone-journey-prerequisites-v1",
     sourceRevision: candidate.sourceRevision,
     expectedSourceRevision: candidate.sourceRevision,
+    gates: {},
     ledgerPrerequisitesObserved: true,
     missing: [],
+    nextActions: [],
+    nextSafeAction: null,
+    blockedActions: [],
+    completeVerifierKeyInventory: "not-verified",
+    actorJourney: "not-run",
+    signedApiPlan: "not-verified",
+    egressDenied: "not-verified",
+    independentFinality: "not-verified",
     releaseQualified: false,
   },
   currentQuery: {
@@ -141,6 +150,11 @@ test("read-only observation binds to one acceptance candidate without passing ca
   const observed = observation(candidate);
   const result = assessStandaloneObservationBinding(candidate, observed);
   assert.equal(result.readOnlyObservationBound, true);
+  assert.throws(() => assessStandaloneObservationBinding(candidate,
+    { ...observed, humanSecurityReview: "approved" }), /differs/u);
+  assert.throws(() => assessStandaloneObservationBinding(candidate,
+    { ...observed, prerequisites: { ...observed.prerequisites,
+      humanSecurityReview: "approved" } }), /differs/u);
   assert.equal(result.actorJourney, "not-run");
   assert.equal(result.acceptanceCasesChanged, false);
   assert.equal(result.releaseQualified, false);
