@@ -339,6 +339,21 @@ The release still requires human-signed real genesis and roster approvals,
 authenticated finalized deployment, live actor/status adapters, offline
 journeys and recovery, and human security review.
 
+Two security follow-ups have local implementation candidates in this
+unpublished stack, but remain open until their reviewed code and evidence land:
+
+| Issue | Local candidate | Remaining release evidence |
+| --- | --- | --- |
+| [#233](https://github.com/midnightntwrk/midnight-trust-registry/issues/233) provider-code identity | The immutable provider-tree and import-boundary checks reject mutable ancestors, symlink/path replacement, and imports outside the approved tree. | Review the exact installed provider/dependency bytes and non-root, root-owned runtime layout; exercise the real deployment and maintenance loader. |
+| [#236](https://github.com/midnightntwrk/midnight-trust-registry/issues/236) manifest-backed publish | The local publish workflow generates and verifies an exact-source manifest and checks the same tarballs before npm publish. | Review the release-channel approval and provenance, image inventory alongside package and verifier-key digests, and the exact-head publish workflow before any release. |
+
+At local head `a9d4dcdc`, 19 focused provider/manifest tests passed, including
+tampered tarball, hash-to-import replacement, linked ancestors, and import
+confinement. This is source-level regression evidence, not an installed
+provider observation, npm publication, deployed actor E2E, or closure of
+either issue. The live #238 Opengrep WebSocket finding and human review #232
+remain independent stop conditions.
+
 ## Release boundary
 
 The [operator journey](../guide/standalone-local-journey.md) defines the real
