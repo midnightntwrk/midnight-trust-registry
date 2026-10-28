@@ -2948,3 +2948,13 @@ then record actor writes and reads with runtime egress denied, followed by
 deployed restart/restore and independent human security review. None of the
 local regression results above can be attached as a passing `A01`-`S01`
 acceptance case.
+
+## Acceptance decision-history metadata
+
+The local acceptance inventory now rejects malformed reviewer identifiers,
+reason codes, noncanonical decision timestamps, and a decision timestamp that
+precedes an earlier decision in the same case. A legacy case labeled before
+the decision-chain feature may still record its prior label in its first
+decision; the new decision is required before that case counts as
+decision-backed. These checks preserve a coherent local audit trail but do
+not authenticate the operator, receipts, finality, or human security verdict.

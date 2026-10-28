@@ -75,11 +75,18 @@ test("strict decision policy requires an ordered, current, source-bound verdict"
     { ...decisions[0].record, sourceRevision: "f".repeat(40) },
     { ...decisions[0].record, reviewerAuthenticated: true },
     { ...decisions[0].record, evidence: [] },
+    { ...decisions[0].record, reviewer: "x" },
+    { ...decisions[0].record, reasonCode: "Private details" },
+    { ...decisions[0].record, decidedAt: "yesterday" },
+    { ...decisions[0].record, decidedAt: "2026-10-27T01:00:00+01:00" },
     { ...decisions[0].record, extra: true },
   ]) {
     assert.throws(() => assess("pass", evidence, [{ ...decisions[0], record: invalid }, decisions[1]]),
       /case history/u);
   }
+  assert.throws(() => assess("pass", evidence, [decisions[0], {
+    ...decisions[1], record: { ...decisions[1].record, decidedAt: "2026-10-26T23:59:59.999Z" },
+  }]), /case history/u);
 });
 const observation = (candidate) => ({
   format: "tr-standalone-qualification-observation-v1",

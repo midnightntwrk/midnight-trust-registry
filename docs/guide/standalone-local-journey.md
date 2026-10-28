@@ -452,7 +452,10 @@ stale acceptance evidence. Exit 2 means at least one case is not `pass`; exit 1
 means the source differs or the inventory or a file is invalid, missing,
 symlinked, or hash-mismatched. Exit 0 means only
 that all cases have current `pass` decisions and every listed file matches
-its digest. The
+its digest. Decision records must retain a valid reviewer identifier, a
+non-sensitive reason code, and canonical UTC timestamps that do not move
+backward through the case history. These fields are self-attested; their
+format and order checks do not authenticate the reviewer. The
 report **always** says `releaseQualified: false`: this command cannot verify
 receipt authenticity, ledger finality, the correctness of a human security
 verdict, or the truth of a `pass` label. A second operator must examine the
