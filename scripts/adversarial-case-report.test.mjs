@@ -260,3 +260,14 @@ test("requires complete invariant metadata with exact isolated case parity", () 
     summary: { ...matrix.summary, total: 2 },
   }), /2 !== 1/u);
 });
+
+test("archive parity rejects summaries that contradict case outcomes", () => {
+  const report = parseAdversarialTap("# Subtest: case-a\nok 1 - case-a\n# tests 1\n");
+  const matrix = matrixFor(report);
+  assert.throws(() => assertAdversarialMatrixParity({ ...report,
+    cases: [{ ...report.cases[0], status: "failed", reason: "assertion-failed" }],
+  }, matrix), /Isolated adversarial summary contradicts case outcomes/u);
+  assert.throws(() => assertAdversarialMatrixParity(report, { ...matrix,
+    cases: [{ ...matrix.cases[0], status: "failed" }],
+  }), /Governed matrix summary contradicts case outcomes/u);
+});

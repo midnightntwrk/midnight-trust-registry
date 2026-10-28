@@ -15,6 +15,19 @@ export const isolatedAdversarialTestFiles = () => readdirSync(scripts)
     && name !== "adversarial-case-report.test.mjs")
   .map((name) => join(scripts, name));
 
+export function hasConsistentAdversarialCaseCounts(report) {
+  const cases = report?.cases;
+  const summary = report?.summary;
+  if (!Array.isArray(cases) || !Number.isSafeInteger(summary?.total)
+    || !Number.isSafeInteger(summary?.passed) || !Number.isSafeInteger(summary?.failed)
+    || summary.total !== cases.length || summary.passed < 0 || summary.failed < 0) {
+    return false;
+  }
+  const failed = cases.filter((entry) => entry?.status === "failed").length;
+  return cases.every((entry) => entry?.status === "passed" || entry?.status === "failed")
+    && summary.failed === failed && summary.passed === cases.length - failed;
+}
+
 export const parseAdversarialTap = (tap) => {
   const cases = [];
   const seen = new Set();
@@ -82,9 +95,11 @@ export const runIsolatedAdversarialCases = (files = isolatedAdversarialTestFiles
 };
 
 export function assertAdversarialMatrixParity(report, matrix) {
+  assert.ok(hasConsistentAdversarialCaseCounts(report), "Isolated adversarial summary contradicts case outcomes");
   assert.equal(matrix?.format, "tr-adversarial-matrix-v1");
   assert.equal(matrix.summary?.total, matrix.cases?.length);
   assert.equal(matrix.summary.passed + matrix.summary.failed, matrix.summary.total);
+  assert.ok(hasConsistentAdversarialCaseCounts(matrix), "Governed matrix summary contradicts case outcomes");
   const cases = matrix.cases.map((entry) => {
     assert.match(entry.id, /^[a-z][a-z0-9-]+$/u);
     assert.ok(typeof entry.invariant === "string" && entry.invariant.length > 0);

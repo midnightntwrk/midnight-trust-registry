@@ -1,27 +1,14 @@
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runIsolatedAdversarialCases } from "./adversarial-case-report.mjs";
+import { hasConsistentAdversarialCaseCounts, runIsolatedAdversarialCases } from "./adversarial-case-report.mjs";
 
 const scripts = dirname(fileURLToPath(import.meta.url));
 const root = dirname(scripts);
 
-function hasConsistentCaseCounts(report) {
-  const cases = report?.cases;
-  const summary = report?.summary;
-  if (!Array.isArray(cases) || !Number.isSafeInteger(summary?.total)
-    || !Number.isSafeInteger(summary?.passed) || !Number.isSafeInteger(summary?.failed)
-    || summary.total !== cases.length || summary.passed < 0 || summary.failed < 0) {
-    return false;
-  }
-  const failed = cases.filter((entry) => entry?.status === "failed").length;
-  return cases.every((entry) => entry?.status === "passed" || entry?.status === "failed")
-    && summary.failed === failed && summary.passed === cases.length - failed;
-}
-
 export function buildAdversarialParityReport(isolatedReport, demoResult, requireFull = false) {
   if (isolatedReport?.format !== "tr-adversarial-case-report-v1"
-    || !hasConsistentCaseCounts(isolatedReport)
+    || !hasConsistentAdversarialCaseCounts(isolatedReport)
     || isolatedReport.cases.length === 0) {
     throw new Error("Isolated adversarial case report is invalid");
   }
@@ -34,7 +21,7 @@ export function buildAdversarialParityReport(isolatedReport, demoResult, require
   try {
     matrix = JSON.parse(demoResult.stdout).adversarialMatrix;
     if (matrix?.format !== "tr-adversarial-matrix-v1"
-      || !hasConsistentCaseCounts(matrix)) {
+      || !hasConsistentAdversarialCaseCounts(matrix)) {
       throw new Error("Governed demo matrix is invalid");
     }
   } catch {
