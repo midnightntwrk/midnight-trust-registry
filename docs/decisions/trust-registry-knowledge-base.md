@@ -2962,3 +2962,15 @@ the decision-chain feature may still record its prior label in its first
 decision; the new decision is required before that case counts as
 decision-backed. These checks preserve a coherent local audit trail but do
 not authenticate the operator, receipts, finality, or human security verdict.
+
+## Standalone qualification observer type boundary
+
+The broad checked-JS CI gate now names the ledger topology, rendered Compose,
+aggregate qualification, and API restart observers directly. Its three egress
+probe modules were already included transitively; direct roots make the other
+entry points explicit rather than depending on incidental imports. The
+aggregate starts with unknown child results and narrows them only after the
+runtime scope validators reject malformed or inflated evidence. This reduces
+type drift, but it does not prove Docker's effective isolation, independently
+authenticate finality, run a governed actor, or satisfy the human security
+review. Those release gates remain open.

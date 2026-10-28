@@ -37,8 +37,8 @@ export async function observeStandaloneQualification(setupDirectory, bundle, sou
     sourceRevision,
     inventorySha256: install.inventorySha256,
     prerequisites,
-    currentQuery: "not-run",
-    apiRestart: "not-run",
+    currentQuery: /** @type {unknown} */ ("not-run"),
+    apiRestart: /** @type {unknown} */ ("not-run"),
     governedActorJourneys: "not-run",
     independentFinality: "not-verified",
     fullEgressDenial: "not-verified",
@@ -96,7 +96,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     console.log(JSON.stringify(report, null, 2));
     process.exitCode = report.prerequisites.ledgerPrerequisitesObserved ? 0 : 2;
   } catch (error) {
-    console.error(`Standalone qualification observation failed: ${error.message}`);
+    console.error(`Standalone qualification observation failed: ${error instanceof Error ? error.message : "unknown error"}`);
     process.exitCode = 1;
   }
 }
