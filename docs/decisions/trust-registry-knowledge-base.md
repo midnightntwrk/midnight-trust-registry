@@ -3109,3 +3109,17 @@ policy for its reservation input and joins the strict checked-JS gate. A
 delimiter-colliding reservation is rejected before any node request. The
 scanner still observes node/indexer data only; it cannot authenticate
 finality independently or release a quarantined deployment attempt.
+
+## Standalone acceptance and committee request guardrails
+
+The operator guide's `L01`-`S01` table now has an executable catalog-alignment
+test. It also guards the guide's explicit distinction between simulator checks
+and deployed acceptance. This catches documentation drift; it does not verify
+that any case passed on a local ledger.
+
+The maintenance-transition request parser is now a strictly checked, pure
+policy boundary. It rejects missing, extra, NUL-aliased, and malformed nested
+fields before the wizard constructs Compact inputs. The wizard still owns
+signature, provider, journal, and finalized-readback sequencing; the new
+parser does not authenticate a checkpoint or approve a transition. Issue #229
+remains open for the non-strict wizard state machine and independent review.

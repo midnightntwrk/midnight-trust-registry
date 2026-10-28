@@ -48,6 +48,7 @@ import {
 } from "./local-ledger-insert-verifier-key.mjs";
 import { validLocalDeploymentReceipt } from "./standalone-deployment-receipt-policy.mjs";
 import { exactFields } from "./standalone-exact-fields-policy.mjs";
+import { parseCommitteeTransitionRequest } from "./standalone-committee-transition-request-policy.mjs";
 import { parseCanonicalSignedJson as parseUntrustedSignedJson } from "./standalone-signed-document-policy.mjs";
 
 const FORMAT = "tr-standalone-setup-v1";
@@ -1501,21 +1502,7 @@ async function readApprovedCommitteeTransition(record, requestPath, dependencies
       throw new Error("Every staged verifier key must have verified finalized readback");
     }
     const requestBytes = await regularBytes(resolve(requestPath));
-    const request = parseJsonBytes(requestBytes);
-    if (!exactFields(request, ["bootstrap", "bootstrapMaintenanceVerifyingKey", "expiresAt",
-      "format", "governance", "sourceRevision"])
-      || request.format !== "tr-local-committee-transition-request-v1"
-      || request.sourceRevision !== record.sourceRevision
-      || !HASH.test(request.bootstrapMaintenanceVerifyingKey)
-      || !exactFields(request.bootstrap, ["governancePolicyCommitment", "maintainerDidCommitment",
-        "maintainerId", "maintainerKeyId", "maintainerPublicKey", "maintainerThreshold",
-        "registryDidCommitment", "registryId"])
-      || !exactFields(request.bootstrap.maintainerPublicKey, ["x", "y"])
-      || typeof request.bootstrap.registryId !== "string"
-      || !exactFields(request.governance, ["actionSequence", "activeMaintainerCount",
-        "maintainerThreshold", "policyCommitment", "policyVersion"])) {
-      throw new Error("Committee transition request has an invalid shape or source revision");
-    }
+    const request = parseCommitteeTransitionRequest(parseJsonBytes(requestBytes), record.sourceRevision);
     const approval = {
       network: staged.network,
       receipt,

@@ -4,7 +4,7 @@ Issue #229 tracks typed assurance for the self-hosted 0.1.0 installer and
 operator workflow. The existing broad `checkJs` configuration includes the
 wizard and installer but permits implicit `any`; Quality CI now runs it.
 A second, strict no-emit gate runs
-`pnpm run check:security-boundaries-types` for fifty-five script boundaries
+`pnpm run check:security-boundaries-types` for fifty-six script boundaries
 plus one ambient declaration:
 
 | Checked file | Security decision |
@@ -31,6 +31,7 @@ plus one ambient declaration:
 | `scripts/load-standalone-install-images.mjs` | Verified archive snapshots and Docker ID/tag matching without a registry pull. |
 | `scripts/standalone-approval-policy.mjs` | Canonical reviewer metadata and release committee/custody validation. |
 | `scripts/standalone-exact-fields-policy.mjs` | Delimiter-safe exact field-name equality for signed wizard approval and recovery documents. |
+| `scripts/standalone-committee-transition-request-policy.mjs` | Strict untrusted maintenance-transition request shape, source, public commitment, counter, and expiration preflight before Compact input construction; it does not authenticate finality or authorize a signature. |
 | `scripts/check-standalone-actor-capability.mjs` | Fail-closed signed-plan and configured-role preflight before a deployed actor run; does not authenticate finality or execute a transaction. |
 | `scripts/standalone-acceptance-decision-policy.mjs` | Source-bound operator decision history and current evidence coverage. |
 | `scripts/standalone-acceptance-manifest-policy.mjs` | Strictly typed shape and source/deployment identity validation for untrusted acceptance manifests; it does not authenticate attached evidence. |
@@ -79,7 +80,7 @@ inventory, not a waiver of the release security review.
 
 | Priority | Files | Reason to retain until typed |
 | --- | --- | --- |
-| 1 | `scripts/standalone-setup-wizard.mjs` | Signed genesis, committee, deployment, and recovery approval sequencing. Reviewer metadata, committee validation, untrusted genesis-review comparison, packet rendering and private packet I/O, packet entrypoint, private-file reads, and API approval-chain export are strictly checked; the wizard transitions remain non-strict. |
+| 1 | `scripts/standalone-setup-wizard.mjs` | Signed genesis, committee, deployment, and recovery approval sequencing. Reviewer metadata, committee validation, untrusted genesis-review comparison, packet rendering and private packet I/O, packet entrypoint, private-file reads, transition-request shape, and API approval-chain export are strictly checked; the wizard transitions remain non-strict. |
 | 2 | Provider runtime installation/ownership transfer | The staging shell and install-bundle verifier are now strictly checked; the actual root-owned transfer and independently reviewed content digest remain operator actions. The direct deployment and insertion CLIs are disabled; the wizard imports these functions after approval checks. |
 | 3 | Installer runtime observations | Bundle generation and Docker image-load I/O now join the strict gate, alongside bundle verification, base Compose/image-inventory mappings, static portal archive, and runtime healthcheck decisions. Docker daemon identity and actual offline behavior still require independent deployment evidence; checked-JS is not that evidence. |
 | 4 | `scripts/check-helm-image-mapping.mjs`, `scripts/observe-helm-runtime.mjs` | Optional Kubernetes mapping and observations; Helm is not a 0.1.0 RC gate. |

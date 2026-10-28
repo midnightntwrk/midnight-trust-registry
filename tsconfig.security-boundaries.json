@@ -34,6 +34,7 @@
     "scripts/load-standalone-install-images.mjs",
     "scripts/standalone-approval-policy.mjs",
     "scripts/standalone-exact-fields-policy.mjs",
+    "scripts/standalone-committee-transition-request-policy.mjs",
     "scripts/check-standalone-actor-capability.mjs",
     "scripts/standalone-api-egress-policy.mjs",
     "scripts/standalone-docker-probe-command.mjs",
