@@ -51,7 +51,13 @@ Status: milestone 0.1.0 reference behavior. See issue #159.
   selected instant. These consistency checks do not authenticate the source
   bundle or establish network finality.
 - Epoch window and bundle equality checks compare RFC3339 instants
-  semantically. Roots, registry ID, and epoch ID still match byte-for-byte.
+  semantically. An equivalent numeric-offset spelling is the same instant;
+  an instant one ten-billionth of a second after an epoch's `validUntil` is
+  outside its evidence window even though `Date.parse` would round both to
+  the same millisecond. The adapter tests both issuer and recognition paths
+  at these boundaries. Roots, registry ID, and epoch ID still match
+  byte-for-byte. These adapter fixture tests do not authenticate a ledger
+  anchor or prove finality.
 - When more than one matching evidence bundle covers the selected instant,
   the source prefers the latest epoch start by full RFC3339 instant comparison,
   including fractional digits beyond milliseconds. Epoch ID breaks only a

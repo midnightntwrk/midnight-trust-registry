@@ -570,6 +570,58 @@ describe("trust registry TRQP adapter", () => {
     expect(recognitionProblem.status).toBe(424);
   });
 
+  it("compares equivalent offsets and sub-millisecond epoch boundaries without Date truncation", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const issuer = createIssuerScenarioFixture("fractional-epoch-issuer");
+    const recognition = createRecognitionScenarioFixture("fractional-epoch-recognition");
+    harness.authorizeIssuer(issuer);
+    harness.authorizeRecognition(recognition);
+    const authorizationBundle = harness.evaluateCurrentIssuerDecision(issuer);
+    const recognitionBundle = harness.evaluateCurrentRecognitionDecision(recognition);
+    const adapter = new TrustRegistryTrqpAdapter({
+      getRegistryRecord: () => harness.registryRecord,
+      getAuthorizationDecision: () => ({
+        bundle: authorizationBundle, statusAtTime: "active", trustedAtTime: true,
+      }),
+      getRecognitionDecision: () => ({
+        bundle: recognitionBundle, statusAtTime: "active", trustedAtTime: true,
+      }),
+    });
+    const equivalentOffset = (instant: string) =>
+      new Date(Date.parse(instant) + 60 * 60 * 1000).toISOString().replace(/Z$/u, "+01:00");
+    const justAfter = (instant: string) => {
+      expect(instant).toMatch(/\.000Z$/u);
+      return instant.replace(/\.000Z$/u, ".0000000001Z");
+    };
+    const issuerRequest = {
+      entity_id: issuer.subjectDid, authority_id: harness.registryDid,
+      action: "issue" as const, resource: issuer.resourceId,
+    };
+    const recognitionRequest = {
+      entity_id: recognition.recognizedAuthorityDid, authority_id: harness.registryDid,
+      action: recognition.scopeResourceType, resource: recognition.scopeResourceId,
+      context: { recognized_registry_id: recognition.recognizedRegistryId },
+    };
+    expect((await adapter.getAuthorizationEvidence({
+      ...issuerRequest, context: { time: equivalentOffset(authorizationBundle.epoch.validFrom) },
+    })).ok).toBe(true);
+    expect((await adapter.getRecognitionEvidence({
+      ...recognitionRequest,
+      context: { ...recognitionRequest.context,
+        time: equivalentOffset(recognitionBundle.epoch.validFrom) },
+    })).ok).toBe(true);
+    const issuerProblem = expectProblem(await adapter.getAuthorizationEvidence({
+      ...issuerRequest, context: { time: justAfter(authorizationBundle.epoch.validUntil) },
+    }));
+    expect(issuerProblem.status).toBe(424);
+    const recognitionProblem = expectProblem(await adapter.getRecognitionEvidence({
+      ...recognitionRequest,
+      context: { ...recognitionRequest.context,
+        time: justAfter(recognitionBundle.epoch.validUntil) },
+    }));
+    expect(recognitionProblem.status).toBe(424);
+  });
+
   it("returns problem details for unknown authorities or unmatched tuples", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const recognition = createRecognitionScenarioFixture("eidas");
