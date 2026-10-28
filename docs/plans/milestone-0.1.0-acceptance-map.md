@@ -17,6 +17,9 @@ inventory parity, not proof that any case ran against a deployed ledger or
 with actor egress denied. It does not close an `L01`-`S01` gate. The proposed
 publication boundaries for the remaining unpublished work are in
 [the local review-group plan](standalone-unpublished-review-groups.md).
+The API approval-chain tests pass locally, but [the first-run reviewer
+trust-anchor requirement](../decisions/local-api-reviewer-trust-anchor.md)
+remains unimplemented; #234 is not closed by signature checks alone.
 
 Published draft PRs [#238](https://github.com/midnightntwrk/midnight-trust-registry/pull/238)
 (`97e59c5e`), [#239](https://github.com/midnightntwrk/midnight-trust-registry/pull/239)
