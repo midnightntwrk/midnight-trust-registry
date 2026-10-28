@@ -48,7 +48,7 @@ status, or offline runtime. In an artifact-bearing checkout, **do not run**
 `./run.sh --light`: use a disposable checkout for that prerequisite. The demo
 command fails if the required prebuilt Compact output is absent or stale;
 it never repairs it by invoking `build:light`. For the applicant and admin
-flows in a real browser, install Google Chrome and run
+flows in a real browser, run `pnpm exec playwright install chromium` and then
 the Playwright command above (or `pnpm run test:e2e:demo:browser` to rerun both
 lanes). If the browser is unavailable, report that lane as **not run** rather
 than passed. Neither result is a standalone `A01`-`O01` verdict.
@@ -58,7 +58,8 @@ It checks all 66 full proof circuits, compiles contract helpers, and rebuilds
 downstream TypeScript/UI packages without calling the Compact build or removing
 its `dist` tree. It does not establish
 the provenance of those artifacts or count as a deployed standalone actor run.
-CI installs Playwright-pinned Chromium instead of Google Chrome. Both variants
+CI and the default local configuration use Playwright-pinned Chromium; set
+`TR_BROWSER_CHANNEL=chrome` to test separately installed Google Chrome. Both variants
 still use fixture identity/status and simulator governance; a green CI browser
 step is **not** standalone deployment evidence. The browser suite also checks
 that the local-ledger admin view hides fixture mutation controls and discards

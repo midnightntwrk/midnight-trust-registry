@@ -23,9 +23,11 @@ journeys, the fixture HTTP API, and both served UIs. Expect four JSON journey
 reports followed by `[demo-smoke] Verified CLI/API demo flow and both served UI
 surfaces on ephemeral loopback ports.` An exit code of zero means the **demo**
 passed, not that a contract was deployed or a VC status authority was checked
-on a real ledger. If Chrome is installed, run `pnpm exec playwright test` to
-exercise the applicant and admin flows in a real browser. Report the browser
-lane as not run if Chrome is unavailable.
+on a real ledger. Install Playwright's pinned Chromium with
+`pnpm exec playwright install chromium`, then run `pnpm exec playwright test`
+to exercise the applicant and admin flows in a real browser. Google Chrome
+is optional: set `TR_BROWSER_CHANNEL=chrome` to select it explicitly. Report
+the browser lane as not run if no supported browser is installed.
 
 `./run.sh --light` removes generated Compact outputs. Never run it in a
 checkout holding full proving keys, a verified install bundle, or private
