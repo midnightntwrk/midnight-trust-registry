@@ -132,6 +132,39 @@ describe("audited proposal reservation abandonment", () => {
         }),
       })).rejects.toThrow(/Signed recovery decision does not match/u);
       expect((await journal.read("issuer", authorizationId))?.state).toBe("reserved");
+
+      const racing = new FileProposalSubmissionJournal(join(root, "reconcile-race.json"));
+      await racing.bindDeployment(harness.registryId, contractAddress, genesisHash);
+      await expect(racing.executeOnce("issuer", authorizationId, evidenceCommitment,
+        async () => { throw new Error("provider response lost"); }, context))
+        .rejects.toBeInstanceOf(ProposalSubmissionOutcomeUnknownError);
+      await expect(racing.reconcile("issuer", authorizationId, async () => {
+        await racing.abandonInvalidatedReservation(input);
+        return { eventHash: hash("f"), evidenceCommitment };
+      })).rejects.toBeInstanceOf(ProposalSubmissionConflictError);
+      expect((await racing.read("issuer", authorizationId))?.state).toBe("abandoned");
+
+      const archivedRace = new FileProposalSubmissionJournal(join(root, "archived-reconcile-race.json"));
+      await archivedRace.bindDeployment(harness.registryId, contractAddress, genesisHash);
+      await expect(archivedRace.executeOnce("issuer", authorizationId, evidenceCommitment,
+        async () => { throw new Error("provider response lost"); }, context))
+        .rejects.toBeInstanceOf(ProposalSubmissionOutcomeUnknownError);
+      await expect(archivedRace.reconcile("issuer", authorizationId, async () => {
+        await archivedRace.abandonInvalidatedReservation(input);
+        await archivedRace.rotateObserved(async () => null);
+        return { eventHash: hash("f"), evidenceCommitment };
+      })).rejects.toBeInstanceOf(ProposalSubmissionConflictError);
+      expect((await archivedRace.read("issuer", authorizationId))?.state).toBe("abandoned");
+
+      const receiptRace = new FileProposalSubmissionJournal(join(root, "late-receipt-race.json"));
+      await receiptRace.bindDeployment(harness.registryId, contractAddress, genesisHash);
+      await expect(receiptRace.executeOnce("issuer", authorizationId, evidenceCommitment,
+        async () => {
+          await receiptRace.abandonInvalidatedReservation(input);
+          return { eventHash: hash("f") };
+        }, context)).rejects.toBeInstanceOf(ProposalSubmissionOutcomeUnknownError);
+      expect((await receiptRace.read("issuer", authorizationId))?.state).toBe("abandoned");
+
       const competing = new FileProposalSubmissionJournal(journalPath);
       const outcomes = await Promise.allSettled([
         journal.abandonInvalidatedReservation(input),

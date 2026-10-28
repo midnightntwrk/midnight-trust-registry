@@ -115,6 +115,13 @@ signed decision and rejects a substituted finalized checkpoint. These checks
 exercise lock and decision binding in one test process, not independent
 processes or an authenticated local ledger. They must not be counted as the
 deployed recovery or offline end-to-end acceptance run.
+Reconciliation and a late provider receipt must re-read the attempt under the
+journal lock before writing. If a signed abandonment became terminal while a
+finalized reader or provider callback was running, neither path may rewrite
+the tombstone as `observed` or `submitted`; reconciliation reports a conflict
+and a late receipt remains outcome-unknown. The fixture interleaving tests
+cover both active and archived tombstones, but do not prove a production
+finality authenticator or permission to abandon a real reservation.
 
 ## Acceptance tests for the future implementation
 

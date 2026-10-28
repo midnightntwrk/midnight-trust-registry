@@ -335,7 +335,8 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
         const storage = await this.readStorage();
         const attempt = storage.active.attempts.find((entry) => entry.role === key.role
           && entry.authorizationId === key.authorizationId);
-        if (attempt === undefined || attempt.evidenceCommitment !== key.evidenceCommitment
+        if (attempt === undefined || attempt.state === "abandoned"
+          || attempt.evidenceCommitment !== key.evidenceCommitment
           || (attempt.eventHash !== null && attempt.eventHash !== receipt.eventHash)) {
           throw new ProposalSubmissionConflictError();
         }
@@ -603,13 +604,15 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
       const archived = storage.archived.find((entry) => entry.role === current.role
         && entry.authorizationId === current.authorizationId);
       if (archived !== undefined) {
-        if (archived.evidenceCommitment !== observation.evidenceCommitment
+        if (archived.state === "abandoned"
+          || archived.evidenceCommitment !== observation.evidenceCommitment
           || archived.eventHash !== observation.eventHash) throw new ProposalSubmissionConflictError();
         return structuredClone(archived);
       }
       const attempt = storage.active.attempts.find((entry) => entry.role === current.role
         && entry.authorizationId === current.authorizationId);
-      if (attempt === undefined || attempt.evidenceCommitment !== observation.evidenceCommitment
+      if (attempt === undefined || attempt.state === "abandoned"
+        || attempt.evidenceCommitment !== observation.evidenceCommitment
         || (attempt.eventHash !== null && attempt.eventHash !== observation.eventHash)) {
         throw new ProposalSubmissionConflictError();
       }
