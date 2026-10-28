@@ -324,8 +324,17 @@ synthetic rendered-Compose preflight inherited real `TR_*_PORT` values and
 could fail without any Compose source change. The preflight now pins its
 synthetic project and all three ports; a conflicting-environment CLI run,
 four focused policy tests, the 113-case topology suite, and checked-JS gate
-passed. Re-review this corrected group at its final local tip before
-publication; the fix is not a disposition of the plaintext transport risk.
+passed. A second read-only whole-range Codex review of the corrected group
+found no actionable regression. Its final local tree passed `./run.sh --light`
+(20/20 tasks) and `pnpm audit --audit-level low` (no known vulnerabilities).
+The original `d87e363c` commit had a bad GPG signature despite its DCO
+trailer; it was not published. The same tree was reapplied without amending
+that commit as signed/DCO `fef4f7f3` on
+`codex/trust-registry-review-group-operator-assurance`. The original branch
+remains recoverable but must not be published. The signed replacement does
+not change the tested file tree or disposition the plaintext transport risk.
+Recheck the live PR base, exact-head CI, and security review after any
+publication.
 The release still requires human-signed real genesis and roster approvals,
 authenticated finalized deployment, live actor/status adapters, offline
 journeys and recovery, and human security review.
