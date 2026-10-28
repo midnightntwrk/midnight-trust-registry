@@ -592,7 +592,11 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
     const current = await this.read(role, authorizationId);
     if (current === null) throw new ProposalSubmissionConflictError();
     const rawObservation = await readFinalized(current.role, current.authorizationId);
-    if (rawObservation === null) return current;
+    if (rawObservation === null) {
+      const refreshed = await this.read(role, authorizationId);
+      if (refreshed === null) throw new ProposalSubmissionConflictError();
+      return refreshed;
+    }
     const observation = GovernedProposalObservationSchema.parse(rawObservation);
     if (current.state === "abandoned") throw new ProposalSubmissionConflictError();
     if (observation.evidenceCommitment !== current.evidenceCommitment

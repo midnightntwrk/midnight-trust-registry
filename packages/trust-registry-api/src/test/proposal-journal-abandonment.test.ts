@@ -144,6 +144,17 @@ describe("audited proposal reservation abandonment", () => {
       })).rejects.toBeInstanceOf(ProposalSubmissionConflictError);
       expect((await racing.read("issuer", authorizationId))?.state).toBe("abandoned");
 
+      const noObservationRace = new FileProposalSubmissionJournal(join(root, "no-observation-race.json"));
+      await noObservationRace.bindDeployment(harness.registryId, contractAddress, genesisHash);
+      await expect(noObservationRace.executeOnce("issuer", authorizationId, evidenceCommitment,
+        async () => { throw new Error("provider response lost"); }, context))
+        .rejects.toBeInstanceOf(ProposalSubmissionOutcomeUnknownError);
+      const refreshed = await noObservationRace.reconcile("issuer", authorizationId, async () => {
+        await noObservationRace.abandonInvalidatedReservation(input);
+        return null;
+      });
+      expect(refreshed.state).toBe("abandoned");
+
       const archivedRace = new FileProposalSubmissionJournal(join(root, "archived-reconcile-race.json"));
       await archivedRace.bindDeployment(harness.registryId, contractAddress, genesisHash);
       await expect(archivedRace.executeOnce("issuer", authorizationId, evidenceCommitment,

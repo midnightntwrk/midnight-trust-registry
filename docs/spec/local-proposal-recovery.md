@@ -119,8 +119,10 @@ Reconciliation and a late provider receipt must re-read the attempt under the
 journal lock before writing. If a signed abandonment became terminal while a
 finalized reader or provider callback was running, neither path may rewrite
 the tombstone as `observed` or `submitted`; reconciliation reports a conflict
-and a late receipt remains outcome-unknown. The fixture interleaving tests
-cover both active and archived tombstones, but do not prove a production
+and a late receipt remains outcome-unknown. Even when the reader returns no
+observation, reconciliation must return the current journal entry rather than
+a pre-read reservation snapshot. The fixture interleaving tests cover both
+active and archived tombstones, but do not prove a production
 finality authenticator or permission to abandon a real reservation.
 
 ## Acceptance tests for the future implementation
