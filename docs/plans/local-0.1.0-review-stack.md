@@ -201,6 +201,12 @@ The verifier, auditor, and maintainer proposal fixture loop is separately
 isolated with its quorum and evidence/scope-substitution cases beside each
 successful proposal and observed receipt. This still uses the simulator-backed
 demo; it is not a deployed actor submission or authenticated finality proof.
+The four maintainer-safety cases now use separate simulator fixtures and run
+as named Node tests in the demo-smoke gate. Their post-rejection ledger
+invariants are part of each recorded outcome; a deliberately bad signer test
+shows later cases still run. The demo-smoke suite passed 240/240, the governed
+demo passed, and exact adversarial case-ID parity remained 198/198. This is
+fixture regression coverage only, not an on-ledger actor qualification.
 These refactors harden report integrity and advance the remaining #216 demo
 extraction, but do not finish that issue or
 qualify a deployed actor journey. Hold group G
