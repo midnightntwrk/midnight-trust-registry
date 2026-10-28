@@ -1,7 +1,7 @@
 # Local API Reviewer Trust Anchor
 
-Status: candidate export implemented locally; protected API enforcement and
-release qualification remain open.
+Status: candidate export and exact-byte comparator implemented locally;
+protected API enforcement and release qualification remain open.
 
 The local API runtime plan is signed, and its v3 approval chain verifies
 genesis, committee, and deployment approval signatures. The plan loader
@@ -18,6 +18,10 @@ SHA-256, the genesis approval digest, both reviewer fingerprints, and the
 source/install/network/genesis/contract identity. This is a review candidate,
 not an API trust anchor: the API does not yet require a protected installed
 copy, and this producer-side export cannot establish independent finality.
+The API package has an opt-in comparator that rejects a self-consistent
+replacement chain against the original anchor bytes. The production loader
+does not yet read a protected anchor or invoke that comparator; tests of the
+comparator must not be counted as installed-runtime enforcement.
 
 For the self-hosted 0.1.0 RC, first setup must produce an operator-protected
 trust-anchor record outside the API runtime plan. It must pin the independently

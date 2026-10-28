@@ -8,7 +8,7 @@ import { expect, it } from "vitest";
 import { sampleSigningKey, signatureVerifyingKey } from "@midnight-ntwrk/compact-runtime";
 import { committeeMaintenanceUpdateSha256 } from "@midnight-ntwrk/trust-registry-integration";
 
-import { verifyLocalApiApprovalChain } from "../local-approval-chain.js";
+import { assertLocalApiTrustAnchor, verifyLocalApiApprovalChain } from "../local-approval-chain.js";
 import { loadApprovedLocalLedgerRuntimePlan } from "../local-ledger-runtime.js";
 
 const sha256 = (bytes: Buffer | string): string => createHash("sha256").update(bytes).digest("hex");
@@ -99,6 +99,22 @@ it("verifies signed standalone approvals and rejects substitution", async () => 
         updateSha256: committeeMaintenanceUpdateSha256({ contractAddress, committee,
           threshold: 2, currentCounter: 1n }), txId: "maintenance-tx",
         finalizedBlockHash: `0x${"5".repeat(64)}`, status: "observed" } };
+    const firstChainBytes = Buffer.from(`${JSON.stringify(chain)}\n`);
+    const anchorBytes = Buffer.from(`${JSON.stringify({
+      format: "tr-local-api-trust-anchor-v1", sourceRevision,
+      installInventorySha256, releaseManifestSha256, networkId: plan.networkId,
+      expectedGenesisHash, contractAddress, approvalChainSha256: sha256(firstChainBytes),
+      genesisApprovalSha256: genesisApproval.documentSha256,
+      genesisReviewerFingerprint: fingerprint,
+      governanceReviewerFingerprint: fingerprint,
+    })}\n`);
+    const checkAnchor = (candidate: object, reviewer = fingerprint!) =>
+      assertLocalApiTrustAnchor({ anchorBytes,
+        chainBytes: Buffer.from(`${JSON.stringify(candidate)}\n`), plan,
+        governanceReviewerFingerprint: reviewer });
+    expect(() => checkAnchor(chain)).not.toThrow();
+    expect(() => checkAnchor(chain, "F".repeat(40)))
+      .toThrow(/protected first-run trust anchor/u);
     const verify = (candidate: object, selectedPlan = plan, reviewer = fingerprint!) =>
       verifyLocalApiApprovalChain({ chainBytes: Buffer.from(`${JSON.stringify(candidate)}\n`),
         plan: selectedPlan, keyringDirectory: verifier, governanceReviewerFingerprint: reviewer });
@@ -135,6 +151,7 @@ it("verifies signed standalone approvals and rejects substitution", async () => 
       maintenanceReadback: { ...chain.maintenanceReadback,
         committeeDeploymentApprovalSha256: alternateDeployment.documentSha256 } };
     await expect(verify(alternateChain)).resolves.toBeUndefined();
+    expect(() => checkAnchor(alternateChain)).toThrow(/protected first-run trust anchor/u);
     await expect(verify({ ...chain, contractAddress: `0x${"0".repeat(64)}` }))
       .rejects.toThrow(/contractAddress/u);
     const otherReceipt = await signed({
