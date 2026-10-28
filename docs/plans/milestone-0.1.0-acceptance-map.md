@@ -21,6 +21,16 @@ requires a reviewed security disposition; a green aggregate scan is not a
 waiver. The later local review groups and recovery fixes are unpublished, so
 their tests do not change those PR heads or CI results.
 
+At signed/DCO local source `27f873601bc168859b470c858aa06fd23e47a7c3`,
+`pnpm run test:e2e:demo:browser` exited 0 on 2026-10-28. The four signed
+membership simulator journeys, fixture API/UI smoke, and all 10 Playwright
+browser cases passed. The adversarial parity command at the same source
+reported 198 demo IDs, 198 isolated IDs, and no missing cases; the full light
+run passed 20/20 tasks. This is a development E2E checkpoint only: it used
+fixture identity/status and a Compact simulator, not a deployed, finalized,
+egress-denied standalone Trust Registry. No `L01`-`S01` case is promoted by
+these results, and this documentation commit will itself have a later SHA.
+
 The retained private `wizard-b23` packet is bound to signed source `6a5b2529`
 and is older than the current local implementation. A read-only prerequisite
 check against its own source returned exit 2: install staged, stack observed,
