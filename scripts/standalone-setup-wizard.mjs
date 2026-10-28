@@ -39,6 +39,7 @@ import {
 import {
   runLocalVerifierKeyInsertion, validateLocalVerifierKeyInsertionPlan,
 } from "./local-ledger-insert-verifier-key.mjs";
+import { exactFields } from "./standalone-exact-fields-policy.mjs";
 
 const FORMAT = "tr-standalone-setup-v1";
 const STANDALONE_PROFILE = getLocalNetworkProfile();
@@ -1434,10 +1435,6 @@ export async function reconcileStandaloneVerifierKeyInsertion(directory, planPat
     return result;
   });
 }
-
-const exactFields = (value, fields) => value !== null && typeof value === "object"
-  && !Array.isArray(value)
-  && Object.keys(value).sort().join("\0") === [...fields].sort().join("\0");
 
 function readStoredCommitteeApproval(record, legacyReadOnly = false) {
   const approvalBytes = Buffer.from(record.committeeApproval.documentBase64 ?? "", "base64");
