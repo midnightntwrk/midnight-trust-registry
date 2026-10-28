@@ -313,6 +313,14 @@ test("rejects missing cases, evidence reuse, traversal, symlinks and unbounded c
     candidate.cases.S01 = { status: "pass", evidence: [{ path: "receipt.log", sha256: sha(bytes) }] };
     candidate.cases.L01 = { status: "pass", evidence: [{ path: "receipt.log", sha256: sha(bytes) }] };
     await assert.rejects(checkStandaloneAcceptanceEvidence(root, candidate), /reused/u);
+    await writeFile(join(root, "RECEIPT.LOG"), bytes);
+    candidate.cases.L01.evidence[0].path = "RECEIPT.LOG";
+    await assert.rejects(checkStandaloneAcceptanceEvidence(root, candidate), /reused/u);
+    await writeFile(join(root, "\u00e9.log"), bytes);
+    await writeFile(join(root, "e\u0301.log"), bytes);
+    candidate.cases.S01.evidence[0].path = "\u00e9.log";
+    candidate.cases.L01.evidence[0].path = "e\u0301.log";
+    await assert.rejects(checkStandaloneAcceptanceEvidence(root, candidate), /reused/u);
     candidate.cases.L01 = { status: "not-run", evidence: [] };
     candidate.cases.S01.evidence[0].path = "../receipt.log";
     await assert.rejects(checkStandaloneAcceptanceEvidence(root, candidate), /relative path/u);
@@ -374,15 +382,23 @@ test("attaches raw evidence without changing an operator verdict or claiming qua
     assert.equal((await checkStandaloneAcceptanceEvidence(root, updated)).completeInventory, false);
     await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
       "A01", "L01/deploy.log"), /already attached/u);
+    await writeFile(join(root, "L01/DEPLOY.LOG"), "operator raw receipt\n");
+    await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
+      "A01", "L01/DEPLOY.LOG"), /reused/u);
     await assert.rejects(attachStandaloneAcceptanceEvidence(root, "f".repeat(40),
       "A01", "L01/deploy.log"), /differs from the selected candidate/u);
     await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
       "A01", "../outside.log"), /relative path/u);
     await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
       "A01", "acceptance.json"), /cannot be attached as its own evidence/u);
+    await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
+      "A01", "ACCEPTANCE.JSON"), /cannot be attached as its own evidence/u);
     assert.deepEqual(JSON.parse(await readFile(join(root, "acceptance.json"), "utf8")), updated);
     const selfReferential = structuredClone(updated);
     selfReferential.cases.A01.evidence = [{ path: "acceptance.json", sha256: sha(await readFile(join(root, "acceptance.json"))) }];
+    await assert.rejects(checkStandaloneAcceptanceEvidence(root, selfReferential),
+      /cannot be attached as its own evidence/u);
+    selfReferential.cases.A01.evidence[0].path = "ACCEPTANCE.JSON";
     await assert.rejects(checkStandaloneAcceptanceEvidence(root, selfReferential),
       /cannot be attached as its own evidence/u);
   } finally {
