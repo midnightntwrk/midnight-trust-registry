@@ -373,6 +373,9 @@ Attach both exact document and detached signature as raw `S01` evidence, then
 verify using a reviewer fingerprint pinned **outside** the evidence bundle:
 
 ```sh
+gpg --batch --yes --detach-sign --output "$EVIDENCE/verdict.sig" \
+  "$EVIDENCE/verdict.json" # Run only in the independent reviewer's environment.
+chmod 600 "$EVIDENCE/verdict.sig"
 node scripts/check-standalone-security-verdict.mjs "$EVIDENCE" "$SOURCE_SHA" \
   verdict.json "$REVIEWER_PUBLIC_KEY" verdict.sig "$PINNED_REVIEWER_FINGERPRINT"
 ```

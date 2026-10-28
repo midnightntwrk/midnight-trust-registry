@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { checkStandaloneSecurityVerdict } from "./check-standalone-security-verdict.mjs";
 import { ACCEPTANCE_CASES } from "./standalone-acceptance-manifest-policy.mjs";
@@ -101,4 +103,61 @@ test("the signature verifier failure is not converted into a security approval",
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("CLI verifies a real detached GPG verdict and rejects substitution", async (t) => {
+  assert.equal(spawnSync("gpg", ["--version"], { stdio: "ignore" }).status, 0,
+    "GPG is required for signed security-review verification");
+  const root = await mkdtemp("/tmp/tr-sv-gpg-");
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const signer = join(root, "signer");
+  await mkdir(signer, { mode: 0o700 });
+  execFileSync("gpg", ["--homedir", signer, "--batch", "--pinentry-mode", "loopback",
+    "--passphrase", "", "--quick-generate-key", "Security Reviewer <reviewer@example.test>",
+    "ed25519", "sign", "0"], { stdio: "pipe", timeout: 30_000 });
+  const listing = execFileSync("gpg", ["--homedir", signer, "--batch", "--with-colons",
+    "--list-secret-keys"], { encoding: "utf8" });
+  const key = listing.split("\n").find((line) => line.startsWith("fpr:"))?.split(":")[9];
+  assert.match(key, /^[A-F0-9]{40}$/u);
+  const publicKey = execFileSync("gpg", ["--homedir", signer, "--batch", "--armor",
+    "--export", key]);
+  await writeFile(join(root, "reviewer.asc"), publicKey, { mode: 0o600 });
+  const candidate = { ...base, cases: Object.fromEntries(ACCEPTANCE_CASES.map((id) =>
+    [id, { status: "not-run", evidence: [] }])) };
+  const signed = { ...verdict, reviewerFingerprint: key,
+    reviewedAt: new Date(Date.now() - 60_000).toISOString() };
+  const writeCandidate = async (outcome) => {
+    const document = `${JSON.stringify({ ...signed, outcome }, null, 2)}\n`;
+    await writeFile(join(root, "verdict.json"), document, { mode: 0o600 });
+    candidate.cases.S01.evidence = [
+      { path: "verdict.json", sha256: sha(document) },
+      { path: "verdict.sig", sha256: sha(await readFile(join(root, "verdict.sig"))) },
+    ];
+    await writeFile(join(root, "acceptance.json"), `${JSON.stringify(candidate)}\n`, { mode: 0o600 });
+  };
+  const sign = async () => {
+    execFileSync("gpg", ["--homedir", signer, "--batch", "--yes",
+      "--detach-sign", "--output", join(root, "verdict.sig"), join(root, "verdict.json")],
+    { stdio: "pipe", timeout: 30_000 });
+    await chmod(join(root, "verdict.sig"), 0o600);
+  };
+  const script = fileURLToPath(new URL("./check-standalone-security-verdict.mjs", import.meta.url));
+  const run = (expected = key) => spawnSync(process.execPath, [script, root, sourceRevision,
+    "verdict.json", join(root, "reviewer.asc"), "verdict.sig", expected], { encoding: "utf8" });
+  await writeFile(join(root, "verdict.json"), `${JSON.stringify(signed, null, 2)}\n`, { mode: 0o600 });
+  await sign();
+  await writeCandidate("approve");
+  const approved = run();
+  assert.equal(approved.status, 0, approved.stderr);
+  assert.equal(JSON.parse(approved.stdout).releaseQualified, false);
+  assert.equal(run("B".repeat(40)).status, 1);
+
+  await writeCandidate("reject");
+  const tampered = run();
+  assert.equal(tampered.status, 1, "changed verdict must fail even when manifest hash is updated");
+  await sign();
+  await writeCandidate("reject");
+  const rejected = run();
+  assert.equal(rejected.status, 2, rejected.stderr);
+  assert.equal(JSON.parse(rejected.stdout).outcome, "reject");
 });
