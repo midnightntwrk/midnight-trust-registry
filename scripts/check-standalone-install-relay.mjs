@@ -6,6 +6,7 @@ import { readFile, lstat } from "node:fs/promises";
 import { promisify } from "node:util";
 
 import { checkStandaloneTopology } from "./check-standalone-topology.mjs";
+import { exactFields } from "./standalone-exact-fields-policy.mjs";
 
 const run = promisify(execFile);
 const ROUTES = { node: "30944/tcp", indexer: "38088/tcp", "proof-server": "36300/tcp" };
@@ -58,13 +59,13 @@ export function checkStandaloneInstallRelay(network, ledgerContainers, relay, co
     throw new Error("Installation relay script mount differs from the verified bundle");
   }
   const networks = relay.NetworkSettings?.Networks;
-  if (Object.keys(networks ?? {}).sort().join("\0") !== ["bridge", config.network].sort().join("\0")
+  if (!exactFields(networks ?? {}, ["bridge", config.network])
     || networks[config.network]?.NetworkID !== network.Id) {
     throw new Error("Installation relay network attachments differ from the selected bridge");
   }
   const bindings = host?.PortBindings;
   const effective = relay.NetworkSettings?.Ports;
-  if (Object.keys(bindings ?? {}).sort().join("\0") !== Object.values(ROUTES).sort().join("\0")
+  if (!exactFields(bindings ?? {}, Object.values(ROUTES))
     || !effective || Object.entries(effective).some(([target, value]) =>
       !Object.values(ROUTES).includes(target) && value !== null
       && (!Array.isArray(value) || value.length !== 0))) {

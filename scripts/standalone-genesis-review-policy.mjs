@@ -1,7 +1,7 @@
 import { getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
 
 import { STANDALONE_IMAGE_REFERENCE } from "./standalone-image-reference.mjs";
-import { exactFields } from "./standalone-exact-fields-policy.mjs";
+import { exactRecordFields as exactFields } from "./standalone-exact-fields-policy.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
 const REVISION = /^[0-9a-f]{40}$/u;

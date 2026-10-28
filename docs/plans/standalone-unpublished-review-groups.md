@@ -54,6 +54,15 @@ plaintext WebSocket findings; the aggregate scan is green. Issue #237 and
 human review #232 require a real risk disposition, not a scanner waiver by
 follow-up issue. No local branch was pushed or merged.
 
+The next local-only runtime-topology branch follows this code checkpoint. Its
+first test run caught duplicate-role acceptance in a naive name-set helper and
+an output-order change; both were corrected before the focused suite passed.
+It also found that the earlier generic helper's type-predicate annotation
+breaks the broader checked-JS gate even though the strict gate passes. The
+runtime-topology branch adds a separate typed wrapper and restores both type
+gates. **Do not publish `e1e035b1` as a standalone PR head**; group the local
+exact-field commits through the final tested head and obtain exact-head CI.
+
 The validation above is local and scoped, not exact-head CI or independent
 review. The final fixture E2E lane is not a deployed-ledger actor journey.
 In this review checkout, `pnpm run test:standalone-topology` passes 121/121,

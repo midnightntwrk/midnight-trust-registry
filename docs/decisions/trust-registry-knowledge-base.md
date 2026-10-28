@@ -3076,3 +3076,13 @@ regression rejects a NUL-containing field name and a duplicate expected
 schema. This does not make a node-reported profile or verifier-key hash an
 independent trust anchor; the operator still must approve the chain and
 verify installed and finalized bytes against the pinned manifest.
+
+The local runtime-topology follow-on applies the same delimiter-safe equality
+to installation-relay network/port keys, Compose service keys, pinned image
+roles, and observed Docker service names. The name-set helper rejects duplicate
+roles as well as alternate NUL-delimiter partitions. Topology reports keep
+their prior sorted service order. A broad checked-JS run exposed that using a
+type-predicate return on the wizard's generic exact-field helper narrowed
+parsed JSON values to `unknown`; a separate typed wrapper now serves strict
+validators while the wizard retains the boolean predicate. Both broad and
+strict type gates must pass before these local commits are grouped for review.

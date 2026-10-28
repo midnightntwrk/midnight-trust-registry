@@ -1,4 +1,5 @@
 import { STANDALONE_IMAGE_REFERENCE } from "./standalone-image-reference.mjs";
+import { exactFields } from "./standalone-exact-fields-policy.mjs";
 
 const ROLES = ["node", "indexer", "proof-server"];
 const PROJECT_NAME = "${TR_STACK_NAME:-tr-standalone-local-smoke}";
@@ -21,7 +22,7 @@ export function pinnedStandaloneImagePolicy(compose) {
   }
   const services = compose.services;
   if (!isRecord(services)
-    || Object.keys(services).sort().join("\0") !== [...ROLES].sort().join("\0")) {
+    || !exactFields(services, ROLES)) {
     throw new Error("Standalone Compose must name the dedicated project and exactly three services");
   }
   return ROLES.map((role) => {
