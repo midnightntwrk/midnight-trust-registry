@@ -135,6 +135,9 @@ test("rejects child reports that imply unobserved actor, finality, or egress evi
     { hostAndBrowserEgress: "verified" },
     { independentFinality: "verified" },
     { planToDeploymentBinding: "verified" },
+    { ambiguousLookups: undefined },
+    { ambiguousLookups: { issuer: 2, verifier: 0, auditor: 0 } },
+    { resolvedLookups: { issuer: 1, verifier: 2, auditor: 1, recognition: 1 } },
   ]) {
     await assert.rejects(observeStandaloneQualification("/setup", "/bundle", source,
       { env: { TR_STACK_NAME: project } },

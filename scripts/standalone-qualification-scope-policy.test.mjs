@@ -14,6 +14,9 @@ const current = {
   hostAndBrowserEgress: "not-verified",
   independentFinality: "not-verified",
   planToDeploymentBinding: "not-verified",
+  counts: { issuer: 1, verifier: 1, auditor: 1, recognition: 1 },
+  resolvedLookups: { issuer: 1, verifier: 1, auditor: 1, recognition: 1 },
+  ambiguousLookups: { issuer: 0, verifier: 0, auditor: 0 },
 };
 const restart = {
   releaseQualified: false,
