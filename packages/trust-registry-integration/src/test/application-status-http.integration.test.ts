@@ -1,4 +1,6 @@
 import { Buffer } from "node:buffer";
+import { once } from "node:events";
+import { createServer } from "node:http";
 
 import { signJubjubDigest } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import { encodeJubjubSignature } from "@midnight-ntwrk/trust-registry-contract";
@@ -129,6 +131,63 @@ describe("HTTP application status authority adapter", () => {
           status({ material, binding, ...context }),
       },
     })).rejects.toMatchObject({ category: "ineligible" });
+  });
+
+  it("verifies the signed fixture through a real loopback HTTP transport", async () => {
+    const scenario = await createApplicationVpScenarioFixture();
+    let signed = scenario.signedStatusAttestation;
+    const requests: Array<{ method: string | undefined; body: unknown }> = [];
+    const server = createServer(async (request, response) => {
+      let body = "";
+      for await (const chunk of request) body += String(chunk);
+      requests.push({ method: request.method, body: JSON.parse(body) as unknown });
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(signed));
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    try {
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("Loopback status server has no TCP port");
+      const status = createHttpApplicationStatusSource({
+        endpointUrl: `http://127.0.0.1:${address.port}/attest`,
+        resolver: scenario.input.resolver,
+      });
+      const input = {
+        ...scenario.input,
+        family: { ...scenario.input.family, assertStatusActive: (material: typeof scenario.material,
+          binding: typeof scenario.fixtureStatusPolicyBinding,
+          context: { nonce: string; evaluatedAtMs: number }) =>
+          status({ material, binding, ...context }) },
+      };
+      await expect(verifyApplicationVp(input)).resolves.toMatchObject({
+        statusDecisionCommitment: expect.stringMatching(/^0x[0-9a-f]{64}$/u),
+      });
+      expect(requests).toHaveLength(1);
+      expect(requests[0]).toMatchObject({
+        method: "POST",
+        body: { statusRegistryId: scenario.fixtureStatusPolicyBinding.statusRegistryId },
+      });
+
+      const statement = {
+        ...signed.statement,
+        expiresAt: new Date(VP_FIXTURE_TIME_MS + 5 * 60_000).toISOString().replace(".000Z", ".0000001Z"),
+      };
+      signed = {
+        statement,
+        proof: {
+          ...signed.proof,
+          signature: `0x${Buffer.from(encodeJubjubSignature(
+            signJubjubDigest(19n, applicationStatusAttestationDigest(statement)),
+          )).toString("hex")}`,
+        },
+      };
+      await expect(verifyApplicationVp(input)).rejects.toMatchObject({ category: "ineligible" });
+      expect(requests).toHaveLength(2);
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
   });
 
   it("rejects insecure endpoints and fails closed on unavailable or rejected responses", async () => {

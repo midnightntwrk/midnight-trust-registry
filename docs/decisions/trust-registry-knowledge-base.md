@@ -2914,8 +2914,12 @@ cannot enter by losing fractional digits in `Date.parse`; an exactly
 five-minute fractional window remains valid. The integer-millisecond
 `validUntilMs` returned to the VP verifier is conservatively rounded down.
 The focused tests re-sign fixture statements with the local test key. They
-do not supply a VC-owned live status adapter, independent finality, or a
-deployed offline actor journey; those release gates remain open.
+also send the fixture over a real loopback HTTP listener and exercise the
+published VC/VP intake through the transport, accepting a current signed
+answer and rejecting a newly signed fractionally overlong one. The DID, VC,
+status authority, and ledger state are still fixture-owned: this does not
+supply a VC-owned live status adapter, independent finality, or a deployed
+offline actor journey. Those release gates remain open.
 
 ## Policy replay isolation and current E2E boundary
 
