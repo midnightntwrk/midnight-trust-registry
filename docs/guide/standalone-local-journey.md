@@ -362,17 +362,22 @@ evidence inventory cannot prevent an operator from revoking a verdict.
 These records are self-attested,
 not signatures or independent evidence verification. For `S01`, attach the
 non-author human's separately signed security verdict before recording `pass`.
-The reviewer may sign a private `tr-local-security-verdict-v1` JSON document
+The reviewer may sign a private `tr-local-security-verdict-v2` JSON document
 with `sourceRevision`, `installInventorySha256`, `signedPlanSha256`,
 `genesisHash`, `contractAddress`, `reviewerFingerprint`, `reviewedAt`,
-`scope: "self-hosted-local-0.1.0"`, and `outcome: "approve"` or `"reject"`.
+`scope: "self-hosted-local-0.1.0"`, `outcome: "approve"` or `"reject"`,
+`findingsPath`, and `findingsSha256`. The findings report must list the review
+scope, each finding with severity and reproduction, its disposition and risk
+owner, or explicitly say there were no findings. Do not include secrets.
 Encode it as canonical two-space-indented JSON with one trailing newline;
 duplicate keys or alternate encodings are rejected. Keep the verdict and its
-signature as separate flat private files in the acceptance directory.
-Attach both exact document and detached signature as raw `S01` evidence, then
-verify using a reviewer fingerprint pinned **outside** the evidence bundle:
+signature as separate flat private files in the acceptance directory. Attach
+the findings report, verdict, and detached signature as distinct raw `S01`
+evidence before verification. The signed verdict must hash that exact report.
+Verify using a reviewer fingerprint pinned **outside** the evidence bundle:
 
 ```sh
+shasum -a 256 "$EVIDENCE/findings.md" # Put this digest in findingsSha256 before signing.
 gpg --batch --yes --detach-sign --output "$EVIDENCE/verdict.sig" \
   "$EVIDENCE/verdict.json" # Run only in the independent reviewer's environment.
 chmod 600 "$EVIDENCE/verdict.sig"
@@ -380,7 +385,7 @@ node scripts/check-standalone-security-verdict.mjs "$EVIDENCE" "$SOURCE_SHA" \
   verdict.json "$REVIEWER_PUBLIC_KEY" verdict.sig "$PINNED_REVIEWER_FINGERPRINT"
 ```
 
-This checks the detached signature and exact candidate binding only. It does
+This checks the detached signature, findings digest, and exact candidate binding only. It does
 not establish that the key belongs to an independent human, that findings were
 resolved, or that any deployed receipt is authentic. The release owner must
 review those facts and retain the attributable finding disposition under #232.

@@ -12,10 +12,12 @@ import {
 import { regularBytes, verifyDetachedReviewerSignatureBytes } from "./standalone-setup-wizard.mjs";
 
 const FINGERPRINT = /^[0-9A-F]{40}$/u;
+const SHA256 = /^[0-9a-f]{64}$/u;
+const FLAT_EVIDENCE_PATH = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 
 /**
- * Verify only the signature and candidate binding. Identity, independence,
- * findings, and the truth of deployment evidence remain human review gates.
+ * Verify the signature, candidate binding, and signed findings digest only.
+ * Identity, independence, finding disposition, and deployment truth remain human gates.
  * @param {string} root
  * @param {string} sourceRevision
  * @param {string} verdictPath
@@ -56,10 +58,11 @@ export async function checkStandaloneSecurityVerdict(
     throw new Error("Security verdict must use canonical signed JSON without duplicate keys");
   }
   const expectedKeys = ["format", "sourceRevision", "installInventorySha256", "signedPlanSha256",
-    "genesisHash", "contractAddress", "reviewerFingerprint", "reviewedAt", "scope", "outcome"];
+    "genesisHash", "contractAddress", "reviewerFingerprint", "reviewedAt", "scope", "outcome",
+    "findingsPath", "findingsSha256"];
   if (!verdict || typeof verdict !== "object" || Array.isArray(verdict)
     || Object.keys(verdict).sort().join("|") !== expectedKeys.sort().join("|")
-    || verdict.format !== "tr-local-security-verdict-v1"
+    || verdict.format !== "tr-local-security-verdict-v2"
     || verdict.sourceRevision !== manifest.sourceRevision
     || verdict.installInventorySha256 !== manifest.installInventorySha256
     || verdict.signedPlanSha256 !== manifest.signedPlanSha256
@@ -68,16 +71,29 @@ export async function checkStandaloneSecurityVerdict(
     || verdict.reviewerFingerprint !== expectedFingerprint
     || verdict.scope !== "self-hosted-local-0.1.0"
     || !["approve", "reject"].includes(verdict.outcome)
+    || typeof verdict.findingsPath !== "string"
+    || !FLAT_EVIDENCE_PATH.test(verdict.findingsPath)
+    || [verdictPath, signaturePath, "acceptance.json"].some((path) =>
+      path.toLowerCase() === verdict.findingsPath.toLowerCase())
+    || !paths.has(verdict.findingsPath)
+    || typeof verdict.findingsSha256 !== "string" || !SHA256.test(verdict.findingsSha256)
     || typeof verdict.reviewedAt !== "string" || !Number.isFinite(Date.parse(verdict.reviewedAt))) {
     throw new Error("Security verdict does not bind the selected standalone candidate");
   }
   await verifySignature(documentBytes, signatureBytes,
     publicKeyPath, expectedFingerprint, verdict.reviewedAt);
+  const findingsBytes = await regularBytes(resolve(root, verdict.findingsPath), { privateFile: true });
+  if (digest(findingsBytes) !== verdict.findingsSha256
+    || digest(findingsBytes) !== manifest.cases.S01.evidence.find((item) =>
+      item.path === verdict.findingsPath)?.sha256) {
+    throw new Error("Signed security findings digest differs from attached report bytes");
+  }
   return {
-    format: "tr-local-security-verdict-check-v1",
+    format: "tr-local-security-verdict-check-v2",
     sourceRevision: manifest.sourceRevision,
     outcome: verdict.outcome,
     signatureValidForPinnedKey: true,
+    findingsDigestBound: true,
     reviewerIndependence: "not-verified",
     findingsDisposition: "not-verified",
     deploymentEvidence: "not-verified",
