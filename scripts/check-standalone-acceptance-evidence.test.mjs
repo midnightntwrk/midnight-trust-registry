@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, mkdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -276,6 +276,31 @@ test("rejects an attached symlink and an active evidence writer lock", async () 
     await mkdir(join(root, ".acceptance.lock"));
     await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
       "L01", "raw.log"), { code: "EEXIST" });
+    assert.deepEqual(JSON.parse(await readFile(join(root, "acceptance.json"), "utf8")), candidate);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects Unicode aliases that resolve to one evidence file", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "tr-acceptance-unicode-alias-"));
+  try {
+    const bytes = "operator receipt\n";
+    await writeFile(join(root, "\u03c3.log"), bytes);
+    const alias = await lstat(join(root, "\u03c2.log")).catch(() => null);
+    const original = await lstat(join(root, "\u03c3.log"));
+    if (!alias || alias.dev !== original.dev || alias.ino !== original.ino) {
+      t.skip("filesystem does not fold Greek sigma and final sigma to one file");
+      return;
+    }
+    const candidate = manifest();
+    candidate.cases.L01.evidence = [{ path: "\u03c3.log", sha256: sha(bytes) }];
+    candidate.cases.S01.evidence = [{ path: "\u03c2.log", sha256: sha(bytes) }];
+    await assert.rejects(checkStandaloneAcceptanceEvidence(root, candidate), /reused/u);
+    candidate.cases.S01.evidence = [];
+    await writeFile(join(root, "acceptance.json"), `${JSON.stringify(candidate)}\n`, { mode: 0o600 });
+    await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
+      "S01", "\u03c2.log"), /reused/u);
     assert.deepEqual(JSON.parse(await readFile(join(root, "acceptance.json"), "utf8")), candidate);
   } finally {
     await rm(root, { recursive: true, force: true });

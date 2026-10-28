@@ -61,7 +61,7 @@ async function digestEvidence(root, path) {
       || after.mtimeNs !== before.mtimeNs || after.ctimeNs !== before.ctimeNs) {
       throw new Error(`Evidence changed during read: ${path}`);
     }
-    return hash.digest("hex");
+    return { sha256: hash.digest("hex"), fileId: `${before.dev}:${before.ino}` };
   } finally {
     await file.close();
   }
@@ -197,7 +197,7 @@ export async function attachStandaloneAcceptanceEvidence(root, expectedSourceRev
     if (manifest.cases[caseId].evidence.length >= 32) {
       throw new Error("Acceptance case has reached its evidence limit");
     }
-    const item = { path, sha256: await digestEvidence(root, path) };
+    const item = { path, sha256: (await digestEvidence(root, path)).sha256 };
     manifest.cases[caseId].evidence.push(item);
     await checkStandaloneAcceptanceEvidence(root, manifest, expectedSourceRevision);
     const unchanged = await lstat(manifestPath);
@@ -248,6 +248,7 @@ export async function checkStandaloneAcceptanceEvidence(root, manifest, expected
   }
   const cases = {};
   const seen = new Set();
+  const seenFiles = new Set();
   for (const id of CASES) {
     const entry = manifest.cases[id];
     if (!exactKeys(entry, ["status", "evidence"])
@@ -262,8 +263,11 @@ export async function checkStandaloneAcceptanceEvidence(root, manifest, expected
       }
       const identity = item.path.normalize("NFC").toLowerCase();
       if (seen.has(identity)) throw new Error(`Evidence reused across cases: ${item.path}`);
+      const evidence = await digestEvidence(root, item.path);
+      if (seenFiles.has(evidence.fileId)) throw new Error(`Evidence reused across cases: ${item.path}`);
       seen.add(identity);
-      if (await digestEvidence(root, item.path) !== item.sha256) {
+      seenFiles.add(evidence.fileId);
+      if (evidence.sha256 !== item.sha256) {
         throw new Error(`${id} evidence SHA-256 mismatch: ${item.path}`);
       }
     }
