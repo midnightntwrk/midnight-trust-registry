@@ -25,6 +25,29 @@ a deployed, finalized standalone contract. A passing `./run.sh --light`,
 evidence. Do not promote draft PR #198 or label 0.1.0 release-ready on those
 results.
 
+## Evaluate the implementation without operator approvals
+
+Use a fresh, disposable checkout for an orientation run. Do not run the light
+target in a checkout holding generated Compact keys, pinned install bundles,
+or private setup evidence: it cleans and rebuilds generated outputs. From the
+repository root, while installation dependencies are available:
+
+```sh
+pnpm install --frozen-lockfile
+./run.sh --light
+pnpm run check:adversarial-parity -- --require-full
+```
+
+The light target runs package, API, documentation, and simulator-backed demo
+checks. The parity command should report equal `demoCaseCount` and
+`extractedCaseCount`, with `missingCaseCount: 0`; a nonzero exit is a regression.
+These commands need no funded wallet, genesis signature, or maintenance keys.
+They are useful for evaluating behavior and reproducing CI, but they do not
+start a dedicated ledger, deny actor egress, or produce any `L01`-`S01`
+deployed acceptance result. Do not attach their output as deployed evidence.
+Continue with the operator procedure below only when an exact-source install
+candidate and the required independent approvals are available.
+
 The current signed local API CLI is read-only: it does not configure the
 production applicant/VP intake, accepted-application admission, governed
 proposal ports, or submitting provider. Governed proposal writes return 503.
