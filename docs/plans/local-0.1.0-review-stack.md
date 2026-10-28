@@ -38,7 +38,7 @@ not a fully green merge gate or release approval.
 
 ### Consolidated local review candidates (2026-10-28)
 
-The 134 signed/DCO commits above published #240 head `bbe527cf` have three
+The unpublished signed/DCO commits above published #240 head `bbe527cf` have three
 non-rewritten, stackable local branch boundaries. These are review candidates,
 not published PRs or a release verdict. Recheck the live #240 head and the
 applicable CI/security disposition before publishing any of them.
@@ -47,7 +47,7 @@ applicable CI/security disposition before publishing any of them.
 | --- | --- | --- | --- |
 | 1 | `codex/trust-registry-review-group-core` (`c786254f`) | 51 commits; `bbe527cf`..`c786254f` | Durable challenge and quorum preflight, verified install/egress canaries, safe demo build, journal restart, full-precision trust times |
 | 2 | `codex/trust-registry-review-group-qualification` (`723df991`) | 42 commits; `c786254f`..`723df991` | Approved-setup/current-query binding, read-only recovery candidate, acceptance evidence integrity, scoped qualification observations, retained approval checks |
-| 3 | `codex/trust-registry-signed-evidence-type-gate` (`76487e16`) | 41 commits; `723df991`..`76487e16` | Isolated policy/adversarial cases, strict standalone script boundaries, audited proposal tombstones, signed security verdict, observation ambiguity and operator handoff |
+| 3 | `codex/trust-registry-signed-evidence-type-gate` (current tip) | `723df991`..branch tip | Isolated policy/adversarial cases, strict standalone script boundaries, audited proposal tombstones, signed security verdict, observation ambiguity and operator handoff |
 
 The top group passed a local full light gate (20/20), focused wizard and
 security-signature tests, strict security-boundary typecheck, docs check, and
