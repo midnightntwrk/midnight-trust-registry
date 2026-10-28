@@ -59,7 +59,8 @@ not a fully green merge gate or release approval.
 ### Consolidated local review candidates (2026-10-28)
 
 The unpublished signed/DCO commits above published #240 head `bbe527cf` have three
-non-rewritten, stackable local branch boundaries. These are review candidates,
+non-rewritten original group boundaries and a post-restack continuation below.
+These are review candidates,
 not published PRs or a release verdict. Recheck the live #240 head and the
 applicable CI/security disposition before publishing any of them.
 
@@ -67,7 +68,7 @@ applicable CI/security disposition before publishing any of them.
 | --- | --- | --- | --- |
 | 1 | `codex/trust-registry-review-group-core` (`c786254f`) | 51 commits; `bbe527cf`..`c786254f` | Durable challenge and quorum preflight, verified install/egress canaries, safe demo build, journal restart, full-precision trust times |
 | 2 | `codex/trust-registry-review-group-qualification` (`723df991`) | 42 commits; `c786254f`..`723df991` | Approved-setup/current-query binding, read-only recovery candidate, acceptance evidence integrity, scoped qualification observations, retained approval checks |
-| 3 | `codex/trust-registry-signed-evidence-type-gate` (current tip) | `723df991`..branch tip | Isolated policy/adversarial cases, strict standalone script boundaries, audited proposal tombstones, signed security verdict, observation ambiguity, operator handoff, and signed status-time regression coverage |
+| 3 | `codex/trust-registry-signed-evidence-type-gate` (`674160e4`) | `723df991`..`674160e4` | Isolated policy/adversarial cases, strict standalone script boundaries, audited proposal tombstones, signed security verdict, observation ambiguity, operator handoff, and signed status-time regression coverage |
 
 Local-only restacked review refs now preserve the original group tips and
 commit history: `codex/trust-registry-review-group-core-restacked-local`
@@ -83,6 +84,21 @@ passed the full light, fixture E2E, and browser gates. These refs are not
 published. Recheck live remote heads and run exact-head CI and review after
 any approved push; local ancestry and tests do not clear #238's external scan
 or the local release evidence gates.
+
+The next local review boundary is
+`codex/trust-registry-review-group-e2e-knowledge`, stacked above the
+restacked adoption ref `506537e0`. Its range contains 16 prior commits plus
+this handoff update: fail-closed query evidence, isolated policy/public lookup
+and temporal demo cases, complete adversarial report attribution, a browser
+fixture egress audit with redirect denial, checked standalone current-query
+inputs, and a reproducible pinned-Chromium adoption path. Writable local
+validation on the continuation passed both browser variants (11/11), 198/198
+adversarial parity, `./run.sh --light` (20/20 tasks), the security script type
+gates, and `pnpm audit --audit-level low`; the relevant commits received
+read-only Codex review without an actionable regression. Review the **whole**
+range at its exact branch head before publication; these checks are not
+deployed standalone actor evidence, current-head PR CI, or a disposition of
+#238's red external Opengrep check.
 
 On 2026-10-28, read-only Codex CLI reviewed each complete restacked group
 against its local parent (`cc7c081b` to `67212c1e`, `67212c1e` to
