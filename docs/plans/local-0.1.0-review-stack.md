@@ -47,7 +47,7 @@ applicable CI/security disposition before publishing any of them.
 | --- | --- | --- | --- |
 | 1 | `codex/trust-registry-review-group-core` (`c786254f`) | 51 commits; `bbe527cf`..`c786254f` | Durable challenge and quorum preflight, verified install/egress canaries, safe demo build, journal restart, full-precision trust times |
 | 2 | `codex/trust-registry-review-group-qualification` (`723df991`) | 42 commits; `c786254f`..`723df991` | Approved-setup/current-query binding, read-only recovery candidate, acceptance evidence integrity, scoped qualification observations, retained approval checks |
-| 3 | `codex/trust-registry-signed-evidence-type-gate` (current tip) | `723df991`..branch tip | Isolated policy/adversarial cases, strict standalone script boundaries, audited proposal tombstones, signed security verdict, observation ambiguity and operator handoff |
+| 3 | `codex/trust-registry-signed-evidence-type-gate` (current tip) | `723df991`..branch tip | Isolated policy/adversarial cases, strict standalone script boundaries, audited proposal tombstones, signed security verdict, observation ambiguity, operator handoff, and signed status-time regression coverage |
 
 The top group passed a local full light gate (20/20), focused wizard and
 security-signature tests, strict security-boundary typecheck, docs check, and
@@ -57,6 +57,13 @@ They are **not** deployed standalone actor E2E, authenticated finality, an
 independent human security verdict, or exact-head GitHub CI. No new group has
 publication or merge authorization. Keep #198 draft and preserve private
 setup evidence, generated Compact artifacts, and ledger volumes.
+The subsequent status-time extension verifies a fixture-signed response through
+an actual loopback HTTP listener and the VP intake, including a fractionally
+overlong rejection. At local tip `97480807`, the integration suite passed
+354 tests with two skipped; typecheck, lint, docs, and audit passed. The last
+full light gate passed 20/20 at the preceding runtime-code tip `e55cb4e3`;
+later commits changed only tests and docs. The loopback test is transport
+coverage, not a VC-owned live status adapter or deployed-ledger actor case.
 
 The local descendant contains the reviewed groups A-D above #240's published
 head `bbe527cf`, followed by review-plan documentation, current-query
