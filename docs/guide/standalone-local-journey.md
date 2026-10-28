@@ -179,8 +179,13 @@ they can all run today. The implementation sequence is in
    reviewed installed copy; do not point it at the candidate in the
    operator-writable setup directory. Install the exact approved candidate
    as a root-owned regular file under root-owned, non-group/world-writable
-   directories, with no symlink or hard link. Keep its digest in the operator
-   evidence. For direct API CLI and writer preflight invocations, set
+   directories, with no symlink or hard link. Never overwrite an existing
+   installed anchor as a shortcut for reviewer rotation; stop and use a
+   separately approved rotation procedure. Before starting the API, compare
+   the installed file's SHA-256 with the independently approved candidate
+   digest and retain both in private operator evidence. This comparison
+   checks installation bytes, not the independence of the review or ledger
+   finality. For direct API CLI and writer preflight invocations, set
    `TR_API_TRUST_ANCHOR_PATH` to that absolute path. For the Compose API
    overlay, set `TR_API_TRUST_ANCHOR_FILE` to the host path; the overlay mounts
    it read-only at `/etc/trust-registry-first-run-anchor.json`. Its ownership
