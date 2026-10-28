@@ -20,6 +20,7 @@
     "scripts/local-deployment-plan-policy.mjs",
     "scripts/local-verifier-key-insertion-plan-policy.mjs",
     "scripts/standalone-deployment-receipt-policy.mjs",
+    "scripts/standalone-signed-document-policy.mjs",
     "scripts/package-contents-policy.mjs",
     "scripts/provider-runtime-content.mjs",
     "scripts/stage-provider-runtime.mjs",

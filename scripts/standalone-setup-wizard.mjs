@@ -47,6 +47,7 @@ import {
   runLocalVerifierKeyInsertion, validateLocalVerifierKeyInsertionPlan,
 } from "./local-ledger-insert-verifier-key.mjs";
 import { validLocalDeploymentReceipt } from "./standalone-deployment-receipt-policy.mjs";
+import { exactFields, parseCanonicalSignedJson as parseUntrustedSignedJson } from "./standalone-signed-document-policy.mjs";
 
 const FORMAT = "tr-standalone-setup-v1";
 const STANDALONE_PROFILE = getLocalNetworkProfile();
@@ -64,6 +65,8 @@ const composePath = resolve(dirname(fileURLToPath(import.meta.url)), "../deploy/
 const offlineComposePath = resolve(dirname(fileURLToPath(import.meta.url)), "../deploy/standalone/compose.offline.yml");
 const validStandaloneDeploymentReceipt = (receipt) =>
   validLocalDeploymentReceipt(receipt, STANDALONE_PROFILE.networkId);
+/** @param {Buffer} bytes @param {string} label @returns {any} */
+const parseCanonicalSignedJson = (bytes, label) => parseUntrustedSignedJson(bytes, label);
 
 function requireVerifiedInventoryBytes(verified, bytes, expectedSha256, message) {
   const hash = sha256(bytes);
@@ -85,16 +88,6 @@ async function verifiedPackageManifestBytes(bundle, inventory, verified) {
     throw new Error("Installed release manifest changed since its inventory pin or bundle verification");
   }
   return manifestBytes;
-}
-
-function parseCanonicalSignedJson(bytes, label) {
-  const raw = bytes.toString("utf8");
-  const value = JSON.parse(raw);
-  if (!Buffer.from(raw, "utf8").equals(bytes)
-    || (raw !== JSON.stringify(value) && raw !== `${JSON.stringify(value, null, 2)}\n`)) {
-    throw new Error(`${label} must use canonical signed JSON without duplicate keys`);
-  }
-  return value;
 }
 
 async function privateDirectory(path) {
@@ -1339,10 +1332,6 @@ export async function reconcileStandaloneVerifierKeyInsertion(directory, planPat
     return result;
   });
 }
-
-const exactFields = (value, fields) => value !== null && typeof value === "object"
-  && !Array.isArray(value)
-  && Object.keys(value).sort().join("\0") === [...fields].sort().join("\0");
 
 function readStoredGenesisApproval(record) {
   const stored = record.genesisApproval;

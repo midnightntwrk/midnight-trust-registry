@@ -2612,6 +2612,12 @@ Focused negatives run in the light local-ledger preflight lane. This validates
 receipt shape only; it does not authenticate a finalized checkpoint or type
 the remaining wizard orchestration.
 
+The wizard's canonical signed-JSON and exact-field checks now also live in a
+strictly checked pure policy. Direct tests reject duplicate keys, altered
+whitespace, malformed UTF-8, missing fields, and extra fields; the existing
+wizard suite retains detached-signature and setup-binding tests. Parsing
+canonical bytes does not verify the signer or establish an approved genesis.
+
 The fixture browser suite had drifted from the API's required side-effect-free
 proposal preflight and from the admin client's health-first loading. Its tests
 now provide the required fixture port, a health response, and the current
