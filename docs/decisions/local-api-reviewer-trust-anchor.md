@@ -1,6 +1,7 @@
 # Local API Reviewer Trust Anchor
 
-Status: design requirement for #234; not implemented or release-qualified.
+Status: candidate export implemented locally; protected API enforcement and
+release qualification remain open.
 
 The local API runtime plan is signed, and its v3 approval chain verifies
 genesis, committee, and deployment approval signatures. The plan loader
@@ -10,6 +11,13 @@ selected reviewer can therefore be accepted if the startup arguments are
 also replaced. The current chain test intentionally demonstrates this case.
 Signature validity alone is not proof that the reviewer was approved at first
 setup.
+
+The wizard's `export-api-approval-chain` command now emits a private
+`api-trust-anchor.candidate.json` beside the exact chain. It pins that chain's
+SHA-256, the genesis approval digest, both reviewer fingerprints, and the
+source/install/network/genesis/contract identity. This is a review candidate,
+not an API trust anchor: the API does not yet require a protected installed
+copy, and this producer-side export cannot establish independent finality.
 
 For the self-hosted 0.1.0 RC, first setup must produce an operator-protected
 trust-anchor record outside the API runtime plan. It must pin the independently

@@ -167,12 +167,16 @@ they can all run today. The implementation sequence is in
    node scripts/standalone-setup-wizard.mjs export-api-approval-chain /absolute/private/setup
    ```
 
-   The command creates a mode-0600, non-overwriting
-   `api-approval-chain.json` in that private directory. It retains the three
+   The command creates mode-0600, non-overwriting `api-approval-chain.json`
+   and `api-trust-anchor.candidate.json` in that private directory. The chain retains the three
    signed approval documents, signatures, and a minimal observed maintenance
    receipt, but omits wallet material, provider configuration, and the full
-   setup record. Store its printed SHA-256 with the operator evidence. This is
-   an **export, not API-side verification**. The command fails on pending,
+   setup record. The companion candidate pins the chain digest, both reviewer
+   fingerprints, source, install, network, genesis, and contract. Store both
+   printed SHA-256 digests with the operator evidence. The candidate is **not**
+   a trusted runtime anchor until independently reviewed and installed under
+   operator-protected ownership; the current API does not yet enforce it.
+   This is an **export, not API-side verification**. The command fails on pending,
    conflicting, or incomplete readback. It does not establish independent
    finality or qualify a release.
 6. **Start the local API and portals from pinned images.** Sign the API's
