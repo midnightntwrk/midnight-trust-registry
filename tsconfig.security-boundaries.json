@@ -57,6 +57,7 @@
     "scripts/standalone-egress-canary-scripts.mjs",
     "scripts/check-standalone-local-egress.mjs",
     "scripts/check-standalone-api-runtime.mjs",
+    "scripts/check-standalone-api-reads.mjs",
     "scripts/check-standalone-api-egress.mjs",
     "scripts/runtime-healthcheck.mjs",
     "scripts/static-runtime-archive.mjs",

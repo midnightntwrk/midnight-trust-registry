@@ -4,7 +4,7 @@ Issue #229 tracks typed assurance for the self-hosted 0.1.0 installer and
 operator workflow. The existing broad `checkJs` configuration includes the
 wizard and installer but permits implicit `any`; Quality CI now runs it.
 A second, strict no-emit gate runs
-`pnpm run check:security-boundaries-types` for forty-nine script boundaries
+`pnpm run check:security-boundaries-types` for fifty script boundaries
 plus one ambient declaration:
 
 | Checked file | Security decision |
@@ -52,6 +52,7 @@ plus one ambient declaration:
 | `scripts/standalone-egress-canary-scripts.mjs` | One shared source for the offline HTTP and DNS/UDP canary programs used by API and ledger probes. |
 | `scripts/check-standalone-local-egress.mjs` | Checked local positive/negative canary probe command/result handoff and cleanup; a passing probe does not establish full host or actor egress denial. |
 | `scripts/check-standalone-api-runtime.mjs` | Checked Docker API-container topology, pinned image/env/command, approval mount, process identity, and non-public listener decisions. Parsed Docker JSON remains untrusted. |
+| `scripts/check-standalone-api-reads.mjs` | Strictly checked current-read probe input and injected dependencies, with a validated reviewer fingerprint before Docker execution. The packaged API JSON is runtime-validated but remains untrusted; this probe does not independently authenticate finality. |
 | `scripts/check-standalone-api-egress.mjs` | Checked API canary positive/negative control orchestration and cleanup. It does not establish full DNS isolation, independent finality, or actor egress denial. |
 | `scripts/standalone-api-egress-policy.mjs` | Requires live positive controls and confined API routes, and accepts only specified TCP and DNS route-denial results. Docker probe orchestration and broader protocol coverage remain outside this typed decision. |
 | `scripts/standalone-docker-probe-command.mjs` | Strictly typed Docker command result and zero-exit enforcement for the API egress observer. Live Docker/network observation remains outside this helper. |

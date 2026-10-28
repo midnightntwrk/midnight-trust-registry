@@ -88,6 +88,9 @@ test("does not exec when topology or reviewer input is invalid", async () => {
   await assert.rejects(probeStandaloneApiCurrentReads("/bundle", {
     TR_API_REVIEWER_FINGERPRINT: "bad",
   }, { observe: async () => topology, execDocker }), /fingerprint is missing/u);
+  await assert.rejects(probeStandaloneApiCurrentReads("/bundle", {
+    TR_API_REVIEWER_FINGERPRINT: 42,
+  }, { observe: async () => topology, execDocker }), /fingerprint is missing/u);
   assert.equal(execCount, 0);
 });
 
