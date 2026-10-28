@@ -85,7 +85,7 @@ export async function checkStandaloneSecurityVerdict(
   }
   await verifySignature(documentBytes, signatureBytes,
     publicKeyPath, expectedFingerprint, verdict.reviewedAt);
-  const findingsDigest = await digestEvidence(root, verdict.findingsPath);
+  const findingsDigest = (await digestEvidence(root, verdict.findingsPath)).sha256;
   if (findingsDigest !== verdict.findingsSha256
     || findingsDigest !== manifest.cases.S01.evidence.find((item) =>
       item.path === verdict.findingsPath)?.sha256) {

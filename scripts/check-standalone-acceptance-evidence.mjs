@@ -96,10 +96,16 @@ export async function digestEvidence(root, path) {
       || after.mtimeNs !== before.mtimeNs || after.ctimeNs !== before.ctimeNs) {
       throw new Error(`Evidence changed during read: ${path}`);
     }
-    return hash.digest("hex");
+    return { sha256: hash.digest("hex"), fileId: `${before.dev}:${before.ino}` };
   } finally {
     await file.close();
   }
+}
+
+/** @param {Set<string>} seenFiles @param {string} fileId @param {string} path */
+export function recordEvidenceFileIdentity(seenFiles, fileId, path) {
+  if (seenFiles.has(fileId)) throw new Error(`Evidence reused across cases: ${path}`);
+  seenFiles.add(fileId);
 }
 
 /** @param {string} root */
@@ -275,7 +281,7 @@ export async function attachStandaloneAcceptanceEvidence(root, expectedSourceRev
       >= MAX_RAW_EVIDENCE_PER_CASE) {
       throw new Error("Acceptance case has reached its raw evidence limit");
     }
-    const item = { path, sha256: await digestEvidence(root, path) };
+    const item = { path, sha256: (await digestEvidence(root, path)).sha256 };
     manifest.cases[caseId].evidence.push(item);
     await checkStandaloneAcceptanceEvidence(root, manifest, expectedSourceRevision);
     const unchanged = await lstat(manifestPath);
@@ -364,7 +370,7 @@ export async function decideStandaloneAcceptanceCase(
     try { await decisionsDirectory.sync(); } finally { await decisionsDirectory.close(); }
     const parentDirectory = await open(root, constants.O_RDONLY);
     try { await parentDirectory.sync(); } finally { await parentDirectory.close(); }
-    entry.evidence.push({ path, sha256: await digestEvidence(root, path) });
+    entry.evidence.push({ path, sha256: (await digestEvidence(root, path)).sha256 });
     entry.status = status;
     await checkStandaloneAcceptanceEvidence(root, manifest, expectedSourceRevision);
     const unchanged = await lstat(manifestPath);
@@ -416,6 +422,7 @@ export async function checkStandaloneAcceptanceEvidence(root, manifest, expected
   /** @type {Record<string, boolean>} */
   const decisionBackedCases = {};
   const seen = new Set();
+  const seenFiles = new Set();
   for (const id of CASES) {
     const entry = candidate.cases[id];
     if (!exactKeys(entry, ["status", "evidence"])
@@ -433,8 +440,10 @@ export async function checkStandaloneAcceptanceEvidence(root, manifest, expected
       }
       const identity = item.path.normalize("NFC").toLowerCase();
       if (seen.has(identity)) throw new Error(`Evidence reused across cases: ${item.path}`);
+      const evidence = await digestEvidence(root, item.path);
+      recordEvidenceFileIdentity(seenFiles, evidence.fileId, item.path);
       seen.add(identity);
-      if (await digestEvidence(root, item.path) !== item.sha256) {
+      if (evidence.sha256 !== item.sha256) {
         throw new Error(`${id} evidence SHA-256 mismatch: ${item.path}`);
       }
       if (isDecisionPath(item.path)) {
