@@ -19,6 +19,7 @@
     "scripts/local-ledger-insert-verifier-key.mjs",
     "scripts/local-deployment-plan-policy.mjs",
     "scripts/local-verifier-key-insertion-plan-policy.mjs",
+    "scripts/scan-local-deployment-attempt.mjs",
     "scripts/standalone-deployment-receipt-policy.mjs",
     "scripts/standalone-signed-document-policy.mjs",
     "scripts/package-contents-policy.mjs",

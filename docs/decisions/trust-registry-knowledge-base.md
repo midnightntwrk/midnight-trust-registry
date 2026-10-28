@@ -3103,3 +3103,9 @@ the compiled circuit list. Filesystem names cannot contain NUL, but manifest
 keys are parsed JSON; the same explicit comparison now covers both. Hash,
 source, package, and finalized readback checks remain separate. Passing this
 preflight does not establish an independently authenticated deployment.
+
+The read-only ambiguous-deployment scanner now uses the same exact-field
+policy for its reservation input and joins the strict checked-JS gate. A
+delimiter-colliding reservation is rejected before any node request. The
+scanner still observes node/indexer data only; it cannot authenticate
+finality independently or release a quarantined deployment attempt.

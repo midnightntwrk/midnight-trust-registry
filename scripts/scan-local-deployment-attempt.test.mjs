@@ -79,6 +79,18 @@ test("scan brackets the attempt with a node-pinned contiguous finalized range", 
   assert.equal(report.scanned.endHash, hash(12));
 });
 
+test("scan rejects a delimiter-colliding reservation before querying the node", async () => {
+  const f = fixture();
+  const { networkId, registryIdCommitment, ...rest } = f.reservation;
+  const colliding = { ...rest, "networkId\u0000registryIdCommitment": networkId };
+  let requests = 0;
+  await assert.rejects(scanLocalDeploymentAttempt(f.plan, colliding, 10, async () => {
+    requests += 1;
+    throw new Error("unexpected network request");
+  }), /matching local plan, reservation/u);
+  assert.equal(requests, 0);
+});
+
 test("scan reports public deployment candidates without inferring their constructor state", async () => {
   const f = fixture();
   f.blocks[1].transactions.push({
