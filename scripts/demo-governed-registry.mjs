@@ -83,6 +83,7 @@ import { runHistoricalPolicyHttpChecks } from "./governed-demo-historical-http.m
 import { runMaintainerSafetyScenarios } from "./governed-demo-maintainer-safety.mjs";
 import { runGovernedRecognitionFlow } from "./governed-demo-recognition-flow.mjs";
 import { runGovernedPolicyRecovery } from "./governed-demo-policy-recovery.mjs";
+import { runPublicLookupSafety } from "./governed-demo-public-lookup-safety.mjs";
 import {
   runHistoricalPolicyClientChecks, runOldPolicyIssuerReplay, runOldPolicyRecognitionReplay,
   runRevisedPolicyRoleReplays,
@@ -1405,53 +1406,7 @@ try {
     assert.equal(result.observedResult, result.expectedResult);
     return result;
   });
-  await expectHttp(await fetch(
-    `${base}/v1/governed/issuer/${recognition.recognitionId}/actions/approve`,
-  ), 404);
-  await adversarialMatrix.expectHttp(await fetch(`${base}/v1/authorizations/resolve`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      role: "issuer", subjectDid: issuer.subjectDid,
-      resourceId: createIssuerScenarioFixture("wrong-scope").resourceId,
-    }),
-  }), {
-    id: "issuer-wrong-resource-api",
-    invariant: "The public lookup cannot substitute another issuer credential-family scope",
-    boundary: "api",
-    status: 404,
-    problemType: "authorization-not-found",
-  });
-  await adversarialMatrix.expectHttp(await fetch(`${base}/v1/authorizations/resolve`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      role: "verifier", subjectDid: verifier.subjectDid,
-      resourceId: createVerifierScenarioFixture("wrong-scope").scopeResourceId,
-    }),
-  }), {
-    id: "verifier-wrong-resource-api",
-    invariant: "The public lookup cannot substitute another verifier request-profile scope",
-    boundary: "api",
-    status: 404,
-    problemType: "authorization-not-found",
-  });
-  await adversarialMatrix.expectHttp(await fetch(`${base}/v1/recognitions/resolve`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      recognizedAuthorityDid: recognition.recognizedAuthorityDid,
-      recognizedRegistryId: "registry:external:wrong:v1",
-      scopeResourceType: recognition.scopeResourceType,
-      scopeResourceId: recognition.scopeResourceId,
-    }),
-  }), {
-    id: "recognition-wrong-external-registry-api",
-    invariant: "The public lookup cannot substitute a different recognized external registry",
-    boundary: "api",
-    status: 404,
-    problemType: "recognition-not-found",
-  });
+  await runPublicLookupSafety(adversarialMatrix, { base, issuer, verifier, recognition, expectHttp });
   const { issuerBundle, verifierBundle, recognitionBundle, vcConsumer, verifierConsumer,
     trustedRecognitionEpoch } = await runGovernedConsumerEvidence(adversarialMatrix, {
     base, client, harness, issuer, verifier, recognition, issuerVpFixture, verifierVpFixture,

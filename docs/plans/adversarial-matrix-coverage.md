@@ -83,6 +83,11 @@ independent counterparts are five named cases in
 `check:adversarial-parity -- --require-full` verifies 198/198 case-ID parity
 after this extraction. These tests remain simulator and fixture evidence, not
 deployed local-ledger recovery or an independent finality check.
+The public issuer/verifier resource and external-recognition registry lookup
+rejections now run through `scripts/governed-demo-public-lookup-safety.mjs`.
+Their independent named cases remain in `scripts/adversarial-api.test.mjs`
+and `scripts/adversarial-recognition.test.mjs`; the extraction changes no
+public API or deployed-ledger claim.
 
 At signed local source `bbb2c456a93aa035ac482d67f945e8cddf6dfb7c`, the
 private archive `artifacts/adversarial-reports/cases-bbb2c456a93aa035ac482d67f945e8cddf6dfb7c.json`
