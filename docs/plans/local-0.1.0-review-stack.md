@@ -103,6 +103,22 @@ its exact published head before merge; these local checks are not
 deployed standalone actor evidence, current-head PR CI, or a disposition of
 #238's red external Opengrep check.
 
+The next local, unpublished acceptance-evidence follow-on is
+`codex/trust-registry-acceptance-decision-chain`, based on the complete
+`codex/trust-registry-review-group-e2e-knowledge` tip `c7663701`.
+Signed/DCO commit `9c95779e` makes the operator decision-chain validator
+reject malformed reviewer identifiers and reason codes, noncanonical UTC
+timestamps, and backward-moving decision times. It preserves the explicit
+legacy first-decision migration path. The 15 focused acceptance tests,
+documentation check, audit, and disposable-checkout `./run.sh --light`
+(20/20 tasks, 198/198 adversarial parity, packed consumer smoke) passed.
+A read-only Codex review found no actionable code regression; its sandbox
+could not run temporary-file tests, which passed in the writable checkout.
+This small follow-on should be grouped with the next coherent acceptance
+hardening publication rather than opened as a standalone PR. It does not
+authenticate operator identity or promote fixture/pre-deployment evidence to
+a deployed standalone verdict. No branch here has push or merge approval.
+
 On 2026-10-28, read-only Codex CLI reviewed each complete restacked group
 against its local parent (`cc7c081b` to `67212c1e`, `67212c1e` to
 `a2d4c2a2`, and `a2d4c2a2` to `506537e0`). No actionable regression was
