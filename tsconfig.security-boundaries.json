@@ -45,6 +45,7 @@
     "scripts/standalone-journey-prerequisites-policy.mjs",
     "scripts/standalone-qualification-scope-policy.mjs",
     "scripts/standalone-current-query-process-policy.mjs",
+    "scripts/standalone-current-query-report-policy.mjs",
     "scripts/standalone-private-file-bytes.mjs",
     "scripts/standalone-reviewer-signature.mjs",
     "scripts/standalone-image-reference.mjs",

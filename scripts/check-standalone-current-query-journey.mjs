@@ -7,65 +7,11 @@ import { assessStandaloneJourneyPrerequisites } from "./check-standalone-journey
 import { observeStandaloneApiEgress } from "./check-standalone-api-egress.mjs";
 import { probeStandaloneApiCurrentReads } from "./check-standalone-api-reads.mjs";
 import { standaloneSetupStatus } from "./standalone-setup-wizard.mjs";
-import { assertCurrentQueryProcessIdentity } from "./standalone-current-query-process-policy.mjs";
+import { checkedCurrentRead, checkedCurrentQueryEgress } from "./standalone-current-query-report-policy.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
-const BLOCK_HASH = /^0x[0-9a-f]{64}$/u;
 const ROLES = ["issuer", "verifier", "auditor", "recognition"];
 const AUTHORIZATION_ROLES = ["issuer", "verifier", "auditor"];
-
-function checkedRead(report, status) {
-  assertCurrentQueryProcessIdentity(report);
-  if (report?.format !== "tr-standalone-api-current-read-probe-v4"
-    || report.releaseQualified !== false || report.sourceRevision !== status.sourceRevision
-    || report.routeReadback !== "same-container-signed-plan-current-only"
-    || !SHA256.test(report.planSha256 ?? "")
-    || !SHA256.test(report.installInventorySha256 ?? "")
-    || !BLOCK_HASH.test(report.planContractAddress ?? "")
-    || /^0x0{64}$/u.test(report.planContractAddress)
-    || !BLOCK_HASH.test(report.planExpectedGenesisHash ?? "")
-    || /^0x0{64}$/u.test(report.planExpectedGenesisHash)
-    || !SHA256.test(report.selectedStateSha256 ?? "")
-    || !BLOCK_HASH.test(report.sourceFinalizedBlockHash ?? "")
-    || /^0x0{64}$/u.test(report.sourceFinalizedBlockHash)
-    || typeof report.registryId !== "string" || report.registryId.length === 0
-    || typeof report.currentEpochId !== "string" || report.currentEpochId.length === 0
-    || typeof report.apiContainerId !== "string" || report.apiContainerId.length === 0
-    || typeof report.networkId !== "string" || report.networkId.length === 0
-    || !ROLES.every((role) => Number.isSafeInteger(report.counts?.[role])
-      && report.counts[role] > 0
-      && Number.isSafeInteger(report.resolvedLookups?.[role])
-      && report.resolvedLookups[role] > 0
-      && report.resolvedLookups[role] <= report.counts[role])
-    || !AUTHORIZATION_ROLES.every((role) => Number.isSafeInteger(report.ambiguousLookups?.[role])
-      && report.ambiguousLookups[role] >= 0
-      && report.ambiguousLookups[role] <= report.counts[role])) {
-    throw new Error("Live current-query readback is incomplete or has no resolved actor role");
-  }
-  if (report.planContractAddress !== status.deployedContractAddress
-    || report.planExpectedGenesisHash !== status.approvedGenesisHash
-    || report.networkId !== status.stackNetworkId
-    || report.installInventorySha256 !== status.installInventorySha256) {
-    throw new Error("Live signed API runtime differs from the approved wizard install, deployment, genesis, or network");
-  }
-  return report;
-}
-
-function checkedEgress(report, first) {
-  if (report?.kind !== "standalone-api-egress-observation"
-    || report.releaseQualified !== false
-    || report.sourceRevision !== first.sourceRevision
-    || report.apiContainerId !== first.apiContainerId
-    || report.networkId !== first.networkId
-    || report.bridgePositiveControlReachable !== true
-    || report.bridgeDnsCanaryReachable !== true
-    || report.apiCanaryConnectionDenied !== true
-    || report.apiBridgeDnsRouteDenied !== true
-    || report.apiRoutesConfinedToLedgerSubnet !== true) {
-    throw new Error("Live API egress probe did not preserve the pinned runtime identity and denial");
-  }
-  return report;
-}
 
 /** A real-runtime current-query slice, never a governed-write or release verdict. */
 export async function observeStandaloneCurrentQueryJourney(setupDirectory, bundle, env = process.env,
@@ -84,9 +30,9 @@ export async function observeStandaloneCurrentQueryJourney(setupDirectory, bundl
 
   const read = dependencies.read ?? probeStandaloneApiCurrentReads;
   const egress = dependencies.egress ?? observeStandaloneApiEgress;
-  const first = checkedRead(await read(bundle, env), status);
-  const denial = checkedEgress(await egress(bundle, env), first);
-  const second = checkedRead(await read(bundle, env), status);
+  const first = checkedCurrentRead(await read(bundle, env), status);
+  checkedCurrentQueryEgress(await egress(bundle, env), first);
+  const second = checkedCurrentRead(await read(bundle, env), status);
   if (second.apiContainerId !== first.apiContainerId
     || second.apiStartedAt !== first.apiStartedAt
     || second.apiRestartCount !== first.apiRestartCount

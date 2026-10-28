@@ -4,7 +4,8 @@ Issue #229 tracks typed assurance for the self-hosted 0.1.0 installer and
 operator workflow. The existing broad `checkJs` configuration includes the
 wizard and installer but permits implicit `any`; Quality CI now runs it.
 A second, strict no-emit gate runs
-`pnpm run check:security-boundaries-types` for forty-eight privileged boundaries:
+`pnpm run check:security-boundaries-types` for forty-nine script boundaries
+plus one ambient declaration:
 
 | Checked file | Security decision |
 | --- | --- |
@@ -40,6 +41,7 @@ A second, strict no-emit gate runs
 | `scripts/standalone-journey-prerequisites-policy.mjs` | Fail-closed wizard-status gate decisions before an offline actor run. |
 | `scripts/standalone-qualification-scope-policy.mjs` | Rejects current-query and API-restart child reports that claim unobserved actor, finality, host/browser egress, deployment binding, or release qualification. |
 | `scripts/standalone-current-query-process-policy.mjs` | Requires a valid container ID, process start time, and restart count before the current-query observer compares reads around egress. |
+| `scripts/standalone-current-query-report-policy.mjs` | Validates the signed-plan current-read report, wizard deployment identity, actor-role counts, and API egress result before combining two live observations. The orchestrator and underlying Docker probes remain separate runtime boundaries. |
 | `scripts/standalone-private-file-bytes.mjs` | Bounded, no-follow reads of private setup and approval evidence with inode and ownership continuity. |
 | `scripts/standalone-image-reference.mjs` | Shared pinned OCI reference syntax for installer and review policy. |
 | `scripts/standalone-compose-image-policy.mjs` | Exact base Compose project, role map, and digest-pinned image decisions before inventory comparison. It does not validate overlays or deployed topology. |
@@ -76,7 +78,7 @@ inventory, not a waiver of the release security review.
 | 3 | Installer runtime observations | Bundle generation and Docker image-load I/O now join the strict gate, alongside bundle verification, base Compose/image-inventory mappings, static portal archive, and runtime healthcheck decisions. Docker daemon identity and actual offline behavior still require independent deployment evidence; checked-JS is not that evidence. |
 | 4 | `scripts/check-helm-image-mapping.mjs`, `scripts/observe-helm-runtime.mjs` | Optional Kubernetes mapping and observations; Helm is not a 0.1.0 RC gate. |
 | 5 | Runtime egress observations beyond the dedicated API/ledger probes | Ledger topology, internal canary, disposable local positive/negative egress, API runtime identity, and API route probes join the strict gate. Host, wallet, browser, backup, and actual actor egress still require measured deployed evidence; checked-JS does not prove them. |
-| 6 | `scripts/observe-standalone-qualification.mjs`, `scripts/check-standalone-current-query-journey.mjs`, `scripts/check-standalone-api-restart.mjs` | The aggregate's scope decision and current-query process-identity decision are strictly checked, but Docker/runtime probe I/O and report identity assembly remain non-strict. Keep exact-source, install, deployment, and container identity negatives while typing the remaining shells. |
+| 6 | `scripts/observe-standalone-qualification.mjs`, `scripts/check-standalone-current-query-journey.mjs`, `scripts/check-standalone-api-restart.mjs` | The aggregate's scope decision and current-query process/report decisions are strictly checked, but Docker/runtime probe I/O and report assembly remain non-strict. Keep exact-source, install, deployment, and container identity negatives while typing the remaining shells. |
 
 The standalone acceptance inventory checker and its manifest-shape and
 decision-chain policies now join the strict gate. Runtime tests still check
