@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { networkInterfaces } from "node:os";
 
-import { test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 import { installOfflineBrowserAudit } from "./offline-browser-fixture.mjs";
 
@@ -44,6 +44,36 @@ test("loopback redirect cannot reach a non-allowlisted listener", async ({ page 
     assert.throws(assertNoExternalRequests, new RegExp(externalAddress.replaceAll(".", "\\."), "u"));
   } finally {
     if (local.listening) await close(local);
+    await close(external);
+  }
+});
+
+test("non-loopback WebSocket cannot reach a reachable listener", async ({ page }) => {
+  const externalAddress = Object.values(networkInterfaces()).flat()
+    .find((address) => address?.family === "IPv4" && !address.internal)?.address;
+  test.skip(!externalAddress, "The live WebSocket probe requires a non-loopback IPv4 interface");
+  let upgrades = 0;
+  const external = createServer((_request, response) => response.end("reachable"));
+  external.on("upgrade", (_request, socket) => {
+    upgrades += 1;
+    socket.destroy();
+  });
+  try {
+    const port = await listen(external, "0.0.0.0");
+    assert.equal((await fetch(`http://${externalAddress}:${port}/preflight`)).status, 200);
+    const assertNoExternalRequests = await installOfflineBrowserAudit(page.context());
+    await page.evaluate((url) => { new WebSocket(url); }, `ws://${externalAddress}:${port}/probe`);
+    await expect.poll(() => {
+      try {
+        assertNoExternalRequests();
+        return false;
+      } catch {
+        return true;
+      }
+    }, { timeout: 5000 }).toBe(true);
+    assert.equal(upgrades, 0);
+    assert.throws(assertNoExternalRequests, new RegExp(externalAddress.replaceAll(".", "\\."), "u"));
+  } finally {
     await close(external);
   }
 });

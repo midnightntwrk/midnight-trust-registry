@@ -71,6 +71,10 @@ redirects are denied even when their destination is loopback, so an allowed
 fixture response cannot trigger an unguarded follow-up request. That
 guard covers only requests visible to this fixture browser context; it does
 not prove host, wallet, prover, container, or deployed-browser egress denial.
+The fixture lane includes negative probes for a loopback HTTP redirect to a
+reachable non-loopback listener and a direct WebSocket attempt to that
+listener. Both must be blocked and recorded by the browser audit. They do
+not replace the deployed `O01` egress-denied actor run.
 See the
 [demo quickstart](quickstart.md) for individual commands and expected behavior.
 
