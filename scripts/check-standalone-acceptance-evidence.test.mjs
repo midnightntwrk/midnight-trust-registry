@@ -479,6 +479,31 @@ test("raw evidence capacity does not prevent a later verdict reversal", async ()
   }
 });
 
+test("rejects Unicode aliases that resolve to one evidence file", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "tr-acceptance-unicode-alias-"));
+  try {
+    const bytes = "operator receipt\n";
+    await writeFile(join(root, "\u03c3.log"), bytes);
+    const alias = await lstat(join(root, "\u03c2.log")).catch(() => null);
+    const original = await lstat(join(root, "\u03c3.log"));
+    if (!alias || alias.dev !== original.dev || alias.ino !== original.ino) {
+      t.skip("filesystem does not fold Greek sigma and final sigma to one file");
+      return;
+    }
+    const candidate = manifest();
+    candidate.cases.L01.evidence = [{ path: "\u03c3.log", sha256: sha(bytes) }];
+    candidate.cases.S01.evidence = [{ path: "\u03c2.log", sha256: sha(bytes) }];
+    await assert.rejects(checkStandaloneAcceptanceEvidence(root, candidate), /reused/u);
+    candidate.cases.S01.evidence = [];
+    await writeFile(join(root, "acceptance.json"), `${JSON.stringify(candidate)}\n`, { mode: 0o600 });
+    await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
+      "S01", "\u03c2.log"), /reused/u);
+    assert.deepEqual(JSON.parse(await readFile(join(root, "acceptance.json"), "utf8")), candidate);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("a hard-linked decision cannot be attached as raw case evidence", async () => {
   const root = await mkdtemp(join(tmpdir(), "tr-acceptance-link-"));
   try {
@@ -506,6 +531,21 @@ test("validator rejects decision-only passes and unreadable oversized manifests"
     candidate.cases.A01.evidence = [{ path: `receipt-${"x".repeat(1024 * 1024)}.log`,
       sha256: "f".repeat(64) }];
     await assert.rejects(checkStandaloneAcceptanceEvidence(root, candidate), /readable size limit/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects hard-link aliases of one evidence file", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-acceptance-hardlink-alias-"));
+  try {
+    const bytes = "operator receipt\n";
+    await writeFile(join(root, "first.log"), bytes);
+    await link(join(root, "first.log"), join(root, "second.log"));
+    const candidate = manifest();
+    candidate.cases.L01.evidence = [{ path: "first.log", sha256: sha(bytes) }];
+    candidate.cases.S01.evidence = [{ path: "second.log", sha256: sha(bytes) }];
+    await assert.rejects(checkStandaloneAcceptanceEvidence(root, candidate), /bounded regular file/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
