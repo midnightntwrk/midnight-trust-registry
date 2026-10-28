@@ -195,6 +195,19 @@ restart and restore, VC-owned live status authority, and independent review
 remain outstanding. Preserve generated Compact keys, verified install bundles,
 private setup evidence, and ledger volumes while preparing those runs.
 
+On 2026-10-28, the read-only journey-prerequisite checker was run against the
+retained private `wizard-b23` setup at its recorded source revision
+`6a5b2529baf39e0a6ac2b63be2fa4a848fec2175`. It confirmed that the
+install was staged and the dedicated pre-deployment stack observed, but
+returned exit code 2 with `genesisApproved` as the first missing gate.
+Release-roster approval, deployment/readback, verifier-key reconciliation,
+and maintenance transition were also absent. This setup is older than the
+unpublished review stack and is not a current-source qualification candidate.
+Do not rerun deployment against it or use its node-reported genesis proposal
+as independent approval. The next release run needs a fresh exact-source
+bundle and human-signed real genesis and roster evidence before any actor E2E
+case can begin.
+
 Group L's local wizard and journey-prerequisite tests passed 120/120 after
 its retained-evidence checks. Strict security-script typing, docs checks,
 and dependency audit passed. A read-only Codex review identified two status
