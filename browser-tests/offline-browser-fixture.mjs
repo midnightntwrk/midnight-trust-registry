@@ -31,9 +31,17 @@ export async function installOfflineBrowserAudit(context) {
     if (!isLocalBrowserUrl(url)) externalOrigins.add(requestOrigin(url));
   };
   context.on("request", (request) => record(request.url()));
-  await context.route("**/*", (route) => {
+  await context.route("**/*", async (route) => {
     const url = route.request().url();
-    if (isLocalBrowserUrl(url)) return route.continue();
+    if (isLocalBrowserUrl(url)) {
+      const response = await route.fetch({ maxRedirects: 0 });
+      if (response.status() >= 300 && response.status() < 400) {
+        const location = response.headers().location;
+        if (location) record(new URL(location, url).href);
+        return route.fulfill({ status: 403, body: "Fixture browser redirects are disabled" });
+      }
+      return route.fulfill({ response });
+    }
     record(url);
     return route.abort("blockedbyclient");
   });
