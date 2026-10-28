@@ -85,7 +85,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     console.log(JSON.stringify(await observeStandaloneCurrentQueryJourney(
       process.argv[2], process.argv[3]), null, 2));
   } catch (error) {
-    console.error(`Standalone current-query journey inconclusive: ${error.message}`);
+    console.error(`Standalone current-query journey inconclusive: ${error instanceof Error ? error.message : "unknown error"}`);
     process.exitCode = 1;
   }
 }

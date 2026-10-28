@@ -18,7 +18,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     console.log(JSON.stringify(report, null, 2));
     if (!report.ledgerPrerequisitesObserved) process.exitCode = 2;
   } catch (error) {
-    console.error(`Standalone journey prerequisite check failed: ${error.message}`);
+    console.error(`Standalone journey prerequisite check failed: ${error instanceof Error ? error.message : "unknown error"}`);
     process.exitCode = 1;
   }
 }
