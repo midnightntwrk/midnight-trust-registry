@@ -17,7 +17,7 @@ above the live draft #240 head `8dc05ec7`. The original unpublished branch
 | Local operator core | `codex/trust-registry-review-live240-core` (`f7d2efa9`) | Draft #240 | 92 topology tests, docs check, audit. |
 | Qualification and recovery | `codex/trust-registry-review-live240-qualification` (`caaec744`) | Local operator core | 97 topology tests, docs check, audit. |
 | Adoption and evidence | `codex/trust-registry-review-live240-adoption` (`d8179c82`) | Qualification and recovery | 111 topology tests, docs check, audit; merge retained the inode guard and private-file fixture requirements from live #240. |
-| Final security and E2E hardening | `codex/trust-registry-review-live240-final` (`364f936f`; validated code at parent `78d0c624`) | Adoption and evidence | 121 topology tests, 290 API unit tests, typecheck, docs check, audit, four simulator-backed membership journeys, CLI/API/UI fixture smoke, and 11 Playwright fixture-browser cases at the validated parent. The tip only updates this handoff document. |
+| Final security and E2E hardening | `codex/trust-registry-review-live240-final` (read the live tip; full-suite checkpoint `78d0c624`) | Adoption and evidence | 121 topology tests, 290 API unit tests, typecheck, docs check, audit, four simulator-backed membership journeys, CLI/API/UI fixture smoke, and 11 Playwright fixture-browser cases at the checkpoint. Later commits clarify this handoff and reject portable archive-path aliases; the manifest/publish-tarball tests, documentation check, and audit passed after that code change. |
 
 The validation above is local and scoped, not exact-head CI or independent
 review. The final fixture E2E lane is not a deployed-ledger actor journey.
