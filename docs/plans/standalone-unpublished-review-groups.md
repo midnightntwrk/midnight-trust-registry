@@ -41,7 +41,7 @@ Issue #241 is not a waiver for #237, #232, or the operator release gates.
 Two further **unpublished** signed/DCO commits form a direct local chain above
 the final candidate and do not change published PR heads:
 
-| Local branch | Head | Scope and evidence |
+| Local branch | Code checkpoint | Scope and evidence |
 | --- | --- | --- |
 | `codex/trust-registry-exact-fields-boundaries` | `e1e035b1` | Delimiter-safe genesis pin/review, deployment/insertion plans, signed wizard approvals and key insertions, and release committee checks. Wizard/packet 111/111, focused policy 10/10, strict typecheck, docs, and audit passed. |
 | `codex/trust-registry-profile-field-validation` | `7ef4ebea` | Internal set-equality helper for network-profile and verifier-key catalogs. Package typecheck and lint, 34 focused tests, docs, and audit passed. |
