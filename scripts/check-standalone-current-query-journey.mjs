@@ -7,11 +7,9 @@ import { assessStandaloneJourneyPrerequisites } from "./check-standalone-journey
 import { observeStandaloneApiEgress } from "./check-standalone-api-egress.mjs";
 import { probeStandaloneApiCurrentReads } from "./check-standalone-api-reads.mjs";
 import { standaloneSetupStatus } from "./standalone-setup-wizard.mjs";
-import { checkedCurrentRead, checkedCurrentQueryEgress } from "./standalone-current-query-report-policy.mjs";
+import { assertStableCurrentReads, checkedCurrentRead, checkedCurrentQueryEgress } from "./standalone-current-query-report-policy.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
-const ROLES = ["issuer", "verifier", "auditor", "recognition"];
-const AUTHORIZATION_ROLES = ["issuer", "verifier", "auditor"];
 
 /** A real-runtime current-query slice, never a governed-write or release verdict. */
 export async function observeStandaloneCurrentQueryJourney(setupDirectory, bundle, env = process.env,
@@ -33,23 +31,7 @@ export async function observeStandaloneCurrentQueryJourney(setupDirectory, bundl
   const first = checkedCurrentRead(await read(bundle, env), status);
   checkedCurrentQueryEgress(await egress(bundle, env), first);
   const second = checkedCurrentRead(await read(bundle, env), status);
-  if (second.apiContainerId !== first.apiContainerId
-    || second.apiStartedAt !== first.apiStartedAt
-    || second.apiRestartCount !== first.apiRestartCount
-    || second.networkId !== first.networkId
-    || second.installInventorySha256 !== first.installInventorySha256
-    || second.planSha256 !== first.planSha256
-    || second.planContractAddress !== first.planContractAddress
-    || second.planExpectedGenesisHash !== first.planExpectedGenesisHash
-    || second.selectedStateSha256 !== first.selectedStateSha256
-    || second.registryId !== first.registryId
-    || second.currentEpochId !== first.currentEpochId
-    || ROLES.some((role) => second.counts[role] !== first.counts[role]
-      || second.resolvedLookups[role] !== first.resolvedLookups[role])
-    || AUTHORIZATION_ROLES.some((role) =>
-      second.ambiguousLookups[role] !== first.ambiguousLookups[role])) {
-    throw new Error("Current-query install, deployment, signed plan, or selected actor reads changed during egress probe");
-  }
+  assertStableCurrentReads(first, second);
   return {
     format: "tr-standalone-current-query-journey-v2",
     sourceRevision: status.sourceRevision,
