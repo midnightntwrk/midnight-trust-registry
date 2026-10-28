@@ -4,6 +4,29 @@ Status: local planning checkpoint, not publication or release approval.
 The first 0.1.0 RC targets self-hosted local/offline runtime only. Preview,
 Preprod, Mainnet, and Kubernetes are not RC qualification targets.
 
+## Local live-#240 review stack (2026-10-28)
+
+Four **unpublished** signed/DCO branch heads now form a direct ancestry chain
+above the live draft #240 head `8dc05ec7`. The original unpublished branch
+`codex/trust-registry-unpublished-stack-restack` remains untouched at
+`aee87db2`; the final review branch had the same tracked tree at
+`78d0c624` before this documentation update. No new PR was opened.
+
+| Proposed review PR | Local branch and tested head | Parent | Scope and local validation |
+| --- | --- | --- | --- |
+| Local operator core | `codex/trust-registry-review-live240-core` (`f7d2efa9`) | Draft #240 | 92 topology tests, docs check, audit. |
+| Qualification and recovery | `codex/trust-registry-review-live240-qualification` (`caaec744`) | Local operator core | 97 topology tests, docs check, audit. |
+| Adoption and evidence | `codex/trust-registry-review-live240-adoption` (`d8179c82`) | Qualification and recovery | 111 topology tests, docs check, audit; merge retained the inode guard and private-file fixture requirements from live #240. |
+| Final security and E2E hardening | `codex/trust-registry-review-live240-final` (`78d0c624`) | Adoption and evidence | 121 topology tests, 290 API unit tests, typecheck, docs check, audit, four simulator-backed membership journeys, CLI/API/UI fixture smoke, and 11 Playwright fixture-browser cases. |
+
+The validation above is local and scoped, not exact-head CI or independent
+review. The final fixture E2E lane is not a deployed-ledger actor journey.
+Before publishing, confirm the live parent heads, run any missing full-light
+and package checks without destroying artifact-bearing checkouts, obtain
+independent exact-head review, and retain #238's external scanner failure as
+an unresolved security disposition under #237/#232. Do not merge or promote
+#198 on the strength of this stack.
+
 ## Why Group the Work
 
 The clean local restack at `7af8e72d04ca3799658aaa90d87b133542711494`
