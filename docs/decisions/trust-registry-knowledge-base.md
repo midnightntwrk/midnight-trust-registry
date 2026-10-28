@@ -2905,6 +2905,18 @@ the older one under the former `Date.parse` sort. These tests narrow #179's
 historical evidence-selection risk but use synthetic operator snapshots, not
 an authenticated local-ledger history or deployed actor E2E evidence.
 
+## Application status-attestation time precision
+
+The DID-signed application status-attestation verifier compares the complete
+RFC3339 instant for the one-minute future limit, five-minute observation age,
+expiry, and five-minute signed lifetime. A signature just beyond a boundary
+cannot enter by losing fractional digits in `Date.parse`; an exactly
+five-minute fractional window remains valid. The integer-millisecond
+`validUntilMs` returned to the VP verifier is conservatively rounded down.
+The focused tests re-sign fixture statements with the local test key. They
+do not supply a VC-owned live status adapter, independent finality, or a
+deployed offline actor journey; those release gates remain open.
+
 ## Policy replay isolation and current E2E boundary
 
 The unpublished local policy-replay slices extracted old-policy signer checks

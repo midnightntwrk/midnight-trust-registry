@@ -3,7 +3,14 @@ import { Buffer } from "node:buffer";
 import { resolveMidnightDIDMethodBinding } from "@midnight-ntwrk/credential-did-midnight";
 import { parseMidnightDIDString, type MidnightDIDResolverInterface } from "@midnight-ntwrk/midnight-did";
 import type { JubjubDigest } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
-import { canonicalizeJson, IssuerStatusPolicyBindingSchema, sha256Hex, type IssuerStatusPolicyBinding } from "@midnight-ntwrk/trust-registry-domain";
+import {
+  canonicalizeJson,
+  compareRfc3339Instants,
+  isRfc3339DurationWithinSeconds,
+  IssuerStatusPolicyBindingSchema,
+  sha256Hex,
+  type IssuerStatusPolicyBinding,
+} from "@midnight-ntwrk/trust-registry-domain";
 import { z } from "zod";
 
 import type { ApplicationVpMaterial } from "./application-vp-verifier.js";
@@ -106,13 +113,14 @@ export function createAttestedApplicationStatusSource(input: {
       || !statement.active) {
       throw new Error("Application status attestation is not active or does not match the pinned credential");
     }
-    const observedAtMs = Date.parse(statement.observedAt);
+    const evaluatedAt = new Date(evaluatedAtMs).toISOString();
+    const oldestObservation = new Date(evaluatedAtMs - 5 * 60_000).toISOString();
+    const latestObservation = new Date(evaluatedAtMs + 60_000).toISOString();
     const expiresAtMs = Date.parse(statement.expiresAt);
-    if (observedAtMs > evaluatedAtMs + 60_000
-      || observedAtMs < evaluatedAtMs - 5 * 60_000
-      || expiresAtMs <= evaluatedAtMs
-      || expiresAtMs <= observedAtMs
-      || expiresAtMs - observedAtMs > 5 * 60_000) {
+    if (compareRfc3339Instants(statement.observedAt, latestObservation) > 0
+      || compareRfc3339Instants(statement.observedAt, oldestObservation) < 0
+      || compareRfc3339Instants(statement.expiresAt, evaluatedAt) <= 0
+      || !isRfc3339DurationWithinSeconds(statement.observedAt, statement.expiresAt, 5 * 60)) {
       throw new Error("Application status attestation is not current");
     }
     const authorityDid = methodId.slice(0, methodId.indexOf("#"));
