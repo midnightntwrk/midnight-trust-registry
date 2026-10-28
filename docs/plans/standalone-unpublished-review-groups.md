@@ -63,6 +63,26 @@ runtime-topology branch adds a separate typed wrapper and restores both type
 gates. **Do not publish `e1e035b1` as a standalone PR head**; group the local
 exact-field commits through the final tested head and obtain exact-head CI.
 
+The current grouped local continuation is `codex/trust-registry-recovery-scan-signed`
+(read its live tip; code checkpoint `4ecf4e29`), a direct descendant of the
+final #241 candidate. It contains
+`7ef4ebea` (profile/catalog keys), `96e8a374` (runtime topology names),
+`5a37bee1` (acceptance and S01 verdict fields), `ce527d58` (release/install
+asset names), and `4ecf4e29` (strictly typed read-only deployment scan).
+Intermediate docs commits are part of the same ancestry. The exact source
+tree at `4ecf4e29` passed `./run.sh --light` 20/20, including local-ledger
+preflight 233/233 and adversarial parity 198/198; focused scanner 11/11,
+security type gates, docs, and audit also passed. A read-only Codex CLI
+review of the scanner slice found no actionable regression, but its sandbox
+could not create temporary test files. These are local checks, not hosted
+exact-head CI or the independent human release verdict.
+
+Do **not** publish the old `codex/trust-registry-runtime-name-sets` tip
+`70408bcc`: `git verify-commit` reports a BAD signature despite its commit
+command succeeding. The replacement `4ecf4e29` has the identical tree, a
+verified GPG signature, and DCO trailer. The old branch is retained only
+for diagnosis. No new PR or push was authorized for this continuation.
+
 The validation above is local and scoped, not exact-head CI or independent
 review. The final fixture E2E lane is not a deployed-ledger actor journey.
 In this review checkout, `pnpm run test:standalone-topology` passes 121/121,
