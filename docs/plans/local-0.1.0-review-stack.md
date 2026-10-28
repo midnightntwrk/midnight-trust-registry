@@ -64,6 +64,13 @@ overlong rejection. At local tip `97480807`, the integration suite passed
 full light gate passed 20/20 at the preceding runtime-code tip `e55cb4e3`;
 later commits changed only tests and docs. The loopback test is transport
 coverage, not a VC-owned live status adapter or deployed-ledger actor case.
+The subsequent local recovery race fix at `181c28a9` preserves signed
+abandonment tombstones when reconciliation or a provider receipt completes
+after abandonment, including after journal rotation. Focused journal tests
+passed 39/39, API typecheck/lint, docs check, and dependency audit passed;
+the light test stage reported 20/20 successful tasks. Exact-commit read-only
+review found no actionable regression. These interleavings use fixture
+readers, not an authenticated finality source or deployed recovery evidence.
 
 The local descendant contains the reviewed groups A-D above #240's published
 head `bbe527cf`, followed by review-plan documentation, current-query
