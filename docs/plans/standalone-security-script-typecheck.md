@@ -4,7 +4,7 @@ Issue #229 tracks typed assurance for the self-hosted 0.1.0 installer and
 operator workflow. The existing broad `checkJs` configuration includes the
 wizard and installer but permits implicit `any`; Quality CI now runs it.
 A second, strict no-emit gate runs
-`pnpm run check:security-boundaries-types` for thirty-four privileged boundaries:
+`pnpm run check:security-boundaries-types` for thirty-five privileged boundaries:
 
 | Checked file | Security decision |
 | --- | --- |
@@ -26,6 +26,7 @@ A second, strict no-emit gate runs
 | `scripts/build-standalone-install.mjs` | Exact-source install inputs, local pinned-image checks, immutable preflight image-directory selection, and new-bundle construction. |
 | `scripts/load-standalone-install-images.mjs` | Verified archive snapshots and Docker ID/tag matching without a registry pull. |
 | `scripts/standalone-approval-policy.mjs` | Canonical reviewer metadata and release committee/custody validation. |
+| `scripts/standalone-exact-fields-policy.mjs` | Delimiter-safe exact field-name equality for signed wizard approval and recovery documents. |
 | `scripts/check-standalone-actor-capability.mjs` | Fail-closed signed-plan and configured-role preflight before a deployed actor run; does not authenticate finality or execute a transaction. |
 | `scripts/standalone-acceptance-decision-policy.mjs` | Source-bound operator decision history and current evidence coverage. |
 | `scripts/standalone-api-approval-chain.mjs` | Exact-byte approval-chain export and deployment/maintenance readback binding. |
