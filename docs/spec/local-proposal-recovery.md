@@ -25,11 +25,16 @@ mechanics tests do not prove live local-ledger finality or recovery.
 
 The current `inspect-local-proposal-recovery` and signed-decision verifier
 are **read-only review aids**. A `sequence-invalidated-record-absent` report
-shows that a later node-observed governance counter would make the originally
-signed action sequence stale *if that observation is authentic*. It neither
-proves that the original action did not execute at its sequence nor permits
-the journal to be cleared. The packaged local API has no approved recovery
-mutator.
+now requires the observed counter to be exactly one beyond the reservation
+and the ledger's last action kind or payload to differ from the reserved
+action. At that one-step boundary, the last-action fields can identify what
+consumed the reserved sequence *if the finalized view is authentic*. A later
+counter has lost this direct history and is marked inconclusive. A matching
+last kind and payload is also inconclusive, even if the proposal record lookup
+is null. The versioned candidate and signed decision include both observed
+last-action values, so a reviewer can compare the exact difference claimed
+by the report. Neither report independently authenticates finality or permits the
+journal to be cleared. The packaged local API has no approved recovery mutator.
 
 ## Evidence required before any future terminal decision
 

@@ -4,6 +4,7 @@ import {
   createLocalRpcFinalizedCheckpointSource,
   createRpcFinalizedCheckpointSource,
 } from "../rpc-finalized-checkpoint.js";
+import { getLocalNetworkProfile } from "../network-profiles.js";
 
 const GENESIS = `0x${"a".repeat(64)}`;
 const FINALIZED = `0x${"b".repeat(64)}`;
@@ -199,7 +200,7 @@ describe("RPC finalized checkpoint source", () => {
       fetchImpl,
     });
     await expect(source.readCurrentFinalizedCheckpoint()).resolves.toEqual({
-      networkId: "undeployed", blockHash: FINALIZED.slice(2),
+      networkId: getLocalNetworkProfile().networkId, blockHash: FINALIZED.slice(2),
     });
     expect(calls.map((call) => call.method)).toEqual(["chain_getBlockHash", "chain_getFinalizedHead"]);
     expect(calls.map((call) => call.redirect)).toEqual(["error", "error"]);

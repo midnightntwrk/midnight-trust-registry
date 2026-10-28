@@ -18,6 +18,8 @@ export type ProposalRecoveryCandidateReason =
   | "legacy-reservation"
   | "sequence-still-live"
   | "sequence-ahead-of-finality"
+  | "sequence-occupied-by-matching-payload"
+  | "sequence-advanced-history-unavailable"
   | "sequence-invalidated-record-absent";
 
 /** An audit input only; no candidate report authorizes journal release or retry. */
@@ -31,7 +33,7 @@ export async function assessProposalRecoveryCandidate(input: {
   approvedPlanSha256: string;
   journalBindingDigest: string;
 }): Promise<{
-  format: "tr-local-proposal-recovery-candidate-v2";
+  format: "tr-local-proposal-recovery-candidate-v3";
   networkId: ReturnType<typeof getLocalNetworkProfile>["networkId"];
   registryId: string;
   contractAddress: string;
@@ -49,6 +51,8 @@ export async function assessProposalRecoveryCandidate(input: {
   reservationActionKind: string | null;
   reservationActionPayloadHash: string | null;
   finalizedGovernanceActionCount: string;
+  finalizedLastActionKind: string | null;
+  finalizedLastActionPayloadHash: string | null;
   observedEventHash: string | null;
   reason: ProposalRecoveryCandidateReason;
   reviewCandidate: boolean;
@@ -86,6 +90,23 @@ export async function assessProposalRecoveryCandidate(input: {
   const observed = await resolveCompactProposalObservation(
     async () => view.ledger, input.registryId, attempt.role, attempt.authorizationId,
   );
+  const immediatelyConsumed = sequence !== undefined
+    && view.ledger.governanceActionCount === BigInt(sequence) + 1n;
+  const needsLastAction = observed === null && attempt.state === "reserved" && immediatelyConsumed;
+  if (needsLastAction
+    && (!(view.ledger.lastAuthorizedActionKind instanceof Uint8Array)
+      || view.ledger.lastAuthorizedActionKind.length !== 32
+      || !(view.ledger.lastAuthorizedActionPayloadHash instanceof Uint8Array)
+      || view.ledger.lastAuthorizedActionPayloadHash.length !== 32)) {
+    throw new Error("Recovery candidate requires the finalized last action readback");
+  }
+  const finalizedLastActionKind = needsLastAction
+    ? `0x${Buffer.from(view.ledger.lastAuthorizedActionKind).toString("hex")}` : null;
+  const finalizedLastActionPayloadHash = needsLastAction
+    ? `0x${Buffer.from(view.ledger.lastAuthorizedActionPayloadHash).toString("hex")}` : null;
+  const lastActionDiffers = context !== undefined && needsLastAction
+    && (finalizedLastActionKind !== context.actionKind
+      || finalizedLastActionPayloadHash !== context.actionPayloadHash);
   const reason: ProposalRecoveryCandidateReason = observed !== null
     ? observed.evidenceCommitment !== attempt.evidenceCommitment
       || (attempt.eventHash !== null && observed.eventHash !== attempt.eventHash)
@@ -94,9 +115,11 @@ export async function assessProposalRecoveryCandidate(input: {
       : sequence === undefined ? "legacy-reservation"
         : view.ledger.governanceActionCount < BigInt(sequence) ? "sequence-ahead-of-finality"
           : view.ledger.governanceActionCount === BigInt(sequence) ? "sequence-still-live"
-            : "sequence-invalidated-record-absent";
+            : !immediatelyConsumed ? "sequence-advanced-history-unavailable"
+              : lastActionDiffers ? "sequence-invalidated-record-absent"
+                : "sequence-occupied-by-matching-payload";
   return {
-    format: "tr-local-proposal-recovery-candidate-v2",
+    format: "tr-local-proposal-recovery-candidate-v3",
     networkId: getLocalNetworkProfile().networkId,
     registryId: input.registryId,
     contractAddress: input.contractAddress.toLowerCase(),
@@ -114,6 +137,8 @@ export async function assessProposalRecoveryCandidate(input: {
     reservationActionKind: context?.actionKind ?? null,
     reservationActionPayloadHash: context?.actionPayloadHash ?? null,
     finalizedGovernanceActionCount: view.ledger.governanceActionCount.toString(),
+    finalizedLastActionKind,
+    finalizedLastActionPayloadHash,
     observedEventHash: observed?.eventHash ?? null,
     reason,
     reviewCandidate: reason === "sequence-invalidated-record-absent",

@@ -114,6 +114,13 @@ gate with a `nextActions` entry. If `sourceMatchesCandidate` is false, start a
 new exact-source setup rather than reusing evidence from the older install.
 Exit 1 means the input or setup could not be checked; do not interpret it as
 a missing gate that can be waived.
+In particular, `invalid-approval-evidence-investigate` in the wizard status
+means retained genesis or committee approval evidence no longer agrees with
+the private setup and pinned install. The prerequisite command exits 1 in
+this state. Preserve the setup directory and signed bytes for investigation;
+do not regenerate an approval, edit the record, or proceed to deployment or
+maintenance transition. A status label is not an independent GPG or finality
+verification.
 The preflight also rejects approval labels without a nonzero approved genesis
 hash or deployed contract address, and duplicate or unnamed staged verifier
 keys. It still does not compare that key list with the complete release

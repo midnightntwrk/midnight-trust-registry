@@ -3,6 +3,7 @@ import type {
   TrustedFinalizedCheckpointSource,
 } from "./finalized-deployment-action-reader.js";
 import { localNetworkEndpoint } from "./local-network-endpoints.js";
+import { getLocalNetworkProfile } from "./network-profiles.js";
 
 const HASH = /^0x[0-9a-fA-F]{64}$/u;
 const ZERO = /^0x0{64}$/u;
@@ -92,7 +93,7 @@ export function createLocalRpcFinalizedCheckpointSource(
   config: LocalRpcFinalizedCheckpointConfig,
 ): TrustedFinalizedCheckpointSource {
   const endpoint = new URL(localNetworkEndpoint(config.rpcUrl, config.allowedHosts, ["http:", "https:"]));
-  return createPinnedCheckpointSource({ ...config, networkId: "undeployed" }, endpoint);
+  return createPinnedCheckpointSource({ ...config, networkId: getLocalNetworkProfile().networkId }, endpoint);
 }
 
 function createPinnedCheckpointSource(

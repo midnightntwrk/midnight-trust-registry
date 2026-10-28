@@ -10,6 +10,7 @@ const imageId = (role) => `sha256:${({ api: "a", node: "b", indexer: "c",
   "proof-server": "d" })[role].repeat(64)}`;
 const expected = {
   project, sourceRevision, approvalDir: "/private/approved-api",
+  inventorySha256: "f".repeat(64),
   uid: "501", gid: "20", reviewerFingerprint: "A".repeat(40),
   composeFiles: ["/bundle/compose.yml", "/bundle/compose.offline.yml", "/bundle/compose.api.yml"],
   apiRuntime: { imageId: imageId("api"), configId: imageId("api") },
@@ -67,7 +68,8 @@ test("reports a topology observation without a release or finality claim", () =>
     kind: "standalone-api-runtime-topology-observation", project,
     networkId: "ledger-id", apiContainerId: "api-id",
     apiStartedAt: "2026-10-24T11:00:00Z", apiRestartCount: 0,
-    sourceRevision, imageIdsMatched: true,
+    sourceRevision, installInventorySha256: expected.inventorySha256,
+    imageIdsMatched: true,
     approvalMountReadOnly: true, internalNetworkOnly: true,
     hostPortPublished: false, finalizedReadback: "not-verified",
     egressDenied: "not-verified", actorJourneys: "not-run",
@@ -142,6 +144,9 @@ test("rejects external or extra network attachments and incomplete services", ()
 });
 
 test("rejects incomplete caller pins", () => {
+  assert.throws(() => checkStandaloneApiRuntime(network, containers, {
+    ...expected, inventorySha256: "bad",
+  }), /inputs are incomplete/u);
   assert.throws(() => checkStandaloneApiRuntime(network, containers, {
     ...expected, reviewerFingerprint: "bad",
   }), /inputs are incomplete/u);

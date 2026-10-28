@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 
 import { createLocalNetworkDeploymentActionReader } from "../local-network-deployment-action-reader.js";
+import { getLocalNetworkProfile } from "../network-profiles.js";
 import { createPublicNetworkDeploymentActionReader } from "../public-network-deployment-action-reader.js";
 
 const mocks = vi.hoisted(() => ({ provider: vi.fn(), query: vi.fn() }));
@@ -17,7 +18,7 @@ const fetchImpl: typeof fetch = vi.fn(async (_url, init) => {
     result: request.method === "chain_getBlockHash" ? genesis : finalized }));
 });
 const config = () => ({
-  networkId: "undeployed" as const,
+  networkId: getLocalNetworkProfile().networkId,
   rpcUrl: "http://node:9944",
   indexerHttpUrl: "http://indexer:8080/graphql",
   indexerWsUrl: "ws://indexer:8080/graphql/ws",
@@ -46,7 +47,7 @@ it("wires only approved local endpoints to a genesis-pinned finalized ledger rea
 
 it("rejects public-network relabeling and non-allowlisted local services", async () => {
   await expect(createLocalNetworkDeploymentActionReader({ ...config(), networkId: "preprod" as never }))
-    .rejects.toThrow(/undeployed network/u);
+    .rejects.toThrow(/standalone network profile/u);
   await expect(createLocalNetworkDeploymentActionReader({ ...config(), indexerHttpUrl: "http://public.example/graphql" }))
     .rejects.toThrow(/allowlist/u);
   await expect(createPublicNetworkDeploymentActionReader({ ...config(), networkId: "undeployed" as never }))

@@ -10,6 +10,7 @@ import { observeStandaloneCurrentQueryJourney } from "./check-standalone-current
 
 const run = promisify(execFile);
 const CONTAINER_ID = /^[0-9a-f]{64}$/u;
+const SHA256 = /^[0-9a-f]{64}$/u;
 
 async function restartContainer(id) {
   await run("docker", ["restart", id], { timeout: 60_000, maxBuffer: 1024 * 1024 });
@@ -23,6 +24,8 @@ function matchingTopology(topology, journey) {
     && topology.apiContainerId === journey.apiContainerId
     && topology.networkId === journey.networkId
     && topology.sourceRevision === journey.sourceRevision
+    && SHA256.test(topology.installInventorySha256 ?? "")
+    && topology.installInventorySha256 === journey.installInventorySha256
     && CONTAINER_ID.test(topology.apiContainerId ?? "")
     && typeof topology.apiStartedAt === "string"
     && Number.isFinite(Date.parse(topology.apiStartedAt))
@@ -34,6 +37,7 @@ function sameProcess(left, right) {
   return left.apiContainerId === right.apiContainerId
     && left.networkId === right.networkId
     && left.sourceRevision === right.sourceRevision
+    && left.installInventorySha256 === right.installInventorySha256
     && left.apiStartedAt === right.apiStartedAt
     && left.apiRestartCount === right.apiRestartCount;
 }
@@ -80,6 +84,7 @@ export async function observeStandaloneApiRestart(setupDirectory, bundle, env = 
     || before.sourceRevision !== after.sourceRevision
     || before.apiContainerId !== after.apiContainerId
     || before.networkId !== after.networkId
+    || before.installInventorySha256 !== after.installInventorySha256
     || before.planSha256 !== after.planSha256
     || before.selectedStateSha256 !== after.selectedStateSha256
     || before.registryId !== after.registryId
@@ -91,6 +96,7 @@ export async function observeStandaloneApiRestart(setupDirectory, bundle, env = 
     sourceRevision: before.sourceRevision,
     apiContainerId: before.apiContainerId,
     networkId: before.networkId,
+    installInventorySha256: before.installInventorySha256,
     planSha256: before.planSha256,
     selectedStateSha256: before.selectedStateSha256,
     beforeStartedAt: initial.apiStartedAt,

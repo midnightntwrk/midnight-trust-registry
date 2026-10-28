@@ -30,6 +30,10 @@ export function assessStandaloneJourneyPrerequisites(status, expectedSourceRevis
     || status.releaseQualified !== false) {
     throw new Error("Invalid standalone wizard status; inspect the private setup record");
   }
+  if (status.localLedger === "invalid-approval-evidence-investigate"
+    || status.maintenanceApproval === "invalid-approval-evidence-investigate") {
+    throw new Error("Stored approval evidence is inconsistent; preserve and investigate the private setup record");
+  }
   if (expectedSourceRevision !== null && !SHA.test(expectedSourceRevision)) {
     throw new Error("Expected candidate source revision must be a full lowercase commit SHA");
   }

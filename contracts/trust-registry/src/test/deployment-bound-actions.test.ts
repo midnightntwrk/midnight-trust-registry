@@ -85,4 +85,22 @@ describe("deployment-bound governed actions", () => {
     )).toHaveLength(32);
     expect(source.simulator.getLedger().governanceActionCount).toBe(sourceActionCount + 1n);
   });
+
+  it("rejects a stale same-deployment vote after another action consumes its sequence", () => {
+    const source = bootstrap(labelToBytes32("network:sequence-replay-test"));
+    const stalePayload = labelToBytes32("audit:reserved-before-other-action");
+    const otherPayload = labelToBytes32("audit:other-finalized-action");
+    const staleSignature = signAudit(source, stalePayload);
+    const otherSignature = signAudit(source, otherPayload);
+    const reservedSequence = source.simulator.getLedger().governanceActionCount;
+
+    source.simulator.authorizeMaintainerAuditEvent(
+      source.maintainer.keyId, source.publicKey, otherSignature, otherPayload,
+    );
+    expect(source.simulator.getLedger().governanceActionCount).toBe(reservedSequence + 1n);
+    expect(() => source.simulator.authorizeMaintainerAuditEvent(
+      source.maintainer.keyId, source.publicKey, staleSignature, stalePayload,
+    )).toThrow();
+    expect(source.simulator.getLedger().governanceActionCount).toBe(reservedSequence + 1n);
+  });
 });

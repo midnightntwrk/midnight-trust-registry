@@ -12,6 +12,7 @@ import { standaloneStackConfig } from "./check-standalone-topology.mjs";
 const run = promisify(execFile);
 const services = ["api", "indexer", "node", "proof-server"];
 const fingerprintPattern = /^[0-9A-F]{40}$/u;
+const sha256Pattern = /^[0-9a-f]{64}$/u;
 const apiHealthcheck = ["CMD", "node", "-e",
   "fetch('http://127.0.0.1:4400/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"];
 
@@ -44,6 +45,7 @@ function normalizedEnvironment(entries) {
 export function checkStandaloneApiRuntime(network, containers, expected) {
   const config = standaloneStackConfig({ TR_STACK_NAME: expected?.project });
   if (!expected || !/^[0-9a-f]{40}$/u.test(expected.sourceRevision)
+    || !sha256Pattern.test(expected.inventorySha256 ?? "")
     || !/^[0-9]+$/u.test(expected.uid) || expected.uid === "0"
     || !/^[0-9]+$/u.test(expected.gid) || expected.gid === "0"
     || !fingerprintPattern.test(expected.reviewerFingerprint)
@@ -160,6 +162,7 @@ export function checkStandaloneApiRuntime(network, containers, expected) {
     apiStartedAt: api.State.StartedAt,
     apiRestartCount: api.RestartCount,
     sourceRevision: expected.sourceRevision,
+    installInventorySha256: expected.inventorySha256,
     imageIdsMatched: true,
     approvalMountReadOnly: true,
     internalNetworkOnly: true,
@@ -209,6 +212,7 @@ export async function observeStandaloneApiRuntime(bundle, env = process.env) {
   return checkStandaloneApiRuntime(network, containers, {
     project: config.project,
     sourceRevision: verified.sourceRevision,
+    inventorySha256: verified.inventorySha256,
     images: verified.images,
     apiRuntime: verified.apiRuntime,
     apiImageEnv: image.Config?.Env,

@@ -3,6 +3,12 @@
 This is the short path to a **self-hosted, offline-runtime** Trust Registry
 qualification run. Installation may use the network; the runtime may not.
 Preprod, Preview, Mainnet, Kubernetes, and Helm are not 0.1.0 local-RC gates.
+The `standalone` [network profile](../spec/network-profiles.md) supplies the
+Midnight SDK network ID (`undeployed`) to the local checkpoint and deployment
+readers. That ID is a protocol selector, not a genesis hash or an assertion
+that a contract is deployed. Each installation needs its own independently
+reviewed genesis pin. A genesis-pinned RPC response from the local node is
+operator-node evidence; it does not independently authenticate finality.
 The detailed procedures and threat model are in
 [Standalone Offline Runtime Qualification](standalone-offline-runtime.md).
 The [security-scan disposition](security-scan-disposition.md) explains how to
@@ -105,6 +111,13 @@ they can all run today. The implementation sequence is in
    before the remaining verifier-key insertions. Reconcile every key before
    transitioning maintenance authority; neither signature substitutes for
    the other.
+   If `status` reports `invalid-approval-evidence-investigate` for local ledger
+   or maintenance approval, stop. Preserve the setup directory and signed
+   evidence for investigation; do not edit the record or regenerate an approval
+   to bypass the mismatch. The journey prerequisite command exits with an
+   investigation error instead of suggesting a new signature. The status
+   check compares retained bytes and setup bindings, but does not
+   independently authenticate the reviewer key.
 4. **Deploy and reconcile once.** Stage the exact signed source and verified
    packages with `stage-provider-runtime.mjs`; independently record its source,
    inventory, and content digests. Transfer it to a new root-owned code tree
@@ -165,6 +178,12 @@ they can all run today. The implementation sequence is in
    slice, not release qualification. Set `TR_STACK_NAME` to the wizard's
    approved project; the command also matches its inventory, Docker network,
    approved genesis, and deployed contract to the running signed API plan.
+   The aggregate rejects a child result that changes its unobserved actor,
+   independent-finality, host/browser egress, or plan-to-deployment scope
+   markers; a successful read-only observation cannot promote those gates.
+   The current-query probe also requires a valid API container identity,
+   process start time, and restart count on both reads around its egress
+   test; missing process identity makes the observation inconclusive.
 
    ```sh
    pnpm observe:standalone-qualification \
@@ -203,9 +222,12 @@ they can all run today. The implementation sequence is in
    ```
 
    This checks issuer, verifier, auditor, and recognition current queries
-   against the live signed-plan source twice, requiring the selected-state
-   SHA-256 to stay fixed around a positive-control TCP
-   and DNS egress-denial probe of the same API container. Save its JSON output
+   against the live signed-plan source twice. It also requires the API's
+   running project and network, the signed plan's install inventory SHA-256,
+   and the plan's genesis and contract address to match the verified bundle
+   and wizard-approved setup before probing egress. It requires the
+   selected-state SHA-256 to stay fixed around a positive-control TCP and
+   DNS egress-denial probe of the same API container. Save its JSON output
    with the raw probe logs in the private evidence directory. An exit code 0
    is **read-only API runtime evidence**, not a governed-write actor journey:
    the check does not authenticate node/indexer finality, cover host/browser
@@ -232,8 +254,12 @@ they can all run today. The implementation sequence is in
    historical ledger state at new finalized checkpoints. Restore a backup in
    a distinct isolated project and reject stale/conflicting checkpoints.
    Quarantine ambiguous submissions; do not treat an empty indexer read as
-   permission to retry. For an opt-in **API-only** restart observation, after
-   the signed-plan current-query probe passes, run:
+   permission to retry. The proposal-recovery CLI may inspect a v3 candidate
+   and verify a distinct reviewer's signed decision, but it cannot authenticate
+   finality or clear a reserved journal entry. Preserve that entry and stop
+   if the operator cannot prove the original action is invalidated at an
+   independently authenticated checkpoint. For an opt-in **API-only** restart
+   observation, after the signed-plan current-query probe passes, run:
 
    ```sh
    pnpm observe:standalone-api-restart /absolute/private/setup /absolute/verified-bundle
@@ -342,7 +368,10 @@ evidence and run `decide` with the desired verdict; its first decision records
 the previous label and brings the case into the checked decision chain. Do
 not reset or rewrite retained evidence merely to satisfy the new check.
 
-Use a different relative file for each case. If `.acceptance.lock` exists,
+Use a different relative file for each case. The inventory rejects a reused
+path even when names differ only by case or Unicode normalization; do not
+rename one receipt to make it count for two cases. The manifest itself cannot
+be attached as evidence. If `.acceptance.lock` exists,
 check whether an evidence writer is active before removing a stale lock; do
 not start a competing writer. A `pass` must have at least one raw file. Record the
 command, UTC time, checkpoint, operator decision, and relevant transaction or
@@ -385,6 +414,9 @@ node scripts/check-standalone-acceptance-evidence.mjs observe \
 
 The second command compares the report's source, inventory, signed API-plan
 hash, approved genesis, and deployed contract with the acceptance candidate.
+It also rejects nested read-only reports that claim actor success, independent
+finality, host/browser egress verification, or a release verdict, and requires
+the API TCP/DNS canary-denial observations to remain present.
 It exits 0 only for a matching read-only observation, 2 for an observation
 stopped before the API probe, and 1 for invalid or mixed-candidate evidence.
 It requires a private regular file, does not change `acceptance.json`, and

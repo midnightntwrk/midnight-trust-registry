@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { archiveAdversarialCaseReport, assertAdversarialMatrixParity, parseAdversarialTap,
+import { archiveAdversarialCaseReport, assertAdversarialMatrixParity, assertCompletedAdversarialRun, parseAdversarialTap,
   runIsolatedAdversarialCases } from "./adversarial-case-report.mjs";
 
 const matrixFor = (report) => ({
@@ -50,6 +50,17 @@ ok 1 - case-a
 # tests 2
 `);
   assert.deepEqual(report.cases[1], { id: "case-b", status: "failed", reason: "missing-outcome" });
+});
+
+test("does not accept an interrupted or abnormal runner as a complete failed-case report", () => {
+  const report = parseAdversarialTap("# Subtest: case-a\nnot ok 1 - case-a\n# tests 1\n");
+  assert.doesNotThrow(() => assertCompletedAdversarialRun({ status: 1, signal: null }, report));
+  assert.throws(() => assertCompletedAdversarialRun({ status: null, signal: "SIGTERM" }, report),
+    /did not complete normally/u);
+  assert.throws(() => assertCompletedAdversarialRun({ status: 2, signal: null }, report),
+    /did not complete normally/u);
+  assert.throws(() => assertCompletedAdversarialRun({ status: 0, signal: null }, report),
+    /disagrees with per-case outcomes/u);
 });
 
 test("archives the complete case report once under a private source-scoped path", async () => {
