@@ -1,7 +1,7 @@
 # Local API Reviewer Trust Anchor
 
-Status: candidate export and exact-byte comparator implemented locally;
-protected API enforcement and release qualification remain open.
+Status: candidate export, exact-byte comparator, and protected-file reader
+implemented locally; API loader enforcement and release qualification remain open.
 
 The local API runtime plan is signed, and its v3 approval chain verifies
 genesis, committee, and deployment approval signatures. The plan loader
@@ -22,6 +22,10 @@ The API package has an opt-in comparator that rejects a self-consistent
 replacement chain against the original anchor bytes. The production loader
 does not yet read a protected anchor or invoke that comparator; tests of the
 comparator must not be counted as installed-runtime enforcement.
+The protected-file reader requires a root-owned regular file under root-owned,
+non-group/world-writable ancestors, with no symlink or hard-link replacement.
+The file must live outside the API's writable-to-the-operator approval bind
+mount. The reader is not yet called by the API loader.
 
 For the self-hosted 0.1.0 RC, first setup must produce an operator-protected
 trust-anchor record outside the API runtime plan. It must pin the independently
