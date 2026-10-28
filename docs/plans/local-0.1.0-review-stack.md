@@ -354,6 +354,17 @@ provider observation, npm publication, deployed actor E2E, or closure of
 either issue. The live #238 Opengrep WebSocket finding and human review #232
 remain independent stop conditions.
 
+The next unpublished [#216](https://github.com/midnightntwrk/midnight-trust-registry/issues/216)
+report-integrity slice, signed/DCO `eb72a044`, rejects a parity report when
+either the isolated runner or governed demo claims zero failures while its
+per-case outcomes contain a failure. Before the fix, that inconsistent input
+could produce a success-shaped parity result. Fifteen focused report tests,
+the full 198/198 case-ID parity run, dependency audit, and `./run.sh --light`
+(20/20 tasks) passed. A read-only Codex commit review found no actionable
+regression; its sandbox could not create temporary test fixtures, so the
+focused and light results are from the writable checkout. This hardens the
+fixture matrix, not deployed standalone E2E or the #237/#232 release gates.
+
 ## Release boundary
 
 The [operator journey](../guide/standalone-local-journey.md) defines the real
