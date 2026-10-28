@@ -285,6 +285,44 @@ extraction, but do not finish that issue or
 qualify a deployed actor journey. Hold group G
 locally until it is a coherent review-sized slice and publication is approved.
 
+## Current local continuation and cleanup (2026-10-28)
+
+Above the previously recorded unpublished review groups, signed/DCO local
+commits `b4975d3b` through `5228ccb1` form one **unpublished** adoption and
+operator-assurance review candidate. They align the recovery knowledge base
+with the implemented tombstone boundary, pin source-level and rendered
+standalone Compose transport assumptions, explicitly type-check the local
+topology and qualification observers, and require the opt-in issuer writer
+annex to be valid at deployment-owned trusted actor time. The last code tip
+`5228ccb1` passed focused issuer-port tests, API typecheck, docs checks,
+dependency audit, and `./run.sh --light` (20/20 tasks). The preceding local
+tip `65080c00` passed the fixture browser lane (11/11); a read-only Codex
+review of `5228ccb1` found no actionable regression, while its sandbox could
+not run the temporary-file tests that passed in the writable checkout. These
+checks do not qualify deployed standalone E2E or clear #237/#232.
+
+The phase-exit worktree audit found roughly 19 GiB of free host space. The
+active disposable checkout is clean. The old light-package checkout has an
+uncommitted knowledge-base edit, and the domain-policy checkout has an
+untracked agent instruction file, so neither may be removed. The clean
+precheck sidecar retains full generated Compact artifacts and an install
+bundle; the clean standalone-qualification checkout retains private setup
+evidence and ledger qualification artifacts; the clean minimal-harness
+checkout retains pinned bundles and full generated proof material. Their
+Git branches and retained outputs are not disposable just because the
+checkouts are clean. Only the ten reproducible npm tarballs created by the
+active checkout's light runs were removed after verification. Do not prune
+these evidence-bearing worktrees or delete their ignored artifacts to make
+space; reassess ownership and recoverability after the pending PR stack is
+published or merged.
+
+The current local continuation has not been pushed. Recheck live #238-#240
+heads, restack safely, obtain exact-head CI and independent review, and keep
+#238 draft until its external Opengrep failure has a reviewed disposition.
+The release still requires human-signed real genesis and roster approvals,
+authenticated finalized deployment, live actor/status adapters, offline
+journeys and recovery, and human security review.
+
 ## Release boundary
 
 The [operator journey](../guide/standalone-local-journey.md) defines the real
