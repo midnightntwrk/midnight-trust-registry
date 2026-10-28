@@ -173,6 +173,10 @@ The adjacent recognition challenge, accreditation, scope-substitution, and
 proposal fixture flow now lives in a separate module while returning the same
 verified evidence and event hash to the demo; the governed demo and case-ID
 parity still pass after that move.
+Issuer, verifier, and recognition consumer-evidence fixture checks now run
+through a named module as well, including the existing tampered Merkle path,
+wrong resource scope, and recognition-as-issuer rejection cases. This is
+fixture/API-client coverage, not a deployed standalone relying-party run.
 These refactors harden report integrity and advance the remaining #216 demo
 extraction, but do not finish that issue or
 qualify a deployed actor journey. Hold group G
