@@ -73,6 +73,12 @@ check, and dependency audit passed; the full light gate passed 20/20 at the
 code tip. Exact-commit read-only reviews found no actionable regression.
 These interleavings use fixture readers, not an authenticated finality source
 or deployed recovery evidence.
+The current-query observer's report decisions were then extracted into a
+strictly checked policy at local `1106d749`. Its 11 focused journey tests,
+strict security-boundary typecheck, docs check, audit, and full light gate
+(20/20) passed; exact-commit read-only review found no actionable regression.
+The Docker/runtime probe orchestration is still not strictly typed, and the
+tests remain injected-provider evidence rather than a deployed actor run.
 
 The local descendant contains the reviewed groups A-D above #240's published
 head `bbe527cf`, followed by review-plan documentation, current-query
