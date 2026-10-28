@@ -19,6 +19,25 @@ above the live draft #240 head `8dc05ec7`. The original unpublished branch
 | Adoption and evidence | `codex/trust-registry-review-live240-adoption` (`d8179c82`) | Qualification and recovery | 111 topology tests, docs check, audit; merge retained the inode guard and private-file fixture requirements from live #240. |
 | Final security and E2E hardening | `codex/trust-registry-review-live240-final` (read the live tip; full-suite checkpoint `78d0c624`) | Adoption and evidence | 121 topology tests, 290 API unit tests, typecheck, docs check, audit, four simulator-backed membership journeys, CLI/API/UI fixture smoke, and 11 Playwright fixture-browser cases at the checkpoint. Later commits clarify this handoff, reject portable archive-path aliases, add a real-journal under-threshold regression, and test direct WebSocket denial; API light passed 345/345 and the expanded fixture browser suite passed 12/12. |
 
+Issue #241 has a separate **local-only, non-rewriting** propagation chain.
+It starts with signed/DCO `271ad6cd` on the exact published #238 head,
+then signed/DCO merge candidates `7be83bc9` for #239 and `d162d0e0` for #240.
+The original published PR heads and four local review-group branches above
+remain unchanged. The review-group candidates are:
+
+| Local candidate | Pre-handoff head | Parent candidate | Focused validation |
+| --- | --- | --- | --- |
+| `codex/trust-registry-review-core-with-241` | `4cafc321` | #240 candidate `d162d0e0` | Wizard/exact-field 105/105, strict type gate, docs, audit. |
+| `codex/trust-registry-review-qualification-with-241` | `11b9ef60` | Core candidate | Wizard/exact-field 111/111, strict type gate, docs, audit. |
+| `codex/trust-registry-review-adoption-with-241` | `b88a7aee` | Qualification candidate | Wizard/exact-field 111/111, strict type gate, docs, audit. |
+| `codex/trust-registry-review-final-with-241` | `52e2b87c` | Adoption candidate | Wizard and three policy suites 115/115, both security-script type gates, docs, audit. |
+
+The final candidate keeps one exact-field implementation and a separate
+canonical signed-byte parser. These checks are local, not exact-head CI or
+deployed standalone evidence. No candidate was pushed; obtain explicit push
+approval, then recheck live parent heads and run exact-head CI and review.
+Issue #241 is not a waiver for #237, #232, or the operator release gates.
+
 The validation above is local and scoped, not exact-head CI or independent
 review. The final fixture E2E lane is not a deployed-ledger actor journey.
 In this review checkout, `pnpm run test:standalone-topology` passes 121/121,
