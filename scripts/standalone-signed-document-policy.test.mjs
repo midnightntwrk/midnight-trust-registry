@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { exactFields, parseCanonicalSignedJson } from "./standalone-signed-document-policy.mjs";
+import { parseCanonicalSignedJson } from "./standalone-signed-document-policy.mjs";
 
 test("accepts only the two signed JSON byte encodings", () => {
   const value = { a: 1, b: "approved" };
@@ -19,13 +19,4 @@ test("rejects duplicate keys, noncanonical whitespace, malformed UTF-8, and inva
   ]) {
     assert.throws(() => parseCanonicalSignedJson(bytes, "Approval"));
   }
-});
-
-test("exact field shape rejects missing, extra, and non-record values", () => {
-  assert.equal(exactFields({ a: 1, b: 2 }, ["b", "a"]), true);
-  for (const value of [null, [], "a", { a: 1 }, { a: 1, b: 2, c: 3 }]) {
-    assert.equal(exactFields(value, ["a", "b"]), false);
-  }
-  assert.equal(exactFields({ "a\u0000b": 1 }, ["a", "b"]), false);
-  assert.equal(exactFields({ a: 1 }, ["a", "a"]), false);
 });

@@ -47,7 +47,8 @@ import {
   runLocalVerifierKeyInsertion, validateLocalVerifierKeyInsertionPlan,
 } from "./local-ledger-insert-verifier-key.mjs";
 import { validLocalDeploymentReceipt } from "./standalone-deployment-receipt-policy.mjs";
-import { exactFields, parseCanonicalSignedJson as parseUntrustedSignedJson } from "./standalone-signed-document-policy.mjs";
+import { exactFields } from "./standalone-exact-fields-policy.mjs";
+import { parseCanonicalSignedJson as parseUntrustedSignedJson } from "./standalone-signed-document-policy.mjs";
 
 const FORMAT = "tr-standalone-setup-v1";
 const STANDALONE_PROFILE = getLocalNetworkProfile();
