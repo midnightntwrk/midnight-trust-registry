@@ -3018,3 +3018,15 @@ API read if a key is missing, extra, substituted, or not reconciled. Pending
 insertions remain an incomplete prerequisite rather than a passing result.
 The report labels a match as bundle-to-wizard recorded consistency only;
 independent finalized on-ledger key readback remains required for `L01`.
+
+## Installed provider dependency integrity
+
+The provider staging test now installs a transitive module under
+`node_modules`, transfers the stage into the install-verifier fixture, and
+proves that changing that dependency fails the externally pinned content
+digest. The installed-runtime verifier also reads `provider-stage.json` from
+a bounded no-follow regular descriptor and rejects linked or oversized
+reports. These checks support the immutable code-tree alternative in #233,
+but a root-owned source-matched install and real SDK-backed run have not been
+observed on this host. The root administrator and any root-managed update
+remain in the trusted computing base; this is not a release security verdict.

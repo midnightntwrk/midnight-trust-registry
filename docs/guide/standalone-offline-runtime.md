@@ -727,7 +727,9 @@ node scripts/verify-installed-provider-runtime.mjs \
 The three arguments must come from the independent handoff record, **not**
 from `provider-stage.json` in the installed tree. This command checks the
 root-owned tree, its source/inventory metadata, and the entire copied content
-against that record. It does not perform privileged installation, approve the
+against that record, including installed dependency files. It reads the stage
+report from a bounded, no-follow, single-link regular file; a linked or
+oversized report is rejected. It does not perform privileged installation, approve the
 signer or genesis, authenticate ledger finality, or run an actor journey.
 Keep the tree immutable during and after verification; a root-managed update
 requires a new handoff. Run the real CLI as a non-root user with the import
