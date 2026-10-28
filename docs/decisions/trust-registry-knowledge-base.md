@@ -2986,3 +2986,25 @@ before `notBefore` and after `notAfter` while the host clock and accepted
 evidence would otherwise allow preparation. This still uses injected time,
 ledger, and status dependencies; it does not supply the production adapter
 or a deployed local actor journey required by #219.
+
+## Reviewed npm artifact handoff
+
+The local #236 publish workflow separates release-byte preparation from the
+protected npm publication job. Preparation builds the exact signed source,
+generates and verifies the release manifest against the complete packed
+tarball set, runs a clean-consumer smoke, and uploads the tarballs and manifest.
+Its job output and summary identify the source revision, version, and manifest
+SHA-256 before `npm-publish` approval is requested. The protected job downloads
+that artifact, checks the recorded manifest digest, rebuilds full Compact
+outputs from the same source, verifies the manifest and tarballs again, and
+reruns the consumer smoke before publishing. The publisher separately checks
+each tarball immediately before its registry operation.
+
+This is a byte-integrity and review-order gate, not proof of an independently
+approved release. GitHub must have required reviewers configured on the
+`npm-publish` environment; workflow YAML cannot impose them. The release
+owner must inspect the prepared artifact and its digest before approval, and
+the publish runner remains inside the trusted computing base after the final
+check. No npm publish or exact-head hosted CI has run for this unpublished
+slice. It does not satisfy the signed local genesis, finalized deployment,
+offline actor E2E, recovery, VC status-authority, or human security gates.
