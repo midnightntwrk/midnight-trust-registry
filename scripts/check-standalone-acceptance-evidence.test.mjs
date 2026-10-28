@@ -92,6 +92,7 @@ const observation = (candidate) => ({
   format: "tr-standalone-qualification-observation-v1",
   sourceRevision: candidate.sourceRevision,
   inventorySha256: candidate.installInventorySha256,
+  recordedVerifierKeyCatalog: "bundle-and-wizard-records-match-not-independent-finality",
   prerequisites: {
     format: "tr-standalone-journey-prerequisites-v1",
     sourceRevision: candidate.sourceRevision,
@@ -143,6 +144,8 @@ test("read-only observation binds to one acceptance candidate without passing ca
   for (const change of [
     { sourceRevision: "9".repeat(40) },
     { inventorySha256: "9".repeat(64) },
+    { recordedVerifierKeyCatalog: "verified" },
+    { recordedVerifierKeyCatalog: undefined },
     { governedActorJourneys: "pass" },
     { releaseQualified: true },
   ]) {
@@ -187,8 +190,12 @@ test("read-only observation binds to one acceptance candidate without passing ca
   assert.throws(() => assessStandaloneObservationBinding(candidate,
     { ...observed, apiRestart: { ...restart, apiDnsCanaryDenied: false } }), /differs/u);
   const pending = { ...observed, prerequisites: { ...observed.prerequisites,
-    ledgerPrerequisitesObserved: false, missing: ["deploymentObserved"] }, currentQuery: "not-run" };
+    ledgerPrerequisitesObserved: false, missing: ["deploymentObserved"] }, currentQuery: "not-run",
+    recordedVerifierKeyCatalog: "not-verified" };
   assert.equal(assessStandaloneObservationBinding(candidate, pending).readOnlyObservationBound, false);
+  assert.throws(() => assessStandaloneObservationBinding(candidate,
+    { ...pending, recordedVerifierKeyCatalog: observed.recordedVerifierKeyCatalog }),
+  /inconsistent pending prerequisites/u);
 });
 
 test("observation CLI rejects public, linked, and mismatched evidence without changing verdicts", async () => {
@@ -208,6 +215,7 @@ test("observation CLI rejects public, linked, and mismatched evidence without ch
     pending.prerequisites.ledgerPrerequisitesObserved = false;
     pending.prerequisites.missing = ["deploymentObserved"];
     pending.currentQuery = "not-run";
+    pending.recordedVerifierKeyCatalog = "not-verified";
     await writeFile(path, `${JSON.stringify(pending)}\n`, { mode: 0o600 });
     const blocked = run("observe", root, candidate.sourceRevision, "observation.json");
     assert.equal(blocked.status, 2, blocked.stderr);

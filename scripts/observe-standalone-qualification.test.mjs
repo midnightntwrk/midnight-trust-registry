@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { observeStandaloneQualification } from "./observe-standalone-qualification.mjs";
+import { assessStandaloneObservationBinding } from "./check-standalone-acceptance-evidence.mjs";
 
 const source = "a".repeat(40);
 const install = { sourceRevision: source, inventorySha256: "b".repeat(64),
@@ -135,6 +136,19 @@ test("observes read-only current queries without an implicit restart", async () 
   assert.equal(report.apiRestart, "not-run");
   assert.equal(report.governedActorJourneys, "not-run");
   assert.equal(report.releaseQualified, false);
+});
+
+test("actual aggregate report binds to a candidate without passing an acceptance case", async () => {
+  const observed = await observeStandaloneQualification("/setup", "/bundle", source,
+    { env: { TR_STACK_NAME: project } }, dependencies());
+  const candidate = { sourceRevision: source, installInventorySha256: install.inventorySha256,
+    signedPlanSha256: query.planSha256, genesisHash, contractAddress };
+  const binding = assessStandaloneObservationBinding(candidate, observed);
+  assert.equal(binding.readOnlyObservationBound, true);
+  assert.equal(binding.acceptanceCasesChanged, false);
+  assert.equal(binding.releaseQualified, false);
+  assert.throws(() => assessStandaloneObservationBinding(candidate,
+    { ...observed, recordedVerifierKeyCatalog: "not-verified" }), /differs/u);
 });
 
 test("rejects incomplete or substituted verifier-key records before live reads", async () => {

@@ -3030,3 +3030,12 @@ reports. These checks support the immutable code-tree alternative in #233,
 but a root-owned source-matched install and real SDK-backed run have not been
 observed on this host. The root administrator and any root-managed update
 remain in the trusted computing base; this is not a release security verdict.
+
+## Acceptance binder catalog scope
+
+The acceptance evidence binder now checks the aggregate observer's recorded
+verifier-key catalog marker. A pending report must leave it unverified; a
+report with current API reads must retain the precise bundle-to-wizard
+consistency marker. A cross-module fixture test passes the aggregate output
+through the binder and confirms that neither component changes an acceptance
+case or asserts independent finality. It is not deployed standalone evidence.

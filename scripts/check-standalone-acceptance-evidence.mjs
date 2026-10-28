@@ -32,6 +32,7 @@ const MAX_DECISIONS_PER_CASE = 64;
 /** @typedef {{ format?: string, sourceRevision?: string, inventorySha256?: string,
  *   releaseQualified?: boolean, governedActorJourneys?: string, independentFinality?: string,
  *   fullEgressDenial?: string, deployedRecovery?: string, independentSecurityReview?: string,
+ *   recordedVerifierKeyCatalog?: string,
  *   prerequisites?: PrerequisiteObservation, currentQuery?: "not-run" | QueryObservation,
  *   apiRestart?: "not-run" | RestartObservation }} QualificationObservation */
 /** @param {string} path */
@@ -199,11 +200,14 @@ export function assessStandaloneObservationBinding(manifest, observation) {
   if (query === "not-run") {
     if (observation.prerequisites.ledgerPrerequisitesObserved !== false
       || observation.prerequisites.missing.length === 0
+      || observation.recordedVerifierKeyCatalog !== "not-verified"
       || observation.apiRestart !== "not-run") {
       throw new Error("Observation reports inconsistent pending prerequisites");
     }
   } else if (observation.prerequisites.ledgerPrerequisitesObserved !== true
     || observation.prerequisites.missing.length !== 0
+    || observation.recordedVerifierKeyCatalog
+      !== "bundle-and-wizard-records-match-not-independent-finality"
     || query?.format !== "tr-standalone-current-query-journey-v2"
     || query.sourceRevision !== manifest.sourceRevision
     || query.installInventorySha256 !== manifest.installInventorySha256
