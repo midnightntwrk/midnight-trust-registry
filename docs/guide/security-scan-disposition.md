@@ -80,6 +80,12 @@ node-to-indexer WebSocket endpoints; it also rejects an offline overlay that
 adds ports, networks, or pulls. This catches topology drift but does not prove
 the rendered project or running host is isolated. The live positive-control
 and denied-egress probes and independent reviewer disposition remain required.
+With Docker Compose installed, run
+`node scripts/check-standalone-compose-render.mjs` to check both rendered
+base and offline configurations using synthetic inputs. It prints no real
+indexer secret and requires no running containers. A passing render proves
+only interpolation and configuration shape, not effective runtime networking,
+host egress denial, or acceptance of the residual plaintext transport risk.
 Keep #238 draft and #237/#232 open until the red check has an explicit,
 reviewed disposition under repository policy. Do not change `ws://` to
 `wss://` without a working TLS listener and verified certificate trust.
