@@ -444,6 +444,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
     sourceRevision: inventory.sourceRevision,
     inventorySha256,
     packageManifestSha256,
+    verifierKeyNames: Object.keys(packageManifest.verifierKeySha256 ?? {}).sort(),
     packageCount: packageManifest.packages?.length,
     imageRoles,
     proofParameterCount: parameterFiles.length,

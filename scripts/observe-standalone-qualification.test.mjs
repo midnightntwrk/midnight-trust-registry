@@ -4,7 +4,8 @@ import { test } from "node:test";
 import { observeStandaloneQualification } from "./observe-standalone-qualification.mjs";
 
 const source = "a".repeat(40);
-const install = { sourceRevision: source, inventorySha256: "b".repeat(64) };
+const install = { sourceRevision: source, inventorySha256: "b".repeat(64),
+  verifierKeyNames: ["initial", "test"] };
 const project = "tr-standalone-local-test";
 const networkId = "e".repeat(64);
 const contractAddress = `0x${"f".repeat(64)}`;
@@ -22,6 +23,7 @@ const status = {
   stackConfiguration: "observed-ledger-bridge-only",
   localLedger: "operator-pinned-reviewer-signature-verified",
   deployment: "observed",
+  initialVerifierKeyName: "initial",
   stagedVerifierKeys: [{ circuitName: "test", state: "verified" }],
   maintenanceApproval: "deployment-bound-roster-signature-verified-transition-pending",
   maintenanceTransition: "observed",
@@ -128,9 +130,39 @@ test("observes read-only current queries without an implicit restart", async () 
     dependencies({ restart: async () => { restarted = true; return restart; } }));
   assert.equal(restarted, false);
   assert.equal(report.currentQuery, query);
+  assert.equal(report.recordedVerifierKeyCatalog,
+    "bundle-and-wizard-records-match-not-independent-finality");
   assert.equal(report.apiRestart, "not-run");
   assert.equal(report.governedActorJourneys, "not-run");
   assert.equal(report.releaseQualified, false);
+});
+
+test("rejects incomplete or substituted verifier-key records before live reads", async () => {
+  for (const [bundleKeys, setup] of [
+    [["initial", "test", "missing"], status],
+    [["initial", "other"], status],
+    [["initial", "test"], { ...status, initialVerifierKeyName: "other" }],
+    [["initial", "test"], { ...status, stagedVerifierKeys: [{ circuitName: "initial", state: "verified" }] }],
+  ]) {
+    let queried = false;
+    await assert.rejects(observeStandaloneQualification("/setup", "/bundle", source,
+      { env: { TR_STACK_NAME: project } }, dependencies({
+        verifyBundle: async () => ({ ...install, verifierKeyNames: bundleKeys }),
+        setupStatus: async () => setup,
+        query: async () => { queried = true; return query; },
+      })), /verifier-key|ledger prerequisites/u);
+    assert.equal(queried, false);
+  }
+  let queried = false;
+  const pending = await observeStandaloneQualification("/setup", "/bundle", source,
+    { env: { TR_STACK_NAME: project } }, dependencies({
+      setupStatus: async () => ({ ...status,
+        stagedVerifierKeys: [{ circuitName: "test", state: "pending" }] }),
+      query: async () => { queried = true; return query; },
+    }));
+  assert.equal(queried, false);
+  assert.deepEqual(pending.prerequisites.missing, ["recordedKeyInsertionsReconciled"]);
+  assert.equal(pending.recordedVerifierKeyCatalog, "not-verified");
 });
 
 test("rejects child reports that imply unobserved actor, finality, or egress evidence", async () => {

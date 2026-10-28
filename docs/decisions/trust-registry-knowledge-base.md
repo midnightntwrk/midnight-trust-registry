@@ -3008,3 +3008,13 @@ the publish runner remains inside the trusted computing base after the final
 check. No npm publish or exact-head hosted CI has run for this unpublished
 slice. It does not satisfy the signed local genesis, finalized deployment,
 offline actor E2E, recovery, VC status-authority, or human security gates.
+
+## Standalone verifier catalog before actor reads
+
+The aggregate standalone observer now obtains the verifier-key names from the
+verified install manifest and compares that complete set to the wizard's
+staged deployment key and recorded insertion names. It stops before a live
+API read if a key is missing, extra, substituted, or not reconciled. Pending
+insertions remain an incomplete prerequisite rather than a passing result.
+The report labels a match as bundle-to-wizard recorded consistency only;
+independent finalized on-ledger key readback remains required for `L01`.

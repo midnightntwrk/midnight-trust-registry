@@ -38,6 +38,7 @@ export async function observeStandaloneQualification(setupDirectory, bundle, sou
     inventorySha256: install.inventorySha256,
     prerequisites,
     currentQuery: /** @type {unknown} */ ("not-run"),
+    recordedVerifierKeyCatalog: "not-verified",
     apiRestart: /** @type {unknown} */ ("not-run"),
     governedActorJourneys: "not-run",
     independentFinality: "not-verified",
@@ -47,6 +48,19 @@ export async function observeStandaloneQualification(setupDirectory, bundle, sou
     releaseQualified: false,
   };
   if (!prerequisites.ledgerPrerequisitesObserved) return report;
+  const catalog = install.verifierKeyNames;
+  const initial = status.initialVerifierKeyName;
+  const insertions = status.stagedVerifierKeys;
+  if (!Array.isArray(catalog) || catalog.length < 2
+    || catalog.some((name) => typeof name !== "string" || name.length === 0)
+    || new Set(catalog).size !== catalog.length
+    || typeof initial !== "string" || !catalog.includes(initial)
+    || insertions.length !== catalog.length - 1
+    || insertions.some((entry) => entry.state !== "verified"
+      || !catalog.includes(entry.circuitName) || entry.circuitName === initial)) {
+    throw new Error("Wizard verifier-key insertions do not cover the verified install catalog");
+  }
+  report.recordedVerifierKeyCatalog = "bundle-and-wizard-records-match-not-independent-finality";
   if (typeof env.TR_STACK_NAME !== "string" || status.stackProject !== env.TR_STACK_NAME
     || !SHA256.test(status.stackNetworkId ?? "")
     || !/^0x[0-9a-f]{64}$/u.test(status.approvedGenesisHash ?? "")

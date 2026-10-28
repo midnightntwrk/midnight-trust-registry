@@ -2054,6 +2054,7 @@ export async function standaloneSetupStatus(directory) {
       ? "operator-pinned-reviewer-signature-verified" : "invalid-approval-evidence-investigate"
       : record.ledgerObservation ? "node-observed-not-independently-approved" : "pending",
     deployment: record.deployment?.state ?? "pending",
+    initialVerifierKeyName: record.deployment?.stagedPlan?.initialVerifierKeyName ?? null,
     stagedVerifierKeys: Object.entries(record.verifierKeyInsertions ?? {})
       .map(([circuitName, entry]) => ({ circuitName, state: entry.state })),
     setupLock: lockPresent ? "present-inspect-before-removal" : "absent",

@@ -213,6 +213,13 @@ they can all run today. The implementation sequence is in
      /absolute/private/setup /absolute/verified-bundle "$SOURCE_SHA"
    ```
 
+   Before probing the API, this observer compares the verified install
+   manifest's complete verifier-key catalog with the wizard's initial key and
+   every recorded finalized insertion. A missing, extra, or substituted name
+   stops the probe. `recordedVerifierKeyCatalog` reports only this bundle-to-
+   wizard consistency check; it does not independently authenticate ledger
+   finality or satisfy the `L01` on-chain key readback.
+
    Add `--api-restart` only when the dedicated API may be restarted. It checks
    that the signed plan and selected state survive one API-container restart;
    it does not restart the ledger or test restore.
