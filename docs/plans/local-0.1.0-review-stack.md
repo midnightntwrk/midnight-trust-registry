@@ -169,6 +169,10 @@ Its runner regression tests passed 6/6 and the full isolated report completed
 application-evidence cases to named fixture modules. A later local slice
 also moved six recognition-intake rejection cases to a named scenario module;
 its six isolated tests, governed demo, and exact 198/198 case-ID parity pass.
+The adjacent recognition challenge, accreditation, scope-substitution, and
+proposal fixture flow now lives in a separate module while returning the same
+verified evidence and event hash to the demo; the governed demo and case-ID
+parity still pass after that move.
 These refactors harden report integrity and advance the remaining #216 demo
 extraction, but do not finish that issue or
 qualify a deployed actor journey. Hold group G
