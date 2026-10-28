@@ -88,15 +88,18 @@ or the local release evidence gates.
 The next local review boundary is
 `codex/trust-registry-review-group-e2e-knowledge`, stacked above the
 restacked adoption ref `506537e0`. Its range contains 16 prior commits plus
-this handoff update: fail-closed query evidence, isolated policy/public lookup
+the handoff update, a parity-runner correction, and this review note:
+fail-closed query evidence, isolated policy/public lookup
 and temporal demo cases, complete adversarial report attribution, a browser
 fixture egress audit with redirect denial, checked standalone current-query
 inputs, and a reproducible pinned-Chromium adoption path. Writable local
 validation on the continuation passed both browser variants (11/11), 198/198
 adversarial parity, `./run.sh --light` (20/20 tasks), the security script type
-gates, and `pnpm audit --audit-level low`; the relevant commits received
-read-only Codex review without an actionable regression. Review the **whole**
-range at its exact branch head before publication; these checks are not
+gates, and `pnpm audit --audit-level low`. A whole-range Codex review found
+two parity-runner edge cases; commit `f47da625` rejects empty isolated coverage
+and malformed demo cases with new negative tests. The corrected whole-range
+review found no actionable regression. Review the **whole** range again at
+its exact published head before merge; these local checks are not
 deployed standalone actor evidence, current-head PR CI, or a disposition of
 #238's red external Opengrep check.
 
