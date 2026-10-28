@@ -3086,3 +3086,11 @@ type-predicate return on the wizard's generic exact-field helper narrowed
 parsed JSON values to `unknown`; a separate typed wrapper now serves strict
 validators while the wizard retains the boolean predicate. Both broad and
 strict type gates must pass before these local commits are grouped for review.
+
+The private standalone acceptance reader, case-decision chain, and detached
+security-verdict reader now use that exact-field policy rather than joining
+field names with `|`. A pipe-containing field cannot impersonate two expected
+names in the schema check. The decision history, attachment hashes, and GPG
+verdict still have their separate value and signature checks; this change does
+not itself authenticate the operator's receipts, reviewer independence, or
+ledger finality. A complete deployed `L01`-`S01` run remains required.

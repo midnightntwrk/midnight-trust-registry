@@ -81,6 +81,7 @@ test("strict decision policy requires an ordered, current, source-bound verdict"
     { ...decisions[0].record, decidedAt: "yesterday" },
     { ...decisions[0].record, decidedAt: "2026-10-27T01:00:00+01:00" },
     { ...decisions[0].record, extra: true },
+    { ...decisions[0].record, "caseId|decidedAt": "L01" },
   ]) {
     assert.throws(() => assess("pass", evidence, [{ ...decisions[0], record: invalid }, decisions[1]]),
       /case history/u);

@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import { assessStandaloneCaseDecisionChain } from "./standalone-acceptance-decision-policy.mjs";
 import { ACCEPTANCE_CASES, parseStandaloneAcceptanceManifest } from "./standalone-acceptance-manifest-policy.mjs";
+import { exactFields as exactKeys } from "./standalone-exact-fields-policy.mjs";
 import { assertApiRestartScope, assertCurrentQueryScope } from "./standalone-qualification-scope-policy.mjs";
 
 const CASES = ACCEPTANCE_CASES;
@@ -46,12 +47,6 @@ const PREREQUISITE_KEYS = ["format", "sourceRevision", "expectedSourceRevision",
  *   apiRestart?: "not-run" | RestartObservation }} QualificationObservation */
 /** @param {string} path */
 const isDecisionPath = (path) => typeof path === "string" && path.toLowerCase().startsWith("decisions/");
-
-/** @param {unknown} value @param {readonly string[]} expected */
-function exactKeys(value, expected) {
-  return value && typeof value === "object" && !Array.isArray(value)
-    && Object.keys(value).sort().join("|") === [...expected].sort().join("|");
-}
 
 /** @param {string} root @param {string} path */
 function evidencePath(root, path) {

@@ -2,13 +2,9 @@
 /** @typedef {"pass" | "fail" | "not-run"} CaseStatus */
 /** @typedef {{index: number, path: string, record: unknown}} IndexedDecision */
 
-const STATUSES = new Set(["pass", "fail", "not-run"]);
+import { exactFields as exactKeys } from "./standalone-exact-fields-policy.mjs";
 
-/** @param {unknown} value @param {readonly string[]} keys */
-function exactKeys(value, keys) {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    && Object.keys(value).sort().join("|") === [...keys].sort().join("|");
-}
+const STATUSES = new Set(["pass", "fail", "not-run"]);
 
 /**
  * Checks the self-attested decision history, not signer identity or receipt truth.

@@ -13,6 +13,7 @@ test("requires precisely the expected signed-document fields", () => {
 test("rejects delimiter-containing field collisions and duplicate schemas", () => {
   assert.equal(exactFields({ "a\u0000b": 1 }, ["a", "b"]), false);
   assert.equal(exactRecordFields({ "a\u0000b": 1 }, ["a", "b"]), false);
+  assert.equal(exactFields({ "a|b": 1 }, ["a", "b"]), false);
   assert.equal(exactRecordFields({ a: 1, b: 2 }, ["a", "b"]), true);
   assert.equal(exactFields({ a: 1 }, ["a", "a"]), false);
 });

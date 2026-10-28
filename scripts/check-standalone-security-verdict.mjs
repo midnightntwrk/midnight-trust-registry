@@ -10,6 +10,7 @@ import {
   digestEvidence,
   readAcceptanceManifest,
 } from "./check-standalone-acceptance-evidence.mjs";
+import { exactFields } from "./standalone-exact-fields-policy.mjs";
 import { regularBytes } from "./standalone-private-file-bytes.mjs";
 import { verifyDetachedReviewerSignatureBytes } from "./standalone-reviewer-signature.mjs";
 
@@ -63,8 +64,7 @@ export async function checkStandaloneSecurityVerdict(
   const expectedKeys = ["format", "sourceRevision", "installInventorySha256", "signedPlanSha256",
     "genesisHash", "contractAddress", "reviewerFingerprint", "reviewedAt", "scope", "outcome",
     "findingsPath", "findingsSha256"];
-  if (!verdict || typeof verdict !== "object" || Array.isArray(verdict)
-    || Object.keys(verdict).sort().join("|") !== expectedKeys.sort().join("|")
+  if (!exactFields(verdict, expectedKeys)
     || verdict.format !== "tr-local-security-verdict-v2"
     || verdict.sourceRevision !== manifest.sourceRevision
     || verdict.installInventorySha256 !== manifest.installInventorySha256
