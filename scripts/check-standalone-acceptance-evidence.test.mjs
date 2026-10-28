@@ -198,6 +198,8 @@ test("inventory is fail-closed and never asserts release qualification", async (
     const candidate = manifest();
     const pending = await checkStandaloneAcceptanceEvidence(root, candidate);
     assert.equal(pending.completeInventory, false);
+    assert.deepEqual(pending.notRunCases, CASES);
+    assert.equal(pending.allOperatorCasesPassed, false);
     assert.equal(pending.releaseQualified, false);
     assert.equal(pending.receiptAndFinalityContent, "not-independently-verified");
     await assert.rejects(checkStandaloneAcceptanceEvidence(root, candidate, "f".repeat(40)),
@@ -219,8 +221,28 @@ test("inventory is fail-closed and never asserts release qualification", async (
     const decided = JSON.parse(await readFile(join(root, "acceptance.json"), "utf8"));
     const complete = await checkStandaloneAcceptanceEvidence(root, decided);
     assert.equal(complete.completeInventory, true);
+    assert.deepEqual(complete.operatorPassedCases, CASES);
+    assert.deepEqual(complete.operatorFailedCases, []);
+    assert.deepEqual(complete.notRunCases, []);
+    assert.equal(complete.allOperatorCasesPassed, true);
     assert.equal(Object.values(complete.decisionBackedCases).every(Boolean), true);
     assert.equal(complete.releaseQualified, false);
+    await decideStandaloneAcceptanceCase(root, candidate.sourceRevision, "L01", "fail",
+      "operator:test", "readback-disputed");
+    const failed = await checkStandaloneAcceptanceEvidence(root,
+      JSON.parse(await readFile(join(root, "acceptance.json"), "utf8")));
+    assert.equal(failed.completeInventory, false);
+    assert.deepEqual(failed.operatorFailedCases, ["L01"]);
+    assert.equal(failed.allOperatorCasesPassed, false);
+    await decideStandaloneAcceptanceCase(root, candidate.sourceRevision, "L01", "not-run",
+      "operator:test", "rerun-required");
+    const notRun = await checkStandaloneAcceptanceEvidence(root,
+      JSON.parse(await readFile(join(root, "acceptance.json"), "utf8")));
+    assert.equal(notRun.completeInventory, false);
+    assert.deepEqual(notRun.notRunCases, ["L01"]);
+    assert.equal(notRun.allOperatorCasesPassed, false);
+    await decideStandaloneAcceptanceCase(root, candidate.sourceRevision, "L01", "pass",
+      "operator:test", "rerun-reviewed");
     await writeFile(join(root, "late.log"), "late evidence\n");
     await attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision, "L01", "late.log");
     const stale = JSON.parse(await readFile(join(root, "acceptance.json"), "utf8"));

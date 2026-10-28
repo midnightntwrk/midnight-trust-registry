@@ -76,6 +76,7 @@ describe("auditor signed apply through published DID/VC/VP HTTP intake", () => {
         if (pending === null || request.headers["x-applicant-did"] !== pending.binding.subjectDid) {
           throw new Error("unauthorized");
         }
+        return pending.binding.subjectDid;
       },
       resolvePendingApplication: async (id) => {
         const pending = registration.readPending(id);

@@ -82,7 +82,7 @@ describe("application VP HTTP intake", () => {
     accepted = null;
     port = {
       challengeStore: new InMemoryApplicationChallengeStore(),
-      authorizeRequest: vi.fn(async () => {}),
+      authorizeRequest: vi.fn(async () => binding.subjectDid),
       resolvePendingApplication: vi.fn(async (id) => id === binding.applicationId
         ? { binding: currentBinding, authorizedVerifiers: currentVerifiers } : null),
       verifyPresentation: vi.fn(async (presentation: unknown) => {
@@ -174,6 +174,68 @@ describe("application VP HTTP intake", () => {
     expect(port.signEvidence).not.toHaveBeenCalled();
     expect(port.persistRedactedEvidence).not.toHaveBeenCalled();
     expect(port.resolveAcceptedEvidence).not.toHaveBeenCalled();
+  });
+
+  it("requires a verified applicant DID for issuance and distinguishes subject and global capacity", async () => {
+    const insert = vi.spyOn(port.challengeStore, "insert");
+    port.authorizeRequest = vi.fn(async () => {});
+    await start();
+    expect((await post("challenges", {})).status).toBe(403);
+    expect(insert).not.toHaveBeenCalled();
+    await close(server!);
+    server = undefined;
+
+    port.authorizeRequest = vi.fn(async () => "did:midnight:issuer:other");
+    await start();
+    expect((await post("challenges", {})).status).toBe(403);
+    expect(insert).not.toHaveBeenCalled();
+    await close(server!);
+    server = undefined;
+
+    port.authorizeRequest = vi.fn(async () => binding.subjectDid);
+    port.challengeStore = new InMemoryApplicationChallengeStore(10, 1);
+    port.resolvePendingApplication = vi.fn(async (id) => ({
+      binding: { ...binding, applicationId: id }, authorizedVerifiers: currentVerifiers,
+    }));
+    await start();
+    expect((await post("challenges", {})).status).toBe(201);
+    const limited = await post("challenges", {});
+    expect(limited.status).toBe(201);
+    const secondApplication = await fetch(`${base}/v1/application-evidence/application:issuer:two/challenges`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: "{}",
+    });
+    expect(secondApplication.status).toBe(429);
+    expect(await secondApplication.json()).toMatchObject({ type: expect.stringContaining("application-vp-subject-capacity") });
+    await close(server!);
+    server = undefined;
+
+    port.challengeStore = new InMemoryApplicationChallengeStore(1, 10);
+    await start();
+    expect((await post("challenges", {})).status).toBe(201);
+    const full = await fetch(`${base}/v1/application-evidence/application:issuer:two/challenges`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: "{}",
+    });
+    expect(full.status).toBe(503);
+    expect(await full.json()).toMatchObject({ type: expect.stringContaining("application-vp-challenge-capacity") });
+  });
+
+  it("returns stable operational codes for collision and conflicting retry without exposing bindings", async () => {
+    await start();
+    const issued = await post("challenges", {});
+    expect(issued.status).toBe(201);
+    currentBinding = { ...binding, policyVersion: "v2" };
+    const conflict = await post("challenges", {});
+    expect(conflict.status).toBe(409);
+    expect(await conflict.json()).toMatchObject({ type: expect.stringContaining("application-vp-binding-conflict") });
+    currentBinding = binding;
+    vi.spyOn(port.challengeStore, "insert").mockRejectedValueOnce(Object.assign(new Error("private nonce"), {
+      code: "CHALLENGE_COLLISION",
+    }));
+    const unavailable = await post("challenges", {});
+    expect(unavailable.status).toBe(503);
+    const body = await unavailable.text();
+    expect(body).toContain("application-vp-challenge-collision");
+    expect(body).not.toContain("private nonce");
   });
 
   it("verifies a submitted VP, persists only signed redacted evidence, and refuses replay", async () => {

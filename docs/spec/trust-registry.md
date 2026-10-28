@@ -316,6 +316,11 @@ State transitions must be append-only. Current state can be indexed for fast rea
 
 Every object that carries a lifecycle status must either expose explicit transition timestamps for the known states or expose a `lifecycleEventRoot` that commits to the append-only transition log. Query APIs can return a current-state projection, but evidence bundles must be able to prove the transition history used for a verification decision.
 
+Lifecycle chronology and effective-window validation compare RFC3339 instants
+after applying their offsets without discarding fractional digits. Equivalent
+offset spellings denote the same instant; a later timestamp must not be
+accepted as an earlier one merely because both fall within one millisecond.
+
 ## 7. Contract Surfaces
 
 The expected Compact contract split is:

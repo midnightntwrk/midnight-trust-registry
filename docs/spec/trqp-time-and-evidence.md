@@ -52,6 +52,11 @@ Status: milestone 0.1.0 reference behavior. See issue #159.
   bundle or establish network finality.
 - Epoch window and bundle equality checks compare RFC3339 instants
   semantically. Roots, registry ID, and epoch ID still match byte-for-byte.
+- When more than one matching evidence bundle covers the selected instant,
+  the source prefers the latest epoch start by full RFC3339 instant comparison,
+  including fractional digits beyond milliseconds. Epoch ID breaks only a
+  true instant tie; it must not override a later start within the same
+  millisecond. Selection is not a substitute for independent proof validation.
 - An independently verified TRQP evidence decision requires an explicit
   `context.time`, a caller-trusted authority DID, and an epoch anchor selected
   from authenticated ledger history rather than the response. The verifier

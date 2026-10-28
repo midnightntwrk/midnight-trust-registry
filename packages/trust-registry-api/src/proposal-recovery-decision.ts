@@ -61,15 +61,25 @@ function assertReviewCandidate(candidate: RecoveryCandidate): void {
   }
 }
 
+function assertDistinctRecoveryReviewer(reviewerFingerprint: string, planReviewerFingerprint: string): void {
+  if (!/^[0-9A-F]{40}$/u.test(planReviewerFingerprint)
+    || !/^[0-9A-F]{40}$/u.test(reviewerFingerprint)
+    || reviewerFingerprint === planReviewerFingerprint) {
+    throw new Error("Recovery decision requires a reviewer distinct from the API-plan reviewer");
+  }
+}
+
 /** Draft only. The operator must independently review evidence and sign these exact bytes. */
 export async function draftProposalRecoveryDecision(input: {
   candidate: RecoveryCandidate;
   finalityEvidencePath: string;
   evidenceReference: string;
   reviewerFingerprint: string;
+  planReviewerFingerprint: string;
   now?: number;
 }): Promise<string> {
   assertReviewCandidate(input.candidate);
+  assertDistinctRecoveryReviewer(input.reviewerFingerprint, input.planReviewerFingerprint);
   const evidence = await readBoundedLocalApprovalFile(input.finalityEvidencePath, 1024 * 1024);
   const decision = DecisionSchema.parse({
     format: "tr-local-proposal-recovery-decision-v2",
@@ -118,11 +128,7 @@ export async function loadApprovedProposalRecoveryDecision(input: {
   now?: number;
 }): Promise<{ decision: ProposalRecoveryDecision; decisionSha256: string;
   finalityAuthenticated: false; releaseQualified: false; retryPermitted: false }> {
-  if (!/^[0-9A-F]{40}$/u.test(input.planReviewerFingerprint)
-    || !/^[0-9A-F]{40}$/u.test(input.reviewerFingerprint)
-    || input.reviewerFingerprint === input.planReviewerFingerprint) {
-    throw new Error("Recovery decision requires a reviewer distinct from the API-plan reviewer");
-  }
+  assertDistinctRecoveryReviewer(input.reviewerFingerprint, input.planReviewerFingerprint);
   const candidate = input.candidate;
   assertReviewCandidate(candidate);
   const bytes = await readBoundedLocalApprovalFile(input.decisionPath, 32 * 1024);

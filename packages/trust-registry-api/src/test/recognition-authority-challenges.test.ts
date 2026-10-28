@@ -142,6 +142,44 @@ describe("recognition authority DID challenge", () => {
     })).rejects.toThrow(/invalid or already consumed/u);
   });
 
+  it("rejects fractional future signing without spending the challenge", async () => {
+    const service = new RecognitionAuthorityChallengeService(
+      new InMemoryApplicationChallengeStore(), () => issuedAtMs,
+    );
+    const challenge = await service.issue(binding);
+    await expect(service.verifyAndConsumeDidAssertion({
+      binding,
+      nonce: challenge.nonce,
+      signed: signedFor(challenge.challengeHash, {
+        issuedAt: "2026-05-20T00:00:00.0000000001Z",
+      }),
+      resolver,
+    })).rejects.toThrow(/outside the challenge window/u);
+
+    await expect(service.verifyAndConsumeDidAssertion({
+      binding,
+      nonce: challenge.nonce,
+      signed: signedFor(challenge.challengeHash, {
+        expiresAt: "2026-05-20T00:00:00.0000000001Z",
+      }),
+      resolver,
+    })).resolves.toMatchObject({ statement: { challengeHash: challenge.challengeHash } });
+  });
+
+  it("rejects an out-of-range challenge record before timestamp conversion", async () => {
+    const store = new InMemoryApplicationChallengeStore();
+    const readLive = store.readLive.bind(store);
+    vi.spyOn(store, "readLive").mockImplementation(async (...args) => {
+      const record = await readLive(...args);
+      return record === null ? null : { ...record, expiresAtMs: Number.MAX_SAFE_INTEGER };
+    });
+    const service = new RecognitionAuthorityChallengeService(store, () => issuedAtMs);
+    const challenge = await service.issue(binding);
+    await expect(service.verifyAndConsumeDidAssertion({
+      binding, nonce: challenge.nonce, signed: signedFor(challenge.challengeHash), resolver,
+    })).rejects.toThrow(/invalid or already consumed/u);
+  });
+
   it("spends the nonce only after both proofs and the accreditation commitment match", async () => {
     const accreditedBinding = { ...binding, scopeResourceType: "credentialfamily" };
     const harness = new LocalTrustRegistryIntegrationHarness("recognition-challenge");

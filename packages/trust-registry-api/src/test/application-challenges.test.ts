@@ -131,6 +131,24 @@ describe("application challenge lifecycle", () => {
       .rejects.toMatchObject({ code: "CHALLENGE_CLOCK_INVALID", name: "ApplicationChallengeClockError" });
   });
 
+  it("rejects a store expiry beyond the representable RFC3339 range", async () => {
+    let saved: ApplicationChallengeRecord | undefined;
+    const store: ApplicationChallengeStore = {
+      insert: async (record) => {
+        saved = record;
+        return { inserted: true, supersededPrevious: false };
+      },
+      readLive: async () => saved === undefined ? null : {
+        ...saved, expiresAtMs: Number.MAX_SAFE_INTEGER,
+      },
+      consume: async () => false,
+    };
+    const service = new ApplicationChallengeService(store, () => START);
+    const issued = await service.issue(binding);
+    await expect(service.liveWindow({ binding, nonce: issued.nonce, challengeHash: issued.challengeHash }))
+      .rejects.toMatchObject({ code: "CHALLENGE_CLOCK_INVALID", name: "ApplicationChallengeClockError" });
+  });
+
   it("fails closed on clock rollback without spending the live challenge", async () => {
     let now = START;
     const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(), () => now);
@@ -169,6 +187,21 @@ describe("application challenge lifecycle", () => {
     expect(second.supersededPrevious).toBe(true);
     expect(await service.consume({ binding, nonce: first.nonce, challengeHash: first.challengeHash })).toBeNull();
     expect(await service.consume({ binding, nonce: second.nonce, challengeHash: second.challengeHash })).toBe(second.challengeHash);
+  });
+
+  it("keeps an older untagged challenge when an authenticated retry exceeds the subject quota", async () => {
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(3, 1), () => START);
+    const first = await service.issue(binding);
+    const secondBinding = { ...binding, applicationId: "application:issuer:two" };
+    const second = await service.issue(secondBinding, binding.subjectDid);
+
+    await expect(service.issue(binding, binding.subjectDid)).rejects.toMatchObject({
+      code: "CHALLENGE_SUBJECT_CAPACITY",
+    });
+    expect(await service.consume({ binding, nonce: first.nonce, challengeHash: first.challengeHash }))
+      .toBe(first.challengeHash);
+    expect(await service.consume({ binding: secondBinding, nonce: second.nonce, challengeHash: second.challengeHash }))
+      .toBe(second.challengeHash);
   });
 
   it("distinguishes a fresh retry after expiry from superseding a live tab", async () => {
@@ -501,9 +534,29 @@ describe("application challenge lifecycle", () => {
     }
   });
 
+  it("bounds authenticated subjects independently while allowing same-binding retry and consume", async () => {
+    const service = new ApplicationChallengeService(new InMemoryApplicationChallengeStore(10, 1), () => START);
+    const first = await service.issue(binding, binding.subjectDid);
+    expect((await service.issue(binding, binding.subjectDid)).supersededPrevious).toBe(true);
+    const otherApplication = { ...binding, applicationId: "application:issuer:other" };
+    await expect(service.issue(otherApplication, binding.subjectDid)).rejects.toMatchObject({
+      code: "CHALLENGE_SUBJECT_CAPACITY", name: "ApplicationChallengeSubjectCapacityError",
+    });
+    const otherSubject = { ...otherApplication, applicationId: "application:issuer:third",
+      subjectDid: "did:midnight:issuer:other" };
+    expect((await service.issue(otherSubject, otherSubject.subjectDid)).challengeHash).toMatch(/^0x[0-9a-f]{64}$/u);
+    await expect(service.issue(otherApplication, otherSubject.subjectDid)).rejects.toThrow(/does not match/u);
+    expect(await service.consume({ binding, nonce: first.nonce, challengeHash: first.challengeHash })).toBeNull();
+    const current = await service.issue(binding, binding.subjectDid);
+    expect(await service.consume({ binding, nonce: current.nonce, challengeHash: current.challengeHash }))
+      .toBe(current.challengeHash);
+    expect((await service.issue(otherApplication, binding.subjectDid)).challengeHash).toMatch(/^0x[0-9a-f]{64}$/u);
+  });
+
   it("rejects invalid capacity and expiry outside the timer range", async () => {
     for (const capacity of [0, -1, 1.5]) {
       expect(() => new InMemoryApplicationChallengeStore(capacity)).toThrow(/capacity is invalid/);
+      expect(() => new InMemoryApplicationChallengeStore(10, capacity)).toThrow(/capacity is invalid/);
     }
     const store = new InMemoryApplicationChallengeStore();
     await expect(store.insert({

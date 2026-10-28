@@ -592,7 +592,8 @@ export const runTrustRegistryApiCli = async (
     const draft = await draftProposalRecoveryDecision({ candidate,
       finalityEvidencePath: options.finalityEvidencePath!,
       evidenceReference: options.evidenceReference!,
-      reviewerFingerprint: options.recoveryReviewerFingerprint! });
+      reviewerFingerprint: options.recoveryReviewerFingerprint!,
+      planReviewerFingerprint: options.localLedgerReviewerFingerprint! });
     process.stdout.write(draft);
     return;
   }

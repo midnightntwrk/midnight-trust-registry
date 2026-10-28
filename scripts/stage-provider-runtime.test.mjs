@@ -123,6 +123,15 @@ test("rejects source mismatch before creating a stage", () => fixture(async ({ b
   await assert.rejects(readFile(join(destination, "provider-stage.json")), { code: "ENOENT" });
 }));
 
+test("rejects a missing install-inventory digest before creating a stage", () => fixture(async ({ bundle,
+  destination, revision, dependencies,
+}) => {
+  await assert.rejects(stageProviderRuntime(bundle, destination, { ...dependencies,
+    verifyBundle: async () => ({ sourceRevision: revision }),
+  }), /does not match the signed source commit/u);
+  await assert.rejects(readFile(join(destination, "provider-stage.json")), { code: "ENOENT" });
+}));
+
 test("rejects unexpected untracked source files but ignores private evidence", () => fixture(async ({ repo,
   bundle, destination, dependencies,
 }) => {

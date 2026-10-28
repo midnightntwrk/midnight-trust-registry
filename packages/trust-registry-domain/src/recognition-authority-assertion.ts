@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { canonicalizeJson } from "./canonical-json.js";
 import { DidSchema, HashHexSchema, ScopedIdentifierSchema, sha256Hex } from "./ids.js";
+import { compareRfc3339Instants, isRfc3339DurationWithinSeconds } from "./instant.js";
 
 const TimestampSchema = z.string().datetime({ offset: true });
 const NonzeroHashHexSchema = HashHexSchema.refine(
@@ -23,10 +24,16 @@ export const RecognitionAuthorityAssertionSchema = z.strictObject({
   issuedAt: TimestampSchema,
   expiresAt: TimestampSchema,
 }).superRefine((value, ctx) => {
-  const issued = Date.parse(value.issuedAt);
-  const expires = Date.parse(value.expiresAt);
-  if (!Number.isFinite(issued) || !Number.isFinite(expires)
-    || expires <= issued || expires - issued > 24 * 60 * 60_000) {
+  if (!TimestampSchema.safeParse(value.issuedAt).success
+    || !TimestampSchema.safeParse(value.expiresAt).success) return;
+  let validLifetime = false;
+  try {
+    validLifetime = compareRfc3339Instants(value.expiresAt, value.issuedAt) > 0
+      && isRfc3339DurationWithinSeconds(value.issuedAt, value.expiresAt, 24 * 60 * 60);
+  } catch {
+    // Treat an unparseable offset as invalid rather than leaking a parser exception.
+  }
+  if (!validLifetime) {
     ctx.addIssue({ code: "custom", path: ["expiresAt"], message: "Assertion lifetime must be positive and at most 24 hours" });
   }
 });

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { open, rename, rm } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { setTimeout as delay } from "node:timers/promises";
@@ -10,6 +11,7 @@ import { z } from "zod";
 import {
   ApplicationChallengeBindingConflictError,
   ApplicationChallengeCapacityError,
+  ApplicationChallengeSubjectCapacityError,
   ApplicationChallengeClockError,
   ApplicationChallengeExpiryError,
   type ApplicationChallengeInsertResult,
@@ -18,6 +20,7 @@ import {
 } from "./application-challenges.js";
 
 const MAX_ENTRIES = 10_000;
+const MAX_PER_SUBJECT = 32;
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_TIMEOUT_MS = 2_147_483_647;
 const LOCK_ATTEMPTS = 100;
@@ -28,6 +31,7 @@ const RecordSchema = z.object({
   challengeHash: HashSchema,
   bindingHash: HashSchema,
   applicationHash: HashSchema,
+  subjectHash: HashSchema.optional(),
   issuedAtMs: TimestampSchema,
   expiresAtMs: TimestampSchema,
 }).strict().refine((record) => record.expiresAtMs > record.issuedAtMs);
@@ -53,13 +57,15 @@ export class InvalidApplicationChallengeFileError extends Error {
   }
 }
 
-/** Local reference adapter. Atomic rename is not a claim of crash-durable persistence. */
+/** Local file adapter with fsync-backed replacement and cross-process write exclusion. */
 export class FileApplicationChallengeStore implements ApplicationChallengeStore {
   private readonly path: string;
 
-  constructor(path: string, private readonly maxEntries = MAX_ENTRIES) {
+  constructor(path: string, private readonly maxEntries = MAX_ENTRIES,
+    private readonly maxPerSubject = MAX_PER_SUBJECT) {
     if (path.length === 0) throw new RangeError("Application challenge path is invalid");
-    if (!Number.isSafeInteger(maxEntries) || maxEntries < 1 || maxEntries > MAX_ENTRIES) {
+    if (!Number.isSafeInteger(maxEntries) || maxEntries < 1 || maxEntries > MAX_ENTRIES
+      || !Number.isSafeInteger(maxPerSubject) || maxPerSubject < 1) {
       throw new RangeError("Application challenge store capacity is invalid");
     }
     this.path = resolve(path);
@@ -98,6 +104,10 @@ export class FileApplicationChallengeStore implements ApplicationChallengeStore 
       }
       const remaining = live.filter((entry) => entry.applicationHash !== record.applicationHash);
       if (remaining.length >= this.maxEntries) throw new ApplicationChallengeCapacityError();
+      if (record.subjectHash !== undefined
+        && remaining.filter((entry) => entry.subjectHash === record.subjectHash).length >= this.maxPerSubject) {
+        throw new ApplicationChallengeSubjectCapacityError();
+      }
       await this.writeState({ version: 1, records: [...remaining, record] });
       return { inserted: true, supersededPrevious: previous !== undefined };
     });
@@ -138,9 +148,14 @@ export class FileApplicationChallengeStore implements ApplicationChallengeStore 
   }
 
   private async withWrite<T>(operation: () => Promise<T>): Promise<T> {
+    const directoryIdentity = await this.directoryIdentity();
     for (let attempt = 0; attempt < LOCK_ATTEMPTS; attempt += 1) {
       try {
-        return await withExclusiveWorkspaceWrite(this.path, operation);
+        return await withExclusiveWorkspaceWrite(this.path, async () => {
+          const lockedIdentity = await this.directoryIdentity();
+          if (lockedIdentity !== directoryIdentity) throw new InvalidApplicationChallengeFileError();
+          return operation();
+        });
       } catch (error) {
         if (!(error instanceof WorkspaceMutationLockedError) || attempt === LOCK_ATTEMPTS - 1) throw error;
         await delay(LOCK_RETRY_MS);
@@ -149,35 +164,81 @@ export class FileApplicationChallengeStore implements ApplicationChallengeStore 
     throw new WorkspaceMutationLockedError();
   }
 
-  private async readState(): Promise<z.infer<typeof StateSchema>> {
-    let info;
+  private async directoryIdentity(): Promise<string> {
+    let directory;
     try {
-      info = await lstat(this.path);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { version: 1, records: [] };
-      throw error;
-    }
-    if (!info.isFile() || (info.mode & 0o077) !== 0 || info.size > MAX_FILE_BYTES) {
-      throw new InvalidApplicationChallengeFileError();
-    }
-    const raw = await readFile(this.path, "utf8");
-    if (Buffer.byteLength(raw, "utf8") > MAX_FILE_BYTES) throw new InvalidApplicationChallengeFileError();
-    try {
-      const state: unknown = JSON.parse(raw);
-      const parsed = StateSchema.parse(state);
-      if (parsed.records.length > this.maxEntries) throw new InvalidApplicationChallengeFileError();
-      return parsed;
+      directory = await open(dirname(this.path), constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
     } catch {
       throw new InvalidApplicationChallengeFileError();
+    }
+    try {
+      const state = await directory.stat({ bigint: true });
+      if (!state.isDirectory()) throw new InvalidApplicationChallengeFileError();
+      return `${state.dev}:${state.ino}`;
+    } finally {
+      await directory.close();
+    }
+  }
+
+  private async readState(): Promise<z.infer<typeof StateSchema>> {
+    let handle;
+    try {
+      handle = await open(this.path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { version: 1, records: [] };
+      if ((error as NodeJS.ErrnoException).code === "ELOOP") throw new InvalidApplicationChallengeFileError();
+      throw error;
+    }
+    try {
+      const before = await handle.stat({ bigint: true });
+      if (!before.isFile() || before.nlink !== 1n || (before.mode & 0o077n) !== 0n
+        || before.size === 0n || before.size > BigInt(MAX_FILE_BYTES)) {
+        throw new InvalidApplicationChallengeFileError();
+      }
+      const raw = Buffer.alloc(Number(before.size));
+      let offset = 0;
+      while (offset < raw.length) {
+        const { bytesRead } = await handle.read(raw, offset, raw.length - offset, offset);
+        if (bytesRead === 0) throw new InvalidApplicationChallengeFileError();
+        offset += bytesRead;
+      }
+      const after = await handle.stat({ bigint: true });
+      if (BigInt(raw.length) !== before.size || after.dev !== before.dev || after.ino !== before.ino
+        || after.size !== before.size || after.mtimeNs !== before.mtimeNs || after.ctimeNs !== before.ctimeNs) {
+        throw new InvalidApplicationChallengeFileError();
+      }
+      try {
+        const parsed = StateSchema.parse(JSON.parse(raw.toString("utf8")));
+        if (parsed.records.length > this.maxEntries) throw new InvalidApplicationChallengeFileError();
+        return parsed;
+      } catch {
+        throw new InvalidApplicationChallengeFileError();
+      }
+    } finally {
+      await handle.close();
     }
   }
 
   private async writeState(state: z.infer<typeof StateSchema>): Promise<void> {
-    await mkdir(dirname(this.path), { recursive: true });
+    const directoryPath = dirname(this.path);
+    const serialized = JSON.stringify(StateSchema.parse(state));
+    if (Buffer.byteLength(serialized, "utf8") > MAX_FILE_BYTES) throw new InvalidApplicationChallengeFileError();
     const temporaryPath = `${this.path}.${randomUUID()}.tmp`;
     try {
-      await writeFile(temporaryPath, JSON.stringify(state), { encoding: "utf8", flag: "wx", mode: 0o600 });
+      const temporary = await open(temporaryPath, "wx", 0o600);
+      try {
+        await temporary.writeFile(serialized);
+        await temporary.sync();
+      } finally {
+        await temporary.close();
+      }
       await rename(temporaryPath, this.path);
+      const directory = await open(directoryPath, "r");
+      try {
+        await directory.sync();
+      } finally {
+        await directory.close();
+      }
     } finally {
       await rm(temporaryPath, { force: true });
     }

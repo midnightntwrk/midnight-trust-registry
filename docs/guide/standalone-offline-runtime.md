@@ -56,8 +56,9 @@ topology is needed before cluster use. Plan verification also needs a writable
 The staged install directory must contain `install-inventory.json`, the
 release-candidate package manifest and its ten tarballs, separate OCI image
 archives for node, indexer, and proof server, and the proof server's verified
-Ledger 8 public-parameter cache. Use this shape, replacing every
-placeholder with approved exact values:
+Ledger 8 public-parameter cache. The following is a **historical v3
+ledger-only excerpt**, not a template for a complete 0.1.0 actor candidate.
+Use the builder below to generate a v6 inventory; do not hand-edit it.
 
 ```json
 {
@@ -101,6 +102,12 @@ placeholder with approved exact values:
   }
 }
 ```
+
+A complete v6 candidate additionally pins the API and both portals under
+`apiRuntime` and `portalRuntimes`, the API Compose overlay under
+`runtimeCompose`, and the installation relay under `installRelay`. The
+verifier requires exact archive and manifest hashes for each image. A v3
+ledger-only inventory cannot start the local API or qualify actor journeys.
 
 From a clean, GPG-signed and DCO-signed source commit with full generated
 contract artifacts already present, run `pnpm run artifacts:standalone-install`.
@@ -908,15 +915,21 @@ private file for restart and restore, and do not reuse it for another ledger.
 An older v2 bundle remains historical smoke evidence, not a new wizard setup
 input. A v3 bundle built from the chosen release source revision is still only
 candidate bytes; it does not by itself support an RC qualification claim.
-`observe-stack` checks the selected live project's topology and canary HTTPS/DNS
-egress behavior, including prepared private-input matching and unchanged
+`observe-stack` checks the selected live project's topology and canary route/DNS
+isolation, including prepared private-input matching and unchanged
 bundled Compose bytes. For v3, it also matches the verified archive image IDs,
 source-scoped offline tags, and Docker Compose's recorded bundle paths before
 appending timestamped ledger-bridge evidence. Its probe runs a fresh throwaway
 container on the same bridge using the verified node image ID, rather than
 trusting a mutable local tag or directly probing the running node. A standalone CLI
-invocation against a source-scoped offline stack must supply the same verified
-bundle: `node scripts/check-standalone-egress.mjs <verified-bundle-directory>`.
+invocation against a v6 offline stack must supply the same verified bundle:
+`node scripts/check-standalone-local-egress.mjs <verified-bundle-directory>`.
+The v6 wizard uses this local probe automatically. It starts a disposable HTTP
+canary from the verified API image on a separate temporary Docker bridge,
+checks DNS and TCP positive controls there, then checks that the selected
+ledger bridge cannot reach it from a throwaway verified node-image probe.
+No public Internet is required. Earlier bundles use the historical public
+canary and cannot use that result as offline-runtime evidence.
 With that verified bundle, the probe accepts Docker Desktop's unpublished
 effective host ports only when the requested bindings still match the selected
 loopback addresses and ports. It does not treat unpublished ports as working
@@ -1521,15 +1534,37 @@ logs and run real actor journeys under the release egress policy separately.
 
 The topology check also requires the network's complete attachment list to
 match the three pinned services. A temporary installation relay or another
-container attached to the ledger bridge fails the check. To test one
-outbound path with a positive control, while Docker's normal bridge can reach
-the public internet and the relay is absent, run:
+container attached to the ledger bridge fails the check. For a verified v6
+install, test one outbound path with a local positive control while the relay
+is absent:
+
+```sh
+node scripts/check-standalone-local-egress.mjs <verified-bundle-directory>
+```
+
+The disposable verified-API-image HTTP canary and node-image probe need no
+public Internet. The probe checks TCP and synthetic DNS/UDP positive controls
+on its temporary control bridge, then denial from the observed ledger bridge.
+The DNS check requires a successful answer before and after the isolated
+attempt, and checks the canary's query log to ensure the isolated packet did
+not arrive; an `ECONNREFUSED` response alone is not sufficient. It
+removes its own canary and bridge afterward; cleanup failure invalidates the
+observation. The result proves only those two canary routes from disposable
+node/API probe images. It does not exercise the running node's application
+traffic or prove that Docker's embedded DNS cannot recurse externally.
+If Docker's default address pools are exhausted, choose an unused private
+`10.x.x.0/24` that does not overlap the ledger bridge or host routes, then set
+`TR_EGRESS_CONTROL_SUBNET` for this one probe. The control network is temporary;
+do not remove or reuse another project's network to make room.
+
+The historical v3-v5 command requires Docker's normal bridge to reach the
+public Internet:
 
 ```sh
 pnpm run check:standalone-egress
 ```
 
-This contacts the external third-party host `example.com` from a restricted
+That command contacts the external third-party host `example.com` from a restricted
 ephemeral copy of the pinned node image on Docker's normal bridge. The same
 IP-pinned HTTPS request must then fail on the dedicated internal bridge,
 and the canary's DNS lookup must fail there as well. The control must have a
@@ -1760,6 +1795,17 @@ read, and a failed journal write prevents the first callback. This verifies
 the journal boundary, not a real node broadcast, local-ledger restart, or
 non-inclusion. Preserve the original journal and its binding sidecar across
 service restart and backup/restore.
+The HTTP integration regression separately closes and recreates its listener,
+server options, proposal port, and file-journal instance after an ambiguous
+issuer submission. A duplicate request remains blocked before the new port
+can execute, and only matching finalized reconciliation changes the journal
+state. Its ledger and submission are synthetic; it does not qualify deployed
+restart or restore.
+The current issuer and HTTP quorum preflights reject duplicate maintainer
+public keys even when key IDs differ; the HTTP regression uses a real file
+journal and confirms rejection before reservation. This does not make every
+provider or Compact failure recoverable. If a reservation is present after any
+failed submission, keep it blocked and follow the review procedure below.
 
 Keep the API mutation path stopped when a proposal reservation has an unknown
 outcome. `trust-registry-api inspect-local-proposal-recovery` reads the bound
@@ -1770,6 +1816,7 @@ retain independently collected finality evidence in a private file. Use
 --evidence-reference REF` with the same signed-plan, role, authorization ID,
 and journal arguments as `inspect`, plus `--recovery-reviewer FINGERPRINT`
 for a reviewer distinct from the API-plan reviewer, to produce canonical unsigned JSON. The
+draft command rejects a duplicate reviewer before producing bytes for signature. The
 reviewer must inspect the candidate and evidence, then detached-sign the exact
 saved bytes. The signed decision names the reserved action sequence, kind,
 and payload hash so the reviewer can compare the intended action with the
@@ -1793,6 +1840,9 @@ Do not use a null indexer read, elapsed
 time, or a new journal path as recovery authority. Issue #220 remains the stop
 gate until a
 reviewed finality policy, durable tombstone, and operator recovery path exist.
+The proposed proof and journal-transition acceptance contract is in
+[Local proposal reservation recovery](../spec/local-proposal-recovery.md).
+It does not grant an operator a recovery command today.
 
 ## Security-Script Type Gate
 

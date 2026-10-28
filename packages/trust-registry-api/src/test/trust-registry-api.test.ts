@@ -768,6 +768,73 @@ describe("trust registry api", () => {
     }
   });
 
+  it("selects the newest authorization epoch beyond millisecond precision", async () => {
+    const snapshot = createDemoSnapshot({ label: "fractional-epoch-order" });
+    const entry = snapshot.issuerEntries.find((candidate) => candidate.authorization.status === "active");
+    if (entry === undefined) throw new Error("expected active issuer evidence");
+    const start = new Date(Date.parse(entry.evidence.epoch.validFrom) + 1).toISOString().slice(0, -1);
+    const at = new Date(Date.parse(entry.evidence.epoch.validFrom) + 2).toISOString();
+    const olderEpoch = {
+      ...entry.evidence.epoch,
+      epochId: `${entry.evidence.epoch.epochId}:zzzz`,
+      validFrom: `${start}0000001Z`,
+    };
+    const newerEpoch = {
+      ...entry.evidence.epoch,
+      epochId: `${entry.evidence.epoch.epochId}:aaaa`,
+      validFrom: `${start}0000002Z`,
+    };
+    const source = createTrqpSourceFromStateSource(createInMemorySource({
+      ...snapshot,
+      epochs: [...snapshot.epochs, olderEpoch, newerEpoch],
+      issuerEntries: snapshot.issuerEntries.map((candidate) =>
+        candidate === entry ? { ...entry, evidence: { ...entry.evidence, epoch: olderEpoch } } : candidate),
+      evidenceArchive: [...snapshot.evidenceArchive, { ...entry.evidence, epoch: newerEpoch }],
+    }));
+    const decision = await source.getAuthorizationDecision({
+      entity_id: entry.authorization.subjectDid,
+      authority_id: snapshot.registry.registryDid,
+      action: "issue",
+      resource: entry.authorization.resourceId,
+    }, at);
+    expect(decision?.trustedAtTime).toBe(true);
+    expect(decision?.bundle?.epoch.epochId).toBe(newerEpoch.epochId);
+  });
+
+  it("selects the newest recognition epoch beyond millisecond precision", async () => {
+    const snapshot = createDemoSnapshot({ label: "fractional-recognition-epoch-order" });
+    const entry = snapshot.recognitionEntries[0];
+    if (entry === undefined) throw new Error("expected recognition evidence");
+    const start = new Date(Date.parse(entry.evidence.epoch.validFrom) + 1).toISOString().slice(0, -1);
+    const at = new Date(Date.parse(entry.evidence.epoch.validFrom) + 2).toISOString();
+    const olderEpoch = {
+      ...entry.evidence.epoch,
+      epochId: `${entry.evidence.epoch.epochId}:zzzz`,
+      validFrom: `${start}0000001Z`,
+    };
+    const newerEpoch = {
+      ...entry.evidence.epoch,
+      epochId: `${entry.evidence.epoch.epochId}:aaaa`,
+      validFrom: `${start}0000002Z`,
+    };
+    const source = createTrqpSourceFromStateSource(createInMemorySource({
+      ...snapshot,
+      epochs: [...snapshot.epochs, olderEpoch, newerEpoch],
+      recognitionEntries: snapshot.recognitionEntries.map((candidate) =>
+        candidate === entry ? { ...entry, evidence: { ...entry.evidence, epoch: olderEpoch } } : candidate),
+      evidenceArchive: [...snapshot.evidenceArchive, { ...entry.evidence, epoch: newerEpoch }],
+    }));
+    const decision = await source.getRecognitionDecision({
+      entity_id: entry.recognition.recognizedAuthorityDid,
+      authority_id: snapshot.registry.registryDid,
+      action: entry.recognition.scope.resourceType,
+      resource: entry.recognition.scope.resourceId,
+      context: { recognized_registry_id: entry.recognition.recognizedRegistryId },
+    }, at);
+    expect(decision?.trustedAtTime).toBe(true);
+    expect(decision?.bundle?.epoch.epochId).toBe(newerEpoch.epochId);
+  });
+
   it("requires exact recognition context rather than treating omission as a wildcard", async () => {
     const snapshot = createDemoSnapshot({ label: "recognition-context-lookup" });
     const original = snapshot.recognitionEntries[0];

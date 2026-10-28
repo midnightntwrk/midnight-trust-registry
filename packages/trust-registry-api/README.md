@@ -579,6 +579,16 @@ authenticated principal to the application and enforce CSRF protection where
 cookie credentials are used. Host the applicant frontend and these routes on
 the same origin or provide a narrowly configured authenticated reverse proxy;
 the reference server does not grant cross-origin browser access to raw VPs.
+For challenge issuance, `authorizeRequest` must return the applicant DID it
+authenticated; `void` or a DID that differs from the pending binding fails
+closed. Returning a caller-provided DID header without verifying control is
+not authentication. The file and memory reference stores limit live challenges
+per registry-scoped authenticated subject hash (default 32) as well as globally
+(default 10,000). A full subject quota returns 429, a changed live binding
+returns 409, and global capacity, clock, or collision failures return stable
+503 problem types. Same-binding retry explicitly supersedes the previous
+challenge. The public route remains blocked until a deployment host supplies
+real authentication, durable atomic VP storage, and abuse controls.
 Challenge issuance accepts only `{}`. Submission
 accepts exactly `{ "nonce": "0x...", "challengeHash": "0x...", "presentation": <VP> }`.
 The server never accepts a caller-supplied binding, policy, verifier list, or
@@ -617,10 +627,16 @@ instants in a versioned private (`0600`) file. A shared cross-process lock
 serializes replacement and one-use consumption; a second instance can read and
 consume the same challenge, but cannot consume it twice. It fails closed on
 malformed or insecurely permissioned files, bounds capacity, and leaves stale
-locks for operator recovery. Atomic rename does not guarantee crash-durable
-writes, and this adapter does not provide distributed transactions, VP
-verification, applicant authentication, rate limits, or atomic pending-state
-persistence. The packaged API CLI still leaves `applicationVp` unconfigured.
+locks for operator recovery. The operator must pre-provision and durably sync
+the store directory before use; the adapter rejects a missing directory and
+rechecks its inode under the write lock instead of creating one during issuance.
+On a local filesystem that
+honors `fsync`, it then syncs the replacement file and existing directory
+around atomic rename. A failed post-rename directory sync is an ambiguous
+write outcome requiring readback. This adapter does not provide distributed
+transactions, VP verification, applicant authentication, rate limits, or
+atomic pending-state persistence. The packaged API CLI still leaves
+`applicationVp` unconfigured.
 
 The optional `POST /v1/pending-applications` accepts an externally signed
 Midnight DID `apply` intent for an issuer, verifier, auditor, or maintainer,

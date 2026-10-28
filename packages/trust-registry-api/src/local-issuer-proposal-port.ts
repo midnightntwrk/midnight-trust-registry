@@ -1,4 +1,5 @@
 import {
+  compareRfc3339Instants,
   computeIssuerStatusPolicyBindingCommitment,
   type ApplicationEvidenceSubmission,
   type GovernancePolicySnapshot,
@@ -74,6 +75,21 @@ export class LocalIssuerEvidenceTimeRejectedError extends Error {
   constructor() {
     super("Accepted issuer evidence is not current at trusted time");
     this.name = "LocalIssuerEvidenceTimeRejectedError";
+  }
+}
+
+export function assertIssuerEvidenceCurrentAtTrustedTime(
+  envelope: Pick<ApplicationEvidenceSubmission["envelope"], "verifiedAt" | "expiresAt">,
+  trustedTimeMs: number,
+): void {
+  const trustedDate = new Date(trustedTimeMs);
+  if (!Number.isSafeInteger(trustedTimeMs) || !Number.isFinite(trustedDate.getTime())) {
+    throw new Error("Trusted time source returned an invalid value");
+  }
+  const trustedTime = trustedDate.toISOString();
+  if (compareRfc3339Instants(trustedTime, envelope.verifiedAt) < 0
+    || compareRfc3339Instants(trustedTime, envelope.expiresAt) >= 0) {
+    throw new LocalIssuerEvidenceTimeRejectedError();
   }
 }
 
@@ -158,13 +174,7 @@ export function createBoundLocalIssuerProposalPort(
 
   const assertEvidenceCurrent = async (evidence: ApplicationEvidenceSubmission): Promise<number> => {
     const trustedTimeMs = await dependencies.readTrustedTimeMs();
-    if (!Number.isSafeInteger(trustedTimeMs)) {
-      throw new Error("Trusted time source returned an invalid value");
-    }
-    if (trustedTimeMs < Date.parse(evidence.envelope.verifiedAt)
-      || trustedTimeMs >= Date.parse(evidence.envelope.expiresAt)) {
-      throw new LocalIssuerEvidenceTimeRejectedError();
-    }
+    assertIssuerEvidenceCurrentAtTrustedTime(evidence.envelope, trustedTimeMs);
     return trustedTimeMs;
   };
 

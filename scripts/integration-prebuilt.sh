@@ -7,17 +7,7 @@ cd "$(dirname "$0")/.."
 # their source and completeness, but does not independently prove provenance.
 pnpm run contract:check-full-artifacts
 
-pnpm -r \
-  --filter @midnight-ntwrk/trust-registry-domain \
-  --filter @midnight-ntwrk/trust-registry-client \
-  --filter @midnight-ntwrk/trust-registry-integration \
-  --filter @midnight-ntwrk/trust-registry-cli \
-  --filter @midnight-ntwrk/trust-registry-api \
-  --filter @midnight-ntwrk/trust-registry-admin-console \
-  --filter @midnight-ntwrk/trust-registry-applicant-portal \
-  --filter @midnight-ntwrk/trust-registry-trqp-adapter \
-  --filter @midnight-ntwrk/trust-registry-openid-federation-adapter \
-  run build
+bash scripts/build-prebuilt-runtime.sh
 
 pnpm --filter @midnight-ntwrk/trust-registry-integration run integration
 pnpm --filter @midnight-ntwrk/trust-registry-api run integration

@@ -173,6 +173,7 @@ export async function startHost(port, staticDir = fileURLToPath(new URL("../pack
     if (!hasDemoSession(request) || pending === null || pending.binding.subjectDid !== subjectDid) {
       throw new Error("Demo applicant session denied");
     }
+    return subjectDid;
   };
   server = createTrustRegistryApiServer({
     source: {

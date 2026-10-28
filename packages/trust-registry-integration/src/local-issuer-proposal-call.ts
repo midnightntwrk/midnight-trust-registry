@@ -243,6 +243,15 @@ export function prepareLocalIssuerProposalCall(input: LocalIssuerProposalCall, l
     prepared.actionSequence, signer.signature,
   ))) throw new Error("Maintainer signature does not bind the current issuer proposal");
   const authorizationBundle = buildCanonicalMaintainerAuthorizationBundle(input.signers);
+  for (let index = 0; index < input.signers.length; index += 1) {
+    for (let previous = 0; previous < index; previous += 1) {
+      const left = input.signers[previous]!.publicKey;
+      const right = input.signers[index]!.publicKey;
+      if (left.x === right.x && left.y === right.y) {
+        throw new Error("Maintainer signer public keys must be distinct");
+      }
+    }
+  }
   const signerSetHash = TrustRegistryContract.pureCircuits.maintainerSignerSetHash(
     authorizationBundle.signerCount, authorizationBundle.signer1.keyId,
     authorizationBundle.signer2.keyId, authorizationBundle.signer3.keyId,

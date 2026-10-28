@@ -96,7 +96,8 @@ async function staticImageArchive(root, role, options = {}) {
     Cmd: ["node", "/app/entrypoint.mjs", "--host", "0.0.0.0", "--port", "4173"],
   } });
   const configId = sha(config);
-  const image = JSON.stringify({ schemaVersion: 2, config: { digest: `sha256:${configId}` }, layers: [] });
+  const image = JSON.stringify({ schemaVersion: 2, config: { digest: `sha256:${configId}` },
+    layers: options.imageLayers ?? [] });
   const imageDigest = sha(image);
   const imageIndex = JSON.stringify({ schemaVersion: 2, manifests: [{
     digest: `sha256:${imageDigest}`, platform: { os: "linux", architecture: "arm64" },
@@ -110,7 +111,7 @@ async function staticImageArchive(root, role, options = {}) {
     manifests: [{ digest: imageId,
       ...(options.outerName ? { annotations: { "io.containerd.image.name": options.outerName } } : {}) }] }));
   await writeFile(join(source, "manifest.json"), JSON.stringify([{ Config: `blobs/sha256/${configId}`,
-    RepoTags: options.repoTags ?? null, Layers: [] }]));
+    RepoTags: options.repoTags ?? null, Layers: options.legacyLayers ?? [] }]));
   const archive = join(root, `images/${role}.image.tar`);
   execFileSync("tar", ["-cf", archive, "-C", source, "index.json", "manifest.json", "blobs"]);
   const archiveSha256 = sha(await readFile(archive));
@@ -391,11 +392,13 @@ test("v5 binds both portal OCI archives to the exact install source and roles", 
       { healthcheck: { ...approvedRuntimeHealthcheck("admin"), Test: ["CMD-SHELL", "true"] } },
       { omitHealthcheck: true },
       { extraPlatform: true },
+      { imageLayers: [null] },
     ]) {
       inventory.portalRuntimes.admin = await staticImageArchive(root, "admin", options);
       await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
       await assert.rejects(verifyStandaloneInstallBundle(root, () => {}),
-        options.extraPlatform ? /OCI index/u : /runtime/u);
+        options.extraPlatform ? /OCI index/u
+          : options.imageLayers ? /OCI image manifest/u : /runtime/u);
     }
   } finally {
     await rm(root, { recursive: true, force: true });

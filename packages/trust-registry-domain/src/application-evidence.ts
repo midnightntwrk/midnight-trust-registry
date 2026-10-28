@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { canonicalizeJson } from "./canonical-json.js";
 import { DidSchema, HashHexSchema, ScopedIdentifierSchema, sha256Hex } from "./ids.js";
+import { compareRfc3339Instants, isRfc3339DurationWithinSeconds } from "./instant.js";
 import {
   IssuerGovernedResourceIdSchema,
   IssuerGovernedResourceTypeSchema,
@@ -112,9 +113,20 @@ export const ApplicationEvidenceEnvelopeSchema = z
         });
       }
     }
-    const verifiedAtMs = Date.parse(envelope.verifiedAt);
-    const expiresAtMs = Date.parse(envelope.expiresAt);
-    if (expiresAtMs <= verifiedAtMs) {
+    if (!TimestampSchema.safeParse(envelope.verifiedAt).success
+      || !TimestampSchema.safeParse(envelope.expiresAt).success) return;
+    let order: number;
+    try {
+      order = compareRfc3339Instants(envelope.expiresAt, envelope.verifiedAt);
+    } catch {
+      ctx.addIssue({
+        code: "custom",
+        path: ["verifiedAt"],
+        message: "Evidence timestamps must be valid RFC3339 instants",
+      });
+      return;
+    }
+    if (order <= 0) {
       ctx.addIssue({
         code: "custom",
         path: ["expiresAt"],
@@ -191,8 +203,8 @@ export function assertValidApplicationEvidence(
   if (parsed.commitment !== expectedCommitment) {
     throw new Error("Application evidence commitment does not match its envelope");
   }
-  if (Date.parse(parsed.envelope.expiresAt) - Date.parse(parsed.envelope.verifiedAt)
-    > MAX_APPLICATION_EVIDENCE_LIFETIME_MS) {
+  if (!isRfc3339DurationWithinSeconds(parsed.envelope.verifiedAt, parsed.envelope.expiresAt,
+    MAX_APPLICATION_EVIDENCE_LIFETIME_MS / 1000)) {
     throw new Error("Application evidence exceeds the maximum 24-hour lifetime");
   }
 
@@ -220,11 +232,10 @@ export function assertValidApplicationEvidence(
   if (!TimestampSchema.safeParse(expectation.evaluatedAt).success) {
     throw new Error("Application evidence evaluation time is invalid");
   }
-  const evaluatedAt = Date.parse(expectation.evaluatedAt);
-  if (evaluatedAt < Date.parse(parsed.envelope.verifiedAt)) {
+  if (compareRfc3339Instants(expectation.evaluatedAt, parsed.envelope.verifiedAt) < 0) {
     throw new Error("Application evidence is not yet valid at the governed transition");
   }
-  if (evaluatedAt >= Date.parse(parsed.envelope.expiresAt)) {
+  if (compareRfc3339Instants(expectation.evaluatedAt, parsed.envelope.expiresAt) >= 0) {
     throw new Error("Application evidence is expired at the governed transition");
   }
 

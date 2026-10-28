@@ -1,7 +1,7 @@
 # Trust Registry Knowledge Base
 
 Status: working knowledge snapshot
-Updated: 2026-10-24
+Updated: 2026-10-27
 
 ## Purpose
 
@@ -11,6 +11,41 @@ This document is the repo-local execution snapshot for
 It records the current code surface, validation baseline, dependency posture,
 backlog posture, and the next implementation direction. It is intentionally
 shorter-lived and more action-oriented than the normative specification.
+
+## October 27 2026 Installer And E2E Boundary
+
+- The installer now uses strictly typechecked policies for its base Compose
+  project, three service roles, and digest-pinned image references, plus the
+  install inventory's exact ledger image roles and distinct archive pins.
+  Malformed YAML shapes, extra or duplicate roles, duplicate archives, and
+  floating image tags fail the focused tests. The install verifier still
+  checks the Compose file's exact bytes and archive contents against the
+  inventory. This proves a staged bundle constraint, not Docker's merged
+  runtime topology or a deployed ledger. The rest of the bundle verifier and
+  wizard I/O remain on the tracked non-strict type-migration list (#229).
+- The local-only 0.1.0 E2E acceptance procedure remains
+  [standalone-local-journey](../guide/standalone-local-journey.md). No actor
+  journey has been recorded against a deployed, independently finalized
+  standalone contract with egress denied. Do not relabel simulator, Playwright,
+  packed-consumer, or injected-provider checks as that evidence (#219).
+- The installed `@midnight-ntwrk/credential-compact` package does not expose a
+  live status-authority verifier. The sibling status-registry package is
+  private, so this repository cannot supply a supported VC-owned adapter by
+  importing its source. #90 remains open until a versioned, consumable VC
+  package and approved verification profile are available. A fixture status
+  response must not be promoted into production non-revocation evidence.
+- The real signed genesis/committee approval, authenticated finality and
+  deployment readback, audited ambiguous-proposal recovery (#220), egress-denied
+  actor journeys, deployed restart/restore, and independent human security
+  review (#232) still gate the local RC. #198 stays draft; Preprod and Helm are
+  deferred or optional, respectively.
+- The merged #210 API code already uses a production Compact ledger type and
+  distinguishes explicit recognition denial (403) from unavailable
+  authorization dependencies (503). A later local #215 slice replaces the
+  remaining five-way proposal-evidence bind/verify ternaries with one
+  exhaustively typed role table. Its Compact-backed observation test covers
+  all five roles; #215 remains open until this local slice is independently
+  reviewed and merged.
 
 ## October 24 2026 API Egress Probe Checkpoint
 
@@ -2633,16 +2668,18 @@ must still independently authenticate finality; the packaged CLI does not
 instantiate the writer, and these injected-dependency tests are not a live
 standalone actor journey.
 
-The local API v3 approval-chain verifier now requires the genesis approval's
-detached GPG signature to use the same pinned reviewer fingerprint as the
-committee, deployment approval, and signed API plan. A second valid public key
-in the keyring can no longer become the genesis trust anchor merely by being
-named in an otherwise valid approval entry. The focused test signs a substitute
-genesis document with a real second GPG key and confirms rejection; the full
-API test suite passed. This is one #234 identity link, not proof that the
-maintenance readback is independently finalized, that the deployment is
-qualified, or that the human security review is complete. A future reviewer
-rotation needs an explicit signed protocol rather than a silent keyring change.
+The local API v3 approval-chain verifier initially required one reviewer key
+for genesis, committee, deployment, and API plan signatures. The later
+`bbe527cf` change permits an independent genesis reviewer while retaining a
+single pinned governance reviewer for committee, deployment, and API plan.
+Governance must sign the exact genesis-approval digest; a second valid public
+key in the keyring cannot substitute a genesis approval without a matching
+governance approval. The focused test exercises both a rejected substitution
+and a correctly linked approval signed by a different genesis reviewer.
+This is one #234 identity link, not proof that the maintenance readback is
+independently finalized, that deployment is qualified, or that human security
+review is complete. A future governance-reviewer rotation still needs an
+explicit signed protocol rather than a silent keyring change.
 
 The local deployment and staged-reconciliation shell is now in the strict
 security-script type gate. Its plan type distinguishes full from staged
@@ -2664,3 +2701,164 @@ and provider material as untrusted boundary values and rejects a malformed
 verifier-key catalog before endpoint or provider use. This does not prove a
 key was inserted on a deployed local ledger or that finality is independently
 authenticated.
+
+The local issuer SDK and the generic governed-proposal HTTP preflight now
+apply Compact's distinct-maintainer-public-key quorum rule before an HTTP
+journal reservation. Two registered key IDs backed by one Jubjub public key
+are rejected even when their signatures verify. A synthetic-ledger HTTP test
+uses a real file journal and checks that no reservation or submission occurs;
+it is not a deployed-ledger actor test. This closes a deterministic
+pre-broadcast wedge identified under #220, not the broader audited recovery
+policy for a reservation whose network outcome is unknown.
+
+## Local proposal recovery proof boundary
+
+Issue #220 remains a local RC safety/liveness gate. The current recovery
+candidate and detached-signed decision are read-only: even a later governance
+counter and absent current proposal record cannot prove the original action
+did not execute. The [recovery specification](../spec/local-proposal-recovery.md)
+requires independently authenticated complete action history, proof that the
+original signed sequence is no longer executable, a separate human reviewer,
+and a durable non-replayable journal tombstone before another proposal can
+proceed. None of those requirements may be replaced by a null indexer read,
+timeout, or new journal path. Synthetic tests of the candidate remain
+non-deployment evidence.
+
+## Static runtime archive type boundary
+
+The standalone installer now strictly type-checks the static API/portal
+healthcheck shape and Docker/OCI archive verifier. Parsed image metadata and
+asset manifests enter as unknown values and are narrowed before role,
+revision, layer, and asset decisions. The installer rejects malformed OCI
+layers and inherited runtime role names; the existing source-matched image
+and digest rules remain in force. This extends issue #229's strict security
+boundary without claiming that the broader bundle I/O shell or first-run
+wizard is fully typed. Focused archive, install-inventory, and mapping tests,
+the strict and broad security-script type gates, docs build, source lint, and
+dependency audit passed in the writable checkout. The read-only exact-head
+Codex review found no actionable regression; its temp-file tests could not
+run under its sandbox. None of these results is a deployed local-ledger actor
+journey or independent finality evidence for #219.
+
+## Latest local standalone evidence boundary
+
+At signed/DCO source `7efcf607`, a verified source-matched v6 install and
+dedicated `wizard-7efc-1` setup passed pinned-bundle checks, internal ledger
+topology and local canary denial, and pre-deployment restart continuity.
+The node-reported genesis candidate and proposed pin remain untrusted; the
+journey prerequisite check stopped at the unsigned genesis approval. No
+registry contract was deployed, no independent finality was authenticated,
+and no offline actor or distinct-project restore test ran. The containers
+were stopped without removing their volumes or private evidence. Later
+source changes make the install historical rather than a current-head RC
+candidate. The [acceptance map](../plans/milestone-0.1.0-acceptance-map.md)
+records its inventory and untrusted-candidate digests without publishing the
+private review packet. A new exact-source install and independently signed
+approval are required before live qualification can resume.
+
+## Demo E2E build safety
+
+The demo E2E command previously ran its four signed simulator journeys before
+building the packages they imported. Individual demo and browser aliases also
+used `build:light`, which removes full generated Compact output. The shared
+prebuilt-runtime build now checks the copied Compact source and generated
+contract-module presence, restores missing generated source declarations from
+the preserved `dist` copy (rejecting mismatches), and recompiles contract
+TypeScript helpers and downstream TypeScript/UI workspaces. It is used by the
+documented commands and prebuilt integration lane. A missing or
+stale prebuilt contract stops before a journey rather than silently selecting
+a destructive light build. This prevents stale package results and protects
+artifact-bearing checkouts; the check does not independently authenticate
+generated-code provenance or turn fixture E2E into deployed-ledger evidence.
+
+## Journal authority after provider restart
+
+Issue #230 isolates a restart safety invariant from the larger deployed
+recovery gate. The pinned provider's in-memory deployment sets are only
+same-process guards; the private, deployment-bound proposal journal is the
+cross-restart authority. The issuer SDK integration test now loses a mocked
+node submission response, resets the provider module, opens the same journal,
+and verifies that a newly constructed provider cannot cause a second
+broadcast. Existing API HTTP tests separately recreate the listener and
+proposal port; journal tests cover write failure and finalized reconciliation.
+Both restart scenarios now run in the API light test lane with injected
+node/ledger state, alongside the journal write-failure and reconciliation
+suite. They do not use a public or deployed local network.
+No test in this group establishes a deployed ledger, authentic finality, or
+permission to clear an unobserved reservation. The #220 recovery proof and
+#219 offline actor qualification remain open.
+
+## Local RC independent review handoff
+
+The published local qualification stack is now draft PRs #238, #239, and
+#240, not the older seven-branch publication plan. The
+[review-stack plan](../plans/local-0.1.0-review-stack.md) records their order
+without freezing their heads. The
+[security-review handoff](../plans/local-0.1.0-security-review-handoff.md)
+gives the independent reviewer an exact-source inventory and the trust
+boundaries to inspect for #232. It is a checklist, not an attributable human
+verdict. The unpublished local descendants and passing fixture tests do not
+change the published PR checks or the missing signed genesis, authenticated
+deployed readback, offline actor, restore, and VC-owned status evidence.
+
+The journey prerequisite CLI is exercised against a temporary wizard setup
+record, not only a synthetic status object. It exits blocked before genesis
+approval, remains blocked after a node-only observation, and reports a stale
+candidate source revision as the first safe action. This is a fail-closed
+operator preflight test, not a real deployment or actor E2E result.
+
+## Fractional application-evidence time boundary
+
+The application-evidence envelope, challenge-backed intake, and local issuer
+writer now compare RFC3339 instants without truncating fractional digits to
+milliseconds. The exact 24-hour evidence lifetime is accepted; an additional
+fractional digit is rejected. Intake rejects a VP verification instant just
+after the trusted evaluation time before consuming the one-use challenge,
+and the local issuer port rejects trusted time just before `verifiedAt`.
+This fixes one #179 trust-decision boundary. Other `Date.parse` uses in
+recognition, policy, and adapter decisions still require the independent
+audit; this slice does not close #179 or prove a deployed actor journey.
+
+## Fractional recognition-assertion boundary
+
+Recognition authority assertions now enforce their 24-hour lifetime at full
+RFC3339 fractional precision. The signed DID assertion verifier likewise
+compares exact expiry with the millisecond trusted evaluation instant, so a
+statement expiring just after that instant remains current, while one expiring
+exactly at it does not. A signed-assertion integration test covers that
+boundary and an overlong lifetime. This narrows #179 but does not address the
+remaining recognition/accreditation, policy, and adapter timestamp decisions.
+The test uses a fixture DID resolver; it is not a standalone deployed-ledger
+actor journey or independent VC status-authority evidence.
+
+## Domain record chronology precision
+
+The shared lifecycle and effective-window validators now use the exact
+RFC3339 instant comparator instead of `Date.parse` millisecond truncation.
+Policy, participant, authorization, and recognition schemas reject reversed
+sub-millisecond chronology while accepting equivalent offset spellings.
+Regression tests exercise a 10-digit fraction and malformed timestamps.
+Other trust-decision and adapter sites remain in the #179 audit; this domain
+validator fix is not a deployed standalone E2E result.
+
+## Recognition challenge fractional-time consumption
+
+The one-use recognition authority challenge now checks the signed assertion's
+issue time against its stored millisecond window and its expiry against the
+trusted consume clock without dropping signed fractional digits. An assertion
+signed a fraction after the trusted clock is rejected without spending the
+challenge; an assertion expiring a fraction after that clock remains current.
+Out-of-range stored window timestamps fail before conversion. Persisted
+admission expiry remains conservatively rounded down to milliseconds. These
+tests use a fixture DID resolver and in-memory challenge store, so they do not
+establish a deployed standalone actor journey or close #179's wider audit.
+
+## TRQP evidence epoch order beyond milliseconds
+
+The API source now sorts matching authorization and recognition bundles by
+their full RFC3339 epoch start before using epoch ID as a tie-breaker. Two
+source-level regressions place the newer bundle only one 10-digit fractional
+step after the older within the same millisecond, with IDs arranged to favor
+the older one under the former `Date.parse` sort. These tests narrow #179's
+historical evidence-selection risk but use synthetic operator snapshots, not
+an authenticated local-ledger history or deployed actor E2E evidence.

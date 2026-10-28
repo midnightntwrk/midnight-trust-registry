@@ -32,13 +32,18 @@ pnpm run demo:signed-auditor
 pnpm run demo:signed-maintainer
 ```
 
-`test:e2e:demo` also starts the fixture API and both served UIs on ephemeral
-loopback ports. Quality CI runs the four journeys together with
+`test:e2e:demo` checks the prebuilt Compact source, safely recompiles its
+contract helpers and downstream TypeScript/UI dependencies, then starts the
+fixture API and both served UIs
+on ephemeral loopback ports. Quality CI runs the four journeys together with
 `pnpm run demo:membership:smoke` after the package build; that step does not
 regenerate proving keys. Neither command exercises a deployed local ledger.
 With Google Chrome installed, `pnpm run test:e2e:demo:browser` follows the
 demo checks with the applicant and admin Playwright journeys using the same
 built assets. It does not run `build:light` or qualify standalone deployment.
+The individual demo aliases and `pnpm run test:browser` also use the safe
+prebuilt package build. They require a source-matched Compact output prepared
+earlier; none silently regenerates or removes proving artifacts.
 
 Each signed journey starts a fresh private operator-workspace file and serves
 its API reads from that file. Governed Compact epoch publication persists the

@@ -1,49 +1,51 @@
 # Local 0.1.0 review stack
 
-This plan defines the grouped draft pull-request stack for the self-hosted,
-local-only first release candidate. Public Preview,
-Preprod, and Mainnet qualification is deferred. Helm is optional and must not
-block the local RC. Keep #198 draft until its scope and release gates are
-explicitly updated. Do not merge any branch solely because it appears in this
-list.
+The first release candidate targets a self-hosted local Midnight ledger with
+offline runtime. Preview, Preprod, Mainnet, and Kubernetes are not qualification
+gates. Keep [promotion PR #198](https://github.com/midnightntwrk/midnight-trust-registry/pull/198)
+draft until its scope and release gates are explicitly updated.
 
-Open the following branches bottom-up. Each PR targets the preceding row's
-branch; row 1 targets `milestone-0.1.0`. The existing linear history is
-retained, so no signed commits need rewriting. The abbreviated SHAs are
-verification hints; review and CI must use exact remote heads.
+## Published draft stack
 
-| Order | Head branch | Local head | Review focus |
+Review these PRs bottom-up. Query their **live exact heads** before every
+review, CI decision, or retarget; the local unpublished descendants are not
+part of their current diffs.
+
+| Order | PR | Base | Focus |
 | --- | --- | --- | --- |
-| 1 | `codex/trust-registry-rc-foundation` | `fc5fc34` | Release manifest, adversarial isolation, nonce capacity, canonical governance bundles, DID/VP security boundaries |
-| 2 | `codex/trust-registry-standalone-setup-wizard` | `0d6e791` | Local deployment/finality path, pinned offline install, isolated ledger stack, resumable first-run wizard |
-| 3 | `codex/trust-registry-rc-standalone-installer` | `49df9f9` | Reviewer-signed genesis, staged verifier keys, deployment-bound committee, maintenance journals, verified topology and restart observation |
-| 4 | `codex/trust-registry-reviewer-public-key-export` | `319cf87` | Signed read-only API, pinned API/portal images, install relay, predeployment restart/restore, optional Helm and egress probes |
-| 5 | `codex/trust-registry-helm-api-plan-binding` | `33c9395` | Signed approval and release-manifest hardening, current-only API plan, packed release identity and runtime binding |
-| 6 | `codex/trust-registry-rc-current-plan-expiry-verified` | `5079a57` | Finalized current reads, journaled issuer proposals, pinned submission, ambiguous-outcome quarantine and recovery inspection |
-| 7 | `codex/trust-registry-package-export-policy` | Resolve exact head | Offline API and egress observations, portal/admin/applicant current-state reads, signed recovery, network profiles and package export policy |
+| 1 | [#238](https://github.com/midnightntwrk/midnight-trust-registry/pull/238) | `milestone-0.1.0` | Local qualification core, pinned install, genesis and committee approval, provider and deployment boundaries |
+| 2 | [#239](https://github.com/midnightntwrk/midnight-trust-registry/pull/239) | #238 head | Governed actor handoff, journal quarantine, signed API plan, recovery evidence |
+| 3 | [#240](https://github.com/midnightntwrk/midnight-trust-registry/pull/240) | #239 head | Installer and operator adoption guide, acceptance evidence, fixture and pre-deployment checks |
 
-## Publication gates
+The published PRs are draft. Check required CI and review at each exact head;
+the top branch's local tests cannot substitute for the lower PRs' checks.
+As of 2026-10-27, #238's external Opengrep OSS check was red.
+[Issue #237](https://github.com/midnightntwrk/midnight-trust-registry/issues/237)
+tracks its disposition. Do not hide, waive, or mark the stack ready while
+the five internal WebSocket transport findings or the PGP negative-test marker
+remain unresolved.
+The latter has a local test fix, but it does not clear the published check
+until applied to the owning PR and rerun at its new head.
 
-- Recheck that each branch head is still the intended descendant of its
-  proposed base before publication or review.
-- Run required validation and independent exact-head review for each PR;
-  local tests at the top of the stack do not substitute for each PR's CI.
-- Preserve the verified install bundles, generated Compact keys, private
-  setup evidence and active ledger volumes. Do not run destructive light/full
-  build targets in the artifact-bearing checkout.
-- Keep #198 draft. No row proves release readiness or authorizes a public
-  deployment. The current exact-source install bundle predates the final row.
+Further signed/DCO local slices are stacked above #240, including prebuilt
+demo/E2E build safety, journal restart quarantine, and the real synthetic GPG
+private-export negative test. They are **not published**. Inspect the live Git
+graph and working-tree status before grouping or propagating them; never
+rewrite or discard unpublished commits to make the stack appear clean.
 
-## Gates still open after code review
+## Release boundary
 
-The operator must review the real local chain specification/genesis and sign
-the exact first-run approval bytes. A node-reported candidate or synthetic
-demo reference is not that approval. The approved release committee threshold,
-public keys and custody roles also require human selection; 1-of-3 is smoke
-only. Deployment must then produce a real finalized contract readback and an
-approved maintenance transition. The API plan must be reviewed and signed for
-that deployment. Egress-denied actor journeys, deployed restart and distinct-
-project restore, a VC-owned live status-authority adapter, and independent
-security review are not closed by simulator, mocked-provider, or predeployment
-tests. Rebuild and verify an exact-source install after the code stack settles,
-then record user acceptance against those real observations.
+The [operator journey](../guide/standalone-local-journey.md) defines the real
+local-ledger acceptance cases. The
+[security-review handoff](local-0.1.0-security-review-handoff.md) lists exact
+review inputs and stop conditions; [human review issue #232](https://github.com/midnightntwrk/midnight-trust-registry/issues/232)
+records the independent verdict. Neither a merged implementation stack nor
+green simulator, browser, or packed-consumer tests closes that release gate.
+
+The retained local-ledger observations are pre-deployment and bound to older
+source revisions. A new exact-source install, independently reviewed and
+human-signed genesis, approved release maintenance roster, authenticated
+finalized deployment and readback, egress-denied actor journeys, deployed
+restart and restore, VC-owned live status authority, and independent review
+remain outstanding. Preserve generated Compact keys, verified install bundles,
+private setup evidence, and ledger volumes while preparing those runs.
