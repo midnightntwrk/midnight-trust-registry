@@ -21,6 +21,14 @@ above the live draft #240 head `8dc05ec7`. The original unpublished branch
 
 The validation above is local and scoped, not exact-head CI or independent
 review. The final fixture E2E lane is not a deployed-ledger actor journey.
+In this review checkout, `pnpm run test:standalone-topology` passes 121/121,
+but `pnpm run contract:check-full-artifacts` stops because
+`dist/managed/trust-registry/compiler/contract-info.json` is absent.
+Consequently `pnpm run integration:prebuilt` was not run here. Do not copy
+unverified generated output from another checkout or run a destructive
+Compact rebuild in an artifact-bearing checkout to fill this gap; exact-head
+CI or a separately verified, source-matched full-artifact lane must provide
+that evidence.
 Before publishing, confirm the live parent heads, run any missing full-light
 and package checks without destroying artifact-bearing checkouts, obtain
 independent exact-head review, and retain #238's external scanner failure as
