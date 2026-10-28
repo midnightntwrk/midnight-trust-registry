@@ -10,6 +10,14 @@ deployed-ledger, offline actor, restart/restore, and security evidence.
 
 ## Current review and operator handoff (2026-10-28)
 
+At local signed/DCO source `7af8e72d04ca3799658aaa90d87b133542711494`,
+`pnpm run check:adversarial-parity -- --require-full` reported 198 demo
+cases, 198 extracted isolated cases, and zero missing IDs. This is case
+inventory parity, not proof that any case ran against a deployed ledger or
+with actor egress denied. It does not close an `L01`-`S01` gate. The proposed
+publication boundaries for the remaining unpublished work are in
+[the local review-group plan](standalone-unpublished-review-groups.md).
+
 Published draft PRs [#238](https://github.com/midnightntwrk/midnight-trust-registry/pull/238)
 (`97e59c5e`), [#239](https://github.com/midnightntwrk/midnight-trust-registry/pull/239)
 (`fa7bf067`), and [#240](https://github.com/midnightntwrk/midnight-trust-registry/pull/240)
