@@ -25,6 +25,10 @@ run focused tests and audit, obtain an independent exact-head review, and run
 the applicable CI/full-light lane on each exact PR head. Keep signed/DCO
 commits and preserve all generated keys, bundles, private approval packets,
 and ledger volumes. Do not publish merely because this plan exists.
+The later local trust-anchor loader commit `59cc8b85` belongs with the
+approval and recovery security review, but its original stack position must
+be preserved until a safe, reviewed restack is planned. These historical
+group ranges do not include that commit.
 
 ## Evidence Boundary
 

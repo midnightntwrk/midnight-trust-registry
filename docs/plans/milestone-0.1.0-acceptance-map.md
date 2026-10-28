@@ -10,6 +10,21 @@ deployed-ledger, offline actor, restart/restore, and security evidence.
 
 ## Current review and operator handoff (2026-10-28)
 
+At signed/DCO local source `59cc8b855b1ae9c5ea2c2c4c27d9405169c1905b`,
+the v3 API loader requires a separately installed, protected first-run trust
+anchor and rejects a self-consistent replacement approval chain. All 289 API
+unit tests, 14 focused standalone API topology/Compose tests, API typecheck,
+documentation check, and low-severity dependency audit passed. The fixture
+E2E lane passed four simulator-backed signed membership journeys, CLI/API/UI
+smoke, and 11 Playwright cases. These tests do **not** prove that a root-owned
+anchor was installed in a running API container, that a contract was deployed
+and finalized, or that an actor journey ran with egress denied. The current
+install bundles and private pre-deployment packets predate this source and
+cannot serve as exact-source release evidence. Optional Helm runtime still
+lacks protected anchor staging and an approved cluster endpoint profile.
+No `L01`-`S01` case is passed by this checkpoint. The local branch remains
+unpublished; #238-#240 and draft promotion #198 are unchanged.
+
 At local signed/DCO source `7af8e72d04ca3799658aaa90d87b133542711494`,
 `pnpm run check:adversarial-parity -- --require-full` reported 198 demo
 cases, 198 extracted isolated cases, and zero missing IDs. This is case
@@ -17,9 +32,10 @@ inventory parity, not proof that any case ran against a deployed ledger or
 with actor egress denied. It does not close an `L01`-`S01` gate. The proposed
 publication boundaries for the remaining unpublished work are in
 [the local review-group plan](standalone-unpublished-review-groups.md).
-The API approval-chain tests pass locally, but [the first-run reviewer
-trust-anchor requirement](../decisions/local-api-reviewer-trust-anchor.md)
-remains unimplemented; #234 is not closed by signature checks alone.
+The first-run reviewer [trust-anchor design](../decisions/local-api-reviewer-trust-anchor.md)
+now has local loader enforcement, but installed-runtime observation, approved
+rotation, independently authenticated finality, and exact-source review
+remain open; #234 is not closed by signature checks alone.
 
 Published draft PRs [#238](https://github.com/midnightntwrk/midnight-trust-registry/pull/238)
 (`97e59c5e`), [#239](https://github.com/midnightntwrk/midnight-trust-registry/pull/239)
