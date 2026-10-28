@@ -2604,6 +2604,14 @@ The wizard's existing approval and recovery suite still passes. This changes
 neither the required detached human signatures nor the pending real local
 deployment and offline actor acceptance gates.
 
+The wizard's local deployment-receipt shape check is now a strictly checked
+pure policy shared by its approval, reconciliation, insertion, and transition
+paths. It rejects missing or wrong-network receipts, zero or malformed
+contract/checkpoint hashes, and unsafe block heights before those decisions.
+Focused negatives run in the light local-ledger preflight lane. This validates
+receipt shape only; it does not authenticate a finalized checkpoint or type
+the remaining wizard orchestration.
+
 The fixture browser suite had drifted from the API's required side-effect-free
 proposal preflight and from the admin client's health-first loading. Its tests
 now provide the required fixture port, a health response, and the current

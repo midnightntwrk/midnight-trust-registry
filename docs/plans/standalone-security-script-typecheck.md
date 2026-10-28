@@ -4,7 +4,7 @@ Issue #229 tracks typed assurance for the self-hosted 0.1.0 installer and
 operator workflow. The existing broad `checkJs` configuration includes the
 wizard and installer but permits implicit `any`; Quality CI now runs it.
 A second, strict no-emit gate runs
-`pnpm run check:security-boundaries-types` for fifty-one script boundaries
+`pnpm run check:security-boundaries-types` for fifty-two script boundaries
 plus one ambient declaration:
 
 | Checked file | Security decision |
@@ -16,6 +16,7 @@ plus one ambient declaration:
 | `scripts/local-ledger-insert-verifier-key.mjs` | Typed staged key-insertion/reconciliation shell, approved deployment receipt comparison, and early manifest catalog validation. |
 | `scripts/local-deployment-plan-policy.mjs` | Exact source, network, provider, and journal fields before deployment or key insertion. |
 | `scripts/local-verifier-key-insertion-plan-policy.mjs` | Exact verifier-key insertion approval and fixed per-circuit journal path. |
+| `scripts/standalone-deployment-receipt-policy.mjs` | Typed local deployment receipt shape, network match, nonzero contract/checkpoint hashes, transaction ID, and safe block height used by the setup wizard. |
 | `scripts/package-contents-policy.mjs` | Full Compact proof-circuit name and artifact completeness decisions. |
 | `scripts/provider-runtime-content.mjs` | Content digest and file continuity during the reviewed provider transfer. |
 | `scripts/stage-provider-runtime.mjs` | Signed-source archive and verified-package staging, private target, and byte-for-byte source checks before operator ownership transfer. |

@@ -46,6 +46,7 @@ import {
 import {
   runLocalVerifierKeyInsertion, validateLocalVerifierKeyInsertionPlan,
 } from "./local-ledger-insert-verifier-key.mjs";
+import { validLocalDeploymentReceipt } from "./standalone-deployment-receipt-policy.mjs";
 
 const FORMAT = "tr-standalone-setup-v1";
 const STANDALONE_PROFILE = getLocalNetworkProfile();
@@ -61,11 +62,8 @@ const parseJsonBytes = (bytes) => JSON.parse(bytes.toString("utf8"));
 const execFileAsync = promisify(execFile);
 const composePath = resolve(dirname(fileURLToPath(import.meta.url)), "../deploy/standalone/compose.yml");
 const offlineComposePath = resolve(dirname(fileURLToPath(import.meta.url)), "../deploy/standalone/compose.offline.yml");
-const validLocalDeploymentReceipt = (receipt) => receipt?.networkId === STANDALONE_PROFILE.networkId
-  && HASH.test(receipt.contractAddress) && !/^0x0{64}$/u.test(receipt.contractAddress)
-  && HASH.test(receipt.blockHash) && !/^0x0{64}$/u.test(receipt.blockHash)
-  && typeof receipt.txId === "string" && receipt.txId.length > 0
-  && Number.isSafeInteger(receipt.blockHeight) && receipt.blockHeight >= 0;
+const validStandaloneDeploymentReceipt = (receipt) =>
+  validLocalDeploymentReceipt(receipt, STANDALONE_PROFILE.networkId);
 
 function requireVerifiedInventoryBytes(verified, bytes, expectedSha256, message) {
   const hash = sha256(bytes);
@@ -940,7 +938,7 @@ export async function approveStandaloneCommitteeDeployment(
     const receipt = deployment?.result?.receipt;
     if (!record.committeeApproval || deployment?.state !== "observed"
       || deployment.result?.readbackStatus !== "staged-bootstrap-pending"
-      || !deployment.stagedPlan || !validLocalDeploymentReceipt(receipt)) {
+      || !deployment.stagedPlan || !validStandaloneDeploymentReceipt(receipt)) {
       throw new Error("A signed roster and finalized staged deployment are required for committee binding");
     }
     if (record.committeeDeploymentApproval) {
@@ -1192,7 +1190,7 @@ export async function reconcileStandaloneDeployment(directory, planPath, depende
       || (result.readbackStatus === "unknown-no-receipt"
         && (result.receipt !== undefined || approval.expectedDeploymentReceipt))
       || (result.readbackStatus !== "unknown-no-receipt"
-        && (!validLocalDeploymentReceipt(result.receipt)
+        && (!validStandaloneDeploymentReceipt(result.receipt)
           || result.receiptAttribution !== "journal-recorded-not-independently-inclusion-verified"))
       || (result.finalizedBlockHash !== undefined
         && !HASH.test(result.finalizedBlockHash))) {
@@ -1238,7 +1236,7 @@ export async function reconcileStandaloneDeployment(directory, planPath, depende
 async function approvedInsertionPlan(root, record, planPath, dependencies) {
   if (record.deployment?.state !== "observed"
     || record.deployment.result?.readbackStatus !== "staged-bootstrap-pending"
-    || !validLocalDeploymentReceipt(record.deployment.result?.receipt)
+    || !validStandaloneDeploymentReceipt(record.deployment.result?.receipt)
     || !record.deployment.stagedPlan || !record.genesisApproval) {
     throw new Error("A finalized staged bootstrap and approved genesis are required before key insertion");
   }
@@ -1432,7 +1430,7 @@ function readStoredCommitteeDeploymentApproval(record, releaseManifestSha256) {
     || sha256(signature) !== stored?.signatureSha256
     || stored?.verification !== "detached-signature-verified-against-operator-pinned-key"
     || !FINGERPRINT.test(stored?.reviewerFingerprint ?? "")
-    || !validLocalDeploymentReceipt(receipt)) {
+    || !validStandaloneDeploymentReceipt(receipt)) {
     throw new Error("Stored committee deployment approval evidence is incomplete or changed");
   }
   const binding = parseCanonicalSignedJson(document, "Stored committee deployment approval");
@@ -1477,7 +1475,7 @@ async function readApprovedCommitteeTransition(record, requestPath, dependencies
       || (!record.committeeDeploymentApproval && !legacyReadOnly) || !staged
       || record.deployment?.state !== "observed"
       || record.deployment.result?.readbackStatus !== "staged-bootstrap-pending"
-      || !validLocalDeploymentReceipt(receipt)) {
+      || !validStandaloneDeploymentReceipt(receipt)) {
       throw new Error("Approved committee and finalized staged deployment are required");
     }
     readStoredCommitteeApproval(record, legacyReadOnly);
