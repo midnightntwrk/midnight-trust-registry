@@ -51,6 +51,35 @@ test("default parity mode rejects an empty isolated case set", () => {
   }), /Isolated adversarial case report is invalid/u);
 });
 
+test("parity rejects an isolated summary that hides a failed case", () => {
+  const isolated = {
+    format: "tr-adversarial-case-report-v1",
+    summary: { total: 1, passed: 1, failed: 0 },
+    cases: [{ id: "case-a", status: "failed", reason: "assertion-failed" }],
+  };
+  assert.throws(() => buildAdversarialParityReport(isolated, {
+    status: 0, signal: null, stdout: "{}",
+  }), /Isolated adversarial case report is invalid/u);
+});
+
+test("parity rejects a governed demo summary that hides a failed case", () => {
+  const isolated = {
+    format: "tr-adversarial-case-report-v1",
+    summary: { total: 1, passed: 1, failed: 0 },
+    cases: [{ id: "case-a", status: "passed", reason: "passed" }],
+  };
+  const matrix = {
+    format: "tr-adversarial-matrix-v1",
+    summary: { total: 1, passed: 1, failed: 0 },
+    cases: [{ id: "case-a", status: "failed" }],
+  };
+  const report = buildAdversarialParityReport(isolated, {
+    status: 0, signal: null, stdout: JSON.stringify({ adversarialMatrix: matrix }),
+  });
+  assert.equal(report.status, "failed");
+  assert.ok(report.issues.includes("governed-demo-report-unavailable"));
+});
+
 test("parseable demo output without cases retains the isolated diagnostic report", () => {
   const isolated = {
     format: "tr-adversarial-case-report-v1",
