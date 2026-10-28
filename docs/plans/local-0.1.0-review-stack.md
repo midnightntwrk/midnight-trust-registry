@@ -207,6 +207,12 @@ invariants are part of each recorded outcome; a deliberately bad signer test
 shows later cases still run. The demo-smoke suite passed 240/240, the governed
 demo passed, and exact adversarial case-ID parity remained 198/198. This is
 fixture regression coverage only, not an on-ledger actor qualification.
+At signed/DCO local head `17f026de`, `pnpm run test:e2e:demo` passed the
+prebuilt Compact, four signed role journeys, API/CLI, and served-UI smoke
+lanes. `pnpm exec playwright test` separately passed 10/10 Chrome browser
+cases, including applicant flows and lost-response recovery. These are
+fixture-backed adoption checks; they do not establish a deployed local
+contract, authenticated finality, live VC status, or egress-denied actor work.
 These refactors harden report integrity and advance the remaining #216 demo
 extraction, but do not finish that issue or
 qualify a deployed actor journey. Hold group G
