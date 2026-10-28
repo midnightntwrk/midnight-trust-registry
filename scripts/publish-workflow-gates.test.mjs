@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import yaml from "js-yaml";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const workflow = readFileSync(join(root, ".github/workflows/publish.yml"), "utf8");
@@ -52,6 +53,39 @@ test("publish workflow binds signed source, manifest verification and tested tar
   assert.match(publisher, /node scripts\/check-publish-tarball\.mjs "\$\{manifest_path\}" "\$\{tarball\}"/u);
   assert.match(publisher, /npm view "\$\{package_name\}@\$\{version\}" dist --json/u);
   assert.match(publisher, /node scripts\/check-published-package-integrity\.mjs "\$\{tarball\}" "\$\{published_dist\}"/u);
+});
+
+test("release bytes are prepared before the protected publish approval", () => {
+  const parsed = yaml.load(workflow);
+  const prepare = parsed.jobs.prepare;
+  const publish = parsed.jobs.publish;
+  assert.equal(prepare.environment, undefined);
+  assert.equal(publish.needs, "prepare");
+  assert.equal(publish.environment.name, "npm-publish");
+  assert.match(prepare.outputs.manifest_sha256, /steps\.manifest\.outputs\.sha256/u);
+  const preparedSteps = prepare.steps.map((step) => step.name);
+  assert.ok(preparedSteps.indexOf("Record manifest digest for release review")
+    < preparedSteps.indexOf("Upload release tarballs"));
+  const publishSteps = publish.steps.map((step) => step.name);
+  const required = [
+    "Download reviewed release tarballs",
+    "Match reviewed manifest digest",
+    "Verify manifest and exact release tarballs after approval",
+    "Smoke test downloaded release tarballs",
+    "Publish packages to npm",
+  ];
+  let previous = -1;
+  for (const name of required) {
+    const position = publishSteps.indexOf(name);
+    assert.ok(position > previous, `Protected publish step is missing or out of order: ${name}`);
+    previous = position;
+  }
+  assert.match(publish.steps.find((step) => step.name === "Match reviewed manifest digest").run,
+    /sha256sum --check --status/u);
+  assert.match(publish.steps.find((step) => step.name === "Verify manifest and exact release tarballs after approval").run,
+    /--verify artifacts\/npm-release\.manifest\.json/u);
+  assert.match(publish.steps.find((step) => step.name === "Rebuild full Compact artifacts for source verification").run,
+    /pnpm run build/u);
 });
 
 test("manual package workflows cannot redirect credentials or select uncommitted release bytes", () => {
