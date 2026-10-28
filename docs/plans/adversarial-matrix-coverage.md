@@ -74,6 +74,16 @@ signatures are rejected and current-policy signatures succeed for the exact
 same prepared payload and sequence on a different harness. It runs in the
 demo-smoke lane but is not a 199th adversarial matrix case.
 
+The threshold-revision, evidence-verifier registration, and atomic maintainer
+recovery journey now runs in `scripts/governed-demo-policy-recovery.mjs` with
+its original six adversarial case IDs and positive receipt controls. The
+independent counterparts are five named cases in
+`scripts/adversarial-policy-api.test.mjs` and the Compact headroom case in
+`scripts/adversarial-compact.test.mjs`. The governed demo remains sequential;
+`check:adversarial-parity -- --require-full` verifies 198/198 case-ID parity
+after this extraction. These tests remain simulator and fixture evidence, not
+deployed local-ledger recovery or an independent finality check.
+
 At signed local source `bbb2c456a93aa035ac482d67f945e8cddf6dfb7c`, the
 private archive `artifacts/adversarial-reports/cases-bbb2c456a93aa035ac482d67f945e8cddf6dfb7c.json`
 recorded 198/198 isolated passes and 198 governed-demo case IDs, with report
