@@ -50,6 +50,12 @@ assertion that every isolated case exercised every boundary. The archive is
 test evidence, not a deployed-ledger or release-qualification result.
 `pnpm run check:adversarial-parity -- --require-full` additionally compares
 those isolated case IDs with the governed demo's machine-readable matrix.
+It runs the independent case suite before the sequential demo. If the demo
+aborts, the parity command exits nonzero but still emits the complete isolated
+per-case outcomes and reasons, with unknown demo and missing-case counts shown
+as `null` rather than a false zero. If the demo emits a failed matrix before
+exiting, the failure report retains both matrices for diagnosis. A successful
+parity report remains compact and requires 198 matching IDs.
 The demo remains useful as one sequential actor journey, but its independent
 case report is the regression gate when an earlier journey step fails.
 The issuer, recognition, verifier, auditor, and maintainer former-policy
