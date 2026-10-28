@@ -11,15 +11,25 @@ deployed-ledger, offline actor, restart/restore, and security evidence.
 ## Current review and operator handoff (2026-10-28)
 
 Published draft PRs [#238](https://github.com/midnightntwrk/midnight-trust-registry/pull/238)
-(`5b6d2851`), [#239](https://github.com/midnightntwrk/midnight-trust-registry/pull/239)
-(`b723a84b`), and [#240](https://github.com/midnightntwrk/midnight-trust-registry/pull/240)
-(`bbe527cf`) remain stacked and unmerged. At #238's exact head, the milestone
-build/package/test, quality, documentation, and aggregate scan checks passed;
+(`97e59c5e`), [#239](https://github.com/midnightntwrk/midnight-trust-registry/pull/239)
+(`fa7bf067`), and [#240](https://github.com/midnightntwrk/midnight-trust-registry/pull/240)
+(`8dc05ec7`) remain stacked, draft, and unmerged. At #238's exact head, the
+milestone build/package/test, quality, documentation, and aggregate scan checks
+passed; #239 and #240 passed their exact-head stacked light and docs checks.
 the separate external Opengrep OSS check remains red for five internal
 plaintext WebSocket links. [#237](https://github.com/midnightntwrk/midnight-trust-registry/issues/237)
 requires a reviewed security disposition; a green aggregate scan is not a
 waiver. The later local review groups and recovery fixes are unpublished, so
 their tests do not change those PR heads or CI results.
+
+The clean unpublished development stack was merged locally onto #240 at
+signed/DCO `0527e11af09327fef15427f148ba07c8688d0f01`, without rewriting
+its original branch. At that source, focused acceptance and security-verdict
+tests passed 22/22, standalone topology passed 120/120, the strict security
+script typecheck passed, and `pnpm audit --audit-level low` found no known
+vulnerabilities. The retained fixture E2E checkpoint below is older than this
+merge and has not been rerun at `0527e11a`. These checks do not authenticate
+finality or establish deployed, egress-denied standalone actor journeys.
 
 At signed/DCO local source `3fddcac5623b58cfecdd672cefa557ef3b691b20`,
 `pnpm run test:e2e:demo:browser` passed the four simulator-backed membership
