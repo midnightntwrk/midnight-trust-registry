@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { link, lstat, mkdtemp, mkdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, link, lstat, mkdtemp, mkdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -229,7 +229,7 @@ test("inventory is fail-closed and never asserts release qualification", async (
       /full lowercase commit SHA/u);
     for (const id of CASES) {
       const bytes = Buffer.from(`raw operator output for ${id}\n`);
-      await writeFile(join(root, `${id}.log`), bytes);
+      await writeFile(join(root, `${id}.log`), bytes, { mode: 0o600 });
       candidate.cases[id] = { status: "pass", evidence: [{ path: `${id}.log`, sha256: sha(bytes) }] };
     }
     assert.equal((await checkStandaloneAcceptanceEvidence(root, candidate)).completeInventory, false);
@@ -264,7 +264,7 @@ test("inventory is fail-closed and never asserts release qualification", async (
     assert.equal(notRun.allOperatorCasesPassed, false);
     await decideStandaloneAcceptanceCase(root, candidate.sourceRevision, "L01", "pass",
       "operator:test", "rerun-reviewed");
-    await writeFile(join(root, "late.log"), "late evidence\n");
+    await writeFile(join(root, "late.log"), "late evidence\n", { mode: 0o600 });
     await attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision, "L01", "late.log");
     const stale = JSON.parse(await readFile(join(root, "acceptance.json"), "utf8"));
     assert.equal((await checkStandaloneAcceptanceEvidence(root, stale)).completeInventory, false);
@@ -283,7 +283,7 @@ test("inventory rejects a status edit or reordered evidence after an operator de
   try {
     const candidate = manifest();
     const bytes = Buffer.from("first receipt\n");
-    await writeFile(join(root, "first.log"), bytes);
+    await writeFile(join(root, "first.log"), bytes, { mode: 0o600 });
     candidate.cases.L01.evidence.push({ path: "first.log", sha256: sha(bytes) });
     await writeFile(join(root, "acceptance.json"), `${JSON.stringify(candidate)}\n`, { mode: 0o600 });
     await decideStandaloneAcceptanceCase(root, candidate.sourceRevision, "L01", "pass",
@@ -304,7 +304,7 @@ test("an older manually labeled case needs a fresh decision before it counts", a
   try {
     const candidate = manifest();
     const bytes = Buffer.from("legacy receipt\n");
-    await writeFile(join(root, "legacy.log"), bytes);
+    await writeFile(join(root, "legacy.log"), bytes, { mode: 0o600 });
     candidate.cases.L01 = { status: "pass", evidence: [{ path: "legacy.log", sha256: sha(bytes) }] };
     await writeFile(join(root, "acceptance.json"), `${JSON.stringify(candidate)}\n`, { mode: 0o600 });
     const before = await checkStandaloneAcceptanceEvidence(root, candidate);
@@ -330,15 +330,15 @@ test("rejects missing cases, evidence reuse, traversal, symlinks and unbounded c
     candidate.cases.S01 = { status: "pass", evidence: [] };
     await assert.rejects(checkStandaloneAcceptanceEvidence(root, candidate), /S01 requires/u);
     const bytes = Buffer.from("evidence\n");
-    await writeFile(join(root, "receipt.log"), bytes);
+    await writeFile(join(root, "receipt.log"), bytes, { mode: 0o600 });
     candidate.cases.S01 = { status: "pass", evidence: [{ path: "receipt.log", sha256: sha(bytes) }] };
     candidate.cases.L01 = { status: "pass", evidence: [{ path: "receipt.log", sha256: sha(bytes) }] };
     await assert.rejects(checkStandaloneAcceptanceEvidence(root, candidate), /reused/u);
-    await writeFile(join(root, "RECEIPT.LOG"), bytes);
+    await writeFile(join(root, "RECEIPT.LOG"), bytes, { mode: 0o600 });
     candidate.cases.L01.evidence[0].path = "RECEIPT.LOG";
     await assert.rejects(checkStandaloneAcceptanceEvidence(root, candidate), /reused/u);
-    await writeFile(join(root, "\u00e9.log"), bytes);
-    await writeFile(join(root, "e\u0301.log"), bytes);
+    await writeFile(join(root, "\u00e9.log"), bytes, { mode: 0o600 });
+    await writeFile(join(root, "e\u0301.log"), bytes, { mode: 0o600 });
     candidate.cases.S01.evidence[0].path = "\u00e9.log";
     candidate.cases.L01.evidence[0].path = "e\u0301.log";
     await assert.rejects(checkStandaloneAcceptanceEvidence(root, candidate), /reused/u);
@@ -389,8 +389,8 @@ test("attaches raw evidence without changing an operator verdict or claiming qua
   try {
     const candidate = manifest();
     await writeFile(join(root, "acceptance.json"), `${JSON.stringify(candidate)}\n`, { mode: 0o600 });
-    await mkdir(join(root, "L01"));
-    await writeFile(join(root, "L01/deploy.log"), "operator raw receipt\n");
+    await mkdir(join(root, "L01"), { mode: 0o700 });
+    await writeFile(join(root, "L01/deploy.log"), "operator raw receipt\n", { mode: 0o600 });
     const result = spawnSync(process.execPath, [script, "attach", root, candidate.sourceRevision,
       "L01", "L01/deploy.log"], { encoding: "utf8" });
     assert.equal(result.status, 0, result.stderr);
@@ -401,9 +401,20 @@ test("attaches raw evidence without changing an operator verdict or claiming qua
     assert.deepEqual(updated.cases.L01.evidence, [{ path: "L01/deploy.log", sha256: sha("operator raw receipt\n") }]);
     assert.equal(updated.cases.L01.status, "not-run");
     assert.equal((await checkStandaloneAcceptanceEvidence(root, updated)).completeInventory, false);
+    await writeFile(join(root, "L01/public.log"), "public receipt\n", { mode: 0o644 });
+    await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
+      "A01", "L01/public.log"), /private nonempty bounded regular file/u);
+    await mkdir(join(root, "public-parent"), { mode: 0o755 });
+    await writeFile(join(root, "public-parent/receipt.log"), "private file\n", { mode: 0o600 });
+    await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
+      "A01", "public-parent/receipt.log"), /private real directory/u);
+    await chmod(join(root, "L01/deploy.log"), 0o644);
+    await assert.rejects(checkStandaloneAcceptanceEvidence(root, updated),
+      /private nonempty bounded regular file/u);
+    await chmod(join(root, "L01/deploy.log"), 0o600);
     await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
       "A01", "L01/deploy.log"), /already attached/u);
-    await writeFile(join(root, "L01/DEPLOY.LOG"), "operator raw receipt\n");
+    await writeFile(join(root, "L01/DEPLOY.LOG"), "operator raw receipt\n", { mode: 0o600 });
     await assert.rejects(attachStandaloneAcceptanceEvidence(root, candidate.sourceRevision,
       "A01", "L01/DEPLOY.LOG"), /reused/u);
     await assert.rejects(attachStandaloneAcceptanceEvidence(root, "f".repeat(40),

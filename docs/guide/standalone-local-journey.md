@@ -329,6 +329,14 @@ output/receipts under that private directory. Attach each file with the
 helper, which hashes it and updates the case inventory atomically while
 leaving its status unchanged:
 
+Use `umask 077` when capturing evidence. The acceptance root and each nested
+evidence directory must be mode `0700`; every attached raw receipt and
+observation must be mode `0600`, a regular file with one link. The checker
+rejects public files or directories even when their content hash matches.
+For an older bundle, inspect ownership and each path before restricting its
+mode; do not follow symlinks or regenerate a signed decision to bypass a
+failed check. Keep wallet secrets and unredacted holder data out of the bundle.
+
 ```sh
 node scripts/check-standalone-acceptance-evidence.mjs attach \
   /absolute/private/acceptance "$SOURCE_SHA" L01 L01/deploy.log

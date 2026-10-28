@@ -61,18 +61,23 @@ function evidencePath(root, path) {
 async function digestEvidence(root, path) {
   const absolute = evidencePath(root, path);
   let parent = root;
+  const rootStat = await lstat(root);
+  if (!rootStat.isDirectory() || (rootStat.mode & 0o077) !== 0) {
+    throw new Error("Evidence root must be a private real directory");
+  }
   for (const part of path.split("/").slice(0, -1)) {
     parent = join(parent, part);
-    if (!(await lstat(parent)).isDirectory()) {
-      throw new Error(`Evidence parent must be a real directory: ${path}`);
+    const parentStat = await lstat(parent);
+    if (!parentStat.isDirectory() || (parentStat.mode & 0o077) !== 0) {
+      throw new Error(`Evidence parent must be a private real directory: ${path}`);
     }
   }
   const file = await open(absolute, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const before = await file.stat({ bigint: true });
-    if (!before.isFile() || before.nlink !== 1n
+    if (!before.isFile() || before.nlink !== 1n || (before.mode & 0o077n) !== 0n
       || before.size === 0n || before.size > BigInt(MAX_FILE_BYTES)) {
-      throw new Error(`Evidence must be a nonempty bounded regular file: ${path}`);
+      throw new Error(`Evidence must be a private nonempty bounded regular file: ${path}`);
     }
     const hash = createHash("sha256");
     const buffer = Buffer.alloc(64 * 1024);
@@ -121,10 +126,15 @@ async function readAcceptanceManifest(root) {
 async function readPrivateObservation(root, path) {
   const absolute = evidencePath(root, path);
   let parent = root;
+  const rootStat = await lstat(root);
+  if (!rootStat.isDirectory() || (rootStat.mode & 0o077) !== 0) {
+    throw new Error("Observation root must be a private real directory");
+  }
   for (const part of path.split("/").slice(0, -1)) {
     parent = join(parent, part);
-    if (!(await lstat(parent)).isDirectory()) {
-      throw new Error(`Observation parent must be a real directory: ${path}`);
+    const parentStat = await lstat(parent);
+    if (!parentStat.isDirectory() || (parentStat.mode & 0o077) !== 0) {
+      throw new Error(`Observation parent must be a private real directory: ${path}`);
     }
   }
   const file = await open(absolute, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);

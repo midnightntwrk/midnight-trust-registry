@@ -232,6 +232,10 @@ signed API plan exist. Attach each case's raw redacted receipts, then have an
 operator record an explicit case verdict. The inventory checker hashes the
 files and tracks missing cases; it does not independently verify receipt
 truth, reviewer identity, or release readiness.
+Keep the acceptance directory and each nested evidence directory mode `0700`,
+and every raw receipt or observation file mode `0600` before attaching it.
+The checker rejects public, linked, or symlinked evidence; do not loosen file
+permissions or copy unredacted wallet, credential, or holder data into the bundle.
 
 ```sh
 mkdir -m 700 /absolute/private/acceptance
