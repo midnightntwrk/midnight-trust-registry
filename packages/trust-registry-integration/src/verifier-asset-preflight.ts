@@ -35,7 +35,8 @@ export async function verifyInstalledVerifierKeyAssets(
   const actualNames = (await readdir(keysPath))
     .filter((name) => name.endsWith(".verifier"))
     .map((name) => name.slice(0, -".verifier".length)).sort();
-  if (actualNames.join("\0") !== circuitNames.join("\0")) {
+  if (actualNames.length !== circuitNames.length
+    || actualNames.some((name, index) => name !== circuitNames[index])) {
     throw new Error("Installed verifier-key inventory disagrees with the release manifest");
   }
   for (const name of circuitNames) {

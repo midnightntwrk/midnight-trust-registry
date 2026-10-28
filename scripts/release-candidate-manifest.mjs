@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 
 import { artifactDirectory, artifactWorkspaces, packageManifestCatalog, publishWorkspaces } from "./trust-registry-workspace-catalog.mjs";
 import { missingFullContractArtifacts, proofCircuitNames } from "./package-contents-policy.mjs";
+import { exactStringSet } from "./standalone-exact-fields-policy.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const HASH = /^[0-9a-f]{40}$/u;
@@ -176,7 +177,7 @@ export function buildReleaseCandidateManifest(input) {
   const sourceKeys = join(repoRoot, "contracts/trust-registry/dist/managed/trust-registry/keys");
   const sourceVerifierNames = readdirSync(sourceKeys).filter((name) => name.endsWith(".verifier"))
     .map((name) => name.slice(0, -".verifier".length)).sort();
-  if (sourceVerifierNames.join("\0") !== Object.keys(verifierKeySha256).join("\0")) {
+  if (!exactStringSet(sourceVerifierNames, Object.keys(verifierKeySha256))) {
     throw new Error("Generated verifier keys do not match the proof-circuit catalog");
   }
   for (const [name, hash] of Object.entries(verifierKeySha256)) {

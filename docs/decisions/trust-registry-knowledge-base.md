@@ -3094,3 +3094,12 @@ names in the schema check. The decision history, attachment hashes, and GPG
 verdict still have their separate value and signature checks; this change does
 not itself authenticate the operator's receipts, reviewer independence, or
 ledger finality. A complete deployed `L01`-`S01` run remains required.
+
+Release and install validation also compare verifier-key catalogs, portal
+roles, and proof-parameter paths by exact name sets rather than NUL-joined
+strings. The deployment-attempt journal rejects a forged catalog key before
+reserving an attempt, and installed verifier filenames remain compared with
+the compiled circuit list. Filesystem names cannot contain NUL, but manifest
+keys are parsed JSON; the same explicit comparison now covers both. Hash,
+source, package, and finalized readback checks remain separate. Passing this
+preflight does not establish an independently authenticated deployment.

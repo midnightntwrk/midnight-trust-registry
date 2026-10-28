@@ -21,6 +21,7 @@ import {
 } from "./public-network-deployment.js";
 import type { LocalNetworkDeploymentActionReaderConfig } from "./local-network-deployment-action-reader.js";
 import type { PublicNetworkDeploymentActionReaderConfig } from "./public-network-deployment-action-reader.js";
+import { hasExactFieldNames } from "./exact-field-names.js";
 import { verifyInstalledVerifierKeyAssets } from "./verifier-asset-preflight.js";
 
 type RegistryContract = TrustRegistryContract.Contract<TrustRegistryPrivateState>;
@@ -117,7 +118,7 @@ function reservationFor(intent: DeploymentAttemptIntent): z.infer<typeof Reserva
   const verifierKeySha256 = Object.entries(releaseManifest.verifierKeySha256)
     .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0);
   const circuitNames = Object.keys(new TrustRegistryContract.Contract(trustRegistryWitnesses).provableCircuits).sort();
-  if (verifierKeySha256.map(([name]) => name).join("\0") !== circuitNames.join("\0")
+  if (!hasExactFieldNames(releaseManifest.verifierKeySha256, circuitNames)
     || verifierKeySha256.some(([, hash]) => !Sha256.safeParse(hash).success)) {
     throw new Error("Deployment verifier-key catalog is invalid or incomplete");
   }
