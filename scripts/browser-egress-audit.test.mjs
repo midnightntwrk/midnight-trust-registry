@@ -53,3 +53,28 @@ test("browser audit blocks external HTTP and WebSocket attempts and reports thei
   assert.throws(assertNoExternalRequests, /outside\.invalid/u);
   assert.throws(assertNoExternalRequests, (error) => !error.message.includes("token=private"));
 });
+
+test("browser audit denies redirects before the browser can follow them", async () => {
+  let handler;
+  const context = {
+    on: () => {},
+    route: async (_pattern, callback) => { handler = callback; },
+    routeWebSocket: async () => {},
+  };
+  const assertNoExternalRequests = await installOfflineBrowserAudit(context);
+  let fulfilled;
+  await handler({
+    request: () => ({ url: () => "http://127.0.0.1:4400/start" }),
+    fetch: async ({ maxRedirects }) => {
+      assert.equal(maxRedirects, 0);
+      return {
+        status: () => 302,
+        headers: () => ({ location: "https://outside.invalid/next?token=private" }),
+      };
+    },
+    fulfill: async (options) => { fulfilled = options; },
+  });
+  assert.equal(fulfilled.status, 403);
+  assert.throws(assertNoExternalRequests, /outside\.invalid/u);
+  assert.throws(assertNoExternalRequests, (error) => !error.message.includes("token=private"));
+});

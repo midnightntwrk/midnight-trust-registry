@@ -22,7 +22,7 @@ const close = (server) => new Promise((resolve, reject) => {
 test("loopback redirect cannot reach a non-allowlisted listener", async ({ page }) => {
   const externalAddress = Object.values(networkInterfaces()).flat()
     .find((address) => address?.family === "IPv4" && !address.internal)?.address;
-  assert.ok(externalAddress, "A non-loopback local interface is required for the redirect probe");
+  test.skip(!externalAddress, "The live redirect probe requires a non-loopback IPv4 interface");
   let externalHits = 0;
   const external = createServer((_request, response) => {
     externalHits += 1;
