@@ -1,14 +1,19 @@
 # Trust Registry Execution Backlog
 
 Status: active
-Updated: 2026-10-13
+Updated: 2026-10-28
 
 The [0.1.0 reference profile](../spec/milestone-0.1.0.md) is the product
 contract. The [0.1.0 issue plan](milestone-0.1.0-issues.md) contains the
 ordered, testable implementation slices and is the source of truth for milestone
-acceptance. GitHub [milestone 0.1.0](https://github.com/midnightntwrk/midnight-trust-registry/milestone/1)
-tracks their execution. The broad [v1 specification](../spec/trust-registry.md)
-continues to describe the longer-term system.
+acceptance. The first RC is **self-hosted local/offline runtime only**: install
+may use the network, but the qualified runtime may not use external egress.
+Preprod and other public networks, historical API/TRQP decisions, and
+Kubernetes/Helm qualification are outside this RC. GitHub
+[milestone 0.1.0](https://github.com/midnightntwrk/midnight-trust-registry/milestone/1)
+tracks execution. The broad [v1 specification](../spec/trust-registry.md)
+continues to describe the longer-term system. A simulator, mocked provider,
+or self-attested wizard status is not deployed local-ledger evidence.
 
 ## Delivered Foundation
 
@@ -47,24 +52,44 @@ aware handoff for uncertain submissions. The Compact contract
 checks evidence hashes but does not itself resolve the evidence verifier's DID
 assertion key.
 
-## 0.1.0 Critical Path
+## Current Local RC Critical Path
 
-Execution is functional-first. Work locally through complete actor journeys
-with positive and rule-specific negative tests before polishing packaging or
-CI. An unmerged PR is not a stop signal. Accumulate several coherent signed
-commits in one worktree and publish a reviewable PR when the feature bundle is
-substantial (roughly 5k-10k changed lines), not by padding a small change.
-Use `./run.sh integration --light` for local simulator iteration and the full
-integration gate before publication. Keep the public
-specification, executable tests, and demo narrative synchronized.
+The [executable issue plan](milestone-0.1.0-issues.md) and
+[operator acceptance cases](../guide/standalone-local-journey.md#operator-acceptance-record)
+control the release decision. Draft implementation PRs #238-#240 provide
+reviewable code and tests, not a qualified deployment. Promotion PR #198
+remains draft. Do not convert a passing light, demo, browser-fixture, or
+read-only observer test into an `A01`-`A04` actor verdict.
 
-Current order: finish authenticated DID/VC/VP intake and Compact-governed
-decisions (#76, #67, #77), compose the issuer and other-actor use cases (#58,
-#78), prove API/UI/query equivalence and adversarial cases (#59, #60, #39),
-then complete VC consumer anchors (#79, #73) and the demo/release candidate.
-Repository hardening, scorecards, extra CI policy, and nonessential packaging
-belong at the end of the backlog. Preserve only checks required to establish
-correctness and avoid security regressions in functional work.
+| Gate | Work still required | Release evidence |
+| --- | --- | --- |
+| Local ledger and approvals | [#219](https://github.com/midnightntwrk/midnight-trust-registry/issues/219), [#233](https://github.com/midnightntwrk/midnight-trust-registry/issues/233), [#234](https://github.com/midnightntwrk/midnight-trust-registry/issues/234) | One source-matched install, independently signed genesis and release committee, deployed contract, authenticated finalized constructor/authority/verifier-key readback, and signed API plan bound to those receipts. |
+| Offline actor journeys | [#219](https://github.com/midnightntwrk/midnight-trust-registry/issues/219), [#90](https://github.com/midnightntwrk/midnight-trust-registry/issues/90) | Real local issuer, verifier, auditor, maintainer, recognition, and relying-party paths with a VC-owned live status-authority adapter, governed writes and current reads, plus host/container/wallet/browser/prover egress-denial evidence. The packaged signed-plan API CLI is still read-only. |
+| Recovery | [#220](https://github.com/midnightntwrk/midnight-trust-registry/issues/220), [#230](https://github.com/midnightntwrk/midnight-trust-registry/issues/230) | Deployed restart and distinct-project restore, checkpoint continuity, durable ambiguous-attempt quarantine, and independently authenticated recovery disposition. Process and synthetic-snapshot tests are not deployed recovery. |
+| Artifact and security review | [#236](https://github.com/midnightntwrk/midnight-trust-registry/issues/236), [#237](https://github.com/midnightntwrk/midnight-trust-registry/issues/237), [#232](https://github.com/midnightntwrk/midnight-trust-registry/issues/232) | Manifest-backed exact-source packages/images/proving keys, disposition of the red external scanner findings, and a non-author human review of the same candidate with signed findings and release-owner sign-off. A GPG verifier checks bytes, not reviewer independence or finding truth. |
+
+Use the private `L01`-`S01` acceptance inventory to retain commands, receipts,
+checkpoints, negative outcomes, and reviewer decisions for **one** candidate.
+Its `allOperatorCasesPassed` field is a self-attested inventory result, not
+release qualification; independent finality and security disposition remain
+separate gates. The current-only API requires operator-reviewed re-signing and
+a controlled restart after each governed mutation. Never publish wallet
+material, private acceptance evidence, or generated proving secrets in a PR.
+
+## Historical Functional Path
+
+The following table records the earlier simulator and package implementation
+plan. Its issue wording and statuses need reconciliation before closure. It is
+not the current RC release sequence; #39 historical API/TRQP routes are
+deferred, while #218 Helm is optional. The scoped issues above take precedence
+for local runtime qualification.
+
+The original order was DID/VC/VP intake and Compact-governed decisions
+(#76, #67, #77), simulator-backed actor cases (#58, #78), API/UI/query and
+adversarial cases (#59, #60), then VC consumer anchors (#79, #73). Those
+tests remain useful regression coverage, but their issue status cannot be
+read as proof of the deployed local runtime. #39 historical routes were in
+that original order and are now deferred from this RC.
 
 | Slice | Existing issue or planned issue | Exit evidence |
 | --- | --- | --- |

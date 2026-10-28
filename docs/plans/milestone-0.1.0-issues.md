@@ -1,7 +1,7 @@
 # 0.1.0 Executable Issue Plan
 
 Status: active milestone backlog
-Updated: 2026-10-24
+Updated: 2026-10-28
 GitHub milestone: [Midnight Trust Registry 0.1.0](https://github.com/midnightntwrk/midnight-trust-registry/milestone/1)
 Normative scope: [0.1.0 reference profile](../spec/milestone-0.1.0.md)
 
@@ -41,6 +41,20 @@ issues #54-#57 and ADRs are inputs, not work to recreate.
 | 12 | [#219](https://github.com/midnightntwrk/midnight-trust-registry/issues/219) | Finalized local-ledger API and offline actor journeys | #58, #59, #77, #90 VC-owned status adapter |
 | 13 | [#220](https://github.com/midnightntwrk/midnight-trust-registry/issues/220) | Audited recovery of never-observed ambiguous proposal reservations | #219 finalized reader and journal |
 | 14 | [#45](https://github.com/midnightntwrk/midnight-trust-registry/issues/45) | Local-only release candidate and attestable package gate | All in-scope RC gates, including #219 and #220 |
+
+The numbered map records implementation dependencies, not a complete
+release verdict. For the local RC, #45 also requires explicit disposition of
+the [external scan findings](https://github.com/midnightntwrk/midnight-trust-registry/issues/237),
+exact-source [manifest-backed publish](https://github.com/midnightntwrk/midnight-trust-registry/issues/236),
+the [provider-code identity](https://github.com/midnightntwrk/midnight-trust-registry/issues/233)
+and [plan-to-deployment](https://github.com/midnightntwrk/midnight-trust-registry/issues/234)
+boundaries, and a [non-author human security review](https://github.com/midnightntwrk/midnight-trust-registry/issues/232)
+of the same install candidate. The [strict GPG parity](https://github.com/midnightntwrk/midnight-trust-registry/issues/235)
+and [restart quarantine](https://github.com/midnightntwrk/midnight-trust-registry/issues/230)
+follow-ups must be reconciled against their acceptance criteria before they
+are treated as complete. Draft PRs and local signed commits are implementation
+evidence only. The acceptance procedure and private `L01`-`S01` evidence
+inventory are in the [operator journey](../guide/standalone-local-journey.md#operator-acceptance-record).
 
 Deferred from this local RC: [#39](https://github.com/midnightntwrk/midnight-trust-registry/issues/39)
 historical API/TRQP evidence and the historical-route acceptance text still
