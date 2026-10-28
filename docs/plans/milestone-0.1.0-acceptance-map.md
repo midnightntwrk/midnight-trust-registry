@@ -27,9 +27,13 @@ signed/DCO `0527e11af09327fef15427f148ba07c8688d0f01`, without rewriting
 its original branch. At that source, focused acceptance and security-verdict
 tests passed 22/22, standalone topology passed 120/120, the strict security
 script typecheck passed, and `pnpm audit --audit-level low` found no known
-vulnerabilities. The retained fixture E2E checkpoint below is older than this
-merge and has not been rerun at `0527e11a`. These checks do not authenticate
-finality or establish deployed, egress-denied standalone actor journeys.
+vulnerabilities. At the subsequent signed/DCO documentation head
+`f20cf27d337f0ce091b09a496901d8bccdeb6f9c`,
+`pnpm run test:e2e:demo:browser` passed four simulator-backed role journeys,
+fixture CLI/API and UI smoke, and 11 Playwright cases. This is the current
+local fixture E2E checkpoint, not a deployed-ledger test. These checks do not
+authenticate finality or establish deployed, egress-denied standalone actor
+journeys, and they pass no `L01`-`S01` acceptance case.
 
 At signed/DCO local source `3fddcac5623b58cfecdd672cefa557ef3b691b20`,
 `pnpm run test:e2e:demo:browser` passed the four simulator-backed membership
