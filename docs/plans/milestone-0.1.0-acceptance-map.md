@@ -8,7 +8,82 @@ Kubernetes and Helm are optional deployment paths, not 0.1.0 RC gates.
 The non-Kubernetes standalone installation may qualify with equivalent
 deployed-ledger, offline actor, restart/restore, and security evidence.
 
+## Current review and operator handoff (2026-10-28)
+
+Published draft PRs [#238](https://github.com/midnightntwrk/midnight-trust-registry/pull/238)
+(`5b6d2851`), [#239](https://github.com/midnightntwrk/midnight-trust-registry/pull/239)
+(`b723a84b`), and [#240](https://github.com/midnightntwrk/midnight-trust-registry/pull/240)
+(`bbe527cf`) remain stacked and unmerged. At #238's exact head, the milestone
+build/package/test, quality, documentation, and aggregate scan checks passed;
+the separate external Opengrep OSS check remains red for five internal
+plaintext WebSocket links. [#237](https://github.com/midnightntwrk/midnight-trust-registry/issues/237)
+requires a reviewed security disposition; a green aggregate scan is not a
+waiver. The later local review groups and recovery fixes are unpublished, so
+their tests do not change those PR heads or CI results.
+
+At signed/DCO local source `27f873601bc168859b470c858aa06fd23e47a7c3`,
+`pnpm run test:e2e:demo:browser` exited 0 on 2026-10-28. The four signed
+membership simulator journeys, fixture API/UI smoke, and all 10 Playwright
+browser cases passed. The adversarial parity command at the same source
+reported 198 demo IDs, 198 isolated IDs, and no missing cases; the full light
+run passed 20/20 tasks. This is a development E2E checkpoint only: it used
+fixture identity/status and a Compact simulator, not a deployed, finalized,
+egress-denied standalone Trust Registry. No `L01`-`S01` case is promoted by
+these results, and this documentation commit will itself have a later SHA.
+
+The retained private `wizard-b23` packet is bound to signed source `6a5b2529`
+and is older than the current local implementation. A read-only prerequisite
+check against its own source returned exit 2: install staged, stack observed,
+and setup unlocked were true; `genesisApproved` was the first missing gate.
+Release roster approval, deployment, committee approval, verifier-key
+reconciliation, and maintenance transition were also missing. This packet is
+pre-deployment evidence, not an exact-current-source release candidate. Its
+node-reported genesis proposal must not be promoted to a trusted pin by the
+wizard or an AI agent.
+
+The operator's next action is to freeze the intended exact source, rebuild
+and verify its pinned install, independently authenticate the real chain
+specification, then review and sign the exact genesis approval. Separately,
+a human reviewer must approve the release committee threshold, public keys, and
+custody roles before deployment. Only then can a deployment produce finalized
+contract and key readback, followed by the maintenance transition, signed API
+plan, egress-denied actor journeys, and deployed restart/restore. The VC-owned
+live status adapter and independent human security verdict remain separate
+release gates. Do not count current fixture, preflight, loopback HTTP, or
+node-self-reported checks as those deployed results. Keep #198 draft.
+
 ## Latest local pre-deployment checkpoint
+
+The most recent source-matched **pre-deployment** packet was prepared from
+signed/DCO source `779bfd1d0b72fd02cb3320511212d9ebd73cc334`. Its verified
+v6 install inventory SHA-256 is
+`66f8d669eb2b06e90f3444c27a0c69f5368f007568f28b757e156229c7e6154d`
+and covers ten packed packages, six pinned images, and 18 proof-parameter
+files. Packed actor and VC consumer fixture checks passed. The dedicated
+`wizard-779bfd1` bridge matched the bundle's three ledger images and passed
+bridge-scoped HTTP/DNS egress-canary denial. A pre-deployment restart retained
+the node-reported finalized checkpoint hash while its height advanced from
+49 to 61. Its node-reported genesis candidate SHA-256 is
+`86925630cc88da02765de3fe33e2185a81479ecb1087ed3c9668ec43cf5627b9`;
+the proposed pin SHA-256 is
+`d1a207e5a816314c2c485b18dd46d958b894be4b52e98ec2058c8f7b97cc8de1`.
+Both remain **untrusted node-derived proposals**. The prerequisite checker
+exited 2 at `genesisApproved`; the three dedicated containers were stopped,
+with private evidence and volumes retained. The packet did not deploy a
+contract, authenticate finality independently, run an offline actor, or test
+deployed restore. This documentation update is newer than the recorded source,
+so the `779bfd1d` bundle is not an exact-head release candidate. Do not sign
+the proposed pin as a final release approval while the implementation stack
+is still changing.
+
+The operator's next safe action is to freeze and independently review the
+intended release source and chain specification, then regenerate a
+source-matched bundle and approval draft. The human reviewer, not an AI or
+node report, signs the exact wizard approval bytes. Separately approve the
+release committee threshold, public keys, and custody roles before attempting
+deployment. Retain the failed prerequisite report as evidence of the stop.
+
+### Historical checkpoint
 
 The private `artifacts/standalone-setup/wizard-7efc-1/` setup was built from
 signed/DCO source `7efcf60760dc7e37641f7c8f3b575dc83fd5dd6b` and a
@@ -152,6 +227,8 @@ private evidence, and generated proof artifacts until safe phase-exit cleanup.
 | Standalone offline runtime | The [qualification plan](../guide/standalone-offline-runtime.md) separates online installation from offline runtime. The `7efcf607` source-matched v6 install and `wizard-7efc-1` bridge in the checkpoint above passed pinned-byte, topology, local canary-denial, and pre-deployment restart checks. Its genesis candidate, proposed pin, and review packet remain private and unsigned. Newer source makes this historical, not current-head release evidence. A fixture journey and a healthy local bridge do not prove a deployed registry. | Build a new exact-source install and genesis packet after the current code stabilizes. The human reviewer must independently check its chain-spec/genesis, source, inventory, and proposed pin, then inspect and detached-sign the wizard-generated approval bytes; neither chat approval nor the node candidate suffices. Live local deployment and authenticated finalized contract readback, approved release maintenance transition, wallet/API/browser egress-denied actor journeys, post-deployment restart and distinct-project restore with contract/wallet/API readback, and independent security review remain open. Pre-deployment smoke closes none of those gates. |
 | #219 ledger-backed API | Local signed slices require a detached reviewer-signed, time-bounded v3 plan and approval-chain handoff, exact install/release bytes, pinned genesis/address/endpoints, per-query finalized readback, and complete current-map Compact projection checks. Historical authorization, recognition, and TRQP decision/evidence routes deliberately return `501 historical-decisions-out-of-scope`. The packaged signed-plan CLI remains read-only; `GET /health` lists no governed proposal ports. An opt-in issuer proposal port has signed writer-annex, provider-identity, journal, and injected-finality/evidence checks in tests, but no production embedding host or live VC-owned status adapter is installed. No API has run against a deployed local contract. | **Current-only 0.1.0 scope is decided.** Keep historical completeness deferred. Supply approved live DID/VC/status and authenticated-finality dependencies, wire the governed ports and durable admission to the exact signed plan, and run issuer through recognition actor writes on one deployed local ledger. After every mutation, drain queries and manually review, re-sign, install, and restart a versioned snapshot/plan set. The old plan must fail closed on changed sequence or deployment-image pins. Simulator and injected-provider tests cannot close this gate; offline actor, recovery, and security review are still required. |
 | #218 Helm deployment (optional, not an RC gate) | The issue defines pinned images, isolated local node/indexer/prover, API and portal workloads, secrets, persistence, default-deny egress, first-run approval integration, and real-cluster qualification. The verified `7821a36` v6 install binds the API, admin, and applicant OCI archives to signed source and exact inventory bytes; the b14 Compose bridge runs only node/indexer/prover, not the API or portals. The local Helm chart has six private digest-pinned workloads, external Secret/PVC references, a namespace-wide default-deny policy, and narrow local operator/actor egress. The signed-render observer rejects an incomplete or narrowed policy set in tests. No Helm workload has been deployed or observed on a real cluster. | Track chart-specific cluster qualification separately from #45. Before claiming #218 complete, independently review final image/install bytes, bind running API and portals to approved image provenance, and install only in a dedicated namespace with trusted role-label admission. Plan/Secret/image and policy-object observations are point-in-time, not measured CNI egress enforcement or live cluster evidence. Qualify chart Secret/PVC ownership, DNS recursion and CNI behavior, local DID/VC/status authority allowlists, first-run wizard handoff, private preload, real isolated-cluster deployment, egress-denied actor journeys, restart/restore, operator compatibility matrix, and independent security review. Template tests are not cluster evidence. None of this makes Kubernetes a prerequisite for the standalone RC. |
+| #230 proposal quarantine across restart | At signed local `e4c96ae9`, `node --test scripts/proposal-journal-process-restart.test.mjs` passed both fresh-process reservation/retry and forced-kill cases; the API package's `proposal-journal-process-restart.test.ts` passed three fresh-provider/journal cases. They assert no second submission callback after ambiguity, no callback after reservation write failure, a lagging read stays blocked, and a matching finalized observation permits a different intent but not replay. | These are injected-provider and journal mechanics tests, not a restarted deployed provider or independently authenticated finality. Keep the real local-ledger restart/restore and ambiguous-outcome evidence under `R01` open; do not clear a never-observed reservation from a null read or timeout. |
+| #236 manifest-backed publication | At signed local `e4c96ae9`, `pnpm run test:artifact-workspaces` passed 67 tests. The publish workflow generates and verifies a source-bound manifest over `artifacts/npm-release`, runs manifest-backed clean-consumer smoke, and rechecks each selected tarball before publish; negative tests reject altered artifacts, incomplete proof parameters, missing manifests, and mismatched registry integrity during resumed publication. | Re-run the full Compact build, manifest generation, tampered-artifact negative, and clean-consumer smoke on the exact final candidate in protected CI. The release owner must approve the reviewed manifest and distribution channel; local workflow tests do not authenticate the runner or authorize publication. |
 | #45 release | Signed-source manifest generator, package hash verifier, ten packed artifacts, four HTTP membership journeys plus one packaged recognition VC/VP journey, and draft [candidate note](../guide/release-candidate-0.1.0.md). The cf5d verified install binds source-matched packages, six images, and proof parameters; it is not installed-runtime or current-head deployment evidence. At signed local `d4b3b345`, `integration:prebuilt` found all 66 full proof circuits and passed 349 integration, 109 API integration, 59 applicant, and 25 admin tests. The simulator/fixture `test:e2e:demo` and all 10 fixture-browser tests also passed. None of these tests is a deployed local-ledger actor journey or final-candidate validation. | Full integration from final source, packed-consumer checks, and artifact review at the final candidate revision, exact-head CI/review, release owner, independent local security review, deployed local-ledger qualification, and recovery approval are pending. |
 | #178 milestone protection policy | The [delivery harness](milestone-0.1.0-delivery-harness.md) requires green exact-head CI and current-head LLM review; the user explicitly declined a milestone branch-protection rule | Reconcile the stale issue with that policy decision; do not treat absence of branch protection as a release blocker or relax develop/main protections. |
 

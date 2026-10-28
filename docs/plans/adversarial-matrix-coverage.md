@@ -34,6 +34,10 @@ include a stable pass/fail reason code; a failing case does not stop later
 cases. The command exits nonzero on a failed case or a count other than 198.
 An interrupted, signaled, or abnormal test-runner exit is rejected even if a
 partial TAP stream contains failed cases; it is not a complete case report.
+Each TAP block may contain at most one top-level outcome, and it must name
+the same stable case ID as its subtest header; duplicate or mismatched results
+cannot be attributed as a pass or failure. This
+checks report identity, not the authenticity of deployed-ledger evidence.
 On a clean committed checkout, `node scripts/adversarial-case-report.mjs --archive`
 also writes the full report once to a mode-0600 file under private ignored
 `artifacts/adversarial-reports/`, named for the current source commit. It
@@ -46,8 +50,50 @@ assertion that every isolated case exercised every boundary. The archive is
 test evidence, not a deployed-ledger or release-qualification result.
 `pnpm run check:adversarial-parity -- --require-full` additionally compares
 those isolated case IDs with the governed demo's machine-readable matrix.
+It runs the independent case suite before the sequential demo. If the demo
+aborts, the parity command exits nonzero but still emits the complete isolated
+per-case outcomes and reasons, with unknown demo and missing-case counts shown
+as `null` rather than a false zero. If the demo emits a failed matrix before
+exiting, the failure report retains both matrices for diagnosis. A successful
+parity report remains compact and requires 198 matching IDs.
 The demo remains useful as one sequential actor journey, but its independent
 case report is the regression gate when an earlier journey step fails.
+The issuer, recognition, verifier, auditor, and maintainer former-policy
+signature replay scenarios now live in `scripts/governed-demo-policy-replay.mjs`.
+Each keeps the exact payload and action sequence fixed across the rejected
+old-policy signature and successful current-policy control. Their isolated
+counterparts remain in
+`scripts/adversarial-compact.test.mjs`; the surrounding historical demo and
+other inline scenarios still need extraction under #216. Neither lane is a
+deployed-ledger replay test.
+The same module also owns the post-revision historical client checks: retained
+issuer, verifier, auditor, and recognition evidence, uncommitted policy
+substitutions, superseded current-time use, and tampered Merkle and epoch
+signatures. The historical HTTP/TRQP checks now run through
+`scripts/governed-demo-historical-http.mjs`, which owns a separate loopback
+listener for the archived policy snapshot and closes it before the later
+mutable actor demo begins. These remain fixture API/adapter checks, not a
+deployed local-ledger readback.
+`scripts/policy-replay-isolation.test.mjs` separately proves that snapshot
+publication advances its own simulator action count, while old-policy
+signatures are rejected and current-policy signatures succeed for the exact
+same prepared payload and sequence on a different harness. It runs in the
+demo-smoke lane but is not a 199th adversarial matrix case.
+
+The threshold-revision, evidence-verifier registration, and atomic maintainer
+recovery journey now runs in `scripts/governed-demo-policy-recovery.mjs` with
+its original six adversarial case IDs and positive receipt controls. The
+independent counterparts are five named cases in
+`scripts/adversarial-policy-api.test.mjs` and the Compact headroom case in
+`scripts/adversarial-compact.test.mjs`. The governed demo remains sequential;
+`check:adversarial-parity -- --require-full` verifies 198/198 case-ID parity
+after this extraction. These tests remain simulator and fixture evidence, not
+deployed local-ledger recovery or an independent finality check.
+The public issuer/verifier resource and external-recognition registry lookup
+rejections now run through `scripts/governed-demo-public-lookup-safety.mjs`.
+Their independent named cases remain in `scripts/adversarial-api.test.mjs`
+and `scripts/adversarial-recognition.test.mjs`; the extraction changes no
+public API or deployed-ledger claim.
 
 At signed local source `bbb2c456a93aa035ac482d67f945e8cddf6dfb7c`, the
 private archive `artifacts/adversarial-reports/cases-bbb2c456a93aa035ac482d67f945e8cddf6dfb7c.json`

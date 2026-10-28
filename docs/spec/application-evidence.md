@@ -424,6 +424,9 @@ authority's current Midnight DID
 assertion key verifies a domain-separated JubJub signature. The registry,
 method, handle, credential root, nonce hash, active flag, observation window,
 and DID state version are all checked before returning an expiry bound.
+The signed observation and expiry MUST form a positive window of at most five
+minutes; observation-age, future-skew, and expiry checks MUST compare complete
+RFC3339 instants without discarding fractional digits.
 Explicit `statusDecision` overrides exist only for negative test cases. The
 fixture still uses test-only issuer eligibility and a deterministic attestation
 fetcher, accepts only its fixture credential-body format, and MUST NOT be

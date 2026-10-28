@@ -1,10 +1,9 @@
-import { spawnSync } from "node:child_process";
-import { constants, existsSync } from "node:fs";
-import { lstat, mkdtemp, open, realpath, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { constants } from "node:fs";
+import { lstat, open, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 
 import { assertStrictDetachedSignatureStatus } from "@midnight-ntwrk/trust-registry-integration/reviewer-signature-status";
+import { verifyDetachedReviewerBytes } from "@midnight-ntwrk/trust-registry-integration/reviewer-signature-verifier";
 
 const FINGERPRINT = /^[0-9A-F]{40}$/u;
 
@@ -108,27 +107,11 @@ export async function verifyDetachedLocalReviewerSignature(input: {
     || keyringAfter.mode !== keyring.mode || keyringAfter.ctimeNs !== keyring.ctimeNs) {
     throw new Error(`${description} reviewer keyring changed during verification`);
   }
-  const gpg = ["/usr/bin/gpg", "/opt/homebrew/bin/gpg", "/usr/local/bin/gpg"].find(existsSync);
-  if (gpg === undefined) throw new Error(`${description} requires an installed GPG verifier`);
-  const temporary = await mkdtemp(join(tmpdir(), "tr-local-reviewer-approval-"));
   try {
-    const documentCopy = join(temporary, "document.json");
-    const signatureCopy = join(temporary, "document.sig");
-    await writeFile(documentCopy, input.documentBytes, { flag: "wx", mode: 0o600 });
-    await writeFile(signatureCopy, signatureBytes, { flag: "wx", mode: 0o600 });
-    await writeFile(join(temporary, "pubring.kbx"), keyringBytes, { flag: "wx", mode: 0o600 });
-    const verification = spawnSync(gpg, ["--batch", "--no-options", "--no-auto-key-retrieve",
-      "--trust-model", "always", "--no-default-keyring", "--homedir", temporary,
-      "--keyring", join(temporary, "pubring.kbx"), "--status-fd=1",
-      "--verify", signatureCopy, documentCopy],
-    { encoding: "utf8", timeout: 10_000, maxBuffer: 1024 * 1024,
-      env: { PATH: "/usr/bin:/bin", HOME: temporary, LC_ALL: "C" } });
-    if (verification.error) {
-      throw new Error(`${description} lacks the approved detached reviewer signature`);
-    }
-    assertApprovedReviewerSignatureStatus(verification.stdout ?? "", verification.status,
-      input.reviewerFingerprint, Date.now(), description);
-  } finally {
-    await rm(temporary, { recursive: true, force: true });
+    verifyDetachedReviewerBytes({ documentBytes: input.documentBytes,
+      signatureBytes, publicKeyBytes: keyringBytes, publicKeyFormat: "keybox",
+      expectedPrimaryFingerprint: input.reviewerFingerprint });
+  } catch {
+    throw new Error(`${description} lacks the approved detached reviewer signature`);
   }
 }

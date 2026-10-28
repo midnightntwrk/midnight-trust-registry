@@ -91,6 +91,16 @@ describe("DID-signed application status attestation", () => {
     });
   });
 
+  it("accepts an exactly five-minute signed window with fractional timestamps", async () => {
+    const { source, request, replace, statement } = await fixture();
+    replace({
+      ...statement,
+      observedAt: new Date(VP_FIXTURE_TIME_MS).toISOString().replace(".000Z", ".0000001Z"),
+      expiresAt: new Date(VP_FIXTURE_TIME_MS + 5 * 60_000).toISOString().replace(".000Z", ".0000001Z"),
+    });
+    await expect(source(request)).resolves.toMatchObject({ validUntilMs: VP_FIXTURE_TIME_MS + 5 * 60_000 });
+  });
+
   it.each([
     ["registry", { statusRegistryId: sha256Hex("other-registry") }],
     ["authority", { statusAuthorityMethodId: "did:midnight:other#assertion-1" }],
@@ -136,6 +146,16 @@ describe("DID-signed application status attestation", () => {
     ["future", { observedAt: new Date(VP_FIXTURE_TIME_MS + 61_000).toISOString() }],
     ["expired", { expiresAt: new Date(VP_FIXTURE_TIME_MS - 1).toISOString() }],
     ["overlong", { expiresAt: new Date(VP_FIXTURE_TIME_MS + 6 * 60_000).toISOString() }],
+    ["fractionally future", {
+      observedAt: new Date(VP_FIXTURE_TIME_MS + 60_000).toISOString().replace(".000Z", ".0000001Z"),
+    }],
+    ["fractionally overlong", {
+      expiresAt: new Date(VP_FIXTURE_TIME_MS + 5 * 60_000).toISOString().replace(".000Z", ".0000001Z"),
+    }],
+    ["zero-length future window", {
+      observedAt: new Date(VP_FIXTURE_TIME_MS + 60_000).toISOString(),
+      expiresAt: new Date(VP_FIXTURE_TIME_MS + 60_000).toISOString(),
+    }],
   ])("rejects a %s re-signed observation", async (_label, change) => {
     const { source, request, replace, statement } = await fixture();
     replace({ ...statement, ...change });

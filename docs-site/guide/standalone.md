@@ -27,6 +27,25 @@ Use `./run.sh --light` only in a disposable checkout: it can remove full
 generated Compact artifacts. Preserve the exact-source signed install bundle,
 proof parameters, generated keys, and private approval evidence.
 
+## Try the fixture-backed behavior first
+
+If you are evaluating the project rather than qualifying an installation,
+start in a fresh disposable checkout. From the repository root:
+
+```sh
+pnpm install --frozen-lockfile
+./run.sh --light
+pnpm run check:adversarial-parity -- --require-full
+```
+
+The final command should exit zero with equal `demoCaseCount` and
+`extractedCaseCount` and `missingCaseCount: 0`. This path does not require a
+wallet or human approval and does not start the dedicated ledger. It exercises
+fixtures and simulator-backed cases only: do not enter its output as deployed
+`L01`-`S01` acceptance evidence. The remaining steps are for an operator with
+a reviewed exact-source install candidate and independent approvals; stop if
+those inputs are unavailable.
+
 ## Build and check a six-image candidate
 
 Run this while online from a **clean GPG/DCO-signed source commit** that already

@@ -12,6 +12,30 @@ It records the current code surface, validation baseline, dependency posture,
 backlog posture, and the next implementation direction. It is intentionally
 shorter-lived and more action-oriented than the normative specification.
 
+## October 27 2026 Latest Local Qualification Handoff
+
+- Signed/DCO source `779bfd1d` has a verified v6 bundle (inventory SHA-256
+  `66f8d669eb2b06e90f3444c27a0c69f5368f007568f28b757e156229c7e6154d`)
+  with ten packages, six images, and 18 proof-parameter files. Packed actor
+  and VC consumer checks passed. The private `wizard-779bfd1` setup matched
+  the three ledger images and passed bridge-scoped HTTP/DNS canary denial.
+  A pre-deployment restart retained the node-reported checkpoint hash as the
+  height advanced from 49 to 61. These are install and pre-deployment checks,
+  not deployed standalone actor E2E.
+- The untrusted node-derived genesis candidate and proposed pin are retained
+  only in the private setup packet. The prerequisite checker stopped at
+  `genesisApproved` (exit 2); the dedicated containers are stopped and their
+  volumes preserved. No contract deployment, independently authenticated
+  finality, approved maintenance transition, offline actor run, or deployed
+  restore occurred. This knowledge-base change makes the bundle historical
+  relative to the current source tree; do not present it as a final-head RC.
+- Freeze the intended release source before asking the human reviewer to
+  authenticate the actual chain specification and sign exact wizard approval
+  bytes. A chat approval, node-reported candidate, or proposed pin cannot
+  substitute for that signature. Approve the release committee roster and
+  threshold separately. The [acceptance map](../plans/milestone-0.1.0-acceptance-map.md)
+  records the packet digests and remaining gates.
+
 ## October 27 2026 Ambiguous Proposal Recovery Boundary
 
 - The local `#220` recovery work can now produce a read-only, versioned v3
@@ -2880,3 +2904,47 @@ step after the older within the same millisecond, with IDs arranged to favor
 the older one under the former `Date.parse` sort. These tests narrow #179's
 historical evidence-selection risk but use synthetic operator snapshots, not
 an authenticated local-ledger history or deployed actor E2E evidence.
+
+## Application status-attestation time precision
+
+The DID-signed application status-attestation verifier compares the complete
+RFC3339 instant for the one-minute future limit, five-minute observation age,
+expiry, and five-minute signed lifetime. A signature just beyond a boundary
+cannot enter by losing fractional digits in `Date.parse`; an exactly
+five-minute fractional window remains valid. The integer-millisecond
+`validUntilMs` returned to the VP verifier is conservatively rounded down.
+The focused tests re-sign fixture statements with the local test key. They
+also send the fixture over a real loopback HTTP listener and exercise the
+published VC/VP intake through the transport, accepting a current signed
+answer and rejecting a newly signed fractionally overlong one. The DID, VC,
+status authority, and ledger state are still fixture-owned: this does not
+supply a VC-owned live status adapter, independent finality, or a deployed
+offline actor journey. Those release gates remain open.
+
+## Policy replay isolation and current E2E boundary
+
+The unpublished local policy-replay slices extracted old-policy signer checks
+and historical HTTP checks from the governed demo into focused helpers. A
+separate regression runs snapshot publication and policy replay in different
+simulator harnesses, so the snapshot's governance actions cannot accidentally
+advance the replay sequence. It verifies that old-policy signatures fail for
+the prepared issuer decision without creating an authorization, while fresh
+signatures for the same payload and sequence succeed. The isolated adversarial
+runner also rejects a TAP subtest attributed to a different case ID or more
+than one top-level outcome. Local validation recorded 198 individually
+attributed adversarial cases, 235 demo-smoke tests, the four signed simulator
+role journeys, ten fixture-browser tests, and the prebuilt integration lane
+with all 66 full proof circuits. These are regression and fixture results,
+not a deployed standalone E2E run or release qualification.
+
+The private b23 setup remains pre-deployment and is tied to older source
+`6a5b2529`; its node-reported genesis candidate is unapproved. No current
+source-matched, human-signed genesis approval or authenticated finalized
+contract readback exists. The packaged local API is read-only and has no
+qualified governed-write actor host or VC-owned live status adapter. The next
+real E2E attempt must start from a new exact-source install, independent
+genesis and committee approvals, and a live finalized deployment; it must
+then record actor writes and reads with runtime egress denied, followed by
+deployed restart/restore and independent human security review. None of the
+local regression results above can be attached as a passing `A01`-`S01`
+acceptance case.

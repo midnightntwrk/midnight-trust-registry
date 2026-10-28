@@ -6,6 +6,7 @@ import { test } from "node:test";
 
 import { archiveAdversarialCaseReport, assertAdversarialMatrixParity, assertCompletedAdversarialRun, parseAdversarialTap,
   runIsolatedAdversarialCases } from "./adversarial-case-report.mjs";
+import { buildAdversarialParityReport } from "./check-adversarial-parity.mjs";
 
 const matrixFor = (report) => ({
   format: "tr-adversarial-matrix-v1",
@@ -14,6 +15,75 @@ const matrixFor = (report) => ({
     id, status, invariant: `invariant-${id}`, boundary: "api",
     expected: "http:403/forbidden", observed: "http:403/forbidden",
   })),
+});
+
+test("parity reports every isolated outcome when the governed demo aborts", () => {
+  const isolatedReport = {
+    format: "tr-adversarial-case-report-v1",
+    summary: { total: 3, passed: 2, failed: 1 },
+    cases: [
+      { id: "case-a", status: "passed", reason: "passed" },
+      { id: "case-b", status: "failed", reason: "assertion-failed" },
+      { id: "case-c", status: "passed", reason: "passed" },
+    ],
+  };
+  const report = buildAdversarialParityReport(isolatedReport, {
+    status: 1, signal: null, stdout: "", stderr: "demo setup failed",
+  }, true);
+  assert.equal(report.status, "failed");
+  assert.equal(report.demoCaseCount, null);
+  assert.equal(report.missingCaseCount, null);
+  assert.deepEqual(report.issues, ["isolated-cases-failed", "governed-demo-process-failed",
+    "governed-demo-report-unavailable"]);
+  assert.deepEqual(report.isolatedReport.cases, isolatedReport.cases);
+  assert.equal(report.demoFailure.reason, "demo setup failed");
+});
+
+test("parity retains a failed governed matrix instead of losing per-case reasons", () => {
+  const cases = Array.from({ length: 198 }, (_, index) => ({
+    id: `case-${index}`, status: index === 5 ? "failed" : "passed",
+    reason: index === 5 ? "assertion-failed" : "passed",
+  }));
+  const isolatedReport = {
+    format: "tr-adversarial-case-report-v1",
+    summary: { total: 198, passed: 197, failed: 1 }, cases,
+  };
+  const report = buildAdversarialParityReport(isolatedReport, {
+    status: 1, signal: null, stderr: "case-5 failed",
+    stdout: JSON.stringify({ adversarialMatrix: matrixFor(isolatedReport) }),
+  }, true);
+  assert.equal(report.status, "failed");
+  assert.equal(report.missingCaseCount, 0);
+  assert.equal(report.governedDemoMatrix.cases[5].status, "failed");
+  assert.equal(report.isolatedReport.cases[5].reason, "assertion-failed");
+  assert.ok(report.issues.includes("governed-demo-cases-failed"));
+});
+
+test("parity keeps the compact success report and rejects a missing isolated case", () => {
+  const cases = Array.from({ length: 198 }, (_, index) => ({
+    id: `case-${index}`, status: "passed", reason: "passed",
+  }));
+  const isolatedReport = {
+    format: "tr-adversarial-case-report-v1",
+    summary: { total: 198, passed: 198, failed: 0 }, cases,
+  };
+  const demoResult = {
+    status: 0, signal: null, stderr: "",
+    stdout: JSON.stringify({ adversarialMatrix: matrixFor(isolatedReport) }),
+  };
+  const passed = buildAdversarialParityReport(isolatedReport, demoResult, true);
+  assert.deepEqual(passed, {
+    format: "tr-adversarial-parity-v1", demoCaseCount: 198,
+    extractedCaseCount: 198, missingCaseCount: 0, missingIds: [],
+  });
+  const incomplete = buildAdversarialParityReport({
+    ...isolatedReport,
+    summary: { total: 197, passed: 197, failed: 0 },
+    cases: cases.slice(1),
+  }, demoResult, true);
+  assert.equal(incomplete.status, "failed");
+  assert.deepEqual(incomplete.missingIds, ["case-0"]);
+  assert.ok(incomplete.issues.includes("governed-demo-case-not-isolated"));
 });
 
 test("reports every isolated outcome after a case fails", () => {
@@ -50,6 +120,19 @@ ok 1 - case-a
 # tests 2
 `);
   assert.deepEqual(report.cases[1], { id: "case-b", status: "failed", reason: "missing-outcome" });
+});
+
+test("rejects an outcome attributed to another isolated case", () => {
+  assert.throws(() => parseAdversarialTap("# Subtest: case-a\nok 1 - case-b\n# tests 1\n"),
+    /outcome ID differs from subtest/u);
+  assert.throws(() => parseAdversarialTap("# Subtest: case-a\nnot ok 1 - case-b\n# tests 1\n"),
+    /outcome ID differs from subtest/u);
+});
+
+test("rejects multiple outcomes for one isolated case", () => {
+  assert.throws(() => parseAdversarialTap(
+    "# Subtest: case-a\nok 1 - case-a\nnot ok 2 - case-a\n# tests 1\n"),
+  /Multiple isolated adversarial outcomes/u);
 });
 
 test("does not accept an interrupted or abnormal runner as a complete failed-case report", () => {

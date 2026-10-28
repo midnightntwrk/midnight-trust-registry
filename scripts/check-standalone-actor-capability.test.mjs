@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, link, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -56,11 +56,34 @@ test("CLI exits 2 for the packaged read-only role set and 0 for a configured por
   const path = join(directory, "health.json");
   try {
     await writeFile(path, JSON.stringify({ ...health, configuredGovernedProposalRoles: [] }));
+    await chmod(path, 0o600);
     await assert.rejects(run(process.execPath, [cli, path, plan]),
     (error) => error.code === 2 && JSON.parse(error.stdout).actorJourney === "not-run");
     await writeFile(path, JSON.stringify(health));
     const { stdout } = await run(process.execPath, [cli, path, plan]);
     assert.equal(JSON.parse(stdout).requestedPortsConfigured, true);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("CLI rejects readable, linked, and symlinked health evidence", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "tr-actor-capability-private-"));
+  const path = join(directory, "health.json");
+  const alias = join(directory, "alias.json");
+  try {
+    await writeFile(path, JSON.stringify(health), { mode: 0o600 });
+    await chmod(path, 0o644);
+    await assert.rejects(run(process.execPath, [cli, path, plan]),
+      (error) => error.code === 1 && error.stderr.includes("private bounded regular file"));
+    await chmod(path, 0o600);
+    await link(path, alias);
+    await assert.rejects(run(process.execPath, [cli, path, plan]),
+      (error) => error.code === 1 && error.stderr.includes("private bounded regular file"));
+    await rm(alias);
+    await symlink(path, alias);
+    await assert.rejects(run(process.execPath, [cli, alias, plan]),
+      (error) => error.code === 1);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

@@ -7,23 +7,43 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { assessStandaloneCaseDecisionChain } from "./standalone-acceptance-decision-policy.mjs";
+import { ACCEPTANCE_CASES, parseStandaloneAcceptanceManifest } from "./standalone-acceptance-manifest-policy.mjs";
 
-const CASES = ["L01", "L02", "A01", "A02", "A03", "A04", "N01", "O01", "R01", "S01"];
+const CASES = ACCEPTANCE_CASES;
 const SHA256 = /^[0-9a-f]{64}$/u;
 const REVISION = /^[0-9a-f]{40}$/u;
-const ADDRESS = /^0x[0-9a-f]{64}$/u;
-const NONZERO_HEX = /[1-9a-f]/u;
 const MAX_FILE_BYTES = 32 * 1024 * 1024;
 const MAX_MANIFEST_BYTES = 1024 * 1024;
 const MAX_RAW_EVIDENCE_PER_CASE = 32;
 const MAX_DECISIONS_PER_CASE = 64;
+/** @typedef {ReturnType<typeof parseStandaloneAcceptanceManifest>} AcceptanceManifest */
+/** @typedef {{ format?: string, sourceRevision?: string, expectedSourceRevision?: string,
+ *   releaseQualified?: boolean, ledgerPrerequisitesObserved?: boolean, missing?: unknown[] }} PrerequisiteObservation */
+/** @typedef {{ format?: string, sourceRevision?: string, installInventorySha256?: string,
+ *   networkId?: string, apiContainerId?: string, selectedStateSha256?: string, planSha256?: string,
+ *   planExpectedGenesisHash?: string, planContractAddress?: string, apiEgressCanaryDenied?: boolean,
+ *   apiDnsCanaryDenied?: boolean, actorJourneys?: string, hostAndBrowserEgress?: string,
+ *   independentFinality?: string, planToDeploymentBinding?: string, releaseQualified?: boolean,
+ *   counts?: Record<string, number>, resolvedLookups?: Record<string, number>,
+ *   ambiguousLookups?: Record<string, number> }} QueryObservation */
+/** @typedef {{ format?: string, sourceRevision?: string, installInventorySha256?: string,
+ *   networkId?: string, apiContainerId?: string, selectedStateSha256?: string, planSha256?: string,
+ *   apiEgressCanaryDenied?: boolean, apiDnsCanaryDenied?: boolean, releaseQualified?: boolean }} RestartObservation */
+/** @typedef {{ format?: string, sourceRevision?: string, inventorySha256?: string,
+ *   releaseQualified?: boolean, governedActorJourneys?: string, independentFinality?: string,
+ *   fullEgressDenial?: string, deployedRecovery?: string, independentSecurityReview?: string,
+ *   prerequisites?: PrerequisiteObservation, currentQuery?: "not-run" | QueryObservation,
+ *   apiRestart?: "not-run" | RestartObservation }} QualificationObservation */
+/** @param {string} path */
 const isDecisionPath = (path) => typeof path === "string" && path.toLowerCase().startsWith("decisions/");
 
+/** @param {unknown} value @param {readonly string[]} expected */
 function exactKeys(value, expected) {
   return value && typeof value === "object" && !Array.isArray(value)
     && Object.keys(value).sort().join("|") === [...expected].sort().join("|");
 }
 
+/** @param {string} root @param {string} path */
 function evidencePath(root, path) {
   if (typeof path !== "string" || path.length === 0 || isAbsolute(path)
     || path.includes("\\") || path.split("/").some((part) => part === "" || part === "." || part === "..")) {
@@ -39,21 +59,27 @@ function evidencePath(root, path) {
   return absolute;
 }
 
-async function digestEvidence(root, path) {
+/** @param {string} root @param {string} path */
+export async function digestEvidence(root, path) {
   const absolute = evidencePath(root, path);
   let parent = root;
+  const rootStat = await lstat(root);
+  if (!rootStat.isDirectory() || (rootStat.mode & 0o077) !== 0) {
+    throw new Error("Evidence root must be a private real directory");
+  }
   for (const part of path.split("/").slice(0, -1)) {
     parent = join(parent, part);
-    if (!(await lstat(parent)).isDirectory()) {
-      throw new Error(`Evidence parent must be a real directory: ${path}`);
+    const parentStat = await lstat(parent);
+    if (!parentStat.isDirectory() || (parentStat.mode & 0o077) !== 0) {
+      throw new Error(`Evidence parent must be a private real directory: ${path}`);
     }
   }
   const file = await open(absolute, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const before = await file.stat({ bigint: true });
-    if (!before.isFile() || before.nlink !== 1n
+    if (!before.isFile() || before.nlink !== 1n || (before.mode & 0o077n) !== 0n
       || before.size === 0n || before.size > BigInt(MAX_FILE_BYTES)) {
-      throw new Error(`Evidence must be a nonempty bounded regular file: ${path}`);
+      throw new Error(`Evidence must be a private nonempty bounded regular file: ${path}`);
     }
     const hash = createHash("sha256");
     const buffer = Buffer.alloc(64 * 1024);
@@ -75,12 +101,14 @@ async function digestEvidence(root, path) {
   }
 }
 
+/** @param {Set<string>} seenFiles @param {string} fileId @param {string} path */
 export function recordEvidenceFileIdentity(seenFiles, fileId, path) {
   if (seenFiles.has(fileId)) throw new Error(`Evidence reused across cases: ${path}`);
   seenFiles.add(fileId);
 }
 
-async function readAcceptanceManifest(root) {
+/** @param {string} root */
+export async function readAcceptanceManifest(root) {
   const file = await open(join(root, "acceptance.json"),
     constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
@@ -96,19 +124,25 @@ async function readAcceptanceManifest(root) {
       || after.mtimeNs !== before.mtimeNs || after.ctimeNs !== before.ctimeNs) {
       throw new Error("Acceptance manifest changed during read");
     }
-    return JSON.parse(bytes.toString("utf8"));
+    return parseStandaloneAcceptanceManifest(JSON.parse(bytes.toString("utf8")));
   } finally {
     await file.close();
   }
 }
 
-async function readPrivateObservation(root, path) {
+/** @param {string} root @param {string} path */
+export async function readPrivateObservation(root, path) {
   const absolute = evidencePath(root, path);
   let parent = root;
+  const rootStat = await lstat(root);
+  if (!rootStat.isDirectory() || (rootStat.mode & 0o077) !== 0) {
+    throw new Error("Observation root must be a private real directory");
+  }
   for (const part of path.split("/").slice(0, -1)) {
     parent = join(parent, part);
-    if (!(await lstat(parent)).isDirectory()) {
-      throw new Error(`Observation parent must be a real directory: ${path}`);
+    const parentStat = await lstat(parent);
+    if (!parentStat.isDirectory() || (parentStat.mode & 0o077) !== 0) {
+      throw new Error(`Observation parent must be a private real directory: ${path}`);
     }
   }
   const file = await open(absolute, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
@@ -131,7 +165,25 @@ async function readPrivateObservation(root, path) {
   }
 }
 
+/** @param {QueryObservation} query */
+function hasConsistentLookupCounts(query) {
+  const roles = ["issuer", "verifier", "auditor", "recognition"];
+  const counts = query.counts;
+  const resolved = query.resolvedLookups;
+  const ambiguous = query.ambiguousLookups;
+  if (!counts || !resolved || !ambiguous) return false;
+  return roles.every((role) => Number.isSafeInteger(counts[role])
+    && counts[role] > 0
+    && Number.isSafeInteger(resolved[role])
+    && resolved[role] > 0
+    && resolved[role] <= counts[role]
+    && (role === "recognition" || (Number.isSafeInteger(ambiguous[role])
+      && ambiguous[role] >= 0
+      && ambiguous[role] <= counts[role])));
+}
+
 /** Binds a read-only observer report to one acceptance candidate; never passes a case. */
+/** @param {AcceptanceManifest} manifest @param {QualificationObservation | null | undefined} observation */
 export function assessStandaloneObservationBinding(manifest, observation) {
   if (observation?.format !== "tr-standalone-qualification-observation-v1"
     || observation.sourceRevision !== manifest.sourceRevision
@@ -169,6 +221,7 @@ export function assessStandaloneObservationBinding(manifest, observation) {
     || query.planContractAddress !== manifest.contractAddress
     || query.apiEgressCanaryDenied !== true
     || query.apiDnsCanaryDenied !== true
+    || !hasConsistentLookupCounts(query)
     || query.actorJourneys !== "not-run"
     || query.hostAndBrowserEgress !== "not-verified"
     || query.independentFinality !== "not-verified"
@@ -205,6 +258,7 @@ export function assessStandaloneObservationBinding(manifest, observation) {
 }
 
 /** Attaches bytes already captured by the operator; it never marks a case passed. */
+/** @param {string} root @param {string} expectedSourceRevision @param {string} caseId @param {string} path */
 export async function attachStandaloneAcceptanceEvidence(root, expectedSourceRevision, caseId, path) {
   if (!CASES.includes(caseId)) throw new Error("Unknown standalone acceptance case");
   if (isDecisionPath(path)) throw new Error("Decision paths are reserved for the verdict command");
@@ -254,6 +308,8 @@ export async function attachStandaloneAcceptanceEvidence(root, expectedSourceRev
 }
 
 /** Records an explicit operator verdict; it never verifies the truth of the attached evidence. */
+/** @param {string} root @param {string} expectedSourceRevision @param {string} caseId
+ * @param {"pass" | "fail" | "not-run"} status @param {string} reviewer @param {string} reasonCode */
 export async function decideStandaloneAcceptanceCase(
   root, expectedSourceRevision, caseId, status, reviewer, reasonCode,
 ) {
@@ -342,6 +398,8 @@ export async function decideStandaloneAcceptanceCase(
 }
 
 /** Checks the inventory, not the truth of a receipt, finality, or a human verdict.
+ * @param {string} root
+ * @param {unknown} manifest
  * @param {string | null} [expectedSourceRevision]
  */
 export async function checkStandaloneAcceptanceEvidence(root, manifest, expectedSourceRevision = null) {
@@ -351,31 +409,18 @@ export async function checkStandaloneAcceptanceEvidence(root, manifest, expected
   if (Buffer.byteLength(`${JSON.stringify(manifest, null, 2)}\n`) > MAX_MANIFEST_BYTES) {
     throw new Error("Acceptance manifest exceeds the readable size limit");
   }
-  if (!exactKeys(manifest, ["format", "sourceRevision", "installInventorySha256", "signedPlanSha256",
-    "genesisHash", "contractAddress", "cases"])
-    || manifest.format !== "tr-standalone-acceptance-evidence-v1"
-    || !REVISION.test(manifest.sourceRevision)
-    || !NONZERO_HEX.test(manifest.sourceRevision)
-    || !SHA256.test(manifest.installInventorySha256)
-    || !NONZERO_HEX.test(manifest.installInventorySha256)
-    || !SHA256.test(manifest.signedPlanSha256)
-    || !NONZERO_HEX.test(manifest.signedPlanSha256)
-    || !ADDRESS.test(manifest.genesisHash)
-    || !NONZERO_HEX.test(manifest.genesisHash.slice(2))
-    || !ADDRESS.test(manifest.contractAddress)
-    || !NONZERO_HEX.test(manifest.contractAddress.slice(2))
-    || !exactKeys(manifest.cases, CASES)) {
-    throw new Error("Acceptance manifest must pin one source, install, plan, genesis, deployment, and all cases");
-  }
-  if (expectedSourceRevision !== null && manifest.sourceRevision !== expectedSourceRevision) {
+  const candidate = parseStandaloneAcceptanceManifest(manifest);
+  if (expectedSourceRevision !== null && candidate.sourceRevision !== expectedSourceRevision) {
     throw new Error("Acceptance evidence source revision differs from the selected candidate");
   }
+  /** @type {Record<string, "pass" | "fail" | "not-run">} */
   const cases = {};
+  /** @type {Record<string, boolean>} */
   const decisionBackedCases = {};
   const seen = new Set();
   const seenFiles = new Set();
   for (const id of CASES) {
-    const entry = manifest.cases[id];
+    const entry = candidate.cases[id];
     if (!exactKeys(entry, ["status", "evidence"])
       || !["pass", "fail", "not-run"].includes(entry.status)
       || !Array.isArray(entry.evidence)
@@ -403,11 +448,11 @@ export async function checkStandaloneAcceptanceEvidence(root, manifest, expected
     }
     cases[id] = entry.status;
     decisionBackedCases[id] = assessStandaloneCaseDecisionChain(
-      id, manifest.sourceRevision, entry.status, entry.evidence, decisions);
+      id, candidate.sourceRevision, entry.status, entry.evidence, decisions);
   }
   return {
     format: "tr-standalone-acceptance-inventory-report-v1",
-    sourceRevision: manifest.sourceRevision,
+    sourceRevision: candidate.sourceRevision,
     cases,
     decisionBackedCases,
     completeInventory: Object.values(decisionBackedCases).every(Boolean),
@@ -458,7 +503,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     }
     if (decide) {
       console.log(JSON.stringify(await decideStandaloneAcceptanceCase(
-        root, ...process.argv.slice(4, 9)), null, 2));
+        root, process.argv[4], process.argv[5],
+        /** @type {"pass" | "fail" | "not-run"} */ (process.argv[6]),
+        process.argv[7], process.argv[8]), null, 2));
       process.exit(0);
     }
     if (observe) {

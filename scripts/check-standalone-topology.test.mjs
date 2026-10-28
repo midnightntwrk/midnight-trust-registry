@@ -62,6 +62,12 @@ test("rejects external attachment and network drift", () => {
   const attached = structuredClone(containers);
   attached[0].NetworkSettings.Networks.bridge = { NetworkID: "outside" };
   assert.throws(() => checkStandaloneTopology(network, attached), /non-internal/u);
+  const missingNetworkSettings = structuredClone(containers);
+  delete missingNetworkSettings[0].NetworkSettings;
+  assert.throws(() => checkStandaloneTopology(network, missingNetworkSettings));
+  const missingLedgerAttachment = structuredClone(containers);
+  delete missingLedgerAttachment[0].NetworkSettings.Networks[ledger];
+  assert.throws(() => checkStandaloneTopology(network, missingLedgerAttachment), /non-internal/u);
   const relay = structuredClone(network);
   relay.Containers["relay-id"] = { Name: "tr-standalone-install-relay" };
   assert.throws(() => checkStandaloneTopology(relay, containers), /extra container attachment/u);
@@ -106,6 +112,8 @@ test("matches prepared private inputs without returning their values", () => {
 test("explicit private-input requirement rejects missing wizard values", () => {
   assert.throws(() => checkStandaloneTopology(network, containers, standaloneStackConfig({}),
     { requirePrivateInputs: true }), /Prepared private stack inputs are incomplete/u);
+  assert.throws(() => checkStandaloneTopology(network, containers, standaloneStackConfig({}),
+    { ...expected, indexerSecret: undefined }), /Prepared private stack inputs are incomplete/u);
 });
 
 test("accepts only verified source-scoped offline image tags and bundle Compose labels", () => {

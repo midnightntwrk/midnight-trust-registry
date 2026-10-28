@@ -2,12 +2,9 @@ import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { CompactError, sampleContractAddress } from "@midnight-ntwrk/compact-runtime";
-import { signJubjubDigestFromSeed } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 
 import {
-  verifyGovernedIssuerCredential,
   verifyGovernedIssuerStatusUpdate,
-  verifyGovernedVerifierRequest,
   verifyGovernedVerifierStatusUpdate,
 } from "./demo-vc-issuer-consumer.mjs";
 
@@ -30,7 +27,6 @@ import {
   verifyVerifierProposalEvidenceSignature,
 } from "../contracts/trust-registry/dist/index.js";
 import { AuthorizationStatus, IssuerResourceType } from "../contracts/trust-registry/dist/managed/trust-registry/contract/index.js";
-import { createMaintainerFixture } from "../contracts/trust-registry/dist/testing.js";
 import { TrustRegistrySimulatorClient } from "../packages/trust-registry-client/dist/simulator-client.js";
 import {
   bytes32Commitment,
@@ -52,10 +48,6 @@ import {
   createApplicationVpScenarioFixture,
   verifyApplicationStatusDecisionWitness,
   createMidnightDid,
-  createMidnightDidLedgerFixture,
-  createMidnightDidResolver,
-  createRecognitionAccreditationVpScenarioFixture,
-  RECOGNITION_VP_FIXTURE_ANCHOR,
   createAuditorAuthorizationScopeFixture,
   createAuditorScenarioFixture,
   createIssuerAuthorizationScopeFixture,
@@ -68,14 +60,11 @@ import {
   LocalTrustRegistryIntegrationHarness,
   AtomicMaintainerRecoveryPrecheckError,
   resolveCompactHistoricalEpochAnchor,
-  recognitionAuthorityAssertionDigest,
-  recognitionAccreditationSubmissionCommitment,
   VP_FIXTURE_NONCE,
   VP_FIXTURE_TIME_MS,
 } from "../packages/trust-registry-integration/dist/index.js";
 import {
   InMemoryApplicationChallengeStore,
-  RecognitionAuthorityChallengeService,
   createTrustRegistryApiServer,
   GovernedAuditorProposalRejectedError,
   GovernedIssuerProposalRejectedError,
@@ -88,7 +77,17 @@ import { AdversarialMatrix } from "./adversarial-matrix.mjs";
 import { buildActorEvidenceReport } from "./actor-evidence-report.mjs";
 import { runApplicationEvidenceSafetyScenarios } from "./governed-demo-application-evidence-safety.mjs";
 import { runDenialSafetyScenario } from "./governed-demo-denial-safety.mjs";
+import { runGovernedConsumerEvidence } from "./governed-demo-consumer-evidence.mjs";
+import { runOtherGovernedProposals } from "./governed-demo-other-proposals.mjs";
+import { runHistoricalPolicyHttpChecks } from "./governed-demo-historical-http.mjs";
 import { runMaintainerSafetyScenarios } from "./governed-demo-maintainer-safety.mjs";
+import { runGovernedRecognitionFlow } from "./governed-demo-recognition-flow.mjs";
+import { runGovernedPolicyRecovery } from "./governed-demo-policy-recovery.mjs";
+import { runPublicLookupSafety } from "./governed-demo-public-lookup-safety.mjs";
+import {
+  runHistoricalPolicyClientChecks, runOldPolicyIssuerReplay, runOldPolicyRecognitionReplay,
+  runRevisedPolicyRoleReplays,
+} from "./governed-demo-policy-replay.mjs";
 import { TrustRegistryTrqpAdapter, verifyTrqpRecognitionEvidenceFromApi } from "../adapters/trqp/dist/index.js";
 
 const asHex = (value) => `0x${Buffer.from(value).toString("hex")}`;
@@ -188,80 +187,10 @@ adversarialMatrix.expectThrown(() => policyHarness.prepareIssuerDecisionAction(
 });
 assert.equal(policyHarness.simulator.getLedger().governanceActionCount, policyActionCountBeforeReplay);
 policyHarness.proposeIssuer(currentPolicyIssuer, [policySecond]);
-const currentPolicyAction = policyHarness.prepareIssuerDecisionAction(currentPolicyIssuer, "approve");
-const oldPolicySignature = signCompact(policySecond, currentPolicyAction, policyHarness, formerPolicyCommitment);
-const oldPolicyCoSignature = signCompact(policyThird, currentPolicyAction, policyHarness, formerPolicyCommitment);
-const policyActionCountBeforeSignatureReplay = policyHarness.simulator.getLedger().governanceActionCount;
-adversarialMatrix.expectThrown(() => policyHarness.simulator.authorizeIssuerAuthorization(
-  oldPolicySignature.keyId,
-  oldPolicySignature.publicKey,
-  oldPolicySignature.signature,
-  currentPolicyIssuer.authorizationIdCommitment,
-  currentPolicyAction.evidenceHash,
-  [oldPolicyCoSignature],
-), {
-  id: "compact-old-policy-signature-replay",
-  invariant: "Former-policy signatures cannot authorize the same payload and sequence under the revised policy",
-  boundary: "compact",
-  messagePattern: /Invalid Jubjub Schnorr signature/u,
-  category: "old-policy-signature-rejected",
-});
-assert.equal(policyHarness.simulator.getLedger().governanceActionCount, policyActionCountBeforeSignatureReplay);
-const currentPolicySignature = signCompact(policySecond, currentPolicyAction, policyHarness);
-const currentPolicyCoSignature = signCompact(policyThird, currentPolicyAction, policyHarness);
-policyHarness.simulator.authorizeIssuerAuthorization(
-  currentPolicySignature.keyId,
-  currentPolicySignature.publicKey,
-  currentPolicySignature.signature,
-  currentPolicyIssuer.authorizationIdCommitment,
-  currentPolicyAction.evidenceHash,
-  [currentPolicyCoSignature],
-);
-assert.equal(policyHarness.simulator.getLedger().governanceActionCount,
-  policyActionCountBeforeSignatureReplay + 1n);
-policyHarness.activateIssuer(currentPolicyIssuer, [policySecond]);
-const currentPolicyBundle = policyHarness.evaluateCurrentIssuerDecision(currentPolicyIssuer);
-const recognitionReplay = createRecognitionScenarioFixture("governed-demo-recognition-policy-replay");
-const recognitionProposal = policyHarness.prepareRecognitionProposalAction(recognitionReplay);
-const recognitionProposalEvidence = policyHarness.signRecognitionProposalEvidence(recognitionProposal);
-const recognitionProposalCount = policyHarness.simulator.getLedger().governanceActionCount;
-adversarialMatrix.expectThrown(() => policyHarness.executeRecognitionProposalWithSignatures(
-  recognitionReplay,
-  [signCompact(policySecond, recognitionProposal, policyHarness, formerPolicyCommitment),
-    signCompact(policyThird, recognitionProposal, policyHarness, formerPolicyCommitment)],
-  recognitionProposalEvidence,
-  recognitionProposal,
-), {
-  id: "compact-recognition-proposal-old-policy-signature-replay",
-  invariant: "A recognition proposal with a current payload cannot reuse former-policy maintainer signatures",
-  boundary: "compact", messagePattern: /Invalid Jubjub Schnorr signature/u,
-  category: "old-policy-signature-rejected",
-});
-assert.equal(policyHarness.simulator.getLedger().governanceActionCount, recognitionProposalCount);
-policyHarness.executeRecognitionProposalWithSignatures(
-  recognitionReplay,
-  [signCompact(policySecond, recognitionProposal, policyHarness),
-    signCompact(policyThird, recognitionProposal, policyHarness)],
-  recognitionProposalEvidence,
-  recognitionProposal,
-);
-const recognitionApproval = policyHarness.prepareRecognitionDecisionAction(recognitionReplay, "approve");
-const recognitionApprovalCount = policyHarness.simulator.getLedger().governanceActionCount;
-adversarialMatrix.expectThrown(() => policyHarness.executeRecognitionDecisionWithSignatures(
-  recognitionReplay, "approve",
-  [signCompact(policySecond, recognitionApproval, policyHarness, formerPolicyCommitment),
-    signCompact(policyThird, recognitionApproval, policyHarness, formerPolicyCommitment)],
-), {
-  id: "compact-recognition-approval-old-policy-signature-replay",
-  invariant: "A recognition approval with a current payload cannot reuse former-policy maintainer signatures",
-  boundary: "compact", messagePattern: /Invalid Jubjub Schnorr signature/u,
-  category: "old-policy-signature-rejected",
-});
-assert.equal(policyHarness.simulator.getLedger().governanceActionCount, recognitionApprovalCount);
-policyHarness.executeRecognitionDecisionWithSignatures(recognitionReplay, "approve", [
-  signCompact(policySecond, recognitionApproval, policyHarness),
-  signCompact(policyThird, recognitionApproval, policyHarness),
-]);
+const currentPolicyBundle = runOldPolicyIssuerReplay(adversarialMatrix, policyHarness,
+  currentPolicyIssuer, policySecond, policyThird, formerPolicyCommitment, signCompact);
+runOldPolicyRecognitionReplay(adversarialMatrix, policyHarness,
+  policySecond, policyThird, formerPolicyCommitment, signCompact);
 const historicalPolicyBundle = policyHarness.buildIssuerHistoricalEvidence(historicalIssuer);
 assert.equal(originalPolicyBundle.policy.version, historicalPolicyBundle.policy.version);
 assert.notEqual(historicalPolicyBundle.policy.version, currentPolicyBundle.policy.version);
@@ -280,384 +209,18 @@ const revisedPolicySnapshot = publishSimulatorSnapshot(policyHarness, {
   auditors: [{ fixture: historicalAuditor, label: "historical-auditor" }],
   recognitions: [{ fixture: historicalRecognition, label: "historical-recognition" }],
 }, originalPolicySnapshot);
-// This listener serves the isolated policy harness's archived snapshot, not the later mutable demo server.
-const policyServer = createTrustRegistryApiServer({
-  source: { mode: "memory", loadSnapshot: async () => revisedPolicySnapshot },
+// Keep this listener isolated from the later mutable demo server.
+await runHistoricalPolicyHttpChecks(adversarialMatrix, {
+  originalPolicySnapshot, revisedPolicySnapshot, historicalIssuer, historicalVerifier,
+  historicalAuditor, historicalRecognition, originalAuditorBundle,
+  originalRecognitionBundle, registryDid: policyHarness.registryDid,
 });
-await new Promise((resolve) => policyServer.listen(0, "127.0.0.1", resolve));
-try {
-  const address = policyServer.address();
-  assert.ok(address && typeof address !== "string");
-  const oldEvidence = originalPolicySnapshot.issuerEntries[0]?.evidence;
-  assert.ok(oldEvidence?.authorization);
-  const historicalIssuerEntry = revisedPolicySnapshot.issuerEntries.find((entry) =>
-    entry.authorization.authorizationId === historicalIssuer.authorizationId);
-  assert.equal(historicalIssuerEntry?.authorization.status, "revoked");
-  assert.ok(revisedPolicySnapshot.evidenceArchive.some((bundle) =>
-    bundle.authorization?.authorizationId === oldEvidence.authorization.authorizationId
-      && bundle.epoch.epochId === oldEvidence.epoch.epochId));
-  const historicalInstant = new Date(Date.parse(oldEvidence.epoch.validFrom) + 1).toISOString();
-  assert.ok(Date.parse(historicalInstant) < Date.parse(historicalIssuerEntry.evidence.epoch.validFrom));
-  const response = await fetch(`http://127.0.0.1:${address.port}/v1/authorizations/evaluate/evidence`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      role: "issuer",
-      subjectDid: historicalIssuer.subjectDid,
-      resourceId: historicalIssuer.resourceId,
-      at: historicalInstant,
-    }),
-  });
-  const historicalDecision = await expectHttp(response, 200);
-  assert.equal(historicalDecision.bundle.epoch.epochId, oldEvidence.epoch.epochId);
-  assert.equal(historicalDecision.bundle.policy.version, oldEvidence.policy.version);
-  assert.notEqual(historicalDecision.bundle.policy.version, revisedPolicySnapshot.policy.version);
-  adversarialMatrix.expectDecision(historicalDecision, {
-    id: "issuer-historical-api-after-threshold-change",
-    invariant: "A policy threshold revision retains the old issuer decision at its original epoch",
-    boundary: "api",
-    trusted: true,
-    statusAtTime: "active",
-  });
-  const trqpResponse = await fetch(`http://127.0.0.1:${address.port}/v1/trqp/authorizations/evidence`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      entity_id: historicalIssuer.subjectDid,
-      authority_id: revisedPolicySnapshot.registry.registryDid,
-      action: "issue",
-      resource: historicalIssuer.resourceId,
-      context: { time: historicalInstant },
-    }),
-  });
-  const historicalTrqpDecision = await expectHttp(trqpResponse, 200);
-  assert.equal(historicalTrqpDecision.bundle.epoch.epochId, oldEvidence.epoch.epochId);
-  assert.equal(historicalTrqpDecision.bundle.policy.version, oldEvidence.policy.version);
-  adversarialMatrix.expectDecision(historicalTrqpDecision, {
-    id: "issuer-historical-trqp-after-threshold-change",
-    invariant: "TRQP retains the old issuer policy and epoch after a threshold revision",
-    boundary: "adapter", trusted: historicalDecision.trustedAtTime,
-  });
-  const oldVerifierEvidence = originalPolicySnapshot.verifierEntries[0]?.evidence;
-  assert.ok(oldVerifierEvidence?.authorization);
-  assert.ok(revisedPolicySnapshot.evidenceArchive.some((bundle) =>
-    bundle.authorization?.authorizationId === oldVerifierEvidence.authorization.authorizationId
-      && bundle.epoch.epochId === oldVerifierEvidence.epoch.epochId));
-  const historicalVerifierEntry = revisedPolicySnapshot.verifierEntries.find((entry) =>
-    entry.authorization.authorizationId === historicalVerifier.authorizationId);
-  assert.equal(historicalVerifierEntry?.authorization.status, "revoked");
-  const verifierInstant = new Date(Date.parse(oldVerifierEvidence.epoch.validFrom) + 1).toISOString();
-  assert.ok(Date.parse(verifierInstant) < Date.parse(historicalVerifierEntry.evidence.epoch.validFrom));
-  const verifierResponse = await fetch(`http://127.0.0.1:${address.port}/v1/authorizations/evaluate/evidence`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      role: "verifier",
-      subjectDid: historicalVerifier.subjectDid,
-      resourceId: historicalVerifier.scopeResourceId,
-      at: verifierInstant,
-    }),
-  });
-  const historicalVerifierDecision = await expectHttp(verifierResponse, 200);
-  assert.equal(historicalVerifierDecision.bundle.epoch.epochId, oldVerifierEvidence.epoch.epochId);
-  assert.equal(historicalVerifierDecision.bundle.policy.version, oldVerifierEvidence.policy.version);
-  adversarialMatrix.expectDecision(historicalVerifierDecision, {
-    id: "verifier-historical-api-after-threshold-change",
-    invariant: "A threshold revision and later revocation retain the verifier decision at its original epoch",
-    boundary: "api", trusted: true, statusAtTime: "active",
-  });
-  const verifierTrqpResponse = await fetch(`http://127.0.0.1:${address.port}/v1/trqp/authorizations/evidence`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      entity_id: historicalVerifier.subjectDid,
-      authority_id: revisedPolicySnapshot.registry.registryDid,
-      action: "verify",
-      resource: historicalVerifier.scopeResourceId,
-      context: { time: verifierInstant },
-    }),
-  });
-  const historicalVerifierTrqpDecision = await expectHttp(verifierTrqpResponse, 200);
-  assert.equal(historicalVerifierTrqpDecision.bundle.epoch.epochId, oldVerifierEvidence.epoch.epochId);
-  assert.equal(historicalVerifierTrqpDecision.bundle.policy.version, oldVerifierEvidence.policy.version);
-  adversarialMatrix.expectDecision(historicalVerifierTrqpDecision, {
-    id: "verifier-historical-trqp-after-threshold-change",
-    invariant: "TRQP retains the old verifier policy and epoch after a threshold revision",
-    boundary: "adapter", trusted: historicalVerifierDecision.trustedAtTime,
-  });
-  const auditorAt = new Date(Date.parse(originalAuditorBundle.epoch.validFrom) + 1).toISOString();
-  const auditorDecision = await expectHttp(await fetch(
-    `http://127.0.0.1:${address.port}/v1/authorizations/evaluate/evidence`, {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ role: "auditor", subjectDid: historicalAuditor.subjectDid,
-        resourceId: historicalAuditor.scopeResourceId, at: auditorAt }),
-    },
-  ), 200);
-  assert.equal(auditorDecision.bundle.epoch.epochId, originalAuditorBundle.epoch.epochId);
-  assert.equal(auditorDecision.bundle.policy.version, originalAuditorBundle.policy.version);
-  assert.notEqual(auditorDecision.bundle.policy.version, revisedPolicySnapshot.policy.version);
-  adversarialMatrix.expectDecision(auditorDecision, {
-    id: "auditor-historical-api-after-threshold-change",
-    invariant: "The former auditor policy and epoch remain queryable after threshold revision and revocation",
-    boundary: "api", trusted: true, statusAtTime: "active",
-  });
-  const recognitionAt = new Date(Date.parse(originalRecognitionBundle.epoch.validFrom) + 1).toISOString();
-  const recognitionSelection = {
-    recognizedAuthorityDid: historicalRecognition.recognizedAuthorityDid,
-    recognizedRegistryId: historicalRecognition.recognizedRegistryId,
-    scopeResourceType: historicalRecognition.scopeResourceType,
-    scopeResourceId: historicalRecognition.scopeResourceId,
-    at: recognitionAt,
-  };
-  const recognitionDecision = await expectHttp(await fetch(
-    `http://127.0.0.1:${address.port}/v1/recognitions/evaluate/evidence`, {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify(recognitionSelection),
-    },
-  ), 200);
-  assert.equal(recognitionDecision.bundle.epoch.epochId, originalRecognitionBundle.epoch.epochId);
-  assert.equal(recognitionDecision.bundle.policy.version, originalRecognitionBundle.policy.version);
-  assert.notEqual(recognitionDecision.bundle.policy.version, revisedPolicySnapshot.policy.version);
-  adversarialMatrix.expectDecision(recognitionDecision, {
-    id: "recognition-historical-api-after-threshold-change",
-    invariant: "The former recognition policy and epoch remain queryable after threshold revision and revocation",
-    boundary: "api", trusted: true, statusAtTime: "active",
-  });
-  const recognitionTrqpDecision = await expectHttp(await fetch(
-    `http://127.0.0.1:${address.port}/v1/trqp/recognitions/evidence`, {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ entity_id: historicalRecognition.recognizedAuthorityDid,
-        authority_id: policyHarness.registryDid,
-        action: historicalRecognition.scopeResourceType,
-        resource: historicalRecognition.scopeResourceId,
-        context: { time: recognitionAt,
-          recognized_registry_id: historicalRecognition.recognizedRegistryId } }),
-    },
-  ), 200);
-  assert.equal(recognitionTrqpDecision.bundle.epoch.epochId, originalRecognitionBundle.epoch.epochId);
-  assert.equal(recognitionTrqpDecision.bundle.policy.version, originalRecognitionBundle.policy.version);
-  adversarialMatrix.expectDecision(recognitionTrqpDecision, {
-    id: "recognition-historical-trqp-after-threshold-change",
-    invariant: "TRQP retains the former recognition policy and epoch after threshold revision",
-    boundary: "adapter", trusted: true, recognition: true,
-  });
-} finally {
-  await new Promise((resolve, reject) => policyServer.close((error) => error ? reject(error) : resolve()));
-}
-adversarialMatrix.expectVerified(() => policyClient.verifyIssuerAuthorizationBundle(
-  historicalPolicyBundle, {},
-), {
-  id: "issuer-history-survives-threshold-change",
-  invariant: "Old issuer authorization remains verifiable under its original policy snapshot",
-  boundary: "client",
-});
-adversarialMatrix.expectVerified(() => policyClient.verifyVerifierAuthorizationBundle(
-  originalVerifierBundle, {},
-), {
-  id: "verifier-history-survives-threshold-change",
-  invariant: "Old verifier authorization remains verifiable under its original policy snapshot",
-  boundary: "client",
-});
-adversarialMatrix.expectVerified(() => policyClient.verifyAuditorAuthorizationBundle(
-  originalAuditorBundle, {},
-), {
-  id: "auditor-history-survives-threshold-change",
-  invariant: "Old auditor authorization remains verifiable under its original policy snapshot",
-  boundary: "client",
-});
-adversarialMatrix.expectVerified(() => policyClient.verifyRecognitionBundle(
-  originalRecognitionBundle, {},
-), {
-  id: "recognition-history-survives-threshold-change",
-  invariant: "Old recognition remains verifiable under its original policy snapshot",
-  boundary: "client",
-});
-adversarialMatrix.expectThrown(() => policyClient.verifyAuditorAuthorizationBundle(
-  { ...originalAuditorBundle, policy: { ...originalAuditorBundle.policy, version: "v9" } }, {},
-), {
-  id: "auditor-uncommitted-policy-version",
-  invariant: "An auditor cannot substitute an uncommitted policy version after threshold revision",
-  boundary: "client", messagePattern: /not committed to the ledger/iu,
-  category: "uncommitted-policy-version-rejected",
-});
-adversarialMatrix.expectThrown(() => policyClient.verifyRecognitionBundle(
-  { ...originalRecognitionBundle, policy: { ...originalRecognitionBundle.policy, version: "v9" } }, {},
-), {
-  id: "recognition-uncommitted-policy-version",
-  invariant: "A recognition cannot substitute an uncommitted policy version after threshold revision",
-  boundary: "client", messagePattern: /not committed to the ledger/iu,
-  category: "uncommitted-policy-version-rejected",
-});
-adversarialMatrix.expectVerified(() => policyClient.verifyIssuerAuthorizationBundle(
-  currentPolicyBundle, {},
-), {
-  id: "issuer-current-policy-after-threshold-change",
-  invariant: "New issuer authorization verifies under the revised policy snapshot",
-  boundary: "client",
-});
-adversarialMatrix.expectThrown(() => policyClient.verifyIssuerAuthorizationBundle(
-  historicalPolicyBundle, { evaluationTime: currentPolicyBundle.policy.effectiveFrom },
-), {
-  id: "issuer-old-policy-current-time-replay",
-  invariant: "Historical issuer evidence cannot establish trust after its policy is superseded",
-  boundary: "client",
-  messagePattern: /policy snapshot is superseded/iu,
-  category: "superseded-policy-rejected",
-});
-adversarialMatrix.expectThrown(() => policyClient.verifyIssuerAuthorizationBundle(
-  { ...historicalPolicyBundle, policy: { ...historicalPolicyBundle.policy, version: "v9" } }, {},
-), {
-  id: "issuer-uncommitted-policy-version",
-  invariant: "Changing the evidence policy version cannot create an uncommitted authorization",
-  boundary: "client",
-  messagePattern: /not committed to the ledger/iu,
-  category: "uncommitted-policy-version-rejected",
-});
-adversarialMatrix.expectThrown(() => policyClient.verifyIssuerAuthorizationBundle({
-  ...historicalPolicyBundle,
-  inclusionProof: {
-    ...historicalPolicyBundle.inclusionProof,
-    path: [changeLastHexNibble(historicalPolicyBundle.inclusionProof.path[0])],
-  },
-}, {}), {
-  id: "issuer-historical-proof-tampered-after-policy-revision",
-  invariant: "A threshold revision cannot make a tampered old-policy Merkle proof valid",
-  boundary: "client",
-  messagePattern: /event sibling/iu,
-  category: "historical-merkle-path-rejected",
-});
-const historicalEpochSignature = historicalPolicyBundle.epoch.maintainerSignatures[0];
-assert.ok(historicalEpochSignature);
-const alteredEpochSignature = `0x${historicalEpochSignature.signature[2] === "0" ? "1" : "0"}${historicalEpochSignature.signature.slice(3)}`;
-adversarialMatrix.expectThrown(() => policyClient.verifyIssuerAuthorizationBundle({
-  ...historicalPolicyBundle,
-  epoch: {
-    ...historicalPolicyBundle.epoch,
-    maintainerSignatures: [{ ...historicalEpochSignature, signature: alteredEpochSignature }],
-  },
-}, {}), {
-  id: "issuer-historical-epoch-signature-tampered",
-  invariant: "A policy revision cannot make a forged historical epoch signature valid",
-  boundary: "client",
-  messagePattern: /invalid/iu,
-  category: "historical-epoch-signature-rejected",
-});
-const revisedPolicyVerifier = createVerifierScenarioFixture("governed-demo-policy-verifier");
-policyHarness.proposeVerifier(revisedPolicyVerifier);
-const verifierApproval = policyHarness.prepareVerifierDecisionAction(revisedPolicyVerifier, "approve");
-const beforeVerifierRejection = policyHarness.simulator.getLedger().governanceActionCount;
-adversarialMatrix.expectThrown(() => policyHarness.executeVerifierDecisionWithSignatures(
-  revisedPolicyVerifier, "approve", [
-    signCompact(policySecond, verifierApproval, policyHarness, formerPolicyCommitment),
-    signCompact(policyThird, verifierApproval, policyHarness, formerPolicyCommitment),
-  ],
-), {
-  id: "compact-verifier-old-policy-signature-replay",
-  invariant: "Former-policy verifier approval signatures cannot authorize a revised-policy action",
-  boundary: "compact", messagePattern: /Invalid Jubjub Schnorr signature/u,
-  category: "old-policy-signature-rejected",
-});
-assert.equal(policyHarness.simulator.getLedger().governanceActionCount, beforeVerifierRejection);
-adversarialMatrix.expectThrown(() => policyHarness.executeVerifierDecisionWithSignatures(
-  revisedPolicyVerifier, "approve", [signCompact(policySecond, verifierApproval, policyHarness)],
-), {
-  id: "verifier-revised-policy-insufficient-quorum",
-  invariant: "A verifier approval under the revised policy requires the new maintainer quorum",
-  boundary: "compact",
-  messagePattern: /Maintainer signer count must satisfy the action threshold/u,
-  category: "revised-policy-insufficient-quorum",
-});
-assert.equal(policyHarness.simulator.getLedger().governanceActionCount, beforeVerifierRejection);
-policyHarness.approveVerifier(revisedPolicyVerifier);
-policyHarness.activateVerifier(revisedPolicyVerifier);
-const revisedPolicyVerifierBundle = policyHarness.evaluateCurrentVerifierDecision(revisedPolicyVerifier);
-adversarialMatrix.expectVerified(() => policyClient.verifyVerifierAuthorizationBundle(
-  revisedPolicyVerifierBundle, {},
-), {
-  id: "verifier-current-policy-after-threshold-change",
-  invariant: "The verifier can be activated under the revised maintainer quorum",
-  boundary: "client",
-});
-adversarialMatrix.expectThrown(() => policyClient.verifyVerifierAuthorizationBundle(
-  { ...revisedPolicyVerifierBundle, policy: { ...revisedPolicyVerifierBundle.policy, version: "v9" } }, {},
-), {
-  id: "verifier-uncommitted-policy-version",
-  invariant: "A verifier cannot substitute an uncommitted policy version after threshold revision",
-  boundary: "client", messagePattern: /not committed to the ledger/iu,
-  category: "uncommitted-policy-version-rejected",
-});
-const revisedPolicyAuditor = createAuditorScenarioFixture("governed-demo-policy-auditor");
-policyHarness.proposeAuditor(revisedPolicyAuditor);
-const auditorApproval = policyHarness.prepareAuditorDecisionAction(revisedPolicyAuditor, "approve");
-const beforeAuditorRejection = policyHarness.simulator.getLedger().governanceActionCount;
-adversarialMatrix.expectThrown(() => policyHarness.executeAuditorDecisionWithSignatures(
-  revisedPolicyAuditor, "approve", [
-    signCompact(policySecond, auditorApproval, policyHarness, formerPolicyCommitment),
-    signCompact(policyThird, auditorApproval, policyHarness, formerPolicyCommitment),
-  ],
-), {
-  id: "compact-auditor-old-policy-signature-replay",
-  invariant: "Former-policy auditor approval signatures cannot authorize a revised-policy action",
-  boundary: "compact", messagePattern: /Invalid Jubjub Schnorr signature/u,
-  category: "old-policy-signature-rejected",
-});
-assert.equal(policyHarness.simulator.getLedger().governanceActionCount, beforeAuditorRejection);
-adversarialMatrix.expectThrown(() => policyHarness.executeAuditorDecisionWithSignatures(
-  revisedPolicyAuditor, "approve", [signCompact(policySecond, auditorApproval, policyHarness)],
-), {
-  id: "auditor-revised-policy-insufficient-quorum",
-  invariant: "An auditor approval under the revised policy requires the new maintainer quorum",
-  boundary: "compact",
-  messagePattern: /Maintainer signer count must satisfy the action threshold/u,
-  category: "revised-policy-insufficient-quorum",
-});
-assert.equal(policyHarness.simulator.getLedger().governanceActionCount, beforeAuditorRejection);
-policyHarness.approveAuditor(revisedPolicyAuditor);
-policyHarness.activateAuditor(revisedPolicyAuditor);
-adversarialMatrix.expectVerified(() => policyClient.verifyAuditorAuthorizationBundle(
-  policyHarness.evaluateCurrentAuditorDecision(revisedPolicyAuditor), {},
-), {
-  id: "auditor-current-policy-after-threshold-change",
-  invariant: "The auditor can be activated under the revised maintainer quorum",
-  boundary: "client",
-});
-const revisedPolicyMaintainer = createMaintainerScenarioFixture("governed-demo-policy-maintainer");
-policyHarness.proposeMaintainer(revisedPolicyMaintainer);
-const maintainerApproval = policyHarness.prepareMaintainerDecisionAction(revisedPolicyMaintainer, "approve");
-const beforeMaintainerRejection = policyHarness.simulator.getLedger().governanceActionCount;
-adversarialMatrix.expectThrown(() => policyHarness.executeMaintainerDecisionWithSignatures(
-  revisedPolicyMaintainer, "approve", [
-    signCompact(policySecond, maintainerApproval, policyHarness, formerPolicyCommitment),
-    signCompact(policyThird, maintainerApproval, policyHarness, formerPolicyCommitment),
-  ],
-), {
-  id: "compact-maintainer-old-policy-signature-replay",
-  invariant: "Former-policy maintainer approval signatures cannot authorize a revised-policy action",
-  boundary: "compact", messagePattern: /Invalid Jubjub Schnorr signature/u,
-  category: "old-policy-signature-rejected",
-});
-assert.equal(policyHarness.simulator.getLedger().governanceActionCount, beforeMaintainerRejection);
-adversarialMatrix.expectThrown(() => policyHarness.executeMaintainerDecisionWithSignatures(
-  revisedPolicyMaintainer, "approve", [signCompact(policySecond, maintainerApproval, policyHarness)],
-), {
-  id: "maintainer-revised-policy-insufficient-quorum",
-  invariant: "A maintainer approval under the revised policy requires the new maintainer quorum",
-  boundary: "compact",
-  messagePattern: /Maintainer signer count must satisfy the action threshold/u,
-  category: "revised-policy-insufficient-quorum",
-});
-assert.equal(policyHarness.simulator.getLedger().governanceActionCount, beforeMaintainerRejection);
-policyHarness.approveMaintainer(revisedPolicyMaintainer);
-policyHarness.activateMaintainer(revisedPolicyMaintainer);
-adversarialMatrix.expectVerified(() => {
-  const membership = policyHarness.simulator.getMaintainerMembership(revisedPolicyMaintainer.maintainerIdCommitment);
-  assert.equal(membership.status, AuthorizationStatus.active);
-  return membership;
-}, {
-  id: "maintainer-current-policy-after-threshold-change",
-  invariant: "The maintainer can be activated under the revised maintainer quorum",
-  boundary: "integration",
-});
+runHistoricalPolicyClientChecks(adversarialMatrix, policyClient, {
+  historicalPolicyBundle, originalVerifierBundle, originalAuditorBundle,
+  originalRecognitionBundle, currentPolicyBundle,
+}, changeLastHexNibble);
+runRevisedPolicyRoleReplays(adversarialMatrix, policyHarness, policyClient,
+  policySecond, policyThird, formerPolicyCommitment, signCompact);
 
 const harness = new LocalTrustRegistryIntegrationHarness("governed-registry-demo");
 const second = createMaintainerScenarioFixture("governed-demo-second");
@@ -691,226 +254,12 @@ const vcAuthorityAnchor = {
 };
 const vcAuthorityKeyIdCommitment = bytes32Commitment("vc-authority:governed-demo");
 
-const recognitionMethodId = `${recognitionAuthorityDid}#assertion-1`;
-const recognitionChallengeBinding = {
-  targetRegistryId: harness.registryId,
-  recognitionId: recognition.recognitionId,
-  authorityDid: recognitionAuthorityDid,
-  recognizedRegistryId: recognition.recognizedRegistryId,
-  scopeResourceType: recognition.scopeResourceType,
-  scopeResourceId: recognition.scopeResourceId,
-};
-const recognitionAnchor = {
-  ...RECOGNITION_VP_FIXTURE_ANCHOR,
-  targetRegistryId: harness.registryId,
-  policyId: harness.policyId,
-  policyVersion: `v${(harness.simulator.getLedger().governancePolicyVersion + 1n).toString()}`,
-  recognizedRegistryId: recognition.recognizedRegistryId,
-  scopeResourceType: recognition.scopeResourceType,
-  scopeResourceId: recognition.scopeResourceId,
-};
-harness.governRecognitionAccreditorAnchor(recognitionAnchor, [second]);
-harness.registerVcAuthorityKey({
-  domain: vcAuthorityAnchor.domain,
-  keyIdCommitment: vcAuthorityKeyIdCommitment,
-  publicKey: vcAuthorityAnchor.publicKey,
-});
-harness.advanceEvidenceTimeBy(60_000);
-const recognitionEvaluationMs = Math.max(
-  VP_FIXTURE_TIME_MS, Date.parse(harness.policyRecord.effectiveFrom) + 60_000,
-);
-const governedRecognitionAnchor = harness.resolveCurrentRecognitionAccreditorAnchor({
-  recognizedRegistryId: recognition.recognizedRegistryId,
-  scopeResourceType: recognition.scopeResourceType,
-  scopeResourceId: recognition.scopeResourceId,
-  evaluatedAtMs: recognitionEvaluationMs,
-});
-const recognitionChallengeService = new RecognitionAuthorityChallengeService(
-  new InMemoryApplicationChallengeStore(), () => recognitionEvaluationMs,
-);
-const recognitionChallenge = await recognitionChallengeService.issue(recognitionChallengeBinding);
-const recognitionChallengeHash = recognitionChallenge.challengeHash;
-const recognitionAccreditationFixture = await createRecognitionAccreditationVpScenarioFixture({
-  nonce: recognitionChallenge.nonce,
-  evaluatedAtMs: recognitionEvaluationMs,
-  authorityDid: recognitionAuthorityDid,
-  authorityAssertionSeed: recognitionAuthoritySeed,
-  anchor: governedRecognitionAnchor.anchor,
-});
-const recognitionStatement = {
-  version: "tr-recognition-authority-assertion-v1",
-  ...recognitionChallengeBinding,
-  accreditationSubmissionCommitment: recognitionAccreditationSubmissionCommitment(
-    recognitionAccreditationFixture.input.submission,
-  ),
-  challengeHash: recognitionChallengeHash,
-  issuedAt: new Date(recognitionEvaluationMs).toISOString(),
-  expiresAt: new Date(recognitionEvaluationMs + 50 * 60_000).toISOString(),
-};
-const recognitionAssertion = {
-  statement: recognitionStatement,
-  proof: {
-    verificationMethodId: recognitionMethodId,
-    algorithm: "jubjub-schnorr",
-    signature: asHex(encodeJubjubSignature(signJubjubDigestFromSeed(
-      recognitionAuthoritySeed,
-      recognitionAuthorityAssertionDigest(recognitionStatement, recognitionMethodId),
-    ))),
+const { verifiedRecognition, recognitionProposalEventHash } = await runGovernedRecognitionFlow(
+  adversarialMatrix, {
+    harness, recognition, recognitionAuthorityDid, recognitionAuthoritySeed,
+    vcAuthorityAnchor, vcAuthorityKeyIdCommitment, second, third, signCompact,
   },
-};
-const verifyRecognitionChallenge = (signed, overrides = {}) => recognitionChallengeService.verifyAndConsumeAccreditedAssertion({
-  binding: recognitionChallengeBinding,
-  nonce: recognitionChallenge.nonce,
-  signed,
-  accreditation: recognitionAccreditationFixture.input.submission,
-  readCurrentGovernance: async () => ({
-    governancePolicy: harness.policyRecord,
-    activePolicyCommitment: asHex(harness.simulator.getLedger().governancePolicyCommitment),
-  }),
-  resolver: recognitionAccreditationFixture.input.resolver,
-  statusSource: recognitionAccreditationFixture.input.statusSource,
-  ...overrides,
-});
-const recognitionSequenceBefore = harness.simulator.getLedger().governanceActionCount;
-await adversarialMatrix.expectRejected(() => verifyRecognitionChallenge({
-  ...recognitionAssertion,
-  statement: { ...recognitionStatement, recognizedRegistryId: "registry:external:wrong:v1" },
-}), {
-  id: "recognition-intake-wrong-registry-binding",
-  invariant: "Recognition authority evidence must match the challenged external registry",
-  boundary: "integration", messagePattern: /does not match/u,
-  category: "recognition-registry-mismatch",
-});
-await adversarialMatrix.expectRejected(() => verifyRecognitionChallenge({
-  ...recognitionAssertion,
-  proof: {
-    ...recognitionAssertion.proof,
-    signature: asHex(encodeJubjubSignature(signJubjubDigestFromSeed(
-      recognitionAuthoritySeed,
-      recognitionAuthorityAssertionDigest({
-        ...recognitionStatement,
-        scopeResourceId: "credential-family:wrong:v1",
-      }, recognitionMethodId),
-    ))),
-  },
-}), {
-  id: "recognition-intake-authority-signature-mismatch",
-  invariant: "A scoped authority signature cannot be reused for another resource",
-  boundary: "integration", messagePattern: /signature is invalid/u,
-  category: "recognition-signature-mismatch",
-});
-await adversarialMatrix.expectRejected(() => verifyRecognitionChallenge(recognitionAssertion, {
-  readCurrentGovernance: async () => ({
-    governancePolicy: harness.policyRecord,
-    activePolicyCommitment: sha256Hex("stale-recognition-policy"),
-  }),
-}), {
-  id: "recognition-intake-governance-policy-drift",
-  invariant: "Accreditation must resolve against the current governed policy commitment",
-  boundary: "integration", messagePattern: /active governed policy/u,
-  category: "recognition-policy-drift",
-});
-await adversarialMatrix.expectRejected(() => verifyRecognitionChallenge(recognitionAssertion, {
-  statusSource: {
-    verifyPinnedStatus: async (request) => ({
-      ...await recognitionAccreditationFixture.input.statusSource.verifyPinnedStatus(request),
-      active: false,
-    }),
-  },
-}), {
-  id: "recognition-intake-inactive-accreditation-status",
-  invariant: "A non-active accreditation status cannot authorize recognition intake",
-  boundary: "integration", messagePattern: /status is not active/u,
-  category: "recognition-status-inactive",
-});
-await adversarialMatrix.expectRejected(() => verifyRecognitionChallenge(recognitionAssertion, {
-  accreditation: {
-    ...recognitionAccreditationFixture.input.submission,
-    rawCredentialBody: `${recognitionAccreditationFixture.input.submission.rawCredentialBody} `,
-  },
-}), {
-  id: "recognition-intake-accreditation-substitution",
-  invariant: "The authority assertion must commit to the exact submitted accreditation VP",
-  boundary: "integration", messagePattern: /submitted accreditation VP/u,
-  category: "recognition-accreditation-substitution",
-});
-const rotatedRecognitionResolver = createMidnightDidResolver([
-  createMidnightDidLedgerFixture(recognitionAuthorityDid, {
-    schnorrJubjubAssertionMethods: [{
-      id: "assertion-1",
-      publicKey: deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(117)),
-    }],
-  }),
-]);
-await adversarialMatrix.expectRejected(() => verifyRecognitionChallenge(recognitionAssertion, {
-  resolver: rotatedRecognitionResolver,
-}), {
-  id: "recognition-intake-rotated-authority-did-key",
-  invariant: "An assertion signed by the previous DID key fails after the resolved assertion key rotates",
-  boundary: "integration", messagePattern: /signature is invalid/u,
-  category: "recognition-rotated-did-key",
-});
-assert.equal(harness.simulator.getLedger().governanceActionCount, recognitionSequenceBefore);
-const verifiedRecognition = await verifyRecognitionChallenge(recognitionAssertion);
-await assert.rejects(verifyRecognitionChallenge(recognitionAssertion), /already consumed/u);
-const recognitionPrepared = harness.prepareRecognitionProposalAction(
-  recognition, fromHex(verifiedRecognition.evidenceCommitment),
 );
-assert.equal(asHex(recognitionPrepared.evidenceHash), verifiedRecognition.evidenceCommitment);
-const recognitionEvidenceSignature = harness.signRecognitionProposalEvidence(recognitionPrepared);
-const recognitionSigners = [
-  signCompact(second, recognitionPrepared), signCompact(third, recognitionPrepared),
-];
-const proposeRecognitionWithChangedScope = (registryIdCommitment, resourceIdCommitment) =>
-  harness.simulator.proposeRecognition(
-    recognitionSigners[0].keyId,
-    recognitionSigners[0].publicKey,
-    recognitionSigners[0].signature,
-    recognition.recognitionIdCommitment,
-    recognition.recognizedAuthorityDidCommitment,
-    registryIdCommitment,
-    recognition.scopeResourceTypeCommitment,
-    resourceIdCommitment,
-    recognitionPrepared.policyCommitment,
-    bytes32Commitment(recognition.trustLevel),
-    recognitionPrepared.evidenceHash,
-    recognitionPrepared.evidenceVerifierAuthorizationId,
-    recognitionPrepared.evidenceVerifierKeyIdCommitment,
-    recognitionEvidenceSignature,
-    recognitionSigners.slice(1),
-  );
-adversarialMatrix.expectThrown(() => proposeRecognitionWithChangedScope(
-  bytes32Commitment("registry:external:substituted:v1"), recognition.scopeResourceIdCommitment,
-), {
-  id: "compact-recognition-external-registry-substitution",
-  invariant: "A recognition quorum signature cannot be reused for another external registry",
-  boundary: "compact", messagePattern: /signature|payload/iu,
-  category: "recognition-scope-signature-rejected",
-});
-adversarialMatrix.expectThrown(() => proposeRecognitionWithChangedScope(
-  recognition.recognizedRegistryIdCommitment, bytes32Commitment("credential-family:substituted:v1"),
-), {
-  id: "compact-recognition-resource-substitution",
-  invariant: "A recognition quorum signature cannot be reused for another resource scope",
-  boundary: "compact", messagePattern: /signature|payload/iu,
-  category: "recognition-scope-signature-rejected",
-});
-assert.equal(harness.simulator.getLedger().governanceActionCount, recognitionSequenceBefore);
-assert.throws(() => harness.executeRecognitionProposalWithSignatures(
-  recognition,
-  recognitionSigners.slice(0, 1),
-  recognitionEvidenceSignature,
-  recognitionPrepared,
-), /action threshold/u);
-const recognitionProposalEventHash = harness.executeRecognitionProposalWithSignatures(
-  recognition,
-  recognitionSigners,
-  recognitionEvidenceSignature,
-  recognitionPrepared,
-);
-assert.equal(asHex(harness.simulator.getRecognitionProposalEvidence(
-  recognition.recognitionIdCommitment,
-).evidenceCommitment), verifiedRecognition.evidenceCommitment);
 const applicantSpecs = [
   {
     role: "issuer",
@@ -1935,127 +1284,11 @@ try {
     category: "unknown-signer-rejected",
   });
   assert.equal(harness.simulator.getLedger().governanceActionCount, governanceActionsBeforeRejections);
-  const otherProposals = [];
-  for (const [role, target] of proposalTargets) {
-    const evidence = target.evidence();
-    assert.ok(evidence);
-    const endpoint = `${base}/v1/governed/${role}/${target.id}/proposal`;
-    const prepared = await expectHttp(await fetch(`${endpoint}/prepare`, {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ evidence }),
-    }), 200);
-    const compactPrepared = target.prepare(evidence);
-    const signature = target.signEvidence(compactPrepared);
-    const body = {
-      evidence,
-      prepared,
-      signers: [sign(second, prepared), sign(third, prepared)],
-      evidenceVerifierSignature: asHex(encodeJubjubSignature(signature)),
-    };
-    const submit = (payload) => fetch(`${endpoint}/submit`, {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload),
-    });
-    await adversarialMatrix.expectHttp(await submit({ ...body, signers: body.signers.slice(0, 1) }), {
-      id: `${role}-proposal-insufficient-quorum`,
-      invariant: `A ${role} proposal requires the active maintainer quorum`,
-      boundary: "api", status: 403, problemType: "governed-proposal-rejected",
-    });
-    await adversarialMatrix.expectHttp(await submit({ ...body, signers: [body.signers[0], body.signers[0]] }), {
-      id: `${role}-proposal-duplicate-signer`,
-      invariant: `One maintainer cannot provide both signatures for a ${role} proposal quorum`,
-      boundary: "api", status: 403, problemType: "invalid-governed-signature",
-    });
-    const compactSigner = signCompact(second, compactPrepared);
-    const beforeCompactQuorumRejections = harness.simulator.getLedger().governanceActionCount;
-    adversarialMatrix.expectThrown(() => target.execute(evidence, [compactSigner], signature), {
-      id: `compact-${role}-proposal-insufficient-quorum`,
-      invariant: `Compact requires the active maintainer quorum for a ${role} proposal`,
-      boundary: "compact",
-      messagePattern: /Maintainer signer count must satisfy the action threshold/u,
-      category: "proposal-quorum-rejected",
-    });
-    adversarialMatrix.expectThrown(() => target.execute(evidence, [compactSigner, compactSigner], signature), {
-      id: `client-${role}-proposal-duplicate-signer`,
-      invariant: `The canonical bundle builder rejects a repeated ${role} proposal signer before Compact execution`,
-      boundary: "client",
-      messagePattern: /Maintainer authorization bundle contains a duplicate key ID/u,
-      category: "proposal-duplicate-signer-rejected",
-    });
-    assert.equal(harness.simulator.getLedger().governanceActionCount, beforeCompactQuorumRejections);
-    if (role === "verifier" || role === "auditor") {
-      const fixture = role === "verifier" ? verifier : auditor;
-      const alteredEvidenceHash = Uint8Array.from(compactPrepared.evidenceHash);
-      alteredEvidenceHash[0] ^= 1;
-      const beforeSubstitution = harness.simulator.getLedger().governanceActionCount;
-      const alteredPrepared = withAlteredProposalEvidence(role, fixture, compactPrepared, alteredEvidenceHash);
-      const alteredVerifierSignature = target.signEvidence(alteredPrepared);
-      assertValidProposalVerifierSignature(role, alteredPrepared, alteredVerifierSignature);
-      assertFreshProposalCanExecute(role, fixture, alteredPrepared, alteredVerifierSignature);
-      adversarialMatrix.expectThrown(() => submitRawProposal(
-        role, fixture, alteredPrepared, alteredVerifierSignature,
-        [compactSigner, signCompact(third, compactPrepared)],
-      ), {
-        id: `compact-${role}-proposal-altered-evidence-hash`,
-        invariant: `A valid quorum cannot reuse its signed ${role} proposal with a substituted evidence commitment`,
-        boundary: "compact",
-        messagePattern: /Invalid Jubjub Schnorr signature/u,
-        category: "proposal-evidence-substitution-rejected",
-      });
-      assert.equal(harness.simulator.getLedger().governanceActionCount, beforeSubstitution);
-      const changedScope = role === "verifier"
-        ? { ...fixture, allowedAttributeSetCommitment: bytes32Commitment("verifier:substituted-attributes") }
-        : { ...fixture, requestResourceIdCommitment: bytes32Commitment("auditor:substituted-request") };
-      const changedPrepared = withAlteredProposalEvidence(
-        role, changedScope, compactPrepared, compactPrepared.evidenceHash,
-      );
-      const changedVerifierSignature = target.signEvidence(changedPrepared);
-      assertValidProposalVerifierSignature(role, changedPrepared, changedVerifierSignature);
-      assertFreshProposalCanExecute(role, changedScope, changedPrepared, changedVerifierSignature);
-      adversarialMatrix.expectThrown(() => submitRawProposal(
-        role, changedScope, changedPrepared, changedVerifierSignature,
-        [compactSigner, signCompact(third, compactPrepared)],
-      ), {
-        id: `compact-${role}-proposal-scope-substitution`,
-        invariant: `A ${role} proposal quorum cannot be reused for a changed request scope`,
-        boundary: "compact", messagePattern: /Invalid Jubjub Schnorr signature/u,
-        category: "proposal-scope-substitution-rejected",
-      });
-      assert.equal(harness.simulator.getLedger().governanceActionCount, beforeSubstitution);
-    }
-    if (role === "maintainer") {
-      const alteredEvidenceHash = Uint8Array.from(compactPrepared.evidenceHash);
-      alteredEvidenceHash[0] ^= 1;
-      const beforeSubstitution = harness.simulator.getLedger().governanceActionCount;
-      const alteredPrepared = withAlteredProposalEvidence(role, candidate, compactPrepared, alteredEvidenceHash);
-      const alteredVerifierSignature = target.signEvidence(alteredPrepared);
-      assertValidProposalVerifierSignature(role, alteredPrepared, alteredVerifierSignature);
-      assertFreshProposalCanExecute(role, candidate, alteredPrepared, alteredVerifierSignature);
-      adversarialMatrix.expectThrown(() => submitRawProposal(
-        role, candidate, alteredPrepared, alteredVerifierSignature,
-        [compactSigner, signCompact(third, compactPrepared)],
-      ), {
-        id: "compact-maintainer-proposal-altered-evidence-hash",
-        invariant: "A valid quorum cannot reuse its signed maintainer proposal with a substituted evidence commitment",
-        boundary: "compact",
-        messagePattern: /Invalid Jubjub Schnorr signature/u,
-        category: "proposal-evidence-substitution-rejected",
-      });
-      assert.equal(harness.simulator.getLedger().governanceActionCount, beforeSubstitution);
-    }
-    assert.equal((await submit(body)).status, 202);
-    const accepted = await expectHttp(await fetch(`${endpoint}/resolve`, {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ evidence }),
-    }), 200);
-    assert.equal(accepted.state, "observed");
-    await expectHttp(await submit(body), 409);
-    otherProposals.push({
-      role,
-      eventHash: accepted.eventHash,
-      evidenceCommitment: evidence.commitment,
-      source: "authenticated VP HTTP intake and governed HTTP proposal",
-    });
-  }
+  const otherProposals = await runOtherGovernedProposals(adversarialMatrix, {
+    proposalTargets, base, harness, second, third, verifier, auditor, candidate,
+    sign, signCompact, withAlteredProposalEvidence, assertValidProposalVerifierSignature,
+    assertFreshProposalCanExecute, submitRawProposal, expectHttp, asHex,
+  });
   const decisions = [];
   const decisionSignerSets = new Map();
   let maintainerObservationEpochId;
@@ -2173,149 +1406,12 @@ try {
     assert.equal(result.observedResult, result.expectedResult);
     return result;
   });
-  await expectHttp(await fetch(
-    `${base}/v1/governed/issuer/${recognition.recognitionId}/actions/approve`,
-  ), 404);
-  await adversarialMatrix.expectHttp(await fetch(`${base}/v1/authorizations/resolve`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      role: "issuer", subjectDid: issuer.subjectDid,
-      resourceId: createIssuerScenarioFixture("wrong-scope").resourceId,
-    }),
-  }), {
-    id: "issuer-wrong-resource-api",
-    invariant: "The public lookup cannot substitute another issuer credential-family scope",
-    boundary: "api",
-    status: 404,
-    problemType: "authorization-not-found",
-  });
-  await adversarialMatrix.expectHttp(await fetch(`${base}/v1/authorizations/resolve`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      role: "verifier", subjectDid: verifier.subjectDid,
-      resourceId: createVerifierScenarioFixture("wrong-scope").scopeResourceId,
-    }),
-  }), {
-    id: "verifier-wrong-resource-api",
-    invariant: "The public lookup cannot substitute another verifier request-profile scope",
-    boundary: "api",
-    status: 404,
-    problemType: "authorization-not-found",
-  });
-  await adversarialMatrix.expectHttp(await fetch(`${base}/v1/recognitions/resolve`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      recognizedAuthorityDid: recognition.recognizedAuthorityDid,
-      recognizedRegistryId: "registry:external:wrong:v1",
-      scopeResourceType: recognition.scopeResourceType,
-      scopeResourceId: recognition.scopeResourceId,
-    }),
-  }), {
-    id: "recognition-wrong-external-registry-api",
-    invariant: "The public lookup cannot substitute a different recognized external registry",
-    boundary: "api",
-    status: 404,
-    problemType: "recognition-not-found",
-  });
-  const issuerBundle = await expectHttp(await fetch(
-    `${base}/v1/authorizations/issuer/${issuer.authorizationId}/evidence`,
-  ), 200);
-  client.verifyIssuerAuthorizationBundle(issuerBundle, {
-    expectedRegistryId: harness.registryId,
-    expectedSubjectDid: issuer.subjectDid,
-    expectedResourceId: issuer.resourceId,
-  });
-  assert.ok(issuerVpFixture);
-  const vcConsumer = await verifyGovernedIssuerCredential({
-    harness,
-    issuer,
-    apiBundle: issuerBundle,
-    applicantVp: issuerVpFixture,
-    authorityAnchor: vcAuthorityAnchor,
-    authoritySeed: vcAuthoritySeed,
-    authorityKeyIdCommitment: vcAuthorityKeyIdCommitment,
-    apiBase: base,
-    publishDecisionEvidence,
-  });
-  const issuerDecision = await expectHttp(await fetch(
-    `${base}/v1/decision-evidence/issuer/${encodeURIComponent(issuer.authorizationId)}`,
-  ), 200);
-  assert.equal(issuerDecision.verification, "client-required");
-  assert.equal(issuerDecision.evidence.grant.authorizationId, issuer.authorizationId);
-  await expectHttp(await fetch(
-    `${base}/v1/decision-evidence/verifier/${encodeURIComponent(issuer.authorizationId)}`,
-  ), 404);
-  adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle({
-    ...issuerBundle,
-    inclusionProof: {
-      ...issuerBundle.inclusionProof,
-      path: [changeLastHexNibble(issuerBundle.inclusionProof.path[0])],
-    },
-  }, { expectedRegistryId: harness.registryId }), {
-    id: "issuer-tampered-merkle-path",
-    invariant: "A changed Merkle sibling cannot verify against the anchored epoch",
-    boundary: "client",
-    messagePattern: /event sibling/iu,
-    category: "tampered-merkle-path",
-  });
-  adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
-    expectedResourceId: "credential-family:unknown",
-  }), {
-    id: "issuer-wrong-credential-family",
-    invariant: "Issuer authorization is bound to the exact credential family",
-    boundary: "client",
-    messagePattern: /issuer authorization resource mismatch/iu,
-    category: "issuer-scope-mismatch",
-  });
-  const verifierBundle = await expectHttp(await fetch(
-    `${base}/v1/authorizations/verifier/${verifier.authorizationId}/evidence`,
-  ), 200);
-  assert.ok(verifierVpFixture);
-  const verifierConsumer = await verifyGovernedVerifierRequest({
-    harness,
-    verifier,
-    scope: createVerifierAuthorizationScopeFixture(verifier),
-    apiBundle: verifierBundle,
-    applicantVp: verifierVpFixture,
-    authorityAnchor: vcAuthorityAnchor,
-    authoritySeed: vcAuthoritySeed,
-    authorityKeyIdCommitment: vcAuthorityKeyIdCommitment,
-    apiBase: base,
-    publishDecisionEvidence,
-  });
-  const verifierDecision = await expectHttp(await fetch(
-    `${base}/v1/decision-evidence/verifier/${encodeURIComponent(verifier.authorizationId)}`,
-  ), 200);
-  assert.equal(verifierDecision.verification, "client-required");
-  assert.equal(verifierDecision.evidence.grant.authorizationId, verifier.authorizationId);
-  adversarialMatrix.expectThrown(() => client.verifyVerifierAuthorizationBundle(verifierBundle, {
-    expectedResourceId: "request-profile:unknown",
-  }), {
-    id: "verifier-wrong-request-profile",
-    invariant: "Verifier authorization is bound to the exact request profile",
-    boundary: "client",
-    messagePattern: /verifier authorization resource mismatch/iu,
-    category: "verifier-scope-mismatch",
-  });
-  const recognitionBundle = await expectHttp(await fetch(
-    `${base}/v1/recognitions/${recognition.recognitionId}/evidence`,
-  ), 200);
-  const locallyVerifiedRecognition = harness.evaluateCurrentRecognitionDecision(recognition);
-  const trustedRecognitionEpoch = {
-    epochId: locallyVerifiedRecognition.epoch.epochId,
-    policyVersion: locallyVerifiedRecognition.policy.version,
-  };
-  assert.equal(recognitionBundle.epoch.epochId, trustedRecognitionEpoch.epochId);
-  assert.equal(recognitionBundle.recognition.evidenceHash, verifiedRecognition.evidenceCommitment);
-  adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(recognitionBundle, {}), {
-    id: "recognition-not-issuer-authorization",
-    invariant: "External registry recognition cannot authorize local VC issuance",
-    boundary: "client",
-    messagePattern: /does not contain issuer authorization/iu,
-    category: "recognition-not-authorization",
+  await runPublicLookupSafety(adversarialMatrix, { base, issuer, verifier, recognition, expectHttp });
+  const { issuerBundle, verifierBundle, recognitionBundle, vcConsumer, verifierConsumer,
+    trustedRecognitionEpoch } = await runGovernedConsumerEvidence(adversarialMatrix, {
+    base, client, harness, issuer, verifier, recognition, issuerVpFixture, verifierVpFixture,
+    vcAuthorityAnchor, vcAuthoritySeed, vcAuthorityKeyIdCommitment,
+    verifiedRecognition, publishDecisionEvidence, expectHttp, changeLastHexNibble,
   });
   const evaluateIssuerAt = (at) => fetch(`${base}/v1/authorizations/evaluate`, {
     method: "POST",
@@ -2798,106 +1894,11 @@ try {
     });
   }
 
-  const policyVersionBeforeRevision = harness.simulator.getLedger().governancePolicyVersion;
-  const policyEndpoint = `${base}/v1/governed/policy`;
-  const postPolicy = (path, body) => fetch(`${policyEndpoint}/${path}`, {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
-  });
-  const thresholds = { default: "3", emergency: "1", archival: "2" };
-  await adversarialMatrix.expectHttp(await postPolicy("thresholds/prepare", {
-    thresholds: { default: "4", emergency: "1", archival: "2" },
-  }), {
-    id: "policy-revision-no-recovery-headroom",
-    invariant: "Preparation rejects a threshold with no non-conflicted recovery quorum",
-    boundary: "api", status: 403, problemType: "governed-policy-rejected",
-  });
-  const revisionContext = await expectHttp(await postPolicy("thresholds/prepare", { thresholds }), 200);
-  await adversarialMatrix.expectHttp(await postPolicy("thresholds/submit", {
-    thresholds, prepared: revisionContext, signers: [sign(second, revisionContext)],
-  }), {
-    id: "policy-revision-one-signer",
-    invariant: "Old-policy quorum is required for threshold revision",
-    boundary: "api", status: 403, problemType: "governed-policy-rejected",
-  });
-  const revisionReceipt = await expectHttp(await postPolicy("thresholds/submit", {
-    thresholds, prepared: revisionContext,
-    signers: [sign(second, revisionContext), sign(third, revisionContext)],
-  }), 202);
-  await adversarialMatrix.expectHttp(await postPolicy("thresholds/submit", {
-    thresholds, prepared: revisionContext,
-    signers: [sign(second, revisionContext), sign(third, revisionContext)],
-  }), {
-    id: "policy-revision-stale-replay",
-    invariant: "A consumed old-policy context cannot revise governance twice",
-    boundary: "api", status: 409, problemType: "stale-governed-policy",
-  });
-  assert.equal(harness.simulator.getLedger().governancePolicyVersion, policyVersionBeforeRevision + 1n);
-  const threeSignerIssuer = createIssuerScenarioFixture("governed-demo-three-signer-issuer");
-  assert.throws(() => harness.proposeIssuer(threeSignerIssuer, [second, third]),
-    /policy|evidence|verifier|active|registered|signature|assert/iu);
-  const registrationContext = await expectHttp(await postPolicy("evidence-verifier/prepare", {}), 200);
-  await adversarialMatrix.expectHttp(await postPolicy("evidence-verifier/submit", {
-    prepared: registrationContext,
-    signers: [sign(second, registrationContext), sign(third, registrationContext)],
-  }), {
-    id: "new-policy-registration-two-signers",
-    invariant: "New-policy quorum is required to register the evidence verifier",
-    boundary: "api", status: 403, problemType: "governed-policy-rejected",
-  });
-  const registrationReceipt = await expectHttp(await postPolicy("evidence-verifier/submit", {
-    prepared: registrationContext,
-    signers: [sign(second, registrationContext), sign(third, registrationContext), sign(candidate, registrationContext)],
-  }), 202);
-  assert.throws(() => harness.proposeIssuer(threeSignerIssuer, [second]), /action threshold/u);
-  harness.proposeIssuer(threeSignerIssuer, [second, third]);
-  const removalSequence = harness.simulator.getLedger().governanceActionCount;
-  adversarialMatrix.expectThrown(() => harness.suspendMaintainer(candidate), {
-    id: "compact-recovery-policy-headroom-required",
-    invariant: "A maintainer removal cannot leave an all-member quorum",
-    boundary: "compact",
-    messagePattern: /non-conflicted removal quorum/iu,
-    category: "maintainer-recovery-protected",
-  });
-  assert.equal(harness.simulator.getLedger().governanceActionCount, removalSequence);
-  const recoveryThresholds = { default: "2", emergency: "1", archival: "2" };
-  const recoveryRequest = {
-    maintainerId: asHex(candidate.maintainerIdCommitment),
-    evidenceHash: asHex(bytes32Commitment("incident:governed-demo:maintainer-recovery")),
-    thresholds: recoveryThresholds,
-  };
-  const recoveryContext = await expectHttp(await postPolicy("maintainer-recovery/prepare", {
-    ...recoveryRequest,
-  }), 200);
-  const bootstrap = createMaintainerFixture("bootstrap", 17);
-  bootstrap.keyId = bytes32Commitment(`${harness.maintainerDid}#key-1`);
-  await adversarialMatrix.expectHttp(await postPolicy("maintainer-recovery/submit", {
-    ...recoveryRequest,
-    prepared: recoveryContext,
-    signers: [sign(bootstrap, recoveryContext), sign(second, recoveryContext), sign(candidate, recoveryContext)],
-  }), {
-    id: "atomic-recovery-target-self-vote",
-    invariant: "The target cannot count toward the old-policy recovery quorum",
-    boundary: "api", status: 403, problemType: "governed-policy-rejected",
-  });
-  assert.equal(harness.simulator.getLedger().governanceActionCount, removalSequence);
-  const recoveryReceipt = await expectHttp(await postPolicy("maintainer-recovery/submit", {
-    ...recoveryRequest,
-    prepared: recoveryContext,
-    signers: [sign(bootstrap, recoveryContext), sign(second, recoveryContext), sign(third, recoveryContext)],
-  }), 202);
-  assert.equal(harness.simulator.getLedger().activeMaintainerCount, 3n);
-  assert.equal(harness.simulator.getLedger().governanceActionCount, removalSequence + 1n);
-  publishCurrentSnapshot();
-  const recoveryRegistrationContext = await expectHttp(await postPolicy("evidence-verifier/prepare", {}), 200);
-  const recoveryRegistrationReceipt = await expectHttp(await postPolicy("evidence-verifier/submit", {
-    prepared: recoveryRegistrationContext,
-    signers: [sign(second, recoveryRegistrationContext), sign(third, recoveryRegistrationContext)],
-  }), 202);
-  const suspendedMaintainerEventHash = recoveryReceipt.eventHash;
-  const postSuspensionIssuer = createIssuerScenarioFixture("governed-demo-post-suspension-issuer");
-  assert.throws(() => harness.proposeIssuer(postSuspensionIssuer, [candidate, second]),
-    /Maintainer must be active/u);
-  const remainingQuorumEventHash = harness.proposeIssuer(postSuspensionIssuer, [second, third]);
+  const { policyVersionBeforeRevision, revisionReceipt, registrationReceipt, recoveryReceipt,
+    recoveryRegistrationReceipt, suspendedMaintainerEventHash, remainingQuorumEventHash } =
+    await runGovernedPolicyRecovery(adversarialMatrix, {
+      base, harness, second, third, candidate, sign, expectHttp, publishCurrentSnapshot, asHex,
+    });
 
   const matrixReport = adversarialMatrix.report();
   process.stdout.write(`${JSON.stringify({

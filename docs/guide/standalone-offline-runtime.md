@@ -1834,12 +1834,15 @@ proposal submissions. The draft timestamp is not the reviewer signing time.
 If the finalized checkpoint advances while the reviewer works, verification
 may reject the old candidate; do not weaken its exact-byte binding or treat
 the later read as non-inclusion proof. This separates reviewer identities for
-the read-only draft and verification steps, but #220 still needs an independently
-authenticated finality policy, durable tombstone, and reviewed journal mutation.
+the read-only draft and verification steps. The journal library has an
+internal, signed-decision-bound tombstone transition tested with an injected
+finality callback; it is not wired into this CLI. #220 still needs a reviewed
+independent finality adapter, complete-action proof, deployed Compact
+stale-action check, and operator run before recovery can qualify.
 Do not use a null indexer read, elapsed
 time, or a new journal path as recovery authority. Issue #220 remains the stop
-gate until a
-reviewed finality policy, durable tombstone, and operator recovery path exist.
+gate until a reviewed finality policy and operator recovery path exist against
+the deployed local ledger.
 The proposed proof and journal-transition acceptance contract is in
 [Local proposal reservation recovery](../spec/local-proposal-recovery.md).
 It does not grant an operator a recovery command today.

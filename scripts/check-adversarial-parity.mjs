@@ -1,4 +1,3 @@
-import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,46 +5,73 @@ import { runIsolatedAdversarialCases } from "./adversarial-case-report.mjs";
 
 const scripts = dirname(fileURLToPath(import.meta.url));
 const root = dirname(scripts);
-const run = (args) => {
-  const result = spawnSync(process.execPath, args, {
+
+export function buildAdversarialParityReport(isolatedReport, demoResult, requireFull = false) {
+  if (isolatedReport?.format !== "tr-adversarial-case-report-v1"
+    || isolatedReport.summary?.total !== isolatedReport.cases?.length) {
+    throw new Error("Isolated adversarial case report is invalid");
+  }
+  const issues = [];
+  if (isolatedReport.summary.failed !== 0) issues.push("isolated-cases-failed");
+  if (demoResult.error || demoResult.signal || demoResult.status !== 0) {
+    issues.push("governed-demo-process-failed");
+  }
+  let matrix;
+  try {
+    matrix = JSON.parse(demoResult.stdout).adversarialMatrix;
+    if (matrix?.format !== "tr-adversarial-matrix-v1"
+      || matrix.summary?.total !== matrix.cases?.length) {
+      throw new Error("Governed demo matrix is invalid");
+    }
+  } catch {
+    matrix = undefined;
+    issues.push("governed-demo-report-unavailable");
+  }
+  const isolatedIds = isolatedReport.cases.map(({ id }) => id);
+  const demoIds = matrix?.cases.map(({ id }) => id) ?? [];
+  const demo = new Set(demoIds);
+  const extracted = new Set(isolatedIds);
+  if (demoIds.length !== demo.size) issues.push("duplicate-governed-demo-case-id");
+  if (isolatedIds.length !== extracted.size) issues.push("duplicate-isolated-case-id");
+  if (matrix && matrix.summary.total !== 198) issues.push("governed-demo-case-count-changed");
+  if (matrix && matrix.summary.failed !== 0) issues.push("governed-demo-cases-failed");
+  const unknownIds = matrix ? isolatedIds.filter((id) => !demo.has(id)) : null;
+  const missingIds = matrix ? demoIds.filter((id) => !extracted.has(id)) : null;
+  if (unknownIds?.length) issues.push("isolated-case-id-not-in-demo");
+  if (requireFull && missingIds?.length) issues.push("governed-demo-case-not-isolated");
+  const result = {
+    format: "tr-adversarial-parity-v1",
+    demoCaseCount: matrix?.cases.length ?? null,
+    extractedCaseCount: isolatedIds.length,
+    missingCaseCount: missingIds?.length ?? null,
+    missingIds,
+  };
+  if (issues.length > 0) {
+    return { ...result, status: "failed", issues, unknownIds,
+      isolatedReport, ...(matrix ? { governedDemoMatrix: matrix } : {}),
+      ...(demoResult.error || demoResult.signal || demoResult.status !== 0 ? {
+        demoFailure: {
+          exitCode: demoResult.status,
+          signal: demoResult.signal,
+          reason: String(demoResult.error?.message ?? demoResult.stderr ?? "").slice(-1000),
+        },
+      } : {}) };
+  }
+  return result;
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  // Run independent cases first so a broken sequential demo cannot suppress their outcomes.
+  const isolatedReport = runIsolatedAdversarialCases();
+  const demoResult = spawnSync(process.execPath, [join(scripts, "demo-governed-registry.mjs")], {
     cwd: root,
     encoding: "utf8",
     maxBuffer: 16 * 1024 * 1024,
     timeout: 300_000,
   });
-  if (result.error || result.status !== 0) {
-    const detail = result.error?.message || result.stderr?.slice(-4000)
-      || result.stdout?.slice(-4000) || String(result.status);
-    throw new Error(`Adversarial parity input failed: ${detail}`);
-  }
-  return result.stdout;
-};
-
-const report = JSON.parse(run([join(scripts, "demo-governed-registry.mjs")])).adversarialMatrix;
-assert.equal(report.format, "tr-adversarial-matrix-v1");
-assert.equal(report.summary.total, 198, "Review the expected governed-demo case count before changing it");
-assert.equal(report.summary.failed, 0);
-const demoIds = report.cases.map(({ id }) => id);
-assert.equal(new Set(demoIds).size, demoIds.length, "Governed demo has duplicate case IDs");
-
-const isolatedReport = runIsolatedAdversarialCases();
-assert.equal(isolatedReport.summary.failed, 0, "Isolated adversarial tests failed");
-const extractedIds = isolatedReport.cases.map(({ id }) => id);
-assert.ok(extractedIds.length > 0, "No named isolated adversarial tests were reported");
-assert.equal(new Set(extractedIds).size, extractedIds.length, "Isolated tests have duplicate case IDs");
-const extracted = new Set(extractedIds);
-const demo = new Set(demoIds);
-const unknownIds = extractedIds.filter((id) => !demo.has(id));
-assert.deepEqual(unknownIds, [], "Isolated test IDs must match governed-demo case IDs");
-const missingIds = demoIds.filter((id) => !extracted.has(id));
-
-process.stdout.write(`${JSON.stringify({
-  format: "tr-adversarial-parity-v1",
-  demoCaseCount: demoIds.length,
-  extractedCaseCount: extractedIds.length,
-  missingCaseCount: missingIds.length,
-  missingIds,
-}, null, 2)}\n`);
-if (process.argv.includes("--require-full")) {
-  assert.deepEqual(missingIds, [], "Not every governed-demo case has an isolated test");
+  const report = buildAdversarialParityReport(
+    isolatedReport, demoResult, process.argv.includes("--require-full"),
+  );
+  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  if (report.status === "failed") process.exitCode = 1;
 }

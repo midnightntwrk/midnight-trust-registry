@@ -6,70 +6,116 @@ import {
   LocalTrustRegistryIntegrationHarness,
 } from "../packages/trust-registry-integration/dist/index.js";
 
-/** Isolated fixture scenarios; these do not share the main demo's ledger. */
-export function runMaintainerSafetyScenarios(matrix, signCompact) {
-  const lastActiveHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-last-active");
-  const bootstrapMembership = {
-    maintainerIdCommitment: lastActiveHarness.maintainerIdCommitment,
-    maintainerId: lastActiveHarness.maintainerId,
-    subjectDidCommitment: lastActiveHarness.maintainerDidCommitment,
-    keyId: lastActiveHarness.simulator.getLedger().lastAuthorizedMaintainerKeyId,
+export const maintainerSafetyCaseIds = Object.freeze([
+  "compact-self-voted-maintainer-suspension",
+  "compact-self-voted-maintainer-revocation",
+  "compact-removal-below-maintainer-threshold",
+  "compact-removed-maintainer-signer",
+]);
+
+function bootstrapMembership(harness) {
+  return {
+    maintainerIdCommitment: harness.maintainerIdCommitment,
+    maintainerId: harness.maintainerId,
+    subjectDidCommitment: harness.maintainerDidCommitment,
+    keyId: harness.simulator.getLedger().lastAuthorizedMaintainerKeyId,
     seed: new Uint8Array(32),
-    subjectDid: lastActiveHarness.maintainerDid,
+    subjectDid: harness.maintainerDid,
     trustLevel: "bootstrap-maintainer",
   };
-  const lastActiveActionCount = lastActiveHarness.simulator.getLedger().governanceActionCount;
-  matrix.expectThrown(() => lastActiveHarness.suspendMaintainer(bootstrapMembership), {
-    id: "compact-self-voted-maintainer-suspension",
-    invariant: "A maintainer cannot vote to suspend its own DID",
+}
+
+function runSelfVote(matrix, action) {
+  const harness = new LocalTrustRegistryIntegrationHarness(`governed-demo-self-${action}`);
+  const membership = bootstrapMembership(harness);
+  const actionCount = harness.simulator.getLedger().governanceActionCount;
+  matrix.expectThrown(() => {
+    try {
+      if (action === "suspend") harness.suspendMaintainer(membership);
+      else harness.revokeMaintainer(membership);
+    } finally {
+      assert.equal(harness.simulator.getLedger().activeMaintainerCount, 1n);
+      assert.equal(harness.simulator.getLedger().governanceActionCount, actionCount);
+    }
+  }, {
+    id: `compact-self-voted-maintainer-${action === "suspend" ? "suspension" : "revocation"}`,
+    invariant: `A maintainer cannot vote to ${action} its own DID`,
     boundary: "compact",
     messagePattern: /own DID/iu,
     category: "conflicted-maintainer-vote-rejected",
   });
-  matrix.expectThrown(() => lastActiveHarness.revokeMaintainer(bootstrapMembership), {
-    id: "compact-self-voted-maintainer-revocation",
-    invariant: "A maintainer cannot vote to revoke its own DID",
-    boundary: "compact",
-    messagePattern: /own DID/iu,
-    category: "conflicted-maintainer-vote-rejected",
-  });
-  assert.equal(lastActiveHarness.simulator.getLedger().activeMaintainerCount, 1n);
-  assert.equal(lastActiveHarness.simulator.getLedger().governanceActionCount, lastActiveActionCount);
-  const thresholdSecond = createMaintainerScenarioFixture("governed-demo-threshold-second");
-  const thresholdThird = createMaintainerScenarioFixture("governed-demo-threshold-third");
-  lastActiveHarness.authorizeMaintainer(thresholdSecond);
-  lastActiveHarness.authorizeMaintainer(thresholdThird);
-  lastActiveHarness.updateMaintainerThresholdPolicy(2n, 1n, 1n, [thresholdSecond]);
-  const thresholdRemoval = lastActiveHarness.prepareMaintainerDecisionAction(bootstrapMembership, "suspend");
-  const thresholdActionCount = lastActiveHarness.simulator.getLedger().governanceActionCount;
-  matrix.expectThrown(() => lastActiveHarness.executeMaintainerDecisionWithSignatures(
-    bootstrapMembership, "suspend", [signCompact(thresholdSecond, thresholdRemoval, lastActiveHarness)],
-  ), {
+}
+
+function runThresholdRemoval(matrix, signCompact) {
+  const harness = new LocalTrustRegistryIntegrationHarness("governed-demo-threshold-removal");
+  const membership = bootstrapMembership(harness);
+  const second = createMaintainerScenarioFixture("governed-demo-threshold-second");
+  const third = createMaintainerScenarioFixture("governed-demo-threshold-third");
+  harness.authorizeMaintainer(second);
+  harness.authorizeMaintainer(third);
+  harness.updateMaintainerThresholdPolicy(2n, 1n, 1n, [second]);
+  const removal = harness.prepareMaintainerDecisionAction(membership, "suspend");
+  const actionCount = harness.simulator.getLedger().governanceActionCount;
+  matrix.expectThrown(() => {
+    try {
+      harness.executeMaintainerDecisionWithSignatures(
+        membership, "suspend", [signCompact(second, removal, harness)],
+      );
+    } finally {
+      assert.equal(harness.simulator.getLedger().activeMaintainerCount, 3n);
+      assert.equal(harness.simulator.getLedger().governanceActionCount, actionCount);
+    }
+  }, {
     id: "compact-removal-below-maintainer-threshold",
     invariant: "A non-conflicted signer cannot remove a maintainer into an all-member quorum",
     boundary: "compact",
     messagePattern: /non-conflicted removal quorum/iu,
     category: "maintainer-threshold-protected",
   });
-  assert.equal(lastActiveHarness.simulator.getLedger().activeMaintainerCount, 3n);
-  assert.equal(lastActiveHarness.simulator.getLedger().governanceActionCount, thresholdActionCount);
+}
 
-  const removedSignerHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-removed-signer");
+function runRemovedSigner(matrix, signCompact) {
+  const harness = new LocalTrustRegistryIntegrationHarness("governed-demo-removed-signer");
   const removedSigner = createMaintainerScenarioFixture("governed-demo-removed-signer");
-  const removedSignerIssuer = createIssuerScenarioFixture("governed-demo-removed-signer-issuer");
-  removedSignerHarness.authorizeMaintainer(removedSigner);
-  removedSignerHarness.suspendMaintainer(removedSigner);
-  removedSignerHarness.proposeIssuer(removedSignerIssuer);
-  const removedSignerApproval = removedSignerHarness.prepareIssuerDecisionAction(removedSignerIssuer, "approve");
-  const removedSignerActionCount = removedSignerHarness.simulator.getLedger().governanceActionCount;
-  matrix.expectThrown(() => removedSignerHarness.executeIssuerDecisionWithSignatures(
-    removedSignerIssuer, "approve", [signCompact(removedSigner, removedSignerApproval, removedSignerHarness)],
-  ), {
+  const issuer = createIssuerScenarioFixture("governed-demo-removed-signer-issuer");
+  harness.authorizeMaintainer(removedSigner);
+  harness.suspendMaintainer(removedSigner);
+  harness.proposeIssuer(issuer);
+  const approval = harness.prepareIssuerDecisionAction(issuer, "approve");
+  const actionCount = harness.simulator.getLedger().governanceActionCount;
+  matrix.expectThrown(() => {
+    try {
+      harness.executeIssuerDecisionWithSignatures(
+        issuer, "approve", [signCompact(removedSigner, approval, harness)],
+      );
+    } finally {
+      assert.equal(harness.simulator.getLedger().governanceActionCount, actionCount);
+    }
+  }, {
     id: "compact-removed-maintainer-signer",
     invariant: "A suspended maintainer key cannot approve a new issuer",
     boundary: "compact",
     messagePattern: /active|authorized|maintainer|signature|assert/iu,
     category: "removed-signer-rejected",
   });
-  assert.equal(removedSignerHarness.simulator.getLedger().governanceActionCount, removedSignerActionCount);
+}
+
+/** Each fixture owns its own simulator; this does not exercise a deployed ledger. */
+export function runMaintainerSafetyCase(id, matrix, signCompact) {
+  switch (id) {
+    case "compact-self-voted-maintainer-suspension":
+      return runSelfVote(matrix, "suspend");
+    case "compact-self-voted-maintainer-revocation":
+      return runSelfVote(matrix, "revoke");
+    case "compact-removal-below-maintainer-threshold":
+      return runThresholdRemoval(matrix, signCompact);
+    case "compact-removed-maintainer-signer":
+      return runRemovedSigner(matrix, signCompact);
+    default:
+      throw new Error(`Unknown maintainer safety case: ${id}`);
+  }
+}
+
+export function runMaintainerSafetyScenarios(matrix, signCompact) {
+  for (const id of maintainerSafetyCaseIds) runMaintainerSafetyCase(id, matrix, signCompact);
 }

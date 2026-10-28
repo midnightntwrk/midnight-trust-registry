@@ -7,15 +7,21 @@ import { setTimeout as delay } from "node:timers/promises";
 import { withExclusiveWorkspaceWrite, WorkspaceMutationLockedError } from "@midnight-ntwrk/trust-registry-cli";
 import { canonicalizeJson, sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
 import { getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
+import type { FinalizedRegistryLedgerView } from "@midnight-ntwrk/trust-registry-integration";
 import { z } from "zod";
 
 import { GovernedMembershipActionReceiptSchema, type GovernedMembershipActionReceipt } from "./governed-membership-actions.js";
 import { GovernedProposalObservationSchema, type GovernedProposalObservation } from "./governed-proposal-observation.js";
+import { readBoundedLocalApprovalFile } from "./local-reviewer-signature.js";
+import { assessProposalRecoveryCandidate } from "./proposal-recovery-candidate.js";
+import { loadApprovedProposalRecoveryDecision } from "./proposal-recovery-decision.js";
 
 const MAX_ENTRIES = 10_000;
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_MANIFEST_BYTES = 1024 * 1024;
 const MAX_ARCHIVES = 64;
+// Upper bound for the recovery record's fixed digests, timestamps, and 512-byte reference.
+const MAX_ABANDONMENT_OVERHEAD_BYTES = 2 * 1024;
 const Bytes32Schema = z.string().regex(/^0x[0-9a-f]{64}$/u);
 const CanonicalActionSequencePattern = /^(0|[1-9][0-9]{0,19})$/u;
 const ActionSequenceSchema = z.string()
@@ -26,14 +32,27 @@ const ReservationContextSchema = z.strictObject({
   actionKind: Bytes32Schema,
   actionPayloadHash: Bytes32Schema,
 });
+const RecoveryRecordSchema = z.strictObject({
+  reservedAttemptDigest: Bytes32Schema,
+  decisionSha256: z.string().regex(/^[0-9a-f]{64}$/u),
+  finalityEvidenceSha256: z.string().regex(/^[0-9a-f]{64}$/u),
+  evidenceReference: z.string().min(1).max(512),
+  reviewerFingerprint: z.string().regex(/^[0-9A-F]{40}$/u),
+  decisionDraftedAt: z.string(),
+  recordedAt: z.string(),
+  finalizedBlockHash: Bytes32Schema,
+});
 const AttemptSchema = z.strictObject({
   role: ProposalRoleSchema,
   authorizationId: z.string().trim().min(1).max(256),
   evidenceCommitment: Bytes32Schema,
-  state: z.enum(["reserved", "submitted", "observed"]),
+  state: z.enum(["reserved", "submitted", "observed", "abandoned"]),
   eventHash: Bytes32Schema.nullable(),
   reservationContext: ReservationContextSchema.optional(),
-}).refine((attempt) => (attempt.state === "reserved") === (attempt.eventHash === null));
+  recovery: RecoveryRecordSchema.optional(),
+}).refine((attempt) => (attempt.state === "reserved" || attempt.state === "abandoned")
+  ? attempt.eventHash === null && (attempt.state === "abandoned") === (attempt.recovery !== undefined)
+  : attempt.eventHash !== null && attempt.recovery === undefined);
 const StateSchema = z.strictObject({
   version: z.literal(1),
   attempts: z.array(AttemptSchema).max(MAX_ENTRIES),
@@ -106,7 +125,7 @@ export class InvalidProposalSubmissionJournalError extends Error {
 
 export class ProposalSubmissionAlreadyPendingError extends Error {
   constructor(readonly state: ProposalSubmissionAttempt["state"]) {
-    super("Proposal submission already has an unresolved or observed attempt");
+    super("Proposal authorization already has a recorded attempt");
     this.name = "ProposalSubmissionAlreadyPendingError";
   }
 }
@@ -301,7 +320,9 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
         attempts: [...projectedAttempts, { ...key, state: "submitted", eventHash: `0x${"0".repeat(64)}`,
           ...(context === undefined ? {} : { reservationContext: context }) }],
       }), "utf8");
-      if (submittedSize > MAX_FILE_BYTES) throw new ProposalSubmissionCapacityError();
+      if (submittedSize + (context === undefined ? 0 : MAX_ABANDONMENT_OVERHEAD_BYTES) > MAX_FILE_BYTES) {
+        throw new ProposalSubmissionCapacityError();
+      }
       await this.writeActive(storage, StateSchema.parse({
         ...storage.active, attempts,
       }));
@@ -314,7 +335,8 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
         const storage = await this.readStorage();
         const attempt = storage.active.attempts.find((entry) => entry.role === key.role
           && entry.authorizationId === key.authorizationId);
-        if (attempt === undefined || attempt.evidenceCommitment !== key.evidenceCommitment
+        if (attempt === undefined || attempt.state === "abandoned"
+          || attempt.evidenceCommitment !== key.evidenceCommitment
           || (attempt.eventHash !== null && attempt.eventHash !== receipt.eventHash)) {
           throw new ProposalSubmissionConflictError();
         }
@@ -366,12 +388,104 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
     });
   }
 
+  /** Opt-in host transition; the packaged CLI supplies no finality authenticator or recovery command. */
+  async abandonInvalidatedReservation(input: {
+    registryId: string;
+    contractAddress: string;
+    expectedGenesisHash: string;
+    planSourceRevision: string;
+    approvedPlanSha256: string;
+    role: GovernedProposalSubmissionRole;
+    authorizationId: string;
+    decisionPath: string;
+    signaturePath: string;
+    finalityEvidencePath: string;
+    keyringDirectory: string;
+    reviewerFingerprint: string;
+    authenticateFinality: (evidence: Buffer) => Promise<{
+      evidenceSha256: string;
+      genesisHash: string;
+      planSourceRevision: string;
+      approvedPlanSha256: string;
+      verifiedPlanReviewerFingerprint: string;
+      view: FinalizedRegistryLedgerView;
+      originalActionRejected: true;
+    }>;
+    now?: number;
+  }): Promise<ProposalSubmissionAttempt> {
+    return this.withWrite(async () => {
+      const binding = await this.readBinding();
+      if (binding === null || !sameDeploymentBinding(binding, {
+        format: "tr-proposal-journal-binding-v1",
+        registryId: input.registryId,
+        networkId: getLocalNetworkProfile().networkId,
+        contractAddress: input.contractAddress,
+        expectedGenesisHash: input.expectedGenesisHash,
+      }) || (this.expectedDeploymentBinding !== null
+        && !sameDeploymentBinding(binding, this.expectedDeploymentBinding))) {
+        throw new ProposalSubmissionConflictError();
+      }
+      const storage = await this.readStorage();
+      const attempt = storage.active.attempts.find((entry) => entry.role === input.role
+        && entry.authorizationId === input.authorizationId);
+      if (attempt?.state !== "reserved" || attempt.reservationContext === undefined) {
+        throw new ProposalSubmissionConflictError();
+      }
+      const evidence = await readBoundedLocalApprovalFile(input.finalityEvidencePath, 1024 * 1024);
+      const authenticated = await input.authenticateFinality(evidence);
+      const evidenceSha256 = createHash("sha256").update(evidence).digest("hex");
+      if (authenticated.evidenceSha256 !== evidenceSha256
+        || authenticated.genesisHash !== binding.expectedGenesisHash
+        || authenticated.planSourceRevision !== input.planSourceRevision
+        || authenticated.approvedPlanSha256 !== input.approvedPlanSha256
+        || !/^[0-9A-F]{40}$/u.test(authenticated.verifiedPlanReviewerFingerprint)
+        || authenticated.originalActionRejected !== true) {
+        throw new ProposalSubmissionConflictError();
+      }
+      const candidate = await assessProposalRecoveryCandidate({
+        attempt, view: authenticated.view, registryId: binding.registryId,
+        contractAddress: binding.contractAddress,
+        planExpectedGenesisHash: binding.expectedGenesisHash,
+        planSourceRevision: input.planSourceRevision,
+        approvedPlanSha256: input.approvedPlanSha256,
+        journalBindingDigest: proposalJournalBindingDigest(binding),
+      });
+      if (!candidate.reviewCandidate || candidate.reason !== "sequence-invalidated-record-absent") {
+        throw new ProposalSubmissionConflictError();
+      }
+      const approved = await loadApprovedProposalRecoveryDecision({
+        decisionPath: input.decisionPath, signaturePath: input.signaturePath,
+        finalityEvidencePath: input.finalityEvidencePath, keyringDirectory: input.keyringDirectory,
+        reviewerFingerprint: input.reviewerFingerprint,
+        planReviewerFingerprint: authenticated.verifiedPlanReviewerFingerprint,
+        candidate, ...(input.now === undefined ? {} : { now: input.now }),
+      });
+      if (approved.decision.finalityEvidenceSha256 !== evidenceSha256) {
+        throw new ProposalSubmissionConflictError();
+      }
+      attempt.state = "abandoned";
+      attempt.recovery = {
+        reservedAttemptDigest: candidate.attemptDigest,
+        decisionSha256: approved.decisionSha256,
+        finalityEvidenceSha256: evidenceSha256,
+        evidenceReference: approved.decision.evidenceReference,
+        reviewerFingerprint: approved.decision.reviewerFingerprint,
+        decisionDraftedAt: approved.decision.draftedAt,
+        recordedAt: new Date(input.now ?? Date.now()).toISOString(),
+        finalizedBlockHash: candidate.finalizedBlockHash,
+      };
+      await this.writeAbandoned(storage, StateSchema.parse(storage.active), attempt);
+      return structuredClone(attempt);
+    });
+  }
+
   async inspectCapacity(): Promise<ProposalSubmissionJournalCapacity> {
     return this.withWrite(async () => {
       const storage = await this.readStorage();
       return {
         activeEntries: storage.active.attempts.length,
-        pendingEntries: storage.active.attempts.filter((attempt) => attempt.state !== "observed").length,
+        pendingEntries: storage.active.attempts.filter((attempt) => attempt.state === "reserved"
+          || attempt.state === "submitted").length,
         archivedEntries: storage.archived.length,
         archiveCount: storage.manifest?.archives.length ?? 0,
         activeBytes: Buffer.byteLength(JSON.stringify(storage.active), "utf8"),
@@ -399,6 +513,7 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
         return { before, after: before, archivedEntries: storage.archived.length };
       }
       for (const attempt of storage.archived) {
+        if (attempt.state === "abandoned") continue;
         const rawObservation = await readFinalized(attempt.role, attempt.authorizationId);
         if (rawObservation === null) throw new ProposalSubmissionConflictError();
         const observation = GovernedProposalObservationSchema.parse(rawObservation);
@@ -438,22 +553,25 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
     });
   }
 
-  /** Recheck every observation against a finalized reader before archiving it. */
+  /** Recheck observed outcomes; retain signed abandonment records as terminal tombstones. */
   async rotateObserved(readFinalized: FinalizedProposalReader): Promise<{ archived: number; pending: number }> {
     return this.withWrite(async () => {
       const storage = await this.readStorage();
-      const observed = storage.active.attempts.filter((attempt) => attempt.state === "observed");
-      const pending = storage.active.attempts.filter((attempt) => attempt.state !== "observed");
-      if (observed.length === 0) return { archived: 0, pending: pending.length };
+      const terminal = storage.active.attempts.filter((attempt) => attempt.state === "observed"
+        || attempt.state === "abandoned");
+      const pending = storage.active.attempts.filter((attempt) => attempt.state === "reserved"
+        || attempt.state === "submitted");
+      if (terminal.length === 0) return { archived: 0, pending: pending.length };
       if ((storage.manifest?.archives.length ?? 0) >= MAX_ARCHIVES) throw new ProposalSubmissionCapacityError();
-      for (const attempt of observed) {
+      for (const attempt of terminal) {
+        if (attempt.state === "abandoned") continue;
         const rawObservation = await readFinalized(attempt.role, attempt.authorizationId);
         if (rawObservation === null) throw new ProposalSubmissionConflictError();
         const observation = GovernedProposalObservationSchema.parse(rawObservation);
         if (observation.evidenceCommitment !== attempt.evidenceCommitment
           || observation.eventHash !== attempt.eventHash) throw new ProposalSubmissionConflictError();
       }
-      const archive = await this.writeSegment(StateSchema.parse({ version: 1, attempts: observed }));
+      const archive = await this.writeSegment(StateSchema.parse({ version: 1, attempts: terminal }));
       const nextActive = await this.writeSegment(StateSchema.parse({ version: 1, attempts: pending }));
       const archives = storage.manifest === null
         ? [archive]
@@ -462,7 +580,7 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
       if (storage.manifest !== null) {
         await rm(join(dirname(this.path), storage.manifest.active.file), { force: true });
       }
-      return { archived: observed.length, pending: pending.length };
+      return { archived: terminal.length, pending: pending.length };
     });
   }
 
@@ -474,8 +592,13 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
     const current = await this.read(role, authorizationId);
     if (current === null) throw new ProposalSubmissionConflictError();
     const rawObservation = await readFinalized(current.role, current.authorizationId);
-    if (rawObservation === null) return current;
+    if (rawObservation === null) {
+      const refreshed = await this.read(role, authorizationId);
+      if (refreshed === null) throw new ProposalSubmissionConflictError();
+      return refreshed;
+    }
     const observation = GovernedProposalObservationSchema.parse(rawObservation);
+    if (current.state === "abandoned") throw new ProposalSubmissionConflictError();
     if (observation.evidenceCommitment !== current.evidenceCommitment
       || (current.eventHash !== null && current.eventHash !== observation.eventHash)) {
       throw new ProposalSubmissionConflictError();
@@ -485,13 +608,15 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
       const archived = storage.archived.find((entry) => entry.role === current.role
         && entry.authorizationId === current.authorizationId);
       if (archived !== undefined) {
-        if (archived.evidenceCommitment !== observation.evidenceCommitment
+        if (archived.state === "abandoned"
+          || archived.evidenceCommitment !== observation.evidenceCommitment
           || archived.eventHash !== observation.eventHash) throw new ProposalSubmissionConflictError();
         return structuredClone(archived);
       }
       const attempt = storage.active.attempts.find((entry) => entry.role === current.role
         && entry.authorizationId === current.authorizationId);
-      if (attempt === undefined || attempt.evidenceCommitment !== observation.evidenceCommitment
+      if (attempt === undefined || attempt.state === "abandoned"
+        || attempt.evidenceCommitment !== observation.evidenceCommitment
         || (attempt.eventHash !== null && attempt.eventHash !== observation.eventHash)) {
         throw new ProposalSubmissionConflictError();
       }
@@ -562,7 +687,9 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
       if (keys.has(key)) throw new InvalidProposalSubmissionJournalError();
       keys.add(key);
     }
-    if (archived.some((attempt) => attempt.state !== "observed")) throw new InvalidProposalSubmissionJournalError();
+    if (archived.some((attempt) => attempt.state !== "observed" && attempt.state !== "abandoned")) {
+      throw new InvalidProposalSubmissionJournalError();
+    }
     return { manifest, active, archived };
   }
 
@@ -667,6 +794,33 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
     const active = await this.writeSegment(state);
     await this.writeManifest({ ...storage.manifest, active });
     await rm(join(dirname(this.path), storage.manifest.active.file), { force: true });
+  }
+
+  /** Preserve old near-capacity journals by committing the tombstone as an archive segment. */
+  private async writeAbandoned(
+    storage: JournalStorage, state: JournalState, abandoned: ProposalSubmissionAttempt,
+  ): Promise<void> {
+    if (Buffer.byteLength(JSON.stringify(state), "utf8") <= MAX_FILE_BYTES) {
+      await this.writeActive(storage, state);
+      return;
+    }
+    if ((storage.manifest?.archives.length ?? 0) >= MAX_ARCHIVES) {
+      throw new ProposalSubmissionCapacityError();
+    }
+    const archive = await this.writeSegment(StateSchema.parse({ version: 1, attempts: [abandoned] }));
+    const active = await this.writeSegment(StateSchema.parse({
+      version: 1,
+      attempts: state.attempts.filter((entry) => entry.role !== abandoned.role
+        || entry.authorizationId !== abandoned.authorizationId),
+    }));
+    await this.writeManifest(ManifestSchema.parse({
+      version: 2,
+      archives: [...(storage.manifest?.archives ?? []), archive],
+      active,
+    }));
+    if (storage.manifest !== null) {
+      await rm(join(dirname(this.path), storage.manifest.active.file), { force: true });
+    }
   }
 
   private async writeState(state: JournalState): Promise<void> {

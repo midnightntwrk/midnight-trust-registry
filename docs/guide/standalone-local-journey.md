@@ -25,6 +25,29 @@ a deployed, finalized standalone contract. A passing `./run.sh --light`,
 evidence. Do not promote draft PR #198 or label 0.1.0 release-ready on those
 results.
 
+## Evaluate the implementation without operator approvals
+
+Use a fresh, disposable checkout for an orientation run. Do not run the light
+target in a checkout holding generated Compact keys, pinned install bundles,
+or private setup evidence: it cleans and rebuilds generated outputs. From the
+repository root, while installation dependencies are available:
+
+```sh
+pnpm install --frozen-lockfile
+./run.sh --light
+pnpm run check:adversarial-parity -- --require-full
+```
+
+The light target runs package, API, documentation, and simulator-backed demo
+checks. The parity command should report equal `demoCaseCount` and
+`extractedCaseCount`, with `missingCaseCount: 0`; a nonzero exit is a regression.
+These commands need no funded wallet, genesis signature, or maintenance keys.
+They are useful for evaluating behavior and reproducing CI, but they do not
+start a dedicated ledger, deny actor egress, or produce any `L01`-`S01`
+deployed acceptance result. Do not attach their output as deployed evidence.
+Continue with the operator procedure below only when an exact-source install
+candidate and the required independent approvals are available.
+
 The current signed local API CLI is read-only: it does not configure the
 production applicant/VP intake, accepted-application admission, governed
 proposal ports, or submitting provider. Governed proposal writes return 503.
@@ -229,8 +252,13 @@ they can all run today. The implementation sequence is in
    selected-state SHA-256 to stay fixed around a positive-control TCP and
    DNS egress-denial probe of the same API container. Save its JSON output
    with the raw probe logs in the private evidence directory. An exit code 0
-   is **read-only API runtime evidence**, not a governed-write actor journey:
-   the check does not authenticate node/indexer finality, cover host/browser
+   is **read-only API runtime evidence**, not a governed-write actor journey.
+   Inspect `counts`, `resolvedLookups`, and `ambiguousLookups` together.
+   An ambiguous issuer, verifier, or auditor lookup is a fail-closed 409,
+   not a successful authorization; the observer retains those counts and
+   rejects a change in them during the egress probe. The acceptance binder
+   rejects a report that omits or contradicts them. The check does not
+   authenticate node/indexer finality, cover host/browser
    egress, independently authenticate the deployment/finality evidence (#234),
    or close release gates.
 7. **Disconnect external egress, then run the actor use case.** Keep the local
@@ -329,6 +357,14 @@ output/receipts under that private directory. Attach each file with the
 helper, which hashes it and updates the case inventory atomically while
 leaving its status unchanged:
 
+Use `umask 077` when capturing evidence. The acceptance root and each nested
+evidence directory must be mode `0700`; every attached raw receipt and
+observation must be mode `0600`, a regular file with one link. The checker
+rejects public files or directories even when their content hash matches.
+For an older bundle, inspect ownership and each path before restricting its
+mode; do not follow symlinks or regenerate a signed decision to bypass a
+failed check. Keep wallet secrets and unredacted holder data out of the bundle.
+
 ```sh
 node scripts/check-standalone-acceptance-evidence.mjs attach \
   /absolute/private/acceptance "$SOURCE_SHA" L01 L01/deploy.log
@@ -354,6 +390,33 @@ evidence inventory cannot prevent an operator from revoking a verdict.
 These records are self-attested,
 not signatures or independent evidence verification. For `S01`, attach the
 non-author human's separately signed security verdict before recording `pass`.
+The reviewer may sign a private `tr-local-security-verdict-v2` JSON document
+with `sourceRevision`, `installInventorySha256`, `signedPlanSha256`,
+`genesisHash`, `contractAddress`, `reviewerFingerprint`, `reviewedAt`,
+`scope: "self-hosted-local-0.1.0"`, `outcome: "approve"` or `"reject"`,
+`findingsPath`, and `findingsSha256`. The findings report must list the review
+scope, each finding with severity and reproduction, its disposition and risk
+owner, or explicitly say there were no findings. Do not include secrets.
+Encode it as canonical two-space-indented JSON with one trailing newline;
+duplicate keys or alternate encodings are rejected. Keep the verdict and its
+signature as separate flat private files in the acceptance directory. Attach
+the findings report, verdict, and detached signature as distinct raw `S01`
+evidence before verification. The signed verdict must hash that exact report.
+Verify using a reviewer fingerprint pinned **outside** the evidence bundle:
+
+```sh
+shasum -a 256 "$EVIDENCE/findings.md" # Put this digest in findingsSha256 before signing.
+gpg --batch --yes --detach-sign --output "$EVIDENCE/verdict.sig" \
+  "$EVIDENCE/verdict.json" # Run only in the independent reviewer's environment.
+chmod 600 "$EVIDENCE/verdict.sig"
+node scripts/check-standalone-security-verdict.mjs "$EVIDENCE" "$SOURCE_SHA" \
+  verdict.json "$REVIEWER_PUBLIC_KEY" verdict.sig "$PINNED_REVIEWER_FINGERPRINT"
+```
+
+This checks the detached signature, findings digest, and exact candidate binding only. It does
+not establish that the key belongs to an independent human, that findings were
+resolved, or that any deployed receipt is authentic. The release owner must
+review those facts and retain the attributable finding disposition under #232.
 Never treat a CLI verdict as proof of its underlying receipt or finality.
 The inventory reports `completeInventory: true` only when every case's latest
 `pass` is backed by a private decision record covering the attached evidence.
