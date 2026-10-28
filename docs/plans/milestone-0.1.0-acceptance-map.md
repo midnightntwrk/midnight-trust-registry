@@ -8,6 +8,40 @@ Kubernetes and Helm are optional deployment paths, not 0.1.0 RC gates.
 The non-Kubernetes standalone installation may qualify with equivalent
 deployed-ledger, offline actor, restart/restore, and security evidence.
 
+## Current review and operator handoff (2026-10-28)
+
+Published draft PRs [#238](https://github.com/midnightntwrk/midnight-trust-registry/pull/238)
+(`5b6d2851`), [#239](https://github.com/midnightntwrk/midnight-trust-registry/pull/239)
+(`b723a84b`), and [#240](https://github.com/midnightntwrk/midnight-trust-registry/pull/240)
+(`bbe527cf`) remain stacked and unmerged. At #238's exact head, the milestone
+build/package/test, quality, documentation, and aggregate scan checks passed;
+the separate external Opengrep OSS check remains red for five internal
+plaintext WebSocket links. [#237](https://github.com/midnightntwrk/midnight-trust-registry/issues/237)
+requires a reviewed security disposition; a green aggregate scan is not a
+waiver. The later local review groups and recovery fixes are unpublished, so
+their tests do not change those PR heads or CI results.
+
+The retained private `wizard-b23` packet is bound to signed source `6a5b2529`
+and is older than the current local implementation. A read-only prerequisite
+check against its own source returned exit 2: install staged, stack observed,
+and setup unlocked were true; `genesisApproved` was the first missing gate.
+Release roster approval, deployment, committee approval, verifier-key
+reconciliation, and maintenance transition were also missing. This packet is
+pre-deployment evidence, not an exact-current-source release candidate. Its
+node-reported genesis proposal must not be promoted to a trusted pin by the
+wizard or an AI agent.
+
+The operator's next action is to freeze the intended exact source, rebuild
+and verify its pinned install, independently authenticate the real chain
+specification, then review and sign the exact genesis approval. Separately,
+a human reviewer must approve the release committee threshold, public keys, and
+custody roles before deployment. Only then can a deployment produce finalized
+contract and key readback, followed by the maintenance transition, signed API
+plan, egress-denied actor journeys, and deployed restart/restore. The VC-owned
+live status adapter and independent human security verdict remain separate
+release gates. Do not count current fixture, preflight, loopback HTTP, or
+node-self-reported checks as those deployed results. Keep #198 draft.
+
 ## Latest local pre-deployment checkpoint
 
 The most recent source-matched **pre-deployment** packet was prepared from
