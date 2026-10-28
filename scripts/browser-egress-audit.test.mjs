@@ -4,13 +4,14 @@ import { test } from "node:test";
 import { installOfflineBrowserAudit, isLocalBrowserUrl } from "../browser-tests/offline-browser-fixture.mjs";
 
 test("browser audit accepts exact loopback origins and rejects deceptive hosts", () => {
+  const allowed = new Set(["http://127.0.0.1:4400", "https://localhost", "ws://[::1]:4400"]);
   for (const url of ["http://127.0.0.1:4400/a", "https://localhost/a", "ws://[::1]:4400/a",
     "about:blank", "data:text/plain,local"]) {
-    assert.equal(isLocalBrowserUrl(url), true, url);
+    assert.equal(isLocalBrowserUrl(url, allowed), true, url);
   }
   for (const url of ["https://example.invalid/a", "http://localhost.example.invalid/a",
-    "http://127.0.0.2/a", "file:///tmp/key", "not-a-url"]) {
-    assert.equal(isLocalBrowserUrl(url), false, url);
+    "http://127.0.0.2/a", "http://127.0.0.1:4401/a", "file:///tmp/key", "not-a-url"]) {
+    assert.equal(isLocalBrowserUrl(url, allowed), false, url);
   }
 });
 
@@ -21,7 +22,8 @@ test("browser audit blocks external HTTP and WebSocket attempts and reports thei
     route: async (_pattern, handler) => { handlers.http = handler; },
     routeWebSocket: async (_pattern, handler) => { handlers.ws = handler; },
   };
-  const assertNoExternalRequests = await installOfflineBrowserAudit(context);
+  const assertNoExternalRequests = await installOfflineBrowserAudit(context,
+    new Set(["http://127.0.0.1:4400", "ws://localhost:4400"]));
   const observed = { fetched: 0, fulfilled: 0, aborted: 0, connected: 0, closed: 0 };
   const httpRoute = (url) => ({
     request: () => ({ url: () => url }),
@@ -38,6 +40,7 @@ test("browser audit blocks external HTTP and WebSocket attempts and reports thei
   });
   await handlers.http(httpRoute("http://127.0.0.1:4400/app"));
   assert.doesNotThrow(assertNoExternalRequests);
+  await handlers.http(httpRoute("http://127.0.0.1:4401/private"));
   await handlers.http(httpRoute("https://outside.invalid/secret?token=private"));
   await handlers.ws({
     url: () => "ws://localhost:4400/local",
@@ -49,7 +52,8 @@ test("browser audit blocks external HTTP and WebSocket attempts and reports thei
     connectToServer: () => { observed.connected += 1; },
     close: () => { observed.closed += 1; },
   });
-  assert.deepEqual(observed, { fetched: 1, fulfilled: 1, aborted: 1, connected: 1, closed: 1 });
+  assert.deepEqual(observed, { fetched: 1, fulfilled: 1, aborted: 2, connected: 1, closed: 1 });
+  assert.throws(assertNoExternalRequests, /127\.0\.0\.1:4401/u);
   assert.throws(assertNoExternalRequests, /outside\.invalid/u);
   assert.throws(assertNoExternalRequests, (error) => !error.message.includes("token=private"));
 });
@@ -61,7 +65,8 @@ test("browser audit denies redirects before the browser can follow them", async 
     route: async (_pattern, callback) => { handler = callback; },
     routeWebSocket: async () => {},
   };
-  const assertNoExternalRequests = await installOfflineBrowserAudit(context);
+  const assertNoExternalRequests = await installOfflineBrowserAudit(context,
+    new Set(["http://127.0.0.1:4400"]));
   let fulfilled;
   await handler({
     request: () => ({ url: () => "http://127.0.0.1:4400/start" }),

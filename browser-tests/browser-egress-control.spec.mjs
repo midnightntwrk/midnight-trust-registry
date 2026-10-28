@@ -38,7 +38,8 @@ test("loopback redirect cannot reach a non-allowlisted listener", async ({ page 
     const preflight = await fetch(`http://${externalAddress}:${externalPort}/preflight`);
     assert.equal(preflight.status, 200);
     externalHits = 0;
-    const assertNoExternalRequests = await installOfflineBrowserAudit(page.context());
+    const assertNoExternalRequests = await installOfflineBrowserAudit(
+      page.context(), new Set([`http://127.0.0.1:${localPort}`]));
     await page.goto(`http://127.0.0.1:${localPort}/start`).catch(() => {});
     assert.equal(externalHits, 0);
     assert.throws(assertNoExternalRequests, new RegExp(externalAddress.replaceAll(".", "\\."), "u"));

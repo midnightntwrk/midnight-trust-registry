@@ -105,7 +105,7 @@ const scenarioFor = (role, harness) => {
   };
 };
 
-for (const role of ["issuer", "verifier", "auditor", "maintainer"]) test(`admin recovers an accepted ${role} proposal after its HTTP response is lost`, async ({ page }) => {
+for (const role of ["issuer", "verifier", "auditor", "maintainer"]) test(`admin recovers an accepted ${role} proposal after its HTTP response is lost`, async ({ page, allowedLocalOrigins }) => {
   const harness = new LocalTrustRegistryIntegrationHarness(`admin-browser-${role}-proposal-recovery`);
   const second = createMaintainerScenarioFixture("admin-browser-second");
   const third = createMaintainerScenarioFixture("admin-browser-third");
@@ -178,6 +178,7 @@ for (const role of ["issuer", "verifier", "auditor", "maintainer"]) test(`admin 
     const address = server.address();
     if (address === null || typeof address === "string") throw new Error("expected TCP address");
     const base = `http://127.0.0.1:${address.port}`;
+    allowedLocalOrigins.add(base);
     page.on("dialog", (dialog) => dialog.accept());
     await page.goto(`${base}/?apiBase=${encodeURIComponent(base)}`);
     await expect(page.locator("[data-proposal-prepare] button[type='submit']")).toBeEnabled();

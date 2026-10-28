@@ -66,9 +66,11 @@ that the local-ledger admin view hides fixture mutation controls and discards
 an exact-ID result when a mocked API checkpoint changes mid-request. This is
 a UI fail-closed regression, not a deployed-ledger or authenticated-finality
 test. Its Playwright context blocks service workers and audits HTTP and
-WebSocket requests, failing if any non-loopback origin is attempted. HTTP
+WebSocket requests, failing if any unregistered origin is attempted. HTTP
 redirects are denied even when their destination is loopback, so an allowed
 fixture response cannot trigger an unguarded follow-up request. That
+guard accepts only each test's registered ephemeral loopback origin, not every
+host-local port. An unrelated loopback service is denied and recorded. The
 guard covers only requests visible to this fixture browser context; it does
 not prove host, wallet, prover, container, or deployed-browser egress denial.
 The fixture lane includes negative probes for a loopback HTTP redirect to a

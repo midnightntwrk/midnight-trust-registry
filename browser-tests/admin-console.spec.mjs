@@ -17,7 +17,7 @@ const summary = (registry) => ({
   registryDid: `did:midnight:testnet:${registry}`, policyId: `policy:${registry}`, epochCount: 1,
 });
 
-test("a late governance receipt cannot replace another registry's board", async ({ page }) => {
+test("a late governance receipt cannot replace another registry's board", async ({ page, allowedLocalOrigins }) => {
   const staticHandler = createStaticAssetHandler({
     distDir: resolve("packages/trust-registry-admin-console/dist"),
     name: "admin-console-browser-test",
@@ -60,6 +60,7 @@ test("a late governance receipt cannot replace another registry's board", async 
   if (address === null || typeof address === "string") throw new Error("expected TCP address");
   const base = `http://127.0.0.1:${address.port}`;
   try {
+    allowedLocalOrigins.add(base);
     page.on("dialog", (dialog) => dialog.accept());
     await page.goto(`${base}/?apiBase=${encodeURIComponent(`${base}/a`)}`);
     const registryLabel = page.locator(".metrics .metric:first-child strong");
@@ -96,7 +97,7 @@ test("a late governance receipt cannot replace another registry's board", async 
   }
 });
 
-test("local-ledger board discards a lookup when its finalized checkpoint changes", async ({ page }) => {
+test("local-ledger board discards a lookup when its finalized checkpoint changes", async ({ page, allowedLocalOrigins }) => {
   const staticHandler = createStaticAssetHandler({
     distDir: resolve("packages/trust-registry-admin-console/dist"),
     name: "admin-console-local-browser-test",
@@ -142,6 +143,7 @@ test("local-ledger board discards a lookup when its finalized checkpoint changes
   if (address === null || typeof address === "string") throw new Error("expected TCP address");
   const base = `http://127.0.0.1:${address.port}`;
   try {
+    allowedLocalOrigins.add(base);
     await page.goto(`${base}/?apiBase=${encodeURIComponent(base)}`);
     await expect(page.locator("[data-current-lookup]")).toBeVisible();
     await expect(page.locator("[data-action]")).toHaveCount(0);
