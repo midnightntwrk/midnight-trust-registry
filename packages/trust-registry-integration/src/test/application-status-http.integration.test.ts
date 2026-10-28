@@ -99,6 +99,38 @@ describe("HTTP application status authority adapter", () => {
     await expect(verifyApplicationVp(input)).rejects.toMatchObject({ category: "ineligible" });
   });
 
+  it("rejects a fractionally overlong signed status answer through the VP intake", async () => {
+    const scenario = await createApplicationVpScenarioFixture();
+    const statement = {
+      ...scenario.signedStatusAttestation.statement,
+      expiresAt: new Date(VP_FIXTURE_TIME_MS + 5 * 60_000).toISOString().replace(".000Z", ".0000001Z"),
+    };
+    const signed = {
+      statement,
+      proof: {
+        ...scenario.signedStatusAttestation.proof,
+        signature: `0x${Buffer.from(encodeJubjubSignature(
+          signJubjubDigest(19n, applicationStatusAttestationDigest(statement)),
+        )).toString("hex")}`,
+      },
+    };
+    const status = createHttpApplicationStatusSource({
+      endpointUrl,
+      resolver: scenario.input.resolver,
+      fetchImpl: async () => Response.json(signed),
+    });
+    await expect(verifyApplicationVp({
+      ...scenario.input,
+      family: {
+        ...scenario.input.family,
+        assertStatusActive: (material: typeof scenario.material,
+          binding: typeof scenario.fixtureStatusPolicyBinding,
+          context: { nonce: string; evaluatedAtMs: number }) =>
+          status({ material, binding, ...context }),
+      },
+    })).rejects.toMatchObject({ category: "ineligible" });
+  });
+
   it("rejects insecure endpoints and fails closed on unavailable or rejected responses", async () => {
     const scenario = await createApplicationVpScenarioFixture();
     for (const url of [
