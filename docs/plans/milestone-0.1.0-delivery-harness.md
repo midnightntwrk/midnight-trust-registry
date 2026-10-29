@@ -38,7 +38,8 @@ additional milestone branch-protection gates.
    round, blocking/advisory dispositions, and, if external, a review link. A
    new push invalidates prior exact-head review evidence; repeat the review
    on the new head. This is an operator process, not a CI-attested approval.
-5. Confirm `Milestone Light`, `scan`, and `Quality` are green
+5. Confirm `Milestone Build, Package, and Test`, `scan`, and
+   `Typecheck, Audit, and Packaging Baseline` are green
    for the current head, along with any other applicable CI jobs. Address
    blocking review findings and confirm mergeability.
    If the base moved, rebase or merge locally with a verified signature and DCO
@@ -84,7 +85,7 @@ without a valid final-head review cannot merge.
 
 ## Hosted gates
 
-- `Milestone Light`: unconditional Compact version check, `./run.sh --light`,
+- `Milestone Build, Package, and Test`: unconditional Compact version check, `./run.sh --light`,
   DID/VC integration scenarios, and `pnpm run demo:smoke` on milestone PRs,
   even docs-only PRs. The existing path-filtered `CI` PR lane excludes
   milestone to avoid a duplicate Compact build.
@@ -95,7 +96,7 @@ without a valid final-head review cannot merge.
 - `Scan`: security scan on every PR and milestone push.
 - Existing docs and PR-title checks remain applicable where triggered.
 
-The operator checks the current PR head and green results for `Milestone Light`,
+The operator checks the current PR head and green results for `Milestone Build, Package, and Test`,
 `scan`, `Typecheck, Audit, and Packaging Baseline`, and any other applicable
 CI jobs before each merge. A stale, pending, failed, or cancelled current-head
 job is not green. No GitHub branch-protection or CODEOWNERS approval is required

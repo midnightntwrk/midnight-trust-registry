@@ -4,6 +4,8 @@ import { lstat, mkdtemp, open, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 
+import { assertStrictDetachedSignatureStatus } from "@midnight-ntwrk/trust-registry-integration/reviewer-signature-status";
+
 const FINGERPRINT = /^[0-9A-F]{40}$/u;
 
 export function assertApprovedReviewerSignatureStatus(
@@ -13,30 +15,9 @@ export function assertApprovedReviewerSignatureStatus(
   now = Date.now(),
   description = "Local API runtime plan",
 ): void {
-  const statuses = output.split("\n").filter((line) => line.startsWith("[GNUPG:] "));
-  const valid = statuses.filter((line) => line.startsWith("[GNUPG:] VALIDSIG "));
-  const good = statuses.filter((line) => line.startsWith("[GNUPG:] GOODSIG "));
-  const fields = valid[0]?.split(/\s+/u);
-  const signerFingerprint = fields?.[2];
-  const goodSignerKeyId = good[0]?.split(/\s+/u)[2];
-  const primaryFingerprint = fields?.[11];
-  const signedAt = Number(fields?.[4]);
-  const expiresAt = Number(fields?.[5]);
-  const hashAlgorithm = fields?.[9];
-  const signatureClass = fields?.[10];
-  const nowSeconds = Math.floor(now / 1000);
-  if (exitStatus !== 0 || !FINGERPRINT.test(expectedPrimaryFingerprint)
-    || valid.length !== 1 || good.length !== 1
-    || fields?.length !== 12
-    || !FINGERPRINT.test(signerFingerprint ?? "")
-    || ![signerFingerprint?.slice(-16), signerFingerprint].includes(goodSignerKeyId)
-    || primaryFingerprint !== expectedPrimaryFingerprint
-    || !Number.isSafeInteger(signedAt) || signedAt <= 0 || signedAt > nowSeconds + 300
-    || !Number.isSafeInteger(expiresAt) || expiresAt < 0
-    || (expiresAt !== 0 && expiresAt <= nowSeconds)
-    || !["8", "9", "10"].includes(hashAlgorithm ?? "")
-    || signatureClass !== "00"
-    || statuses.some((line) => /^\[GNUPG:\] (?:BADSIG|ERRSIG|EXPKEYSIG|EXPSIG|REVKEYSIG|KEYREVOKED|SIGEXPIRED|PLAINTEXT|PLAINTEXT_LENGTH)\b/u.test(line))) {
+  try {
+    assertStrictDetachedSignatureStatus({ output, exitStatus, expectedPrimaryFingerprint, now });
+  } catch {
     throw new Error(`${description} lacks the approved detached reviewer signature`);
   }
 }
@@ -77,7 +58,8 @@ export async function readBoundedLocalApprovalFile(
 
 export async function verifyDetachedLocalReviewerSignature(input: {
   documentBytes: Buffer;
-  signaturePath: string;
+  signaturePath?: string;
+  signatureBytes?: Buffer;
   keyringDirectory: string;
   reviewerFingerprint: string;
   description?: string;
@@ -86,7 +68,14 @@ export async function verifyDetachedLocalReviewerSignature(input: {
   if (!FINGERPRINT.test(input.reviewerFingerprint)) {
     throw new Error(`${description} reviewer primary signing-key fingerprint must be canonical`);
   }
-  const signatureBytes = await readBoundedLocalApprovalFile(input.signaturePath, 64 * 1024);
+  if ((input.signaturePath === undefined) === (input.signatureBytes === undefined)) {
+    throw new Error(`${description} requires exactly one detached signature source`);
+  }
+  const signatureBytes = input.signatureBytes
+    ?? await readBoundedLocalApprovalFile(input.signaturePath!, 64 * 1024);
+  if (signatureBytes.length === 0 || signatureBytes.length > 64 * 1024) {
+    throw new Error(`${description} detached signature is missing or oversized`);
+  }
   if (!isAbsolute(input.keyringDirectory)) {
     throw new Error(`${description} reviewer keyring path must be absolute`);
   }

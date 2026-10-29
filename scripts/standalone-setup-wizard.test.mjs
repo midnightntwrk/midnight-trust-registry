@@ -19,6 +19,7 @@ import {
   approveStandaloneCommitteeDeployment,
   approveStandaloneCommitteeRecovery as approveStandaloneCommitteeRecoveryRaw,
   approveStandaloneGenesis,
+  buildStandaloneApiApprovalChain,
   attemptStandaloneDeployment as attemptStandaloneDeploymentRaw,
   attemptStandaloneVerifierKeyInsertion as attemptStandaloneVerifierKeyInsertionRaw,
   collectStandaloneGenesisCandidate,
@@ -74,6 +75,58 @@ const stagedReceipt = {
   contractAddress: `0x${"c".repeat(64)}`, blockHash: `0x${"d".repeat(64)}`,
   blockHeight: 10, txId: "staged-deployment-tx",
 };
+
+test("API approval-chain export refuses missing or substituted deployment evidence", () => {
+  const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
+  const entry = (document, fingerprint = reviewerFingerprint) => {
+    const bytes = Buffer.from(JSON.stringify(document));
+    const signature = Buffer.from("test-only-signature");
+    return {
+      documentBase64: bytes.toString("base64"), documentSha256: digest(bytes),
+      signatureBase64: signature.toString("base64"), signatureSha256: digest(signature),
+      reviewerFingerprint: fingerprint,
+    };
+  };
+  const inventory = "a".repeat(64);
+  const manifest = "b".repeat(64);
+  const deploymentPlan = "c".repeat(64);
+  const genesisApproval = entry({ format: "tr-local-genesis-approval-v1", sourceRevision,
+    installInventorySha256: inventory, networkId: "undeployed", expectedGenesisHash,
+    reviewerFingerprint });
+  const committeeApproval = entry({ format: "tr-local-committee-approval-v2", sourceRevision,
+    installInventorySha256: inventory, genesisApprovalSha256: genesisApproval.documentSha256,
+    networkId: "undeployed", expectedGenesisHash, deploymentPlanSha256: deploymentPlan,
+    reviewerFingerprint: governanceFingerprint }, governanceFingerprint);
+  const committeeDeploymentApproval = entry({ format: "tr-local-committee-deployment-approval-v1",
+    sourceRevision, committeeApprovalSha256: committeeApproval.documentSha256,
+    deploymentPlanSha256: deploymentPlan, releaseManifestSha256: manifest,
+    expectedGenesisHash, deploymentReceipt: stagedReceipt,
+    reviewerFingerprint: governanceFingerprint }, governanceFingerprint);
+  const record = {
+    sourceRevision, install: { inventorySha256: inventory }, genesisApproval,
+    committeeApproval, committeeDeploymentApproval,
+    deployment: { state: "observed", result: { receipt: stagedReceipt } },
+    maintenanceAttempt: { state: "observed", txId: "maintenance-tx",
+      updateSha256: "d".repeat(64),
+      committeeDeploymentApprovalSha256: committeeDeploymentApproval.documentSha256,
+      reconciliation: { status: "observed", txId: "maintenance-tx",
+        finalizedBlockHash: `0x${"e".repeat(64)}` } },
+  };
+  const chain = buildStandaloneApiApprovalChain(record, manifest);
+  assert.equal(chain.format, "tr-local-api-approval-chain-v1");
+  assert.equal(chain.contractAddress, stagedReceipt.contractAddress);
+  assert.equal(chain.maintenanceReadback.status, "observed");
+  assert.equal(JSON.stringify(chain).includes("test-only-signature"), false);
+  assert.equal(Object.hasOwn(chain, "install"), false);
+  assert.throws(() => buildStandaloneApiApprovalChain({ ...record, maintenanceAttempt: {
+    ...record.maintenanceAttempt, state: "pending" } }, manifest), /readback/u);
+  assert.throws(() => buildStandaloneApiApprovalChain({ ...record, maintenanceAttempt: {
+    ...record.maintenanceAttempt, alert: "conflict" } }, manifest), /readback/u);
+  assert.throws(() => buildStandaloneApiApprovalChain({ ...record,
+    committeeDeploymentApproval: { ...committeeDeploymentApproval, documentSha256: "f".repeat(64) } },
+  manifest), /digest/u);
+  assert.throws(() => buildStandaloneApiApprovalChain(record, "f".repeat(64)), /approval chain/u);
+});
 const pin = {
   format: "tr-local-ledger-pin-v1",
   networkId: "undeployed",
@@ -699,6 +752,10 @@ test("wizard records only selected ledger-bridge topology and egress observation
   assert.equal(result.state, "observed-ledger-bridge-only");
   const status = await standaloneSetupStatus(f.directory);
   assert.equal(status.stackConfiguration, "observed-ledger-bridge-only");
+  assert.equal(status.stackProject, project);
+  assert.equal(status.stackNetworkId, ledgerNetworkId);
+  assert.match(status.installInventorySha256, /^[0-9a-f]{64}$/u);
+  assert.equal(status.deployedContractAddress, null);
   assert.equal(status.localLedger, "pending");
   assert.equal(status.deployment, "pending");
   assert.equal(status.offlineJourneys, "pending");
@@ -2916,8 +2973,6 @@ test("reviewer signature status binds the signer and rejects weak or attached si
   assert.doesNotThrow(() => assertDetachedReviewerSignatureStatus(output, primary, approvedAt));
   assert.doesNotThrow(() => assertDetachedReviewerSignatureStatus(
     output.replace(signer.slice(-16), signer), primary, approvedAt));
-  assert.doesNotThrow(() => assertDetachedReviewerSignatureStatus(
-    `${output}[GNUPG:] KEYEXPIRED ${signedAt - 1}\n`, primary, approvedAt));
   for (const invalid of [
     valid,
     `${output}${valid}\n`,
@@ -2928,6 +2983,7 @@ test("reviewer signature status binds the signer and rejects weak or attached si
     output.replace(" 22 8 00 ", " 22 8 01 "),
     `${output}[GNUPG:] EXPKEYSIG ${signer} Reviewer\n`,
     `${output}[GNUPG:] KEYREVOKED\n`,
+    `${output}[GNUPG:] KEYEXPIRED ${signedAt - 1}\n`,
     `${output}[GNUPG:] PLAINTEXT_LENGTH 10\n`,
   ]) {
     assert.throws(() => assertDetachedReviewerSignatureStatus(invalid, primary, approvedAt), /pinned reviewer key/u);
@@ -2963,6 +3019,22 @@ test("detached GPG verification accepts only the pinned signing key and exact by
   await writeFile(document, '{"format":"tr-local-genesis-approval-v1"}\n');
   execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--detach-sign", "--output", signature, document]);
   await verifyDetachedReviewerSignature(document, signature, verifier, fingerprint, approvedAt);
+  const fakeBin = join(root, "fake-bin");
+  await mkdir(fakeBin);
+  const marker = join(root, "path-gpg-called");
+  await writeFile(join(fakeBin, "gpg"), `#!/bin/sh\nprintf called > '${marker}'\nexit 0\n`, { mode: 0o700 });
+  const oldPath = process.env.PATH;
+  const oldHome = process.env.GNUPGHOME;
+  try {
+    process.env.PATH = `${fakeBin}:${oldPath}`;
+    process.env.GNUPGHOME = join(root, "untrusted-home");
+    await verifyDetachedReviewerSignature(document, signature, verifier, fingerprint, approvedAt);
+    await assert.rejects(lstat(marker), { code: "ENOENT" });
+  } finally {
+    process.env.PATH = oldPath;
+    if (oldHome === undefined) delete process.env.GNUPGHOME;
+    else process.env.GNUPGHOME = oldHome;
+  }
   const armoredSignature = join(root, "approval.asc");
   execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--armor", "--detach-sign",
     "--output", armoredSignature, document]);
@@ -2973,7 +3045,11 @@ test("detached GPG verification accepts only the pinned signing key and exact by
   await assert.rejects(verifyDetachedReviewerSignature(document, signature, publicExport, "B".repeat(40), approvedAt),
     /does not match/u);
   const invalidExport = join(root, "invalid-public.asc");
-  await writeFile(invalidExport, "-----BEGIN PGP PRIVATE KEY BLOCK-----\n", { mode: 0o600 });
+  const privateExport = execFileSync("gpg", ["--homedir", signer, "--batch", "--armor",
+    "--export-secret-keys", fingerprint]);
+  assert.ok(privateExport.length > 0);
+  assert.ok(!privateExport.equals(armoredPublicKey));
+  await writeFile(invalidExport, privateExport, { mode: 0o600 });
   await assert.rejects(verifyDetachedReviewerSignature(document, signature, invalidExport, fingerprint, approvedAt),
     /armored public-key export/u);
   const longKeyring = join(root, "nested-".repeat(10), "reviewer-".repeat(8));

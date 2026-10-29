@@ -166,7 +166,7 @@ Keep using signed/DCO commits and PRs rather than direct milestone pushes.
 PRs into `develop` and `main` retain human merge authority and their existing
 protections.
 
-Before autonomous milestone merges, verify current-head `Milestone Light`,
+Before autonomous milestone merges, verify current-head `Milestone Build, Package, and Test`,
 `scan`, and `Typecheck, Audit, and Packaging Baseline` are green, along with
 any other applicable CI jobs. Do not treat red or pending CI as advisory.
 

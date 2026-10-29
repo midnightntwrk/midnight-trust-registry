@@ -60,8 +60,23 @@ a durable journal and independently authenticated reader. Presence checks alone
 are not qualification. Other governed action ports remain disabled until they
 have an equivalent durable submission path.
 
-For local-ledger mode, a reviewer must detach-sign a `tr-local-api-runtime-v2`
-JSON plan. Write it as compact JSON with an optional final newline, or as
+For local-ledger mode, a reviewer must detach-sign a `tr-local-api-runtime-v3`
+JSON plan. The v3 plan adds absolute `approvalChainPath` and its exact
+`approvalChainSha256` to the v2 fields. Obtain the private chain file with the
+wizard's `export-api-approval-chain` command after an observed deployment and
+maintenance transition. Put the file in the API's read-only approval directory,
+and sign a plan naming that path and digest. The API re-verifies the genesis,
+committee, and deployment detached signatures, their hash links, approved
+custody roster and committee, and the recorded maintenance readback before
+starting. The out-of-band reviewer fingerprint passed to the CLI anchors the
+governance and deployment signatures; the governance-signed genesis digest
+anchors the genesis signer. A v2 plan remains parseable by the library for
+forensic compatibility, but the local-ledger CLI rejects it for preflight,
+observation, proposal operations, and server startup. It is not local-RC evidence.
+This v3 check still does not independently authenticate node/indexer finality
+or prove an offline actor journey.
+
+Write the plan as compact JSON with an optional final newline, or as
 two-space-indented JSON with a final newline. Duplicate keys, alternative
 escaping, and other noncanonical encodings are rejected even if signed. The
 operator supplies the exact plan, detached signature, a private

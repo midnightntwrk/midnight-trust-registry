@@ -9,12 +9,13 @@ import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
 
 import { verifyReleaseCandidateArtifacts } from "./release-candidate-manifest.mjs";
+import { matchesApprovedRuntimeHealthcheck } from "./runtime-healthcheck.mjs";
 import { staticImageIdentityFromArchive, validateStaticImageManifest } from "./static-runtime-archive.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
 const REVISION = /^[0-9a-f]{40}$/u;
 const ROLES = ["node", "indexer", "proof-server"];
-const IMAGE = /^[a-z0-9][a-z0-9./_:-]*@sha256:[0-9a-f]{64}$/u;
+export const STANDALONE_IMAGE_REFERENCE = /^[a-z0-9][a-z0-9./_:-]*@sha256:[0-9a-f]{64}$/u;
 const IMAGE_ID = /^sha256:[0-9a-f]{64}$/u;
 const FINGERPRINT = /^[0-9A-F]{40}$/u;
 
@@ -26,7 +27,7 @@ export function pinnedStandaloneImages(composeSource) {
   }
   return ROLES.map((role) => {
     const reference = compose.services[role]?.image;
-    if (typeof reference !== "string" || !IMAGE.test(reference)) {
+    if (typeof reference !== "string" || !STANDALONE_IMAGE_REFERENCE.test(reference)) {
       throw new Error(`Standalone image is not digest pinned: ${role}`);
     }
     return { role, reference };
@@ -87,7 +88,7 @@ export function installedApiImageIdFromArchive(archive, manifest, sourceRevision
     || !REVISION.test(manifest.sourceRevision)
     || !FINGERPRINT.test(manifest.approvedSignerFingerprint)
     || manifest.platform !== "linux/arm64"
-    || !IMAGE.test(manifest.baseImage)
+    || !STANDALONE_IMAGE_REFERENCE.test(manifest.baseImage)
     || !SHA256.test(manifest.lockfileSha256)
     || !SHA256.test(manifest.dockerfileSha256)
     || !SHA256.test(manifest.payload?.sha256)
@@ -157,7 +158,11 @@ export function installedApiImageIdFromArchive(archive, manifest, sourceRevision
     || config.config?.User !== "1000:1000"
     || config.config?.WorkingDir !== "/app"
     || JSON.stringify(config.config?.Entrypoint) !== JSON.stringify(["node", "/app/bin/trust-registry-api.mjs"])
-    || config.config?.Cmd != null || config.config?.Healthcheck != null
+    || config.config?.Cmd != null
+    || (manifest.format === "tr-api-runtime-image-v2"
+      ? !matchesApprovedRuntimeHealthcheck(config.config?.Healthcheck, "api")
+      : config.config?.Healthcheck != null
+        && !matchesApprovedRuntimeHealthcheck(config.config.Healthcheck, "api"))
     || config.config?.OnBuild != null || config.config?.Volumes != null
     || !Array.isArray(environment) || environment.some((entry) => typeof entry !== "string"
       || /^(?:NODE_OPTIONS|NODE_PATH|LD_PRELOAD|LD_LIBRARY_PATH)=/u.test(entry))) {
@@ -318,7 +323,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
   verifyPackages(packageManifest, artifactRoot);
   const verifiedImages = [];
   for (const image of inventory.images) {
-    if (!IMAGE.test(image.reference) || !SHA256.test(image.archiveSha256)) {
+    if (!STANDALONE_IMAGE_REFERENCE.test(image.reference) || !SHA256.test(image.archiveSha256)) {
       throw new Error(`Unpinned or invalid container image: ${image.role}`);
     }
     const archive = await regularBundleFile(root, image.archive);

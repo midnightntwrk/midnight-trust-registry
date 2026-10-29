@@ -7,7 +7,8 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 const readerMocks = vi.hoisted(() => ({ createReader: vi.fn() }));
-vi.mock("@midnight-ntwrk/trust-registry-integration", () => ({
+vi.mock("@midnight-ntwrk/trust-registry-integration", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@midnight-ntwrk/trust-registry-integration")>(),
   createLocalNetworkDeploymentActionReader: readerMocks.createReader,
 }));
 
@@ -27,7 +28,10 @@ import { resolveAuthorizationEntry, resolveRecognitionEntry } from "../source.js
 const sourceRevision = "a".repeat(40);
 const sha256 = (bytes: Buffer | string): string => createHash("sha256").update(bytes).digest("hex");
 const verifierKeySha256 = { first: "1".repeat(64), second: "2".repeat(64) };
-const maintenanceAuthority = { committee: [`0x${"3".repeat(64)}`], threshold: 1, counter: "0" };
+const contractAddress = `0x${"e".repeat(64)}`;
+const identity = { networkId: "undeployed", contractAddress };
+const maintenanceAuthority = { committee: ["3", "4", "5"].map((digit) => `0x${digit.repeat(64)}`),
+  threshold: 2, counter: "2" };
 const plan = (root: string) => ({
   format: "tr-local-api-runtime-v2",
   networkId: "undeployed",
@@ -37,7 +41,7 @@ const plan = (root: string) => ({
   releaseManifestPath: join(root, "release-manifest.json"),
   releaseManifestSha256: "c".repeat(64),
   expectedGenesisHash: `0x${"d".repeat(64)}`,
-  contractAddress: `0x${"e".repeat(64)}`,
+  contractAddress,
   rpcUrl: "http://127.0.0.1:29944",
   indexerHttpUrl: "http://127.0.0.1:28088/api/v4/graphql",
   indexerWsUrl: "ws://127.0.0.1:28088/api/v4/graphql/ws",
@@ -65,8 +69,6 @@ describe("approved local-ledger API runtime", () => {
     expect(() => assertApprovedReviewerSignatureStatus(output, 0, primary, now)).not.toThrow();
     expect(() => assertApprovedReviewerSignatureStatus(
       output.replace(signer.slice(-16), signer), 0, primary, now)).not.toThrow();
-    expect(() => assertApprovedReviewerSignatureStatus(
-      `${output}[GNUPG:] KEYEXPIRED ${signedAt - 1}\n`, 0, primary, now)).not.toThrow();
     for (const invalid of [
       [output, 0, "C".repeat(40)],
       [output, 1, primary],
@@ -75,6 +77,7 @@ describe("approved local-ledger API runtime", () => {
       [`${output}${valid}\n`, 0, primary],
       [`${output}[GNUPG:] REVKEYSIG ${signer} Reviewer\n`, 0, primary],
       [`${output}[GNUPG:] KEYREVOKED\n`, 0, primary],
+      [`${output}[GNUPG:] KEYEXPIRED ${signedAt - 1}\n`, 0, primary],
       [`${output}[GNUPG:] EXPKEYSIG ${signer} Reviewer\n`, 0, primary],
       [`[GNUPG:] GOODSIG ${signer} Reviewer\n[GNUPG:] VALIDSIG ${signer} 2026-10-23 ${signedAt} 0 4 0 22 8 00\n`, 0, primary],
       [`[GNUPG:] GOODSIG ${primary} Reviewer\n[GNUPG:] VALIDSIG ${primary} 2026-10-23 ${signedAt} 0 4 0 22 8 00\n`, 0, primary],
@@ -124,7 +127,10 @@ describe("approved local-ledger API runtime", () => {
       { ...valid, verifierKeySha256: {} },
       { ...valid, verifierKeySha256: { first: "a".repeat(63) } },
       { ...valid, maintenanceAuthority: { ...maintenanceAuthority, counter: "-1" } },
-      { ...valid, maintenanceAuthority: { ...maintenanceAuthority, threshold: 2 } },
+      { ...valid, maintenanceAuthority: { ...maintenanceAuthority, counter: "0" } },
+      { ...valid, maintenanceAuthority: { ...maintenanceAuthority, threshold: 1 } },
+      { ...valid, maintenanceAuthority: { ...maintenanceAuthority,
+        committee: [maintenanceAuthority.committee[0]] } },
       { ...valid, maintenanceAuthority: { ...maintenanceAuthority,
         committee: [maintenanceAuthority.committee[0], maintenanceAuthority.committee[0]] } },
       { ...valid, sequenceTimestamps: {} },
@@ -148,10 +154,17 @@ describe("approved local-ledger API runtime", () => {
 
   it("rejects finalized verifier-key and maintenance-authority drift", () => {
     const approved = validateLocalLedgerRuntimePlan(plan("/tmp/tr-api-runtime-test"));
-    const image = { verifierKeySha256, maintenanceAuthority: {
-      committee: maintenanceAuthority.committee, threshold: 1, counter: 0n,
+    const image = { ...identity, verifierKeySha256, maintenanceAuthority: {
+      committee: maintenanceAuthority.committee, threshold: 2, counter: 2n,
     } };
     expect(() => assertApprovedDeploymentImage(approved, image)).not.toThrow();
+    for (const invalid of [
+      { ...image, networkId: "preprod" },
+      { ...image, contractAddress: `0x${"f".repeat(64)}` },
+    ]) {
+      expect(() => assertApprovedDeploymentImage(approved, invalid))
+        .toThrow(/Finalized registry identity differs/u);
+    }
     for (const invalid of [
       { ...image, verifierKeySha256: { first: verifierKeySha256.first } },
       { ...image, verifierKeySha256: { ...verifierKeySha256, second: "4".repeat(64) } },
@@ -162,7 +175,7 @@ describe("approved local-ledger API runtime", () => {
     }
     for (const invalid of [
       { ...image, maintenanceAuthority: { ...image.maintenanceAuthority, counter: 1n } },
-      { ...image, maintenanceAuthority: { ...image.maintenanceAuthority, threshold: 2 } },
+      { ...image, maintenanceAuthority: { ...image.maintenanceAuthority, threshold: 1 } },
       { ...image, maintenanceAuthority: { ...image.maintenanceAuthority,
         committee: [`0x${"4".repeat(64)}`] } },
     ]) {
@@ -189,9 +202,9 @@ describe("approved local-ledger API runtime", () => {
   });
 
   it("checks the signed governance count and expiry on actual source reads", async () => {
-    const readCurrentFinalizedLedger = vi.fn(async () => ({
+    const readCurrentFinalizedLedger = vi.fn(async () => ({ ...identity,
       ledger: { governanceActionCount: 2n }, verifierKeySha256,
-      maintenanceAuthority: { ...maintenanceAuthority, counter: 0n },
+      maintenanceAuthority: { ...maintenanceAuthority, counter: 2n },
     }));
     readerMocks.createReader.mockResolvedValue({
       readCurrentFinalizedLedger,
@@ -204,22 +217,22 @@ describe("approved local-ledger API runtime", () => {
       cause: { message: expect.stringMatching(/operator restart is required/u) },
     });
     expect(readCurrentFinalizedLedger).toHaveBeenCalledTimes(1);
-    readCurrentFinalizedLedger.mockResolvedValue({ ledger: { governanceActionCount: 1n },
+    readCurrentFinalizedLedger.mockResolvedValue({ ...identity, ledger: { governanceActionCount: 1n },
       verifierKeySha256: { ...verifierKeySha256, first: "4".repeat(64) },
-      maintenanceAuthority: { ...maintenanceAuthority, counter: 0n } });
+      maintenanceAuthority: { ...maintenanceAuthority, counter: 2n } });
     await expect((await createApprovedLocalLedgerRuntimeSource(approved)).loadSnapshot()).rejects.toMatchObject({
       cause: { message: expect.stringMatching(/Finalized verifier-key catalog differs/u) },
     });
-    readCurrentFinalizedLedger.mockResolvedValue({ ledger: { governanceActionCount: 1n },
+    readCurrentFinalizedLedger.mockResolvedValue({ ...identity, ledger: { governanceActionCount: 1n },
       verifierKeySha256,
       maintenanceAuthority: { ...maintenanceAuthority, counter: 1n } });
     await expect((await createApprovedLocalLedgerRuntimeSource(approved)).readFinalizedProposalLedger())
       .rejects.toMatchObject({
         cause: { message: expect.stringMatching(/Finalized maintenance authority differs/u) },
       });
-    readCurrentFinalizedLedger.mockResolvedValue({ ledger: { governanceActionCount: 1n },
+    readCurrentFinalizedLedger.mockResolvedValue({ ...identity, ledger: { governanceActionCount: 1n },
       verifierKeySha256,
-      maintenanceAuthority: { ...maintenanceAuthority, counter: 0n } });
+      maintenanceAuthority: { ...maintenanceAuthority, counter: 2n } });
     await expect(source.loadSnapshot()).rejects.toMatchObject({
       cause: { message: expect.stringMatching(/operator restart is required/u) },
     });
@@ -283,6 +296,26 @@ describe("approved local-ledger API runtime", () => {
       const input = { planPath, signaturePath, keyringDirectory: verifier,
         reviewerFingerprint: fingerprint! };
       expect((await loadApprovedLocalLedgerRuntimePlan(input)).sourceRevision).toBe(sourceRevision);
+      const fakeBin = join(root, "fake-bin");
+      const pathMarker = join(root, "ambient-gpg-invoked");
+      await mkdir(fakeBin);
+      await writeFile(join(fakeBin, "gpg"),
+        `#!/bin/sh\nprintf called > '${pathMarker}'\nexit 0\n`, { mode: 0o700 });
+      const ambient = Object.fromEntries(["PATH", "GNUPGHOME", "GPG_AGENT_INFO", "GPG_TTY"]
+        .map((key) => [key, process.env[key]]));
+      try {
+        process.env.PATH = `${fakeBin}:${ambient.PATH ?? ""}`;
+        process.env.GNUPGHOME = join(root, "untrusted-home");
+        process.env.GPG_AGENT_INFO = "untrusted-agent";
+        process.env.GPG_TTY = "/dev/null";
+        expect((await loadApprovedLocalLedgerRuntimePlan(input)).sourceRevision).toBe(sourceRevision);
+        await expect(readFile(pathMarker)).rejects.toMatchObject({ code: "ENOENT" });
+      } finally {
+        for (const [key, value] of Object.entries(ambient)) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+      }
       expect(await loadApprovedLocalLedgerRuntimePlanWithDigest(input)).toEqual({
         plan: candidate,
         planSha256: sha256(await readFile(planPath)),

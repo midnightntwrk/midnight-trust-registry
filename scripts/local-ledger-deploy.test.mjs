@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -114,6 +114,24 @@ test("deployment rechecks approved release manifest bytes before loading provide
   assert.equal(loaded, false);
 });
 
+test("real deployment and maintenance stop without an immutable provider root", async () => {
+  const previous = process.env.TR_IMMUTABLE_PROVIDER_ROOT;
+  delete process.env.TR_IMMUTABLE_PROVIDER_ROOT;
+  let called = false;
+  try {
+    const dependencies = {
+      validateEndpoints: async () => { called = true; },
+      observe: async () => { called = true; },
+    };
+    await assert.rejects(runLocalDeployment(plan, dependencies), /TR_IMMUTABLE_PROVIDER_ROOT/u);
+    await assert.rejects(loadApprovedMaintenanceMaterial(plan, dependencies), /TR_IMMUTABLE_PROVIDER_ROOT/u);
+    assert.equal(called, false);
+  } finally {
+    if (previous === undefined) delete process.env.TR_IMMUTABLE_PROVIDER_ROOT;
+    else process.env.TR_IMMUTABLE_PROVIDER_ROOT = previous;
+  }
+});
+
 test("observes the pinned node before importing the provider and passes only approved inputs", async () => {
   const steps = [];
   const result = await runLocalDeployment(plan, {
@@ -162,11 +180,40 @@ test("preflight failure never imports the provider or enters the journal", async
   assert.equal(loaded, false);
 });
 
+test("deployment rejects a same-byte provider replacement during network preflight", async () => {
+  const path = join(root, "replace-deployment-provider.mjs");
+  const replacement = join(root, "deployment-replacement.mjs");
+  await writeFile(path, moduleSource);
+  await writeFile(replacement, moduleSource);
+  let loaded = false;
+  await assert.rejects(runLocalDeployment({ ...plan, providerModulePath: path }, {
+    validateEndpoints: async () => {},
+    observe: async () => { await rename(replacement, path); },
+    loadProvider: async () => { loaded = true; },
+  }), /path or inode changed/u);
+  assert.equal(loaded, false);
+});
+
+test("maintenance rejects a same-byte provider replacement during network preflight", async () => {
+  const path = join(root, "replace-maintenance-provider.mjs");
+  const replacement = join(root, "maintenance-replacement.mjs");
+  await writeFile(path, moduleSource);
+  await writeFile(replacement, moduleSource);
+  let loaded = false;
+  await assert.rejects(loadApprovedMaintenanceMaterial({ ...plan, providerModulePath: path }, {
+    validateEndpoints: async () => {},
+    observe: async () => { await rename(replacement, path); },
+    loadProvider: async () => { loaded = true; },
+  }), /path or inode changed/u);
+  assert.equal(loaded, false);
+});
+
 test("endpoint rejection prevents preflight and provider import", async () => {
   let observed = false;
   await assert.rejects(runLocalDeployment(plan, {
     validateEndpoints: async () => { throw new Error("invalid endpoint"); },
     observe: async () => { observed = true; },
+    loadProvider: async () => { throw new Error("provider must not load"); },
   }), /invalid endpoint/u);
   assert.equal(observed, false);
 });

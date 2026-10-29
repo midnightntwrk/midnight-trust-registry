@@ -39,6 +39,8 @@ This repository does not own:
 - [Requirements memo](docs/research/trust-registry-requirements-memo.md) captures the research inputs used to derive the requirements.
 - [Architecture boundaries](docs/architecture/trust-registry-boundaries.md) describes how TR integrates with DID and VC repositories.
 - [Demo and release guide](docs/guide/demo-and-release.md) documents the operator walkthrough, package boundaries, and manual publish/smoke workflows.
+- [Standalone local journey quickstart](docs/guide/standalone-local-journey.md) separates real offline deployment evidence from simulator tests and lists the operator stop gates.
+- [Self-hosted standalone first run](docs-site/guide/standalone.md) gives new operators the short verified-bundle and isolated-ledger path; it stops before human approvals and points to the full acceptance record.
 - [Decisions](docs/decisions/trust-registry-decisions.md) records current design decisions and unresolved questions.
 
 ## Development Baseline

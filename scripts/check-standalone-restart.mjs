@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { observeStandaloneTopology, standaloneStackConfig } from "./check-standalone-topology.mjs";
+import { getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
 
 const run = promisify(execFile);
 const SHA256 = /^[0-9a-f]{64}$/u;
@@ -18,14 +19,17 @@ const ZERO_HASH = /^0x0{64}$/u;
 const SERVICES = ["node", "indexer", "proof-server"];
 const BASELINE = "restart-baseline.json";
 const VERIFICATION = "restart-verification.json";
+const INTERRUPTED_BASELINE = /^restart-baseline\.json\.[1-9][0-9]*\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/u;
+const INTERRUPTED_VERIFICATION = /^restart-verification\.json\.[1-9][0-9]*\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/u;
 
+/** @param {string | Buffer} bytes */
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
 export function deploymentMarkerFromRecord(record) {
   const receipt = record.deployment?.result?.receipt;
-  const validReceipt = receipt?.networkId === "undeployed"
+  const validReceipt = receipt?.networkId === getLocalNetworkProfile().networkId
     && HASH.test(receipt.contractAddress ?? "") && !ZERO_HASH.test(receipt.contractAddress)
     && HASH.test(receipt.blockHash ?? "") && !ZERO_HASH.test(receipt.blockHash)
     && typeof receipt.txId === "string" && receipt.txId.length > 0
@@ -60,8 +64,7 @@ async function privateDirectory(directory) {
 async function publishedEvidenceLinkIsInterruptedWrite(path, stat) {
   const name = basename(path);
   if (![BASELINE, VERIFICATION].includes(name) || stat.nlink !== 2n) return false;
-  const companion = new RegExp(`^${name.replaceAll(".", "\\.")}\\.[1-9][0-9]*\\.`
-    + "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.tmp$", "u");
+  const companion = name === BASELINE ? INTERRUPTED_BASELINE : INTERRUPTED_VERIFICATION;
   for (const entry of await readdir(dirname(path))) {
     if (!companion.test(entry)) continue;
     const candidate = await lstat(join(dirname(path), entry));
@@ -117,21 +120,32 @@ async function writeEvidence(path, value) {
   }
 }
 
-function parsePreparedEnv(bytes) {
+/** @param {Buffer} bytes @param {{networkId: string} | undefined} [profile] */
+export function parsePreparedEnv(bytes, profile = undefined) {
   const lines = bytes.toString("utf8").trimEnd().split("\n");
   const entries = lines.map((line) => {
     const separator = line.indexOf("=");
     if (separator < 1) throw new Error("Prepared stack environment is malformed");
     return [line.slice(0, separator), line.slice(separator + 1)];
   });
-  if (entries.length !== 8 || new Set(entries.map(([name]) => name)).size !== 8) {
+  const expectedNames = ["TR_STACK_NAME", "COMPOSE_PROJECT_NAME", "TR_NODE_PORT",
+    "TR_INDEXER_PORT", "TR_PROOF_PORT", "TR_PROOF_PARAMS_DIR",
+    "TR_INDEXER_PASSWORD", "TR_INDEXER_SECRET"];
+  if (profile) expectedNames.push("TR_NETWORK_ID");
+  if (entries.length !== expectedNames.length
+    || new Set(entries.map(([name]) => name)).size !== expectedNames.length
+    || entries.some(([name]) => !expectedNames.includes(name))) {
     throw new Error("Prepared stack environment has unexpected entries");
   }
-  return Object.fromEntries(entries);
+  const env = Object.fromEntries(entries);
+  if (profile && env.TR_NETWORK_ID !== profile.networkId) {
+    throw new Error("Prepared stack network profile differs from the selected profile");
+  }
+  return env;
 }
 
 async function readContext(root, dependencies) {
-  const record = JSON.parse(await privateFile(join(root, "setup-record.json")));
+  const record = JSON.parse((await privateFile(join(root, "setup-record.json"))).toString("utf8"));
   if (!record.stack?.observation || record.stack.state !== "observed-ledger-bridge-only"
     || !SHA256.test(record.install?.inventorySha256 ?? "")
     || !SHA256.test(record.stack.envFileSha256 ?? "")
@@ -153,7 +167,11 @@ async function readContext(root, dependencies) {
     || !Array.isArray(verified.images) || verified.images.length !== SERVICES.length) {
     throw new Error("Running stack no longer matches the verified install bundle");
   }
-  const env = parsePreparedEnv(envBytes);
+  if (record.networkProfile !== undefined
+    && JSON.stringify(record.networkProfile) !== JSON.stringify(getLocalNetworkProfile())) {
+    throw new Error("Prepared stack network profile differs from standalone");
+  }
+  const env = parsePreparedEnv(envBytes, record.networkProfile);
   const config = standaloneStackConfig(env);
   if (config.project !== record.stack.project
     || JSON.stringify(config.ports) !== JSON.stringify(record.stack.ports)
@@ -345,7 +363,7 @@ export async function captureStandaloneRestartBaseline(directory, dependencies =
 export async function verifyStandaloneRestart(directory, dependencies = {}) {
   const root = await privateDirectory(directory);
   const baselineBytes = await privateFile(join(root, BASELINE), 1024 * 1024);
-  const baseline = JSON.parse(baselineBytes);
+  const baseline = JSON.parse(baselineBytes.toString("utf8"));
   const after = await observeStandaloneRestartSnapshot(root,
     { historicalHeight: baseline.finalizedHeight, allowUnpublishedHostPorts: true }, dependencies);
   const result = compareStandaloneRestartSnapshots(baseline, after);
@@ -362,16 +380,16 @@ export async function readStandaloneRestartEvidence(directory, expected) {
   try {
     baselineBytes = await privateFile(join(root, BASELINE), 1024 * 1024);
   } catch (error) {
-    if (error.code !== "ENOENT") throw error;
+    if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
   }
   try {
     verificationBytes = await privateFile(join(root, VERIFICATION), 1024 * 1024);
   } catch (error) {
-    if (error.code !== "ENOENT") throw error;
+    if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
   }
   if (!baselineBytes && !verificationBytes) return { status: "pending" };
   if (!baselineBytes) throw new Error("Restart verification exists without its baseline");
-  const baseline = JSON.parse(baselineBytes);
+  const baseline = JSON.parse(baselineBytes.toString("utf8"));
   if (baseline.format !== "tr-standalone-restart-snapshot-v1"
     || baseline.sourceRevision !== expected.sourceRevision
     || baseline.installInventorySha256 !== expected.installInventorySha256
@@ -379,7 +397,7 @@ export async function readStandaloneRestartEvidence(directory, expected) {
     throw new Error("Restart baseline is not bound to this setup");
   }
   if (!verificationBytes) return { status: "baseline-captured-verification-pending" };
-  const verification = JSON.parse(verificationBytes);
+  const verification = JSON.parse(verificationBytes.toString("utf8"));
   const comparison = compareStandaloneRestartSnapshots(baseline, verification.after);
   if (verification.baselineSha256 !== sha256(baselineBytes)
     || !Number.isFinite(Date.parse(verification.observedAt ?? ""))

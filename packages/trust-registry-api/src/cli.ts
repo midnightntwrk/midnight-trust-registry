@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 import { once } from "node:events";
 import { isAbsolute } from "node:path";
 
-import { createLocalNetworkDeploymentActionReader } from "@midnight-ntwrk/trust-registry-integration";
+import { createLocalNetworkDeploymentActionReader, getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
 
 import {
   createSnapshotFileSource,
@@ -368,6 +368,7 @@ const loadCurrentProposalRecoveryCandidate = async (options: TrustRegistryApiCli
     keyringDirectory: options.localLedgerKeyringDirectory!,
     reviewerFingerprint: options.localLedgerReviewerFingerprint!,
     requireApiRuntimePin: true,
+    requireApprovalChain: true,
   });
   const source = await createApprovedLocalLedgerRuntimeSource(plan);
   const snapshot = await source.loadSnapshot();
@@ -400,6 +401,7 @@ export const runTrustRegistryApiCli = async (
       keyringDirectory: options.localLedgerKeyringDirectory!,
       reviewerFingerprint: options.localLedgerReviewerFingerprint!,
       requireApiRuntimePin: true,
+      requireApprovalChain: true,
     });
     const source = await createApprovedLocalLedgerRuntimeSource(plan);
     await source.loadSnapshot();
@@ -413,12 +415,15 @@ export const runTrustRegistryApiCli = async (
       keyringDirectory: options.localLedgerKeyringDirectory!,
       reviewerFingerprint: options.localLedgerReviewerFingerprint!,
       requireApiRuntimePin: true,
+      requireApprovalChain: true,
     });
     const source = await createApprovedLocalLedgerRuntimeSource(plan);
     const result = await observeLocalApiCurrentReads({ source, apiOrigin: options.apiOrigin!,
       expectedPlanSha256: planSha256 });
     process.stdout.write(`${JSON.stringify({ ...result, planSourceRevision: plan.sourceRevision,
-      planSha256, planNotAfter: plan.notAfter }, null, 2)}\n`);
+      planSha256, planNotAfter: plan.notAfter,
+      planContractAddress: plan.contractAddress,
+      planExpectedGenesisHash: plan.expectedGenesisHash }, null, 2)}\n`);
     return;
   }
   if (options.command === "observe-local-proposal") {
@@ -428,6 +433,7 @@ export const runTrustRegistryApiCli = async (
       keyringDirectory: options.localLedgerKeyringDirectory!,
       reviewerFingerprint: options.localLedgerReviewerFingerprint!,
       requireApiRuntimePin: true,
+      requireApprovalChain: true,
     });
     const source = await createApprovedLocalLedgerRuntimeSource(plan);
     const snapshot = await source.loadSnapshot();
@@ -442,7 +448,7 @@ export const runTrustRegistryApiCli = async (
     };
     process.stdout.write(`${JSON.stringify({
       format: "tr-local-proposal-observation-v1",
-      networkId: "undeployed",
+      networkId: getLocalNetworkProfile().networkId,
       registryId: snapshot.registry.registryId,
       contractAddress: plan.contractAddress,
       role: options.proposalRole,
@@ -461,6 +467,7 @@ export const runTrustRegistryApiCli = async (
       keyringDirectory: options.localLedgerKeyringDirectory!,
       reviewerFingerprint: options.localLedgerReviewerFingerprint!,
       requireApiRuntimePin: true,
+      requireApprovalChain: true,
     });
     const source = await createApprovedLocalLedgerRuntimeSource(plan);
     const snapshot = await source.loadSnapshot();
@@ -480,7 +487,7 @@ export const runTrustRegistryApiCli = async (
     });
     process.stdout.write(`${JSON.stringify({
       format: "tr-local-proposal-reconciliation-v1",
-      networkId: "undeployed",
+      networkId: getLocalNetworkProfile().networkId,
       registryId: snapshot.registry.registryId,
       contractAddress: plan.contractAddress,
       role: attempt.role,
@@ -533,6 +540,7 @@ export const runTrustRegistryApiCli = async (
       keyringDirectory: options.localLedgerKeyringDirectory!,
       reviewerFingerprint: options.localLedgerReviewerFingerprint!,
       requireApiRuntimePin: true,
+      requireApprovalChain: true,
     });
     const source = await createApprovedLocalLedgerRuntimeSource(plan);
     const snapshot = await source.loadSnapshot();
@@ -560,6 +568,7 @@ export const runTrustRegistryApiCli = async (
         keyringDirectory: options.localLedgerKeyringDirectory!,
         reviewerFingerprint: options.localLedgerReviewerFingerprint!,
         requireApiRuntimePin: options.clusterBind === true,
+        requireApprovalChain: true,
       });
       const { plan } = approved;
       localPlanSha256 = approved.planSha256;

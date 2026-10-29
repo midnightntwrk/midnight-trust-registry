@@ -19,8 +19,11 @@ async function docker(args, allowFailure = false) {
     const { stdout, stderr } = await run("docker", args, { timeout: 30_000, maxBuffer: 1024 * 1024 });
     return { code: 0, stdout, stderr };
   } catch (error) {
-    if (allowFailure && Number.isInteger(error.code)) {
-      return { code: error.code, stdout: error.stdout ?? "", stderr: error.stderr ?? "" };
+    if (allowFailure && error && typeof error === "object" && "code" in error
+      && typeof error.code === "number" && Number.isInteger(error.code)) {
+      return { code: error.code,
+        stdout: "stdout" in error && typeof error.stdout === "string" ? error.stdout : "",
+        stderr: "stderr" in error && typeof error.stderr === "string" ? error.stderr : "" };
     }
     throw error;
   }
@@ -71,7 +74,7 @@ export function ledgerSubnet(network, expectedId) {
   const match = typeof subnet === "string" ? /^(\d+(?:\.\d+){3})\/(\d{1,2})$/u.exec(subnet) : null;
   const address = match ? ipv4Address(match[1]) : null;
   const prefix = match ? Number(match[2]) : null;
-  if (address === null || !Number.isInteger(prefix) || prefix < 1 || prefix > 32) {
+  if (address === null || prefix === null || !Number.isInteger(prefix) || prefix < 1 || prefix > 32) {
     throw new Error("Ledger bridge has no valid IPv4 subnet");
   }
   const mask = (0xffffffff << (32 - prefix)) >>> 0;
@@ -86,7 +89,8 @@ export function assertOnlyLedgerRoutes(routeTable, subnet) {
     const columns = line.trim().split(/\s+/u);
     const prefix = routePrefixLength(columns[7]);
     const destination = routeAddress(columns[1]);
-    if (prefix < subnet.prefix || ((destination & subnet.mask) >>> 0) !== subnet.address) {
+    if (prefix === null || prefix < subnet.prefix
+      || ((destination & subnet.mask) >>> 0) !== subnet.address) {
       throw new Error("Ledger bridge route escapes the observed subnet");
     }
   }
@@ -250,7 +254,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       ? await verifiedOfflineEgressTopology(process.argv[2]) : undefined;
     console.log(JSON.stringify(await observeStandaloneEgress({ expectedTopology })));
   } catch (error) {
-    console.error(`Standalone egress probe inconclusive: ${error.message}`);
+    console.error(`Standalone egress probe inconclusive: ${error instanceof Error ? error.message : String(error)}`);
     process.exitCode = 1;
   }
 }

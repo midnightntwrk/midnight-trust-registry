@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noImplicitAny": false,
+    "exactOptionalPropertyTypes": false,
+    "noUncheckedIndexedAccess": false
+  },
+  "files": [
+    "scripts/approved-provider-identity.mjs",
+    "scripts/build-standalone-install.mjs",
+    "scripts/check-helm-image-mapping.mjs",
+    "scripts/check-standalone-restart.mjs",
+    "scripts/local-ledger-deploy.mjs",
+    "scripts/local-ledger-insert-verifier-key.mjs",
+    "scripts/stage-provider-runtime.mjs",
+    "scripts/provider-runtime-content.mjs",
+    "scripts/verify-installed-provider-runtime.mjs",
+    "scripts/standalone-setup-wizard.mjs",
+    "scripts/static-runtime-archive.mjs",
+    "scripts/verify-helm-mapping-signature.mjs"
+  ]
+}

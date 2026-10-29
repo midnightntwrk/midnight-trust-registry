@@ -9,6 +9,7 @@ import type { Ledger } from "@midnight-ntwrk/trust-registry-contract/managed/tru
 import type {
   FinalizedRegistryBootstrapReader,
 } from "@midnight-ntwrk/trust-registry-integration";
+import { getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
 
 import { assertLocalLedgerEvidenceMatchesSnapshot } from "./local-ledger-projection.js";
 import type { FinalizedProposalLedgerReader } from "./compact-proposal-observation.js";
@@ -131,7 +132,7 @@ export function createLocalLedgerBoundSource(input: {
     try {
       const view = await input.reader.readCurrentFinalizedLedger(address);
       if (view === null) throw new FinalizedReadNotReadyError();
-      if (view.networkId !== "undeployed" || view.contractAddress.toLowerCase() !== address
+      if (view.networkId !== getLocalNetworkProfile().networkId || view.contractAddress.toLowerCase() !== address
         || !FINALIZED_HASH.test(view.finalizedBlockHash.toLowerCase())
         || /^0x0{64}$/u.test(view.finalizedBlockHash.toLowerCase())) {
         throw new Error("Finalized local Trust Registry view does not match the pinned deployment");
@@ -149,7 +150,7 @@ export function createLocalLedgerBoundSource(input: {
       assertLocalLedgerEvidenceMatchesSnapshot({
         snapshot,
         ledger: view.ledger,
-        expectedNetworkId: "undeployed",
+        expectedNetworkId: getLocalNetworkProfile().networkId,
         contractAddress: addressBytes,
         sequenceToTimestamp: input.sequenceToTimestamp,
       });

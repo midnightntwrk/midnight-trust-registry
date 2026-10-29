@@ -2,7 +2,7 @@
 
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { constants } from "node:fs";
+import { constants, existsSync } from "node:fs";
 import { link, open, lstat, mkdir, mkdtemp, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
@@ -16,6 +16,7 @@ import {
   getLocalNetworkProfile, validateMaintenancePolicy,
   VerifierKeyInsertionOutcomeUnknownError,
 } from "@midnight-ntwrk/trust-registry-integration";
+import { assertStrictDetachedSignatureStatus } from "@midnight-ntwrk/trust-registry-integration/reviewer-signature-status";
 import { ContractMaintenanceAuthority } from "@midnight-ntwrk/midnight-js-protocol/ledger";
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 
@@ -34,6 +35,7 @@ import {
 import {
   runLocalVerifierKeyInsertion, validateLocalVerifierKeyInsertionPlan,
 } from "./local-ledger-insert-verifier-key.mjs";
+import { exactFields } from "./standalone-exact-fields-policy.mjs";
 
 const FORMAT = "tr-standalone-setup-v1";
 const STANDALONE_PROFILE = getLocalNetworkProfile();
@@ -42,7 +44,10 @@ const FINGERPRINT = /^[A-F0-9]{40}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
 const DECIMAL = /^(0|[1-9][0-9]*)$/u;
+/** @param {string | Buffer} bytes */
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+/** @param {Buffer} bytes */
+const parseJsonBytes = (bytes) => JSON.parse(bytes.toString("utf8"));
 const execFileAsync = promisify(execFile);
 const composePath = resolve(dirname(fileURLToPath(import.meta.url)), "../deploy/standalone/compose.yml");
 const offlineComposePath = resolve(dirname(fileURLToPath(import.meta.url)), "../deploy/standalone/compose.offline.yml");
@@ -63,7 +68,7 @@ function requireVerifiedInventoryBytes(verified, bytes, expectedSha256, message)
 }
 
 async function verifiedPackageManifestBytes(bundle, inventory, verified) {
-  const pin = JSON.parse(inventory);
+  const pin = parseJsonBytes(inventory);
   const manifestBytes = await regularBytes(join(bundle, pin.packageManifest));
   if (!SHA256.test(pin.packageManifestSha256 ?? "")
     || !SHA256.test(verified?.packageManifestSha256 ?? "")
@@ -186,7 +191,7 @@ export async function initializeStandaloneSetup(directory, bundleDirectory, depe
   const bundle = await realpath(resolve(bundleDirectory));
   const verified = await (dependencies.verifyBundle ?? verifyStandaloneInstallBundle)(bundle);
   const inventory = await regularBytes(join(bundle, "install-inventory.json"));
-  const inventoryDocument = JSON.parse(inventory);
+  const inventoryDocument = parseJsonBytes(inventory);
   requireVerifiedInventoryBytes(verified, inventory, undefined,
     "Verified install inventory changed during setup");
   await verifiedPackageManifestBytes(bundle, inventory, verified);
@@ -221,7 +226,7 @@ export async function checkStandaloneHelmBootstrapHandoff(directory, paths, depe
       throw new Error("Helm bootstrap requires a fresh setup; Compose ledger evidence cannot qualify a Helm target");
     }
     const inventoryBytes = await regularBytes(join(record.install.bundle, "install-inventory.json"));
-    const inventory = JSON.parse(inventoryBytes);
+    const inventory = parseJsonBytes(inventoryBytes);
     if (sha256(inventoryBytes) !== record.install.inventorySha256
       || inventory.sourceRevision !== record.sourceRevision) {
       throw new Error("Helm bootstrap install inventory changed since wizard initialization");
@@ -306,8 +311,8 @@ export async function prepareStandaloneStack(directory, requested, dependencies 
     }
     if (!SHA256.test(verified.runtimeComposeSha256 ?? "")
       || !SHA256.test(verified.runtimeOfflineComposeSha256 ?? "")
-      || JSON.parse(inventoryBytes).runtimeCompose?.sha256 !== verified.runtimeComposeSha256
-      || JSON.parse(inventoryBytes).runtimeCompose?.offlineSha256 !== verified.runtimeOfflineComposeSha256) {
+      || parseJsonBytes(inventoryBytes).runtimeCompose?.sha256 !== verified.runtimeComposeSha256
+      || parseJsonBytes(inventoryBytes).runtimeCompose?.offlineSha256 !== verified.runtimeOfflineComposeSha256) {
       throw new Error("New standalone setup requires a verified v3/v4/v5 runtime Compose pin");
     }
     const composeBytes = await regularBytes(composePath);
@@ -315,7 +320,7 @@ export async function prepareStandaloneStack(directory, requested, dependencies 
       || sha256(await regularBytes(offlineComposePath)) !== verified.runtimeOfflineComposeSha256) {
       throw new Error("Current runtime Compose differs from the verified install bundle");
     }
-    const installedImages = JSON.parse(inventoryBytes).images;
+    const installedImages = parseJsonBytes(inventoryBytes).images;
     const pinnedImages = pinnedStandaloneImages(composeBytes.toString("utf8"));
     if (!Array.isArray(installedImages) || installedImages.length !== pinnedImages.length
       || pinnedImages.some(({ role, reference }) => !installedImages.some((image) =>
@@ -525,7 +530,7 @@ export async function draftStandaloneGenesisPin(directory, dependencies = {}) {
       throw new Error("Draft a genesis pin only from an observed, pre-approval standalone stack");
     }
     const candidateBytes = await regularBytes(join(root, "genesis-candidate.untrusted.json"));
-    const candidate = JSON.parse(candidateBytes);
+    const candidate = parseJsonBytes(candidateBytes);
     if (!Buffer.from(`${JSON.stringify(candidate, null, 2)}\n`).equals(candidateBytes)
       || candidate?.format !== "tr-local-genesis-candidate-v1"
       || Object.keys(candidate).sort().join("\0") !== [
@@ -631,7 +636,7 @@ export async function observeStandaloneLedger(directory, pinPath, dependencies =
     requireVerifiedInventoryBytes(record.install.verified, inventory, record.install.inventorySha256,
       "Installed inventory changed since setup verification");
     const pinBytes = await regularBytes(resolve(pinPath));
-    const pin = JSON.parse(pinBytes);
+    const pin = parseJsonBytes(pinBytes);
     if (pin.sourceRevision !== record.sourceRevision) {
       throw new Error("Genesis pin source revision disagrees with the installed bundle");
     }
@@ -707,28 +712,11 @@ export async function observeStandaloneLedger(directory, pinPath, dependencies =
 export function assertDetachedReviewerSignatureStatus(
   output, expectedFingerprint, approvedAt, now = Date.now(),
 ) {
-  const statuses = output.split("\n").filter((line) => line.startsWith("[GNUPG:] "));
-  const valid = statuses.filter((line) => line.startsWith("[GNUPG:] VALIDSIG "));
-  const good = statuses.filter((line) => line.startsWith("[GNUPG:] GOODSIG "));
-  const fields = valid[0]?.split(/\s+/u);
-  const signerFingerprint = fields?.[2];
-  const signedAt = Number(fields?.[4]);
-  const expiresAt = Number(fields?.[5]);
-  const minimumSignedAt = typeof approvedAt === "string"
-    ? Math.floor(Date.parse(approvedAt) / 1000) : NaN;
-  const nowSeconds = Math.floor(now / 1000);
-  if (!FINGERPRINT.test(expectedFingerprint)
-    || valid.length !== 1 || good.length !== 1 || fields?.length !== 12
-    || !FINGERPRINT.test(signerFingerprint ?? "")
-    || ![signerFingerprint.slice(-16), signerFingerprint].includes(good[0]?.split(/\s+/u)[2])
-    || fields[11] !== expectedFingerprint
-    || !Number.isSafeInteger(signedAt) || signedAt <= 0
-    || !Number.isSafeInteger(expiresAt) || expiresAt < 0
-    || !Number.isSafeInteger(minimumSignedAt)
-    || signedAt < minimumSignedAt || signedAt > nowSeconds + 5 * 60
-    || (expiresAt !== 0 && expiresAt <= nowSeconds)
-    || !["8", "9", "10"].includes(fields[9]) || fields[10] !== "00"
-    || statuses.some((line) => /^\[GNUPG:\] (?:EXPSIG|EXPKEYSIG|REVKEYSIG|BADSIG|ERRSIG|KEYREVOKED|SIGEXPIRED|PLAINTEXT|PLAINTEXT_LENGTH)\b/u.test(line))) {
+  try {
+    if (typeof approvedAt !== "string") throw new Error("Approval timestamp is required");
+    assertStrictDetachedSignatureStatus({ output, exitStatus: 0,
+      expectedPrimaryFingerprint: expectedFingerprint, approvedAt, now });
+  } catch {
     throw new Error("Detached approval signature does not match the pinned reviewer key");
   }
 }
@@ -747,7 +735,7 @@ export async function verifyDetachedReviewerSignature(
     keybox = await open(keyboxPath,
       constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   } catch (error) {
-    if (error.code === "ENOENT") {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
       throw new Error("Reviewer keyring needs pubring.kbx; export and import the public key into a pre-created private directory");
     }
     throw error;
@@ -770,20 +758,23 @@ export async function verifyDetachedReviewerSignature(
   const shortTempRoot = tmpdir().length > 55 ? "/tmp" : tmpdir();
   const temporary = await mkdtemp(join(shortTempRoot, "tr-reviewer-keyring-"));
   try {
+    const gpg = ["/usr/bin/gpg", "/opt/homebrew/bin/gpg", "/usr/local/bin/gpg"].find(existsSync);
+    if (!gpg) throw new Error("A trusted GPG executable is required for reviewer approval");
+    const verificationEnv = { PATH: "/usr/bin:/bin", HOME: temporary, LC_ALL: "C" };
     const keyring = join(temporary, "pubring.kbx");
     if (armoredExport) {
       const exportPath = join(temporary, "reviewer-public.asc");
       await writeFile(exportPath, publicKeys, { flag: "wx", mode: 0o600 });
-      await execFileAsync("gpg", ["--batch", "--no-options", "--homedir", temporary,
-        "--import", exportPath], { timeout: 30_000, maxBuffer: 1024 * 1024 });
+      await execFileAsync(gpg, ["--batch", "--no-options", "--homedir", temporary,
+        "--import", exportPath], { timeout: 30_000, maxBuffer: 1024 * 1024, env: verificationEnv });
     } else {
       await writeFile(keyring, publicKeys, { flag: "wx", mode: 0o600 });
     }
-    const { stdout } = await execFileAsync("gpg", [
+    const { stdout } = await execFileAsync(gpg, [
       "--batch", "--no-options", "--no-auto-key-retrieve", "--trust-model", "always",
       "--no-default-keyring", "--homedir", temporary, "--keyring", keyring,
       "--status-fd=1", "--verify", signaturePath, documentPath,
-    ], { timeout: 30_000, maxBuffer: 1024 * 1024 });
+    ], { timeout: 30_000, maxBuffer: 1024 * 1024, env: verificationEnv });
     assertDetachedReviewerSignatureStatus(stdout, expectedFingerprint, approvedAt);
   } finally {
     await rm(temporary, { recursive: true, force: true });
@@ -889,7 +880,7 @@ export async function draftStandaloneCommitteeApproval(directory, proposal) {
       throw new Error("Committee review requires an absolute deployment plan path");
     }
     const planBytes = await regularBytes(resolve(proposal.deploymentPlanPath));
-    const plan = validateLocalDeploymentPlan(JSON.parse(planBytes));
+    const plan = validateLocalDeploymentPlan(parseJsonBytes(planBytes));
     if (plan.sourceRevision !== record.sourceRevision
       || plan.network.expectedGenesisHash !== record.ledgerObservation.expectedGenesisHash
       || plan.network.rpcUrl !== record.ledgerObservation.rpcUrl
@@ -1106,7 +1097,7 @@ export async function approveStandaloneCommitteeDeployment(
     if (sha256(manifestBytes) !== sha256(stagedManifestBytes)) {
       throw new Error("Staged deployment manifest disagrees with approved install bytes");
     }
-    const manifest = JSON.parse(manifestBytes);
+    const manifest = parseJsonBytes(manifestBytes);
     if (manifest.format !== "tr-release-candidate-manifest-v2"
       || manifest.sourceRevision !== record.sourceRevision) {
       throw new Error("Staged deployment manifest has an invalid source or format");
@@ -1230,7 +1221,7 @@ export async function attemptStandaloneDeployment(directory, planPath, dependenc
     }
     const committee = readStoredCommitteeApproval(record);
     const planBytes = await regularBytes(resolve(planPath));
-    const plan = validateLocalDeploymentPlan(JSON.parse(planBytes));
+    const plan = validateLocalDeploymentPlan(parseJsonBytes(planBytes));
     if (sha256(planBytes) !== committee.deploymentPlanSha256
       || plan.providerModuleSha256 !== committee.providerModuleSha256
       || plan.sourceRevision !== record.sourceRevision
@@ -1293,7 +1284,7 @@ export async function reconcileStandaloneDeployment(directory, planPath, depende
       throw new Error("Staged bootstrap already advanced; reconcile verifier keys instead of downgrading deployment state");
     }
     const planBytes = await regularBytes(resolve(planPath));
-    const plan = validateLocalDeploymentPlan(JSON.parse(planBytes));
+    const plan = validateLocalDeploymentPlan(parseJsonBytes(planBytes));
     if (plan.format !== "tr-local-staged-deployment-plan-v1"
       || sha256(planBytes) !== record.deployment.planSha256
       || plan.journalPath !== record.deployment.journalPath
@@ -1380,7 +1371,7 @@ async function approvedInsertionPlan(root, record, planPath, dependencies) {
     throw new Error("A finalized staged bootstrap and approved genesis are required before key insertion");
   }
   const planBytes = await regularBytes(resolve(planPath));
-  const plan = validateLocalVerifierKeyInsertionPlan(JSON.parse(planBytes));
+  const plan = validateLocalVerifierKeyInsertionPlan(parseJsonBytes(planBytes));
   const staged = record.deployment.stagedPlan;
   if (plan.sourceRevision !== record.sourceRevision
     || plan.network.expectedGenesisHash !== record.ledgerObservation.expectedGenesisHash
@@ -1479,10 +1470,6 @@ export async function reconcileStandaloneVerifierKeyInsertion(directory, planPat
   });
 }
 
-const exactFields = (value, fields) => value !== null && typeof value === "object"
-  && !Array.isArray(value)
-  && Object.keys(value).sort().join("\0") === [...fields].sort().join("\0");
-
 function readStoredCommitteeApproval(record, legacyReadOnly = false) {
   const approvalBytes = Buffer.from(record.committeeApproval.documentBase64 ?? "", "base64");
   // Historical attempts may be reconciled forensically, but never prepared or submitted again.
@@ -1556,7 +1543,7 @@ async function readApprovedCommitteeTransition(record, requestPath, dependencies
     if (sha256(manifestBytes) !== sha256(deployedManifestBytes)) {
       throw new Error("Staged deployment manifest disagrees with approved install bytes");
     }
-    const manifest = JSON.parse(manifestBytes);
+    const manifest = parseJsonBytes(manifestBytes);
     if (manifest.format !== "tr-release-candidate-manifest-v2"
       || manifest.sourceRevision !== record.sourceRevision) {
       throw new Error("Staged deployment manifest has an invalid source or format");
@@ -1592,7 +1579,7 @@ async function readApprovedCommitteeTransition(record, requestPath, dependencies
       throw new Error("Every staged verifier key must have verified finalized readback");
     }
     const requestBytes = await regularBytes(resolve(requestPath));
-    const request = JSON.parse(requestBytes);
+    const request = parseJsonBytes(requestBytes);
     if (!exactFields(request, ["bootstrap", "bootstrapMaintenanceVerifyingKey", "expiresAt",
       "format", "governance", "sourceRevision"])
       || request.format !== "tr-local-committee-transition-request-v1"
@@ -1736,7 +1723,7 @@ export async function submitStandaloneCommitteeTransition(
       throw new Error("Human-recovered maintenance requires a fresh request and signing window");
     }
     const signingRequestBytes = await regularBytes(resolve(signingRequestPath));
-    const savedSigningRequest = JSON.parse(signingRequestBytes);
+    const savedSigningRequest = parseJsonBytes(signingRequestBytes);
     if (!signingRequestMatches(savedSigningRequest, signingRequest)) {
       throw new Error("Saved signing request disagrees with fresh finalized maintenance evidence");
     }
@@ -1746,7 +1733,7 @@ export async function submitStandaloneCommitteeTransition(
       throw new Error("Recovered maintenance attempt cannot reuse the abandoned finalized checkpoint");
     }
     const signatureBytes = await regularBytes(resolve(signaturePath));
-    const signed = JSON.parse(signatureBytes);
+    const signed = parseJsonBytes(signatureBytes);
     if (!exactFields(signed, ["format", "signature", "updateSha256"])
       || signed.format !== "tr-local-committee-signature-v1"
       || signed.updateSha256 !== signingRequest.updateSha256
@@ -1805,12 +1792,13 @@ export async function submitStandaloneCommitteeTransition(
     } catch (error) {
       let journalReserved = true;
       try { journalReserved = await journal.inspect() !== null; } catch { /* An unreadable journal is unknown. */ }
+      const reportedTxId = error && typeof error === "object" && "txId" in error
+        && typeof error.txId === "string" ? error.txId : undefined;
       record.maintenanceAttempt = { ...record.maintenanceAttempt,
         state: journalReserved ? "unknown" : "aborted-before-journal",
         journalReserved,
-        ...(journalReserved && typeof error?.txId === "string"
-          && error.txId.length > 0 && error.txId.length <= 512
-          ? { reportedTxId: error.txId } : {}) };
+        ...(journalReserved && reportedTxId && reportedTxId.length <= 512
+          ? { reportedTxId } : {}) };
       await writeRecord(root, record);
       if (!journalReserved) {
         throw new Error("Maintenance preflight stopped before journal reservation; inspect setup and prepare again");
@@ -1842,7 +1830,7 @@ export async function reconcileStandaloneCommitteeTransition(
       record, requestPath, dependencies, legacyReadOnly,
     );
     const signingRequestBytes = await regularBytes(resolve(signingRequestPath));
-    const signingRequest = JSON.parse(signingRequestBytes);
+    const signingRequest = parseJsonBytes(signingRequestBytes);
     if (sha256(requestBytes) !== attempt.requestSha256
       || sha256(signingRequestBytes) !== attempt.signingRequestSha256
       || signingRequest.updateSha256 !== attempt.updateSha256
@@ -1947,7 +1935,7 @@ export async function approveStandaloneCommitteeRecovery(
       record, requestPath, dependencies,
     );
     const signingRequestBytes = await regularBytes(resolve(signingRequestPath));
-    const signingRequest = JSON.parse(signingRequestBytes);
+    const signingRequest = parseJsonBytes(signingRequestBytes);
     if (sha256(requestBytes) !== attempt.requestSha256
       || sha256(signingRequestBytes) !== attempt.signingRequestSha256
       || attempt.committeeDeploymentApprovalSha256
@@ -2034,6 +2022,113 @@ export async function approveStandaloneCommitteeRecovery(
   });
 }
 
+export function buildStandaloneApiApprovalChain(record, releaseManifestSha256) {
+  const approval = (entry, label) => {
+    if (!entry || !FINGERPRINT.test(entry.reviewerFingerprint ?? "")) {
+      throw new Error(`${label} reviewer approval is missing`);
+    }
+    const decode = (encoded, expected, kind) => {
+      if (typeof encoded !== "string" || encoded.length === 0 || encoded.length > 90_000) {
+        throw new Error(`${label} ${kind} is missing or oversized`);
+      }
+      const bytes = Buffer.from(encoded, "base64");
+      if (bytes.toString("base64") !== encoded || sha256(bytes) !== expected) {
+        throw new Error(`${label} ${kind} differs from the recorded digest`);
+      }
+      return bytes;
+    };
+    const document = decode(entry.documentBase64, entry.documentSha256, "document");
+    decode(entry.signatureBase64, entry.signatureSha256, "signature");
+    const parsed = parseCanonicalSignedJson(document, label);
+    if (parsed.reviewerFingerprint !== entry.reviewerFingerprint) {
+      throw new Error(`${label} reviewer fingerprint differs from signed bytes`);
+    }
+    return {
+      documentBase64: entry.documentBase64,
+      documentSha256: entry.documentSha256,
+      signatureBase64: entry.signatureBase64,
+      signatureSha256: entry.signatureSha256,
+      reviewerFingerprint: entry.reviewerFingerprint,
+      parsed,
+    };
+  };
+  const genesis = approval(record.genesisApproval, "Genesis");
+  const committee = approval(record.committeeApproval, "Committee");
+  const deployment = approval(record.committeeDeploymentApproval, "Deployment");
+  const receipt = record.deployment?.result?.receipt;
+  const attempt = record.maintenanceAttempt;
+  const observed = attempt?.reconciliation;
+  if (record.deployment?.state !== "observed" || !validLocalDeploymentReceipt(receipt)
+    || attempt?.state !== "observed" || attempt.alert || observed?.status !== "observed"
+    || typeof attempt.txId !== "string" || !attempt.txId
+    || observed.txId !== attempt.txId || !HASH.test(observed.finalizedBlockHash ?? "")
+    || /^0x0{64}$/u.test(observed.finalizedBlockHash)
+    || !SHA256.test(attempt.updateSha256 ?? "")
+    || attempt.committeeDeploymentApprovalSha256 !== deployment.documentSha256
+    || !SHA256.test(releaseManifestSha256 ?? "")) {
+    throw new Error("Finalized deployment and unambiguous maintenance readback are required");
+  }
+  if (genesis.parsed.format !== "tr-local-genesis-approval-v1"
+    || committee.parsed.format !== "tr-local-committee-approval-v2"
+    || deployment.parsed.format !== "tr-local-committee-deployment-approval-v1"
+    || genesis.parsed.sourceRevision !== record.sourceRevision
+    || committee.parsed.sourceRevision !== record.sourceRevision
+    || deployment.parsed.sourceRevision !== record.sourceRevision
+    || genesis.parsed.installInventorySha256 !== record.install?.inventorySha256
+    || committee.parsed.installInventorySha256 !== record.install?.inventorySha256
+    || committee.parsed.genesisApprovalSha256 !== genesis.documentSha256
+    || committee.parsed.networkId !== genesis.parsed.networkId
+    || committee.parsed.expectedGenesisHash !== genesis.parsed.expectedGenesisHash
+    || committee.parsed.reviewerFingerprint !== deployment.reviewerFingerprint
+    || deployment.parsed.committeeApprovalSha256 !== committee.documentSha256
+    || deployment.parsed.deploymentPlanSha256 !== committee.parsed.deploymentPlanSha256
+    || deployment.parsed.expectedGenesisHash !== genesis.parsed.expectedGenesisHash
+    || deployment.parsed.releaseManifestSha256 !== releaseManifestSha256
+    || receipt.networkId !== genesis.parsed.networkId
+    || !["networkId", "contractAddress", "blockHash", "blockHeight", "txId"]
+      .every((key) => deployment.parsed.deploymentReceipt?.[key] === receipt[key])) {
+    throw new Error("Signed approval chain disagrees with the observed install or deployment");
+  }
+  const publicApproval = ({ parsed, ...evidence }) => evidence;
+  return {
+    format: "tr-local-api-approval-chain-v1",
+    sourceRevision: record.sourceRevision,
+    installInventorySha256: record.install.inventorySha256,
+    releaseManifestSha256,
+    networkId: genesis.parsed.networkId,
+    expectedGenesisHash: genesis.parsed.expectedGenesisHash,
+    contractAddress: receipt.contractAddress,
+    genesisApproval: publicApproval(genesis),
+    committeeApproval: publicApproval(committee),
+    committeeDeploymentApproval: publicApproval(deployment),
+    maintenanceReadback: {
+      committeeDeploymentApprovalSha256: deployment.documentSha256,
+      updateSha256: attempt.updateSha256,
+      txId: attempt.txId,
+      finalizedBlockHash: observed.finalizedBlockHash,
+      status: "observed",
+    },
+  };
+}
+
+export async function exportStandaloneApiApprovalChain(directory) {
+  return withLock(directory, async (root) => {
+    const { record } = await readRecord(root);
+    const inventory = await regularBytes(join(record.install.bundle, "install-inventory.json"));
+    if (sha256(inventory) !== record.install.inventorySha256) {
+      throw new Error("Installed inventory changed since reviewer approval");
+    }
+    const verified = await verifyStandaloneInstallBundle(record.install.bundle);
+    requireVerifiedInventoryBytes(verified, inventory, record.install.inventorySha256,
+      "Installed inventory changed since reviewer approval");
+    const manifest = await verifiedPackageManifestBytes(record.install.bundle, inventory, verified);
+    const chain = buildStandaloneApiApprovalChain(record, sha256(manifest));
+    const output = join(root, "api-approval-chain.json");
+    await writePrivateSnapshot(output, Buffer.from(`${JSON.stringify(chain, null, 2)}\n`));
+    return { path: output, sha256: sha256(await regularBytes(output, { privateFile: true })) };
+  });
+}
+
 export async function standaloneSetupStatus(directory) {
   const { root, record } = await readRecord(directory);
   let restartObservation;
@@ -2051,11 +2146,17 @@ export async function standaloneSetupStatus(directory) {
     await lstat(join(root, ".setup.lock"));
     lockPresent = true;
   } catch (error) {
-    if (error.code !== "ENOENT") throw error;
+    if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
   }
   return {
     format: FORMAT,
     sourceRevision: record.sourceRevision,
+    installInventorySha256: record.install.inventorySha256,
+    stackProject: record.stack?.project ?? null,
+    stackNetworkId: record.stack?.observation?.topology?.networkId ?? null,
+    approvedGenesisHash: record.ledgerObservation?.expectedGenesisHash ?? null,
+    deployedContractAddress: record.deployment?.state === "observed"
+      ? record.deployment.result?.receipt?.contractAddress ?? null : null,
     install: "verified-staged-bytes-only",
     stackConfiguration: record.stack?.observation ? "observed-ledger-bridge-only"
       : record.stack ? "prepared-runtime-unobserved" : "pending",
@@ -2087,7 +2188,7 @@ export async function runStandaloneSetupInteractive(
     try {
       ({ record } = await readRecord(directory));
     } catch (error) {
-      if (error.code !== "ENOENT") throw error;
+      if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
       const bundle = await io.question("Verified install bundle directory: ");
       record = await initializeStandaloneSetup(directory, bundle);
     }
@@ -2173,7 +2274,7 @@ export async function runStandaloneSetupInteractive(
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [command, directory, input, signature, keyring, fingerprint, extra, more] = process.argv.slice(2);
-  if (!directory || !["run", "init", "prepare-stack", "observe-stack", "collect-genesis-candidate", "draft-genesis-pin", "observe", "draft-genesis", "approve-genesis", "draft-committee", "approve-committee", "approve-committee-deployment", "deploy", "reconcile-deploy", "insert-key", "reconcile-key", "prepare-committee", "submit-committee", "reconcile-committee", "approve-committee-recovery", "check-helm-bootstrap", "status"].includes(command)) {
+  if (!directory || !["run", "init", "prepare-stack", "observe-stack", "collect-genesis-candidate", "draft-genesis-pin", "observe", "draft-genesis", "approve-genesis", "draft-committee", "approve-committee", "approve-committee-deployment", "deploy", "reconcile-deploy", "insert-key", "reconcile-key", "prepare-committee", "submit-committee", "reconcile-committee", "approve-committee-recovery", "check-helm-bootstrap", "export-api-approval-chain", "status"].includes(command)) {
     throw new Error("Usage: node scripts/standalone-setup-wizard.mjs <run|init|prepare-stack|observe-stack|collect-genesis-candidate|draft-genesis-pin|observe|draft-genesis|approve-genesis|draft-committee|approve-committee|approve-committee-deployment|deploy|reconcile-deploy|insert-key|reconcile-key|prepare-committee|submit-committee|reconcile-committee|approve-committee-recovery|check-helm-bootstrap|status> <private-setup-dir> [inputs]");
   }
   if (command === "run") await runStandaloneSetupInteractive(directory);
@@ -2192,14 +2293,14 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   }
   else if (command === "observe" && input) console.log(JSON.stringify(await observeStandaloneLedger(directory, input)));
   else if (command === "draft-genesis" && input) {
-    const proposal = JSON.parse(await regularBytes(resolve(input)));
+    const proposal = parseJsonBytes(await regularBytes(resolve(input)));
     console.log(JSON.stringify(await draftStandaloneGenesisApproval(directory, proposal)));
   }
   else if (command === "approve-genesis" && input && signature && keyring && fingerprint) {
     console.log(JSON.stringify(await approveStandaloneGenesis(directory, input, signature, keyring, fingerprint)));
   }
   else if (command === "draft-committee" && input) {
-    const proposal = JSON.parse(await regularBytes(resolve(input)));
+    const proposal = parseJsonBytes(await regularBytes(resolve(input)));
     console.log(JSON.stringify(await draftStandaloneCommitteeApproval(directory, proposal)));
   }
   else if (command === "approve-committee" && input && signature && keyring && fingerprint) {
@@ -2251,5 +2352,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     })));
   }
   else if (command === "status") console.log(JSON.stringify(await standaloneSetupStatus(directory), null, 2));
+  else if (command === "export-api-approval-chain") {
+    console.log(JSON.stringify(await exportStandaloneApiApprovalChain(directory)));
+  }
   else throw new Error(`Missing input path for ${command}`);
 }

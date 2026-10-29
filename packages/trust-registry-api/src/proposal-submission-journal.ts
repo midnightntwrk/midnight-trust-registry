@@ -6,6 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { withExclusiveWorkspaceWrite, WorkspaceMutationLockedError } from "@midnight-ntwrk/trust-registry-cli";
 import { canonicalizeJson, sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
+import { getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
 import { z } from "zod";
 
 import { GovernedMembershipActionReceiptSchema, type GovernedMembershipActionReceipt } from "./governed-membership-actions.js";
@@ -56,7 +57,7 @@ const ManifestSchema = z.strictObject({
 const DeploymentBindingSchema = z.strictObject({
   format: z.literal("tr-proposal-journal-binding-v1"),
   registryId: z.string().trim().min(1).max(256),
-  networkId: z.literal("undeployed"),
+  networkId: z.literal(getLocalNetworkProfile().networkId),
   expectedGenesisHash: Bytes32Schema,
   contractAddress: Bytes32Schema,
 });
@@ -181,7 +182,7 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
   async bindDeployment(registryId: string, contractAddress: string, expectedGenesisHash: string): Promise<void> {
     const binding = DeploymentBindingSchema.parse({
       format: "tr-proposal-journal-binding-v1", registryId,
-      networkId: "undeployed", contractAddress, expectedGenesisHash,
+      networkId: getLocalNetworkProfile().networkId, contractAddress, expectedGenesisHash,
     });
     await this.withWrite(async () => {
       const current = await this.readBinding();
@@ -232,7 +233,7 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
   ): Promise<void> {
     const expected = DeploymentBindingSchema.parse({
       format: "tr-proposal-journal-binding-v1", registryId,
-      networkId: "undeployed", contractAddress, expectedGenesisHash,
+      networkId: getLocalNetworkProfile().networkId, contractAddress, expectedGenesisHash,
     });
     const current = await this.readBinding();
     if (current === null || !sameDeploymentBinding(current, expected)
@@ -345,7 +346,7 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
   ): Promise<{ attempt: ProposalSubmissionAttempt | null; bindingDigest: string }> {
     const expected = DeploymentBindingSchema.parse({
       format: "tr-proposal-journal-binding-v1", registryId,
-      networkId: "undeployed", contractAddress, expectedGenesisHash,
+      networkId: getLocalNetworkProfile().networkId, contractAddress, expectedGenesisHash,
     });
     const parsedRole = ProposalRoleSchema.parse(role);
     const parsedId = AttemptSchema.shape.authorizationId.parse(authorizationId);

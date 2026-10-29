@@ -4,11 +4,13 @@ import { dirname, isAbsolute, join } from "node:path";
 import type { SequenceToTimestamp } from "@midnight-ntwrk/trust-registry-client";
 import {
   createLocalNetworkDeploymentActionReader,
+  getLocalNetworkProfile,
   type FinalizedRegistryLedgerView,
   type LocalNetworkDeploymentActionReaderConfig,
 } from "@midnight-ntwrk/trust-registry-integration";
 
 import { createLocalLedgerBoundSource, LocalLedgerSourceUnavailableError } from "./local-ledger-source.js";
+import { verifyLocalApiApprovalChain } from "./local-approval-chain.js";
 import { readBoundedLocalApprovalFile, verifyDetachedLocalReviewerSignature } from "./local-reviewer-signature.js";
 export { assertApprovedReviewerSignatureStatus } from "./local-reviewer-signature.js";
 
@@ -18,7 +20,9 @@ const REVISION = /^[0-9a-f]{40}$/u;
 const DECIMAL = /^(0|[1-9][0-9]*)$/u;
 
 export type LocalLedgerRuntimePlan = LocalNetworkDeploymentActionReaderConfig & {
-  format: "tr-local-api-runtime-v2";
+  format: "tr-local-api-runtime-v2" | "tr-local-api-runtime-v3";
+  approvalChainPath?: string;
+  approvalChainSha256?: string;
   sourceRevision: string;
   installInventoryPath: string;
   installInventorySha256: string;
@@ -61,14 +65,15 @@ function validMaintenanceAuthority(value: unknown): boolean {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const authority = value as Record<string, unknown>;
   if (!exactKeys(authority, ["committee", "threshold", "counter"])
-    || !Array.isArray(authority.committee) || authority.committee.length === 0
+    || !Array.isArray(authority.committee) || authority.committee.length < 3
     || authority.committee.some((key: unknown) =>
       typeof key !== "string" || !HASH.test(key) || /^0x0{64}$/u.test(key))
     || new Set(authority.committee).size !== authority.committee.length
     || !Number.isSafeInteger(authority.threshold)
-    || (authority.threshold as number) < 1
+    || (authority.threshold as number) < 2
     || (authority.threshold as number) > authority.committee.length
-    || typeof authority.counter !== "string" || !DECIMAL.test(authority.counter)) return false;
+    || typeof authority.counter !== "string" || !DECIMAL.test(authority.counter)
+    || BigInt(authority.counter) < 1n) return false;
   return true;
 }
 
@@ -77,12 +82,18 @@ export function validateLocalLedgerRuntimePlan(value: unknown): LocalLedgerRunti
     throw new Error("Local API runtime plan must be an object");
   }
   const plan = value as Record<string, unknown>;
+  const approvalChainKeys = plan.format === "tr-local-api-runtime-v3"
+    ? ["approvalChainPath", "approvalChainSha256"] : [];
   if (!exactKeys(plan, ["allowedHosts", "contractAddress", "expectedGenesisHash", "format",
     "indexerHttpUrl", "indexerWsUrl", "installInventoryPath", "installInventorySha256",
     "maintenanceAuthority", "networkId", "notAfter", "notBefore", "releaseManifestPath",
     "releaseManifestSha256", "rpcUrl", "sequenceTimestamps", "snapshotPath", "snapshotSha256",
-    "sourceRevision", "verifierKeySha256"])
-    || plan.format !== "tr-local-api-runtime-v2" || plan.networkId !== "undeployed"
+    "sourceRevision", "verifierKeySha256", ...approvalChainKeys])
+    || !["tr-local-api-runtime-v2", "tr-local-api-runtime-v3"].includes(plan.format as string)
+    || (plan.format === "tr-local-api-runtime-v3"
+      && (typeof plan.approvalChainPath !== "string" || !isAbsolute(plan.approvalChainPath)
+        || typeof plan.approvalChainSha256 !== "string" || !SHA256.test(plan.approvalChainSha256)))
+    || plan.networkId !== getLocalNetworkProfile().networkId
     || typeof plan.sourceRevision !== "string" || !REVISION.test(plan.sourceRevision)
     || typeof plan.expectedGenesisHash !== "string" || !HASH.test(plan.expectedGenesisHash)
     || /^0x0{64}$/u.test(plan.expectedGenesisHash)
@@ -150,9 +161,12 @@ export function assertApprovedPlanCoversGovernanceCount(
 }
 
 export function assertApprovedDeploymentImage(
-  plan: Pick<LocalLedgerRuntimePlan, "verifierKeySha256" | "maintenanceAuthority">,
-  view: Pick<FinalizedRegistryLedgerView, "verifierKeySha256" | "maintenanceAuthority">,
+  plan: Pick<LocalLedgerRuntimePlan, "networkId" | "contractAddress" | "verifierKeySha256" | "maintenanceAuthority">,
+  view: Pick<FinalizedRegistryLedgerView, "networkId" | "contractAddress" | "verifierKeySha256" | "maintenanceAuthority">,
 ): void {
+  if (view.networkId !== plan.networkId || view.contractAddress !== plan.contractAddress) {
+    throw new Error("Finalized registry identity differs from the approved local plan");
+  }
   const expected = plan.verifierKeySha256;
   const observed = view.verifierKeySha256;
   if (observed === null || typeof observed !== "object" || Array.isArray(observed)
@@ -191,6 +205,7 @@ type ApprovedLocalLedgerRuntimePlanInput = {
   keyringDirectory: string;
   reviewerFingerprint: string;
   requireApiRuntimePin?: boolean;
+  requireApprovalChain?: boolean;
 };
 
 export async function loadApprovedLocalLedgerRuntimePlanWithDigest(
@@ -204,6 +219,9 @@ export async function loadApprovedLocalLedgerRuntimePlanWithDigest(
     reviewerFingerprint: input.reviewerFingerprint,
   });
   const plan = validateLocalLedgerRuntimePlan(parseCanonicalApprovedPlan(planBytes));
+  if (input.requireApprovalChain === true && plan.format !== "tr-local-api-runtime-v3") {
+    throw new Error("Local-ledger runtime requires a signed v3 approval-chain plan");
+  }
   const inventoryBytes = await readBoundedLocalApprovalFile(plan.installInventoryPath, 1024 * 1024);
   const manifestBytes = await readBoundedLocalApprovalFile(plan.releaseManifestPath, 1024 * 1024);
   const digest = (bytes: Buffer): string => createHash("sha256").update(bytes).digest("hex");
@@ -256,6 +274,15 @@ export async function loadApprovedLocalLedgerRuntimePlanWithDigest(
       !Object.hasOwn(manifest.verifierKeySha256, name)
       || manifest.verifierKeySha256[name] !== hash)) {
     throw new Error("Local API approved verifier-key catalog differs from the release manifest");
+  }
+  if (plan.format === "tr-local-api-runtime-v3") {
+    const chainBytes = await readBoundedLocalApprovalFile(plan.approvalChainPath!, 512 * 1024, true);
+    if (digest(chainBytes) !== plan.approvalChainSha256) {
+      throw new Error("Local API approval-chain bytes differ from the signed runtime plan");
+    }
+    await verifyLocalApiApprovalChain({ chainBytes, plan,
+      keyringDirectory: input.keyringDirectory,
+      governanceReviewerFingerprint: input.reviewerFingerprint });
   }
   return { plan, planSha256: digest(planBytes) };
 }

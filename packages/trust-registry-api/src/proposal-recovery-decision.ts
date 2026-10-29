@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { canonicalizeJson } from "@midnight-ntwrk/trust-registry-domain";
+import { getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
 import { z } from "zod";
 
 import { readBoundedLocalApprovalFile, verifyDetachedLocalReviewerSignature } from "./local-reviewer-signature.js";
@@ -42,7 +43,7 @@ export function proposalRecoveryCandidateDigest(candidate: RecoveryCandidate): s
 
 function assertReviewCandidate(candidate: RecoveryCandidate): void {
   if (candidate.format !== "tr-local-proposal-recovery-candidate-v2"
-    || candidate.networkId !== "undeployed"
+    || candidate.networkId !== getLocalNetworkProfile().networkId
     || candidate.reason !== "sequence-invalidated-record-absent"
     || candidate.reservationState !== "reserved"
     || candidate.reviewCandidate !== true || candidate.retryPermitted !== false

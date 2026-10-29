@@ -2364,3 +2364,28 @@ operator, but it does not provide a published VC-owned live status-authority
 adapter for the Trust Registry RC. Do not copy the sibling's private source
 into this repository or count existing simulator, portal, or API tests as
 deployed offline DID/VC/status actor-journey evidence.
+
+The standalone qualification observer must not combine a wizard setup with
+an API runtime merely because both use the same source commit. The verified
+install inventory, wizard project and observed Docker network, independently
+approved genesis, and deployed contract address must match the running API's
+signed plan and readback. An opt-in API restart must retain the same container,
+network, plan, and selected state. These are cross-run identity checks, not
+independent authentication of node/indexer finality or proof of a governed
+actor write. The combined observer remains `releaseQualified: false` and
+stops before API probes when wizard ledger prerequisites are missing.
+
+The local acceptance inventory can now compare a private, read-only observer
+report with its selected source, install inventory, signed API plan, approved
+genesis, and deployed contract. This check never changes case verdicts or
+authenticates the report; a pre-deployment result exits as missing evidence.
+The operator quickstart invokes the Node observer directly when redirecting
+JSON because `pnpm` emits a stdout banner. The standalone API now obtains its
+local network ID from the versioned `standalone` profile in plan validation,
+finalized source checks, proposal journaling, and recovery reports. The
+profile still maps to Midnight's local `undeployed` identifier; this is not
+public-network support or a portable genesis pin. Both changes are in local,
+unpublished signed/DCO branches. Focused observer/acceptance tests, the API's
+256-test suite, integration profile tests, typecheck, lint, docs build, and
+dependency audit passed in the writable checkout. Neither change provides a
+deployed actor journey or clears #219, #220, or the release security gates.

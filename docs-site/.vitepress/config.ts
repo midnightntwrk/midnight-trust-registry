@@ -38,6 +38,7 @@ export default defineConfig({
       "/guide/": [{ text: "Guide", items: [
         { text: "Overview", link: "/guide/" },
         { text: "Quickstart and demo", link: "/guide/quickstart" },
+        { text: "Self-hosted standalone", link: "/guide/standalone" },
         { text: "Actors and use cases", link: "/guide/use-cases" },
         { text: "Status and limitations", link: "/guide/status" },
         { text: "Documentation publishing", link: "/guide/publishing" },

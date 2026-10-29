@@ -106,7 +106,7 @@ export async function checkHelmImageMapping(paths) {
   if (createHash("sha256").update(inventoryBytes).digest("hex") !== bundle.inventorySha256) {
     throw new Error("Install inventory changed during mapping verification");
   }
-  const inventory = JSON.parse(inventoryBytes);
+  const inventory = JSON.parse(inventoryBytes.toString("utf8"));
   if (["tr-standalone-install-v5", "tr-standalone-install-v6"].includes(inventory.format)
     ? paths.adminManifest !== undefined || paths.applicantManifest !== undefined
     : !paths.adminManifest || !paths.applicantManifest) {
@@ -122,7 +122,7 @@ export async function checkHelmImageMapping(paths) {
   const receiptBytes = await readFile(paths.receiptPath);
   verifyMappingSignature(receiptBytes, paths.signaturePath, paths.keyringPath,
     paths.signerFingerprint);
-  const receipt = JSON.parse(receiptBytes);
+  const receipt = JSON.parse(receiptBytes.toString("utf8"));
   return { ...verifyHelmImageMapping(bundle, inventory, portals, values, receipt,
     createHash("sha256").update(valuesBytes).digest("hex")),
     mappingSha256: createHash("sha256").update(receiptBytes).digest("hex") };

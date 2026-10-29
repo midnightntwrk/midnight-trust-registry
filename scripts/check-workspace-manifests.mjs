@@ -51,10 +51,15 @@ assertArrayEqual("root workspaces", rootPackage.workspaces, expectedWorkspaces);
 const lintScript = rootPackage.scripts?.["ci:lint"];
 const lightScript = rootPackage.scripts?.["ci:build:light"];
 const buildIndex = lightScript?.indexOf("pnpm run build:light") ?? -1;
+const topologyIndex = lightScript?.indexOf("pnpm run test:standalone-topology") ?? -1;
 const smokeIndex = lightScript?.indexOf("pnpm run test:demo-smoke-scripts") ?? -1;
 if (typeof lintScript !== "string" || lintScript.includes("test:demo-smoke-scripts")
   || buildIndex < 0 || smokeIndex <= buildIndex) {
   errors.push("dist-dependent adversarial smoke must run after build:light, not in ci:lint");
+}
+if (typeof lintScript !== "string" || lintScript.includes("test:standalone-topology")
+  || topologyIndex <= buildIndex) {
+  errors.push("standalone topology tests require build:light and must not run in ci:lint");
 }
 if (typeof runtimeVersion !== "string" || !/^\d+\.\d+\.\d+$/.test(runtimeVersion)) {
   errors.push("Compact runtime must use an exact semver version");

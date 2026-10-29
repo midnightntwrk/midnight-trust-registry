@@ -1,0 +1,316 @@
+# Standalone local journey: operator quickstart
+
+This is the short path to a **self-hosted, offline-runtime** Trust Registry
+qualification run. Installation may use the network; the runtime may not.
+Preprod, Preview, Mainnet, Kubernetes, and Helm are not 0.1.0 local-RC gates.
+The detailed procedures and threat model are in
+[Standalone Offline Runtime Qualification](standalone-offline-runtime.md).
+
+**Current state:** the repository has simulator-backed actor journeys, API
+integration tests, pinned-install checks, and pre-deployment local-ledger
+restart observations. It has **not** recorded a complete actor journey against
+a deployed, finalized standalone contract. A passing `./run.sh --light`,
+`pnpm run integration`, or `pnpm run test:standalone-topology` is not that
+evidence. Do not promote draft PR #198 or label 0.1.0 release-ready on those
+results.
+
+## What the operator needs
+
+- A dedicated local Midnight node, indexer, proof server, funded local wallet,
+  and reviewed source-matched install bundle with immutable package, image,
+  and proving-artifact hashes. Never reuse another project's volumes.
+- A real chain-spec/genesis pin reviewed independently of node-reported
+  values, plus the human reviewer's public signing key and detached signature
+  on the exact wizard approval bytes. A demo or proposed pin is not approval.
+- Governance-approved maintenance public keys, threshold, custody roles, and
+  enough independent key holders to sign the deployment-bound transition.
+  The development 1-of-3 smoke roster is not a release approval.
+- Local DID, VC, and status-authority services and their pinned trust anchors.
+  Do not replace the VC-owned live status adapter with a fixture response.
+- An egress-deny policy covering the host, wallet, containers, browser, backup
+  process, and proof server, with logs and a positive-control test.
+- An independent human security reviewer and an operator who owns backup and
+  recovery decisions. Do not send seeds, private keys, or credentials in PRs.
+
+## Run in order
+
+1. **Verify the install candidate while online.** Use a signed source commit
+   and the exact-source `artifacts:standalone-install` workflow in the detailed
+   guide. Preserve the inventory, release manifest, image digests, verifier-key
+   hashes, and all Compact proving artifacts. Record the source SHA and
+   inventory SHA-256 in the private evidence directory. A bundle built from a
+   different source SHA is a stop condition.
+2. **Prepare a new isolated ledger.** Create a fresh mode-0700 setup directory,
+   then use the wizard's `init`, `prepare-stack`, and `observe-stack` commands.
+   Review the generated Compose plan before starting it. Run `status` after
+   every phase:
+
+   ```sh
+   node scripts/standalone-setup-wizard.mjs init /absolute/private/setup /absolute/verified-bundle
+   node scripts/standalone-setup-wizard.mjs prepare-stack /absolute/private/setup tr-standalone-local-qualification 39944 38088 36300
+   node scripts/standalone-setup-wizard.mjs status /absolute/private/setup
+   ```
+
+   Use [the detailed stack-start instructions](standalone-offline-runtime.md#first-run-setup-wizard-initial-slice)
+   for the reviewed Compose invocation and installation relay. The wizard
+   does not start the ledger or approve genesis for you.
+3. **Stop at human approvals.** Collect the node's *untrusted* genesis
+   candidate, compare it with independently reviewed chain-spec evidence, and
+   have the reviewer sign the exact generated approval draft. Review and sign
+   the maintenance roster separately. Do not use the demo-reference script,
+   a node-reported hash alone, or an AI-generated signature as approval.
+4. **Deploy and reconcile once.** Stage the exact signed source and verified
+   packages with `stage-provider-runtime.mjs`; independently record its source,
+   inventory, and content digests. Transfer it to a new root-owned code tree
+   that the non-root operator cannot change, and verify the copy with
+   `verify-installed-provider-runtime.mjs` using those externally recorded
+   digests. This is an install handoff, not a deployed E2E result. Set
+   `TR_IMMUTABLE_PROVIDER_ROOT` and preload
+   `scripts/approved-provider-preload.mjs` as described in the
+   [local deployment operator CLI](standalone-offline-runtime.md#local-deployment-operator-cli).
+   Keep every relative dependency link and its resolved target inside the
+   approved tree; a writable development checkout is not a substitute. Use
+   wizard `deploy` with the signed plan;
+   if the result is ambiguous, use `reconcile-deploy`, never an unreviewed
+   second submission. Capture the transaction ID, finalized checkpoint,
+   contract address, constructor state, maintenance authority, and every
+   verifier-key readback. A missing or stale readback is a stop condition.
+5. **Transition authority.** Bind the approved roster to the finalized
+   deployment, collect the threshold signatures, submit once, and reconcile
+   finalized maintenance readback. A bootstrap-only or development-smoke
+   authority is not qualified. Once the wizard reports an unambiguous observed
+   transition, export its restricted approval-chain handoff:
+
+   ```sh
+   node scripts/standalone-setup-wizard.mjs export-api-approval-chain /absolute/private/setup
+   ```
+
+   The command creates a mode-0600, non-overwriting
+   `api-approval-chain.json` in that private directory. It retains the three
+   signed approval documents, signatures, and a minimal observed maintenance
+   receipt, but omits wallet material, provider configuration, and the full
+   setup record. Store its printed SHA-256 with the operator evidence. This is
+   an **export, not API-side verification**. The command fails on pending,
+   conflicting, or incomplete readback. It does not establish independent
+   finality or qualify a release.
+6. **Start the local API and portals from pinned images.** Sign the API's
+   immutable current-state plan, verify it with `trust-registry-api
+   check-local-ledger-plan`, initialize the bound proposal journal, and start
+   local-ledger mode. Snapshot/workspace/demo mode is not acceptable. The
+   signed `tr-local-api-runtime-v3` plan must name the exported approval-chain
+   path and SHA-256, as well as the approved genesis and deployed contract.
+   The API rechecks the embedded detached signatures, signed hash links,
+   custody roster, and committee before serving. Use the same approved
+   governance reviewer fingerprint and private public-key keyring in the
+   CLI invocation. The local-ledger CLI rejects v2 plans; they are not
+   approval-chain evidence. Issue #234
+   remains a release gate until independent finality and exact-head review
+   establish that this linkage is sufficient for the deployed runtime.
+   For a source-pinned operator observation, use the combined command below.
+   It verifies the full install bundle, checks wizard-recorded ledger
+   prerequisites, and only then runs live current-query and API-container
+   egress probes. It does not submit an actor mutation or set an acceptance
+   verdict. Save its JSON in a private evidence file and inspect it before
+   attaching it to a case. Missing gates exit 2 without touching the API;
+   invalid bundles or probe failures exit 1. Exit 0 proves only this read-only
+   slice, not release qualification. Set `TR_STACK_NAME` to the wizard's
+   approved project; the command also matches its inventory, Docker network,
+   approved genesis, and deployed contract to the running signed API plan.
+
+   ```sh
+   pnpm observe:standalone-qualification \
+     /absolute/private/setup /absolute/verified-bundle "$SOURCE_SHA"
+   ```
+
+   Add `--api-restart` only when the dedicated API may be restarted. It checks
+   that the signed plan and selected state survive one API-container restart;
+   it does not restart the ledger or test restore.
+   Before an operator actor run, check the wizard's ledger prerequisites:
+
+   ```sh
+   node scripts/check-standalone-journey-prerequisites.mjs /absolute/private/setup "$SOURCE_SHA"
+   ```
+
+   Set `SOURCE_SHA` to the full signed commit selected for this install
+   candidate, not an old setup record's SHA. A source mismatch is a missing
+   gate; rebuild and review a source-matched bundle rather than reusing the
+   old deployment evidence. Exit code 2 lists missing gates; exit code 0
+   means only that wizard-recorded ledger prerequisites are present. It does
+   not verify the complete
+   verifier-key inventory, signed API plan, authenticated finality, egress
+   denial, an actor action, or release readiness.
+   Once the approved API is actually running, run the read-only current-query
+   slice with the same `TR_STACK_NAME`, `TR_API_APPROVAL_DIR`, `TR_API_UID`,
+   `TR_API_GID`, and `TR_API_REVIEWER_FINGERPRINT` used to start it:
+
+   ```sh
+   pnpm observe:standalone-current-query /absolute/private/setup /absolute/verified-bundle
+   ```
+
+   This checks issuer, verifier, auditor, and recognition current queries
+   against the live signed-plan source twice, requiring the selected-state
+   SHA-256 to stay fixed around a positive-control TCP
+   and DNS egress-denial probe of the same API container. Save its JSON output
+   with the raw probe logs in the private evidence directory. An exit code 0
+   is **read-only API runtime evidence**, not a governed-write actor journey:
+   the check does not authenticate node/indexer finality, cover host/browser
+   egress, independently authenticate the deployment/finality evidence (#234),
+   or close release gates.
+7. **Disconnect external egress, then run the actor use case.** Keep the local
+   service network and loopback available. Record issuer application and
+   governed authorization, verifier and auditor decisions, maintainer action,
+   external-authority recognition, DID resolution, VC status validation, and
+   relying-party current-state/TRQP reads. For each mutation, record the
+   exact-intent authorization, proposal journal state, transaction/receipt,
+   authenticated finalized checkpoint, contract event and readback, and the
+   manually reviewed, re-signed API plan used after restart. Include negative
+   cases for wrong authority, stale plan, revoked/suspended authorization,
+   substituted evidence, and unavailable local status. Browser/API success
+   alone is not ledger success. The full actor path is tracked in issue #219.
+8. **Restart and restore.** Restart node, indexer, prover, API, and portals
+   independently with egress still denied. Show the same deployment and
+   historical ledger state at new finalized checkpoints. Restore a backup in
+   a distinct isolated project and reject stale/conflicting checkpoints.
+   Quarantine ambiguous submissions; do not treat an empty indexer read as
+   permission to retry. For an opt-in **API-only** restart observation, after
+   the signed-plan current-query probe passes, run:
+
+   ```sh
+   pnpm observe:standalone-api-restart /absolute/private/setup /absolute/verified-bundle
+   ```
+
+   This restarts the dedicated API container once, repeats the read and
+   API-container egress probes, and rejects a changed plan or selected state.
+   It does not restart the node, wallet, or portals; it is not backup/restore,
+   actor-write, or independently authenticated finality evidence. See issues
+   #220 and #230 for the remaining recovery gate.
+9. **Review and sign off.** Preserve raw receipts, hashes, commands, logs,
+   timestamps, egress-deny evidence, and redacted reviewer decisions in a
+   private evidence bundle. An independent human reviewer must record scope,
+   exact commit, findings, and verdict under issue #232. Release remains
+   blocked while any high/critical finding or required evidence is missing.
+
+## Operator acceptance record
+
+Run the cases below against one approved deployment and one pinned install
+inventory. Record `pass`, `fail`, or `not-run` for **each** case; never infer a
+pass from simulator tests, a wizard status field, or an HTTP response alone.
+Keep the command, UTC time, source SHA, inventory SHA-256, signed-plan SHA-256,
+contract address, genesis hash, authenticated finalized checkpoint, and
+redacted raw output for each case in the private evidence bundle. Preserve
+transaction IDs and journal states for writes. After a mutation, require the
+operator-reviewed re-sign/restart before accepting a new current-state read.
+
+| Case | Action and expected result | Required evidence |
+| --- | --- | --- |
+| `L01` | Approve genesis, deploy once, and read back the constructor, authority, and every verifier key at a finalized checkpoint. | Signed approval, exact-source bundle, deployment journal, authenticated inclusion/readback, complete key-hash comparison. |
+| `L02` | Transition from bootstrap authority to the release-approved threshold roster; old bootstrap authority cannot act. | Signed roster, distinct custodian proofs, finalized transition and rejection receipts. The 1-of-3 development roster does not pass. |
+| `A01` | Submit issuer application with local DID/VC/status evidence; governed proposal and decision create a current issuer grant. | Accepted evidence commitment, exact-intent signatures, one-attempt journal, finalized event and by-ID/current API readback. |
+| `A02` | Repeat `A01` for verifier and auditor grants, including their distinct policy and mandate scopes. | Separate finalized receipts and current reads for each role; no role substitution. |
+| `A03` | Perform a maintainer-governed action and a scoped external-authority recognition decision. | Threshold signatures, finalized action sequence/events, current maintenance and recognition readback. Recognition must not imply membership. |
+| `A04` | Resolve the issuer DID and validate the live VC status authority; relying party checks current evidence and TRQP against the same local deployment. | Authenticated DID/status responses, trusted-time decision, selected finalized checkpoint, API/TRQP outputs. A fixture status response fails. |
+| `N01` | Reject wrong authority, stale signed plan, substituted evidence, revoked or suspended grant, and unavailable local status. | Per-case denial with no unintended ledger mutation; uncertain submissions remain quarantined. |
+| `O01` | Repeat actor reads and a governed action with external egress denied while local service traffic remains available. | Host/container/wallet/browser/prover egress logs, positive controls, receipts and readbacks from the same deployment. API-container canary denial alone does not pass. |
+| `R01` | Restart each service, then restore a backup in a distinct isolated project; reject stale or conflicting checkpoint and reconcile an ambiguous submission without blind retry. | Before/after authenticated checkpoints, contract and journal state, restore logs, operator recovery decision. |
+| `S01` | Have a non-author human assess the exact candidate and all retained evidence. | Reviewer identity, scope, findings, dispositions, and release-owner sign-off under issue #232. |
+
+Do not mark the end-to-end journey complete unless `L01` through `S01` all
+pass at a single reviewed candidate SHA. These cases are an acceptance
+procedure, not evidence that any deployed run has occurred. The current
+read-only query probe can support part of `A04`; it cannot satisfy `A01` to
+`A03`, `O01`, or `R01`.
+
+### Hand off one evidence bundle
+
+After deployment and the signed API plan exist, make a private directory and
+initialize an acceptance inventory with the **actual** source revision,
+install-inventory SHA-256, signed-plan SHA-256, reviewed genesis hash, and
+deployed contract address. The final two values must be lowercase `0x`-prefixed
+64-hex-character values. Do not use a node-reported genesis candidate or a
+simulator address as a substitute.
+
+```sh
+mkdir -m 700 /absolute/private/acceptance
+node scripts/check-standalone-acceptance-evidence.mjs init \
+  /absolute/private/acceptance "$SOURCE_SHA" "$INVENTORY_SHA256" \
+  "$SIGNED_PLAN_SHA256" "$GENESIS_HASH" "$CONTRACT_ADDRESS"
+```
+
+For each case in `acceptance.json`, set `status` to `pass`, `fail`, or
+`not-run` **only after reviewing the underlying run**. Put its redacted raw
+command output/receipts under that private directory. Attach each file with
+the helper, which hashes it and updates the case inventory atomically while
+leaving its status unchanged:
+
+```sh
+node scripts/check-standalone-acceptance-evidence.mjs attach \
+  /absolute/private/acceptance "$SOURCE_SHA" L01 L01/deploy.log
+```
+
+Use a different relative file for each case. If `.acceptance.lock` exists,
+check whether an evidence writer is active before removing a stale lock; do
+not start a competing writer. A `pass` must have at least one file. Record the
+command, UTC time, checkpoint, operator decision, and relevant transaction or
+journal identifier **in the retained file**; the checker does not infer these
+facts. Do not include seeds, private keys, or credentials. Keep each raw file
+below 32 MiB and use separate files per case.
+
+```sh
+pnpm check:standalone-acceptance-evidence /absolute/private/acceptance "$SOURCE_SHA"
+```
+
+Pass the full signed source commit selected for the **current** install candidate;
+the checker rejects a bundle from a different commit instead of validating
+stale acceptance evidence. Exit 2 means at least one case is not `pass`; exit 1
+means the source differs or the inventory or a file is invalid, missing,
+symlinked, or hash-mismatched. Exit 0 means only
+that all case labels are `pass` and every listed file matches its digest. The
+report **always** says `releaseQualified: false`: this command cannot verify
+receipt authenticity, ledger finality, the correctness of a human security
+verdict, or the truth of a `pass` label. A second operator must examine the
+raw evidence and independently disposition the release gates.
+
+### Bind a read-only observation to this candidate
+
+After the approved API is running, capture the combined read-only probe in the
+private acceptance directory. Use `umask 077` so the report is not readable by
+other local users. An exit code of 2 means a prerequisite is missing; retain
+the report for diagnosis, but do not mark a case passed. The probe must run
+against the same source revision and install bundle used for `acceptance.json`.
+
+```sh
+umask 077
+node scripts/observe-standalone-qualification.mjs \
+  /absolute/private/setup /absolute/verified-bundle "$SOURCE_SHA" \
+  > /absolute/private/acceptance/read-only-observation.json
+node scripts/check-standalone-acceptance-evidence.mjs observe \
+  /absolute/private/acceptance "$SOURCE_SHA" read-only-observation.json
+```
+
+The second command compares the report's source, inventory, signed API-plan
+hash, approved genesis, and deployed contract with the acceptance candidate.
+It exits 0 only for a matching read-only observation, 2 for an observation
+stopped before the API probe, and 1 for invalid or mixed-candidate evidence.
+It requires a private regular file, does not change `acceptance.json`, and
+never marks `A04` or another case passed. It cannot independently authenticate
+the report, ledger finality, actor mutations, or the security verdict. An
+operator may attach the report as supporting evidence only after checking its
+raw probe logs and provenance; the full `A04` live VC-status requirement still
+needs separate evidence.
+
+## Evidence verdict
+
+Use these labels consistently:
+
+| Label | What it proves | What it does not prove |
+| --- | --- | --- |
+| `simulator-test` | Contract/client behavior under test fixtures | Deployment or finality |
+| `ledger-bridge-smoke` | Isolated local node/indexer/prover topology or continuity | A deployed registry or actor journey |
+| `deployed-readback` | A specific finalized contract state and verifier-key set | Offline actor success or recovery |
+| `offline-actor-journey` | Recorded actor path against the bound local deployment with egress denied | Independent security approval |
+| `release-qualified` | All local RC gates, including human review, are satisfied | Preprod or public-network readiness |
+
+The wizard currently reports `releaseQualified: false` and leaves offline
+journeys and restore pending. Do not edit those fields or substitute a manual
+checklist result. Only promote after the evidence above is independently
+reviewed and the outstanding security gates are closed.

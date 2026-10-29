@@ -461,10 +461,11 @@ The repo currently exposes two manual GitHub Actions workflows:
 
 `Publish Packages` performs the following sequence:
 
-1. stamps a release version across the root and workspace manifests
+1. requires the requested version to be committed at the signed/DCO source SHA
 2. validates manifest and package-content expectations
 3. builds the repository
-4. packs release tarballs and smoke-tests them locally
+4. packs release tarballs, generates and re-verifies their full release manifest,
+   then runs a clean-consumer smoke on the manifest-selected bytes
 5. publishes the remotely publishable core packages
 6. smoke-tests the published packages from the configured registry
 
@@ -480,11 +481,20 @@ Local helpers used by the workflow:
 
 ```bash
 node scripts/release-set-version.mjs --version 0.1.0-rc2
-pnpm run published-artifacts:smoke -- --tarball-dir artifacts/npm-release
+pnpm install --lockfile-only
+# Review and commit the version/lockfile changes with GPG and DCO before publishing.
+node scripts/release-set-version.mjs --version 0.1.0-rc2 --check
+node scripts/release-candidate-manifest.mjs --artifact-dir artifacts/npm-release --output artifacts/npm-release.manifest.json
+node scripts/release-candidate-manifest.mjs --artifact-dir artifacts/npm-release --verify artifacts/npm-release.manifest.json
+pnpm run published-artifacts:smoke -- --tarball-dir artifacts/npm-release --manifest artifacts/npm-release.manifest.json
 ```
 
 The publish workflow expects `NPM_TOKEN` to be configured as a repository
 secret. The default registry is `https://registry.npmjs.org`.
+The manifest is uploaded with the exact tarballs; it records the signed source,
+package and verifier-key digests. Runtime image digests and independent local
+deployment/security approval remain separate release evidence, not a result of
+publishing npm packages.
 
 ## Dependency Refresh
 

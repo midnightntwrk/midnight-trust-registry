@@ -14,7 +14,7 @@ const fixture = () => ({
   commits: [{ sha: head, commit: { author: { name: "Reviewer", email: "reviewer@example.test" },
     message: "fix: checked change\n\nSigned-off-by: Reviewer <reviewer@example.test>",
     verification: { verified: true, reason: "valid", signature } } }],
-  checks: [check("Milestone Light", 1), check("scan", 2),
+  checks: [check("Milestone Build, Package, and Test", 1), check("scan", 2),
     check("Typecheck, Audit, and Packaging Baseline", 3), check("docs", 4, "skipped")],
   statuses: [],
   review: { format: "tr-milestone-current-head-review-v1",
@@ -46,6 +46,13 @@ test("rejects a draft, off-train, or changed-head PR", () => {
 });
 
 test("rejects missing, pending, failed, or wrong-head required checks", () => {
+  const renamed = "Milestone Build, Package, and Test";
+  const oldNameOnly = fixture();
+  oldNameOnly.checks[0] = check("Milestone Light", 1);
+  assert.throws(() => evaluateMilestoneMergeGate(oldNameOnly), /Milestone Build, Package, and Test/u);
+  const failed = fixture();
+  failed.checks[0] = check(renamed, 1, "failure");
+  assert.throws(() => evaluateMilestoneMergeGate(failed), /Milestone Build, Package, and Test/u);
   const missing = fixture();
   missing.checks = missing.checks.filter((entry) => entry.name !== "scan");
   assert.throws(() => evaluateMilestoneMergeGate(missing), /scan/u);

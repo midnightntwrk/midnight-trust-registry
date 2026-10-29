@@ -151,8 +151,8 @@ therefore still starts and observes only node, indexer, and proof server.
 Do not put `compose.api.yml` in a default `COMPOSE_FILE` during installation.
 **Do not pass this overlay or enable the API profile before approved genesis,
 deployment, maintenance transition, and a
-detached-reviewer-signed v2 local API plan.** The approval directory must
-contain the signed plan, signature, reviewed public keyring, pinned snapshot,
+detached-reviewer-signed v3 local API plan.** The approval directory must
+contain the signed plan, signature, wizard-exported approval chain, reviewed public keyring, pinned snapshot,
 install inventory, and release manifest at the paths named by the signed plan.
 It is bind-mounted read-only; the selected UID/GID must own or be allowed to
 read those private inputs. The operator supplies the exact locally loaded API
@@ -188,6 +188,10 @@ evidence. A post-deployment observer must verify the API container identity,
 approval mounts, source revision, finalized reads, runtime egress, and actor
 journeys before the local 0.1.0 RC gate can close. Kubernetes and Helm are
 optional alternative deployment paths, not prerequisites.
+An optional Helm image-mapping receipt is verified from a private snapshot of
+the supplied public keyring and detached signature using a fixed GPGV path and
+the pinned primary fingerprint. A Helm mapping signature does not replace the
+wizard's genesis or maintenance approvals and cannot qualify the local RC.
 
 Once a **new exact-source bundle pins `compose.api.yml`** and the human-signed
 plan has been independently approved, the operator can run the read-only API
@@ -300,11 +304,21 @@ temporary filesystem can hold the largest image archive. A v3 bundle remains a l
 bundle only and cannot back a signed local-ledger API plan. The API requires a
 v4-v6 inventory with an API image pin and checks that its embedded release
 manifest digest and path identify the same signed manifest bytes as the plan.
-The v2 signed API plan must also pin the complete release-manifest verifier-key
-catalog and the approved maintenance committee, threshold, and counter. Each
-API query checks those values from the same finalized contract-state read as
+The v3 signed API plan must also pin the complete release-manifest verifier-key
+catalog and a non-bootstrap committee of at least three distinct public keys,
+threshold at least two, and a positive transition counter. Each API query
+checks the finalized network, contract address, verifier-key catalog, and
+maintenance authority against the plan from the same contract-state read as
 the Compact ledger projection. Any verifier-key or authority change requires
-manual review, a new signed plan, and an API restart.
+manual review, a new signed plan, and an API restart. These comparisons do
+bind the plan reviewer and contract to the wizard's signed genesis, committee,
+and deployment approvals when the private chain file and its hash are pinned.
+The maintenance readback in that chain is a wizard-observed receipt, not an
+independently authenticated finality proof. Issue #234 remains a release gate
+until real deployed evidence, independent finality, and exact-head review
+validate the complete handoff. The library can still parse a v2 plan for
+forensic compatibility, but the local-ledger CLI refuses it for preflight,
+observation, proposal operations, and runtime startup.
 Archive verification alone does not start the API or prove that it can query a live
 local ledger. Matching source labels and hashes do not independently prove
 image build provenance; the release operator must approve the exact archive
@@ -508,7 +522,13 @@ The dedicated smoke stack keeps node RPC, indexer, and proof-server services on
 its internal bridge. On Docker Desktop, that bridge does **not** publish the
 configured loopback ports to the host, even though Compose records the port
 bindings. Probe service aliases from a container on the isolated network;
-host-side preflight/deployment needs a separately controlled temporary access
+the indexer's `ws://node:9944` connections are plaintext within this bridge,
+not authenticated or encrypted against a compromised peer on that bridge.
+The optional Helm chart makes the same local transport assumption only when
+its ClusterIP services and default-deny NetworkPolicies are enforced by the
+cluster CNI. Do not use the chart in a cluster without policy enforcement or
+expose this WebSocket endpoint outside the controlled local trust boundary.
+Host-side preflight/deployment needs a separately controlled temporary access
 path and cannot be counted as an offline journey while that path permits
 egress. Do not expose these endpoints on public interfaces. Start and fund
 local accounts before disabling egress. A local
@@ -612,9 +632,98 @@ contractMaintenanceSigningKey, stop? }`. It owns the funded local wallet and
 all opaque Midnight.js provider endpoints; no wallet seed, signing key, or
 mnemonic belongs in the plan or CLI output. The module is privileged code, not
 a data file: review its transitive imports, approve its SHA-256, install it
-read-only, and enforce process-level egress controls. A file hash checked
-before dynamic import does not eliminate a replacement race on writable
-storage. Use a pre-provisioned private journal directory and retain it with
+read-only, and enforce process-level egress controls. The real deployment,
+maintenance, and verifier-key insertion CLIs now require
+`TR_IMMUTABLE_PROVIDER_ROOT` to name an absolute, root-owned code tree
+containing the approved provider, wizard/CLI scripts, and all package code,
+and to run as a non-root user. The tree may
+have ordinary root-write permissions but no group/other write permission;
+it is effectively read-only to that process. The check permits only root-owned
+relative symlinks whose literal and resolved targets remain inside the tree;
+it rejects escaping links, hard links, group/other-writable descendants, and untrusted ancestors before network
+preflight; test-injected provider factories do not exercise that CLI gate.
+Root and administrative updates are inside the trusted computing base: a
+compromised root account or root-managed update during deployment can still
+replace code. Freeze the installed code tree for the run and retain the
+installer's source and image hashes; this check is not protection from root.
+Paths that traverse symlinked ancestors are intentionally rejected rather
+than canonicalized into an alternate approval path. Preload the resolver
+**before** the wizard or CLI entry point so static ESM and CommonJS dependencies
+cannot resolve outside that tree. A missing preload is rejected by the real
+provider loader:
+
+```sh
+export TR_IMMUTABLE_PROVIDER_ROOT=/absolute/root-owned/trust-registry-install
+export NODE_OPTIONS="--import=$TR_IMMUTABLE_PROVIDER_ROOT/scripts/approved-provider-preload.mjs"
+node "$TR_IMMUTABLE_PROVIDER_ROOT/scripts/local-ledger-deploy.mjs" /absolute/private/approved-plan.json
+```
+
+The preloader rejects file imports outside the tree and non-file imports other
+than Node built-ins, including dynamic ESM and CommonJS imports. A normal
+developer checkout is intentionally not a qualified immutable install even if
+its pnpm links are internal; do not remove the preload or substitute a writable checkout
+to make it run. This confines ordinary module resolution; it is **not** a
+sandbox for malicious code already present in the approved tree. The runner
+reads a no-follow regular-file descriptor and
+rechecks its bytes and inode immediately before import, including for
+maintenance and verifier-key insertion. This rejects replacements during
+network preflight; the preloaded resolver confines subsequent imports.
+
+To prepare the code tree without copying ignored wallet, setup, or genesis
+evidence from a developer checkout, use a **new private staging directory**:
+
+```sh
+mkdir -m 700 /absolute/private/provider-stages
+node scripts/stage-provider-runtime.mjs \
+  /absolute/verified/standalone-install/SOURCE_SHA \
+  /absolute/private/provider-stages/SOURCE_SHA
+```
+
+The command requires a clean GPG-signed `HEAD` matching the fully verified
+bundle. It rejects linked/non-regular Git entries before extraction, archives
+only committed source, installs locked dependencies with lifecycle scripts
+disabled and package files copied instead of hard-linked from the pnpm store,
+then overlays the bundle's verified package tarballs. This order uses the
+source workspace manifests for the frozen install; packed manifests can
+rewrite `workspace:*` dependencies. It refuses an existing
+destination and retains a partial stage for inspection on failure. The
+`provider-stage.json` report is **not an approval**: its source signer and
+inventory digest still need independent review. Record the printed
+`contentSha256`, `sourceRevision`, and `installInventorySha256` **outside** the
+stage and install tree as the reviewed handoff. The content digest includes
+every directory, regular file, and relative symlink in the staged runtime
+except `provider-stage.json`; it survives the ownership transfer but not a
+content or layout change. Do not copy the developer checkout or pnpm store
+instead.
+
+The result is owned by the current user and is not valid as
+`TR_IMMUTABLE_PROVIDER_ROOT`. A privileged operator must create a **new**
+root-owned installation beneath root-owned, non-group-writable ancestors,
+copy the reviewed stage without following links, make the code and internal
+links root-owned and non-writable to the non-root runner, then verify it:
+
+```sh
+node scripts/verify-installed-provider-runtime.mjs \
+  /absolute/root-owned/trust-registry-install \
+  "$REVIEWED_CONTENT_SHA256" "$REVIEWED_SOURCE_SHA" "$REVIEWED_INVENTORY_SHA256"
+```
+
+The three arguments must come from the independent handoff record, **not**
+from `provider-stage.json` in the installed tree. This command checks the
+root-owned tree, its source/inventory metadata, and the entire copied content
+against that record. It does not perform privileged installation, approve the
+signer or genesis, authenticate ledger finality, or run an actor journey.
+Keep the tree immutable during and after verification; a root-managed update
+requires a new handoff. Run the real CLI as a non-root user with the import
+preloader. This host has not yet demonstrated that transfer or a real
+SDK-backed submission; issue #233 remains open. Never put wallet seeds,
+signatures, private approval records, or backup material into the code tree.
+Neither check protects against a compromised root account, an unreviewed
+administrative update, or arbitrary code already running before the
+preloader. A source-matched root-owned installation and real SDK-backed run
+have not yet been demonstrated, so issue #233 remains a local-RC security
+gate. Do not use this unqualified hardening as release
+qualification. Use a pre-provisioned private journal directory and retain it with
 the receipt and ledger evidence. The CLI checks the manifest source, module
 hash, endpoint allowlist, and live genesis/finalized-head preflight before
 loading the provider. The deployment helper checks installed verifier-key
@@ -729,6 +838,10 @@ node scripts/standalone-setup-wizard.mjs approve-genesis /absolute/private/setup
 node scripts/standalone-setup-wizard.mjs draft-committee /absolute/private/setup-directory /absolute/committee-review-metadata.json
 # Governance independently reviews the public keys, custody roles, and threshold before signing.
 node scripts/standalone-setup-wizard.mjs approve-committee /absolute/private/setup-directory /absolute/private/setup-directory/committee-approval.unsigned.json /absolute/committee-approval.sig /absolute/private/governance-public-keyring GOVERNANCE_SIGNING_KEY_FINGERPRINT
+# Provider-backed commands must run from the reviewed, root-owned installation.
+export TR_IMMUTABLE_PROVIDER_ROOT=/absolute/root-owned/trust-registry-install
+export NODE_OPTIONS="--import=$TR_IMMUTABLE_PROVIDER_ROOT/scripts/approved-provider-preload.mjs"
+cd "$TR_IMMUTABLE_PROVIDER_ROOT"
 node scripts/standalone-setup-wizard.mjs deploy /absolute/private/setup-directory /absolute/approved-deployment-plan.json
 # Re-read a reserved staged deployment without submitting, if first readback lagged:
 node scripts/standalone-setup-wizard.mjs reconcile-deploy /absolute/private/setup-directory /absolute/approved-deployment-plan.json
@@ -823,6 +936,17 @@ same node's self-report. The reviewer must verify the
 chain-spec provenance and proposed pin before the separate `observe` command;
 the same relay identity and ports must be restored and reverified for that
 observation. A pre-existing proposal is not replaced automatically.
+
+After the untrusted proposal exists, run
+`pnpm prepare:standalone-genesis-review /absolute/private/setup-directory`.
+It re-verifies the install bundle, compares the private candidate and pin with
+the selected source, project, network profile, inventory, and pinned node image,
+then writes a non-overwriting mode-0600 `genesis-review-packet.md` in the
+private setup directory. This is a human review checklist and digest inventory,
+**not** independent chain-spec evidence or approval. The reviewer must obtain
+the authentic chain specification and approved install digest through a separate
+channel, compare them, and later sign the wizard's exact unsigned approval
+draft. The packet itself is never the signing target.
 
 For the pinned local node image, `CFG_PRESET=dev` selects the embedded
 `/res/cfg/dev.toml`, which references
@@ -920,8 +1044,9 @@ primary-key fingerprint and the `GOODSIG` key ID or fingerprint matches the
 actual signer.
 It requires a detached binary-document signature using SHA-256, SHA-384, or
 SHA-512; ASCII armoring of that detached signature is accepted. It rejects an
-expired or revoked signing key or signature. A `KEYEXPIRED` status alone does
-not cause rejection; an expired signing key is rejected through `EXPKEYSIG`.
+expired or revoked signing key or signature. API, wizard, and optional Helm
+bootstrap use the same strict status policy: `KEYEXPIRED`, `EXPKEYSIG`, and
+ambiguous or multiple valid-signature statuses all fail closed.
 The operator must refresh the approved public-key export or keyring before
 verification, because an old export cannot reveal a later revocation. The signature's
 creation time must be at or after the draft's `approvedAt` time; set that
@@ -1583,6 +1708,20 @@ not production secrets or public-network security guidance.
 
 ### Ambiguous proposal review
 
+The pinned submission provider's in-memory pending/uncertain sets guard only
+overlapping calls in one process. The private, deployment-bound proposal
+journal is the cross-restart authority: its reservation must be durable
+*before* the provider broadcasts. A failed journal write stops submission;
+restarting the API or provider must reopen the same bound journal and keep an
+ambiguous reservation blocked. Synthetic HTTP and journal tests exercise this
+ordering. The light-lane process-restart test forks a fresh API-side journal
+and pinned submission-provider instance for each attempt. Its mocked SDK
+submission callback is not reached after a lost response or lagging finalized
+read, and a failed journal write prevents the first callback. This verifies
+the journal boundary, not a real node broadcast, local-ledger restart, or
+non-inclusion. Preserve the original journal and its binding sidecar across
+service restart and backup/restore.
+
 Keep the API mutation path stopped when a proposal reservation has an unknown
 outcome. `trust-registry-api inspect-local-proposal-recovery` reads the bound
 private journal and signed local plan; a `reviewCandidate` result is an audit
@@ -1610,6 +1749,29 @@ before any release path is enabled. Do not use a null indexer read, elapsed
 time, or a new journal path as recovery authority. Issue #220 remains the stop
 gate until a
 reviewed finality policy, durable tombstone, and operator recovery path exist.
+
+## Security-Script Type Gate
+
+`pnpm run typecheck:security-scripts` checks the JavaScript import graph rooted
+at the first-run wizard, deployment and verifier-key runners, approved provider
+identity reader, install builder, Helm mapping verifier, restart observer, and
+static image archive reader. Root `typecheck` and `typecheck:light` run it in CI
+after the workspace packages are built. The gate caught previously implicit
+`Buffer`-to-JSON coercions; those reads now decode UTF-8 explicitly. The
+standalone wizard, deployment, maintenance, restart, Helm, and install tests
+remain the behavioral authority for malformed or missing fields.
+
+This is checked JavaScript with strict null and catch-variable checks, but
+`noImplicitAny` remains off. It is **not** a claim that the dynamic setup
+record, external provider callbacks, or parsed network JSON are fully typed.
+Trust Registry maintainers own the remaining migration under
+[#229](https://github.com/midnightntwrk/midnight-trust-registry/issues/229):
+move pure approval/plan decisions into typed packages, define explicit
+schemas for all untrusted records, and add strict types at the shell/IO
+boundary. Other operator and observation scripts outside the listed import
+graph remain untyped until inventoried and migrated. Type checking does not
+close the provider dependency-identity gate (#233), authenticated finality,
+or independent security review (#232).
 
 ## Evidence Ledger And Stop Rules
 

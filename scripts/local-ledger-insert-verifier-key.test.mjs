@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -89,6 +89,36 @@ test("checks source and provider bytes before network or provider access", async
     ...plan, sourceRevision: "d".repeat(40),
   }, dependencies(steps)), /source SHA disagrees/u);
   assert.deepEqual(steps, []);
+});
+
+test("real verifier-key insertion stops without an immutable provider root", async () => {
+  const previous = process.env.TR_IMMUTABLE_PROVIDER_ROOT;
+  delete process.env.TR_IMMUTABLE_PROVIDER_ROOT;
+  let called = false;
+  try {
+    await assert.rejects(runLocalVerifierKeyInsertion(plan, {
+      validateEndpoints: async () => { called = true; },
+      observe: async () => { called = true; },
+    }), /TR_IMMUTABLE_PROVIDER_ROOT/u);
+    assert.equal(called, false);
+  } finally {
+    if (previous === undefined) delete process.env.TR_IMMUTABLE_PROVIDER_ROOT;
+    else process.env.TR_IMMUTABLE_PROVIDER_ROOT = previous;
+  }
+});
+
+test("verifier-key insertion rejects a same-byte provider replacement during preflight", async () => {
+  const path = join(root, "replace-insertion-provider.mjs");
+  const replacement = join(root, "insertion-replacement.mjs");
+  await writeFile(path, moduleSource);
+  await writeFile(replacement, moduleSource);
+  let loaded = false;
+  await assert.rejects(runLocalVerifierKeyInsertion({ ...plan, providerModulePath: path }, {
+    validateEndpoints: async () => {},
+    observe: async () => { await rename(replacement, path); },
+    loadProvider: async () => { loaded = true; },
+  }), /path or inode changed/u);
+  assert.equal(loaded, false);
 });
 
 test("submits only after approved staged receipt and routes reconciliation without submission", async () => {

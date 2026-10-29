@@ -5,6 +5,7 @@ registry="${REGISTRY:-https://registry.npmjs.org}"
 npm_tag="${NPM_TAG:-next}"
 version="${VERSION:-}"
 tarball_dir="${TARBALL_DIR:-artifacts/npm-release}"
+manifest_path="${MANIFEST_PATH:-}"
 
 if [[ -z "${NODE_AUTH_TOKEN:-${NPM_TOKEN:-}}" ]]; then
   echo "::error::NODE_AUTH_TOKEN or NPM_TOKEN is required to publish packages." >&2
@@ -15,6 +16,19 @@ if [[ -z "${version}" ]]; then
   echo "::error::VERSION is required to publish packages." >&2
   exit 1
 fi
+
+if [[ -z "${manifest_path}" || ! -f "${manifest_path}" ]]; then
+  echo "::error::A verified release manifest is required to publish packages." >&2
+  exit 1
+fi
+node scripts/release-candidate-manifest.mjs --artifact-dir "${tarball_dir}" --verify "${manifest_path}"
+node --input-type=module -e '
+  import { readFileSync } from "node:fs";
+  const [path, version] = process.argv.slice(1);
+  if (JSON.parse(readFileSync(path, "utf8")).packageVersion !== version) {
+    throw new Error("Approved release manifest version differs from publish version");
+  }
+' "${manifest_path}" "${version}"
 
 published_version_for_package() {
   local package_name="$1"

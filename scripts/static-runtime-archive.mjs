@@ -1,6 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 
+import { matchesApprovedRuntimeHealthcheck } from "./runtime-healthcheck.mjs";
+
 const IMAGE_ID = /^sha256:[0-9a-f]{64}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
 const FINGERPRINT = /^[0-9A-F]{40}$/u;
@@ -23,7 +25,7 @@ function verifiedBlob(archive, digest) {
   if (createHash("sha256").update(bytes).digest("hex") !== digest.slice(7)) {
     throw new Error("OCI blob hash mismatch");
   }
-  return JSON.parse(bytes);
+  return JSON.parse(bytes.toString("utf8"));
 }
 
 export function staticImageIdentityFromArchive(archive, role, revision, requireOci = false) {
@@ -52,7 +54,7 @@ export function staticImageIdentityFromArchive(archive, role, revision, requireO
   if (createHash("sha256").update(configBytes).digest("hex") !== configDigest) {
     throw new Error(`${role} image archive config hash mismatch`);
   }
-  const config = JSON.parse(configBytes);
+  const config = JSON.parse(configBytes.toString("utf8"));
   const environment = config?.config?.Env;
   if (config?.os !== "linux" || config.architecture !== "arm64"
     || config.config?.Labels?.["org.opencontainers.image.revision"] !== revision
@@ -65,7 +67,8 @@ export function staticImageIdentityFromArchive(archive, role, revision, requireO
     || !environment.includes(`TR_STATIC_ROLE=${role}`)
     || (requireOci && (environment.some((entry) => typeof entry !== "string"
       || /^(?:NODE_OPTIONS|NODE_PATH|LD_PRELOAD|LD_LIBRARY_PATH)=/u.test(entry))
-      || config.config.Healthcheck != null || config.config.OnBuild != null
+      || !matchesApprovedRuntimeHealthcheck(config.config.Healthcheck, role)
+      || config.config.OnBuild != null
       || config.config.Volumes != null))
     || JSON.stringify(config.config?.Cmd)
       !== JSON.stringify(["node", "/app/entrypoint.mjs", "--host", "0.0.0.0", "--port", "4173"])) {

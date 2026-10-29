@@ -18,10 +18,13 @@ const topology = {
   hostPortPublished: false,
 };
 const report = {
-  format: "tr-local-api-current-read-observation-v3",
+  format: "tr-local-api-current-read-observation-v4",
   apiOrigin: "http://127.0.0.1:4400",
   planSourceRevision: sourceRevision,
   planSha256: "d".repeat(64),
+  planContractAddress: `0x${"a".repeat(64)}`,
+  planExpectedGenesisHash: `0x${"b".repeat(64)}`,
+  selectedStateSha256: "f".repeat(64),
   observedAt: "2026-10-24T11:00:00.000Z",
   planNotAfter: "2026-11-01T00:00:00.000Z",
   registryId: "registry:local",
@@ -49,14 +52,17 @@ test("probes loopback from the verified API container, then rechecks its identit
     "--local-ledger-reviewer", fingerprint,
     "--api-origin", "http://127.0.0.1:4400"]);
   assert.deepEqual(result, {
-    format: "tr-standalone-api-current-read-probe-v3",
+    format: "tr-standalone-api-current-read-probe-v4",
     sourceRevision, apiContainerId: topology.apiContainerId,
     apiStartedAt: topology.apiStartedAt, apiRestartCount: topology.apiRestartCount,
     networkId: topology.networkId,
     planSha256: report.planSha256, planNotAfter: report.planNotAfter,
+    planContractAddress: report.planContractAddress,
+    planExpectedGenesisHash: report.planExpectedGenesisHash,
     observedAt: report.observedAt,
     registryId: report.registryId, currentEpochId: report.currentEpochId,
     sourceFinalizedBlockHash: report.sourceFinalizedBlockHash,
+    selectedStateSha256: report.selectedStateSha256,
     counts: report.counts,
     resolvedLookups: report.resolvedLookups,
     ambiguousLookups: report.ambiguousLookups,
@@ -83,6 +89,8 @@ test("rejects malformed and source-mismatched packaged readback", async () => {
   const observe = async () => topology;
   for (const stdout of ["not-json", JSON.stringify({ ...report, releaseQualified: true }),
     JSON.stringify({ ...report, format: "tr-local-api-current-read-observation-v1" }),
+    JSON.stringify({ ...report, planContractAddress: `0x${"0".repeat(64)}` }),
+    JSON.stringify({ ...report, planExpectedGenesisHash: "invalid" }),
     JSON.stringify({ ...report, planSourceRevision: "b".repeat(40) })]) {
     await assert.rejects(probeStandaloneApiCurrentReads("/bundle", env, {
       observe, execDocker: async () => stdout,
@@ -130,6 +138,7 @@ test("rejects invalid report time, expired observation, and incomplete topology"
   for (const current of [{ ...report, observedAt: "not-a-time" },
     { ...report, observedAt: "2026-11-02T00:00:00.000Z" },
     { ...report, planSha256: undefined },
+    { ...report, selectedStateSha256: undefined },
     { ...report, planNotAfter: "2026-11-01" },
     { ...report, planSourceRevision: undefined },
     { ...report, sourceFinalizedBlockHash: undefined },

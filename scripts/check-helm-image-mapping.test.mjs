@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -202,19 +202,56 @@ test("detached mapping signature covers the exact bytes and approved signer", as
     assert.throws(() => verifyMappingSignature(Buffer.from("changed"), signature, keyring,
       fingerprint), /valid detached signature/u);
     assert.throws(() => verifyMappingSignature(bytes, signature, keyring,
-      "B".repeat(40)), /approved signer/u);
+      "B".repeat(40)), /valid detached signature/u);
+    const linkedKeyring = join(root, "linked-keyring.gpg");
+    const linkedSignature = join(root, "linked-mapping.sig");
+    await symlink(keyring, linkedKeyring);
+    await symlink(signature, linkedSignature);
+    assert.throws(() => verifyMappingSignature(bytes, signature, linkedKeyring, fingerprint));
+    assert.throws(() => verifyMappingSignature(bytes, linkedSignature, keyring, fingerprint));
+    assert.throws(() => verifyMappingSignature(bytes, "mapping.sig", keyring, fingerprint), /absolute/u);
+    const fakeBin = join(root, "fake-bin");
+    await mkdir(fakeBin);
+    const marker = join(root, "path-gpgv-called");
+    await writeFile(join(fakeBin, "gpgv"), `#!/bin/sh\nprintf called > '${marker}'\nexit 0\n`, { mode: 0o700 });
+    const oldPath = process.env.PATH;
+    const oldHome = process.env.GNUPGHOME;
+    try {
+      process.env.PATH = `${fakeBin}:${oldPath}`;
+      process.env.GNUPGHOME = join(root, "untrusted-home");
+      assert.equal(verifyMappingSignature(bytes, signature, keyring, fingerprint), fingerprint);
+      await assert.rejects(readFile(marker), { code: "ENOENT" });
+    } finally {
+      process.env.PATH = oldPath;
+      if (oldHome === undefined) delete process.env.GNUPGHOME;
+      else process.env.GNUPGHOME = oldHome;
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test("GPG status accepts a primary fingerprint for a signing subkey but rejects revoked keys", () => {
+test("GPG status accepts a pinned primary and rejects ambiguous or weak signatures", () => {
   const signer = "A".repeat(40);
   const primary = "B".repeat(40);
-  const status = `[GNUPG:] VALIDSIG ${signer} 2026-10-20 0 0 4 0 22 8 00 ${primary}\n`;
-  assert.equal(approvedMappingSigner(status, signer), signer);
+  const signedAt = Math.floor(Date.now() / 1000) - 30;
+  const valid = `[GNUPG:] VALIDSIG ${signer} 2026-10-20 ${signedAt} 0 4 0 22 8 00 ${primary}\n`;
+  const status = `[GNUPG:] GOODSIG ${signer.slice(-16)} Reviewer\n${valid}`;
   assert.equal(approvedMappingSigner(status, primary), primary);
-  assert.throws(() => approvedMappingSigner(status, "C".repeat(40)), /approved signer/u);
-  assert.throws(() => approvedMappingSigner(`${status}[GNUPG:] REVKEYSIG ${signer}\n`, primary), /revoked/u);
-  assert.throws(() => approvedMappingSigner(`${status}[GNUPG:] EXPKEYSIG ${signer}\n`, primary), /expired/u);
+  assert.throws(() => approvedMappingSigner(status, signer), /valid detached signature/u);
+  assert.throws(() => approvedMappingSigner(status, "C".repeat(40)), /valid detached signature/u);
+  assert.throws(() => approvedMappingSigner(`${status}[GNUPG:] REVKEYSIG ${signer}\n`, primary), /valid detached signature/u);
+  assert.throws(() => approvedMappingSigner(`${status}[GNUPG:] EXPKEYSIG ${signer}\n`, primary), /valid detached signature/u);
+  for (const invalid of [
+    `${status}${valid}`,
+    `${status}[GNUPG:] GOODSIG ${signer.slice(-16)} Second\n`,
+    status.replace(" 22 8 00 ", " 22 2 00 "),
+    status.replace(" 22 8 00 ", " 22 8 01 "),
+    `${status}[GNUPG:] BADSIG ${signer}\n`,
+    `${status}[GNUPG:] NO_PUBKEY ${signer}\n`,
+    `${status}[GNUPG:] PLAINTEXT_LENGTH 10\n`,
+    status.replace(`${signedAt} 0`, `${signedAt} ${signedAt - 1}`),
+  ]) {
+    assert.throws(() => approvedMappingSigner(invalid, primary));
+  }
 });
