@@ -8,6 +8,10 @@ import { prepareStandaloneGenesisReviewPacketBytes } from "./standalone-genesis-
 export { validateGenesisReviewEvidence } from "./standalone-genesis-review-policy.mjs";
 export { renderGenesisReviewPacket } from "./standalone-genesis-review-packet.mjs";
 
+/**
+ * @param {string} directory
+ * @param {{ verifyBundle?: (path: string) => Promise<unknown> }} [dependencies]
+ */
 export async function prepareStandaloneGenesisReviewPacket(directory,
   dependencies = {}) {
   return prepareStandaloneGenesisReviewPacketBytes(directory,

@@ -128,6 +128,8 @@ test("rejects external or extra network attachments and incomplete services", ()
   assert.throws(drift((_network, items) => { items[0].NetworkSettings.Networks.bridge = {
     NetworkID: "outside",
   }; }), /non-internal network/u);
+  assert.throws(drift((_network, items) => { delete items[0].NetworkSettings; }),
+    /non-internal network/u);
   assert.throws(drift((_network, items) => { items[0].State.Running = false; }), /unhealthy/u);
   assert.throws(drift((_network, items) => { delete items[0].Config.Healthcheck; }), /health check/u);
   assert.throws(drift((_network, items) => { delete items[0].State.Health; }), /health check/u);

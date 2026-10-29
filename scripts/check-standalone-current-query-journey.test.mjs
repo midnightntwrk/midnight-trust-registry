@@ -24,6 +24,7 @@ const status = {
   maintenanceTransitionAlert: null,
 };
 const roles = { issuer: 1, verifier: 1, auditor: 1, recognition: 1 };
+const ambiguousLookups = { issuer: 0, verifier: 0, auditor: 0 };
 const read = {
   format: "tr-standalone-api-current-read-probe-v4",
   sourceRevision,
@@ -43,6 +44,7 @@ const read = {
   installInventorySha256: status.installInventorySha256,
   counts: roles,
   resolvedLookups: roles,
+  ambiguousLookups,
 };
 const egress = {
   kind: "standalone-api-egress-observation",
@@ -78,6 +80,7 @@ test("combines two live current reads around the API egress probe without releas
   assert.equal(result.planContractAddress, read.planContractAddress);
   assert.equal(result.planExpectedGenesisHash, read.planExpectedGenesisHash);
   assert.deepEqual(result.resolvedLookups, roles);
+  assert.deepEqual(result.ambiguousLookups, ambiguousLookups);
   assert.equal(result.actorJourneys, "not-run");
   assert.equal(result.independentFinality, "not-verified");
   assert.equal(result.releaseQualified, false);
@@ -127,6 +130,15 @@ test("rejects an empty or mocked actor selection", async () => {
   /no resolved actor role/u);
 });
 
+test("rejects missing or impossible ambiguous lookup counts", async () => {
+  for (const ambiguous of [undefined, { ...ambiguousLookups, issuer: -1 },
+    { ...ambiguousLookups, verifier: 2 }]) {
+    await assert.rejects(observeStandaloneCurrentQueryJourney("/setup", "/bundle", env,
+      dependencies({ read: async () => ({ ...read, ambiguousLookups: ambiguous }) })),
+    /readback is incomplete/u);
+  }
+});
+
 test("rejects missing process identity on either side of the egress probe", async () => {
   for (const mutation of [{ apiStartedAt: undefined }, { apiRestartCount: undefined }]) {
     for (const badRead of [1, 2]) {
@@ -167,4 +179,12 @@ test("rejects role count drift between reads", async () => {
   await assert.rejects(observeStandaloneCurrentQueryJourney("/setup", "/bundle", env,
     dependencies({ read: async () => { reads += 1; return reads === 1 ? read
       : { ...read, counts: { ...roles, verifier: 2 } }; } })), /changed during egress probe/u);
+});
+
+test("rejects ambiguous lookup drift across the egress probe", async () => {
+  let reads = 0;
+  await assert.rejects(observeStandaloneCurrentQueryJourney("/setup", "/bundle", env,
+    dependencies({ read: async () => { reads += 1; return reads === 1 ? read
+      : { ...read, ambiguousLookups: { ...ambiguousLookups, issuer: 1 } }; } })),
+  /changed during egress probe/u);
 });

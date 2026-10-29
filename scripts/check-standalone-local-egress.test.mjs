@@ -4,6 +4,8 @@ import { Script } from "node:vm";
 
 import { localEgressCanaryServerScript,
   observeStandaloneLocalEgress } from "./check-standalone-local-egress.mjs";
+import { apiEgressCanaryServerScript, apiEgressDnsScript } from "./check-standalone-api-egress.mjs";
+import { apiEgressDnsScript as sharedDnsScript } from "./standalone-egress-canary-scripts.mjs";
 
 const header = "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT";
 const subnetRoute = "eth0\t000015AC\t00000000\t0001\t0\t0\t0\t0000FFFF\t0\t0\t0";
@@ -17,12 +19,15 @@ const expectedTopology = { allowOffline: true, sourceRevision: "c".repeat(40),
   apiRuntime: { imageId: apiIndex, configId: apiImage } };
 
 test("generated canary script is valid Node source with escaped HTTP framing", () => {
+  assert.equal(localEgressCanaryServerScript, apiEgressCanaryServerScript);
+  assert.equal(apiEgressDnsScript, sharedDnsScript);
   assert.doesNotThrow(() => new Script(localEgressCanaryServerScript));
   assert.match(localEgressCanaryServerScript, /\\r\\nContent-Length: 0\\r\\n/u);
   assert.ok(!localEgressCanaryServerScript.includes("No Content\r\n"));
 });
 
 function harness({ isolatedCurlCode = 7, isolatedDnsCode = 7, canaryImage,
+  canaryAddress = "172.31.0.7",
   loadedApiImage = apiImage,
   changedNetwork = false, canaryStartCode = 0, isolatedDnsDelivered = false } = {}) {
   const calls = [];
@@ -50,7 +55,7 @@ function harness({ isolatedCurlCode = 7, isolatedDnsCode = 7, canaryImage,
     }
     if (args[0] === "inspect") return { code: 0, stdout: JSON.stringify([{
       Image: canaryImage ?? loadedApiImage, NetworkSettings: { Networks: {
-        [controlNetwork]: { IPAddress: "172.31.0.7" },
+        [controlNetwork]: { IPAddress: canaryAddress },
       } },
     }]) };
     if (args[0] !== "run") throw new Error(`Unexpected Docker call: ${args.join(" ")}`);
@@ -98,7 +103,8 @@ test("offline ledger probe uses a disposable local canary and cleans up", async 
 test("offline ledger probe rejects leakage and changed identities", async () => {
   for (const options of [{ isolatedCurlCode: 0 }, { isolatedDnsCode: 0 },
     { isolatedDnsCode: 2 }, { isolatedDnsDelivered: true },
-    { canaryImage: nodeImage }, { changedNetwork: true }]) {
+    { canaryImage: nodeImage }, { canaryAddress: null },
+    { canaryAddress: "not-an-ip" }, { changedNetwork: true }]) {
     const setup = harness(options);
     await assert.rejects(observeStandaloneLocalEgress({ ...setup, expectedTopology,
       env: { TR_STACK_NAME: "tr-standalone-local-probe" } }));

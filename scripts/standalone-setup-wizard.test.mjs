@@ -3225,6 +3225,16 @@ test("detached GPG verification accepts only the pinned signing key and exact by
   await writeFile(document, '{"format":"tr-local-genesis-approval-v1"}\n');
   execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--detach-sign", "--output", signature, document]);
   await verifyDetachedReviewerSignature(document, signature, verifier, fingerprint, approvedAt);
+  await assert.rejects(verifyDetachedReviewerSignature(document, signature, verifier, fingerprint),
+    /pinned reviewer key/u);
+  const linkedDocument = join(root, "linked-approval.json");
+  const linkedSignature = join(root, "linked-approval.sig");
+  await symlink(document, linkedDocument);
+  await symlink(signature, linkedSignature);
+  await assert.rejects(verifyDetachedReviewerSignature(linkedDocument, signature,
+    verifier, fingerprint, approvedAt));
+  await assert.rejects(verifyDetachedReviewerSignature(document, linkedSignature,
+    verifier, fingerprint, approvedAt));
   const fakeBin = join(root, "fake-bin");
   await mkdir(fakeBin);
   const marker = join(root, "path-gpg-called");
@@ -3248,6 +3258,16 @@ test("detached GPG verification accepts only the pinned signing key and exact by
   const publicExport = join(root, "reviewer-public.asc");
   await writeFile(publicExport, armoredPublicKey, { mode: 0o600 });
   await verifyDetachedReviewerSignature(document, signature, publicExport, fingerprint, approvedAt);
+  const longTemp = join(root, "long-configured-temporary-directory-for-gpg-armored-import");
+  await mkdir(longTemp);
+  const previousTemp = process.env.TMPDIR;
+  try {
+    process.env.TMPDIR = longTemp;
+    await verifyDetachedReviewerSignature(document, signature, publicExport, fingerprint, approvedAt);
+  } finally {
+    if (previousTemp === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = previousTemp;
+  }
   await assert.rejects(verifyDetachedReviewerSignature(document, signature, publicExport, "B".repeat(40), approvedAt),
     /does not match/u);
   const invalidExport = join(root, "invalid-public.asc");
@@ -3281,9 +3301,9 @@ test("detached GPG verification accepts only the pinned signing key and exact by
   const unrelatedDocument = join(root, "unrelated.json");
   await writeFile(unrelatedDocument, '{"format":"different"}\n');
   await assert.rejects(verifyDetachedReviewerSignature(unrelatedDocument, attachedSignature,
-    verifier, fingerprint, approvedAt), /detached signature|not verified/u);
+    verifier, fingerprint, approvedAt), /does not match|not verified/u);
   await assert.rejects(verifyDetachedReviewerSignature(unrelatedDocument, clearSignature,
-    verifier, fingerprint, approvedAt), /detached signature|not verified/u);
+    verifier, fingerprint, approvedAt), /does not match|not verified/u);
   await writeFile(document, '{"format":"tampered"}\n');
   await assert.rejects(verifyDetachedReviewerSignature(document, signature, verifier, fingerprint, approvedAt));
 });
