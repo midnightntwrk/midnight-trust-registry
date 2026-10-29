@@ -12,6 +12,8 @@ const initial = {
   installInventorySha256: "9".repeat(64),
   apiStartedAt: "2026-01-01T00:00:00.000Z",
   apiRestartCount: 0,
+  approvalMountReadOnly: true,
+  trustAnchorMountReadOnly: true,
 };
 const resumed = { ...initial, apiStartedAt: "2026-01-01T00:01:00.000Z", apiRestartCount: 1 };
 const journey = {
@@ -76,6 +78,15 @@ test("refuses to restart when the preflight did not prove API egress denial", as
   assert.equal(restarted, false);
 });
 
+test("refuses to restart when the protected anchor mount is not observed", async () => {
+  let restarted = false;
+  await assert.rejects(observeStandaloneApiRestart("/setup", "/bundle", {}, dependencies({
+    observe: async () => ({ ...initial, trustAnchorMountReadOnly: false }),
+    restart: async () => { restarted = true; },
+  })), /do not match/u);
+  assert.equal(restarted, false);
+});
+
 test("rejects restart without new process identity or with a second unexpected restart", async () => {
   for (const state of [initial, { ...resumed, apiRestartCount: 2 }]) {
     await assert.rejects(observeStandaloneApiRestart("/setup", "/bundle", {}, dependencies({
@@ -88,12 +99,24 @@ test("rejects selected-state or signed-plan drift after restart", async () => {
   for (const change of [{ selectedStateSha256: "f".repeat(64) },
     { planSha256: "f".repeat(64) }, { installInventorySha256: "f".repeat(64) },
     { apiContainerId: "f".repeat(64) },
+    { currentEpochId: "epoch-2" },
     { apiEgressCanaryDenied: false }]) {
     let reads = 0;
     await assert.rejects(observeStandaloneApiRestart("/setup", "/bundle", {}, dependencies({
       journey: async () => { reads += 1; return reads === 1 ? journey : { ...journey, ...change }; },
     })), /changed across restart/u);
   }
+});
+
+test("rejects a second process change after post-restart current reads", async () => {
+  let observations = 0;
+  await assert.rejects(observeStandaloneApiRestart("/setup", "/bundle", {}, dependencies({
+    observe: async () => {
+      observations += 1;
+      return observations === 1 ? initial : observations === 2 ? resumed
+        : { ...resumed, apiRestartCount: 2, apiStartedAt: "2026-01-01T00:02:00.000Z" };
+    },
+  })), /changed across restart/u);
 });
 
 test("fails closed when the API cannot be observed after its post-restart journey", async () => {

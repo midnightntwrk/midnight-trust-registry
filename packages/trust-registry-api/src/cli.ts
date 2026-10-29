@@ -72,6 +72,8 @@ const HELP_TEXT = `Usage:
 
 Snapshot and workspace modes are fixture-only and require a loopback host.
 Cluster binding requires signed local-ledger mode; it is not release qualification.
+All v3 local-ledger commands require TR_API_TRUST_ANCHOR_PATH to name a
+separately reviewed, root-owned first-run anchor outside the approval directory.
 --serve-portals serves packaged admin/applicant assets from the API origin.
 The plan check performs signed-pin and finalized snapshot readback without a listener.
 It is not independent finality proof or release qualification.
@@ -87,8 +89,8 @@ Draft and verify are also read-only: they do not authenticate chain finality or 
 Examples:
   trust-registry-api serve --snapshot ./tmp/demo-snapshot.json
   trust-registry-api serve --workspace ./tmp/operator-workspace.json --port 4400
-  trust-registry-api serve --local-ledger-plan /run/trust-registry/api-plan.json --local-ledger-signature /run/trust-registry/api-plan.sig --local-ledger-keyring /run/trust-registry/reviewer-keyring --local-ledger-reviewer 0123456789ABCDEF0123456789ABCDEF01234567
-  trust-registry-api serve --local-ledger-plan /run/trust-registry/api-plan.json --local-ledger-signature /run/trust-registry/api-plan.sig --local-ledger-keyring /run/trust-registry/reviewer-keyring --local-ledger-reviewer 0123456789ABCDEF0123456789ABCDEF01234567 --host 0.0.0.0 --cluster-bind
+  TR_API_TRUST_ANCHOR_PATH=/etc/trust-registry-first-run-anchor.json trust-registry-api serve --local-ledger-plan /run/trust-registry/api-plan.json --local-ledger-signature /run/trust-registry/api-plan.sig --local-ledger-keyring /run/trust-registry/reviewer-keyring --local-ledger-reviewer 0123456789ABCDEF0123456789ABCDEF01234567
+  TR_API_TRUST_ANCHOR_PATH=/etc/trust-registry-first-run-anchor.json trust-registry-api serve --local-ledger-plan /run/trust-registry/api-plan.json --local-ledger-signature /run/trust-registry/api-plan.sig --local-ledger-keyring /run/trust-registry/reviewer-keyring --local-ledger-reviewer 0123456789ABCDEF0123456789ABCDEF01234567 --host 0.0.0.0 --cluster-bind
 `;
 
 export type TrustRegistryApiCliOptions = {

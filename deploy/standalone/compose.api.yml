@@ -12,6 +12,8 @@ services:
     pids_limit: 128
     expose: [4400]
     networks: [ledger]
+    environment:
+      TR_API_TRUST_ANCHOR_PATH: /etc/trust-registry-first-run-anchor.json
     depends_on:
       node:
         condition: service_healthy
@@ -21,6 +23,12 @@ services:
       - type: bind
         source: ${TR_API_APPROVAL_DIR:?private approved runtime directory required}
         target: /run/trust-registry
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${TR_API_TRUST_ANCHOR_FILE:?root-owned first-run trust anchor required}
+        target: /etc/trust-registry-first-run-anchor.json
         read_only: true
         bind:
           create_host_path: false

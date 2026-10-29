@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { assessStandaloneObservationBinding, attachStandaloneAcceptanceEvidence, checkStandaloneAcceptanceEvidence,
   decideStandaloneAcceptanceCase, recordEvidenceFileIdentity } from "./check-standalone-acceptance-evidence.mjs";
 import { assessStandaloneCaseDecisionChain } from "./standalone-acceptance-decision-policy.mjs";
+import { API_RESTART_SCOPE, CURRENT_QUERY_SCOPE } from "./standalone-qualification-scope-policy.mjs";
 
 const CASES = ["L01", "L02", "A01", "A02", "A03", "A04", "N01", "O01", "R01", "S01"];
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -75,22 +76,40 @@ test("strict decision policy requires an ordered, current, source-bound verdict"
     { ...decisions[0].record, sourceRevision: "f".repeat(40) },
     { ...decisions[0].record, reviewerAuthenticated: true },
     { ...decisions[0].record, evidence: [] },
+    { ...decisions[0].record, reviewer: "x" },
+    { ...decisions[0].record, reasonCode: "Private details" },
+    { ...decisions[0].record, decidedAt: "yesterday" },
+    { ...decisions[0].record, decidedAt: "2026-10-27T01:00:00+01:00" },
     { ...decisions[0].record, extra: true },
+    { ...decisions[0].record, "caseId|decidedAt": "L01" },
   ]) {
     assert.throws(() => assess("pass", evidence, [{ ...decisions[0], record: invalid }, decisions[1]]),
       /case history/u);
   }
+  assert.throws(() => assess("pass", evidence, [decisions[0], {
+    ...decisions[1], record: { ...decisions[1].record, decidedAt: "2026-10-26T23:59:59.999Z" },
+  }]), /case history/u);
 });
 const observation = (candidate) => ({
   format: "tr-standalone-qualification-observation-v1",
   sourceRevision: candidate.sourceRevision,
   inventorySha256: candidate.installInventorySha256,
+  recordedVerifierKeyCatalog: "bundle-and-wizard-records-match-not-independent-finality",
   prerequisites: {
     format: "tr-standalone-journey-prerequisites-v1",
     sourceRevision: candidate.sourceRevision,
     expectedSourceRevision: candidate.sourceRevision,
+    gates: {},
     ledgerPrerequisitesObserved: true,
     missing: [],
+    nextActions: [],
+    nextSafeAction: null,
+    blockedActions: [],
+    completeVerifierKeyInventory: "not-verified",
+    actorJourney: "not-run",
+    signedApiPlan: "not-verified",
+    egressDenied: "not-verified",
+    independentFinality: "not-verified",
     releaseQualified: false,
   },
   currentQuery: {
@@ -103,11 +122,15 @@ const observation = (candidate) => ({
     planExpectedGenesisHash: candidate.genesisHash,
     planContractAddress: candidate.contractAddress,
     selectedStateSha256: "2".repeat(64),
+    registryId: "test-registry",
+    currentEpochId: "test-epoch",
+    finalizedCheckpoints: [`0x${"3".repeat(64)}`, `0x${"4".repeat(64)}`],
     counts: { issuer: 1, verifier: 1, auditor: 1, recognition: 1 },
     resolvedLookups: { issuer: 1, verifier: 1, auditor: 1, recognition: 1 },
     ambiguousLookups: { issuer: 0, verifier: 0, auditor: 0 },
     apiEgressCanaryDenied: true,
     apiDnsCanaryDenied: true,
+    scope: CURRENT_QUERY_SCOPE,
     actorJourneys: "not-run",
     hostAndBrowserEgress: "not-verified",
     independentFinality: "not-verified",
@@ -128,6 +151,11 @@ test("read-only observation binds to one acceptance candidate without passing ca
   const observed = observation(candidate);
   const result = assessStandaloneObservationBinding(candidate, observed);
   assert.equal(result.readOnlyObservationBound, true);
+  assert.throws(() => assessStandaloneObservationBinding(candidate,
+    { ...observed, humanSecurityReview: "approved" }), /differs/u);
+  assert.throws(() => assessStandaloneObservationBinding(candidate,
+    { ...observed, prerequisites: { ...observed.prerequisites,
+      humanSecurityReview: "approved" } }), /differs/u);
   assert.equal(result.actorJourney, "not-run");
   assert.equal(result.acceptanceCasesChanged, false);
   assert.equal(result.releaseQualified, false);
@@ -136,6 +164,8 @@ test("read-only observation binds to one acceptance candidate without passing ca
   for (const change of [
     { sourceRevision: "9".repeat(40) },
     { inventorySha256: "9".repeat(64) },
+    { recordedVerifierKeyCatalog: "verified" },
+    { recordedVerifierKeyCatalog: undefined },
     { governedActorJourneys: "pass" },
     { releaseQualified: true },
   ]) {
@@ -169,6 +199,7 @@ test("read-only observation binds to one acceptance candidate without passing ca
     selectedStateSha256: observed.currentQuery.selectedStateSha256,
     apiEgressCanaryDenied: true,
     apiDnsCanaryDenied: true,
+    scope: API_RESTART_SCOPE,
     releaseQualified: false,
   };
   assert.equal(assessStandaloneObservationBinding(candidate,
@@ -179,9 +210,18 @@ test("read-only observation binds to one acceptance candidate without passing ca
     { ...observed, apiRestart: { ...restart, installInventorySha256: "9".repeat(64) } }), /differs/u);
   assert.throws(() => assessStandaloneObservationBinding(candidate,
     { ...observed, apiRestart: { ...restart, apiDnsCanaryDenied: false } }), /differs/u);
+  assert.throws(() => assessStandaloneObservationBinding(candidate,
+    { ...observed, currentQuery: { ...observed.currentQuery,
+      governedActorJourneys: "passed" } }), /differs/u);
+  assert.throws(() => assessStandaloneObservationBinding(candidate,
+    { ...observed, apiRestart: { ...restart, independentFinality: "verified" } }), /differs/u);
   const pending = { ...observed, prerequisites: { ...observed.prerequisites,
-    ledgerPrerequisitesObserved: false, missing: ["deploymentObserved"] }, currentQuery: "not-run" };
+    ledgerPrerequisitesObserved: false, missing: ["deploymentObserved"] }, currentQuery: "not-run",
+    recordedVerifierKeyCatalog: "not-verified" };
   assert.equal(assessStandaloneObservationBinding(candidate, pending).readOnlyObservationBound, false);
+  assert.throws(() => assessStandaloneObservationBinding(candidate,
+    { ...pending, recordedVerifierKeyCatalog: observed.recordedVerifierKeyCatalog }),
+  /inconsistent pending prerequisites/u);
 });
 
 test("observation CLI rejects public, linked, and mismatched evidence without changing verdicts", async () => {
@@ -201,6 +241,7 @@ test("observation CLI rejects public, linked, and mismatched evidence without ch
     pending.prerequisites.ledgerPrerequisitesObserved = false;
     pending.prerequisites.missing = ["deploymentObserved"];
     pending.currentQuery = "not-run";
+    pending.recordedVerifierKeyCatalog = "not-verified";
     await writeFile(path, `${JSON.stringify(pending)}\n`, { mode: 0o600 });
     const blocked = run("observe", root, candidate.sourceRevision, "observation.json");
     assert.equal(blocked.status, 2, blocked.stderr);

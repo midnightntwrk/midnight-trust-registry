@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { join, resolve } from "node:path";
 
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
+import { exactStringSet } from "./standalone-exact-fields-policy.mjs";
 
 const run = promisify(execFile);
 const DEFAULT_PROJECT = "tr-standalone-local-smoke";
@@ -231,9 +232,10 @@ export function checkStandaloneTopology(network, containers, config = standalone
     }
     observed.push(service);
   }
-  if (observed.sort().join("\0") !== [...SERVICES].sort().join("\0")) {
+  if (!exactStringSet(observed, SERVICES)) {
     throw new Error("Dedicated service set is incomplete");
   }
+  observed.sort();
   if (portAccess.size !== 1) {
     throw new Error("Dedicated service host access mode is inconsistent");
   }

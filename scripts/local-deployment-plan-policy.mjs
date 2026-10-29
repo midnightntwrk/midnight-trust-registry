@@ -1,6 +1,7 @@
 import { isAbsolute } from "node:path";
 
 import { getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
+import { exactRecordFields as exactFields } from "./standalone-exact-fields-policy.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
 const REVISION = /^[0-9a-f]{40}$/u;
@@ -23,11 +24,6 @@ const NETWORK_FIELDS = ["allowedHosts", "expectedGenesisHash", "indexerHttpUrl",
 
 /** @param {unknown} value @returns {value is Record<string, unknown>} */
 const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
-
-/** @param {unknown} value @param {string[]} fields
- * @returns {value is Record<string, unknown>} */
-const exactFields = (value, fields) => isRecord(value)
-  && Object.keys(value).sort().join("\0") === [...fields].sort().join("\0");
 
 /** @param {unknown} value */
 const absolutePath = (value) => typeof value === "string" && isAbsolute(value);

@@ -39,6 +39,64 @@ test("parity reports every isolated outcome when the governed demo aborts", () =
   assert.equal(report.demoFailure.reason, "demo setup failed");
 });
 
+test("default parity mode rejects an empty isolated case set", () => {
+  const empty = {
+    format: "tr-adversarial-case-report-v1",
+    summary: { total: 0, passed: 0, failed: 0 }, cases: [],
+  };
+  assert.throws(() => buildAdversarialParityReport(empty, {
+    status: 0, signal: null, stdout: JSON.stringify({ adversarialMatrix: {
+      format: "tr-adversarial-matrix-v1", summary: { total: 0, failed: 0 }, cases: [],
+    } }),
+  }), /Isolated adversarial case report is invalid/u);
+});
+
+test("parity rejects an isolated summary that hides a failed case", () => {
+  const isolated = {
+    format: "tr-adversarial-case-report-v1",
+    summary: { total: 1, passed: 1, failed: 0 },
+    cases: [{ id: "case-a", status: "failed", reason: "assertion-failed" }],
+  };
+  assert.throws(() => buildAdversarialParityReport(isolated, {
+    status: 0, signal: null, stdout: "{}",
+  }), /Isolated adversarial case report is invalid/u);
+});
+
+test("parity rejects a governed demo summary that hides a failed case", () => {
+  const isolated = {
+    format: "tr-adversarial-case-report-v1",
+    summary: { total: 1, passed: 1, failed: 0 },
+    cases: [{ id: "case-a", status: "passed", reason: "passed" }],
+  };
+  const matrix = {
+    format: "tr-adversarial-matrix-v1",
+    summary: { total: 1, passed: 1, failed: 0 },
+    cases: [{ id: "case-a", status: "failed" }],
+  };
+  const report = buildAdversarialParityReport(isolated, {
+    status: 0, signal: null, stdout: JSON.stringify({ adversarialMatrix: matrix }),
+  });
+  assert.equal(report.status, "failed");
+  assert.ok(report.issues.includes("governed-demo-report-unavailable"));
+});
+
+test("parseable demo output without cases retains the isolated diagnostic report", () => {
+  const isolated = {
+    format: "tr-adversarial-case-report-v1",
+    summary: { total: 1, passed: 1, failed: 0 },
+    cases: [{ id: "case-a", status: "passed", reason: "passed" }],
+  };
+  const report = buildAdversarialParityReport(isolated, {
+    status: 0, signal: null, stdout: JSON.stringify({ adversarialMatrix: {
+      format: "tr-adversarial-matrix-v1", summary: {},
+    } }),
+  });
+  assert.equal(report.status, "failed");
+  assert.deepEqual(report.issues, ["governed-demo-report-unavailable"]);
+  assert.deepEqual(report.isolatedReport, isolated);
+  assert.equal(report.missingCaseCount, null);
+});
+
 test("parity retains a failed governed matrix instead of losing per-case reasons", () => {
   const cases = Array.from({ length: 198 }, (_, index) => ({
     id: `case-${index}`, status: index === 5 ? "failed" : "passed",
@@ -201,4 +259,15 @@ test("requires complete invariant metadata with exact isolated case parity", () 
   assert.throws(() => assertAdversarialMatrixParity(report, { ...matrix,
     summary: { ...matrix.summary, total: 2 },
   }), /2 !== 1/u);
+});
+
+test("archive parity rejects summaries that contradict case outcomes", () => {
+  const report = parseAdversarialTap("# Subtest: case-a\nok 1 - case-a\n# tests 1\n");
+  const matrix = matrixFor(report);
+  assert.throws(() => assertAdversarialMatrixParity({ ...report,
+    cases: [{ ...report.cases[0], status: "failed", reason: "assertion-failed" }],
+  }, matrix), /Isolated adversarial summary contradicts case outcomes/u);
+  assert.throws(() => assertAdversarialMatrixParity(report, { ...matrix,
+    cases: [{ ...matrix.cases[0], status: "failed" }],
+  }), /Governed matrix summary contradicts case outcomes/u);
 });

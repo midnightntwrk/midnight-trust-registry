@@ -59,7 +59,7 @@ test("full release circuit inventory comes from validated Compact metadata", () 
 test("publish workflow runs light tests before full build and package gate", () => {
   const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const workflow = yaml.load(readFileSync(path.join(root, ".github/workflows/publish.yml"), "utf8"));
-  const commands = workflow.jobs.publish.steps.map((step) => step.run ?? "");
+  const commands = workflow.jobs.prepare.steps.map((step) => step.run ?? "");
   const lightTest = commands.indexOf("pnpm run test:light");
   const fullBuild = commands.indexOf("pnpm run build");
   const fullGate = commands.indexOf("pnpm run packages:check-contents");
@@ -67,6 +67,10 @@ test("publish workflow runs light tests before full build and package gate", () 
   assert.ok(lightTest >= 0 && lightTest < fullBuild && fullBuild < fullGate && fullGate < pack);
   assert.ok(commands.slice(fullBuild + 1, pack).every((command) =>
     !command.includes("build:light") && !command.includes("test:light")));
+  const publishCommands = workflow.jobs.publish.steps.map((step) => step.run ?? "");
+  const rebuild = publishCommands.indexOf("pnpm run build");
+  const verify = publishCommands.findIndex((command) => command.includes("--verify artifacts/npm-release.manifest.json"));
+  assert.ok(rebuild >= 0 && rebuild < verify);
 });
 
 test("full integration preserves full contract artifacts and checks package contents last", () => {

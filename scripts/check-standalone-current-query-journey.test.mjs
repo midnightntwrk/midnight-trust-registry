@@ -188,3 +188,19 @@ test("rejects ambiguous lookup drift across the egress probe", async () => {
       : { ...read, ambiguousLookups: { ...ambiguousLookups, issuer: 1 } }; } })),
   /changed during egress probe/u);
 });
+
+test("rejects process and selected-ledger drift across the egress probe", async () => {
+  for (const mutation of [
+    { apiStartedAt: "2026-01-01T00:00:01Z" },
+    { apiRestartCount: 1 },
+    { registryId: "registry-2" },
+    { currentEpochId: "epoch-2" },
+  ]) {
+    let reads = 0;
+    await assert.rejects(observeStandaloneCurrentQueryJourney("/setup", "/bundle", env,
+      dependencies({ read: async () => {
+        reads += 1;
+        return reads === 1 ? read : { ...read, ...mutation };
+      } })), /changed during egress probe/u);
+  }
+});

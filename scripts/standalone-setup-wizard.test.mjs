@@ -21,6 +21,7 @@ import {
   approveStandaloneCommitteeRecovery as approveStandaloneCommitteeRecoveryRaw,
   approveStandaloneGenesis,
   buildStandaloneApiApprovalChain,
+  buildStandaloneApiTrustAnchor,
   attemptStandaloneDeployment as attemptStandaloneDeploymentRaw,
   attemptStandaloneVerifierKeyInsertion as attemptStandaloneVerifierKeyInsertionRaw,
   collectStandaloneGenesisCandidate,
@@ -117,6 +118,19 @@ test("API approval-chain export refuses missing or substituted deployment eviden
   assert.equal(chain.format, "tr-local-api-approval-chain-v1");
   assert.equal(chain.contractAddress, stagedReceipt.contractAddress);
   assert.equal(chain.maintenanceReadback.status, "observed");
+  const chainBytes = Buffer.from(`${JSON.stringify(chain, null, 2)}\n`);
+  const anchor = buildStandaloneApiTrustAnchor(chain, chainBytes);
+  assert.equal(anchor.approvalChainSha256, digest(chainBytes));
+  assert.equal(anchor.genesisApprovalSha256, genesisApproval.documentSha256);
+  assert.equal(anchor.genesisReviewerFingerprint, reviewerFingerprint);
+  assert.equal(anchor.governanceReviewerFingerprint, governanceFingerprint);
+  assert.equal(anchor.contractAddress, stagedReceipt.contractAddress);
+  assert.throws(() => buildStandaloneApiTrustAnchor(chain,
+    Buffer.from(`${JSON.stringify({ ...chain, contractAddress: `0x${"0".repeat(64)}` }, null, 2)}\n`)),
+  /exact exported approval-chain bytes/u);
+  assert.throws(() => buildStandaloneApiTrustAnchor({ ...chain, committeeApproval: {
+    ...committeeApproval, documentSha256: "0".repeat(64) } }, chainBytes),
+  /exact exported approval-chain bytes/u);
   assert.equal(JSON.stringify(chain).includes("test-only-signature"), false);
   assert.equal(Object.hasOwn(chain, "install"), false);
   assert.throws(() => buildStandaloneApiApprovalChain({ ...record, maintenanceAttempt: {

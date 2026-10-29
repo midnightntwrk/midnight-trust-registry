@@ -1,14 +1,15 @@
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runIsolatedAdversarialCases } from "./adversarial-case-report.mjs";
+import { hasConsistentAdversarialCaseCounts, runIsolatedAdversarialCases } from "./adversarial-case-report.mjs";
 
 const scripts = dirname(fileURLToPath(import.meta.url));
 const root = dirname(scripts);
 
 export function buildAdversarialParityReport(isolatedReport, demoResult, requireFull = false) {
   if (isolatedReport?.format !== "tr-adversarial-case-report-v1"
-    || isolatedReport.summary?.total !== isolatedReport.cases?.length) {
+    || !hasConsistentAdversarialCaseCounts(isolatedReport)
+    || isolatedReport.cases.length === 0) {
     throw new Error("Isolated adversarial case report is invalid");
   }
   const issues = [];
@@ -20,7 +21,7 @@ export function buildAdversarialParityReport(isolatedReport, demoResult, require
   try {
     matrix = JSON.parse(demoResult.stdout).adversarialMatrix;
     if (matrix?.format !== "tr-adversarial-matrix-v1"
-      || matrix.summary?.total !== matrix.cases?.length) {
+      || !hasConsistentAdversarialCaseCounts(matrix)) {
       throw new Error("Governed demo matrix is invalid");
     }
   } catch {

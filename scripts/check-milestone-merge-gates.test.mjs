@@ -72,12 +72,27 @@ test("rejects an applicable failed check or status, but accepts a successful rer
   input.checks.push(check("docs", 5, "failure"));
   assert.throws(() => evaluateMilestoneMergeGate(input), /docs/u);
   input.checks.push(check("docs", 6, "success"));
-  input.statuses = [{ sha: head, context: "legacy-ci", state: "failure",
+  input.statuses = [{ id: 1, sha: head, context: "legacy-ci", state: "failure",
     created_at: "2026-10-01T00:00:00Z" }];
   assert.throws(() => evaluateMilestoneMergeGate(input), /legacy-ci/u);
-  input.statuses.push({ sha: null, context: "legacy-ci", state: "success",
+  input.statuses.push({ id: 2, sha: null, context: "legacy-ci", state: "success",
     created_at: "2026-10-01T00:01:00Z" });
   assert.equal(evaluateMilestoneMergeGate(input).checkedStatuses, 1);
+});
+
+test("newer failed status wins when GitHub timestamps share a second", () => {
+  const input = fixture();
+  input.statuses = [
+    { id: 10, sha: null, context: "legacy-ci", state: "success",
+      created_at: "2026-10-01T00:00:00Z" },
+    { id: 11, sha: null, context: "legacy-ci", state: "failure",
+      created_at: "2026-10-01T00:00:00Z" },
+  ];
+  assert.throws(() => evaluateMilestoneMergeGate(input), /legacy-ci/u);
+  input.statuses.reverse();
+  assert.throws(() => evaluateMilestoneMergeGate(input), /legacy-ci/u);
+  input.statuses[0] = { ...input.statuses[0], id: undefined };
+  assert.throws(() => evaluateMilestoneMergeGate(input), /malformed/u);
 });
 
 test("rejects unsigned, non-OpenPGP, or DCO-mismatched commits", () => {

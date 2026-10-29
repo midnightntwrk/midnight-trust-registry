@@ -113,7 +113,9 @@ dispositions. Run `node scripts/check-milestone-merge-gates.mjs PR_NUMBER
 preflight checks the open, non-draft, mergeable PR and stable base/head; all
 reported exact-head check runs and commit statuses; GitHub-verified OpenPGP
 signatures and matching DCO trailers on every PR commit; and the review record's
-exact head. Its fixture tests run in the light CI lane.
+exact head. For repeated status contexts, the newest GitHub status ID wins even
+when creation timestamps share a second; a later failure cannot be hidden by
+an earlier success. Its fixture tests run in the light CI lane.
 
 The record is **not** a cryptographic review attestation. The operator must
 inspect the referenced review, its unresolved findings, and the live PR again

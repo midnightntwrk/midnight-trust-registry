@@ -1,4 +1,5 @@
 import { STANDALONE_IMAGE_REFERENCE } from "./standalone-image-reference.mjs";
+import { exactStringSet } from "./standalone-exact-fields-policy.mjs";
 
 const ROLES = ["node", "indexer", "proof-server"];
 const SHA256 = /^[0-9a-f]{64}$/u;
@@ -17,7 +18,7 @@ function isRecord(value) {
 export function pinnedStandaloneInventoryImages(value) {
   if (!Array.isArray(value) || value.length !== ROLES.length
     || value.some((image) => !isRecord(image))
-    || value.map((image) => image.role).sort().join("\0") !== [...ROLES].sort().join("\0")) {
+    || !exactStringSet(value.map((image) => image.role), ROLES)) {
     throw new Error("Standalone install inventory must pin node, indexer, and proof-server exactly once");
   }
   const images = /** @type {Array<Record<string, unknown>>} */ (value);

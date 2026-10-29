@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { TrustRegistryContract, trustRegistryWitnesses } from "@midnight-ntwrk/trust-registry-contract";
 
 import type { ReleaseVerifierKeyManifest } from "./public-network-deployment.js";
+import { hasExactFieldNames } from "./exact-field-names.js";
 
 const installedAssetsPath = resolve(
   dirname(fileURLToPath(import.meta.resolve("@midnight-ntwrk/trust-registry-contract/contract"))),
@@ -22,7 +23,7 @@ export async function verifyInstalledVerifierKeyAssets(
   const circuitNames = Object.keys(new TrustRegistryContract.Contract(trustRegistryWitnesses).provableCircuits).sort();
   if (manifest?.format !== "tr-release-candidate-manifest-v2"
     || expected === null || typeof expected !== "object" || Array.isArray(expected)
-    || Object.keys(expected).sort().join("\0") !== circuitNames.join("\0")
+    || !hasExactFieldNames(expected, circuitNames)
     || circuitNames.some((name) => !/^[0-9a-f]{64}$/u.test(expected[name] ?? ""))) {
     throw new Error("Release manifest has an invalid or incomplete verifier-key catalog");
   }
@@ -34,7 +35,8 @@ export async function verifyInstalledVerifierKeyAssets(
   const actualNames = (await readdir(keysPath))
     .filter((name) => name.endsWith(".verifier"))
     .map((name) => name.slice(0, -".verifier".length)).sort();
-  if (actualNames.join("\0") !== circuitNames.join("\0")) {
+  if (actualNames.length !== circuitNames.length
+    || actualNames.some((name, index) => name !== circuitNames[index])) {
     throw new Error("Installed verifier-key inventory disagrees with the release manifest");
   }
   for (const name of circuitNames) {

@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./offline-browser-fixture.mjs";
 
 import { applicationDraft, demoRegistryId, presentationForNonce, signDigest, startHost } from "../scripts/demo-auditor-admission.mjs";
 
@@ -39,9 +39,10 @@ const cases = [
 ];
 
 for (const applicant of cases) {
-  test(`${applicant.role} application completes the real-browser admission flow`, async ({ page }) => {
+  test(`${applicant.role} application completes the real-browser admission flow`, async ({ page, allowedLocalOrigins }) => {
     const host = await startHost(0, resolve("packages/trust-registry-applicant-portal/dist"), applicant.scope);
     try {
+      allowedLocalOrigins.add(host.base);
       await page.goto(`${host.base}/?apiBase=${encodeURIComponent(host.base)}`);
       const form = page.locator(`[data-${applicant.role}-application-form]`);
       const applicationId = `application:${applicant.role}:browser:v1`;

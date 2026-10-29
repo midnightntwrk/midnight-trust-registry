@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createLocalRpcFinalizedCheckpointSource, getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
+import { exactFields } from "./standalone-exact-fields-policy.mjs";
 
 const HASH = /^0x[0-9a-f]{64}$/u;
 const REVISION = /^[0-9a-f]{40}$/u;
@@ -21,7 +22,7 @@ const isRecord = (value) => value !== null && typeof value === "object" && !Arra
  */
 export function validateLocalLedgerPin(candidate) {
   if (!isRecord(candidate)
-    || Object.keys(candidate).sort().join("\0") !== FIELDS.join("\0")
+    || !exactFields(candidate, FIELDS)
     || candidate.format !== "tr-local-ledger-pin-v1"
     || candidate.networkId !== getLocalNetworkProfile().networkId
     || typeof candidate.sourceRevision !== "string" || !REVISION.test(candidate.sourceRevision)

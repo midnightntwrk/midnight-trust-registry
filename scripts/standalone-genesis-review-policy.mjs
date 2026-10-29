@@ -1,6 +1,7 @@
 import { getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
 
 import { STANDALONE_IMAGE_REFERENCE } from "./standalone-image-reference.mjs";
+import { exactRecordFields as exactFields } from "./standalone-exact-fields-policy.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
 const REVISION = /^[0-9a-f]{40}$/u;
@@ -9,10 +10,6 @@ const PROJECT = /^tr-standalone-local-[a-z0-9][a-z0-9-]*[a-z0-9]$/u;
 
 /** @param {unknown} value @returns {value is Record<string, unknown>} */
 const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
-
-/** @param {unknown} value @param {readonly string[]} fields @returns {value is Record<string, unknown>} */
-const exactFields = (value, fields) => isRecord(value)
-  && Object.keys(value).sort().join("\0") === [...fields].sort().join("\0");
 
 /** @param {unknown} value */
 const validLoopbackRpcUrl = (value) => {

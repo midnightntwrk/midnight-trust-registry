@@ -167,12 +167,30 @@ they can all run today. The implementation sequence is in
    node scripts/standalone-setup-wizard.mjs export-api-approval-chain /absolute/private/setup
    ```
 
-   The command creates a mode-0600, non-overwriting
-   `api-approval-chain.json` in that private directory. It retains the three
+   The command creates mode-0600, non-overwriting `api-approval-chain.json`
+   and `api-trust-anchor.candidate.json` in that private directory. The chain retains the three
    signed approval documents, signatures, and a minimal observed maintenance
    receipt, but omits wallet material, provider configuration, and the full
-   setup record. Store its printed SHA-256 with the operator evidence. This is
-   an **export, not API-side verification**. The command fails on pending,
+   setup record. The companion candidate pins the chain digest, both reviewer
+   fingerprints, source, install, network, genesis, and contract. Store both
+   printed SHA-256 digests with the operator evidence. The candidate is **not**
+   a trusted runtime anchor until independently reviewed and installed under
+   operator-protected ownership. The v3 API loader requires an independently
+   reviewed installed copy; do not point it at the candidate in the
+   operator-writable setup directory. Install the exact approved candidate
+   as a root-owned regular file under root-owned, non-group/world-writable
+   directories, with no symlink or hard link. Never overwrite an existing
+   installed anchor as a shortcut for reviewer rotation; stop and use a
+   separately approved rotation procedure. Before starting the API, compare
+   the installed file's SHA-256 with the independently approved candidate
+   digest and retain both in private operator evidence. This comparison
+   checks installation bytes, not the independence of the review or ledger
+   finality. For direct API CLI and writer preflight invocations, set
+   `TR_API_TRUST_ANCHOR_PATH` to that absolute path. For the Compose API
+   overlay, set `TR_API_TRUST_ANCHOR_FILE` to the host path; the overlay mounts
+   it read-only at `/etc/trust-registry-first-run-anchor.json`. Its ownership
+   and ancestor permissions must pass the loader's check inside the container.
+   This is an **export, not API-side verification**. The command fails on pending,
    conflicting, or incomplete readback. It does not establish independent
    finality or qualify a release.
 6. **Start the local API and portals from pinned images.** Sign the API's
@@ -203,7 +221,10 @@ they can all run today. The implementation sequence is in
    approved genesis, and deployed contract to the running signed API plan.
    The aggregate rejects a child result that changes its unobserved actor,
    independent-finality, host/browser egress, or plan-to-deployment scope
-   markers; a successful read-only observation cannot promote those gates.
+   markers. Unknown child-report fields and altered scope prose are rejected,
+   and the acceptance binder repeats the same scope checks before attaching
+   the report. This prevents a read-only observation from promoting those
+   gates; it does not authenticate the report or ledger finality.
    The current-query probe also requires a valid API container identity,
    process start time, and restart count on both reads around its egress
    test; missing process identity makes the observation inconclusive.
@@ -212,6 +233,13 @@ they can all run today. The implementation sequence is in
    pnpm observe:standalone-qualification \
      /absolute/private/setup /absolute/verified-bundle "$SOURCE_SHA"
    ```
+
+   Before probing the API, this observer compares the verified install
+   manifest's complete verifier-key catalog with the wizard's initial key and
+   every recorded finalized insertion. A missing, extra, or substituted name
+   stops the probe. `recordedVerifierKeyCatalog` reports only this bundle-to-
+   wizard consistency check; it does not independently authenticate ledger
+   finality or satisfy the `L01` on-chain key readback.
 
    Add `--api-restart` only when the dedicated API may be restarted. It checks
    that the signed plan and selected state survive one API-container restart;
@@ -237,8 +265,9 @@ they can all run today. The implementation sequence is in
    verifier-key inventory, signed API plan, authenticated finality, egress
    denial, an actor action, or release readiness.
    Once the approved API is actually running, run the read-only current-query
-   slice with the same `TR_STACK_NAME`, `TR_API_APPROVAL_DIR`, `TR_API_UID`,
-   `TR_API_GID`, and `TR_API_REVIEWER_FINGERPRINT` used to start it:
+   slice with the same `TR_STACK_NAME`, `TR_API_APPROVAL_DIR`,
+   `TR_API_TRUST_ANCHOR_FILE`, `TR_API_UID`, `TR_API_GID`, and
+   `TR_API_REVIEWER_FINGERPRINT` used to start it:
 
    ```sh
    pnpm observe:standalone-current-query /absolute/private/setup /absolute/verified-bundle
@@ -452,7 +481,10 @@ stale acceptance evidence. Exit 2 means at least one case is not `pass`; exit 1
 means the source differs or the inventory or a file is invalid, missing,
 symlinked, or hash-mismatched. Exit 0 means only
 that all cases have current `pass` decisions and every listed file matches
-its digest. The
+its digest. Decision records must retain a valid reviewer identifier, a
+non-sensitive reason code, and canonical UTC timestamps that do not move
+backward through the case history. These fields are self-attested; their
+format and order checks do not authenticate the reviewer. The
 report **always** says `releaseQualified: false`: this command cannot verify
 receipt authenticity, ledger finality, the correctness of a human security
 verdict, or the truth of a `pass` label. A second operator must examine the
@@ -479,7 +511,10 @@ The second command compares the report's source, inventory, signed API-plan
 hash, approved genesis, and deployed contract with the acceptance candidate.
 It also rejects nested read-only reports that claim actor success, independent
 finality, host/browser egress verification, or a release verdict, and requires
-the API TCP/DNS canary-denial observations to remain present.
+the API TCP/DNS canary-denial observations to remain present. It requires the
+catalog field to say either `not-verified` when prerequisites are pending or
+`bundle-and-wizard-records-match-not-independent-finality` when current reads
+ran; neither value is an on-chain key readback.
 It exits 0 only for a matching read-only observation, 2 for an observation
 stopped before the API probe, and 1 for invalid or mixed-candidate evidence.
 It requires a private regular file, does not change `acceptance.json`, and

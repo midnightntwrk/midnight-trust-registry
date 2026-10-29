@@ -59,7 +59,8 @@ not a fully green merge gate or release approval.
 ### Consolidated local review candidates (2026-10-28)
 
 The unpublished signed/DCO commits above published #240 head `bbe527cf` have three
-non-rewritten, stackable local branch boundaries. These are review candidates,
+non-rewritten original group boundaries and a post-restack continuation below.
+These are review candidates,
 not published PRs or a release verdict. Recheck the live #240 head and the
 applicable CI/security disposition before publishing any of them.
 
@@ -67,7 +68,7 @@ applicable CI/security disposition before publishing any of them.
 | --- | --- | --- | --- |
 | 1 | `codex/trust-registry-review-group-core` (`c786254f`) | 51 commits; `bbe527cf`..`c786254f` | Durable challenge and quorum preflight, verified install/egress canaries, safe demo build, journal restart, full-precision trust times |
 | 2 | `codex/trust-registry-review-group-qualification` (`723df991`) | 42 commits; `c786254f`..`723df991` | Approved-setup/current-query binding, read-only recovery candidate, acceptance evidence integrity, scoped qualification observations, retained approval checks |
-| 3 | `codex/trust-registry-signed-evidence-type-gate` (current tip) | `723df991`..branch tip | Isolated policy/adversarial cases, strict standalone script boundaries, audited proposal tombstones, signed security verdict, observation ambiguity, operator handoff, and signed status-time regression coverage |
+| 3 | `codex/trust-registry-signed-evidence-type-gate` (`674160e4`) | `723df991`..`674160e4` | Isolated policy/adversarial cases, strict standalone script boundaries, audited proposal tombstones, signed security verdict, observation ambiguity, operator handoff, and signed status-time regression coverage |
 
 Local-only restacked review refs now preserve the original group tips and
 commit history: `codex/trust-registry-review-group-core-restacked-local`
@@ -83,6 +84,40 @@ passed the full light, fixture E2E, and browser gates. These refs are not
 published. Recheck live remote heads and run exact-head CI and review after
 any approved push; local ancestry and tests do not clear #238's external scan
 or the local release evidence gates.
+
+The next local review boundary is
+`codex/trust-registry-review-group-e2e-knowledge`, stacked above the
+restacked adoption ref `506537e0`. Its range contains 16 prior commits plus
+the handoff update, a parity-runner correction, and this review note:
+fail-closed query evidence, isolated policy/public lookup
+and temporal demo cases, complete adversarial report attribution, a browser
+fixture egress audit with redirect denial, checked standalone current-query
+inputs, and a reproducible pinned-Chromium adoption path. Writable local
+validation on the continuation passed both browser variants (11/11), 198/198
+adversarial parity, `./run.sh --light` (20/20 tasks), the security script type
+gates, and `pnpm audit --audit-level low`. A whole-range Codex review found
+two parity-runner edge cases; commit `f47da625` rejects empty isolated coverage
+and malformed demo cases with new negative tests. The corrected whole-range
+review found no actionable regression. Review the **whole** range again at
+its exact published head before merge; these local checks are not
+deployed standalone actor evidence, current-head PR CI, or a disposition of
+#238's red external Opengrep check.
+
+The next local, unpublished acceptance-evidence follow-on is
+`codex/trust-registry-acceptance-decision-chain`, based on the complete
+`codex/trust-registry-review-group-e2e-knowledge` tip `c7663701`.
+Signed/DCO commit `9c95779e` makes the operator decision-chain validator
+reject malformed reviewer identifiers and reason codes, noncanonical UTC
+timestamps, and backward-moving decision times. It preserves the explicit
+legacy first-decision migration path. The 15 focused acceptance tests,
+documentation check, audit, and disposable-checkout `./run.sh --light`
+(20/20 tasks, 198/198 adversarial parity, packed consumer smoke) passed.
+A read-only Codex review found no actionable code regression; its sandbox
+could not run temporary-file tests, which passed in the writable checkout.
+This small follow-on should be grouped with the next coherent acceptance
+hardening publication rather than opened as a standalone PR. It does not
+authenticate operator identity or promote fixture/pre-deployment evidence to
+a deployed standalone verdict. No branch here has push or merge approval.
 
 On 2026-10-28, read-only Codex CLI reviewed each complete restacked group
 against its local parent (`cc7c081b` to `67212c1e`, `67212c1e` to
@@ -249,6 +284,88 @@ These refactors harden report integrity and advance the remaining #216 demo
 extraction, but do not finish that issue or
 qualify a deployed actor journey. Hold group G
 locally until it is a coherent review-sized slice and publication is approved.
+
+## Current local continuation and cleanup (2026-10-28)
+
+Above the previously recorded unpublished review groups, signed/DCO local
+commits `b4975d3b` through `5228ccb1` form one **unpublished** adoption and
+operator-assurance review candidate. They align the recovery knowledge base
+with the implemented tombstone boundary, pin source-level and rendered
+standalone Compose transport assumptions, explicitly type-check the local
+topology and qualification observers, and require the opt-in issuer writer
+annex to be valid at deployment-owned trusted actor time. The last code tip
+`5228ccb1` passed focused issuer-port tests, API typecheck, docs checks,
+dependency audit, and `./run.sh --light` (20/20 tasks). The preceding local
+tip `65080c00` passed the fixture browser lane (11/11); a read-only Codex
+review of `5228ccb1` found no actionable regression, while its sandbox could
+not run the temporary-file tests that passed in the writable checkout. These
+checks do not qualify deployed standalone E2E or clear #237/#232.
+
+The phase-exit worktree audit found roughly 19 GiB of free host space. The
+active disposable checkout is clean. The old light-package checkout has an
+uncommitted knowledge-base edit, and the domain-policy checkout has an
+untracked agent instruction file, so neither may be removed. The clean
+precheck sidecar retains full generated Compact artifacts and an install
+bundle; the clean standalone-qualification checkout retains private setup
+evidence and ledger qualification artifacts; the clean minimal-harness
+checkout retains pinned bundles and full generated proof material. Their
+Git branches and retained outputs are not disposable just because the
+checkouts are clean. Only the ten reproducible npm tarballs created by the
+active checkout's light runs were removed after verification. Do not prune
+these evidence-bearing worktrees or delete their ignored artifacts to make
+space; reassess ownership and recoverability after the pending PR stack is
+published or merged.
+
+The current local continuation has not been pushed. Recheck live #238-#240
+heads, restack safely, obtain exact-head CI and independent review, and keep
+#238 draft until its external Opengrep failure has a reviewed disposition.
+The first whole-range review of this operator-assurance group found that the
+synthetic rendered-Compose preflight inherited real `TR_*_PORT` values and
+could fail without any Compose source change. The preflight now pins its
+synthetic project and all three ports; a conflicting-environment CLI run,
+four focused policy tests, the 113-case topology suite, and checked-JS gate
+passed. A second read-only whole-range Codex review of the corrected group
+found no actionable regression. Its final local tree passed `./run.sh --light`
+(20/20 tasks) and `pnpm audit --audit-level low` (no known vulnerabilities).
+The original `d87e363c` commit had a bad GPG signature despite its DCO
+trailer; it was not published. The same tree was reapplied without amending
+that commit as signed/DCO `fef4f7f3` on
+`codex/trust-registry-review-group-operator-assurance`. The original branch
+remains recoverable but must not be published. The signed replacement does
+not change the tested file tree or disposition the plaintext transport risk.
+Recheck the live PR base, exact-head CI, and security review after any
+publication.
+The release still requires human-signed real genesis and roster approvals,
+authenticated finalized deployment, live actor/status adapters, offline
+journeys and recovery, and human security review.
+
+Two security follow-ups have local implementation candidates in this
+unpublished stack, but remain open until their reviewed code and evidence land:
+
+| Issue | Local candidate | Remaining release evidence |
+| --- | --- | --- |
+| [#233](https://github.com/midnightntwrk/midnight-trust-registry/issues/233) provider-code identity | The immutable provider-tree and import-boundary checks reject mutable ancestors, symlink/path replacement, and imports outside the approved tree. | Review the exact installed provider/dependency bytes and non-root, root-owned runtime layout; exercise the real deployment and maintenance loader. |
+| [#236](https://github.com/midnightntwrk/midnight-trust-registry/issues/236) manifest-backed publish | The local publish workflow generates and verifies an exact-source manifest and checks the same tarballs before npm publish. | Review the release-channel approval and provenance, image inventory alongside package and verifier-key digests, and the exact-head publish workflow before any release. |
+
+At local head `a9d4dcdc`, 19 focused provider/manifest tests passed, including
+tampered tarball, hash-to-import replacement, linked ancestors, and import
+confinement. This is source-level regression evidence, not an installed
+provider observation, npm publication, deployed actor E2E, or closure of
+either issue. The live #238 Opengrep WebSocket finding and human review #232
+remain independent stop conditions.
+
+The next unpublished [#216](https://github.com/midnightntwrk/midnight-trust-registry/issues/216)
+report-integrity slice, signed/DCO `eb72a044` and `39a3880e`, rejects both
+parity and archive reports when either the isolated runner or governed demo
+claims zero failures while its per-case outcomes contain a failure. Before
+the fix, contradictory input could produce a success-shaped parity result
+or a misleading archive. The count check is now shared by both paths.
+Sixteen focused report tests, full 198/198 case-ID parity in the light lane,
+dependency audit, and `./run.sh --light` (20/20 tasks) passed. Read-only Codex
+reviews of both code commits found no actionable regression; their sandboxes
+could not create temporary test fixtures, so the focused and light results
+are from the writable checkout. This hardens the fixture matrix, not deployed
+standalone E2E or the #237/#232 release gates.
 
 ## Release boundary
 

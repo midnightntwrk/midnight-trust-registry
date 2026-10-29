@@ -1,6 +1,7 @@
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import { validateLocalDeploymentPlan } from "./local-deployment-plan-policy.mjs";
+import { exactFields } from "./standalone-exact-fields-policy.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
 const NAME = /^[A-Za-z][A-Za-z0-9_]{0,127}$/u;
@@ -22,7 +23,7 @@ const absolutePath = (value) => typeof value === "string" && isAbsolute(value);
 /** @param {unknown} candidate @returns {LocalVerifierKeyInsertionPlan} */
 export function validateLocalVerifierKeyInsertionPlan(candidate) {
   if (!isRecord(candidate)
-    || Object.keys(candidate).sort().join("\0") !== [...FIELDS].sort().join("\0")
+    || !exactFields(candidate, FIELDS)
     || candidate.format !== "tr-local-verifier-key-insertion-plan-v1"
     || typeof candidate.providerModuleSha256 !== "string" || !SHA256.test(candidate.providerModuleSha256)
     || typeof candidate.circuitName !== "string" || !NAME.test(candidate.circuitName)

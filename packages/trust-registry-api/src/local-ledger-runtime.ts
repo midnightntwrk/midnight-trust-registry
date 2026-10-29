@@ -10,8 +10,9 @@ import {
 } from "@midnight-ntwrk/trust-registry-integration";
 
 import { createLocalLedgerBoundSource, LocalLedgerSourceUnavailableError } from "./local-ledger-source.js";
-import { verifyLocalApiApprovalChain } from "./local-approval-chain.js";
+import { assertLocalApiTrustAnchor, verifyLocalApiApprovalChain } from "./local-approval-chain.js";
 import { readBoundedLocalApprovalFile, verifyDetachedLocalReviewerSignature } from "./local-reviewer-signature.js";
+import { readProtectedLocalTrustAnchor } from "./local-trust-anchor-file.js";
 export { assertApprovedReviewerSignatureStatus } from "./local-reviewer-signature.js";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
@@ -280,6 +281,12 @@ export async function loadApprovedLocalLedgerRuntimePlanWithDigest(
     if (digest(chainBytes) !== plan.approvalChainSha256) {
       throw new Error("Local API approval-chain bytes differ from the signed runtime plan");
     }
+    const anchorPath = process.env.TR_API_TRUST_ANCHOR_PATH;
+    if (anchorPath === undefined || !isAbsolute(anchorPath)) {
+      throw new Error("Local API v3 requires an absolute protected first-run trust anchor path");
+    }
+    assertLocalApiTrustAnchor({ anchorBytes: await readProtectedLocalTrustAnchor(anchorPath),
+      chainBytes, plan, governanceReviewerFingerprint: input.reviewerFingerprint });
     await verifyLocalApiApprovalChain({ chainBytes, plan,
       keyringDirectory: input.keyringDirectory,
       governanceReviewerFingerprint: input.reviewerFingerprint });

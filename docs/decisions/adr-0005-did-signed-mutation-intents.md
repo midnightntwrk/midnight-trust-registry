@@ -20,7 +20,11 @@ workspace commitment, expected epoch ID (or `null`), issued-at, and expires-at.
 `MutationIntentSchema` and `computeMutationIntentDigest` are the executable
 format. Unknown fields, mixed-case identifiers/commitments, noncanonical UTC
 timestamps, and intents lasting longer than five minutes are rejected. The
-0.1.0 signer profile uses a four-part `did:midnight` actor with a lowercase
+timestamp format is exactly canonical UTC milliseconds (`.sssZ`), not
+arbitrary-precision RFC3339: sub-millisecond values are rejected before the
+millisecond clock preflight can compare issuance and expiry. TRQP evidence
+time uses a separate arbitrary-precision comparator and does not inherit this
+restriction. The 0.1.0 signer profile uses a four-part `did:midnight` actor with a lowercase
 64-hex identifier and a DID-fragment key. The signature signs the raw 32 digest
 bytes returned by `mutationIntentDigestBytes`, not the UTF-8 bytes of the `0x`
 hex display string. This is narrower than the

@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url";
 
 import { assessStandaloneCaseDecisionChain } from "./standalone-acceptance-decision-policy.mjs";
 import { ACCEPTANCE_CASES, parseStandaloneAcceptanceManifest } from "./standalone-acceptance-manifest-policy.mjs";
+import { exactFields as exactKeys } from "./standalone-exact-fields-policy.mjs";
+import { assertApiRestartScope, assertCurrentQueryScope } from "./standalone-qualification-scope-policy.mjs";
 
 const CASES = ACCEPTANCE_CASES;
 const SHA256 = /^[0-9a-f]{64}$/u;
@@ -16,6 +18,14 @@ const MAX_FILE_BYTES = 32 * 1024 * 1024;
 const MAX_MANIFEST_BYTES = 1024 * 1024;
 const MAX_RAW_EVIDENCE_PER_CASE = 32;
 const MAX_DECISIONS_PER_CASE = 64;
+const OBSERVATION_KEYS = ["format", "sourceRevision", "inventorySha256", "prerequisites",
+  "currentQuery", "recordedVerifierKeyCatalog", "apiRestart", "governedActorJourneys",
+  "independentFinality", "fullEgressDenial", "deployedRecovery", "independentSecurityReview",
+  "releaseQualified"];
+const PREREQUISITE_KEYS = ["format", "sourceRevision", "expectedSourceRevision", "gates",
+  "missing", "nextActions", "nextSafeAction", "blockedActions",
+  "ledgerPrerequisitesObserved", "completeVerifierKeyInventory", "actorJourney",
+  "signedApiPlan", "egressDenied", "independentFinality", "releaseQualified"];
 /** @typedef {ReturnType<typeof parseStandaloneAcceptanceManifest>} AcceptanceManifest */
 /** @typedef {{ format?: string, sourceRevision?: string, expectedSourceRevision?: string,
  *   releaseQualified?: boolean, ledgerPrerequisitesObserved?: boolean, missing?: unknown[] }} PrerequisiteObservation */
@@ -32,16 +42,11 @@ const MAX_DECISIONS_PER_CASE = 64;
 /** @typedef {{ format?: string, sourceRevision?: string, inventorySha256?: string,
  *   releaseQualified?: boolean, governedActorJourneys?: string, independentFinality?: string,
  *   fullEgressDenial?: string, deployedRecovery?: string, independentSecurityReview?: string,
+ *   recordedVerifierKeyCatalog?: string,
  *   prerequisites?: PrerequisiteObservation, currentQuery?: "not-run" | QueryObservation,
  *   apiRestart?: "not-run" | RestartObservation }} QualificationObservation */
 /** @param {string} path */
 const isDecisionPath = (path) => typeof path === "string" && path.toLowerCase().startsWith("decisions/");
-
-/** @param {unknown} value @param {readonly string[]} expected */
-function exactKeys(value, expected) {
-  return value && typeof value === "object" && !Array.isArray(value)
-    && Object.keys(value).sort().join("|") === [...expected].sort().join("|");
-}
 
 /** @param {string} root @param {string} path */
 function evidencePath(root, path) {
@@ -182,10 +187,22 @@ function hasConsistentLookupCounts(query) {
       && ambiguous[role] <= counts[role])));
 }
 
+/** @param {unknown} report @param {(value: unknown) => void} check */
+function hasObserverScope(report, check) {
+  try {
+    check(report);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Binds a read-only observer report to one acceptance candidate; never passes a case. */
 /** @param {AcceptanceManifest} manifest @param {QualificationObservation | null | undefined} observation */
 export function assessStandaloneObservationBinding(manifest, observation) {
-  if (observation?.format !== "tr-standalone-qualification-observation-v1"
+  if (!exactKeys(observation, OBSERVATION_KEYS)
+    || !exactKeys(observation?.prerequisites, PREREQUISITE_KEYS)
+    || observation?.format !== "tr-standalone-qualification-observation-v1"
     || observation.sourceRevision !== manifest.sourceRevision
     || observation.inventorySha256 !== manifest.installInventorySha256
     || observation.releaseQualified !== false
@@ -205,12 +222,16 @@ export function assessStandaloneObservationBinding(manifest, observation) {
   if (query === "not-run") {
     if (observation.prerequisites.ledgerPrerequisitesObserved !== false
       || observation.prerequisites.missing.length === 0
+      || observation.recordedVerifierKeyCatalog !== "not-verified"
       || observation.apiRestart !== "not-run") {
       throw new Error("Observation reports inconsistent pending prerequisites");
     }
   } else if (observation.prerequisites.ledgerPrerequisitesObserved !== true
     || observation.prerequisites.missing.length !== 0
+    || observation.recordedVerifierKeyCatalog
+      !== "bundle-and-wizard-records-match-not-independent-finality"
     || query?.format !== "tr-standalone-current-query-journey-v2"
+    || !hasObserverScope(query, assertCurrentQueryScope)
     || query.sourceRevision !== manifest.sourceRevision
     || query.installInventorySha256 !== manifest.installInventorySha256
     || !SHA256.test(query.networkId ?? "")
@@ -232,6 +253,7 @@ export function assessStandaloneObservationBinding(manifest, observation) {
   const restart = observation.apiRestart;
   if (restart !== "not-run" && (query === "not-run"
     || restart?.format !== "tr-standalone-api-restart-observation-v1"
+    || !hasObserverScope(restart, assertApiRestartScope)
     || restart.sourceRevision !== manifest.sourceRevision
     || restart.installInventorySha256 !== manifest.installInventorySha256
     || restart.installInventorySha256 !== query.installInventorySha256

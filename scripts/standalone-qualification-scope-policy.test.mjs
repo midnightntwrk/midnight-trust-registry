@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  API_RESTART_SCOPE,
+  CURRENT_QUERY_SCOPE,
   assertApiRestartScope,
   assertCurrentQueryScope,
 } from "./standalone-qualification-scope-policy.mjs";
@@ -22,6 +24,7 @@ const current = {
   releaseQualified: false,
   apiEgressCanaryDenied: true,
   apiDnsCanaryDenied: true,
+  scope: CURRENT_QUERY_SCOPE,
   actorJourneys: "not-run",
   hostAndBrowserEgress: "not-verified",
   independentFinality: "not-verified",
@@ -34,6 +37,7 @@ const restart = {
   releaseQualified: false,
   apiEgressCanaryDenied: true,
   apiDnsCanaryDenied: true,
+  scope: API_RESTART_SCOPE,
 };
 
 test("accepts only the limited scope actually reported by the probes", () => {
@@ -51,6 +55,10 @@ test("rejects missing, malformed, or upgraded current-query scope fields", () =>
   })]) {
     assert.throws(() => assertCurrentQueryScope(report), /evidence scope/u);
   }
+  for (const report of [
+    { ...current, governedActorJourneys: "passed" },
+    { ...current, scope: "Finalized actor journey passed" },
+  ]) assert.throws(() => assertCurrentQueryScope(report), /evidence scope/u);
 });
 
 test("rejects malformed finality checkpoints and incomplete runtime identity", () => {
@@ -77,4 +85,9 @@ test("rejects missing, malformed, or upgraded API restart scope fields", () => {
   })]) {
     assert.throws(() => assertApiRestartScope(report), /evidence scope/u);
   }
+  for (const report of [
+    { ...restart, actorJourneys: "passed" },
+    { ...restart, independentFinality: "verified" },
+    { ...restart, scope: "Deployed recovery and restore passed" },
+  ]) assert.throws(() => assertApiRestartScope(report), /evidence scope/u);
 });

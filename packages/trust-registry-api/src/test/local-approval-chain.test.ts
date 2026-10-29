@@ -3,17 +3,23 @@ import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+
+vi.mock("../local-trust-anchor-file.js", () => ({
+  readProtectedLocalTrustAnchor: async (path: string) =>
+    (await import("node:fs/promises")).readFile(path),
+}));
 
 import { sampleSigningKey, signatureVerifyingKey } from "@midnight-ntwrk/compact-runtime";
 import { committeeMaintenanceUpdateSha256 } from "@midnight-ntwrk/trust-registry-integration";
 
-import { verifyLocalApiApprovalChain } from "../local-approval-chain.js";
+import { assertLocalApiTrustAnchor, verifyLocalApiApprovalChain } from "../local-approval-chain.js";
 import { loadApprovedLocalLedgerRuntimePlan } from "../local-ledger-runtime.js";
 
 const sha256 = (bytes: Buffer | string): string => createHash("sha256").update(bytes).digest("hex");
 
 it("verifies signed standalone approvals and rejects substitution", async () => {
+  const priorTrustAnchorPath = process.env.TR_API_TRUST_ANCHOR_PATH;
   const root = await mkdtemp("/tmp/tr-api-approval-chain-");
   const signer = join(root, "signer");
   const verifier = join(root, "verifier");
@@ -99,6 +105,25 @@ it("verifies signed standalone approvals and rejects substitution", async () => 
         updateSha256: committeeMaintenanceUpdateSha256({ contractAddress, committee,
           threshold: 2, currentCounter: 1n }), txId: "maintenance-tx",
         finalizedBlockHash: `0x${"5".repeat(64)}`, status: "observed" } };
+    const firstChainBytes = Buffer.from(`${JSON.stringify(chain)}\n`);
+    const anchorBytes = Buffer.from(`${JSON.stringify({
+      format: "tr-local-api-trust-anchor-v1", sourceRevision,
+      installInventorySha256, releaseManifestSha256, networkId: plan.networkId,
+      expectedGenesisHash, contractAddress, approvalChainSha256: sha256(firstChainBytes),
+      genesisApprovalSha256: genesisApproval.documentSha256,
+      genesisReviewerFingerprint: fingerprint,
+      governanceReviewerFingerprint: fingerprint,
+    })}\n`);
+    const anchorPath = join(root, "first-run-anchor.json");
+    await writeFile(anchorPath, anchorBytes);
+    process.env.TR_API_TRUST_ANCHOR_PATH = anchorPath;
+    const checkAnchor = (candidate: object, reviewer = fingerprint!) =>
+      assertLocalApiTrustAnchor({ anchorBytes,
+        chainBytes: Buffer.from(`${JSON.stringify(candidate)}\n`), plan,
+        governanceReviewerFingerprint: reviewer });
+    expect(() => checkAnchor(chain)).not.toThrow();
+    expect(() => checkAnchor(chain, "F".repeat(40)))
+      .toThrow(/protected first-run trust anchor/u);
     const verify = (candidate: object, selectedPlan = plan, reviewer = fingerprint!) =>
       verifyLocalApiApprovalChain({ chainBytes: Buffer.from(`${JSON.stringify(candidate)}\n`),
         plan: selectedPlan, keyringDirectory: verifier, governanceReviewerFingerprint: reviewer });
@@ -135,8 +160,17 @@ it("verifies signed standalone approvals and rejects substitution", async () => 
       maintenanceReadback: { ...chain.maintenanceReadback,
         committeeDeploymentApprovalSha256: alternateDeployment.documentSha256 } };
     await expect(verify(alternateChain)).resolves.toBeUndefined();
+    expect(() => checkAnchor(alternateChain)).toThrow(/protected first-run trust anchor/u);
     await expect(verify({ ...chain, contractAddress: `0x${"0".repeat(64)}` }))
       .rejects.toThrow(/contractAddress/u);
+    const otherReceipt = await signed({
+      ...JSON.parse(Buffer.from(committeeDeploymentApproval.documentBase64, "base64").toString("utf8")),
+      deploymentReceipt: { ...receipt, contractAddress: `0x${"a".repeat(64)}` },
+    }, "other-receipt");
+    await expect(verify({ ...chain, committeeDeploymentApproval: otherReceipt,
+      maintenanceReadback: { ...chain.maintenanceReadback,
+        committeeDeploymentApprovalSha256: otherReceipt.documentSha256 } }))
+      .rejects.toThrow(/approved deployment or maintenance state/u);
     await expect(verify({ ...chain, committeeApproval: { ...committeeApproval,
       signatureBase64: genesisApproval.signatureBase64 } }))
       .rejects.toThrow(/SHA-256/u);
@@ -180,11 +214,17 @@ it("verifies signed standalone approvals and rejects substitution", async () => 
     await signRuntime(runtime);
     await expect(load()).resolves.toMatchObject({ format: "tr-local-api-runtime-v3",
       contractAddress });
+    delete process.env.TR_API_TRUST_ANCHOR_PATH;
+    await expect(load()).rejects.toThrow(/requires an absolute protected first-run trust anchor/u);
+    process.env.TR_API_TRUST_ANCHOR_PATH = anchorPath;
+    await signRuntime({ ...runtime, maintenanceAuthority: {
+      committee: [committee[0]], threshold: 1, counter: "1" } });
+    await expect(load()).rejects.toThrow(/lacks exact approved local pins/u);
+    await signRuntime(runtime);
     const alternateChainBytes = Buffer.from(`${JSON.stringify(alternateChain)}\n`);
     await writeFile(chainPath, alternateChainBytes);
     await signRuntime({ ...runtime, approvalChainSha256: sha256(alternateChainBytes) });
-    await expect(load()).resolves.toMatchObject({ format: "tr-local-api-runtime-v3",
-      contractAddress });
+    await expect(load()).rejects.toThrow(/protected first-run trust anchor/u);
     await writeFile(chainPath, chainBytes);
     await signRuntime(runtime);
     const legacy = Object.fromEntries(Object.entries(runtime)
@@ -196,8 +236,10 @@ it("verifies signed standalone approvals and rejects substitution", async () => 
     await expect(load()).rejects.toThrow(/approval-chain bytes differ/u);
     await writeFile(chainPath, chainBytes);
     await signRuntime({ ...runtime, contractAddress: `0x${"a".repeat(64)}` });
-    await expect(load()).rejects.toThrow(/contractAddress differs/u);
+    await expect(load()).rejects.toThrow(/protected first-run trust anchor/u);
   } finally {
+    if (priorTrustAnchorPath === undefined) delete process.env.TR_API_TRUST_ANCHOR_PATH;
+    else process.env.TR_API_TRUST_ANCHOR_PATH = priorTrustAnchorPath;
     try { execFileSync("gpgconf", ["--homedir", signer, "--kill", "gpg-agent"]); } catch { /* Best effort. */ }
     await rm(root, { recursive: true, force: true });
   }

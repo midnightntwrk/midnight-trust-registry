@@ -318,6 +318,13 @@ test("packed Compact contract must contain every ZKIR and prover/verifier pair",
   }
   assert.throws(() => assertFullPackedContract([...paths, "package/dist/", "package/dist"], info),
     /duplicate archive paths/u);
+  for (const aliases of [
+    ["package/src/Policy.ts", "package/src/policy.ts"],
+    ["package/src/caf\u00e9.json", "package/src/cafe\u0301.json"],
+  ]) {
+    assert.throws(() => assertFullPackedContract([...paths, ...aliases], info),
+      /case or Unicode alias archive paths/u);
+  }
 });
 
 test("manifest smoke mode refuses invalid evidence before package installation", () => {

@@ -30,6 +30,11 @@ The opt-in `createBoundLocalIssuerProposalPort` now validates a separate
 digest and reviewer, source/inventory, network/genesis/contract, bounded
 validity interval, immutable provider content digest, and journal path. It
 rechecks that annex and installed provider identity around proposal work.
+Each prepare, preflight, execute, and pre-broadcast evidence check also
+requires the deployment-owned trusted-time result to fall inside the annex
+window. A rolled-back host clock cannot extend an expired writer approval;
+host-clock checks remain an additional fail-closed startup guard, not the
+authority for the actor's validity window.
 The CLI neither loads this annex nor supplies the required authenticated
 finalized reader, trusted time, captured admission, live DID/VC/status
 verification, and approved submission provider. A signed annex by itself

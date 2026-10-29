@@ -11,7 +11,7 @@ evidence. Passing the demo path does not advance the standalone release gate.
 | Goal | Run | Passing result means |
 | --- | --- | --- |
 | Try the product flows without a ledger | `pnpm run test:e2e:demo` | The four signed role journeys and fixture API/UI smoke completed in a Compact simulator. |
-| Exercise the demo in a browser | `pnpm run test:e2e:demo:browser` | The same demo plus applicant/admin Playwright flows completed against fixture services. |
+| Exercise the demo in a browser | `pnpm run test:e2e:demo:browser` | The same demo plus applicant/admin Playwright flows completed against fixture services; the test context blocked and reported non-loopback browser requests. |
 | Check submission restart quarantine without a live network | `pnpm --filter @midnight-ntwrk/trust-registry-api run test:light` | The journal write, mocked-node/provider restart, and fixture API-listener restart tests passed; this is not deployed-ledger recovery evidence. |
 | Check a real standalone candidate before actor testing | `node scripts/check-standalone-journey-prerequisites.mjs "$SETUP" "$SOURCE_SHA"` | Exit 0: the wizard recorded the prerequisite ledger observations for this exact source. Exit 2: stop and follow `nextActions`. |
 | Record a deployed candidate's operator-reviewed cases | `node scripts/check-standalone-acceptance-evidence.mjs "$ACCEPTANCE" "$SOURCE_SHA"` | Exit 0: all cases have a current decision-backed operator `pass`; exit 2: a case is failed, not run, or needs a fresh decision. Inspect `operatorFailedCases`, `notRunCases`, and `decisionBackedCases`; receipt authenticity, finality, and the security verdict still need independent review. |
@@ -48,7 +48,7 @@ status, or offline runtime. In an artifact-bearing checkout, **do not run**
 `./run.sh --light`: use a disposable checkout for that prerequisite. The demo
 command fails if the required prebuilt Compact output is absent or stale;
 it never repairs it by invoking `build:light`. For the applicant and admin
-flows in a real browser, install Google Chrome and run
+flows in a real browser, run `pnpm exec playwright install chromium` and then
 the Playwright command above (or `pnpm run test:e2e:demo:browser` to rerun both
 lanes). If the browser is unavailable, report that lane as **not run** rather
 than passed. Neither result is a standalone `A01`-`O01` verdict.
@@ -58,13 +58,26 @@ It checks all 66 full proof circuits, compiles contract helpers, and rebuilds
 downstream TypeScript/UI packages without calling the Compact build or removing
 its `dist` tree. It does not establish
 the provenance of those artifacts or count as a deployed standalone actor run.
-CI installs Playwright-pinned Chromium instead of Google Chrome. Both variants
+CI and the default local configuration use Playwright-pinned Chromium; set
+`TR_BROWSER_CHANNEL=chrome` to test separately installed Google Chrome. Both variants
 still use fixture identity/status and simulator governance; a green CI browser
 step is **not** standalone deployment evidence. The browser suite also checks
 that the local-ledger admin view hides fixture mutation controls and discards
 an exact-ID result when a mocked API checkpoint changes mid-request. This is
 a UI fail-closed regression, not a deployed-ledger or authenticated-finality
-test. See the
+test. Its Playwright context blocks service workers and audits HTTP and
+WebSocket requests, failing if any unregistered origin is attempted. HTTP
+redirects are denied even when their destination is loopback, so an allowed
+fixture response cannot trigger an unguarded follow-up request. That
+guard accepts only each test's registered ephemeral loopback origin, not every
+host-local port. An unrelated loopback service is denied and recorded. The
+guard covers only requests visible to this fixture browser context; it does
+not prove host, wallet, prover, container, or deployed-browser egress denial.
+The fixture lane includes negative probes for a loopback HTTP redirect to a
+reachable non-loopback listener and a direct WebSocket attempt to that
+listener. Both must be blocked and recorded by the browser audit. They do
+not replace the deployed `O01` egress-denied actor run.
+See the
 [demo quickstart](quickstart.md) for individual commands and expected behavior.
 
 ## Prepare a standalone run
@@ -123,8 +136,10 @@ maintenance transition. A status label is not an independent GPG or finality
 verification.
 The preflight also rejects approval labels without a nonzero approved genesis
 hash or deployed contract address, and duplicate or unnamed staged verifier
-keys. It still does not compare that key list with the complete release
-manifest or independently authenticate a receipt.
+keys. This preflight does not compare that list with the complete release
+manifest or independently authenticate a receipt. The separate aggregate
+observer compares the recorded key catalog with the verified install bundle;
+that comparison is still not an on-chain key readback.
 Do not change `SOURCE_SHA` to the older setup's revision just to make this
 check pass: the source, install bundle, API plan, and acceptance inventory must
 identify the same candidate. This command is safe to rerun and does not deploy
@@ -134,6 +149,27 @@ No standalone actor E2E command is currently green by design: the packaged
 local-ledger API is read-only, and the issuer/verifier/auditor/maintainer ports
 are not supplied by a qualified embedding host. Stop at this preflight rather
 than recording the simulator command above as an `A01`-`O01` pass.
+
+Once the approved read-only API is running, bind its aggregate observation to
+the same private acceptance candidate. Use the full selected source revision
+and retain the raw probe output for operator review:
+
+```sh
+umask 077
+node scripts/observe-standalone-qualification.mjs \
+  "$SETUP" "$INSTALL" "$SOURCE_SHA" \
+  > /absolute/private/acceptance/read-only-observation.json
+node scripts/check-standalone-acceptance-evidence.mjs observe \
+  /absolute/private/acceptance "$SOURCE_SHA" read-only-observation.json
+```
+
+The binder rejects a missing or overstated verifier-key catalog marker and
+mixed source, inventory, plan, genesis, or contract identities. Exit 0 means
+only that a matching **read-only** observation was bound; exit 2 means the API
+probe was blocked by prerequisites. It does not pass an acceptance case or
+authenticate finality, actor actions, or the report itself. See the
+[operator acceptance record](https://github.com/midnightntwrk/midnight-trust-registry/blob/milestone-0.1.0/docs/guide/standalone-local-journey.md#bind-a-read-only-observation-to-this-candidate)
+for the full evidence boundary.
 
 ## Run and record the real use case
 

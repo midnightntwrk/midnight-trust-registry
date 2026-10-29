@@ -7,6 +7,7 @@ import { isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { validateLocalDeploymentPlan } from "./local-ledger-deploy.mjs";
+import { exactRecordFields } from "./standalone-exact-fields-policy.mjs";
 
 const HASH = /^0x[0-9a-f]{64}$/u;
 const RAW_HASH = /^[0-9a-f]{64}$/u;
@@ -17,12 +18,13 @@ const MIN_OBSERVATION_MS = 60 * 60_000;
 const RESERVATION_FIELDS = ["bootstrapMaintenanceVerifyingKey", "expectedGenesisHash",
   "intentSha256", "networkId", "registryIdCommitment", "reservedAt", "sourceRevision", "version"];
 
+/** @param {string | Buffer} bytes */
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
-const exactFields = (value, fields) => value !== null && typeof value === "object"
-  && !Array.isArray(value) && Object.keys(value).sort().join("\0") === fields.slice().sort().join("\0");
-const heightOf = (header) => /^0x[0-9a-f]+$/u.test(header?.number)
+/** @param {{number?: unknown} | null | undefined} header */
+const heightOf = (header) => typeof header?.number === "string" && /^0x[0-9a-f]+$/u.test(header.number)
   ? Number.parseInt(header.number.slice(2), 16) : NaN;
 
+/** @param {string} value @param {readonly string[]} allowedHosts */
 function localUrl(value, allowedHosts) {
   const url = new URL(value);
   if (url.protocol !== "http:" || url.hostname !== "127.0.0.1"
@@ -33,6 +35,7 @@ function localUrl(value, allowedHosts) {
   return url.toString();
 }
 
+/** @param {string} url @param {unknown} body @param {typeof fetch} fetchImpl */
 async function postJson(url, body, fetchImpl) {
   const response = await fetchImpl(url, {
     method: "POST",
@@ -45,6 +48,7 @@ async function postJson(url, body, fetchImpl) {
   return response.json();
 }
 
+/** @param {string} url @param {string} method @param {unknown[]} params @param {typeof fetch} fetchImpl */
 async function rpc(url, method, params, fetchImpl) {
   const result = await postJson(url, { jsonrpc: "2.0", id: 1, method, params }, fetchImpl);
   if (result?.error || result?.result === undefined) {
@@ -53,6 +57,7 @@ async function rpc(url, method, params, fetchImpl) {
   return result.result;
 }
 
+/** @param {string} url @param {number[]} heights @param {typeof fetch} fetchImpl */
 async function indexedBlocks(url, heights, fetchImpl) {
   const query = `{ ${heights.map((height) => `h${height}:block(offset:{height:${height}}) { height hash timestamp parent { hash } transactions { hash contractActions { __typename address } } }`).join(" ")} }`;
   const result = await postJson(url, { query }, fetchImpl);
@@ -62,6 +67,7 @@ async function indexedBlocks(url, heights, fetchImpl) {
   return heights.map((height) => result.data[`h${height}`]);
 }
 
+/** @param {string} url @param {number[]} heights @param {typeof fetch} fetchImpl */
 async function nodeBlockHashes(url, heights, fetchImpl) {
   const requests = heights.map((height) => ({
     jsonrpc: "2.0", id: height, method: "chain_getBlockHash", params: [height],
@@ -86,27 +92,29 @@ async function nodeBlockHashes(url, heights, fetchImpl) {
 }
 
 /** Reports finalized, public chain observations only; it never authorizes a retry. */
+/** @param {unknown} plan @param {unknown} reservation @param {number} startHeight @param {typeof fetch} fetchImpl */
 export async function scanLocalDeploymentAttempt(plan, reservation, startHeight, fetchImpl = fetch) {
-  validateLocalDeploymentPlan(plan);
-  if (!plan.network.allowedHosts.includes("127.0.0.1")
-    || !exactFields(reservation, RESERVATION_FIELDS)
+  const approvedPlan = validateLocalDeploymentPlan(plan);
+  if (!approvedPlan.network.allowedHosts.includes("127.0.0.1")
+    || !exactRecordFields(reservation, RESERVATION_FIELDS)
     || reservation.version !== 1
     || reservation.networkId !== "undeployed"
-    || reservation.sourceRevision !== plan.sourceRevision
-    || reservation.expectedGenesisHash !== plan.network.expectedGenesisHash
-    || !HASH.test(reservation.registryIdCommitment)
+    || reservation.sourceRevision !== approvedPlan.sourceRevision
+    || reservation.expectedGenesisHash !== approvedPlan.network.expectedGenesisHash
+    || typeof reservation.registryIdCommitment !== "string" || !HASH.test(reservation.registryIdCommitment)
+    || typeof reservation.bootstrapMaintenanceVerifyingKey !== "string"
     || !HASH.test(reservation.bootstrapMaintenanceVerifyingKey)
-    || !SHA256.test(reservation.intentSha256)
+    || typeof reservation.intentSha256 !== "string" || !SHA256.test(reservation.intentSha256)
     || typeof reservation.reservedAt !== "string"
     || !Number.isSafeInteger(Date.parse(reservation.reservedAt))
     || new Date(reservation.reservedAt).toISOString() !== reservation.reservedAt
     || !Number.isSafeInteger(startHeight) || startHeight < 1) {
     throw new Error("Deployment scan requires matching local plan, reservation, and start height");
   }
-  const rpcUrl = localUrl(plan.network.rpcUrl, plan.network.allowedHosts);
-  const indexerUrl = localUrl(plan.network.indexerHttpUrl, plan.network.allowedHosts);
+  const rpcUrl = localUrl(approvedPlan.network.rpcUrl, approvedPlan.network.allowedHosts);
+  const indexerUrl = localUrl(approvedPlan.network.indexerHttpUrl, approvedPlan.network.allowedHosts);
   const genesis = await rpc(rpcUrl, "chain_getBlockHash", [0], fetchImpl);
-  if (genesis !== plan.network.expectedGenesisHash) {
+  if (genesis !== approvedPlan.network.expectedGenesisHash) {
     throw new Error("Local node genesis disagrees with the approved deployment plan");
   }
   const finalizedHash = await rpc(rpcUrl, "chain_getFinalizedHead", [], fetchImpl);
@@ -196,7 +204,7 @@ export async function scanLocalDeploymentAttempt(plan, reservation, startHeight,
     kind: "local-deployment-attempt-finalized-scan",
     conclusion: "observation-only-not-recovery-approval",
     transactionEnumeration: "indexer-reported-not-independently-verified-by-node",
-    sourceRevision: plan.sourceRevision,
+    sourceRevision: approvedPlan.sourceRevision,
     expectedGenesisHash: genesis,
     reservedAt: reservation.reservedAt,
     scanned: { startHeight, endHeight: finalizedHeight, startHash, endHash: finalizedHash,
@@ -210,6 +218,7 @@ export async function scanLocalDeploymentAttempt(plan, reservation, startHeight,
   };
 }
 
+/** @param {string} path */
 async function regularJson(path) {
   const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
@@ -219,27 +228,30 @@ async function regularJson(path) {
     }
     const bytes = await handle.readFile();
     if (bytes.length !== info.size) throw new Error("Deployment scan input changed during read");
-    return { bytes, value: JSON.parse(bytes) };
+    return { bytes, value: JSON.parse(bytes.toString("utf8")) };
   } finally {
     await handle.close();
   }
 }
 
+/** @param {string} journalPath */
 async function requireNoReceipt(journalPath) {
   try {
     await lstat(`${journalPath}.submitted`);
     throw new Error("Deployment journal already has a submitted receipt; use receipt reconciliation");
   } catch (error) {
-    if (error.code !== "ENOENT") throw error;
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
   }
 }
 
+/** @param {string} planPath @param {number} startHeight @param {typeof fetch} fetchImpl */
 export async function scanLocalDeploymentAttemptFiles(planPath, startHeight, fetchImpl = fetch) {
   const { bytes: planBytes, value: plan } = await regularJson(resolve(planPath));
-  if (typeof plan.journalPath !== "string" || !isAbsolute(plan.journalPath)) {
+  const approvedPlan = validateLocalDeploymentPlan(plan);
+  if (!isAbsolute(approvedPlan.journalPath)) {
     throw new Error("Approved plan has no absolute attempt journal path");
   }
-  const journalPath = resolve(plan.journalPath);
+  const journalPath = resolve(approvedPlan.journalPath);
   const { bytes: reservationBytes, value: reservation } = await regularJson(journalPath);
   await requireNoReceipt(journalPath);
   const report = await scanLocalDeploymentAttempt(plan, reservation, startHeight, fetchImpl);

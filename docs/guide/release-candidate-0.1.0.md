@@ -67,16 +67,29 @@ finalized on-chain verifier-key catalog with this mapping and confirms its
 initial single-key maintenance authority at the same checkpoint. This is not
 an independent local-ledger readback or approval of that authority model;
 the local maintenance transition remains blocking. The manifest alone cannot certify the deployed code.
+The pack verifier also rejects archive entries that collide after case or
+Unicode normalization, so a tarball cannot extract different bytes under the
+same name on a case-insensitive operator host. This is a portability and
+integrity check, not a signature on the manifest.
 A matching tarball digest does not by itself prove that every
 generated file was built from the recorded
 source revision: run the full build and pack on the clean, signed candidate
 tree before producing the manifest. The manifest does not authenticate its own
 distribution channel or prove any test, review, or network claim.
-The protected publish job generates and verifies this manifest against the
-packed tarball set, runs a clean-consumer smoke, and rechecks each selected
-tarball's manifest-pinned size and SHA-256 immediately before its `npm publish`
-call. This catches accidental or intervening artifact mutation; it does not
-defend against a compromised publish runner changing files after that check.
+The preparation job generates and verifies this manifest against the packed
+tarball set, runs a clean-consumer smoke, then uploads those bytes and records
+the manifest SHA-256 in the workflow summary. Only after that artifact exists
+does the `npm-publish` environment gate the publication job. The release owner
+must inspect the source, version, manifest digest, and attached artifact before
+approving that environment; configure required reviewers in GitHub rather
+than assuming the workflow YAML creates them. The protected job downloads the
+prepared bytes, checks the reviewed manifest digest, rebuilds full Compact
+outputs from the same source, re-verifies the exact manifest and tarballs, and
+reruns clean-consumer smoke. It rechecks each selected tarball's manifest-pinned
+size and SHA-256 immediately before its `npm publish` call. This catches
+accidental or intervening artifact mutation; it does not defend against a
+compromised publish runner changing files after that check or substitute for
+an accountable release-owner approval.
 If a version already exists during a resumed publish job, the job compares
 the registry's SHA-512 integrity metadata with the exact manifest-checked
 tarball before skipping that immutable version. Missing, weak, or mismatched

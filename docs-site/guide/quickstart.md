@@ -38,9 +38,10 @@ fixture API and both served UIs
 on ephemeral loopback ports. Quality CI runs the four journeys together with
 `pnpm run demo:membership:smoke` after the package build; that step does not
 regenerate proving keys. Neither command exercises a deployed local ledger.
-With Google Chrome installed, `pnpm run test:e2e:demo:browser` follows the
-demo checks with the applicant and admin Playwright journeys using the same
-built assets. It does not run `build:light` or qualify standalone deployment.
+After `pnpm exec playwright install chromium`, `pnpm run test:e2e:demo:browser`
+follows the demo checks with the applicant and admin Playwright journeys using
+the same built assets. Set `TR_BROWSER_CHANNEL=chrome` to opt into a separately
+installed Google Chrome. It does not run `build:light` or qualify standalone deployment.
 The individual demo aliases and `pnpm run test:browser` also use the safe
 prebuilt package build. They require a source-matched Compact output prepared
 earlier; none silently regenerates or removes proving artifacts.
@@ -99,7 +100,7 @@ are local fixtures, not production trust or Midnight finality.
 The maintainer form derives its exact registry scope from the API's current
 context rather than an applicant-entered registry ID.
 
-With Google Chrome installed, `pnpm run test:browser` builds and exercises
+With Playwright's pinned Chromium installed, `pnpm run test:browser` builds and exercises
 the issuer, verifier, auditor, and maintainer forms in a real browser against
 the authenticated loopback admission host. The browser test rejects a forged
 applicant signature, accepts the valid fixture signature, and submits a

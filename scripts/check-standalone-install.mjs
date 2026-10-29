@@ -14,6 +14,7 @@ import { staticImageIdentityFromArchive, validateStaticImageManifest } from "./s
 import { STANDALONE_IMAGE_REFERENCE } from "./standalone-image-reference.mjs";
 import { pinnedStandaloneImagePolicy } from "./standalone-compose-image-policy.mjs";
 import { pinnedStandaloneInventoryImages } from "./standalone-install-image-inventory-policy.mjs";
+import { exactFields, exactStringSet } from "./standalone-exact-fields-policy.mjs";
 export { STANDALONE_IMAGE_REFERENCE } from "./standalone-image-reference.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
@@ -99,12 +100,12 @@ export function installedApiImageIdFromArchive(archive, manifest, sourceRevision
     throw new Error("API image manifest is malformed or disagrees with install source");
   }
   if (manifest.format === "tr-api-runtime-image-v2"
-    && (Object.keys(manifest.portals ?? {}).sort().join("\0") !== "admin\0applicant"
+    && (!exactFields(manifest.portals, ["admin", "applicant"])
       || ["admin", "applicant"].some((role) => {
         const portal = manifest.portals[role];
         return !Number.isSafeInteger(portal?.fileCount) || portal.fileCount < 2
           || !SHA256.test(portal?.sha256)
-          || Object.keys(portal).sort().join("\0") !== "fileCount\0sha256";
+          || !exactFields(portal, ["fileCount", "sha256"]);
       }))) {
     throw new Error("API image portal manifest is malformed");
   }
@@ -366,7 +367,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
   }
   let portalRuntimes = null;
   if (["tr-standalone-install-v5", "tr-standalone-install-v6"].includes(inventory.format)) {
-    if (Object.keys(inventory.portalRuntimes ?? {}).sort().join("\0") !== "admin\0applicant") {
+    if (!exactFields(inventory.portalRuntimes, ["admin", "applicant"])) {
       throw new Error("Standalone v5/v6 install requires both portal image pins");
     }
     portalRuntimes = /** @type {Record<string, any>} */ ({});
@@ -429,8 +430,8 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
   }
   const parameterFiles = inventory.proofParameters.files;
   const pinnedNames = parameterFiles.map((/** @type {any} */ file) => file?.path).sort();
-  if (pinnedNames.join("\0") !== STANDALONE_PROOF_PARAMETER_PATHS.join("\0")
-    || (await regularFiles(proofRoot)).join("\0") !== STANDALONE_PROOF_PARAMETER_PATHS.join("\0")) {
+  if (!exactStringSet(pinnedNames, STANDALONE_PROOF_PARAMETER_PATHS)
+    || !exactStringSet(await regularFiles(proofRoot), STANDALONE_PROOF_PARAMETER_PATHS)) {
     throw new Error("Standalone proof parameter inventory is incomplete or has extra files");
   }
   for (const file of parameterFiles) {
@@ -444,6 +445,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
     sourceRevision: inventory.sourceRevision,
     inventorySha256,
     packageManifestSha256,
+    verifierKeyNames: Object.keys(packageManifest.verifierKeySha256 ?? {}).sort(),
     packageCount: packageManifest.packages?.length,
     imageRoles,
     proofParameterCount: parameterFiles.length,

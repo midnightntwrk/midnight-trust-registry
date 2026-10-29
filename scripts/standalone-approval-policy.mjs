@@ -1,6 +1,8 @@
 import { validateMaintenancePolicy } from "@midnight-ntwrk/trust-registry-integration";
 import { ContractMaintenanceAuthority } from "@midnight-ntwrk/midnight-js-protocol/ledger";
 
+import { exactFields } from "./standalone-exact-fields-policy.mjs";
+
 const FINGERPRINT = /^[A-F0-9]{40}$/u;
 
 /** @param {unknown} value @returns {value is Record<string, unknown>} */
@@ -23,7 +25,7 @@ export function canonicalReviewerMetadata(value, earliest, latest) {
 /** @param {unknown} proposal @param {readonly string[]} fields @param {number} [now] */
 export function reviewerProposal(proposal, fields, now = Date.now()) {
   if (!isRecord(proposal)
-    || Object.keys(proposal).sort().join("\0") !== [...fields].sort().join("\0")
+    || !exactFields(proposal, fields)
     || typeof proposal.reviewerFingerprint !== "string"
     || !FINGERPRINT.test(proposal.reviewerFingerprint)
     || !canonicalReviewerMetadata(proposal, -Infinity, now + 5 * 60_000)) {
@@ -36,7 +38,7 @@ export function validateReleaseCommittee(maintenancePolicy, custodians) {
   if (!isRecord(maintenancePolicy)
     || maintenancePolicy.mode !== "committee"
     || !Array.isArray(maintenancePolicy.verifyingKeys)
-    || Object.keys(maintenancePolicy).sort().join("\0") !== "mode\0threshold\0verifyingKeys"
+    || !exactFields(maintenancePolicy, ["mode", "threshold", "verifyingKeys"])
     || !maintenancePolicy.verifyingKeys.every((key) => typeof key === "string")
     || typeof maintenancePolicy.threshold !== "number") {
     throw new Error("Release maintenance approval requires a canonical committee policy");
@@ -50,7 +52,7 @@ export function validateReleaseCommittee(maintenancePolicy, custodians) {
   }
   if (!Array.isArray(custodians) || custodians.length !== keys.length
     || custodians.some((entry, index) => !isRecord(entry)
-      || Object.keys(entry).sort().join("\0") !== "custodyReference\0holderRole\0verifyingKey"
+      || !exactFields(entry, ["custodyReference", "holderRole", "verifyingKey"])
       || entry.verifyingKey !== keys[index]
       || typeof entry.holderRole !== "string" || entry.holderRole.length < 3 || entry.holderRole.length > 128
       || typeof entry.custodyReference !== "string" || entry.custodyReference.length < 8

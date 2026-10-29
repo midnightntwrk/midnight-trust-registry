@@ -35,8 +35,8 @@ import { observeStandaloneTopology, standaloneStackConfig } from "./check-standa
 import {
   canonicalReviewerMetadata, reviewerProposal, validateReleaseCommittee,
 } from "./standalone-approval-policy.mjs";
-import { buildStandaloneApiApprovalChain } from "./standalone-api-approval-chain.mjs";
-export { buildStandaloneApiApprovalChain } from "./standalone-api-approval-chain.mjs";
+import { buildStandaloneApiApprovalChain, buildStandaloneApiTrustAnchor } from "./standalone-api-approval-chain.mjs";
+export { buildStandaloneApiApprovalChain, buildStandaloneApiTrustAnchor } from "./standalone-api-approval-chain.mjs";
 import { observeStandaloneRestartSnapshot, readStandaloneRestartEvidence } from "./check-standalone-restart.mjs";
 import { checkLocalLedgerPreflight, validateStandaloneGenesisPin } from "./local-ledger-preflight.mjs";
 import {
@@ -46,7 +46,10 @@ import {
 import {
   runLocalVerifierKeyInsertion, validateLocalVerifierKeyInsertionPlan,
 } from "./local-ledger-insert-verifier-key.mjs";
+import { validLocalDeploymentReceipt } from "./standalone-deployment-receipt-policy.mjs";
 import { exactFields } from "./standalone-exact-fields-policy.mjs";
+import { parseCommitteeTransitionRequest } from "./standalone-committee-transition-request-policy.mjs";
+import { parseCanonicalSignedJson as parseUntrustedSignedJson } from "./standalone-signed-document-policy.mjs";
 
 const FORMAT = "tr-standalone-setup-v1";
 const STANDALONE_PROFILE = getLocalNetworkProfile();
@@ -62,11 +65,10 @@ const parseJsonBytes = (bytes) => JSON.parse(bytes.toString("utf8"));
 const execFileAsync = promisify(execFile);
 const composePath = resolve(dirname(fileURLToPath(import.meta.url)), "../deploy/standalone/compose.yml");
 const offlineComposePath = resolve(dirname(fileURLToPath(import.meta.url)), "../deploy/standalone/compose.offline.yml");
-const validLocalDeploymentReceipt = (receipt) => receipt?.networkId === STANDALONE_PROFILE.networkId
-  && HASH.test(receipt.contractAddress) && !/^0x0{64}$/u.test(receipt.contractAddress)
-  && HASH.test(receipt.blockHash) && !/^0x0{64}$/u.test(receipt.blockHash)
-  && typeof receipt.txId === "string" && receipt.txId.length > 0
-  && Number.isSafeInteger(receipt.blockHeight) && receipt.blockHeight >= 0;
+const validStandaloneDeploymentReceipt = (receipt) =>
+  validLocalDeploymentReceipt(receipt, STANDALONE_PROFILE.networkId);
+/** @param {Buffer} bytes @param {string} label @returns {any} */
+const parseCanonicalSignedJson = (bytes, label) => parseUntrustedSignedJson(bytes, label);
 
 function requireVerifiedInventoryBytes(verified, bytes, expectedSha256, message) {
   const hash = sha256(bytes);
@@ -88,16 +90,6 @@ async function verifiedPackageManifestBytes(bundle, inventory, verified) {
     throw new Error("Installed release manifest changed since its inventory pin or bundle verification");
   }
   return manifestBytes;
-}
-
-function parseCanonicalSignedJson(bytes, label) {
-  const raw = bytes.toString("utf8");
-  const value = JSON.parse(raw);
-  if (!Buffer.from(raw, "utf8").equals(bytes)
-    || (raw !== JSON.stringify(value) && raw !== `${JSON.stringify(value, null, 2)}\n`)) {
-    throw new Error(`${label} must use canonical signed JSON without duplicate keys`);
-  }
-  return value;
 }
 
 async function privateDirectory(path) {
@@ -530,11 +522,11 @@ export async function draftStandaloneGenesisPin(directory, dependencies = {}) {
     const candidate = parseJsonBytes(candidateBytes);
     if (!Buffer.from(`${JSON.stringify(candidate, null, 2)}\n`).equals(candidateBytes)
       || candidate?.format !== "tr-local-genesis-candidate-v1"
-      || Object.keys(candidate).sort().join("\0") !== [
+      || !exactFields(candidate, [
         "format", "installInventorySha256", "networkId", "nodeReportedFinalizedBlockHash",
         "nodeReportedFinalizedHeight", "nodeReportedGenesisHash", "observedAt",
         "observerSha256", "project", "sourceRevision", "status",
-      ].sort().join("\0")
+      ])
       || candidate.status !== "untrusted-node-observation-independent-review-required"
       || candidate.sourceRevision !== record.sourceRevision
       || candidate.installInventorySha256 !== record.install.inventorySha256
@@ -838,7 +830,7 @@ export async function approveStandaloneGenesis(
       "networkId", "pinSha256", "reviewedReference", "reviewerFingerprint", "rpcUrl", "setupId",
       "sourceRevision", "stackProject"];
     if (approval === null || typeof approval !== "object" || Array.isArray(approval)
-      || Object.keys(approval).sort().join("\0") !== expectedFields.join("\0")
+      || !exactFields(approval, expectedFields)
       || approval.format !== "tr-local-genesis-approval-v1"
       || approval.sourceRevision !== record.sourceRevision
       || !record.setupId || approval.setupId !== record.setupId
@@ -893,7 +885,7 @@ export async function approveStandaloneCommittee(
       "maintenancePolicy", "networkId", "providerModuleSha256", "reviewedReference",
       "reviewerFingerprint", "sourceRevision"];
     if (approval === null || typeof approval !== "object" || Array.isArray(approval)
-      || Object.keys(approval).sort().join("\0") !== expectedFields.join("\0")
+      || !exactFields(approval, expectedFields)
       || approval.format !== "tr-local-committee-approval-v2"
       || !SHA256.test(approval.deploymentPlanSha256)
       || !SHA256.test(approval.providerModuleSha256)
@@ -941,7 +933,7 @@ export async function approveStandaloneCommitteeDeployment(
     const receipt = deployment?.result?.receipt;
     if (!record.committeeApproval || deployment?.state !== "observed"
       || deployment.result?.readbackStatus !== "staged-bootstrap-pending"
-      || !deployment.stagedPlan || !validLocalDeploymentReceipt(receipt)) {
+      || !deployment.stagedPlan || !validStandaloneDeploymentReceipt(receipt)) {
       throw new Error("A signed roster and finalized staged deployment are required for committee binding");
     }
     if (record.committeeDeploymentApproval) {
@@ -1193,7 +1185,7 @@ export async function reconcileStandaloneDeployment(directory, planPath, depende
       || (result.readbackStatus === "unknown-no-receipt"
         && (result.receipt !== undefined || approval.expectedDeploymentReceipt))
       || (result.readbackStatus !== "unknown-no-receipt"
-        && (!validLocalDeploymentReceipt(result.receipt)
+        && (!validStandaloneDeploymentReceipt(result.receipt)
           || result.receiptAttribution !== "journal-recorded-not-independently-inclusion-verified"))
       || (result.finalizedBlockHash !== undefined
         && !HASH.test(result.finalizedBlockHash))) {
@@ -1239,7 +1231,7 @@ export async function reconcileStandaloneDeployment(directory, planPath, depende
 async function approvedInsertionPlan(root, record, planPath, dependencies) {
   if (record.deployment?.state !== "observed"
     || record.deployment.result?.readbackStatus !== "staged-bootstrap-pending"
-    || !validLocalDeploymentReceipt(record.deployment.result?.receipt)
+    || !validStandaloneDeploymentReceipt(record.deployment.result?.receipt)
     || !record.deployment.stagedPlan || !record.genesisApproval) {
     throw new Error("A finalized staged bootstrap and approved genesis are required before key insertion");
   }
@@ -1429,7 +1421,7 @@ function readStoredCommitteeDeploymentApproval(record, releaseManifestSha256) {
     || sha256(signature) !== stored?.signatureSha256
     || stored?.verification !== "detached-signature-verified-against-operator-pinned-key"
     || !FINGERPRINT.test(stored?.reviewerFingerprint ?? "")
-    || !validLocalDeploymentReceipt(receipt)) {
+    || !validStandaloneDeploymentReceipt(receipt)) {
     throw new Error("Stored committee deployment approval evidence is incomplete or changed");
   }
   const binding = parseCanonicalSignedJson(document, "Stored committee deployment approval");
@@ -1474,7 +1466,7 @@ async function readApprovedCommitteeTransition(record, requestPath, dependencies
       || (!record.committeeDeploymentApproval && !legacyReadOnly) || !staged
       || record.deployment?.state !== "observed"
       || record.deployment.result?.readbackStatus !== "staged-bootstrap-pending"
-      || !validLocalDeploymentReceipt(receipt)) {
+      || !validStandaloneDeploymentReceipt(receipt)) {
       throw new Error("Approved committee and finalized staged deployment are required");
     }
     readStoredCommitteeApproval(record, legacyReadOnly);
@@ -1505,26 +1497,12 @@ async function readApprovedCommitteeTransition(record, requestPath, dependencies
     const expectedInsertions = catalog.filter((name) => name !== staged.initialVerifierKeyName).sort();
     const insertions = record.verifierKeyInsertions ?? {};
     if (catalog.length < 2 || !catalog.includes(staged.initialVerifierKeyName)
-      || Object.keys(insertions).sort().join("\0") !== expectedInsertions.join("\0")
+      || !exactFields(insertions, expectedInsertions)
       || expectedInsertions.some((name) => insertions[name].state !== "verified")) {
       throw new Error("Every staged verifier key must have verified finalized readback");
     }
     const requestBytes = await regularBytes(resolve(requestPath));
-    const request = parseJsonBytes(requestBytes);
-    if (!exactFields(request, ["bootstrap", "bootstrapMaintenanceVerifyingKey", "expiresAt",
-      "format", "governance", "sourceRevision"])
-      || request.format !== "tr-local-committee-transition-request-v1"
-      || request.sourceRevision !== record.sourceRevision
-      || !HASH.test(request.bootstrapMaintenanceVerifyingKey)
-      || !exactFields(request.bootstrap, ["governancePolicyCommitment", "maintainerDidCommitment",
-        "maintainerId", "maintainerKeyId", "maintainerPublicKey", "maintainerThreshold",
-        "registryDidCommitment", "registryId"])
-      || !exactFields(request.bootstrap.maintainerPublicKey, ["x", "y"])
-      || typeof request.bootstrap.registryId !== "string"
-      || !exactFields(request.governance, ["actionSequence", "activeMaintainerCount",
-        "maintainerThreshold", "policyCommitment", "policyVersion"])) {
-      throw new Error("Committee transition request has an invalid shape or source revision");
-    }
+    const request = parseCommitteeTransitionRequest(parseJsonBytes(requestBytes), record.sourceRevision);
     const approval = {
       network: staged.network,
       receipt,
@@ -1966,8 +1944,27 @@ export async function exportStandaloneApiApprovalChain(directory) {
     const manifest = await verifiedPackageManifestBytes(record.install.bundle, inventory, verified);
     const chain = buildStandaloneApiApprovalChain(record, sha256(manifest));
     const output = join(root, "api-approval-chain.json");
-    await writePrivateSnapshot(output, Buffer.from(`${JSON.stringify(chain, null, 2)}\n`));
-    return { path: output, sha256: sha256(await regularBytes(output, { privateFile: true })) };
+    const chainBytes = Buffer.from(`${JSON.stringify(chain, null, 2)}\n`);
+    const anchor = buildStandaloneApiTrustAnchor(chain, chainBytes);
+    const anchorOutput = join(root, "api-trust-anchor.candidate.json");
+    for (const path of [output, anchorOutput]) {
+      try {
+        await lstat(path);
+        throw new Error(`API approval export already exists: ${path}`);
+      } catch (error) {
+        if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+      }
+    }
+    await writePrivateSnapshot(anchorOutput, Buffer.from(`${JSON.stringify(anchor, null, 2)}\n`));
+    try {
+      await writePrivateSnapshot(output, chainBytes);
+    } catch (error) {
+      await unlink(anchorOutput);
+      throw error;
+    }
+    return { path: output, sha256: sha256(await regularBytes(output, { privateFile: true })),
+      trustAnchorCandidatePath: anchorOutput,
+      trustAnchorCandidateSha256: sha256(await regularBytes(anchorOutput, { privateFile: true })) };
   });
 }
 
@@ -2051,6 +2048,7 @@ export async function standaloneSetupStatus(directory) {
       ? "operator-pinned-reviewer-signature-verified" : "invalid-approval-evidence-investigate"
       : record.ledgerObservation ? "node-observed-not-independently-approved" : "pending",
     deployment: record.deployment?.state ?? "pending",
+    initialVerifierKeyName: record.deployment?.stagedPlan?.initialVerifierKeyName ?? null,
     stagedVerifierKeys: Object.entries(record.verifierKeyInsertions ?? {})
       .map(([circuitName, entry]) => ({ circuitName, state: entry.state })),
     setupLock: lockPresent ? "present-inspect-before-removal" : "absent",

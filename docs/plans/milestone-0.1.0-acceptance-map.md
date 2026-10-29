@@ -10,16 +10,68 @@ deployed-ledger, offline actor, restart/restore, and security evidence.
 
 ## Current review and operator handoff (2026-10-28)
 
+At signed/DCO local source `59cc8b855b1ae9c5ea2c2c4c27d9405169c1905b`,
+the v3 API loader requires a separately installed, protected first-run trust
+anchor and rejects a self-consistent replacement approval chain. All 289 API
+unit tests, 14 focused standalone API topology/Compose tests, API typecheck,
+documentation check, and low-severity dependency audit passed. The fixture
+E2E lane passed four simulator-backed signed membership journeys, CLI/API/UI
+smoke, and 11 Playwright cases. These tests do **not** prove that a root-owned
+anchor was installed in a running API container, that a contract was deployed
+and finalized, or that an actor journey ran with egress denied. The current
+install bundles and private pre-deployment packets predate this source and
+cannot serve as exact-source release evidence. Optional Helm runtime still
+lacks protected anchor staging and an approved cluster endpoint profile.
+No `L01`-`S01` case is passed by this checkpoint. The local branch remains
+unpublished; #238-#240 and draft promotion #198 are unchanged.
+
+At local signed/DCO source `7af8e72d04ca3799658aaa90d87b133542711494`,
+`pnpm run check:adversarial-parity -- --require-full` reported 198 demo
+cases, 198 extracted isolated cases, and zero missing IDs. This is case
+inventory parity, not proof that any case ran against a deployed ledger or
+with actor egress denied. It does not close an `L01`-`S01` gate. The proposed
+publication boundaries for the remaining unpublished work are in
+[the local review-group plan](standalone-unpublished-review-groups.md).
+The first-run reviewer [trust-anchor design](../decisions/local-api-reviewer-trust-anchor.md)
+now has local loader enforcement, but installed-runtime observation, approved
+rotation, independently authenticated finality, and exact-source review
+remain open; #234 is not closed by signature checks alone.
+
 Published draft PRs [#238](https://github.com/midnightntwrk/midnight-trust-registry/pull/238)
-(`5b6d2851`), [#239](https://github.com/midnightntwrk/midnight-trust-registry/pull/239)
-(`b723a84b`), and [#240](https://github.com/midnightntwrk/midnight-trust-registry/pull/240)
-(`bbe527cf`) remain stacked and unmerged. At #238's exact head, the milestone
-build/package/test, quality, documentation, and aggregate scan checks passed;
+(`97e59c5e`), [#239](https://github.com/midnightntwrk/midnight-trust-registry/pull/239)
+(`fa7bf067`), and [#240](https://github.com/midnightntwrk/midnight-trust-registry/pull/240)
+(`8dc05ec7`) remain stacked, draft, and unmerged. At #238's exact head, the
+milestone build/package/test, quality, documentation, and aggregate scan checks
+passed; #239 and #240 passed their exact-head stacked light and docs checks.
 the separate external Opengrep OSS check remains red for five internal
 plaintext WebSocket links. [#237](https://github.com/midnightntwrk/midnight-trust-registry/issues/237)
 requires a reviewed security disposition; a green aggregate scan is not a
 waiver. The later local review groups and recovery fixes are unpublished, so
 their tests do not change those PR heads or CI results.
+
+The clean unpublished development stack was merged locally onto #240 at
+signed/DCO `0527e11af09327fef15427f148ba07c8688d0f01`, without rewriting
+its original branch. At that source, focused acceptance and security-verdict
+tests passed 22/22, standalone topology passed 120/120, the strict security
+script typecheck passed, and `pnpm audit --audit-level low` found no known
+vulnerabilities. At the subsequent signed/DCO documentation head
+`f20cf27d337f0ce091b09a496901d8bccdeb6f9c`,
+`pnpm run test:e2e:demo:browser` passed four simulator-backed role journeys,
+fixture CLI/API and UI smoke, and 11 Playwright cases. This is the current
+local fixture E2E checkpoint, not a deployed-ledger test. These checks do not
+authenticate finality or establish deployed, egress-denied standalone actor
+journeys, and they pass no `L01`-`S01` acceptance case.
+
+At signed/DCO local source `3fddcac5623b58cfecdd672cefa557ef3b691b20`,
+`pnpm run test:e2e:demo:browser` passed the four simulator-backed membership
+journeys, fixture CLI/API and UI smoke, and 11 Playwright cases on
+2026-10-28. `pnpm run test:standalone-topology` separately passed 117/117.
+These are implementation and fixture/topology checks only. They did not
+deploy or read back a finalized standalone contract, exercise a live
+VC-owned status authority, deny egress for deployed actors, or restore a
+deployed registry. They do not pass any `L01`-`S01` acceptance case. This
+documentation update is newer than the tested source and must be retested
+as part of an exact-source release candidate.
 
 At signed/DCO local source `27f873601bc168859b470c858aa06fd23e47a7c3`,
 `pnpm run test:e2e:demo:browser` exited 0 on 2026-10-28. The four signed
@@ -292,16 +344,20 @@ A bound journal with a missing state file now rejects writes instead of
 starting empty, and a running instance detects loss of its checked binding.
 Loss of both files across process restart still requires independent durable
 recovery evidence and cannot be treated as a fresh installation.
-The local read-only draft/verify commands and signed recovery-decision parser
-now bind the exact review candidate,
-reviewer key, draft time, and retained finality-evidence bytes. Its result
-explicitly marks finality unverified, release unqualified, and retry forbidden.
-It neither authenticates chain finality nor changes journal state. A future
-release path must independently authenticate finality and re-assess the exact
-candidate under the journal lock before any state change. #220 remains open:
-an independently reviewed finality policy, durable tombstone, operator command,
-restart/replay tests, and security review are still required before any
-reservation can be released.
+The local draft/verify commands bind the exact review candidate, distinct
+reviewer key, draft time, and retained finality-evidence bytes. Verification
+alone marks finality unverified, release unqualified, and retry forbidden.
+The opt-in `FileProposalSubmissionJournal.abandonInvalidatedReservation`
+method now re-assesses the candidate under its journal lock, requires a
+deployment-owned finality authenticator and the exact detached-signed
+decision, and durably retains a terminal, non-replayable tombstone. Local
+tests cover competing journal instances, late receipts, rotation, restart,
+and a new proposal without replay of the original ID. The authenticator in
+those tests supplies an injected simulator view, not independent local-ledger
+finality. No reviewed production authenticator, complete-action proof format,
+deployed stale-action check, or operator CLI/HTTP path exists. #220 remains
+open; neither a signed decision nor the local unit tests authorize release
+of a real reservation, and the `R01` recovery gate is still unproven.
 
 ## Next Local Qualification Sequence
 

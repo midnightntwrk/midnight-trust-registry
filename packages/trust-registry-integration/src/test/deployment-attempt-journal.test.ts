@@ -196,6 +196,14 @@ describe("deployment attempt journal", () => {
     await expect(file.executeOnce({ ...intent(), releaseManifest: {
       ...releaseManifest, verifierKeySha256: { missing: "c".repeat(64) },
     } }, submit)).rejects.toThrow(/catalog is invalid or incomplete/u);
+    const [first, second] = Object.keys(releaseManifest.verifierKeySha256).sort();
+    const collidingCatalog = { ...releaseManifest.verifierKeySha256 };
+    delete collidingCatalog[first!];
+    delete collidingCatalog[second!];
+    collidingCatalog[`${first!}\u0000${second!}`] = "c".repeat(64);
+    await expect(file.executeOnce({ ...intent(), releaseManifest: {
+      ...releaseManifest, verifierKeySha256: collidingCatalog,
+    } }, submit)).rejects.toThrow(/catalog is invalid or incomplete/u);
     await expect(file.executeOnce({ ...intent(), bootstrap: {
       ...bootstrap, maintainerId: new Uint8Array(32),
     } }, submit)).rejects.toThrow(/nonzero 32-byte/u);

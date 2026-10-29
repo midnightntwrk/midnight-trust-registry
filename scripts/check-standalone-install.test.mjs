@@ -376,6 +376,11 @@ test("v5 binds both portal OCI archives to the exact install source and roles", 
     await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
     await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /both portal/u);
     inventory.portalRuntimes.applicant = await staticImageArchive(root, "applicant");
+    const portalPins = inventory.portalRuntimes;
+    inventory.portalRuntimes = { "admin\u0000applicant": portalPins.admin };
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /both portal/u);
+    inventory.portalRuntimes = portalPins;
     const wrongRole = await staticImageArchive(root, "admin", { labelRevision: "b".repeat(40) });
     inventory.portalRuntimes.admin = wrongRole;
     await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
