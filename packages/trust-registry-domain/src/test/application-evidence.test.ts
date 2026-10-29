@@ -67,6 +67,14 @@ const authorizedVerifier = {
 };
 
 describe("application evidence", () => {
+  it("returns parse failures rather than throwing for malformed time inputs", () => {
+    const envelope = createSubmission().envelope;
+    for (const changed of [{ verifiedAt: "bad" }, { expiresAt: "2026-07-28T00:00:00" }]) {
+      expect(() => ApplicationEvidenceEnvelopeSchema.safeParse({ ...envelope, ...changed })).not.toThrow();
+      expect(ApplicationEvidenceEnvelopeSchema.safeParse({ ...envelope, ...changed }).success).toBe(false);
+    }
+  });
+
   it.each(["issuer", "verifier", "auditor"] as const)("returns a parse failure for malformed %s scope hashes", (role) => {
     const envelope = createSubmission().envelope;
     const scopedEnvelope = role === "issuer" ? envelope : {
@@ -118,6 +126,28 @@ describe("application evidence", () => {
     expect(() => assertValidApplicationEvidence(
       submission, expectation, [authorizedVerifier], () => true,
     )).toThrow(/maximum 24-hour lifetime/);
+  });
+
+  it("preserves fractional validity and the exact 24-hour boundary", () => {
+    const submission = createSubmission();
+    submission.envelope.verifiedAt = "2026-07-27T12:00:00.0000000001Z";
+    submission.envelope.expiresAt = "2026-07-28T12:00:00.0000000001Z";
+    submission.commitment = computeApplicationEvidenceCommitment(submission.envelope);
+    expect(() => assertValidApplicationEvidence(submission, {
+      ...expectation, evaluatedAt: "2026-07-27T12:00:00Z",
+    }, [authorizedVerifier], () => true)).toThrow(/not yet valid/u);
+    expect(() => assertValidApplicationEvidence(submission, {
+      ...expectation, evaluatedAt: submission.envelope.verifiedAt,
+    }, [authorizedVerifier], () => true)).not.toThrow();
+    expect(() => assertValidApplicationEvidence(submission, {
+      ...expectation, evaluatedAt: submission.envelope.expiresAt,
+    }, [authorizedVerifier], () => true)).toThrow(/expired/u);
+
+    submission.envelope.expiresAt = "2026-07-28T12:00:00.0000000002Z";
+    submission.commitment = computeApplicationEvidenceCommitment(submission.envelope);
+    expect(() => assertValidApplicationEvidence(submission, {
+      ...expectation, evaluatedAt: submission.envelope.verifiedAt,
+    }, [authorizedVerifier], () => true)).toThrow(/maximum 24-hour lifetime/u);
   });
 
   it.each(["verifier", "auditor"] as const)("binds %s request evidence to its complete signed scope", (role) => {

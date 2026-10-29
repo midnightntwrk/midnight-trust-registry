@@ -15,11 +15,11 @@ const FIELDS = ["allowedHosts", "expectedGenesisHash", "format", "networkId", "r
 /** @param {unknown} value @returns {value is Record<string, unknown>} */
 const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 
-/** Node observation only; an operator must approve the genesis from another channel.
+/** Validate exact proposed pin bytes before any topology or node observation.
  * @param {unknown} candidate
- * @param {typeof fetch} [fetchImpl]
+ * @returns {LocalLedgerPin}
  */
-export async function checkLocalLedgerPreflight(candidate, fetchImpl) {
+export function validateLocalLedgerPin(candidate) {
   if (!isRecord(candidate)
     || Object.keys(candidate).sort().join("\0") !== FIELDS.join("\0")
     || candidate.format !== "tr-local-ledger-pin-v1"
@@ -32,7 +32,36 @@ export async function checkLocalLedgerPreflight(candidate, fetchImpl) {
     || candidate.allowedHosts.some((host) => typeof host !== "string" || host.length === 0)) {
     throw new Error("Local ledger preflight requires an exact approved network, source, and genesis pin");
   }
-  const plan = /** @type {LocalLedgerPin} */ (/** @type {unknown} */ (candidate));
+  return /** @type {LocalLedgerPin} */ (/** @type {unknown} */ (candidate));
+}
+
+/** The standalone wizard exposes only its prepared loopback endpoint during installation.
+ * @param {unknown} candidate
+ * @param {string} sourceRevision
+ * @returns {LocalLedgerPin}
+ */
+export function validateStandaloneGenesisPin(candidate, sourceRevision) {
+  const pin = validateLocalLedgerPin(candidate);
+  if (pin.sourceRevision !== sourceRevision) {
+    throw new Error("Genesis pin source revision disagrees with the installed bundle");
+  }
+  if (pin.allowedHosts.length !== 1 || pin.allowedHosts[0] !== "127.0.0.1"
+    || !/^http:\/\/127\.0\.0\.1:([1-9][0-9]*)$/u.test(pin.rpcUrl)) {
+    throw new Error("Genesis pin must allow only the prepared loopback host");
+  }
+  const port = Number(pin.rpcUrl.slice(pin.rpcUrl.lastIndexOf(":") + 1));
+  if (port < 1024 || port > 65535) {
+    throw new Error("Genesis pin must use a valid prepared loopback port");
+  }
+  return pin;
+}
+
+/** Node observation only; an operator must approve the genesis from another channel.
+ * @param {unknown} candidate
+ * @param {typeof fetch} [fetchImpl]
+ */
+export async function checkLocalLedgerPreflight(candidate, fetchImpl) {
+  const plan = validateLocalLedgerPin(candidate);
   const source = createLocalRpcFinalizedCheckpointSource({
     rpcUrl: plan.rpcUrl,
     expectedGenesisHash: plan.expectedGenesisHash,

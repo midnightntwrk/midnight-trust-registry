@@ -505,7 +505,13 @@ paths:
       requestBody:
         required: true
         content: { application/json: { schema: { type: object, maxProperties: 0 } } }
-      responses: *governedResponses
+      responses:
+        '201': { description: One-use challenge created for the authenticated applicant by the trusted intake port }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { description: Authenticated applicant live-challenge quota reached }
+        '503': { $ref: '#/components/responses/PortUnavailable' }
   /v1/application-evidence/{id}/submissions:
     parameters: [*id]
     post:

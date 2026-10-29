@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  assertAscendingTimestamps,
   assertLifecycleTransition,
   AuthorizationRecordSchema,
   createScopedIdentifier,
@@ -161,9 +162,58 @@ describe("lifecycle transitions", () => {
       /Invalid lifecycle transition/,
     );
   });
+
+  it("orders lifecycle instants beyond milliseconds and across equivalent offsets", () => {
+    expect(() => assertAscendingTimestamps([
+      ["proposedAt", "2026-05-20T00:00:00.0000000001Z"],
+      ["authorizedAt", "2026-05-20T01:00:00.0000000001+01:00"],
+    ])).not.toThrow();
+    expect(() => assertAscendingTimestamps([
+      ["proposedAt", "2026-05-20T00:00:00.0000000002Z"],
+      ["authorizedAt", "2026-05-20T01:00:00.0000000001+01:00"],
+    ])).toThrow(/authorizedAt must not be earlier than proposedAt/u);
+    expect(() => assertAscendingTimestamps([["proposedAt", "invalid"]]))
+      .toThrow(/Invalid timestamp in proposedAt/u);
+  });
 });
 
 describe("record schemas", () => {
+  it("rejects a policy effective window reversed only beyond milliseconds", () => {
+    const policy = createPolicyRecordInput();
+    expect(GovernancePolicyRecordSchema.safeParse({
+      ...policy,
+      effectiveFrom: "2026-05-20T00:00:00.0000000002Z",
+      effectiveUntil: "2026-05-20T00:00:00.0000000001Z",
+    }).success).toBe(false);
+    expect(GovernancePolicyRecordSchema.safeParse({ ...policy, effectiveUntil: "invalid" }).success)
+      .toBe(false);
+  });
+
+  it("rejects authorization approval before proposal within one millisecond", () => {
+    const result = AuthorizationRecordSchema.safeParse({
+      authorizationId: "auth:issuer:fractional:v1",
+      registryId: "registry:midnight:university",
+      subjectDid: "did:midnight:issuer:1",
+      role: "issuer",
+      resourceType: "credential-family",
+      resourceId: ISSUER_RESOURCE_ID,
+      policyId: "policy:university:v1",
+      trustLevel: "approved",
+      status: "active",
+      statusPolicyBindingCommitment: HASH_B,
+      proposedAt: "2026-05-20T00:00:00.0000000002Z",
+      authorizedAt: "2026-05-20T01:00:00.0000000001+01:00",
+      activeFrom: "2026-05-20T00:00:00.0000000003Z",
+      evidenceHash: HASH_C,
+      lifecycleEventRoot: HASH_A,
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.message.includes("authorizedAt must not be earlier")))
+        .toBe(true);
+    }
+  });
+
   it("accepts a registry record", () => {
     const parsed = RegistryRecordSchema.parse({
       registryId: "registry:midnight:university",

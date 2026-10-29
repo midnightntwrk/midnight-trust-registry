@@ -40,6 +40,7 @@ export async function assertCurrentProposalQuorum(
     throw new InvalidProposalQuorumError("Maintainer signer count does not meet the action threshold");
   }
   const seen = new Set<string>();
+  const seenPublicKeys: Array<{ x: bigint; y: bigint }> = [];
   for (const signer of signers) {
     const key = Buffer.from(signer.keyId).toString("hex");
     if (seen.has(key) || !ledger.maintainerKeyIds.member(signer.keyId)) {
@@ -53,5 +54,9 @@ export async function assertCurrentProposalQuorum(
       || record.publicKey.y !== signer.publicKey.y) {
       throw new InvalidProposalQuorumError("Maintainer signer key is not current and active");
     }
+    if (seenPublicKeys.some((point) => point.x === signer.publicKey.x && point.y === signer.publicKey.y)) {
+      throw new InvalidProposalQuorumError("Maintainer signer public keys must be distinct");
+    }
+    seenPublicKeys.push(signer.publicKey);
   }
 }

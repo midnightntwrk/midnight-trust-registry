@@ -1330,8 +1330,13 @@ export const createTrustRegistryApiServer = (
         if (applicationVp === undefined || options.applicationVp === undefined) {
           throw jsonProblem(problemBaseUri, "application-vp-unavailable", 503, "application VP unavailable");
         }
+        let authenticatedSubjectDid: string | void;
         try {
-          await options.applicationVp.authorizeRequest(segments[2]!, request);
+          authenticatedSubjectDid = await options.applicationVp.authorizeRequest(segments[2]!, request);
+          if (segments[3] === "challenges" && (typeof authenticatedSubjectDid !== "string"
+            || authenticatedSubjectDid.length === 0)) {
+            throw new Error("Challenge issuance requires authenticated applicant identity");
+          }
         } catch {
           throw jsonProblem(problemBaseUri, "application-vp-forbidden", 403, "application VP forbidden");
         }
@@ -1356,12 +1361,26 @@ export const createTrustRegistryApiServer = (
             throw new ApplicationVpHttpError("invalid-request");
           }
           const result = segments[3] === "challenges"
-            ? await applicationVp.issue(segments[2]!, body)
+            ? await applicationVp.issue(segments[2]!, body, authenticatedSubjectDid as string)
             : await applicationVp.submit(segments[2]!, body);
           writeJson(response, segments[3] === "challenges" ? 201 : 202, result, false);
           return;
         } catch (error) {
           if (error instanceof HttpProblem) throw error;
+          const challengeCode = segments[3] === "challenges" && error !== null && typeof error === "object"
+            && "code" in error ? error.code : undefined;
+          if (challengeCode === "CHALLENGE_SUBJECT_CAPACITY") {
+            throw jsonProblem(problemBaseUri, "application-vp-subject-capacity", 429, "application VP capacity");
+          }
+          if (challengeCode === "CHALLENGE_CAPACITY" || challengeCode === "CHALLENGE_CLOCK_INVALID"
+            || challengeCode === "CHALLENGE_EXPIRY_RANGE" || challengeCode === "CHALLENGE_COLLISION") {
+            throw jsonProblem(problemBaseUri, `application-vp-${String(challengeCode).toLowerCase().replaceAll("_", "-")}`,
+              503, "application VP unavailable");
+          }
+          if (challengeCode === "CHALLENGE_BINDING_CONFLICT") {
+            throw jsonProblem(problemBaseUri, "application-vp-binding-conflict", 409,
+              "application VP binding conflict");
+          }
           const reason = error instanceof ApplicationVpHttpError ? error.reason : "rejected";
           const status = reason === "invalid-request" ? 400 : reason === "not-found" ? 404
             : reason === "stale-policy" || reason === "invalid-challenge" ? 409 : 403;

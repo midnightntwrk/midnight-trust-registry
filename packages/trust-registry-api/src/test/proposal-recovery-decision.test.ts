@@ -89,23 +89,25 @@ describe("signed local proposal recovery decision", () => {
       const input = { decisionPath, signaturePath, finalityEvidencePath,
         keyringDirectory: verifier, reviewerFingerprint: fingerprint!,
         planReviewerFingerprint: "A".repeat(40), candidate };
-      await expect(draftProposalRecoveryDecision({ candidate, finalityEvidencePath,
+      const draftInput = { candidate, finalityEvidencePath,
         evidenceReference: decision.evidenceReference, reviewerFingerprint: fingerprint!,
+        planReviewerFingerprint: input.planReviewerFingerprint };
+      await expect(draftProposalRecoveryDecision({ ...draftInput,
         now: Date.parse(decision.draftedAt) })).resolves.toBe(`${canonicalizeJson(decision)}\n`);
-      await expect(draftProposalRecoveryDecision({ candidate: { ...candidate,
-        reason: "sequence-still-live" }, finalityEvidencePath,
-      evidenceReference: decision.evidenceReference, reviewerFingerprint: fingerprint! }))
+      await expect(draftProposalRecoveryDecision({ ...draftInput,
+        planReviewerFingerprint: fingerprint! })).rejects.toThrow(/distinct from the API-plan reviewer/u);
+      await expect(draftProposalRecoveryDecision({ ...draftInput,
+        planReviewerFingerprint: fingerprint!.toLowerCase() })).rejects.toThrow(/distinct from the API-plan reviewer/u);
+      await expect(draftProposalRecoveryDecision({ ...draftInput, candidate: { ...candidate,
+        reason: "sequence-still-live" } }))
         .rejects.toThrow(/invalidated/u);
-      await expect(draftProposalRecoveryDecision({ candidate: { ...candidate,
-        reservationActionKind: "invalid" }, finalityEvidencePath,
-      evidenceReference: decision.evidenceReference, reviewerFingerprint: fingerprint! }))
+      await expect(draftProposalRecoveryDecision({ ...draftInput, candidate: { ...candidate,
+        reservationActionKind: "invalid" } }))
         .rejects.toThrow(/invalidated/u);
-      await expect(draftProposalRecoveryDecision({ candidate: { ...candidate,
-        reservationActionPayloadHash: "invalid" }, finalityEvidencePath,
-      evidenceReference: decision.evidenceReference, reviewerFingerprint: fingerprint! }))
+      await expect(draftProposalRecoveryDecision({ ...draftInput, candidate: { ...candidate,
+        reservationActionPayloadHash: "invalid" } }))
         .rejects.toThrow(/invalidated/u);
-      await expect(draftProposalRecoveryDecision({ candidate, finalityEvidencePath,
-        evidenceReference: "demo:unsafe", reviewerFingerprint: fingerprint! }))
+      await expect(draftProposalRecoveryDecision({ ...draftInput, evidenceReference: "demo:unsafe" }))
         .rejects.toThrow();
       await sign(decision);
       await expect(loadApprovedProposalRecoveryDecision(input)).resolves.toEqual({

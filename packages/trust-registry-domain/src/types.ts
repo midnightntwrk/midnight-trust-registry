@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { DidSchema, HashHexSchema, ScopedIdentifierSchema, UriSchema } from "./ids.js";
+import { compareRfc3339Instants } from "./instant.js";
 import { RecognitionAccreditorAnchorSchema } from "./recognition-accreditation.js";
 import {
   assertAscendingTimestamps,
@@ -513,7 +514,10 @@ function refineEffectiveWindow(
     return;
   }
 
-  if (Date.parse(fromValue) > Date.parse(untilValue)) {
+  if (!TimestampSchema.safeParse(fromValue).success || !TimestampSchema.safeParse(untilValue).success) {
+    return;
+  }
+  if (compareRfc3339Instants(fromValue, untilValue) > 0) {
     ctx.addIssue({
       code: "custom",
       message: `${untilField ?? "until"} must not be earlier than ${fromField}`,

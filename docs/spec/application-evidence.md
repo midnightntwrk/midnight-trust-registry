@@ -176,7 +176,8 @@ envelope's `challengeHash` is SHA-256 of the nonce bytes, not a hash of the
 textual hex representation.
 
 The off-ledger challenge store retains only `challengeHash`, trusted issuance
-and expiry instants, a registry/application identity hash for replacement, and
+and expiry instants, a registry/application identity hash for replacement, an
+optional registry-scoped hash of an authenticated applicant DID for quota, and
 a domain-separated binding commitment to registry id, application id, subject DID,
 evidence-verifier DID, role, policy id/version, governed resource type/id, and
 scope commitment. It MUST
@@ -198,6 +199,9 @@ transition. The reference store rejects such changes; a future public route
 MUST authenticate the applicant before allowing either replacement or
 same-binding retries, so a third party cannot invalidate an outstanding
 challenge.
+Capacity or authenticated-subject quota rejection MUST leave a previous live
+same-binding challenge intact, including when that challenge predates subject
+quota tagging.
 
 The 0.1.0 reference intake profile permits zero clock skew between the
 challenge service and its trusted evaluation instant. A VP verification time
@@ -205,7 +209,12 @@ MUST be at or after the stored challenge issuance instant, strictly before
 the stored challenge expiry, and no later than the trusted evaluation instant.
 The evaluation instant itself MUST be inside that half-open challenge window.
 The signed evidence expiry MUST be after verification and no more than 24
-hours later. Evidence may remain valid after the five-minute challenge expires;
+hours later. Time comparisons MUST preserve every supplied fractional second
+digit, including digits beyond milliseconds; rounding an instant into the
+challenge or evidence window MUST NOT make an otherwise premature or expired
+decision valid.
+The exact 24-hour limit is inclusive, but any positive fractional excess is not.
+Evidence may remain valid after the five-minute challenge expires;
 the challenge proves VP freshness, whereas the evidence window bounds later
 governed approval. The service MUST read the window from the challenge store,
 validate its numeric issuance and expiry instants, and fail closed if that
@@ -384,6 +393,9 @@ does not itself implement the official VC verifier. The API exposes optional
 trusted host injects an application VP port. That port MUST authenticate and
 authorize the applicant against the pending application before request-body
 parsing or VP work; authentication by an external proxy alone is insufficient.
+For challenge issuance it MUST return the verified applicant DID, which the
+service compares to the pending binding before inserting a subject-quota-bound
+record. Missing or mismatched identity fails closed before insertion.
 The server derives binding and authorized verifier policy from the host, never
 from the applicant's request. It rechecks both just before evidence persistence;
 the host MUST atomically recheck pending status and policy at persistence. These
@@ -438,10 +450,26 @@ The reference API package exposes an in-memory store for local tests and a
 bounded file-backed store for a single local deployment. The in-memory store
 caps live entries and schedules expiry cleanup; the file-backed store uses
 private atomic file replacement and a cross-process lock for one-use consume,
-and prunes expired records during writes. Neither supplies distributed storage,
-crash-durable commits, applicant authentication, abuse controls, or a complete
-retention/cleanup policy. A public deployment MUST provide and test those
-properties as appropriate to its failure model. Challenge expiry uses the evidence verifier's off-ledger
+and prunes expired records during writes. File reads require one private,
+single-link regular inode opened without following a final-path symlink and
+reject a file changed during the read. This is local file-integrity hardening,
+not proof of the caller's identity. Neither adapter supplies distributed
+storage, applicant authentication, or a complete retention/cleanup policy.
+The file adapter requires a pre-provisioned, durably synced store directory,
+then syncs its replacement file and that directory around rename when the
+local filesystem honors `fsync`; it
+does not atomically commit challenge consumption with accepted VP evidence.
+The file and memory adapters now bound live entries per authenticated subject
+hash when the embedding host supplies a verified DID;
+the application VP HTTP route rejects challenge issuance if the authorization
+callback returns no DID or one that differs from the pending binding. The
+default packaged API configures no such host. A caller-provided DID or demo
+header is not authentication; the host MUST verify caller control and enforce
+its session and abuse policy before returning a DID. Public exposure remains
+blocked until that host boundary and durable atomic VP verification are
+independently implemented and tested. A global cap alone would let one actor
+exhaust the store with many application IDs.
+Challenge expiry uses the evidence verifier's off-ledger
 clock. Invalid clock readings and store capacity exhaustion are operational
 errors, not invalid applicant challenges. It is not a claim that the Midnight
 contract has a datetime primitive.

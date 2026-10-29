@@ -7,7 +7,9 @@ The detailed procedures and threat model are in
 [Standalone Offline Runtime Qualification](standalone-offline-runtime.md).
 The [security-scan disposition](security-scan-disposition.md) explains how to
 reproduce the older draft's scanner findings; only an exact-head full scan can
-clear that gate for a new candidate.
+clear that gate for a new candidate. Give the independent reviewer the
+[local RC security-review handoff](../plans/local-0.1.0-security-review-handoff.md)
+with the exact source and install candidate.
 
 **Current state:** the repository has simulator-backed actor journeys, API
 integration tests, pinned-install checks, and pre-deployment local-ledger

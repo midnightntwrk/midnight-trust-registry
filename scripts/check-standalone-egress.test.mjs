@@ -58,6 +58,8 @@ test("rejects broad /0 through /8 routes regardless of flags", () => {
   assert.equal(hasBroadOutboundRoute(`${header}\r\n${subnet}\r\n`), false);
   assert.equal(hasBroadOutboundRoute(`${header}\n`), false);
   assert.equal(hasValidRouteTable(isolatedRoute), true);
+  assert.equal(hasValidRouteTable(`${header}\neth0\tINVALID!\t00000000\t0001\t0\t0\t0\t0000FFFF\n`), false);
+  assert.equal(hasValidRouteTable(`${header}\neth0\t000015AC\t00000000\t0001\t0\t0\t0\tBADMASK!\n`), false);
   assert.equal(hasValidRouteTable(`${header}\neth0\t00000000\t00000000\t0001\t0\t0\t0\t00FF00FF\n`), false);
   assert.equal(hasValidRouteTable(`${header}\n`), false);
   assert.equal(hasValidRouteTable(""), false);
@@ -90,6 +92,10 @@ test("confines every isolated route to the observed ledger subnet", () => {
     IPAM: { Config: [{ Subnet: "172.21.0.1/16" }] } }, "ledger-id"), /not canonical/u);
   assert.throws(() => ledgerSubnet({ ...inspectedNetwork,
     IPAM: { Config: [{ Subnet: "172.21.0.0/16" }, { Subnet: "10.0.0.0/8" }] } }, "ledger-id"), /IPAM/u);
+  assert.throws(() => ledgerSubnet({ ...inspectedNetwork, IPAM: { Config: [{}] } },
+    "ledger-id"), /valid IPv4 subnet/u);
+  assert.throws(() => ledgerSubnet({ ...inspectedNetwork,
+    IPAM: { Config: [{ Subnet: "172.21.0.0/33" }] } }, "ledger-id"), /valid IPv4 subnet/u);
 });
 
 const subnetRoute = (destination, mask) =>

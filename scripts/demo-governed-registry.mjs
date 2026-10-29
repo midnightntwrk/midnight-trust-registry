@@ -1424,6 +1424,7 @@ const server = createTrustRegistryApiServer({
       ) {
         throw new Error("Demo applicant authorization failed");
       }
+      return bindings.get(applicationId)?.subjectDid;
     },
     resolvePendingApplication: async (applicationId) => {
       const binding = bindings.get(applicationId);

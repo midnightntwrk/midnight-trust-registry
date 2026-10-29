@@ -9,15 +9,18 @@ import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 
 import { observeStandaloneApiRuntime } from "./check-standalone-api-runtime.mjs";
-import { assertOnlyLedgerRoutes, ledgerSubnet } from "./check-standalone-egress.mjs";
+import { ledgerSubnet } from "./check-standalone-egress.mjs";
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
+import { validateApiEgressProbe } from "./standalone-api-egress-policy.mjs";
+
+export { validateApiEgressProbe } from "./standalone-api-egress-policy.mjs";
 
 const run = promisify(execFile);
 const canaryPort = 45987;
 const dnsCanaryName = "tr-offline-canary.invalid";
 const dnsCanaryAddress = "198.51.100.7";
-export const apiEgressCanaryServerScript = `const net=require('node:net'),dgram=require('node:dgram');
-net.createServer(socket=>socket.end()).listen(${canaryPort},'0.0.0.0');
+export const apiEgressCanaryServerScript = String.raw`const net=require('node:net'),dgram=require('node:dgram');
+net.createServer(socket=>socket.end('HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n')).listen(${canaryPort},'0.0.0.0');
 const server=dgram.createSocket('udp4');
 server.on('message',(query,remote)=>{
   if(query.length<18)return;
@@ -28,6 +31,7 @@ server.on('message',(query,remote)=>{
   }
   if(offset+5>query.length||labels.join('.')!=='${dnsCanaryName}'
     ||query.readUInt16BE(offset+1)!==1||query.readUInt16BE(offset+3)!==1)return;
+  console.log('tr-offline-dns-query');
   const question=query.subarray(12,offset+5);
   const answer=Buffer.from([0xc0,0x0c,0,1,0,1,0,0,0,0,0,4,198,51,100,7]);
   const reply=Buffer.alloc(12+question.length+answer.length);
@@ -39,16 +43,17 @@ server.on('message',(query,remote)=>{
 const connectionScript = `const net=require('node:net');const socket=net.connect(Number(process.argv[2]),process.argv[1]);socket.setTimeout(3000);socket.on('connect',()=>{console.log('connected');socket.end()});socket.on('timeout',()=>socket.destroy(Object.assign(new Error('timeout'),{code:'ETIMEDOUT'})));socket.on('error',error=>{console.log('denied:'+error.code);process.exitCode=7})`;
 export const apiEgressDnsScript = `const resolver=new (require('node:dns')).Resolver({timeout:1500,tries:1});resolver.setServers([process.argv[1]+':'+process.argv[2]]);resolver.resolve4('${dnsCanaryName}',(error,addresses)=>{if(error){console.log('denied:'+error.code);process.exitCode=7}else{console.log('resolved:'+addresses[0])}})`;
 const routeScript = "process.stdout.write(require('node:fs').readFileSync('/proc/net/route','utf8'))";
-const deniedCodes = new Set(["ENETUNREACH", "EHOSTUNREACH", "ETIMEDOUT"]);
-const deniedDnsCodes = new Set(["ETIMEOUT", "ENETUNREACH", "EHOSTUNREACH"]);
 
 async function docker(args, allowFailure = false) {
   try {
     const { stdout, stderr } = await run("docker", args, { timeout: 20_000, maxBuffer: 1024 * 1024 });
     return { code: 0, stdout, stderr };
   } catch (error) {
-    if (allowFailure && Number.isInteger(error.code)) {
-      return { code: error.code, stdout: error.stdout ?? "", stderr: error.stderr ?? "" };
+    if (allowFailure && error && typeof error === "object" && "code" in error
+      && typeof error.code === "number" && Number.isInteger(error.code)) {
+      return { code: error.code,
+        stdout: "stdout" in error && typeof error.stdout === "string" ? error.stdout : "",
+        stderr: "stderr" in error && typeof error.stderr === "string" ? error.stderr : "" };
     }
     throw error;
   }
@@ -57,36 +62,6 @@ async function docker(args, allowFailure = false) {
 function requireSuccess(result, description) {
   if (result.code !== 0) throw new Error(`${description} failed`);
   return result.stdout.trim();
-}
-
-export function validateApiEgressProbe(input) {
-  const { subnet, routeTable, canaryAddress, controlBefore, isolated, controlAfter,
-    dnsControlBefore, dnsIsolated, dnsControlAfter } = input;
-  if (isIP(canaryAddress) !== 4) throw new Error("Canary address is not IPv4");
-  const address = canaryAddress.split(".").reduce((value, octet) =>
-    ((value << 8) | Number(octet)) >>> 0, 0);
-  if (((address & subnet.mask) >>> 0) === subnet.address) {
-    throw new Error("Canary is inside the API's isolated subnet");
-  }
-  assertOnlyLedgerRoutes(routeTable, subnet);
-  if (controlBefore.code !== 0 || controlBefore.stdout.trim() !== "connected"
-    || controlAfter.code !== 0 || controlAfter.stdout.trim() !== "connected") {
-    throw new Error("Bridge canary positive control was not reachable throughout the probe");
-  }
-  if (isolated.code !== 7 || !deniedCodes.has(isolated.stdout.trim().replace(/^denied:/u, ""))
-    || !isolated.stdout.trim().startsWith("denied:")) {
-    throw new Error("Running API container did not show an outbound route denial");
-  }
-  for (const control of [dnsControlBefore, dnsControlAfter]) {
-    if (control?.code !== 0 || control.stdout.trim() !== `resolved:${dnsCanaryAddress}`) {
-      throw new Error("Bridge DNS positive control did not resolve the local canary");
-    }
-  }
-  if (dnsIsolated?.code !== 7
-    || !dnsIsolated.stdout.trim().startsWith("denied:")
-    || !deniedDnsCodes.has(dnsIsolated.stdout.trim().slice("denied:".length))) {
-    throw new Error("Running API container did not deny the bridge DNS canary route");
-  }
 }
 
 export async function observeStandaloneApiEgress(bundle, env = process.env, dependencies = {}) {
@@ -108,6 +83,8 @@ export async function observeStandaloneApiEgress(bundle, env = process.env, depe
   const name = `tr-api-egress-canary-${randomUUID()}`;
   const image = verified.apiRuntime.imageId;
   let canaryStarted = false;
+  let observation;
+  let failure;
   try {
     requireSuccess(await command(["run", "-d", "--rm", "--name", name, "--pull", "never",
       "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
@@ -156,7 +133,7 @@ export async function observeStandaloneApiEgress(bundle, env = process.env, depe
       || after.sourceRevision !== before.sourceRevision) {
       throw new Error("API container or network changed during the egress probe");
     }
-    return {
+    observation = {
       kind: "standalone-api-egress-observation",
       observedAt: new Date().toISOString(),
       sourceRevision: verified.sourceRevision,
@@ -173,12 +150,16 @@ export async function observeStandaloneApiEgress(bundle, env = process.env, depe
       scope: "running API TCP and DNS/UDP routes to one local bridge canary; Docker DNS recursion, other protocols, host ingress, and actor journeys not verified",
       releaseQualified: false,
     };
+  } catch (error) {
+    failure = error;
   } finally {
-    const cleanup = await command(["rm", "-f", name], true);
+    const cleanup = await command(["rm", "-f", name], true).catch(() => ({ code: -1 }));
     if (canaryStarted && cleanup.code !== 0) {
-      throw new Error("Could not remove the dedicated API egress canary");
+      failure = new Error("Could not remove the dedicated API egress canary", { cause: failure });
     }
   }
+  if (failure) throw failure;
+  return observation;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -188,7 +169,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     }
     console.log(JSON.stringify(await observeStandaloneApiEgress(process.argv[2])));
   } catch (error) {
-    console.error(`Dedicated API egress probe inconclusive: ${error.message}`);
+    console.error(`Dedicated API egress probe inconclusive: ${error instanceof Error ? error.message : String(error)}`);
     process.exitCode = 1;
   }
 }

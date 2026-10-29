@@ -35,6 +35,8 @@ test("requires a live bridge control, confined routes, and a route-denied API co
   assert.throws(() => validateApiEgressProbe({ ...input, canaryAddress: "10.0.0.2" }), /inside/u);
   assert.throws(() => validateApiEgressProbe({ ...input, controlAfter: { ...control, code: 1 } }),
     /positive control/u);
+  assert.throws(() => validateApiEgressProbe({ ...input, controlBefore: undefined }),
+    /positive control/u);
   assert.throws(() => validateApiEgressProbe({ ...input, isolated: { code: 0, stdout: "connected" } }),
     /route denial/u);
   assert.throws(() => validateApiEgressProbe({ ...input,
@@ -43,6 +45,8 @@ test("requires a live bridge control, confined routes, and a route-denied API co
     routeTable: routeTable.replace("00FFFFFF", "00000000") }), /route escapes/u);
   assert.throws(() => validateApiEgressProbe({ ...input,
     dnsControlAfter: { code: 7, stdout: "denied:ETIMEOUT" } }), /DNS positive control/u);
+  assert.throws(() => validateApiEgressProbe({ ...input, dnsControlBefore: undefined }),
+    /DNS positive control/u);
   assert.throws(() => validateApiEgressProbe({ ...input,
     dnsIsolated: { code: 0, stdout: "resolved:198.51.100.7" } }), /bridge DNS canary/u);
   assert.throws(() => validateApiEgressProbe({ ...input,

@@ -8,12 +8,83 @@ Kubernetes and Helm are optional deployment paths, not 0.1.0 RC gates.
 The non-Kubernetes standalone installation may qualify with equivalent
 deployed-ledger, offline actor, restart/restore, and security evidence.
 
+## Latest local pre-deployment checkpoint
+
+The private `artifacts/standalone-setup/wizard-7efc-1/` setup was built from
+signed/DCO source `7efcf60760dc7e37641f7c8f3b575dc83fd5dd6b` and a
+verified v6 install inventory with SHA-256
+`cf816e832bf0b554f886194bce9fa255ad602598dfc4cbea3b7afe3ac81036a8`.
+The bundle check covered ten packages, six images, and 18 proof-parameter
+files. Its dedicated node/indexer/prover bridge passed image and Compose
+matching, local HTTP and DNS canary-denial checks, and pre-deployment restart
+continuity (node-reported height 33 before, 43 after). The untrusted genesis
+candidate and proposed pin have SHA-256 values
+`11bf275076028efadc8884d67c4abf60b99e4d60c406d7e02c6405fd292731e8`
+and `614d28894283b3262cc5135fb5e190f4107054c9125090911ef7b8f8f6345a75`.
+The three containers are stopped; their volumes and private evidence remain.
+The journey-prerequisite check exited 2 at the unsigned genesis gate. No
+contract was deployed, no independent finality was authenticated, and no
+offline actor or restore test ran. Current local source has advanced past
+`7efcf607`, so this bundle is historical pre-deployment evidence, not an
+exact-head release candidate. The earlier checkpoints below are retained
+only as an audit trail.
+
+At signed local source `ef6a9644`, the safe prebuilt regression lane found
+all 66 full proof circuits and passed 349 integration, 109 API integration,
+59 applicant, and 25 admin tests. The fixture demo passed four signed role
+journeys plus CLI/API and both UI smoke surfaces; Playwright passed 10
+fixture-browser cases. The standalone topology lane passed 89 isolated
+orchestration tests. These checks did not authenticate the provenance of the
+retained proof artifacts, deploy a contract, run a wallet or actor against
+the ledger, or prove host-wide egress denial. They must not be entered as
+`L01`-`S01` deployed acceptance results.
+
 The open [0.1.0 issues](https://github.com/midnightntwrk/midnight-trust-registry/milestone/1)
 must be reconciled against code and exact-head validation before closure.
 The files below identify where to check behavior; their existence alone does
 not prove every acceptance criterion. In particular, a simulator test is not
 a finalized-network read, and a package smoke is not a live status proof.
-The most recent retained pre-deployment bridge observation is **b33**, bound
+The unpublished `codex/trust-registry-offline-egress-canary` slice at signed/DCO
+`4719b01d` adds a v6-only local HTTP/DNS canary for the ledger bridge, replacing
+the historical public-Internet positive control in the v6 wizard. Focused
+orchestration tests, the standalone topology suite, documentation checks, and
+dependency audit passed. A disposable Docker smoke with previously loaded
+source-pinned node/API images returned HTTP 204 and resolved the canary on its
+control bridge, while a separate internal bridge returned curl code 7 and DNS
+code 2; all smoke resources were removed. This verifies the probe mechanics,
+not an exact-source b23 or current-head ledger observation. Docker's default
+address pools were exhausted on this host, so that smoke used two explicit
+private /24 control subnets. The retained b23 install bundle predates a
+currently required packed `reviewer-signature-status.js` file and fails the
+current verifier; it must not be reclassified as current-source evidence.
+No deployed contract, offline actor journey, or release gate was closed by
+this probe.
+The later private `artifacts/standalone-setup/wizard-31f6-1/` packet retains
+a verified six-image v6 install at signed/DCO source
+`31f6c5bbf9d0ddae6be090d7191748dd5cf642c2`, inventory SHA-256
+`cec0e192f26d1e4c013cbf6729f3aeef6eb1aedf3b08ed61b5c5ae17d05fbce2`,
+and an observed three-service internal bridge. The v6 local HTTP/DNS canary
+passed against that live bridge without public Internet. Its node-reported
+genesis candidate has SHA-256
+`4fef60d63a3e3632c3c46c548b91d37d0d695b1413ff26629c5c5d78244c1a32`
+and remains **untrusted**. Separate node, indexer, and proof-server restarts
+preserved the finalized checkpoint hash and advanced the node-reported height
+from 26 to 40. The private status still reports `localLedger: pending`,
+`deployment: pending`, `restartRestore: pending`, and `releaseQualified: false`.
+The newer signed `ed1260a3` source forwards an explicit control subnet through
+the wizard, so even this successful pre-deployment packet is no longer an
+exact-current-head release candidate. No signed genesis approval, deployed
+contract, authenticated finalized readback, actor journey, or restore test
+occurred. A later development probe against the retained `31f6` bridge used
+the verified image IDs with a synthetic DNS/UDP canary. A positive control
+answered before and after the isolated attempt, while the canary query count
+did not advance during that attempt; local TCP and DNS/UDP canary routes were
+denied. This was run with newer source than the install bundle and was not a
+wizard release observation. It does not establish general DNS isolation or
+egress denial for deployed services or actors. Both projects' volumes and
+private evidence remain retained.
+
+The earlier retained pre-deployment bridge observation **b33** was bound
 to signed/DCO source `8957d96d29554e7ed9be9cd692b2a00d7c819e3f` and
 verified v6 install inventory SHA-256
 `7736b31041275795895641b0383c24a21f48c22cf195b35b330c6ef8bb15556e`.
@@ -31,6 +102,27 @@ so b33 is **historical pre-deployment evidence**, not an exact-head candidate
 to approve or deploy. A new source-matched install and packet are required
 after code stabilizes. Earlier b28 and node-1.0.400 compatibility observations
 remain historical; neither independently approved a genesis hash.
+
+The later private `artifacts/standalone-setup/wizard-cf5d-1/` packet is bound
+to signed/DCO source `cf5d8d3d68e1438f5044c0fac161765cdd32441d` and
+verified v6 install inventory SHA-256
+`3d46b6a1f4541a558a7ffc6ad5b5a8764e458b846d6895c81ec58f8efa6e022e`.
+The isolated three-service bridge passed image/Compose matching and local
+HTTP/DNS canary-denial checks. Its node-reported candidate and proposed pin
+have SHA-256 values
+`11f1fdb6498b0552818b124c1438b552954434e1a9b2916c8b7345f170075de4`
+and `c881c473e76d4660a58fa312f9931d0449dd94c1dc577e01225dad0fa9c34b43`;
+both are **untrusted**. The private review packet explains the independent
+chain-spec comparison and exact-byte human signature required next. Restart
+smoke preserved the node-reported finalized checkpoint at height 21 while
+height advanced to 31. This is pre-deployment continuity only: contract
+readback was not verified, cross-host restore was not run, and no actor
+transaction occurred. The temporary install relay was removed and the three
+dedicated containers were stopped; named volumes and private evidence remain.
+The newer signed/DCO `d4b3b345` source strictly checks the packet I/O boundary
+but does not match that retained install. The packet remains historical input
+for review, not an exact-current-head release candidate. A candidate using
+the newer source requires a fresh source-matched install and approval packet.
 
 The historical checkpoints in the table and paragraphs below remain as an
 audit trail, not as current-head release evidence.
@@ -57,10 +149,10 @@ private evidence, and generated proof artifacts until safe phase-exit cleanup.
 | #201, #202 signer and nonce rules | `contracts/trust-registry/src/test/trust-registry.test.ts` rejects unsorted, duplicate, nonzero-padded, and zero signer slots; `packages/trust-registry-integration/src/test/external-epoch-publication.integration.test.ts` sorts a reversed signature input and checks the resulting signer-set and event hashes; [ADR-0001](../decisions/adr-0001-governance-evidence-and-policy-snapshots.md) records the Compact size tradeoff. `packages/trust-registry-api/src/test/signed-mutation-state.test.ts` checks expiry pruning, actor and global live-window capacity, clock rollback, and keyed lookup; `packages/trust-registry-api/src/test/signed-mutation-http.test.ts` checks cross-actor saturation, concurrent reuse, and replay after server restart; `packages/trust-registry-cli/src/test/trust-registry-cli.test.ts` validates and explicitly rejects old workspace formats. The 10,000-entry/5,000-lookup local benchmark (`node scripts/bench-mutation-nonce-lookups.mjs`) measured 0.2 ms keyed versus 745 ms linear on Node 24/Darwin ARM64; this is a local microbenchmark, not a CI latency guarantee | Pass exact-head full integration and link the signed implementation commits after merge. Confirm pre-release snapshot migration or rejection in the final package review. |
 | #90 issuer status policy | The issuer status binding and application status-attestation tests verify a governed commitment and reject substitution | A consumable VC-owned status-authority adapter is still missing. The current VC status-registry package is private and reference-tier; its own `docs/spec/status-time-authority-v1.md` leaves B1 authenticated authority, B2 accepted root/non-membership, and B3 trusted time as implementation gates. Select an approved verification profile and satisfy its gates before wiring a supported non-revocation result or restoring a federation status claim. Fixture evidence is not live status authority. |
 | #200, #213 public deployment, deferred from local 0.1.0 RC | Constructor, deployment-domain, replay, provider-adapter, one-attempt deployment and committee-submission journals, Ledger 8 committee-update preparation, and read-only finalized-state reconciliation tests exist; network and genesis are configurable. The [Preprod admin runbook](../guide/preprod-admin-qualification.md) is for a later public-network release | A funded operator, approved genesis and committee pins, real Preprod deployment with independently finalized readback, custody and recovery review, and actual committee transition remain required for that later release. This deferral does not waive the analogous local-ledger and maintenance gates below. |
-| Standalone offline runtime | The [qualification plan](../guide/standalone-offline-runtime.md) separates online installation from offline runtime. The b33 source-matched v6 install contains ten packages, six OCI archives, and 18 proof-parameter files. Its isolated bridge passed image/Compose matching and bridge-only canary egress checks; its untrusted candidate, proposed pin, and review packet remain private and unsigned. A public-seed simulator/fixture journey and a healthy local bridge do not prove a deployed registry. | Build a new exact-source install and genesis packet after the current code stabilizes. The human reviewer must independently check its chain-spec/genesis, source, inventory, and proposed pin, then inspect and detached-sign the wizard-generated approval bytes; neither chat approval nor the node candidate suffices. Live local deployment and finalized contract readback, approved release maintenance transition, wallet/API/browser egress-denied actor journeys, post-deployment restart and distinct-project restore with contract/wallet/API readback, and independent security review remain open. Pre-deployment smoke closes none of those gates. |
+| Standalone offline runtime | The [qualification plan](../guide/standalone-offline-runtime.md) separates online installation from offline runtime. The `7efcf607` source-matched v6 install and `wizard-7efc-1` bridge in the checkpoint above passed pinned-byte, topology, local canary-denial, and pre-deployment restart checks. Its genesis candidate, proposed pin, and review packet remain private and unsigned. Newer source makes this historical, not current-head release evidence. A fixture journey and a healthy local bridge do not prove a deployed registry. | Build a new exact-source install and genesis packet after the current code stabilizes. The human reviewer must independently check its chain-spec/genesis, source, inventory, and proposed pin, then inspect and detached-sign the wizard-generated approval bytes; neither chat approval nor the node candidate suffices. Live local deployment and authenticated finalized contract readback, approved release maintenance transition, wallet/API/browser egress-denied actor journeys, post-deployment restart and distinct-project restore with contract/wallet/API readback, and independent security review remain open. Pre-deployment smoke closes none of those gates. |
 | #219 ledger-backed API | Local signed slices require a detached reviewer-signed, time-bounded v3 plan and approval-chain handoff, exact install/release bytes, pinned genesis/address/endpoints, per-query finalized readback, and complete current-map Compact projection checks. Historical authorization, recognition, and TRQP decision/evidence routes deliberately return `501 historical-decisions-out-of-scope`. The packaged signed-plan CLI remains read-only; `GET /health` lists no governed proposal ports. An opt-in issuer proposal port has signed writer-annex, provider-identity, journal, and injected-finality/evidence checks in tests, but no production embedding host or live VC-owned status adapter is installed. No API has run against a deployed local contract. | **Current-only 0.1.0 scope is decided.** Keep historical completeness deferred. Supply approved live DID/VC/status and authenticated-finality dependencies, wire the governed ports and durable admission to the exact signed plan, and run issuer through recognition actor writes on one deployed local ledger. After every mutation, drain queries and manually review, re-sign, install, and restart a versioned snapshot/plan set. The old plan must fail closed on changed sequence or deployment-image pins. Simulator and injected-provider tests cannot close this gate; offline actor, recovery, and security review are still required. |
 | #218 Helm deployment (optional, not an RC gate) | The issue defines pinned images, isolated local node/indexer/prover, API and portal workloads, secrets, persistence, default-deny egress, first-run approval integration, and real-cluster qualification. The verified `7821a36` v6 install binds the API, admin, and applicant OCI archives to signed source and exact inventory bytes; the b14 Compose bridge runs only node/indexer/prover, not the API or portals. The local Helm chart has six private digest-pinned workloads, external Secret/PVC references, a namespace-wide default-deny policy, and narrow local operator/actor egress. The signed-render observer rejects an incomplete or narrowed policy set in tests. No Helm workload has been deployed or observed on a real cluster. | Track chart-specific cluster qualification separately from #45. Before claiming #218 complete, independently review final image/install bytes, bind running API and portals to approved image provenance, and install only in a dedicated namespace with trusted role-label admission. Plan/Secret/image and policy-object observations are point-in-time, not measured CNI egress enforcement or live cluster evidence. Qualify chart Secret/PVC ownership, DNS recursion and CNI behavior, local DID/VC/status authority allowlists, first-run wizard handoff, private preload, real isolated-cluster deployment, egress-denied actor journeys, restart/restore, operator compatibility matrix, and independent security review. Template tests are not cluster evidence. None of this makes Kubernetes a prerequisite for the standalone RC. |
-| #45 release | Signed-source manifest generator, package hash verifier, ten packed artifacts, four HTTP membership journeys plus one packaged recognition VC/VP journey, and draft [candidate note](../guide/release-candidate-0.1.0.md). The b33 verified install binds source-matched packages, six images, and proof parameters; it is not installed-runtime or current-head deployment evidence. The simulator/fixture `test:e2e:demo` passed at b33's source, and a later local manifest-typing slice passed 61 artifact-workspace tests and strict script gates. Neither is a deployed local-ledger actor journey or final-candidate validation. | Full integration, packed-consumer checks, and artifact review at the final candidate revision, exact-head CI/review, release owner, independent local security review, deployed local-ledger qualification, and recovery approval are pending. |
+| #45 release | Signed-source manifest generator, package hash verifier, ten packed artifacts, four HTTP membership journeys plus one packaged recognition VC/VP journey, and draft [candidate note](../guide/release-candidate-0.1.0.md). The cf5d verified install binds source-matched packages, six images, and proof parameters; it is not installed-runtime or current-head deployment evidence. At signed local `d4b3b345`, `integration:prebuilt` found all 66 full proof circuits and passed 349 integration, 109 API integration, 59 applicant, and 25 admin tests. The simulator/fixture `test:e2e:demo` and all 10 fixture-browser tests also passed. None of these tests is a deployed local-ledger actor journey or final-candidate validation. | Full integration from final source, packed-consumer checks, and artifact review at the final candidate revision, exact-head CI/review, release owner, independent local security review, deployed local-ledger qualification, and recovery approval are pending. |
 | #178 milestone protection policy | The [delivery harness](milestone-0.1.0-delivery-harness.md) requires green exact-head CI and current-head LLM review; the user explicitly declined a milestone branch-protection rule | Reconcile the stale issue with that policy decision; do not treat absence of branch protection as a release blocker or relax develop/main protections. |
 
 An earlier retained exact-source install was **b20 at signed/DCO

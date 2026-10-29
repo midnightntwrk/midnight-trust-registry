@@ -189,6 +189,9 @@ test("v5 and v6 load both verified portal archives after the ledger and API imag
       await assert.rejects(loadStandaloneInstallImages(root, {
         verify: async () => ({ ...verified, portalRuntimes: { admin: verified.portalRuntimes.admin } }),
       }), /portal image IDs are missing/u);
+      await assert.rejects(loadStandaloneInstallImages(root, {
+        verify: async () => ({ ...verified, portalRuntimes: null }),
+      }), /portal image IDs are missing/u);
     }
   } finally {
     await writeFile(inventoryPath, original);

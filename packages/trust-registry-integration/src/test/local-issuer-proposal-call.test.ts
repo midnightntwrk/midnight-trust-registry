@@ -125,6 +125,31 @@ beforeEach(() => {
 });
 
 describe("local issuer proposal circuit call", () => {
+  it("rejects a repeated public key behind distinct registered maintainer IDs before submission", async () => {
+    const { call, ledger } = fixture();
+    const secondKeyId = bytes32Commitment("maintainer:key-2");
+    const duplicatedSigner = { ...call.signers[0]!, keyId: secondKeyId };
+    const thresholdTwoLedger = {
+      ...ledger,
+      maintainerThreshold: 2n,
+      maintainerKeyIds: {
+        member: (id: Uint8Array) => [keyId, secondKeyId].some((candidate) => Buffer.from(candidate).equals(id)),
+      },
+      maintainerRecords: {
+        lookup: (id: Uint8Array) => ({ keyId: id, publicKey: signerPublicKey, status: MaintainerStatus.active }),
+      },
+    } as TrustRegistryContract.Ledger;
+    const input = {
+      call: { ...call, signers: [call.signers[0]!, duplicatedSigner] }, expectedGenesisHash: genesisHash,
+      readFinalizedLedger: async (address: string) => ({ contractAddress: address, genesisHash, ledger: thresholdTwoLedger }),
+      providers: {} as Parameters<typeof executeLocalIssuerProposalAfterReservation>[0]["providers"],
+      readSubmissionProviderIdentity,
+    };
+    await expect(preflightLocalIssuerProposalSubmission(input))
+      .rejects.toThrow(/public keys must be distinct/u);
+    expect(mocks.submitCallTx).not.toHaveBeenCalled();
+  });
+
   it("preflights without broadcast and submits once after an external reservation", async () => {
     const { call, ledger } = fixture();
     const input = {

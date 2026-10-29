@@ -49,8 +49,8 @@ export type ApplicationVpHttpSubmissionResult = {
 /** The embedding application owns authenticated applicant access, policy and atomic redacted persistence. */
 export interface ApplicationVpHttpPort {
   challengeStore: ApplicationChallengeStore;
-  /** Authenticate the caller and authorize access to this application; throw on denial. The request body is unread. */
-  authorizeRequest(applicationId: string, request: IncomingMessage): Promise<void>;
+  /** Authenticate the caller and authorize access; return its verified DID for challenge issuance. The body is unread. */
+  authorizeRequest(applicationId: string, request: IncomingMessage): Promise<string | void>;
   resolvePendingApplication(applicationId: string): Promise<{
     binding: ApplicationChallengeBinding;
     authorizedVerifiers: readonly AuthorizedEvidenceVerifier[];
@@ -129,12 +129,13 @@ export function createApplicationVpHttpService(port: ApplicationVpHttpPort, cloc
       const applicationId = parseApplicationId(applicationIdInput);
       return (await resolve(port, applicationId)).binding;
     },
-    async issue(applicationIdInput: string, body: unknown) {
+    async issue(applicationIdInput: string, body: unknown, authenticatedSubjectDid: string) {
       const applicationId = parseApplicationId(applicationIdInput);
       if (typeof body !== "object" || body === null || Array.isArray(body)
         || Object.keys(body).length !== 0) throw new ApplicationVpHttpError("invalid-request");
       const current = await resolve(port, applicationId);
-      const challenge = await challenges.issue(current.binding);
+      if (current.binding.subjectDid !== authenticatedSubjectDid) throw new ApplicationVpHttpError("rejected");
+      const challenge = await challenges.issue(current.binding, authenticatedSubjectDid);
       return { applicationId, ...challenge };
     },
     async submit(applicationIdInput: string, body: unknown) {

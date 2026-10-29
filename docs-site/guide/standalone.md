@@ -27,6 +27,62 @@ Use `./run.sh --light` only in a disposable checkout: it can remove full
 generated Compact artifacts. Preserve the exact-source signed install bundle,
 proof parameters, generated keys, and private approval evidence.
 
+## Build and check a six-image candidate
+
+Run this while online from a **clean GPG/DCO-signed source commit** that already
+has the full generated Compact and Ledger 8 proof artifacts. The output parent
+must exist outside the source checkout and be private. Obtain the approved
+signer fingerprint and digest-pinned Node base image through your release
+process; do not infer either from the running node or a mutable tag.
+
+```sh
+SOURCE_SHA="$(git rev-parse HEAD)"
+SIGNER=replace-with-approved-40-hex-fingerprint
+BASE_IMAGE=node@sha256:replace-with-approved-64-hex-digest
+IMAGE_OUTPUT=/absolute/private/image-builds
+git verify-commit "$SOURCE_SHA"
+git status --porcelain
+node scripts/build-api-runtime-image.mjs \
+  "$BASE_IMAGE" linux/arm64 "$IMAGE_OUTPUT/api-$SOURCE_SHA" "$SOURCE_SHA" "$SIGNER"
+node scripts/build-static-runtime-image.mjs admin \
+  "$BASE_IMAGE" linux/arm64 "$IMAGE_OUTPUT/admin-$SOURCE_SHA" "$SOURCE_SHA" "$SIGNER"
+node scripts/build-static-runtime-image.mjs applicant \
+  "$BASE_IMAGE" linux/arm64 "$IMAGE_OUTPUT/applicant-$SOURCE_SHA" "$SOURCE_SHA" "$SIGNER"
+node scripts/build-standalone-install.mjs --preflight \
+  --api-image-dir "$IMAGE_OUTPUT/api-$SOURCE_SHA" \
+  --admin-image-dir "$IMAGE_OUTPUT/admin-$SOURCE_SHA" \
+  --applicant-image-dir "$IMAGE_OUTPUT/applicant-$SOURCE_SHA"
+node scripts/build-standalone-install.mjs \
+  --api-image-dir "$IMAGE_OUTPUT/api-$SOURCE_SHA" \
+  --admin-image-dir "$IMAGE_OUTPUT/admin-$SOURCE_SHA" \
+  --applicant-image-dir "$IMAGE_OUTPUT/applicant-$SOURCE_SHA"
+```
+
+The builder refuses an existing destination. Its v6 output is
+`artifacts/standalone-install/$SOURCE_SHA` and contains ten package tarballs,
+six image archives, and 18 proof-parameter files. Check the exact candidate
+again before transfer:
+
+```sh
+INSTALL="$(pwd)/artifacts/standalone-install/$SOURCE_SHA"
+node scripts/check-standalone-install.mjs "$INSTALL" "$SOURCE_SHA"
+shasum -a 256 "$INSTALL/install-inventory.json"
+node scripts/check-standalone-static-assets.mjs "$INSTALL"
+node scripts/smoke-packed-artifacts.mjs \
+  --artifacts-dir "$INSTALL/packages" \
+  --manifest "$INSTALL/release-manifest.json" \
+  --actor-journey --vc-consumer
+```
+
+The static-asset check reads back locally loaded images; the image builders
+load them on this build host. On a different offline host, load the verified
+archives before that check. The packed actor smoke uses fixture services and
+is **not** a deployed-ledger journey. Review the source signature, base image,
+package and proof provenance, and inventory digest independently before
+using the bundle. Keep the bundle and generated keys. External image-build
+directories may be removed only after their archive and manifest files are
+byte-compared with the verified bundle; do not remove the bundle itself.
+
 ## Bring up the ledger bridge
 
 1. While online, select a bundle **derived from an approved GPG-signed source

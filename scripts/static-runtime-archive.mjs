@@ -9,6 +9,14 @@ const FINGERPRINT = /^[0-9A-F]{40}$/u;
 const REVISION = /^[0-9a-f]{40}$/u;
 const IMAGE = /^[a-z0-9][a-z0-9./_:-]*@sha256:[0-9a-f]{64}$/u;
 
+/** @param {unknown} value @returns {Record<string, unknown> | null} */
+const record = (value) => value !== null && typeof value === "object" && !Array.isArray(value)
+  ? /** @type {Record<string, unknown>} */ (value) : null;
+
+/** @param {unknown} value @returns {unknown[] | null} */
+const array = (value) => Array.isArray(value) ? /** @type {unknown[]} */ (value) : null;
+
+/** @param {string} archive @param {string} member @returns {unknown} */
 function archiveJson(archive, member) {
   return JSON.parse(execFileSync("tar", ["-xOf", archive, member], {
     encoding: "utf8", timeout: 30_000, maxBuffer: 1024 * 1024,
@@ -16,6 +24,7 @@ function archiveJson(archive, member) {
   }));
 }
 
+/** @param {string} archive @param {string} digest @returns {unknown} */
 function verifiedBlob(archive, digest) {
   if (!IMAGE_ID.test(digest)) throw new Error("Invalid OCI blob digest");
   const bytes = execFileSync("tar", ["-xOf", archive, `blobs/sha256/${digest.slice(7)}`], {
@@ -28,24 +37,30 @@ function verifiedBlob(archive, digest) {
   return JSON.parse(bytes.toString("utf8"));
 }
 
+/** @param {string} archive @param {string} role @param {string} revision @param {boolean} [requireOci] */
 export function staticImageIdentityFromArchive(archive, role, revision, requireOci = false) {
   if (!["admin", "applicant"].includes(role) || !REVISION.test(revision)) {
     throw new Error("Static image role or source revision is invalid");
   }
+  /** @type {unknown} */
   let legacy;
   try {
     legacy = archiveJson(archive, "manifest.json");
   } catch {
     throw new Error(`${role} image archive has no readable Docker manifest`);
   }
-  const configPath = legacy?.length === 1 ? legacy[0]?.Config : undefined;
-  const configDigest = /^blobs\/sha256\/([0-9a-f]{64})$/u.exec(configPath ?? "")?.[1];
-  if (!configDigest || (legacy[0].RepoTags !== null && legacy[0].RepoTags?.length !== 0)) {
+  const legacyEntries = array(legacy);
+  const legacyEntry = legacyEntries?.length === 1 ? record(legacyEntries[0]) : null;
+  const configPath = legacyEntry?.Config;
+  const configDigest = /^blobs\/sha256\/([0-9a-f]{64})$/u.exec(
+    typeof configPath === "string" ? configPath : "")?.[1];
+  const repoTags = legacyEntry?.RepoTags;
+  if (!configDigest || (repoTags !== null && (array(repoTags)?.length ?? -1) !== 0)) {
     throw new Error(`${role} image archive has an invalid config or implicit tag`);
   }
   let configBytes;
   try {
-    configBytes = execFileSync("tar", ["-xOf", archive, configPath], {
+    configBytes = execFileSync("tar", ["-xOf", archive, /** @type {string} */ (configPath)], {
       timeout: 30_000, maxBuffer: 1024 * 1024,
     });
   } catch {
@@ -54,23 +69,25 @@ export function staticImageIdentityFromArchive(archive, role, revision, requireO
   if (createHash("sha256").update(configBytes).digest("hex") !== configDigest) {
     throw new Error(`${role} image archive config hash mismatch`);
   }
-  const config = JSON.parse(configBytes.toString("utf8"));
-  const environment = config?.config?.Env;
+  const config = record(/** @type {unknown} */ (JSON.parse(configBytes.toString("utf8"))));
+  const runtime = record(config?.config);
+  const labels = record(runtime?.Labels);
+  const environment = array(runtime?.Env);
   if (config?.os !== "linux" || config.architecture !== "arm64"
-    || config.config?.Labels?.["org.opencontainers.image.revision"] !== revision
-    || config.config?.User !== "1000:1000"
-    || config.config?.WorkingDir !== "/app"
-    || (config.config?.Entrypoint != null && config.config.Entrypoint.length !== 0)
-    || !Array.isArray(environment)
+    || labels?.["org.opencontainers.image.revision"] !== revision
+    || runtime?.User !== "1000:1000"
+    || runtime?.WorkingDir !== "/app"
+    || (runtime?.Entrypoint != null && array(runtime.Entrypoint)?.length !== 0)
+    || environment === null
     || environment.filter((entry) => typeof entry === "string"
       && entry.startsWith("TR_STATIC_ROLE=")).length !== 1
     || !environment.includes(`TR_STATIC_ROLE=${role}`)
     || (requireOci && (environment.some((entry) => typeof entry !== "string"
       || /^(?:NODE_OPTIONS|NODE_PATH|LD_PRELOAD|LD_LIBRARY_PATH)=/u.test(entry))
-      || !matchesApprovedRuntimeHealthcheck(config.config.Healthcheck, role)
-      || config.config.OnBuild != null
-      || config.config.Volumes != null))
-    || JSON.stringify(config.config?.Cmd)
+      || !matchesApprovedRuntimeHealthcheck(runtime?.Healthcheck, role)
+      || runtime?.OnBuild != null
+      || runtime?.Volumes != null))
+    || JSON.stringify(runtime?.Cmd)
       !== JSON.stringify(["node", "/app/entrypoint.mjs", "--host", "0.0.0.0", "--port", "4173"])) {
     throw new Error(`${role} image archive config disagrees with the approved runtime`);
   }
@@ -83,66 +100,93 @@ export function staticImageIdentityFromArchive(archive, role, revision, requireO
     if (requireOci) throw new Error(`${role} image archive requires an OCI index`);
     return { configId: `sha256:${configDigest}`, acceptedIds };
   }
-  const index = archiveJson(archive, "index.json");
-  if (index?.schemaVersion !== 2 || index.manifests?.length !== 1
+  const index = record(archiveJson(archive, "index.json"));
+  const indexManifests = array(index?.manifests);
+  const indexEntry = indexManifests?.length === 1 ? record(indexManifests[0]) : null;
+  if (index?.schemaVersion !== 2 || indexEntry === null
     || (requireOci && (index.annotations !== undefined
-      || index.manifests[0]?.annotations !== undefined))
-    || !IMAGE_ID.test(index.manifests[0]?.digest)) {
+      || indexEntry.annotations !== undefined))
+    || typeof indexEntry.digest !== "string" || !IMAGE_ID.test(indexEntry.digest)) {
     throw new Error(`${role} OCI index is malformed`);
   }
-  const topDigest = index.manifests[0].digest;
-  const top = verifiedBlob(archive, topDigest);
+  const topDigest = indexEntry.digest;
+  const top = record(verifiedBlob(archive, topDigest));
   let imageDigest = topDigest;
+  /** @type {unknown} */
   let imageManifest = top;
-  if (Array.isArray(top.manifests)) {
-    const candidates = top.manifests.filter((entry) => entry.platform?.os === "linux"
-      && entry.platform?.architecture === "arm64");
-    if (candidates.length !== 1 || !IMAGE_ID.test(candidates[0].digest)
-      || (requireOci && (top.annotations !== undefined
-        || candidates[0].annotations !== undefined
-        || top.manifests.filter((entry) => entry !== candidates[0]).length > 1
-        || top.manifests.some((entry) => entry !== candidates[0]
-          && (entry.platform?.os !== "unknown" || entry.platform?.architecture !== "unknown"
-            || entry.annotations?.["vnd.docker.reference.type"] !== "attestation-manifest"
-            || entry.annotations?.["vnd.docker.reference.digest"] !== candidates[0].digest
-            || Object.keys(entry.annotations).sort().join(",")
-              !== "vnd.docker.reference.digest,vnd.docker.reference.type"))))) {
+  const topManifests = array(top?.manifests);
+  if (topManifests !== null) {
+    const entries = topManifests.map(record);
+    const candidates = entries.filter((entry) => {
+      const platform = record(entry?.platform);
+      return platform?.os === "linux" && platform.architecture === "arm64";
+    });
+    const selected = candidates.length === 1 ? candidates[0] : null;
+    const selectedDigest = selected?.digest;
+    if (selected === null || typeof selectedDigest !== "string" || !IMAGE_ID.test(selectedDigest)
+      || (requireOci && (top?.annotations !== undefined
+        || selected.annotations !== undefined
+        || entries.filter((entry) => entry !== selected).length > 1
+        || entries.some((entry) => {
+          if (entry === selected) return false;
+          const platform = record(entry?.platform);
+          const annotations = record(entry?.annotations);
+          return platform?.os !== "unknown" || platform.architecture !== "unknown"
+            || annotations?.["vnd.docker.reference.type"] !== "attestation-manifest"
+            || annotations?.["vnd.docker.reference.digest"] !== selectedDigest
+            || annotations === null || Object.keys(annotations).sort().join(",")
+              !== "vnd.docker.reference.digest,vnd.docker.reference.type";
+        })))) {
       throw new Error(`${role} OCI index does not select one arm64 image`);
     }
-    imageDigest = candidates[0].digest;
+    imageDigest = selectedDigest;
     imageManifest = verifiedBlob(archive, imageDigest);
   } else if (requireOci) {
     throw new Error(`${role} image archive requires an OCI image index`);
   }
-  if (imageManifest?.schemaVersion !== 2
-    || imageManifest.config?.digest !== `sha256:${configDigest}`
-    || (requireOci && (!Array.isArray(imageManifest.layers)
-      || imageManifest.layers.some((layer) => !IMAGE_ID.test(layer?.digest))
-      || JSON.stringify(legacy[0].Layers) !== JSON.stringify(imageManifest.layers.map((layer) =>
-        `blobs/sha256/${layer.digest.slice(7)}`))))) {
+  const manifest = record(imageManifest);
+  const manifestConfig = record(manifest?.config);
+  const layers = array(manifest?.layers);
+  const layerPaths = layers?.map((layer) => {
+    const digest = record(layer)?.digest;
+    return typeof digest === "string" && IMAGE_ID.test(digest)
+      ? `blobs/sha256/${digest.slice(7)}` : null;
+  });
+  if (manifest?.schemaVersion !== 2
+    || manifestConfig?.digest !== `sha256:${configDigest}`
+    || (requireOci && (layerPaths === undefined || layerPaths.some((path) => path === null)
+      || JSON.stringify(legacyEntry?.Layers) !== JSON.stringify(layerPaths)))) {
     throw new Error(`${role} OCI image manifest disagrees with the Docker config`);
   }
   return { configId: `sha256:${configDigest}`, topDigest,
     acceptedIds: [...new Set([...acceptedIds, imageDigest, topDigest])] };
 }
 
+/** @param {unknown} manifest @param {string} role @param {string} revision @param {string} archiveSha256 */
 export function validateStaticImageManifest(manifest, role, revision, archiveSha256) {
-  if (manifest?.format !== "tr-static-runtime-image-v1" || manifest.role !== role
-    || manifest.sourceRevision !== revision || manifest.platform !== "linux/arm64"
-    || !FINGERPRINT.test(manifest.approvedSignerFingerprint ?? "")
-    || !IMAGE.test(manifest.baseImage ?? "")
-    || !SHA256.test(manifest.assetsSha256 ?? "")
-    || !IMAGE_ID.test(manifest.imageId ?? "")
-    || manifest.archiveName !== `${role}.image.tar`
-    || manifest.archiveSha256 !== archiveSha256
-    || !Array.isArray(manifest.assets) || manifest.assets.length === 0
-    || manifest.assets.some((asset) => typeof asset?.path !== "string"
-      || !/^[a-zA-Z0-9][a-zA-Z0-9._/-]*\.(?:html|js|css)$/u.test(asset.path)
-      || asset.path.split("/").some((part) => part === ".." || part === "." || part === "")
-      || !Number.isSafeInteger(asset.size) || asset.size < 1 || asset.size > 32 * 1024 * 1024
-      || !SHA256.test(asset.sha256 ?? ""))
-    || createHash("sha256").update(JSON.stringify(manifest.assets)).digest("hex")
-      !== manifest.assetsSha256) {
+  const value = record(manifest);
+  const assets = array(value?.assets);
+  if (value?.format !== "tr-static-runtime-image-v1" || value.role !== role
+    || value.sourceRevision !== revision || value.platform !== "linux/arm64"
+    || typeof value.approvedSignerFingerprint !== "string"
+    || !FINGERPRINT.test(value.approvedSignerFingerprint)
+    || typeof value.baseImage !== "string" || !IMAGE.test(value.baseImage)
+    || typeof value.assetsSha256 !== "string" || !SHA256.test(value.assetsSha256)
+    || typeof value.imageId !== "string" || !IMAGE_ID.test(value.imageId)
+    || value.archiveName !== `${role}.image.tar`
+    || value.archiveSha256 !== archiveSha256
+    || assets === null || assets.length === 0
+    || assets.some((asset) => {
+      const item = record(asset);
+      return typeof item?.path !== "string"
+        || !/^[a-zA-Z0-9][a-zA-Z0-9._/-]*\.(?:html|js|css)$/u.test(item.path)
+        || item.path.split("/").some((part) => part === ".." || part === "." || part === "")
+        || !Number.isSafeInteger(item.size) || /** @type {number} */ (item.size) < 1
+        || /** @type {number} */ (item.size) > 32 * 1024 * 1024
+        || typeof item.sha256 !== "string" || !SHA256.test(item.sha256);
+    })
+    || createHash("sha256").update(JSON.stringify(assets)).digest("hex")
+      !== value.assetsSha256) {
     throw new Error(`${role} static image manifest is invalid`);
   }
 }

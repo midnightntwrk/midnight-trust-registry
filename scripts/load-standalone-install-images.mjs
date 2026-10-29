@@ -12,20 +12,26 @@ import { installedImageIdFromArchive, verifyStandaloneInstallBundle } from "./ch
 
 const REVISION = /^[0-9a-f]{40}$/u;
 
+/** @param {string[]} args */
 function docker(args) {
   return execFileSync("docker", args, { encoding: "utf8", timeout: 30 * 60_000,
     maxBuffer: 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
 
+/** @param {string} tag @param {typeof docker} runDocker */
 function inspectOptionalTag(tag, runDocker) {
   try {
     return runDocker(["image", "inspect", tag, "--format", "{{.Id}}"]).trim();
   } catch (error) {
-    if (error.status === 1 && /No such image/u.test(String(error.stderr))) return null;
+    if (error !== null && typeof error === "object" && "status" in error
+      && "stderr" in error && error.status === 1
+      && /No such image/u.test(String(error.stderr))) return null;
     throw error;
   }
 }
 
+/** @typedef {{role: string, archive: string, archiveSha256: string}} InstallImage */
+/** @param {string} root @param {InstallImage} image @param {string} staging */
 async function stagedArchivePath(root, image, staging) {
   const archive = resolve(root, image.archive);
   if (!archive.startsWith(`${root}${sep}`) || !(await lstat(archive)).isFile()) {
@@ -46,6 +52,10 @@ async function stagedArchivePath(root, image, staging) {
 }
 
 /** Loads only previously verified archive bytes; never pulls from a registry. */
+/** @param {string} bundlePath
+ * @param {{verify?: typeof verifyStandaloneInstallBundle, docker?: typeof docker,
+ *   imageId?: typeof installedImageIdFromArchive, archivePath?: typeof stagedArchivePath}} [dependencies]
+ */
 export async function loadStandaloneInstallImages(bundlePath, dependencies = {}) {
   const root = await realpath(resolve(bundlePath));
   const verified = await (dependencies.verify ?? verifyStandaloneInstallBundle)(root);
@@ -64,16 +74,19 @@ export async function loadStandaloneInstallImages(bundlePath, dependencies = {})
       || !/^sha256:[0-9a-f]{64}$/u.test(apiConfigId ?? ""))) {
     throw new Error("Verified API image IDs are missing");
   }
-  if (["tr-standalone-install-v5", "tr-standalone-install-v6"].includes(inventory.format)
-    && ["admin", "applicant"].some((role) =>
-      !/^sha256:[0-9a-f]{64}$/u.test(verified?.portalRuntimes?.[role]?.imageId ?? "")
-      || !/^sha256:[0-9a-f]{64}$/u.test(verified?.portalRuntimes?.[role]?.configId ?? ""))) {
+  const hasPortals = ["tr-standalone-install-v5", "tr-standalone-install-v6"].includes(inventory.format);
+  if (hasPortals && (verified.portalRuntimes === null
+    || ["admin", "applicant"].some((role) =>
+      !/^sha256:[0-9a-f]{64}$/u.test(verified.portalRuntimes?.[role]?.imageId ?? "")
+      || !/^sha256:[0-9a-f]{64}$/u.test(verified.portalRuntimes?.[role]?.configId ?? "")))) {
     throw new Error("Verified portal image IDs are missing");
   }
   const runDocker = dependencies.docker ?? docker;
   const inspectArchive = dependencies.imageId ?? installedImageIdFromArchive;
+  /** @type {Record<string, string>} */
   const tags = {};
   const staging = await mkdtemp(join(tmpdir(), "tr-install-image-load-"));
+  /** @param {InstallImage} image @param {Set<string>} acceptedIds @param {string} archive */
   async function load(image, acceptedIds, archive) {
     const tag = `tr-standalone/${image.role}:sha-${inventory.sourceRevision}`;
     const existing = inspectOptionalTag(tag, runDocker);
@@ -113,7 +126,7 @@ export async function loadStandaloneInstallImages(bundlePath, dependencies = {})
         if (!dependencies.archivePath) await rm(archive, { force: true });
       }
     }
-    if (["tr-standalone-install-v5", "tr-standalone-install-v6"].includes(inventory.format)) {
+    if (hasPortals && verified.portalRuntimes !== null) {
       for (const role of ["admin", "applicant"]) {
         const pin = inventory.portalRuntimes[role];
         const image = { role, archive: pin.archive, archiveSha256: pin.archiveSha256 };

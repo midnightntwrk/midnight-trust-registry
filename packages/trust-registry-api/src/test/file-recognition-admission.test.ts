@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, link, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -128,5 +128,23 @@ describe("file recognition admission store", () => {
     await writeFile(path, JSON.stringify({ version: 1, challenges: [], accepted: [] }), { mode: 0o644 });
     await chmod(path, 0o644);
     await expect(store.readAccepted(recognitionId)).rejects.toThrow(/file is invalid/u);
+  });
+
+  it("rejects symbolic and hard links for admission state", async () => {
+    for (const makeLink of [symlink, link]) {
+      const { path, governancePath } = await paths();
+      const target = join(dirname(path), "other.json");
+      const contents = JSON.stringify({ version: 1, challenges: [], accepted: [] });
+      await writeFile(target, contents, { mode: 0o600 });
+      await makeLink(target, path);
+      const store = new FileRecognitionAdmissionStore(path, governancePath);
+      await expect(store.readAccepted(recognitionId)).rejects.toMatchObject({
+        name: "InvalidRecognitionAdmissionFileError",
+      });
+      await expect(store.insert(challenge(), NOW, () => NOW)).rejects.toMatchObject({
+        name: "InvalidRecognitionAdmissionFileError",
+      });
+      expect(await readFile(target, "utf8")).toBe(contents);
+    }
   });
 });

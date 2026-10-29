@@ -210,6 +210,7 @@ describe("pending application registration over private HTTP", () => {
         if (current === null || request.headers["x-applicant-did"] !== current.binding.subjectDid) {
           throw new Error("unauthorized");
         }
+        return current.binding.subjectDid;
       },
       resolvePendingApplication: async (id) => {
         const current = registration.readPending(id);
@@ -317,6 +318,7 @@ describe("pending application registration over private HTTP", () => {
         if (current === null || request.headers["x-applicant-did"] !== current.binding.subjectDid) {
           throw new Error("unauthorized");
         }
+        return current.binding.subjectDid;
       },
       resolvePendingApplication: async (id) => {
         const current = registration.readPending(id);

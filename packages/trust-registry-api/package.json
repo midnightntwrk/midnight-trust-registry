@@ -49,7 +49,7 @@
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run src/test --testTimeout 30000",
     "build:light": "pnpm run build",
-    "test:light": "vitest run src/test --testTimeout 90000",
+    "test:light": "vitest run src/test src/integration-test/proposal-submission-journal.integration.test.ts src/integration-test/issuer-call-journal.integration.test.ts src/integration-test/governed-issuer-proposal-http.integration.test.ts --testTimeout 90000",
     "integration": "pnpm --filter @midnight-ntwrk/trust-registry-integration build && vitest run src/integration-test --testTimeout 120000",
     "integration:light": "pnpm run integration"
   },

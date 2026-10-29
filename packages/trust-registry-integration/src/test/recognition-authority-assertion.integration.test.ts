@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 
 import { signJubjubDigestFromSeed } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import { deriveJubjubPublicKey, deriveJubjubPublicKeyFromSeed, encodeJubjubSignature } from "@midnight-ntwrk/trust-registry-contract";
-import { sha256Hex, type RecognitionAuthorityAssertion } from "@midnight-ntwrk/trust-registry-domain";
+import { RecognitionAuthorityAssertionSchema, sha256Hex, type RecognitionAuthorityAssertion } from "@midnight-ntwrk/trust-registry-domain";
 import { describe, expect, it } from "vitest";
 
 import { createMidnightDidLedgerFixture, createMidnightDidResolver } from "../did-resolution.js";
@@ -60,6 +60,40 @@ const resolver = createMidnightDidResolver([
 ]);
 
 describe("Midnight DID recognition authority assertion", () => {
+  it("enforces fractional lifetime and evaluates a signed assertion at the exact expiry boundary", async () => {
+    const overlong = {
+      ...statement,
+      issuedAt: "2026-05-20T00:00:00.0000000001Z",
+      expiresAt: "2026-05-21T00:00:00.0000000002Z",
+    };
+    expect(RecognitionAuthorityAssertionSchema.safeParse(overlong).success).toBe(false);
+    expect(RecognitionAuthorityAssertionSchema.safeParse({
+      ...statement,
+      issuedAt: "2026-05-20T00:00:00.0000000002Z",
+      expiresAt: "2026-05-20T00:00:00.0000000001Z",
+    }).success).toBe(false);
+
+    const fractional = {
+      ...statement,
+      issuedAt: "2026-05-20T00:00:00.0000000001Z",
+      expiresAt: "2026-05-20T00:10:00.0000000001Z",
+    };
+    const fractionalSigned = {
+      statement: fractional,
+      proof: { ...signed.proof,
+        signature: `0x${Buffer.from(encodeJubjubSignature(
+          signJubjubDigestFromSeed(seed, recognitionAuthorityAssertionDigest(fractional, methodId)),
+        )).toString("hex")}` },
+    };
+    await expect(verifyRecognitionAuthorityAssertion({
+      signed: fractionalSigned, expected, resolver,
+    })).resolves.toMatchObject({ statement: fractional });
+    await expect(verifyRecognitionAuthorityAssertion({
+      signed: { ...fractionalSigned, statement: { ...fractional, expiresAt: "2026-05-20T00:10:00Z" } },
+      expected, resolver,
+    })).rejects.toThrow(/not current/u);
+  });
+
   it("verifies a scoped, challenge-bound authority statement and returns a signed evidence commitment", async () => {
     const verified = await verifyRecognitionAuthorityAssertion({ signed, expected, resolver });
     expect(verified.statement).toEqual(statement);

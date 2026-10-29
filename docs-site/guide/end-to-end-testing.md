@@ -12,8 +12,9 @@ evidence. Passing the demo path does not advance the standalone release gate.
 | --- | --- | --- |
 | Try the product flows without a ledger | `pnpm run test:e2e:demo` | The four signed role journeys and fixture API/UI smoke completed in a Compact simulator. |
 | Exercise the demo in a browser | `pnpm run test:e2e:demo:browser` | The same demo plus applicant/admin Playwright flows completed against fixture services. |
+| Check submission restart quarantine without a live network | `pnpm --filter @midnight-ntwrk/trust-registry-api run test:light` | The journal write, mocked-node/provider restart, and fixture API-listener restart tests passed; this is not deployed-ledger recovery evidence. |
 | Check a real standalone candidate before actor testing | `node scripts/check-standalone-journey-prerequisites.mjs "$SETUP" "$SOURCE_SHA"` | Exit 0: the wizard recorded the prerequisite ledger observations for this exact source. Exit 2: stop and follow `nextActions`. |
-| Record a deployed candidate's operator-reviewed cases | `node scripts/check-standalone-acceptance-evidence.mjs "$ACCEPTANCE" "$SOURCE_SHA"` | Exit 0: all case decisions and evidence digests are present; receipt authenticity, finality, and the security verdict still need independent review. |
+| Record a deployed candidate's operator-reviewed cases | `node scripts/check-standalone-acceptance-evidence.mjs "$ACCEPTANCE" "$SOURCE_SHA"` | Exit 0: all cases have a current decision-backed operator `pass`; exit 2: a case is failed, not run, or needs a fresh decision. Inspect `operatorFailedCases`, `notRunCases`, and `decisionBackedCases`; receipt authenticity, finality, and the security verdict still need independent review. |
 
 There is deliberately no green standalone actor-E2E shortcut. A demo result,
 successful prerequisite check, or complete evidence inventory cannot substitute
@@ -34,20 +35,28 @@ pnpm run test:e2e:demo
 pnpm exec playwright test
 ```
 
-`test:e2e:demo` runs signed issuer, verifier, auditor, and maintainer Compact
-simulator journeys, then starts the fixture API and both served UIs on
-ephemeral loopback ports. A passing exit code means those two demo checks
-passed; it does not imply a deployed contract, authenticated finality, live VC
+`test:e2e:demo` first checks that prebuilt Compact output contains the current
+source and contract module. If generated source declarations are absent, it
+restores only that contract module from the preserved `dist` copy; mismatched
+generated source stops the run. It then compiles contract TypeScript helpers in
+place and rebuilds downstream TypeScript and UI workspaces
+without regenerating Compact keys. It runs signed issuer, verifier, auditor,
+and maintainer Compact simulator journeys, then starts the fixture API and
+both served UIs on ephemeral loopback ports. A passing exit code means those
+two demo checks passed; it does not imply a deployed contract, authenticated finality, live VC
 status, or offline runtime. In an artifact-bearing checkout, **do not run**
-`./run.sh --light`: use a disposable checkout for that prerequisite. For the
-applicant and admin flows in a real browser, install Google Chrome and run
+`./run.sh --light`: use a disposable checkout for that prerequisite. The demo
+command fails if the required prebuilt Compact output is absent or stale;
+it never repairs it by invoking `build:light`. For the applicant and admin
+flows in a real browser, install Google Chrome and run
 the Playwright command above (or `pnpm run test:e2e:demo:browser` to rerun both
 lanes). If the browser is unavailable, report that lane as **not run** rather
 than passed. Neither result is a standalone `A01`-`O01` verdict.
 If full Compact outputs already exist in an artifact-bearing checkout, use
 `pnpm run integration:prebuilt` for the package and simulator integration lane.
-It checks all 66 full proof circuits, rebuilds only TypeScript/UI packages, and
-does not call the Compact build or remove its `dist` tree. It does not establish
+It checks all 66 full proof circuits, compiles contract helpers, and rebuilds
+downstream TypeScript/UI packages without calling the Compact build or removing
+its `dist` tree. It does not establish
 the provenance of those artifacts or count as a deployed standalone actor run.
 CI installs Playwright-pinned Chromium instead of Google Chrome. Both variants
 still use fixture identity/status and simulator governance; a green CI browser
@@ -148,6 +157,15 @@ An embedding host must supply approved immutable provider code, authenticated
 finality, live VC-owned status verification, and the governed ports before
 `A01`-`A04` can pass. Do not use simulator or mock-provider receipts in their
 place.
+Before exposing applicant challenge issuance beyond a trusted local operator,
+the host must authenticate the applicant and return its verified DID from
+`authorizeRequest`. The challenge service rejects a DID that differs from the
+pending application, and the reference stores enforce a live per-subject quota
+atomically across local processes. This is not a built-in DID authentication
+method: a caller-provided DID or demo header is not a quota identity. The
+packaged local-ledger API has no production applicant port. Keep public
+issuance disabled until a real authenticated host and durable atomic VP
+verification have been independently implemented and tested.
 The [standalone actor host handoff](standalone-actor-host.md) lists the
 required callbacks, result bindings, and negative cases without treating an
 injected test provider as a deployed runtime.
@@ -217,6 +235,12 @@ The full `attach` and `decide` procedure is in the
 The independent human security assessment remains a release gate. Keep draft
 promotion #198 draft until the local-only scope and all release gates are
 explicitly updated and satisfied.
+`completeInventory` and the command's exit code describe current,
+decision-backed operator passes, not independent verification.
+`operatorFailedCases` and `notRunCases` identify unfinished or disputed cases;
+`allOperatorCasesPassed` is false when any case is failed, not run, or lacks a
+current decision. `releaseQualified` remains false even when every operator
+case is recorded as `pass`.
 
 ## What a new adopter can claim
 

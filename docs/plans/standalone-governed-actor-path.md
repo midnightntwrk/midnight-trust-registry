@@ -151,6 +151,12 @@ deployed local ledger.
 This tests one crash boundary, not every filesystem failure or an actual
 deployed provider restart. Deployed actor and recovery evidence remains open
 under #219 and #230.
+The issuer SDK and generic HTTP quorum preflights now reject two registered
+maintainer IDs backed by the same public key before the HTTP journal reserves.
+A real file-journal HTTP regression asserts no reservation or execution for
+that deterministic Compact quorum failure. Its ledger and provider are
+synthetic; this narrows #220's pre-broadcast ambiguity case but does not prove
+the full audited recovery procedure or deployed actor journey.
 An opt-in `createBoundLocalIssuerProposalPort` now composes the accepted
 application binder, current policy/ledger preflight, live-evidence callback,
 provider-code check, SDK preflight, and after-reservation execution. Its

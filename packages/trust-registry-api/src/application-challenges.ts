@@ -13,7 +13,9 @@ const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 const NONCE_BYTES = 32;
 const MAX_COLLISION_ATTEMPTS = 3;
 const MAX_IN_MEMORY_CHALLENGES = 10_000;
+const MAX_CHALLENGES_PER_SUBJECT = 32;
 const MAX_TIMEOUT_MS = 2_147_483_647;
+const MAX_CHALLENGE_RECORD_MS = Date.parse("9999-12-31T23:59:59.999Z");
 const HashSchema = HashHexSchema;
 const NonceSchema = z.string().regex(/^0x[0-9a-f]{64}$/);
 export { ApplicationChallengeBindingSchema };
@@ -30,6 +32,8 @@ export type ApplicationChallengeRecord = {
   challengeHash: string;
   bindingHash: string;
   applicationHash: string;
+  /** Present only when an embedding host authenticated the applicant DID. */
+  subjectHash?: string | undefined;
   issuedAtMs: number;
   expiresAtMs: number;
 };
@@ -51,6 +55,14 @@ export class ApplicationChallengeCapacityError extends Error {
   constructor() {
     super("Application challenge store is at capacity");
     this.name = "ApplicationChallengeCapacityError";
+  }
+}
+
+export class ApplicationChallengeSubjectCapacityError extends Error {
+  readonly code = "CHALLENGE_SUBJECT_CAPACITY";
+  constructor() {
+    super("Authenticated applicant challenge quota is full");
+    this.name = "ApplicationChallengeSubjectCapacityError";
   }
 }
 
@@ -91,13 +103,18 @@ export class InMemoryApplicationChallengeStore implements ApplicationChallengeSt
   private readonly records = new Map<string, { record: ApplicationChallengeRecord; timer: NodeJS.Timeout }>();
   private readonly applicationHashes = new Map<string, string>();
 
-  constructor(private readonly maxEntries = MAX_IN_MEMORY_CHALLENGES) {
-    if (!Number.isSafeInteger(maxEntries) || maxEntries < 1) {
+  constructor(private readonly maxEntries = MAX_IN_MEMORY_CHALLENGES,
+    private readonly maxPerSubject = MAX_CHALLENGES_PER_SUBJECT) {
+    if (!Number.isSafeInteger(maxEntries) || maxEntries < 1
+      || !Number.isSafeInteger(maxPerSubject) || maxPerSubject < 1) {
       throw new RangeError("Application challenge store capacity is invalid");
     }
   }
 
   async insert(record: ApplicationChallengeRecord, nowMs: number, readNow: () => number = Date.now): Promise<ApplicationChallengeInsertResult> {
+    if (record.subjectHash !== undefined && !HashSchema.safeParse(record.subjectHash).success) {
+      throw new RangeError("Authenticated applicant challenge hash is invalid");
+    }
     if (!Number.isSafeInteger(record.issuedAtMs) || record.issuedAtMs < 0 || record.issuedAtMs > nowMs) {
       throw new ApplicationChallengeClockError("Application challenge issuance time is invalid");
     }
@@ -117,13 +134,21 @@ export class InMemoryApplicationChallengeStore implements ApplicationChallengeSt
       throw new ApplicationChallengeBindingConflictError();
     }
     const supersededPrevious = previous !== undefined && nowMs < previous.record.expiresAtMs;
-    if (previousHash !== undefined) this.remove(previousHash);
-    if (this.records.size >= this.maxEntries) {
-      for (const [hash, current] of this.records) {
-        if (nowMs >= current.record.expiresAtMs) this.remove(hash);
+    let liveEntries = 0;
+    let liveForSubject = 0;
+    for (const [hash, current] of this.records) {
+      if (nowMs >= current.record.expiresAtMs) {
+        this.remove(hash);
+      } else if (hash !== previousHash) {
+        liveEntries += 1;
+        if (record.subjectHash !== undefined && current.record.subjectHash === record.subjectHash) {
+          liveForSubject += 1;
+        }
       }
-      if (this.records.size >= this.maxEntries) throw new ApplicationChallengeCapacityError();
     }
+    if (liveEntries >= this.maxEntries) throw new ApplicationChallengeCapacityError();
+    if (liveForSubject >= this.maxPerSubject) throw new ApplicationChallengeSubjectCapacityError();
+    if (previousHash !== undefined) this.remove(previousHash);
     const saved = Object.freeze({ ...record });
     const entry = { record: saved, timer: undefined as unknown as NodeJS.Timeout };
     this.records.set(saved.challengeHash, entry);
@@ -209,8 +234,11 @@ export class ApplicationChallengeService {
     private readonly clock: () => number = Date.now,
   ) {}
 
-  async issue(bindingInput: ApplicationChallengeBinding): Promise<IssuedApplicationChallenge> {
+  async issue(bindingInput: ApplicationChallengeBinding, authenticatedSubjectDid?: string): Promise<IssuedApplicationChallenge> {
     const binding = ApplicationChallengeBindingSchema.parse(bindingInput);
+    if (authenticatedSubjectDid !== undefined && authenticatedSubjectDid !== binding.subjectDid) {
+      throw new Error("Authenticated applicant does not match challenge binding");
+    }
     const issuedAtMs = this.now();
     const expiresAtMs = issuedAtMs + CHALLENGE_TTL_MS;
     const bindingHash = computeApplicationChallengeBindingHash(binding);
@@ -219,12 +247,16 @@ export class ApplicationChallengeService {
       binding.registryId,
       binding.applicationId,
     ]));
+    const subjectHash = authenticatedSubjectDid === undefined ? undefined : sha256Hex(JSON.stringify([
+      "tr:application:authenticated-subject:v1", binding.registryId, authenticatedSubjectDid,
+    ]));
 
     for (let attempt = 0; attempt < MAX_COLLISION_ATTEMPTS; attempt += 1) {
       const nonceBytes = randomBytes(NONCE_BYTES);
       const challengeHash = sha256Hex(nonceBytes);
       const result = await this.store.insert(
-        { challengeHash, bindingHash, applicationHash, issuedAtMs, expiresAtMs },
+        { challengeHash, bindingHash, applicationHash, ...(subjectHash === undefined ? {} : { subjectHash }),
+          issuedAtMs, expiresAtMs },
         issuedAtMs,
         () => this.now(),
       );
@@ -281,6 +313,7 @@ export class ApplicationChallengeService {
     if (record === undefined || record.challengeHash !== challengeHash || record.bindingHash !== bindingHash
       || !Number.isSafeInteger(record.issuedAtMs) || !Number.isSafeInteger(record.expiresAtMs)
       || record.issuedAtMs < 0 || record.issuedAtMs > nowMs
+      || record.expiresAtMs > MAX_CHALLENGE_RECORD_MS
       || record.expiresAtMs <= nowMs || record.expiresAtMs <= record.issuedAtMs) {
       throw new ApplicationChallengeClockError("Application challenge store returned an invalid live window");
     }

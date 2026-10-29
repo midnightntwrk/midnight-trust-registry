@@ -17,13 +17,18 @@ export { pinnedStandaloneImages } from "./check-standalone-install.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-function command(program, args, options = {}) {
+/** @typedef {{outputRoot?: string, proofSource?: string, apiImageDirectory?: string,
+ * adminImageDirectory?: string, applicantImageDirectory?: string}} StandaloneInstallBuildOptions */
+
+/** @param {string} program @param {string[]} args */
+function command(program, args) {
   return execFileSync(program, args, {
     cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
-    timeout: 30 * 60_000, maxBuffer: 8 * 1024 * 1024, ...options,
+    timeout: 30 * 60_000, maxBuffer: 8 * 1024 * 1024,
   }).trim();
 }
 
+/** @param {string} path */
 async function sha256(path) {
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(path)) hash.update(chunk);
@@ -42,6 +47,7 @@ function verifiedSourceRevision() {
   return command("git", ["rev-parse", "HEAD"]);
 }
 
+/** @param {string} repoRoot @param {typeof artifactWorkspaces} [workspaces] */
 export function assertRequiredWorkspaceFiles(repoRoot, workspaces = artifactWorkspaces) {
   for (const workspace of workspaces) {
     const required = packageManifestCatalog.get(workspace)?.requiredPackedPaths;
@@ -57,6 +63,7 @@ export function assertRequiredWorkspaceFiles(repoRoot, workspaces = artifactWork
   }
 }
 
+/** @param {string} inputDirectory @param {string} sourceRevision */
 export function validateApiRuntimeImageInput(inputDirectory, sourceRevision) {
   if (!isAbsolute(inputDirectory)) throw new Error("API image directory must be absolute");
   const source = resolve(inputDirectory);
@@ -72,6 +79,7 @@ export function validateApiRuntimeImageInput(inputDirectory, sourceRevision) {
   return { manifestSource, archiveSource };
 }
 
+/** @param {string} inputDirectory @param {string} destination @param {string} sourceRevision */
 export async function stageApiRuntimeImage(inputDirectory, destination, sourceRevision) {
   const { manifestSource, archiveSource } = validateApiRuntimeImageInput(inputDirectory, sourceRevision);
   const manifest = "images/api.manifest.json";
@@ -82,6 +90,7 @@ export async function stageApiRuntimeImage(inputDirectory, destination, sourceRe
     archive, archiveSha256: await sha256(join(destination, archive)) };
 }
 
+/** @param {string} inputDirectory @param {string} role @param {string} sourceRevision */
 export function validateStaticRuntimeImageInput(inputDirectory, role, sourceRevision) {
   if (!isAbsolute(inputDirectory) || !["admin", "applicant"].includes(role)) {
     throw new Error("Static image directory must be absolute and role must be approved");
@@ -100,6 +109,8 @@ export function validateStaticRuntimeImageInput(inputDirectory, role, sourceRevi
   return { manifestSource, archiveSource };
 }
 
+/** @param {string} inputDirectory @param {string} destination @param {string} role
+ * @param {string} sourceRevision */
 export async function stageStaticRuntimeImage(inputDirectory, destination, role, sourceRevision) {
   const { manifestSource, archiveSource } = validateStaticRuntimeImageInput(
     inputDirectory, role, sourceRevision);
@@ -111,20 +122,23 @@ export async function stageStaticRuntimeImage(inputDirectory, destination, role,
     archive, archiveSha256: await sha256(join(destination, archive)) };
 }
 
+/** @param {StandaloneInstallBuildOptions} options @param {string} sourceRevision
+ * @param {(reference: string) => unknown} [inspectImage] */
 export function validateStandaloneInstallInputs(options, sourceRevision, inspectImage = (reference) =>
   JSON.parse(command("docker", ["image", "inspect", reference, "--format", "{{json .RepoDigests}}"]))) {
-  const staticDirectories = [options.adminImageDirectory, options.applicantImageDirectory];
+  const { apiImageDirectory, adminImageDirectory, applicantImageDirectory } = options;
+  const staticDirectories = [adminImageDirectory, applicantImageDirectory];
   if (staticDirectories.some((directory) => directory !== undefined)
     && (staticDirectories.some((directory) => directory === undefined)
-      || options.apiImageDirectory === undefined)) {
+      || apiImageDirectory === undefined)) {
     throw new Error("A v5 install requires API, admin, and applicant image directories together");
   }
-  if (options.apiImageDirectory !== undefined) {
-    validateApiRuntimeImageInput(options.apiImageDirectory, sourceRevision);
+  if (apiImageDirectory !== undefined) {
+    validateApiRuntimeImageInput(apiImageDirectory, sourceRevision);
   }
-  if (options.adminImageDirectory !== undefined) {
-    validateStaticRuntimeImageInput(options.adminImageDirectory, "admin", sourceRevision);
-    validateStaticRuntimeImageInput(options.applicantImageDirectory, "applicant", sourceRevision);
+  if (adminImageDirectory !== undefined && applicantImageDirectory !== undefined) {
+    validateStaticRuntimeImageInput(adminImageDirectory, "admin", sourceRevision);
+    validateStaticRuntimeImageInput(applicantImageDirectory, "applicant", sourceRevision);
   }
   const outputRoot = resolve(options.outputRoot ?? join(root, "artifacts/standalone-install"));
   const proofSource = resolve(options.proofSource ?? join(root, "artifacts/standalone-proof-params"));
@@ -147,9 +161,11 @@ export function validateStandaloneInstallInputs(options, sourceRevision, inspect
       throw new Error(`Local image does not retain approved repository digest: ${role}`);
     }
   }
-  return { sourceRevision, outputRoot, proofSource, destination, pinned };
+  return { sourceRevision, outputRoot, proofSource, destination, pinned,
+    apiImageDirectory, adminImageDirectory, applicantImageDirectory };
 }
 
+/** @param {StandaloneInstallBuildOptions} [options] */
 export function preflightStandaloneInstall(options = {}) {
   const sourceRevision = verifiedSourceRevision();
   assertRequiredWorkspaceFiles(root);
@@ -157,8 +173,10 @@ export function preflightStandaloneInstall(options = {}) {
 }
 
 /** Creates a fresh bundle only; failed output is retained for inspection. */
+/** @param {StandaloneInstallBuildOptions} [options] */
 export async function buildStandaloneInstall(options = {}) {
-  const { sourceRevision, outputRoot, proofSource, destination, pinned } = preflightStandaloneInstall(options);
+  const { sourceRevision, outputRoot, proofSource, destination, pinned,
+    apiImageDirectory, adminImageDirectory, applicantImageDirectory } = preflightStandaloneInstall(options);
   mkdirSync(outputRoot, { recursive: true });
   mkdirSync(destination, { mode: 0o700 });
   const packages = join(destination, "packages");
@@ -175,7 +193,7 @@ export async function buildStandaloneInstall(options = {}) {
   copyFileSync(join(root, "deploy/standalone/compose.offline.yml"), offlineComposeTarget,
     fsConstants.COPYFILE_EXCL);
   let apiComposeTarget;
-  if (options.apiImageDirectory !== undefined) {
+  if (apiImageDirectory !== undefined) {
     apiComposeTarget = join(destination, "compose.api.yml");
     copyFileSync(join(root, "deploy/standalone/compose.api.yml"), apiComposeTarget,
       fsConstants.COPYFILE_EXCL);
@@ -219,15 +237,15 @@ export async function buildStandaloneInstall(options = {}) {
   }
 
   let apiRuntime;
-  if (options.apiImageDirectory !== undefined) {
-    apiRuntime = await stageApiRuntimeImage(options.apiImageDirectory, destination, sourceRevision);
+  if (apiImageDirectory !== undefined) {
+    apiRuntime = await stageApiRuntimeImage(apiImageDirectory, destination, sourceRevision);
   }
   let portalRuntimes;
-  if (options.adminImageDirectory !== undefined) {
+  if (adminImageDirectory !== undefined && applicantImageDirectory !== undefined) {
     portalRuntimes = {
-      admin: await stageStaticRuntimeImage(options.adminImageDirectory, destination,
+      admin: await stageStaticRuntimeImage(adminImageDirectory, destination,
         "admin", sourceRevision),
-      applicant: await stageStaticRuntimeImage(options.applicantImageDirectory, destination,
+      applicant: await stageStaticRuntimeImage(applicantImageDirectory, destination,
         "applicant", sourceRevision),
     };
   }

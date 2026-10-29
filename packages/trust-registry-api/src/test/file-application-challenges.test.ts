@@ -1,9 +1,9 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { link, mkdir, mkdtemp, open, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ApplicationChallengeRecord } from "../application-challenges.js";
 import { FileApplicationChallengeStore } from "../file-application-challenges.js";
@@ -62,6 +62,58 @@ describe("file application challenge store", () => {
     expect(await second.readLive(challenge.challengeHash, challenge.bindingHash, START)).toBeNull();
   });
 
+  it("retains the previous challenge and cleans up after a failed pre-rename file sync", async () => {
+    const path = await storePath();
+    const store = new FileApplicationChallengeStore(path);
+    const original = record(10, 20);
+    await store.insert(original, START, () => START);
+    const handle = await open(path, "r");
+    const handlePrototype = Object.getPrototypeOf(handle) as { sync: () => Promise<void> };
+    await handle.close();
+    const sync = vi.spyOn(handlePrototype, "sync").mockRejectedValueOnce(new Error("simulated sync failure"));
+    try {
+      await expect(store.insert(record(11, 20), START, () => START))
+        .rejects.toThrow("simulated sync failure");
+    } finally {
+      sync.mockRestore();
+    }
+    expect(await store.readLive(original.challengeHash, original.bindingHash, START)).toEqual(original);
+    expect(await readdir(dirname(path))).toEqual(["challenges.json"]);
+  });
+
+  it("reports an ambiguous consume when parent-directory sync fails after rename", async () => {
+    const path = await storePath();
+    const store = new FileApplicationChallengeStore(path);
+    const challenge = record(10, 20);
+    await store.insert(challenge, START, () => START);
+    const handle = await open(path, "r");
+    const handlePrototype = Object.getPrototypeOf(handle) as { sync: () => Promise<void> };
+    await handle.close();
+    const sync = vi.spyOn(handlePrototype, "sync")
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("simulated directory sync failure"));
+    try {
+      await expect(store.consume(challenge.challengeHash, challenge.bindingHash, START))
+        .rejects.toThrow("simulated directory sync failure");
+      expect(sync).toHaveBeenCalledTimes(2);
+    } finally {
+      sync.mockRestore();
+    }
+    expect(await store.readLive(challenge.challengeHash, challenge.bindingHash, START)).toBeNull();
+    expect(await readdir(dirname(path))).toEqual(["challenges.json"]);
+  });
+
+  it("refuses a missing store directory instead of creating an unsynced parent", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "tr-file-challenges-missing-"));
+    directories.push(directory);
+    const path = join(directory, "missing", "challenges.json");
+    const store = new FileApplicationChallengeStore(path);
+    await expect(store.insert(record(10, 20), START, () => START)).rejects.toMatchObject({
+      name: "InvalidApplicationChallengeFileError",
+    });
+    await expect(stat(dirname(path))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("supersedes only a live challenge with the same application and binding", async () => {
     const path = await storePath();
     const first = new FileApplicationChallengeStore(path);
@@ -108,6 +160,43 @@ describe("file application challenge store", () => {
     expect(await second.insert(fresh, START + 300_000, () => START + 300_000)).toEqual({
       inserted: true, supersededPrevious: false,
     });
+  });
+
+  it("enforces the authenticated-subject quota across instances and releases it on consume", async () => {
+    const path = await storePath();
+    const first = new FileApplicationChallengeStore(path, 10, 1);
+    const second = new FileApplicationChallengeStore(path, 10, 1);
+    const subjectHash = hash(90);
+    const initial = { ...record(10, 20), subjectHash };
+    const retry = { ...record(11, 20), subjectHash };
+    const next = { ...record(12, 21), subjectHash };
+    await first.insert(initial, START, () => START);
+    expect(await second.insert(retry, START, () => START)).toEqual({ inserted: true, supersededPrevious: true });
+    await expect(first.insert(next, START, () => START)).rejects.toMatchObject({
+      code: "CHALLENGE_SUBJECT_CAPACITY", name: "ApplicationChallengeSubjectCapacityError",
+    });
+    expect(await second.readLive(retry.challengeHash, retry.bindingHash, START)).toEqual(retry);
+    expect(await first.insert({ ...record(13, 22), subjectHash: hash(91) }, START, () => START))
+      .toEqual({ inserted: true, supersededPrevious: false });
+    expect(await second.consume(retry.challengeHash, retry.bindingHash, START)).toBe(true);
+    expect(await first.insert(next, START, () => START)).toEqual({ inserted: true, supersededPrevious: false });
+    expect(JSON.parse(await readFile(path, "utf8")).records).toContainEqual(next);
+  });
+
+  it("admits only one concurrent cross-instance issuance for a quota-one subject", async () => {
+    const path = await storePath();
+    const first = new FileApplicationChallengeStore(path, 10, 1);
+    const second = new FileApplicationChallengeStore(path, 10, 1);
+    const subjectHash = hash(90);
+    const attempts = await Promise.allSettled([
+      first.insert({ ...record(10, 20), subjectHash }, START, () => START),
+      second.insert({ ...record(11, 21), subjectHash }, START, () => START),
+    ]);
+    expect(attempts.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(attempts.filter((result) => result.status === "rejected")[0]).toMatchObject({
+      reason: { code: "CHALLENGE_SUBJECT_CAPACITY" },
+    });
+    expect(JSON.parse(await readFile(path, "utf8")).records).toHaveLength(1);
   });
 
   it("rejects clock rollback and invalid expiry without consuming or replacing", async () => {
@@ -170,6 +259,24 @@ describe("file application challenge store", () => {
       name: "InvalidApplicationChallengeFileError",
     });
     expect((await stat(path)).mode & 0o777).toBe(0o644);
+  });
+
+  it("rejects symbolic and hard links for reads and writes", async () => {
+    for (const makeLink of [symlink, link]) {
+      const path = await storePath();
+      const target = join(dirname(path), "other.json");
+      const contents = JSON.stringify({ version: 1, records: [record(10, 20)] });
+      await writeFile(target, contents, { mode: 0o600 });
+      await makeLink(target, path);
+      const store = new FileApplicationChallengeStore(path);
+      await expect(store.readLive(hash(10), hash(1), START)).rejects.toMatchObject({
+        name: "InvalidApplicationChallengeFileError",
+      });
+      await expect(store.insert(record(11, 21), START, () => START)).rejects.toMatchObject({
+        name: "InvalidApplicationChallengeFileError",
+      });
+      expect(await readFile(target, "utf8")).toBe(contents);
+    }
   });
 
   it("does not remove a stale lock or silently bypass it", async () => {

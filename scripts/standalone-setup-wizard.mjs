@@ -25,6 +25,7 @@ export { regularBytes } from "./standalone-private-file-bytes.mjs";
 import { checkHelmImageMapping } from "./check-helm-image-mapping.mjs";
 import { pinnedStandaloneImages } from "./build-standalone-install.mjs";
 import { observeStandaloneEgress } from "./check-standalone-egress.mjs";
+import { observeStandaloneLocalEgress } from "./check-standalone-local-egress.mjs";
 import { observeStandaloneInstallRelay } from "./check-standalone-install-relay.mjs";
 import { observeStandaloneTopology, standaloneStackConfig } from "./check-standalone-topology.mjs";
 import {
@@ -33,7 +34,7 @@ import {
 import { buildStandaloneApiApprovalChain } from "./standalone-api-approval-chain.mjs";
 export { buildStandaloneApiApprovalChain } from "./standalone-api-approval-chain.mjs";
 import { observeStandaloneRestartSnapshot, readStandaloneRestartEvidence } from "./check-standalone-restart.mjs";
-import { checkLocalLedgerPreflight } from "./local-ledger-preflight.mjs";
+import { checkLocalLedgerPreflight, validateStandaloneGenesisPin } from "./local-ledger-preflight.mjs";
 import {
   loadApprovedMaintenanceMaterial, reconcileLocalDeployment, runLocalDeployment,
   validateLocalDeploymentPlan,
@@ -399,6 +400,8 @@ async function preparedStandaloneTopology(root, record) {
       ...(record.install.verified?.runtimeComposeSha256 ? {
         sourceRevision: record.install.verified.sourceRevision,
         images: record.install.verified.images,
+        apiRuntime: record.install.verified.apiRuntime,
+        installRelay: record.install.verified.installRelay,
         allowOffline: true,
         composeFiles: [join(record.install.bundle, "compose.yml"),
           join(record.install.bundle, "compose.offline.yml")],
@@ -432,15 +435,18 @@ export async function observeStandaloneStack(directory, dependencies = {}) {
       throw new Error("Stack observation history is full or malformed");
     }
     const { config, expectedTopology } = await preparedStandaloneTopology(root, record);
+    const controlSubnet = dependencies.egressControlSubnet ?? process.env.TR_EGRESS_CONTROL_SUBNET;
     const topology = await (dependencies.observeTopology ?? observeStandaloneTopology)(config,
       expectedTopology);
-    const egress = await (dependencies.observeEgress ?? observeStandaloneEgress)({
+    const egress = await (dependencies.observeEgress ?? (expectedTopology.installRelay
+      ? observeStandaloneLocalEgress : observeStandaloneEgress))({
       env: {
         TR_STACK_NAME: config.project,
         COMPOSE_PROJECT_NAME: config.project,
         TR_NODE_PORT: config.ports.node,
         TR_INDEXER_PORT: config.ports.indexer,
         TR_PROOF_PORT: config.ports["proof-server"],
+        ...(controlSubnet === undefined ? {} : { TR_EGRESS_CONTROL_SUBNET: controlSubnet }),
       },
       expectedTopology,
     });
@@ -623,18 +629,11 @@ export async function observeStandaloneLedger(directory, pinPath, dependencies =
     requireVerifiedInventoryBytes(record.install.verified, inventory, record.install.inventorySha256,
       "Installed inventory changed since setup verification");
     const pinBytes = await regularBytes(resolve(pinPath));
-    const pin = parseJsonBytes(pinBytes);
-    if (pin.sourceRevision !== record.sourceRevision) {
-      throw new Error("Genesis pin source revision disagrees with the installed bundle");
-    }
+    const pin = validateStandaloneGenesisPin(parseJsonBytes(pinBytes), record.sourceRevision);
     let installAccess;
     if (record.install.verified?.runtimeComposeSha256) {
       const { config, expectedTopology } = await preparedStandaloneTopology(root, record);
       const directUrl = `http://127.0.0.1:${record.stack.ports.node}`;
-      if (!Array.isArray(pin.allowedHosts) || pin.allowedHosts.length !== 1
-        || pin.allowedHosts[0] !== "127.0.0.1") {
-        throw new Error("Genesis pin must allow only the prepared loopback host");
-      }
       if (pin.rpcUrl === directUrl) {
         const current = await (dependencies.observeTopology ?? observeStandaloneTopology)(config,
           { ...expectedTopology, allowUnpublishedHostPorts: false });

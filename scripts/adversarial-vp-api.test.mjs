@@ -78,6 +78,7 @@ const startCase = async (context, role, label) => {
         if (id !== applicationId || request.headers.authorization !== `Bearer ${token}`) {
           throw new Error("Applicant authorization failed");
         }
+        return binding.subjectDid;
       },
       resolvePendingApplication: async (id) => id === applicationId && accepted === undefined
         ? { binding, authorizedVerifiers: [harness.evidenceVerifier] } : null,
