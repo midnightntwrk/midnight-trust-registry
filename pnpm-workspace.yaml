@@ -14,7 +14,7 @@ overrides:
   "@midnight-ntwrk/midnight-did-domain": 0.7.0
   "@midnight-ntwrk/midnight-did-jubjub-schnorr": 0.7.0
   "vitest>vite": 7.3.7
-  "vitepress>vite": 6.4.4
+  "vitepress>vite": 6.4.5
   "esbuild@<0.25.0": 0.28.1
   "mermaid>katex": 0.18.2
   "esbuild@>=0.27.3 <0.28.1": 0.28.1
