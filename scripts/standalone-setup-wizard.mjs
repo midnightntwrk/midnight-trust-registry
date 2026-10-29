@@ -13,11 +13,10 @@ import { promisify } from "node:util";
 import {
   FileMaintenanceTransitionJournal, prepareLocalNetworkCommitteeTransition,
   reconcileLocalNetworkCommitteeTransition, submitLocalNetworkCommitteeTransition,
-  getLocalNetworkProfile, validateMaintenancePolicy,
+  getLocalNetworkProfile,
   VerifierKeyInsertionOutcomeUnknownError,
 } from "@midnight-ntwrk/trust-registry-integration";
 import { assertStrictDetachedSignatureStatus } from "@midnight-ntwrk/trust-registry-integration/reviewer-signature-status";
-import { ContractMaintenanceAuthority } from "@midnight-ntwrk/midnight-js-protocol/ledger";
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
@@ -26,6 +25,11 @@ import { pinnedStandaloneImages } from "./build-standalone-install.mjs";
 import { observeStandaloneEgress } from "./check-standalone-egress.mjs";
 import { observeStandaloneInstallRelay } from "./check-standalone-install-relay.mjs";
 import { observeStandaloneTopology, standaloneStackConfig } from "./check-standalone-topology.mjs";
+import {
+  canonicalReviewerMetadata, reviewerProposal, validateReleaseCommittee,
+} from "./standalone-approval-policy.mjs";
+import { buildStandaloneApiApprovalChain } from "./standalone-api-approval-chain.mjs";
+export { buildStandaloneApiApprovalChain } from "./standalone-api-approval-chain.mjs";
 import { observeStandaloneRestartSnapshot, readStandaloneRestartEvidence } from "./check-standalone-restart.mjs";
 import { checkLocalLedgerPreflight } from "./local-ledger-preflight.mjs";
 import {
@@ -487,8 +491,17 @@ export async function collectStandaloneGenesisCandidate(directory, dependencies 
       || record.ledgerObservation || record.genesisApproval || record.deployment) {
       throw new Error("Collect a candidate only from an observed stack before recording a genesis pin");
     }
-    const snapshot = await (dependencies.observeSnapshot ?? observeStandaloneRestartSnapshot)(root,
-      { allowUnpublishedHostPorts: true });
+    let snapshot;
+    try {
+      snapshot = await (dependencies.observeSnapshot ?? observeStandaloneRestartSnapshot)(root,
+        { allowUnpublishedHostPorts: true });
+    } catch (error) {
+      if (error instanceof Error
+        && error.message === "Dedicated ledger network has a missing or extra container attachment") {
+        throw new Error("Genesis collection requires only the three ledger containers; inspect attachments and remove any verified temporary install relay before retrying", { cause: error });
+      }
+      throw error;
+    }
     if (snapshot.project !== record.stack.project
       || snapshot.sourceRevision !== record.sourceRevision
       || snapshot.installInventorySha256 !== record.install.inventorySha256
@@ -781,26 +794,6 @@ export async function verifyDetachedReviewerSignature(
   }
 }
 
-function canonicalReviewerMetadata(value, earliest, latest) {
-  const approvedAt = Date.parse(value?.approvedAt);
-  return typeof value?.reviewedReference === "string"
-    && value.reviewedReference.length >= 8 && value.reviewedReference.length <= 512
-    && !value.reviewedReference.startsWith("demo:")
-    && typeof value.approvedAt === "string"
-    && Number.isFinite(approvedAt)
-    && new Date(approvedAt).toISOString() === value.approvedAt
-    && approvedAt >= earliest && approvedAt <= latest;
-}
-
-function reviewerProposal(proposal, fields) {
-  if (proposal === null || typeof proposal !== "object" || Array.isArray(proposal)
-    || Object.keys(proposal).sort().join("\0") !== fields.sort().join("\0")
-    || !FINGERPRINT.test(proposal.reviewerFingerprint ?? "")
-    || !canonicalReviewerMetadata(proposal, -Infinity, Date.now() + 5 * 60_000)) {
-    throw new Error("Canonical reviewer metadata and a human-supplied approval time are required");
-  }
-}
-
 export async function draftStandaloneGenesisApproval(directory, proposal) {
   return withLock(directory, async (root) => {
     const { record } = await readRecord(root);
@@ -834,33 +827,6 @@ export async function draftStandaloneGenesisApproval(directory, proposal) {
     await writePrivateSnapshot(path, bytes);
     return { path, documentSha256: sha256(bytes), state: "unsigned-human-review-required" };
   });
-}
-
-function validateReleaseCommittee(maintenancePolicy, custodians) {
-  if (maintenancePolicy === null || typeof maintenancePolicy !== "object"
-    || Array.isArray(maintenancePolicy)
-    || maintenancePolicy.mode !== "committee"
-    || !Array.isArray(maintenancePolicy.verifyingKeys)
-    || Object.keys(maintenancePolicy).sort().join("\0") !== "mode\0threshold\0verifyingKeys") {
-    throw new Error("Release maintenance approval requires a canonical committee policy");
-  }
-  validateMaintenancePolicy(maintenancePolicy);
-  const keys = maintenancePolicy.verifyingKeys;
-  try {
-    new ContractMaintenanceAuthority(keys.map((key) => key.slice(2)), maintenancePolicy.threshold, 1n);
-  } catch {
-    throw new Error("Release committee contains a verifying key the Midnight ledger cannot use");
-  }
-  if (!Array.isArray(custodians) || custodians.length !== keys.length
-    || custodians.some((entry, index) => entry === null || typeof entry !== "object" || Array.isArray(entry)
-      || Object.keys(entry).sort().join("\0") !== "custodyReference\0holderRole\0verifyingKey"
-      || entry.verifyingKey !== keys[index]
-      || typeof entry.holderRole !== "string" || entry.holderRole.length < 3 || entry.holderRole.length > 128
-      || typeof entry.custodyReference !== "string" || entry.custodyReference.length < 8
-      || entry.custodyReference.length > 512)
-    || new Set(custodians.map((entry) => entry.holderRole)).size !== keys.length) {
-    throw new Error("Committee custody must bind distinct holder roles to every approved public key");
-  }
 }
 
 export async function draftStandaloneCommitteeApproval(directory, proposal) {
@@ -2020,95 +1986,6 @@ export async function approveStandaloneCommitteeRecovery(
       recoveryFinalizedBlockHash: fresh.finalizedBlockHash,
     };
   });
-}
-
-export function buildStandaloneApiApprovalChain(record, releaseManifestSha256) {
-  const approval = (entry, label) => {
-    if (!entry || !FINGERPRINT.test(entry.reviewerFingerprint ?? "")) {
-      throw new Error(`${label} reviewer approval is missing`);
-    }
-    const decode = (encoded, expected, kind) => {
-      if (typeof encoded !== "string" || encoded.length === 0 || encoded.length > 90_000) {
-        throw new Error(`${label} ${kind} is missing or oversized`);
-      }
-      const bytes = Buffer.from(encoded, "base64");
-      if (bytes.toString("base64") !== encoded || sha256(bytes) !== expected) {
-        throw new Error(`${label} ${kind} differs from the recorded digest`);
-      }
-      return bytes;
-    };
-    const document = decode(entry.documentBase64, entry.documentSha256, "document");
-    decode(entry.signatureBase64, entry.signatureSha256, "signature");
-    const parsed = parseCanonicalSignedJson(document, label);
-    if (parsed.reviewerFingerprint !== entry.reviewerFingerprint) {
-      throw new Error(`${label} reviewer fingerprint differs from signed bytes`);
-    }
-    return {
-      documentBase64: entry.documentBase64,
-      documentSha256: entry.documentSha256,
-      signatureBase64: entry.signatureBase64,
-      signatureSha256: entry.signatureSha256,
-      reviewerFingerprint: entry.reviewerFingerprint,
-      parsed,
-    };
-  };
-  const genesis = approval(record.genesisApproval, "Genesis");
-  const committee = approval(record.committeeApproval, "Committee");
-  const deployment = approval(record.committeeDeploymentApproval, "Deployment");
-  const receipt = record.deployment?.result?.receipt;
-  const attempt = record.maintenanceAttempt;
-  const observed = attempt?.reconciliation;
-  if (record.deployment?.state !== "observed" || !validLocalDeploymentReceipt(receipt)
-    || attempt?.state !== "observed" || attempt.alert || observed?.status !== "observed"
-    || typeof attempt.txId !== "string" || !attempt.txId
-    || observed.txId !== attempt.txId || !HASH.test(observed.finalizedBlockHash ?? "")
-    || /^0x0{64}$/u.test(observed.finalizedBlockHash)
-    || !SHA256.test(attempt.updateSha256 ?? "")
-    || attempt.committeeDeploymentApprovalSha256 !== deployment.documentSha256
-    || !SHA256.test(releaseManifestSha256 ?? "")) {
-    throw new Error("Finalized deployment and unambiguous maintenance readback are required");
-  }
-  if (genesis.parsed.format !== "tr-local-genesis-approval-v1"
-    || committee.parsed.format !== "tr-local-committee-approval-v2"
-    || deployment.parsed.format !== "tr-local-committee-deployment-approval-v1"
-    || genesis.parsed.sourceRevision !== record.sourceRevision
-    || committee.parsed.sourceRevision !== record.sourceRevision
-    || deployment.parsed.sourceRevision !== record.sourceRevision
-    || genesis.parsed.installInventorySha256 !== record.install?.inventorySha256
-    || committee.parsed.installInventorySha256 !== record.install?.inventorySha256
-    || committee.parsed.genesisApprovalSha256 !== genesis.documentSha256
-    || committee.parsed.networkId !== genesis.parsed.networkId
-    || committee.parsed.expectedGenesisHash !== genesis.parsed.expectedGenesisHash
-    || committee.parsed.reviewerFingerprint !== deployment.reviewerFingerprint
-    || deployment.parsed.committeeApprovalSha256 !== committee.documentSha256
-    || deployment.parsed.deploymentPlanSha256 !== committee.parsed.deploymentPlanSha256
-    || deployment.parsed.expectedGenesisHash !== genesis.parsed.expectedGenesisHash
-    || deployment.parsed.releaseManifestSha256 !== releaseManifestSha256
-    || receipt.networkId !== genesis.parsed.networkId
-    || !["networkId", "contractAddress", "blockHash", "blockHeight", "txId"]
-      .every((key) => deployment.parsed.deploymentReceipt?.[key] === receipt[key])) {
-    throw new Error("Signed approval chain disagrees with the observed install or deployment");
-  }
-  const publicApproval = ({ parsed, ...evidence }) => evidence;
-  return {
-    format: "tr-local-api-approval-chain-v1",
-    sourceRevision: record.sourceRevision,
-    installInventorySha256: record.install.inventorySha256,
-    releaseManifestSha256,
-    networkId: genesis.parsed.networkId,
-    expectedGenesisHash: genesis.parsed.expectedGenesisHash,
-    contractAddress: receipt.contractAddress,
-    genesisApproval: publicApproval(genesis),
-    committeeApproval: publicApproval(committee),
-    committeeDeploymentApproval: publicApproval(deployment),
-    maintenanceReadback: {
-      committeeDeploymentApprovalSha256: deployment.documentSha256,
-      updateSha256: attempt.updateSha256,
-      txId: attempt.txId,
-      finalizedBlockHash: observed.finalizedBlockHash,
-      status: "observed",
-    },
-  };
 }
 
 export async function exportStandaloneApiApprovalChain(directory) {

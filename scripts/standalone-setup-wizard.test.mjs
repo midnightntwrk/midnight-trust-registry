@@ -122,10 +122,28 @@ test("API approval-chain export refuses missing or substituted deployment eviden
     ...record.maintenanceAttempt, state: "pending" } }, manifest), /readback/u);
   assert.throws(() => buildStandaloneApiApprovalChain({ ...record, maintenanceAttempt: {
     ...record.maintenanceAttempt, alert: "conflict" } }, manifest), /readback/u);
+  assert.throws(() => buildStandaloneApiApprovalChain({ ...record, maintenanceAttempt: {
+    ...record.maintenanceAttempt, txId: stagedReceipt.txId,
+    reconciliation: { ...record.maintenanceAttempt.reconciliation, txId: stagedReceipt.txId },
+  } }, manifest), /readback/u);
   assert.throws(() => buildStandaloneApiApprovalChain({ ...record,
     committeeDeploymentApproval: { ...committeeDeploymentApproval, documentSha256: "f".repeat(64) } },
   manifest), /digest/u);
   assert.throws(() => buildStandaloneApiApprovalChain(record, "f".repeat(64)), /approval chain/u);
+  assert.throws(() => buildStandaloneApiApprovalChain({ ...record, install: undefined }, manifest), /inventory/u);
+  assert.throws(() => buildStandaloneApiApprovalChain({ ...record, sourceRevision: undefined }, manifest),
+    /approval chain/u);
+  assert.throws(() => buildStandaloneApiApprovalChain({ ...record, maintenanceAttempt: {
+    ...record.maintenanceAttempt, reconciliation: { ...record.maintenanceAttempt.reconciliation,
+      finalizedBlockHash: `0x${"0".repeat(64)}` },
+  } }, manifest), /readback/u);
+  const duplicatedFormat = Buffer.from(Buffer.from(genesisApproval.documentBase64, "base64")
+    .toString("utf8").replace('"format":"tr-local-genesis-approval-v1"',
+      '"format":"tr-local-genesis-approval-v1","format":"tr-local-genesis-approval-v1"'));
+  assert.throws(() => buildStandaloneApiApprovalChain({ ...record, genesisApproval: {
+    ...genesisApproval, documentBase64: duplicatedFormat.toString("base64"),
+    documentSha256: digest(duplicatedFormat),
+  } }, manifest), /canonical signed JSON/u);
 });
 const pin = {
   format: "tr-local-ledger-pin-v1",
@@ -246,13 +264,13 @@ async function fixture(format = "tr-standalone-install-v3", manifestOverride) {
         archive: "images/applicant.image.tar", archiveSha256: "f".repeat(64) },
     } } : {}),
     ...(format === "tr-standalone-install-v6" ? { installRelay: {
-      path: "install-relay.py", sha256: "b".repeat(64), imageRole: "node",
+      path: "install-relay.mjs", sha256: "b".repeat(64), imageRole: "node",
     } } : {}) }));
   await writeFile(join(bundle, "release-manifest.json"), releaseManifestBytes);
   await writeFile(join(bundle, "compose.yml"), compose);
   await writeFile(join(bundle, "compose.offline.yml"), offlineCompose);
   if (format === "tr-standalone-install-v6") {
-    await writeFile(join(bundle, "install-relay.py"), "# fixture relay\n");
+    await writeFile(join(bundle, "install-relay.mjs"), "// fixture relay\n");
   }
   await mkdir(join(bundle, "proof-params"));
   const releaseManifestPath = join(root, "release-manifest.json");
@@ -280,7 +298,7 @@ async function fixture(format = "tr-standalone-install-v3", manifestOverride) {
       applicant: { imageId: `sha256:${"e".repeat(64)}` },
     } : null,
     installRelay: format === "tr-standalone-install-v6" ? {
-      path: join(bundle, "install-relay.py"), sha256: "b".repeat(64),
+      path: join(bundle, "install-relay.mjs"), sha256: "b".repeat(64),
       image: { role: "node", reference: images.find((image) => image.role === "node").reference,
         acceptedIds: [`sha256:${images.find((image) => image.role === "node").reference.split("@sha256:")[1]}`] },
     } : null });
@@ -836,6 +854,12 @@ test("genesis candidate is untrusted, non-overwriting, and cannot approve the no
     observerSha256: "c".repeat(64), genesisHash: expectedGenesisHash,
     finalizedHash: `0x${"d".repeat(64)}`, finalizedHeight: 11,
     observedAt: "2026-10-20T00:00:00.000Z" };
+  await assert.rejects(collectStandaloneGenesisCandidate(f.directory, {
+    observeSnapshot: async () => {
+      throw new Error("Dedicated ledger network has a missing or extra container attachment");
+    },
+  }), /inspect attachments and remove any verified temporary install relay/u);
+  assert.equal((await standaloneSetupStatus(f.directory)).localLedger, "pending");
   await assert.rejects(collectStandaloneGenesisCandidate(f.directory, {
     observeSnapshot: async () => ({ ...observed, sourceRevision: "f".repeat(40) }),
   }), /candidate disagrees/u);

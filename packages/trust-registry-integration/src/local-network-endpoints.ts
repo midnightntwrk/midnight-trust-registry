@@ -34,5 +34,10 @@ export function localNetworkEndpoint(
   if (endpoint.username !== "" || endpoint.password !== "" || endpoint.hash !== "" || endpoint.search !== "") {
     throw new Error("Local service endpoint must not contain credentials, query, or fragment");
   }
+  // A rooted name prevents the host resolver from expanding a Docker service
+  // alias through an unrelated search domain.
+  if (endpoint.hostname !== "localhost" && /^[a-z][a-z0-9-]*$/u.test(endpoint.hostname)) {
+    endpoint.hostname = `${endpoint.hostname}.`;
+  }
   return endpoint.toString();
 }

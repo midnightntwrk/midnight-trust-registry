@@ -113,10 +113,16 @@ export async function loadApprovedProposalRecoveryDecision(input: {
   finalityEvidencePath: string;
   keyringDirectory: string;
   reviewerFingerprint: string;
+  planReviewerFingerprint: string;
   candidate: RecoveryCandidate;
   now?: number;
 }): Promise<{ decision: ProposalRecoveryDecision; decisionSha256: string;
   finalityAuthenticated: false; releaseQualified: false; retryPermitted: false }> {
+  if (!/^[0-9A-F]{40}$/u.test(input.planReviewerFingerprint)
+    || !/^[0-9A-F]{40}$/u.test(input.reviewerFingerprint)
+    || input.reviewerFingerprint === input.planReviewerFingerprint) {
+    throw new Error("Recovery decision requires a reviewer distinct from the API-plan reviewer");
+  }
   const candidate = input.candidate;
   assertReviewCandidate(candidate);
   const bytes = await readBoundedLocalApprovalFile(input.decisionPath, 32 * 1024);

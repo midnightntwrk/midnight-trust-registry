@@ -5,6 +5,7 @@ import { open } from "node:fs/promises";
 
 import { TrustRegistryOperatorSnapshotSchema } from "@midnight-ntwrk/trust-registry-cli";
 import { bytes32Commitment, type SequenceToTimestamp } from "@midnight-ntwrk/trust-registry-client";
+import { deriveGovernancePolicySnapshot } from "@midnight-ntwrk/trust-registry-domain";
 import type { Ledger } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import type {
   FinalizedRegistryBootstrapReader,
@@ -114,6 +115,12 @@ export function createLocalLedgerBoundSource(input: {
 }): TrustRegistryApiStateSource & {
   loadCurrentLedgerSelection(): Promise<TrustRegistryApiCurrentLedgerSelection>;
   readFinalizedProposalLedger: FinalizedProposalLedgerReader;
+  readIssuerProposalSnapshot(): Promise<{
+    contractAddress: string;
+    finalizedBlockHash: string;
+    policySnapshot: ReturnType<typeof deriveGovernancePolicySnapshot>;
+    ledger: Ledger;
+  }>;
 } {
   const address = input.contractAddress.toLowerCase();
   if (!CONTRACT_ADDRESS.test(address) || /^0x0{64}$/u.test(address)) {
@@ -206,6 +213,15 @@ export function createLocalLedgerBoundSource(input: {
     },
     async readFinalizedProposalLedger() {
       return (await readBoundState()).ledger;
+    },
+    async readIssuerProposalSnapshot() {
+      const state = await readBoundState();
+      return {
+        contractAddress: address,
+        finalizedBlockHash: state.selection.finalizedBlockHash,
+        policySnapshot: deriveGovernancePolicySnapshot(state.snapshot.policy),
+        ledger: state.ledger,
+      };
     },
   };
 }

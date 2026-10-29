@@ -148,6 +148,11 @@ describe("file application admission store", () => {
     const signedEvidence = evidence();
     const receipt = await second.acceptEvidence(applicationId, signedEvidence, now);
     expect(await first.resolveAcceptedEvidence(applicationId)).toEqual({ evidence: signedEvidence, receipt });
+    const captured = await first.readCapturedAdmission(applicationId);
+    expect(captured).toEqual({ pending, accepted: { evidence: signedEvidence, receipt } });
+    expect(captured.pending).not.toBe(pending);
+    expect(captured.accepted?.evidence).not.toBe(signedEvidence);
+    expect(await second.readCapturedAdmission("application:missing")).toEqual({ pending: null, accepted: null });
     expect(receipt.evidenceCommitment).toBe(signedEvidence.commitment);
     await expect(first.acceptEvidence(applicationId, signedEvidence, now))
       .rejects.toMatchObject({ reason: "already-accepted" });

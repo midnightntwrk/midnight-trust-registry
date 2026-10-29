@@ -8,7 +8,9 @@ const approved = {
   setupLock: "absent", install: "verified-staged-bytes-only",
   stackConfiguration: "observed-ledger-bridge-only",
   localLedger: "operator-pinned-reviewer-signature-verified",
+  approvedGenesisHash: `0x${"1".repeat(64)}`,
   deployment: "observed", stagedVerifierKeys: [{ circuitName: "test", state: "verified" }],
+  deployedContractAddress: `0x${"2".repeat(64)}`,
   maintenanceApproval: "deployment-bound-roster-signature-verified-transition-pending",
   maintenanceTransition: "observed", maintenanceLastReadback: "observed",
   maintenanceTransitionAlert: null,
@@ -18,6 +20,9 @@ test("only reports wizard ledger prerequisites, never actor or release qualifica
   const report = assessStandaloneJourneyPrerequisites(approved);
   assert.equal(report.ledgerPrerequisitesObserved, true);
   assert.deepEqual(report.missing, []);
+  assert.deepEqual(report.nextActions, []);
+  assert.equal(report.nextSafeAction, null);
+  assert.deepEqual(report.blockedActions, []);
   assert.equal(report.actorJourney, "not-run");
   assert.equal(report.completeVerifierKeyInventory, "not-verified");
   assert.equal(report.independentFinality, "not-verified");
@@ -32,6 +37,13 @@ test("fails closed for missing approval, unresolved key or alert", () => {
   });
   assert.equal(report.ledgerPrerequisitesObserved, false);
   assert.deepEqual(report.missing, ["genesisApproved", "recordedKeyInsertionsReconciled", "maintenanceObserved"]);
+  assert.deepEqual(report.nextActions.map(({ gate }) => gate), report.missing);
+  assert.match(report.nextActions[0].action, /Independently review the real chain specification/u);
+  assert.equal(report.nextSafeAction.gate, "genesisApproved");
+  assert.deepEqual(report.blockedActions, [
+    { gate: "recordedKeyInsertionsReconciled", blockedBy: "genesisApproved" },
+    { gate: "maintenanceObserved", blockedBy: "genesisApproved" },
+  ]);
 });
 
 test("empty key evidence and active setup lock block the journey", () => {
@@ -39,6 +51,15 @@ test("empty key evidence and active setup lock block the journey", () => {
     ...approved, stagedVerifierKeys: [], setupLock: "present-inspect-before-removal",
   });
   assert.deepEqual(report.missing, ["setupUnlocked", "recordedKeyInsertionsReconciled"]);
+});
+
+test("approval labels without pinned identities cannot open the actor prerequisite gate", () => {
+  for (const value of [null, undefined, "bad", `0x${"0".repeat(64)}`]) {
+    const missingGenesis = assessStandaloneJourneyPrerequisites({ ...approved, approvedGenesisHash: value });
+    assert.deepEqual(missingGenesis.missing, ["genesisApproved"]);
+    const missingContract = assessStandaloneJourneyPrerequisites({ ...approved, deployedContractAddress: value });
+    assert.deepEqual(missingContract.missing, ["deploymentObserved"]);
+  }
 });
 
 test("candidate source revision must match the retained install setup", () => {
@@ -50,9 +71,28 @@ test("candidate source revision must match the retained install setup", () => {
   const stale = assessStandaloneJourneyPrerequisites(approved, "b".repeat(40));
   assert.equal(stale.gates.sourceMatchesCandidate, false);
   assert.deepEqual(stale.missing, ["sourceMatchesCandidate"]);
+  assert.match(stale.nextActions[0].action, /never reuse an older setup/u);
+  assert.equal(stale.nextSafeAction.gate, "sourceMatchesCandidate");
   assert.equal(stale.ledgerPrerequisitesObserved, false);
   assert.throws(() => assessStandaloneJourneyPrerequisites(approved, "bad"),
     /Expected candidate source revision/u);
+});
+
+test("does not present deployment as the first safe action before approvals", () => {
+  const report = assessStandaloneJourneyPrerequisites({
+    ...approved,
+    localLedger: "node-observed-not-independently-approved",
+    deployment: "pending",
+    stagedVerifierKeys: [],
+    maintenanceApproval: "pending",
+    maintenanceTransition: "pending",
+  }, "b".repeat(40));
+  assert.equal(report.nextSafeAction.gate, "sourceMatchesCandidate");
+  assert.deepEqual(report.blockedActions.map(({ gate }) => gate), [
+    "genesisApproved", "deploymentObserved", "recordedKeyInsertionsReconciled",
+    "committeeApproved", "maintenanceObserved",
+  ]);
+  assert.equal(report.releaseQualified, false);
 });
 
 test("rejects malformed status rather than implying a clean run", () => {
@@ -60,4 +100,21 @@ test("rejects malformed status rather than implying a clean run", () => {
     /Invalid standalone wizard status/u);
   assert.throws(() => assessStandaloneJourneyPrerequisites({ ...approved, sourceRevision: "bad" }),
     /Invalid standalone wizard status/u);
+  assert.throws(() => assessStandaloneJourneyPrerequisites(null),
+    /Invalid standalone wizard status/u);
+  assert.throws(() => assessStandaloneJourneyPrerequisites({ ...approved, stagedVerifierKeys: undefined }),
+    /Invalid standalone wizard status/u);
+  assert.throws(() => assessStandaloneJourneyPrerequisites({ ...approved, sourceRevision: 42 }),
+    /Invalid standalone wizard status/u);
+});
+
+test("malformed or duplicate verifier-key evidence cannot satisfy the recorded-insertions gate", () => {
+  for (const stagedVerifierKeys of [[null], ["verified"], [{}], [{ state: "pending" }],
+    [{ state: "verified" }], [{ circuitName: "test", state: "verified" },
+      { circuitName: "test", state: "verified" }]]) {
+    const report = assessStandaloneJourneyPrerequisites({ ...approved, stagedVerifierKeys });
+    assert.deepEqual(report.missing, ["recordedKeyInsertionsReconciled"]);
+    assert.equal(report.ledgerPrerequisitesObserved, false);
+    assert.equal(report.releaseQualified, false);
+  }
 });

@@ -140,10 +140,11 @@ describe("read-only local proposal recovery inspection CLI", () => {
     mocks.draftDecision.mockResolvedValue('{"reviewOnly":true}\n');
     await runTrustRegistryApiCli(["draft-local-proposal-recovery-decision", ...args().slice(1),
       "--finality-evidence", join(directory, "finality.json"),
+      "--recovery-reviewer", "B".repeat(40),
       "--evidence-reference", "private-review-1"]);
     expect(mocks.draftDecision).toHaveBeenCalledWith(expect.objectContaining({
       finalityEvidencePath: join(directory, "finality.json"),
-      evidenceReference: "private-review-1", reviewerFingerprint: "A".repeat(40),
+      evidenceReference: "private-review-1", reviewerFingerprint: "B".repeat(40),
     }));
     expect(output.join("")).toBe('{"reviewOnly":true}\n');
     expect(await readFile(path)).toEqual(before);
@@ -154,19 +155,22 @@ describe("read-only local proposal recovery inspection CLI", () => {
     const journal = await reserve();
     const before = await readFile(path);
     const filesBefore = await readdir(directory);
-    mocks.loadDecision.mockResolvedValue({ decision: { reviewerFingerprint: "A".repeat(40),
+    mocks.loadDecision.mockResolvedValue({ decision: { reviewerFingerprint: "B".repeat(40),
       evidenceReference: "private-review-1", finalityEvidenceSha256: "6".repeat(64),
       draftedAt: "2026-10-24T00:00:00.000Z" }, decisionSha256: "8".repeat(64),
     finalityAuthenticated: false, releaseQualified: false, retryPermitted: false });
     await runTrustRegistryApiCli(["verify-local-proposal-recovery-decision", ...args().slice(1),
       "--finality-evidence", join(directory, "finality.json"),
+      "--recovery-reviewer", "B".repeat(40),
+      "--recovery-keyring", "/run/recovery-keyring",
       "--recovery-decision", join(directory, "decision.json"),
       "--recovery-signature", join(directory, "decision.sig")]);
     expect(mocks.loadDecision).toHaveBeenCalledWith(expect.objectContaining({
       decisionPath: join(directory, "decision.json"),
       signaturePath: join(directory, "decision.sig"),
       finalityEvidencePath: join(directory, "finality.json"),
-      keyringDirectory: "/run/keyring", reviewerFingerprint: "A".repeat(40),
+      keyringDirectory: "/run/recovery-keyring", reviewerFingerprint: "B".repeat(40),
+      planReviewerFingerprint: "A".repeat(40),
       candidate: expect.objectContaining({ reviewCandidate: true }),
     }));
     expect(JSON.parse(output.join(""))).toMatchObject({

@@ -5,6 +5,9 @@ import { join } from "node:path";
 
 import { expect, it } from "vitest";
 
+import { sampleSigningKey, signatureVerifyingKey } from "@midnight-ntwrk/compact-runtime";
+import { committeeMaintenanceUpdateSha256 } from "@midnight-ntwrk/trust-registry-integration";
+
 import { verifyLocalApiApprovalChain } from "../local-approval-chain.js";
 import { loadApprovedLocalLedgerRuntimePlan } from "../local-ledger-runtime.js";
 
@@ -57,7 +60,7 @@ it("verifies signed standalone approvals and rejects substitution", async () => 
     await writeFile(inventoryPath, inventoryBytes);
     const expectedGenesisHash = `0x${"d".repeat(64)}`;
     const contractAddress = `0x${"e".repeat(64)}`;
-    const committee = ["3", "4", "5"].map((digit) => `0x${digit.repeat(64)}`);
+    const committee = Array.from({ length: 3 }, () => `0x${signatureVerifyingKey(sampleSigningKey())}`);
     const plan = { sourceRevision, installInventorySha256, releaseManifestSha256,
       networkId: "undeployed", rpcUrl: "http://127.0.0.1:29944",
       expectedGenesisHash, contractAddress,
@@ -91,7 +94,8 @@ it("verifies signed standalone approvals and rejects substitution", async () => 
       expectedGenesisHash, contractAddress, genesisApproval, committeeApproval,
       committeeDeploymentApproval, maintenanceReadback: {
         committeeDeploymentApprovalSha256: committeeDeploymentApproval.documentSha256,
-        updateSha256: "6".repeat(64), txId: "maintenance-tx",
+        updateSha256: committeeMaintenanceUpdateSha256({ contractAddress, committee,
+          threshold: 2, currentCounter: 1n }), txId: "maintenance-tx",
         finalizedBlockHash: `0x${"5".repeat(64)}`, status: "observed" } };
     const verify = (candidate: object, selectedPlan = plan, reviewer = fingerprint!) =>
       verifyLocalApiApprovalChain({ chainBytes: Buffer.from(`${JSON.stringify(candidate)}\n`),
@@ -107,6 +111,12 @@ it("verifies signed standalone approvals and rejects substitution", async () => 
       ...plan.maintenanceAuthority, counter: "1" } })).rejects.toThrow(/maintenance state/u);
     await expect(verify({ ...chain, maintenanceReadback: {
       ...chain.maintenanceReadback, status: "pending" } })).rejects.toThrow(/maintenance state/u);
+    await expect(verify({ ...chain, maintenanceReadback: {
+      ...chain.maintenanceReadback, updateSha256: "6".repeat(64) } }))
+      .rejects.toThrow(/approved committee action/u);
+    await expect(verify({ ...chain, maintenanceReadback: {
+      ...chain.maintenanceReadback, txId: receipt.txId } }))
+      .rejects.toThrow(/maintenance state/u);
     await expect(verify({ ...chain, committeeDeploymentApproval: {
       ...committeeDeploymentApproval, documentBase64: genesisApproval.documentBase64 } }))
       .rejects.toThrow(/SHA-256/u);

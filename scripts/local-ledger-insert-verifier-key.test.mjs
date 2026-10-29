@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { FileVerifierKeyInsertionJournal } from "@midnight-ntwrk/trust-registry-integration";
 
@@ -12,6 +14,7 @@ import {
 } from "./local-ledger-insert-verifier-key.mjs";
 
 const root = await mkdtemp(join(tmpdir(), "tr-local-key-plan-"));
+
 after(() => rm(root, { recursive: true, force: true }));
 const sourceRevision = "a".repeat(40);
 const modulePath = join(root, "provider.mjs");
@@ -78,6 +81,13 @@ test("rejects malformed or shared-journal insertion plans", () => {
   assert.throws(() => validateLocalVerifierKeyInsertionPlan({
     ...plan, journalPath: plan.deploymentJournalPath,
   }), /fixed per-circuit journal/u);
+  for (const malformed of [null, [], {}, { ...plan, network: null },
+    { ...plan, circuitName: "../escape" }, { ...plan, initialVerifierKeyName: undefined },
+    { ...plan, deploymentJournalPath: "relative.json" },
+    { ...plan, providerModuleSha256: 42 }, { ...plan, journalPath: `${root}/other.json` }]) {
+    assert.throws(() => validateLocalVerifierKeyInsertionPlan(malformed),
+      /exact local|exact source|fixed per-circuit journal/u);
+  }
 });
 
 test("checks source and provider bytes before network or provider access", async () => {
@@ -105,6 +115,16 @@ test("real verifier-key insertion stops without an immutable provider root", asy
     if (previous === undefined) delete process.env.TR_IMMUTABLE_PROVIDER_ROOT;
     else process.env.TR_IMMUTABLE_PROVIDER_ROOT = previous;
   }
+});
+
+test("insertion provider factory must be an own module export", async () => {
+  await assert.rejects(runLocalVerifierKeyInsertion(plan, {
+    validateEndpoints: async () => {},
+    observe: async () => {},
+    loadProvider: async () => Object.create({
+      createLocalDeploymentMaterial: async () => ({ providers: { marker: "inherited" } }),
+    }),
+  }), /must export createLocalDeploymentMaterial/u);
 });
 
 test("verifier-key insertion rejects a same-byte provider replacement during preflight", async () => {
@@ -186,4 +206,14 @@ test("wizard approval rejects changed manifest or deployment receipt before inse
   });
   assert.equal(result.readbackStatus, "verified");
   assert.deepEqual(steps, ["endpoints", "genesis", "provider", "deployment-journal", "submit", "stop"]);
+});
+
+test("direct key-insertion CLI refuses an unapproved plan before submission", () => {
+  const result = spawnSync(process.execPath,
+    [fileURLToPath(new URL("./local-ledger-insert-verifier-key.mjs", import.meta.url)),
+      join(root, "missing-plan.json")],
+    { encoding: "utf8" });
+  assert.equal(result.status, 2, result.stderr);
+  assert.match(result.stderr, /Direct verifier-key insertion is disabled/u);
+  assert.equal(result.stdout, "");
 });

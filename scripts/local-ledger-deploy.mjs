@@ -2,7 +2,7 @@
 
 import { createHash } from "node:crypto";
 import { lstat, readFile } from "node:fs/promises";
-import { isAbsolute, resolve } from "node:path";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
@@ -18,41 +18,9 @@ import {
 import { checkLocalLedgerPreflight } from "./local-ledger-preflight.mjs";
 import { loadRecheckedApprovedProvider, readApprovedProviderIdentity } from "./approved-provider-identity.mjs";
 import { assertApprovedProviderImportBoundary, assertApprovedProviderTree } from "./immutable-provider-tree.mjs";
+import { validateLocalDeploymentPlan } from "./local-deployment-plan-policy.mjs";
 
-const SHA256 = /^[0-9a-f]{64}$/u;
-const REVISION = /^[0-9a-f]{40}$/u;
-const HASH = /^0x[0-9a-f]{64}$/u;
-const PLAN_FIELDS = ["format", "journalPath", "network", "providerModulePath",
-  "providerModuleSha256", "releaseManifestPath", "sourceRevision"];
-const STAGED_PLAN_FIELDS = [...PLAN_FIELDS, "initialVerifierKeyName"];
-const NETWORK_FIELDS = ["allowedHosts", "expectedGenesisHash", "indexerHttpUrl",
-  "indexerWsUrl", "networkId", "rpcUrl"];
-
-const exactFields = (value, fields) => value !== null && typeof value === "object"
-  && !Array.isArray(value) && Object.keys(value).sort().join("\0") === [...fields].sort().join("\0");
-
-export function validateLocalDeploymentPlan(plan) {
-  const full = exactFields(plan, PLAN_FIELDS) && plan.format === "tr-local-deployment-plan-v1";
-  const staged = exactFields(plan, STAGED_PLAN_FIELDS)
-    && plan.format === "tr-local-staged-deployment-plan-v1"
-    && typeof plan.initialVerifierKeyName === "string"
-    && /^[A-Za-z][A-Za-z0-9_]{0,127}$/u.test(plan.initialVerifierKeyName);
-  if ((!full && !staged)
-    || !REVISION.test(plan.sourceRevision) || !SHA256.test(plan.providerModuleSha256)
-    || !exactFields(plan.network, NETWORK_FIELDS)
-    || plan.network.networkId !== getLocalNetworkProfile().networkId
-    || !HASH.test(plan.network.expectedGenesisHash)
-    || /^0x0{64}$/u.test(plan.network.expectedGenesisHash)
-    || !["rpcUrl", "indexerHttpUrl", "indexerWsUrl"].every(
-      (field) => typeof plan.network[field] === "string" && plan.network[field].length > 0)
-    || !Array.isArray(plan.network.allowedHosts) || plan.network.allowedHosts.length === 0
-    || plan.network.allowedHosts.some((host) => typeof host !== "string" || host.length === 0)
-    || !["journalPath", "providerModulePath", "releaseManifestPath"].every(
-      (field) => typeof plan[field] === "string" && isAbsolute(plan[field]))) {
-    throw new Error("Local deployment requires an exact source, genesis, endpoint, and provider approval plan");
-  }
-  return plan;
-}
+export { validateLocalDeploymentPlan };
 
 async function regularFile(path) {
   const stat = await lstat(path);
@@ -77,8 +45,8 @@ async function loadApprovedMaterial(plan, dependencies, approval, factoryName) {
   }
   const providerIdentity = await readApprovedProviderIdentity(plan.providerModulePath, plan.providerModuleSha256);
   if (dependencies.loadProvider === undefined) {
-    assertApprovedProviderTree(plan.providerModulePath, process.env.TR_IMMUTABLE_PROVIDER_ROOT);
-    assertApprovedProviderImportBoundary(process.env.TR_IMMUTABLE_PROVIDER_ROOT);
+    const tree = assertApprovedProviderTree(plan.providerModulePath, process.env.TR_IMMUTABLE_PROVIDER_ROOT);
+    assertApprovedProviderImportBoundary(tree.root);
   }
   setNetworkId(getLocalNetworkProfile().networkId);
   await (dependencies.validateEndpoints ?? createLocalNetworkDeploymentActionReader)(plan.network);
@@ -92,10 +60,12 @@ async function loadApprovedMaterial(plan, dependencies, approval, factoryName) {
   });
   const module = await loadRecheckedApprovedProvider(plan.providerModulePath,
     plan.providerModuleSha256, providerIdentity, dependencies.loadProvider);
-  if (typeof module[factoryName] !== "function") {
+  const factory = module !== null && typeof module === "object" && Object.hasOwn(module, factoryName)
+    ? /** @type {Record<string, unknown>} */ (module)[factoryName] : undefined;
+  if (typeof factory !== "function") {
     throw new Error(`Approved provider module must export ${factoryName}`);
   }
-  const material = await module[factoryName]({
+  const material = await factory({
     network: plan.network, releaseManifest: manifest,
   });
   return { manifest, material };
@@ -211,15 +181,6 @@ export async function reconcileLocalDeployment(plan, dependencies = {}, approval
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (process.argv.length !== 3) {
-    throw new Error("Usage: node scripts/local-ledger-deploy.mjs <approved-plan.json>");
-  }
-  try {
-    const plan = JSON.parse((await regularFile(resolve(process.argv[2]))).toString("utf8"));
-    console.log(JSON.stringify(await runLocalDeployment(plan)));
-  } catch {
-    // SDK errors can contain wallet internals. Preserve the journal and avoid printing a private cause.
-    console.error("Local deployment failed or has unknown outcome; inspect the private journal and finalized chain before retrying");
-    process.exitCode = 1;
-  }
+  console.error("Direct deployment is disabled: use standalone-setup-wizard.mjs deploy with signed setup approvals");
+  process.exitCode = 2;
 }

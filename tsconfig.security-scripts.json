@@ -18,12 +18,18 @@
     "scripts/build-standalone-install.mjs",
     "scripts/check-helm-image-mapping.mjs",
     "scripts/check-standalone-restart.mjs",
+    "scripts/check-published-package-integrity.mjs",
+    "scripts/check-local-issuer-writer-approval.mjs",
+    "scripts/check-standalone-acceptance-evidence.mjs",
+    "scripts/immutable-provider-tree.mjs",
     "scripts/local-ledger-deploy.mjs",
     "scripts/local-ledger-insert-verifier-key.mjs",
     "scripts/stage-provider-runtime.mjs",
     "scripts/provider-runtime-content.mjs",
+    "scripts/prepare-local-issuer-writer-review.mjs",
     "scripts/verify-installed-provider-runtime.mjs",
     "scripts/standalone-setup-wizard.mjs",
+    "scripts/standalone-acceptance-decision-policy.mjs",
     "scripts/static-runtime-archive.mjs",
     "scripts/verify-helm-mapping-signature.mjs"
   ]

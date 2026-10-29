@@ -155,6 +155,21 @@ export class FileApplicationAdmissionStore implements PendingApplicationRegistra
     return record === undefined ? null : structuredClone({ evidence: record.evidence, receipt: record.receipt });
   }
 
+  async readCapturedAdmission(applicationId: string): Promise<{
+    pending: PendingApplicationRecord | null;
+    accepted: AcceptedApplicationEvidence | null;
+  }> {
+    const state = await this.readState();
+    const pending = state.applications.find(
+      (entry) => entry.binding.applicationId === applicationId && entry.status === "pending",
+    );
+    const accepted = state.accepted.find((entry) => entry.applicationId === applicationId);
+    return {
+      pending: pending === undefined ? null : structuredClone(pending),
+      accepted: accepted === undefined ? null : structuredClone({ evidence: accepted.evidence, receipt: accepted.receipt }),
+    };
+  }
+
   async acceptEvidence(
     applicationId: string,
     submittedEvidence: ApplicationEvidenceSubmission,

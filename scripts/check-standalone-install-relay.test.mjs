@@ -16,7 +16,8 @@ const targets = { node: "9944/tcp", indexer: "8088/tcp", "proof-server": "6300/t
 const ports = { node: "29944", indexer: "28088", "proof-server": "26300" };
 const relayTargets = { node: "30944/tcp", indexer: "38088/tcp", "proof-server": "36300/tcp" };
 const relayPorts = { node: "60944", indexer: "60888", "proof-server": "60630" };
-const bundle = { installRelay: { path: "/private/bundle/install-relay.py", sha256: "b".repeat(64) },
+const bundle = { installRelay: { path: "/private/bundle/install-relay.mjs", sha256: "b".repeat(64),
+  imageRole: "node", image: { role: "node", reference, acceptedIds: [digest] } },
   images: [{ role: "node", reference, acceptedIds: [digest] }] };
 const network = { Name: config.network, Id: "ledger-id", Internal: true,
   Driver: "bridge", EnableIPv6: false,
@@ -42,13 +43,13 @@ const bindings = Object.fromEntries(services.map((service) => [relayTargets[serv
   [{ HostIp: "127.0.0.1", HostPort: relayPorts[service] }]]));
 const relay = {
   Id: "relay-id", Name: `/${config.project}-install-relay`, Image: digest,
-  Config: { Image: reference, Entrypoint: ["/usr/bin/python3"], Cmd: ["/relay.py"],
+  Config: { Image: reference, Entrypoint: ["node"], Cmd: ["/relay.mjs"],
     Labels: {}, Env: [], User: "root" },
   State: { Running: true }, HostConfig: { PortBindings: bindings },
   NetworkSettings: { Networks: { bridge: { NetworkID: "bridge-id" },
     [config.network]: { NetworkID: "ledger-id" } }, Ports: structuredClone(bindings) },
   Mounts: [{ Type: "bind", Source: bundle.installRelay.path,
-    Destination: "/relay.py", RW: false }],
+    Destination: "/relay.mjs", RW: false }],
 };
 const baseImage = { Id: digest, Config: { Env: [], User: "root" } };
 const checkStandaloneInstallRelay = (network, ledgerContainers, candidate, config, verified) =>
@@ -63,13 +64,36 @@ test("verified relay grants installation-only loopback access to the unpublished
   assert.equal(observed.topology.hostPortAccess, "unpublished-install-access-required");
 });
 
+test("API-hosted relay requires the verified API image and disabled API healthcheck", () => {
+  const apiReference = `tr-standalone/api:sha-${"f".repeat(40)}`;
+  const apiBundle = structuredClone(bundle);
+  apiBundle.installRelay.imageRole = "api";
+  apiBundle.installRelay.image = { role: "api", reference: apiReference, acceptedIds: [digest] };
+  const apiRelay = structuredClone(relay);
+  apiRelay.Config.Image = apiReference;
+  apiRelay.Config.Healthcheck = { Test: ["NONE"], Interval: 30_000_000_000 };
+  const apiBaseImage = structuredClone(baseImage);
+  apiBaseImage.Config.Healthcheck = { Test: ["CMD", "node", "/health.js"],
+    Interval: 30_000_000_000 };
+  assert.doesNotThrow(() => checkRelay(network, containers, apiRelay, config,
+    apiBundle, undefined, apiBaseImage));
+  const enabledHealthcheck = structuredClone(apiRelay);
+  enabledHealthcheck.Config.Healthcheck.Test = apiBaseImage.Config.Healthcheck.Test;
+  assert.throws(() => checkRelay(network, containers, enabledHealthcheck, config,
+    apiBundle, undefined, apiBaseImage), /identity or entrypoint/u);
+  const changedImage = structuredClone(apiRelay);
+  changedImage.Config.Image = reference;
+  assert.throws(() => checkRelay(network, containers, changedImage, config,
+    apiBundle, undefined, apiBaseImage), /identity or entrypoint/u);
+});
+
 test("relay identity, mount, network, and effective ports fail closed", () => {
   const changedImage = structuredClone(relay);
   changedImage.Config.Image = "midnightntwrk/node:latest";
   assert.throws(() => checkStandaloneInstallRelay(network, containers, changedImage, config, bundle),
     /identity or entrypoint/u);
   const injectedEnvironment = structuredClone(relay);
-  injectedEnvironment.Config.Env = ["PYTHONPATH=/tmp/override"];
+  injectedEnvironment.Config.Env = ["NODE_OPTIONS=--import=/tmp/override.mjs"];
   assert.throws(() => checkStandaloneInstallRelay(network, containers, injectedEnvironment,
     config, bundle), /identity or entrypoint/u);
   const inheritedHealthcheck = structuredClone(relay);
@@ -124,11 +148,11 @@ test("relay identity, mount, network, and effective ports fail closed", () => {
 test("live relay observation hashes both host and running mount bytes", async () => {
   const root = await mkdtemp(join(tmpdir(), "tr-relay-check-"));
   try {
-    const path = join(root, "install-relay.py");
+    const path = join(root, "install-relay.mjs");
     const bytes = Buffer.from("# pinned relay\n");
     const sha256 = createHash("sha256").update(bytes).digest("hex");
     await writeFile(path, bytes);
-    const installed = { ...bundle, installRelay: { path, sha256 } };
+    const installed = { ...bundle, installRelay: { ...bundle.installRelay, path, sha256 } };
     const running = structuredClone(relay);
     running.Mounts[0].Source = path;
     const docker = async (args) => {
@@ -136,7 +160,7 @@ test("live relay observation hashes both host and running mount bytes", async ()
       if (args[0] === "network") return JSON.stringify([network]);
       if (args[0] === "image") return JSON.stringify([baseImage]);
       if (args[0] === "exec") {
-        assert.deepEqual(args.slice(0, 5), ["exec", "relay-id", "/usr/bin/python3", "-I", "-c"]);
+        assert.deepEqual(args.slice(0, 4), ["exec", "relay-id", "node", "-e"]);
         return `${sha256}\n`;
       }
       if (args[0] === "inspect" && args[1] === "--type") return JSON.stringify([running]);
@@ -151,6 +175,42 @@ test("live relay observation hashes both host and running mount bytes", async ()
     await writeFile(path, "changed\n");
     await assert.rejects(observeStandaloneInstallRelay(config, installed, undefined, { docker }),
       /script changed after bundle verification/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("live API relay observation inspects the verified API image tag", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-api-relay-check-"));
+  try {
+    const path = join(root, "install-relay.mjs");
+    const bytes = Buffer.from("# pinned API relay\n");
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    await writeFile(path, bytes);
+    const apiReference = `tr-standalone/api:sha-${"f".repeat(40)}`;
+    const installed = { ...bundle, installRelay: { path, sha256, imageRole: "api",
+      image: { role: "api", reference: apiReference, acceptedIds: [digest] } } };
+    const running = structuredClone(relay);
+    running.Config.Image = apiReference;
+    running.Config.Healthcheck = { Test: ["NONE"], Interval: 30_000_000_000 };
+    running.Mounts[0].Source = path;
+    const apiBaseImage = structuredClone(baseImage);
+    apiBaseImage.Config.Healthcheck = { Test: ["CMD", "node", "/health.js"],
+      Interval: 30_000_000_000 };
+    const docker = async (args) => {
+      if (args[0] === "ps") return "node-id\nindexer-id\nproof-server-id\n";
+      if (args[0] === "network") return JSON.stringify([network]);
+      if (args[0] === "image") {
+        assert.equal(args[2], apiReference);
+        return JSON.stringify([apiBaseImage]);
+      }
+      if (args[0] === "exec") return `${sha256}\n`;
+      if (args[0] === "inspect" && args[1] === "--type") return JSON.stringify([running]);
+      if (args[0] === "inspect") return JSON.stringify(containers);
+      throw new Error("Unexpected Docker call");
+    };
+    assert.equal((await observeStandaloneInstallRelay(config, installed, undefined, { docker })).relayId,
+      "relay-id");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

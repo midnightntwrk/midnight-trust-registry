@@ -2,7 +2,7 @@
 
 import { createHash } from "node:crypto";
 import { lstat, readFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
@@ -13,47 +13,14 @@ import {
   getLocalNetworkProfile,
   reconcileLocalVerifierKeyInsertion,
   submitLocalVerifierKeyInsertion,
-  VerifierKeyInsertionOutcomeUnknownError,
 } from "@midnight-ntwrk/trust-registry-integration";
 
 import { checkLocalLedgerPreflight } from "./local-ledger-preflight.mjs";
 import { loadRecheckedApprovedProvider, readApprovedProviderIdentity } from "./approved-provider-identity.mjs";
 import { assertApprovedProviderImportBoundary, assertApprovedProviderTree } from "./immutable-provider-tree.mjs";
-import { validateLocalDeploymentPlan } from "./local-ledger-deploy.mjs";
+import { validateLocalVerifierKeyInsertionPlan } from "./local-verifier-key-insertion-plan-policy.mjs";
 
-const SHA256 = /^[0-9a-f]{64}$/u;
-const FIELDS = ["circuitName", "deploymentJournalPath", "format", "initialVerifierKeyName",
-  "journalPath", "network", "providerModulePath", "providerModuleSha256",
-  "releaseManifestPath", "sourceRevision"];
-const exactFields = (value, fields) => value !== null && typeof value === "object"
-  && !Array.isArray(value) && Object.keys(value).sort().join("\0") === [...fields].sort().join("\0");
-
-export function validateLocalVerifierKeyInsertionPlan(plan) {
-  if (!exactFields(plan, FIELDS)
-    || plan.format !== "tr-local-verifier-key-insertion-plan-v1"
-    || !SHA256.test(plan.providerModuleSha256)
-    || !["circuitName", "initialVerifierKeyName"].every((field) =>
-      typeof plan[field] === "string" && /^[A-Za-z][A-Za-z0-9_]{0,127}$/u.test(plan[field]))
-    || !["deploymentJournalPath", "journalPath", "providerModulePath", "releaseManifestPath"]
-      .every((field) => typeof plan[field] === "string" && isAbsolute(plan[field]))) {
-    throw new Error("Verifier-key insertion requires an exact local approval plan");
-  }
-  validateLocalDeploymentPlan({
-    format: "tr-local-deployment-plan-v1",
-    sourceRevision: plan.sourceRevision,
-    network: plan.network,
-    providerModulePath: plan.providerModulePath,
-    providerModuleSha256: plan.providerModuleSha256,
-    releaseManifestPath: plan.releaseManifestPath,
-    journalPath: plan.journalPath,
-  });
-  const expectedJournalPath = join(dirname(resolve(plan.deploymentJournalPath)),
-    `verifier-${plan.circuitName}.json`);
-  if (resolve(plan.journalPath) !== expectedJournalPath) {
-    throw new Error("Verifier-key insertion requires the fixed per-circuit journal path");
-  }
-  return plan;
-}
+export { validateLocalVerifierKeyInsertionPlan };
 
 async function regularFile(path) {
   const stat = await lstat(path);
@@ -78,8 +45,8 @@ export async function runLocalVerifierKeyInsertion(plan, dependencies = {}, mode
   }
   const providerIdentity = await readApprovedProviderIdentity(plan.providerModulePath, plan.providerModuleSha256);
   if (dependencies.loadProvider === undefined) {
-    assertApprovedProviderTree(plan.providerModulePath, process.env.TR_IMMUTABLE_PROVIDER_ROOT);
-    assertApprovedProviderImportBoundary(process.env.TR_IMMUTABLE_PROVIDER_ROOT);
+    const tree = assertApprovedProviderTree(plan.providerModulePath, process.env.TR_IMMUTABLE_PROVIDER_ROOT);
+    assertApprovedProviderImportBoundary(tree.root);
   }
   setNetworkId(getLocalNetworkProfile().networkId);
   await (dependencies.validateEndpoints ?? createLocalNetworkDeploymentActionReader)(plan.network);
@@ -93,10 +60,13 @@ export async function runLocalVerifierKeyInsertion(plan, dependencies = {}, mode
   });
   const module = await loadRecheckedApprovedProvider(plan.providerModulePath,
     plan.providerModuleSha256, providerIdentity, dependencies.loadProvider);
-  if (typeof module.createLocalDeploymentMaterial !== "function") {
+  const factory = module !== null && typeof module === "object"
+    && Object.hasOwn(module, "createLocalDeploymentMaterial")
+    ? /** @type {Record<string, unknown>} */ (module).createLocalDeploymentMaterial : undefined;
+  if (typeof factory !== "function") {
     throw new Error("Approved provider module must export createLocalDeploymentMaterial");
   }
-  const material = await module.createLocalDeploymentMaterial({
+  const material = await factory({
     network: plan.network, releaseManifest: manifest,
   });
   try {
@@ -160,23 +130,6 @@ export async function runLocalVerifierKeyInsertion(plan, dependencies = {}, mode
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (process.argv.length < 3 || process.argv.length > 4
-    || (process.argv[3] !== undefined && process.argv[3] !== "--reconcile")) {
-    throw new Error("Usage: node scripts/local-ledger-insert-verifier-key.mjs <approved-plan.json> [--reconcile]");
-  }
-  try {
-    const plan = JSON.parse((await regularFile(resolve(process.argv[2]))).toString("utf8"));
-    const result = await runLocalVerifierKeyInsertion(
-      plan, {}, process.argv[3] === "--reconcile" ? "reconcile" : "submit",
-    );
-    console.log(JSON.stringify(result));
-    const status = result.readbackStatus ?? result.readback?.status;
-    if (status !== "verified") process.exitCode = 2;
-  } catch (error) {
-    if (error instanceof VerifierKeyInsertionOutcomeUnknownError && error.receipt) {
-      console.log(JSON.stringify({ kind: "local-verifier-key-insertion-error", receipt: error.receipt }));
-    }
-    console.error("Verifier-key insertion is incomplete or ambiguous; preserve journals and inspect finalized state");
-    process.exitCode = 1;
-  }
+  console.error("Direct verifier-key insertion is disabled: use standalone-setup-wizard.mjs insert-key or reconcile-key with signed setup approvals");
+  process.exitCode = 2;
 }

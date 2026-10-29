@@ -360,7 +360,7 @@ partial directory is retained for inspection; use a new signed source commit
 or a separately reviewed recovery procedure rather than silently replacing
 candidate bytes.
 
-Run `node scripts/check-standalone-install.mjs <bundle-directory>` before
+Run `node scripts/check-standalone-install.mjs <bundle-directory> <selected-source-sha>` before
 disconnecting and after transfer. It verifies the package manifest against
 the packed contract and each package's required entrypoint files, including
 the manifest's Compact-source and generated
@@ -396,8 +396,10 @@ It rechecks the bundle, snapshots and hashes each archive in a private
 temporary directory, loads those snapshots without pulling, verifies each Docker
 image ID against the archived config bytes, and creates source-SHA-scoped
 local tags. Reject a tag already bound to different bytes. Set
-`TR_NODE_IMAGE`, `TR_INDEXER_IMAGE`, and `TR_PROOF_SERVER_IMAGE` to the returned
-tags. Then use **both verified bundle copies**, not mutable checkout files,
+`TR_NODE_IMAGE`, `TR_INDEXER_IMAGE`, `TR_PROOF_SERVER_IMAGE`, and `TR_API_IMAGE`
+to the returned tags. The API tag also hosts the installation-only relay;
+its normal API healthcheck is disabled only for that relay container. Then use
+**both verified bundle copies**, not mutable checkout files,
 with `docker compose -f <verified-bundle>/compose.yml -f
 <verified-bundle>/compose.offline.yml up --pull never -d --wait`; the overlay
 sets `pull_policy: never` for every image. Do this
@@ -565,7 +567,10 @@ endpoints. The caller-supplied Midnight.js wallet, proving, and submission
 providers are opaque to these helpers and **are not covered by that
 allowlist**. Pin their endpoint configuration separately and enforce egress
 denial for the complete process and container network; syntax checks on local
-aliases do not prove where DNS resolves them. The indexer client's own redirect
+aliases do not prove where DNS resolves them. Approved single-label aliases
+are sent to the client as rooted names (`node.` rather than `node`) to prevent
+search-domain expansion. This does not authenticate their DNS answers. The
+indexer client's own redirect
 handling is also outside the allowlist check, so egress denial is required
 even for configured readback URLs. Use single-label aliases only on the
 isolated container network. The public adapter still rejects `undeployed`;
@@ -600,11 +605,14 @@ policy. Do not use that smoke result to close the RC maintenance gate. The
 final threshold, three distinct public keys, custody assignments, and human
 approval remain required before a release-qualified transition.
 
-### Local deployment operator CLI
+### Local deployment material (wizard only)
 
-`node scripts/local-ledger-deploy.mjs <approved-plan.json>` is a guarded entry
-point for a **real** local-ledger submission. Build the integration package and
-verify the installed release artifact first. The plan is a private, absolute
+The standalone wizard is the supported entry point for a **real** local-ledger
+submission. The lower-level deployment and verifier-key scripts can be imported
+by the wizard, but direct CLI invocation is disabled because a standalone JSON
+plan does not prove the wizard's signed genesis and committee approvals. Build
+the integration package and verify the installed release artifact first. The
+plan is a private, absolute
 path JSON file with exactly these fields (replace every placeholder):
 
 ```json
@@ -655,7 +663,8 @@ provider loader:
 ```sh
 export TR_IMMUTABLE_PROVIDER_ROOT=/absolute/root-owned/trust-registry-install
 export NODE_OPTIONS="--import=$TR_IMMUTABLE_PROVIDER_ROOT/scripts/approved-provider-preload.mjs"
-node "$TR_IMMUTABLE_PROVIDER_ROOT/scripts/local-ledger-deploy.mjs" /absolute/private/approved-plan.json
+node "$TR_IMMUTABLE_PROVIDER_ROOT/scripts/standalone-setup-wizard.mjs" deploy \
+  /absolute/private/setup-directory /absolute/private/approved-plan.json
 ```
 
 The preloader rejects file imports outside the tree and non-file imports other
@@ -756,8 +765,8 @@ first. The development-only public genesis wallet and 1-of-3 committee remain
 unsuitable for release approval.
 
 For a staged deployment with a finalized receipt, insert one remaining key at
-a time with `node scripts/local-ledger-insert-verifier-key.mjs
-<approved-insertion-plan.json>`. Each key uses the fixed private journal path
+a time through `node scripts/standalone-setup-wizard.mjs insert-key
+<private-setup-dir> <approved-insertion-plan.json>`. Each key uses the fixed private journal path
 `verifier-<circuitName>.json` beside the deployment journal; never reuse or
 rename a prior insertion journal. The circuit must be the next absent name in
 sorted release-catalog order. The helper prepares the compiled circuit and
@@ -781,7 +790,7 @@ insertion plan contains:
 }
 ```
 
-The CLI checks the original staged deployment approval and receipt, the local
+The wizard-controlled helper checks the original staged deployment approval and receipt, the local
 genesis, the entire installed key catalog, and the finalized pre-insertion
 image. It rejects changed or unexpected operations and changed bootstrap
 authority, then durably reserves this circuit's attempt before calling the
@@ -789,8 +798,9 @@ Midnight SDK. It stores the public finalized transaction receipt and reads the
 post-insertion image. `verified` means this circuit and the previously
 installed subset match the pinned key hashes in the observed finalized image;
 it does **not** mean the full catalog, committee, or RC is qualified. If the
-readback lags, run the same plan with `--reconcile`, which never submits.
-The CLI exits nonzero for pending, absent, mismatched, or ambiguous outcomes,
+readback lags, use `standalone-setup-wizard.mjs reconcile-key` with the same
+setup directory and plan; that command never submits. The wizard exits nonzero
+for pending, absent, mismatched, or ambiguous outcomes,
 while still printing any public receipt it recovered.
 `observed-without-receipt` means a key appeared after an ambiguous submission;
 human transaction attribution and recovery approval are required. Do not
@@ -799,7 +809,7 @@ reconciled. `absent` only means a key is not yet visible after an attempt with
 no receipt; it does not prove the transaction was never submitted. A successful
 receipt with lagging readback remains `pending`. `failed-on-chain` retains the
 public transaction receipt and requires operator investigation; neither state
-authorizes deleting a journal or retrying automatically. The CLI's provider
+authorizes deleting a journal or retrying automatically. The provider
 module remains privileged and must be pinned,
 reviewed, and run with egress controls. A verified full-key image, approved
 committee transition, actor journeys, and independent security review are
@@ -936,6 +946,9 @@ same node's self-report. The reviewer must verify the
 chain-spec provenance and proposed pin before the separate `observe` command;
 the same relay identity and ports must be restored and reverified for that
 observation. A pre-existing proposal is not replaced automatically.
+Collect the candidate **before** attaching the relay: its direct-container
+topology check permits exactly the node, indexer, and proof server. An extra
+relay attachment is a stop condition, not a reason to bypass that check.
 
 After the untrusted proposal exists, run
 `pnpm prepare:standalone-genesis-review /absolute/private/setup-directory`.
@@ -1325,9 +1338,9 @@ deployment receipt and `staged-bootstrap-pending` finalized readback. It binds
 the insertion plan to the exact approved source, genesis, RPC and indexer
 endpoints, provider module hash, staged initial key, original deployment
 journal, and verified bundle manifest before making a separate one-attempt
-reservation. The insertion CLI rechecks the manifest bytes and compares the
+reservation. The imported insertion helper rechecks the manifest bytes and compares the
 journal's deployment receipt with the wizard's recorded receipt before any
-submission. The underlying insertion CLI still checks the live finalized
+submission. It also checks the live finalized
 image and per-circuit journal. A pending, failed, or ambiguous key blocks the
 next key; use `reconcile-key` with the **same plan** for read-only observation.
 Neither command deletes a reservation or authorizes a retry. The wizard reports
@@ -1400,7 +1413,7 @@ the 1-of-3 transition and release approvals remain separate, open gates.
 The dedicated internal Docker network used in development does not expose its
 configured loopback ports to the host on the tested Docker Desktop setup.
 For an **online installation or deployment window only**, run a temporary
-fixed-destination relay using the already pinned node image, then attach that
+fixed-destination relay using the already verified, loaded API image, then attach that
 one container to the selected internal ledger network. The relay has no configurable
 upstream destinations. Select three unused host loopback ports distinct from
 both Compose projects' published ports; the example below uses `40944` for
@@ -1409,21 +1422,24 @@ host ports in the operator's approved endpoint plan and separately pin the
 opaque wallet provider endpoints. Stop and remove
 the relay before the offline runtime test; the relay has a `bridge` attachment
 and is **not** evidence of egress denial.
-Use the absolute canonical `install-relay.py` path returned by the verified v6
+Use the absolute canonical `install-relay.mjs` path returned by the verified v6
 bundle for the read-only mount; a symlink or differently spelled source path
 fails the live relay gate.
+The relay uses the pinned API image's Node runtime and does not require Python
+in the API base image.
 
 ```sh
 export TR_STACK_NAME=tr-standalone-local-qualification
 export TR_RELAY_NAME="${TR_STACK_NAME}-install-relay"
 docker run -d --pull=never --name "$TR_RELAY_NAME" --network bridge \
+  --no-healthcheck \
   --publish 127.0.0.1:40944:30944 \
   --publish 127.0.0.1:48088:38088 \
   --publish 127.0.0.1:46300:36300 \
-  --mount type=bind,src="<verified-v6-bundle>/install-relay.py",dst=/relay.py,readonly \
-  --entrypoint /usr/bin/python3 \
-  midnightntwrk/midnight-node@sha256:c3e46f8beff308b352813cd8904f6480c331504e09060abd671b8a32e1255220 \
-  /relay.py
+  --mount type=bind,src="<verified-v6-bundle>/install-relay.mjs",dst=/relay.mjs,readonly \
+  --entrypoint node \
+  "$TR_API_IMAGE" \
+  /relay.mjs
 docker network connect "${TR_STACK_NAME}_ledger" "$TR_RELAY_NAME"
 # Perform approved installation/deployment checks, then remove the access path.
 docker stop "$TR_RELAY_NAME"
@@ -1729,7 +1745,8 @@ input, not proof of non-inclusion. If its action sequence appears invalidated,
 retain independently collected finality evidence in a private file. Use
 `draft-local-proposal-recovery-decision --finality-evidence ABSOLUTE_PATH
 --evidence-reference REF` with the same signed-plan, role, authorization ID,
-and journal arguments as `inspect` to produce canonical unsigned JSON. The
+and journal arguments as `inspect`, plus `--recovery-reviewer FINGERPRINT`
+for a reviewer distinct from the API-plan reviewer, to produce canonical unsigned JSON. The
 reviewer must inspect the candidate and evidence, then detached-sign the exact
 saved bytes. The signed decision names the reserved action sequence, kind,
 and payload hash so the reviewer can compare the intended action with the
@@ -1737,15 +1754,19 @@ private journal; the candidate digest also binds the full report. This is the
 `tr-local-proposal-recovery-decision-v2` draft format; earlier unsigned drafts
 must be regenerated and reviewed rather than reinterpreted as v2.
 `verify-local-proposal-recovery-decision` takes the same inputs
-plus `--recovery-decision` and `--recovery-signature` absolute paths. Its output
+plus `--recovery-decision` and `--recovery-signature` absolute paths and
+`--recovery-keyring` pointing to the separate reviewer's public-key directory.
+The verifier rejects the API-plan signer's fingerprint as recovery reviewer;
+a different keyring path with the same signer is insufficient. Its output
 explicitly reports `finalityAuthenticated: false`, `releaseQualified: false`,
 and `retryPermitted: false`. Neither command changes the journal or reopens
 proposal submissions. The draft timestamp is not the reviewer signing time.
 If the finalized checkpoint advances while the reviewer works, verification
 may reject the old candidate; do not weaken its exact-byte binding or treat
-the later read as non-inclusion proof. The recovery reviewer and plan reviewer
-are currently the same pinned key; #220 must settle separation of duties
-before any release path is enabled. Do not use a null indexer read, elapsed
+the later read as non-inclusion proof. This separates reviewer identities for
+the read-only draft and verification steps, but #220 still needs an independently
+authenticated finality policy, durable tombstone, and reviewed journal mutation.
+Do not use a null indexer read, elapsed
 time, or a new journal path as recovery authority. Issue #220 remains the stop
 gate until a
 reviewed finality policy, durable tombstone, and operator recovery path exist.

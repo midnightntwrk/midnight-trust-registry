@@ -1,7 +1,11 @@
+import { Buffer } from "node:buffer";
+
 import type { MidnightDIDResolverInterface } from "@midnight-ntwrk/midnight-did";
 
 import { createAttestedApplicationStatusSource } from "./application-status-attestation.js";
 import { ApplicationVpDependencyUnavailableError } from "./application-vp-verifier.js";
+
+const MAX_STATUS_RESPONSE_BYTES = 64 * 1024;
 
 const statusEndpoint = (value: string): URL => {
   const url = new URL(value);
@@ -41,13 +45,41 @@ export function createHttpApplicationStatusSource(input: {
         throw new ApplicationVpDependencyUnavailableError();
       }
       if (!response.ok) throw new Error(`Status attestation rejected (${response.status})`);
-      let body: string;
-      try {
-        body = await response.text();
-      } catch {
-        throw new ApplicationVpDependencyUnavailableError();
+      const contentLength = response.headers.get("content-length");
+      if (contentLength !== null && !/^(0|[1-9][0-9]*)$/u.test(contentLength)) {
+        void response.body?.cancel().catch(() => {});
+        throw new Error("Status attestation Content-Length is malformed");
       }
-      return JSON.parse(body) as unknown;
+      if (contentLength !== null && BigInt(contentLength) > BigInt(MAX_STATUS_RESPONSE_BYTES)) {
+        void response.body?.cancel().catch(() => {});
+        throw new Error("Status attestation response exceeds size limit");
+      }
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("Status attestation response is empty");
+      const chunks: Uint8Array[] = [];
+      let length = 0;
+      try {
+        while (true) {
+          let result: ReadableStreamReadResult<Uint8Array>;
+          try {
+            result = await reader.read();
+          } catch {
+            throw new ApplicationVpDependencyUnavailableError();
+          }
+          const { done, value } = result;
+          if (done) break;
+          length += value.byteLength;
+          if (length > MAX_STATUS_RESPONSE_BYTES) {
+            void reader.cancel().catch(() => {});
+            throw new Error("Status attestation response exceeds size limit");
+          }
+          chunks.push(value);
+        }
+      } finally {
+        reader.releaseLock();
+      }
+      return JSON.parse(new TextDecoder("utf-8", { fatal: true })
+        .decode(Buffer.concat(chunks))) as unknown;
     },
   });
 }

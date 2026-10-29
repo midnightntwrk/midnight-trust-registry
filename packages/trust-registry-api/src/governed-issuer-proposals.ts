@@ -15,6 +15,7 @@ import {
   type GovernedMembershipSigner,
 } from "./governed-membership-actions.js";
 import type { GovernedProposalObservation } from "./governed-proposal-observation.js";
+import { LocalIssuerProposalTermsSchema, type LocalIssuerProposalTerms } from "./local-issuer-proposal-terms.js";
 
 const Bytes32Schema = z.string().regex(/^0x[0-9a-f]{64}$/u);
 const ScalarSchema = z.string().regex(/^(0|[1-9][0-9]{0,78})$/u);
@@ -37,10 +38,12 @@ export const PreparedGovernedIssuerProposalSchema = z.strictObject({
 
 export const GovernedIssuerProposalPrepareRequestSchema = z.strictObject({
   evidence: ApplicationEvidenceSubmissionSchema,
+  terms: LocalIssuerProposalTermsSchema.optional(),
 });
 
 export const GovernedIssuerProposalSubmitRequestSchema = z.strictObject({
   evidence: ApplicationEvidenceSubmissionSchema,
+  terms: LocalIssuerProposalTermsSchema.optional(),
   prepared: PreparedGovernedIssuerProposalSchema,
   signers: GovernedMembershipSignersSchema,
   evidenceVerifierSignature: z.string().regex(/^0x[0-9a-f]+$/u),
@@ -65,13 +68,15 @@ export type GovernedIssuerProposalContext = {
 
 export type GovernedIssuerProposalPort = {
   /** Verify the signed application evidence against the active policy and current Compact context. */
-  prepare(authorizationId: string, evidence: ApplicationEvidenceSubmission): Promise<GovernedIssuerProposalContext>;
+  prepare(authorizationId: string, evidence: ApplicationEvidenceSubmission,
+    terms?: LocalIssuerProposalTerms): Promise<GovernedIssuerProposalContext>;
   /** Reject known-invalid submissions without broadcasting; required when a durable journal is configured. */
   preflightSubmission?(
     authorizationId: string, evidence: ApplicationEvidenceSubmission,
     signers: readonly GovernedMembershipSigner[],
     evidenceVerifierSignature: TrustRegistryJubjubSignature,
     context: GovernedIssuerProposalContext,
+    terms?: LocalIssuerProposalTerms,
   ): Promise<void>;
   /** Recheck evidence, quorum, policy, and sequence in Compact before accepting. */
   execute(
@@ -79,6 +84,7 @@ export type GovernedIssuerProposalPort = {
     evidence: ApplicationEvidenceSubmission,
     signers: readonly GovernedMembershipSigner[],
     evidenceVerifierSignature: TrustRegistryJubjubSignature,
+    terms?: LocalIssuerProposalTerms,
   ): Promise<GovernedMembershipActionReceipt>;
   /** Return only finalized, ledger-observed proposal evidence; null is not proof that submission failed. */
   resolve?(authorizationId: string): Promise<GovernedProposalObservation | null>;

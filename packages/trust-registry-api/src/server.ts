@@ -6,6 +6,7 @@ import { buildSnapshotSummary } from "@midnight-ntwrk/trust-registry-cli";
 import { DecisionEvidenceSchema, SignedPendingApplicationSchema } from "@midnight-ntwrk/trust-registry-domain";
 import { encodeCompactActionKind } from "@midnight-ntwrk/trust-registry-contract";
 import { EvidenceVerifierDidResolutionUnavailableError } from "@midnight-ntwrk/trust-registry-integration";
+import { LocalIssuerEvidenceTimeRejectedError } from "./local-issuer-proposal-port.js";
 
 import {
   TrustRegistryTrqpAdapter,
@@ -237,7 +238,7 @@ class HttpProblem extends Error {
 
 export type TrustRegistryApiServerOptions = {
   source: TrustRegistryApiStateSource;
-  /** Digest of the signed local plan bytes verified when this server started. */
+  /** The embedding host must verify the signed plan; this server checks only the supplied digest's shape. */
   localPlanSha256?: string;
   corsPolicy?: "public" | "none";
   clock?: () => string;
@@ -741,6 +742,10 @@ const mapGovernedMembershipError = (error: unknown, problemBaseUri: string): nev
 };
 
 const mapGovernedIssuerProposalError = (error: unknown, problemBaseUri: string): never => {
+  if (error instanceof LocalIssuerEvidenceTimeRejectedError) {
+    throw jsonProblem(problemBaseUri, "issuer-evidence-not-current", 409,
+      "issuer evidence not current");
+  }
   if (error instanceof GovernedIssuerProposalRejectedError) {
     const unknown = error.reason === "unknown-authorization";
     throw jsonProblem(problemBaseUri, unknown ? "authorization-not-found" : "governed-proposal-rejected",
@@ -829,6 +834,13 @@ export const createTrustRegistryApiServer = (
     || options.governedVerifierProposals !== undefined
     || options.governedAuditorProposals !== undefined
     || options.governedMaintainerProposals !== undefined;
+  const configuredGovernedProposalRoles = ([
+    ["issuer", options.governedIssuerProposals],
+    ["verifier", options.governedVerifierProposals],
+    ["auditor", options.governedAuditorProposals],
+    ["maintainer", options.governedMaintainerProposals],
+    ["recognition", options.governedRecognitionProposals],
+  ] as const).filter(([, port]) => port !== undefined).map(([role]) => role);
   if (options.source.mode === "local-ledger") {
     const sourceAddress = options.source.localProposalContractAddress;
     const approvedAddress = options.source.localDeploymentBinding?.contractAddress;
@@ -874,6 +886,11 @@ export const createTrustRegistryApiServer = (
       options.governedAuditorProposals, options.governedMaintainerProposals]
       .some((port) => port !== undefined && typeof port.preflightSubmission !== "function")) {
     throw new Error("Journaled membership proposals require side-effect-free submission preflight");
+  }
+  if (options.source.mode === "local-ledger"
+    && (hasMembershipProposalPort || options.governedRecognitionProposals !== undefined)
+    && options.localPlanSha256 === undefined) {
+    throw new Error("Local-ledger governed proposal ports require a caller-verified signed-plan digest");
   }
   const problemBaseUri = options.problemBaseUri ?? DEFAULT_PROBLEM_BASE;
   const requireCompleteHistoricalProjection = (): void => {
@@ -1159,6 +1176,7 @@ export const createTrustRegistryApiServer = (
           TrustRegistryApiHealthResponseSchema.parse({
             status: "ok",
             sourceMode: options.source.mode,
+            configuredGovernedProposalRoles,
             generatedAt: summary.generatedAt,
             registryId: summary.registryId,
             ...(options.localPlanSha256 === undefined ? {} : { localPlanSha256: options.localPlanSha256 }),
@@ -1566,10 +1584,14 @@ export const createTrustRegistryApiServer = (
         if (segments[5] === "prepare") {
           const body = await parseJsonBody(request,
             (value) => GovernedIssuerProposalPrepareRequestSchema.parse(value), problemBaseUri);
+          if (options.source.mode === "local-ledger" && body.terms === undefined) {
+            throw jsonProblem(problemBaseUri, "issuer-proposal-terms-required", 400,
+              "local issuer proposal terms required");
+          }
           await requireProposalAdmission("issuer", authorizationId, body.evidence);
           try {
             writeJson(response, 200, serializeGovernedIssuerProposal(
-              await port.prepare(authorizationId, body.evidence),
+              await port.prepare(authorizationId, body.evidence, body.terms),
             ));
             return;
           } catch (error) {
@@ -1578,11 +1600,15 @@ export const createTrustRegistryApiServer = (
         }
         const body = await parseJsonBody(request,
           (value) => GovernedIssuerProposalSubmitRequestSchema.parse(value), problemBaseUri);
+        if (options.source.mode === "local-ledger" && body.terms === undefined) {
+          throw jsonProblem(problemBaseUri, "issuer-proposal-terms-required", 400,
+            "local issuer proposal terms required");
+        }
         await requireProposalAdmission("issuer", authorizationId, body.evidence);
         let signerContext;
         let prepared;
         try {
-          signerContext = await port.prepare(authorizationId, body.evidence);
+          signerContext = await port.prepare(authorizationId, body.evidence, body.terms);
           prepared = serializeGovernedIssuerProposal(signerContext);
         } catch (error) {
           return mapGovernedIssuerProposalError(error, problemBaseUri);
@@ -1604,10 +1630,10 @@ export const createTrustRegistryApiServer = (
         try {
           await requireCurrentProposalQuorum(signerContext, signers);
           await port.preflightSubmission?.(authorizationId, body.evidence, signers,
-            evidenceVerifierSignature, signerContext);
+            evidenceVerifierSignature, signerContext, body.terms);
           const receipt = GovernedMembershipActionReceiptSchema.parse(
             await executeProposal("issuer", authorizationId, body.evidence.commitment, prepared,
-              () => port.execute(authorizationId, body.evidence, signers, evidenceVerifierSignature)),
+              () => port.execute(authorizationId, body.evidence, signers, evidenceVerifierSignature, body.terms)),
           );
           writeJson(response, 202, receipt);
           return;

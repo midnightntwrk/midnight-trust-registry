@@ -5,6 +5,9 @@ qualification run. Installation may use the network; the runtime may not.
 Preprod, Preview, Mainnet, Kubernetes, and Helm are not 0.1.0 local-RC gates.
 The detailed procedures and threat model are in
 [Standalone Offline Runtime Qualification](standalone-offline-runtime.md).
+The [security-scan disposition](security-scan-disposition.md) explains how to
+reproduce the older draft's scanner findings; only an exact-head full scan can
+clear that gate for a new candidate.
 
 **Current state:** the repository has simulator-backed actor journeys, API
 integration tests, pinned-install checks, and pre-deployment local-ledger
@@ -13,6 +16,19 @@ a deployed, finalized standalone contract. A passing `./run.sh --light`,
 `pnpm run integration`, or `pnpm run test:standalone-topology` is not that
 evidence. Do not promote draft PR #198 or label 0.1.0 release-ready on those
 results.
+
+The current signed local API CLI is read-only: it does not configure the
+production applicant/VP intake, accepted-application admission, governed
+proposal ports, or submitting provider. Governed proposal writes return 503.
+An opt-in issuer-port assembly exists for an embedding host, but it requires
+independently implemented live evidence, authenticated finality, and approved
+provider-code dependencies. It is not wired into this CLI; its unit and SDK
+tests do not count as the `A01` deployed actor case.
+`GET /health` reports `configuredGovernedProposalRoles: []` for this CLI; a
+healthy current-read response is not a write-capability or release verdict.
+The operator steps below are the **acceptance procedure**, not a claim that
+they can all run today. The implementation sequence is in
+[Standalone Governed Actor Path](../plans/standalone-governed-actor-path.md).
 
 ## What the operator needs
 
@@ -100,7 +116,10 @@ results.
    signed `tr-local-api-runtime-v3` plan must name the exported approval-chain
    path and SHA-256, as well as the approved genesis and deployed contract.
    The API rechecks the embedded detached signatures, signed hash links,
-   custody roster, and committee before serving. Use the same approved
+   custody roster, and committee before serving. It reconstructs the
+   maintenance action digest from the approved contract, committee, threshold,
+   and counter, and rejects a deployment transaction reused as the maintenance
+   receipt. These checks do not independently authenticate finality. Use the same approved
    governance reviewer fingerprint and private public-key keyring in the
    CLI invocation. The local-ledger CLI rejects v2 plans; they are not
    approval-chain evidence. Issue #234
@@ -136,6 +155,12 @@ results.
    gate; rebuild and review a source-matched bundle rather than reusing the
    old deployment evidence. Exit code 2 lists missing gates; exit code 0
    means only that wizard-recorded ledger prerequisites are present. It does
+   not authorize deployment. Use `nextSafeAction` for the first step in the
+   operator sequence; `blockedActions` names later steps to defer until that
+   first gate is resolved. For example, an older setup's source mismatch
+   takes precedence over genesis approval or deployment. Re-run the check
+   after each completed step rather than treating `nextActions` as a list of
+   commands that can all run immediately. It does
    not verify the complete
    verifier-key inventory, signed API plan, authenticated finality, egress
    denial, an actor action, or release readiness.
@@ -167,6 +192,11 @@ results.
    cases for wrong authority, stale plan, revoked/suspended authorization,
    substituted evidence, and unavailable local status. Browser/API success
    alone is not ledger success. The full actor path is tracked in issue #219.
+   Before soliciting signatures, capture the API health response from its
+   isolated container and run `check-standalone-actor-capability.mjs` as shown
+   in the [first-run guide](../../docs-site/guide/standalone.md#check-the-actor-port-before-preparing-signatures).
+   A missing issuer port or mismatched signed-plan digest is an early stop,
+   not a failed on-ledger action. A passing port check is not `A01` evidence.
 8. **Restart and restore.** Restart node, indexer, prover, API, and portals
    independently with egress still denied. Show the same deployment and
    historical ledger state at new finalized checkpoints. Restore a backup in
@@ -226,8 +256,9 @@ After deployment and the signed API plan exist, make a private directory and
 initialize an acceptance inventory with the **actual** source revision,
 install-inventory SHA-256, signed-plan SHA-256, reviewed genesis hash, and
 deployed contract address. The final two values must be lowercase `0x`-prefixed
-64-hex-character values. Do not use a node-reported genesis candidate or a
-simulator address as a substitute.
+64-hex-character values. All five identifiers must be nonzero; the initializer
+rejects all-zero placeholders but does not authenticate the supplied values.
+Do not use a node-reported genesis candidate or a simulator address as a substitute.
 
 ```sh
 mkdir -m 700 /absolute/private/acceptance
@@ -236,10 +267,10 @@ node scripts/check-standalone-acceptance-evidence.mjs init \
   "$SIGNED_PLAN_SHA256" "$GENESIS_HASH" "$CONTRACT_ADDRESS"
 ```
 
-For each case in `acceptance.json`, set `status` to `pass`, `fail`, or
-`not-run` **only after reviewing the underlying run**. Put its redacted raw
-command output/receipts under that private directory. Attach each file with
-the helper, which hashes it and updates the case inventory atomically while
+For each case in `acceptance.json`, record `pass`, `fail`, or `not-run`
+**only after reviewing the underlying run**. Put its redacted raw command
+output/receipts under that private directory. Attach each file with the
+helper, which hashes it and updates the case inventory atomically while
 leaving its status unchanged:
 
 ```sh
@@ -247,9 +278,43 @@ node scripts/check-standalone-acceptance-evidence.mjs attach \
   /absolute/private/acceptance "$SOURCE_SHA" L01 L01/deploy.log
 ```
 
+After inspecting the raw evidence, record an explicit operator decision.
+Use a stable reviewer identifier and a non-sensitive reason code; put detailed
+reasoning in a separately attached private file rather than command arguments:
+
+```sh
+node scripts/check-standalone-acceptance-evidence.mjs decide \
+  /absolute/private/acceptance "$SOURCE_SHA" L01 pass \
+  operator:alice finalized-readback-reviewed
+```
+
+`decide` requires attached raw evidence for `pass` or `fail`. It creates a
+mode-0600 decision record under `decisions/`, records the previous status and
+all attached evidence hashes, and adds its own hash to the same case under the
+inventory lock. A later change to `fail` or `not-run` creates another record;
+it does not overwrite the earlier decision. Decision history is limited to
+64 records per case, separate from the 32 raw files allowed per case, so a full raw
+evidence inventory cannot prevent an operator from revoking a verdict.
+These records are self-attested,
+not signatures or independent evidence verification. For `S01`, attach the
+non-author human's separately signed security verdict before recording `pass`.
+Never treat a CLI verdict as proof of its underlying receipt or finality.
+The inventory reports `completeInventory: true` only when every case's latest
+`pass` is backed by a private decision record covering the attached evidence.
+If new raw evidence is attached after a `pass`, the case becomes incomplete
+until the operator reviews it and records a new decision. Editing a status
+label in `acceptance.json` is not a substitute for `decide`; the checker
+rejects a label that contradicts the latest decision. These protections catch
+stale or accidental inventory edits, not a malicious operator who controls the
+private evidence directory.
+For an older inventory whose status was entered manually, review the raw
+evidence and run `decide` with the desired verdict; its first decision records
+the previous label and brings the case into the checked decision chain. Do
+not reset or rewrite retained evidence merely to satisfy the new check.
+
 Use a different relative file for each case. If `.acceptance.lock` exists,
 check whether an evidence writer is active before removing a stale lock; do
-not start a competing writer. A `pass` must have at least one file. Record the
+not start a competing writer. A `pass` must have at least one raw file. Record the
 command, UTC time, checkpoint, operator decision, and relevant transaction or
 journal identifier **in the retained file**; the checker does not infer these
 facts. Do not include seeds, private keys, or credentials. Keep each raw file
@@ -264,7 +329,8 @@ the checker rejects a bundle from a different commit instead of validating
 stale acceptance evidence. Exit 2 means at least one case is not `pass`; exit 1
 means the source differs or the inventory or a file is invalid, missing,
 symlinked, or hash-mismatched. Exit 0 means only
-that all case labels are `pass` and every listed file matches its digest. The
+that all cases have current `pass` decisions and every listed file matches
+its digest. The
 report **always** says `releaseQualified: false`: this command cannot verify
 receipt authenticity, ledger finality, the correctness of a human security
 verdict, or the truth of a `pass` label. A second operator must examine the

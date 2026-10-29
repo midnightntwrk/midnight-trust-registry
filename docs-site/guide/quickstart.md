@@ -2,6 +2,12 @@
 
 This is a **local reference journey**. Its operator workspace and Compact simulator do not constitute a live network deployment.
 
+For a self-hosted installation, start with the
+[standalone first-run guide](standalone.md) instead. Its ledger-bridge smoke is
+also not an end-to-end acceptance run: the deployed actor cases and their
+required evidence are listed in the
+[operator acceptance record](https://github.com/midnightntwrk/midnight-trust-registry/blob/milestone-0.1.0/docs/guide/standalone-local-journey.md#operator-acceptance-record).
+
 ## Prerequisites
 
 - Node.js 24 and pnpm 10.34.1 or later.
@@ -17,14 +23,22 @@ pnpm run demo:governed
 The governed demo exercises the local simulator, policy-bound maintainers, and authorization transitions. Its `proposalDenial` report shows that a pending duplicate scope is blocked, a one-signer archive fails, a 2-of-3 archive preserves the historical record without granting trust, and a fresh application ID may reuse the scope. Its issuer and verifier VC journeys build and check a decision-evidence claim at the demo HTTP API, independently check the `client-required` response at the consumer, obtain a governed VC authority proof, and install that proof in a compiled VC consumer. After suspension and revocation, fresh simulator ledger reads make the API return `503` rather than serve the old active claim; the consumer also refuses it. This is a cross-surface reference flow, **not** network finality or production key custody. The packaged API does not enable this optional route without an embedding host's finalized evidence source. The additional role-specific demos exercise signed membership journeys:
 
 ```bash
+pnpm run test:e2e:demo
+
+# Or run each role separately:
 pnpm run demo:signed-issuer
 pnpm run demo:signed-verifier
 pnpm run demo:signed-auditor
 pnpm run demo:signed-maintainer
 ```
 
-Quality CI runs the four journeys together with `pnpm run demo:membership:smoke`
-after the package build; it does not regenerate proving keys for this step.
+`test:e2e:demo` also starts the fixture API and both served UIs on ephemeral
+loopback ports. Quality CI runs the four journeys together with
+`pnpm run demo:membership:smoke` after the package build; that step does not
+regenerate proving keys. Neither command exercises a deployed local ledger.
+With Google Chrome installed, `pnpm run test:e2e:demo:browser` follows the
+demo checks with the applicant and admin Playwright journeys using the same
+built assets. It does not run `build:light` or qualify standalone deployment.
 
 Each signed journey starts a fresh private operator-workspace file and serves
 its API reads from that file. Governed Compact epoch publication persists the

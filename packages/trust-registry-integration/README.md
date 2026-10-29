@@ -74,7 +74,8 @@ Current coverage:
   challenge commitments with no raw credential, disables cache and redirects,
   and then applies the same governed-binding, DID assertion-key signature,
   challenge, active-status, and freshness checks. Network/5xx/429 failures are
-  retryable dependency outages; 4xx, malformed, and invalid signed answers
+  retryable dependency outages; response bodies over 64 KiB, 4xx, malformed,
+  and invalid signed answers
   never establish eligibility. The transport does not authenticate Midnight
   finality or provide an independent live status-registry proof.
 

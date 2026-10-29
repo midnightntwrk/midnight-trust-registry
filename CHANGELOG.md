@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- add an operator-only `decide` command for standalone acceptance cases. It
+  records each explicit verdict and referenced evidence hashes in a private
+  decision file instead of requiring manual manifest edits; it never verifies
+  receipt truth, reviewer identity, finality, or release readiness
+- require an injected trusted-time source for the opt-in local issuer proposal
+  port, pass its reading to live evidence verification, and reject expired or
+  not-yet-valid accepted evidence before provider use and again at the pinned
+  transport send boundary after journal reservation. The signed-plan CLI remains
+  read-only; this is not deployed actor evidence
 - add an experimental Node-only local issuer submitter that checks node and
   indexer genesis, binds the SDK provider pair, and owns a non-reconnecting
   Polkadot transport with bounded connection/submission attempts. Bound the

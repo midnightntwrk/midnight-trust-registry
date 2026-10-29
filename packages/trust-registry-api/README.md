@@ -423,11 +423,61 @@ with `{ "evidence": <signed application evidence> }`, followed by
 `POST /v1/governed/issuer/:id/proposal/submit` with the same evidence, the
 exact prepared response, external maintainer `signers`, and an
 `evidenceVerifierSignature`. It is available only when the embedding server
-injects `governedIssuerProposals`; the packaged CLI returns 503. The port
+injects `governedIssuerProposals`; the packaged CLI returns 503.
+In local-ledger mode, both prepare and submit additionally require the same
+`terms` object in `tr-local-issuer-proposal-terms-v1` format. It names the
+approved network, genesis, contract, application, authorization, evidence
+commitment, exact trust level, and complete status-policy binding. The port
+receives these terms again at prepare, preflight, and execution, and must
+bind them to the authenticated current policy and finalized Compact payload;
+the HTTP schema alone does not establish that binding. The packaged CLI still
+configures no governed issuer writer. The port
 must recheck the already verified, one-use-challenge evidence and current
 Compact context. Compact verifies the registered evidence-verifier key and
 maintainer quorum for the proposal digest. Raw VC/VP payloads are not accepted
 by this API, and a 202 is simulator acceptance, not network finality.
+`createBoundLocalIssuerProposalPort` is an opt-in assembly for an embedding
+host. It requires a captured pending/accepted application pair, an
+independently authenticated finalized ledger plus matching policy snapshot,
+live DID/VP/VC-status verification and an injected trusted-time source,
+immutable approved
+provider-code checks, and provider loading. The embedding host must verify a
+detached reviewer signature over a canonical `tr-local-issuer-writer-approval-v1`
+annex using `loadApprovedLocalIssuerWriterApproval`. The annex binds the exact
+signed API-plan SHA-256 and its verified reviewer fingerprint, source, install inventory, network, genesis, contract,
+provider root and content digest, API-owned submission journal path, and a
+validity window within the plan's. The host must initialize the journal at that
+path and provide the verified annex to the factory; constructing an unsigned
+object of the same shape is not an approval. The port rechecks the annex's
+validity during operations and immediately before broadcast. It compares the reviewed context
+before loading a provider, rejects evidence outside its signed validity
+window at each prepare/preflight/execute and again immediately before SDK
+broadcast, repeats the code check around loading, and uses
+the SDK's side-effect-free preflight before the API-owned journal reserves.
+The code check must return the installed-runtime verification report: its
+source revision and inventory digest must match the signed API plan, and its
+content digest must match the signed writer annex.
+Returning only success without this identity now rejects the submission.
+After reservation it rechecks and submits once without creating a second
+journal. A failure then remains quarantined for operator reconciliation; it
+is not permission to retry. The factory does not supply those trusted
+dependencies, finalized proposal resolution, or a production CLI writer.
+Injected-provider tests are not deployed standalone E2E evidence.
+For a future embedding host, `node scripts/prepare-local-issuer-writer-review.mjs`
+at repository root can draft the exact unsigned writer annex after verifying a
+signed v3 API plan and immutable installed provider against an **independently
+reviewed** content digest. It creates a mode-0600 file in an existing, owned
+mode-0700 directory and refuses to overwrite it. The output is not an
+approval; the plan reviewer must inspect the bytes and sign that exact file
+with their own key. The host must then use the detached-signature loader and
+initialize the approved journal path. This preparation command does not
+configure the packaged CLI writer or qualify a deployed actor journey.
+`node scripts/check-local-issuer-writer-approval.mjs` is a read-only post-signature
+preflight that checks the plan, annex, and installed provider together. Its
+success does not authenticate ledger finality or run an actor transaction.
+The final local clock check cannot prove that a transaction reaches a finalized
+block before evidence expiry; a deployment must enforce its approved
+transition-time policy using authenticated ledger evidence.
 An embedding host may also provide a ledger-backed `resolve` method for
 `POST /v1/governed/:role/:id/proposal/resolve` with the same accepted
 `{ "evidence": ... }`. The API returns `observed` with the proposal event

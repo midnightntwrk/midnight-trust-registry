@@ -15,6 +15,8 @@ on:
       - "run.sh"
       - ".compact-version"
       - "scripts/**"
+      - "browser-tests/**"
+      - "playwright.config.mjs"
       - "contracts/**"
       - "packages/**"
       - "adapters/**"
@@ -33,6 +35,8 @@ on:
       - "run.sh"
       - ".compact-version"
       - "scripts/**"
+      - "browser-tests/**"
+      - "playwright.config.mjs"
       - "contracts/**"
       - "packages/**"
       - "adapters/**"
@@ -133,3 +137,9 @@ jobs:
 
       - name: Smoke test signed membership journeys
         run: pnpm run demo:membership:smoke
+
+      - name: Install pinned Playwright Chromium for fixture browser journeys
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run fixture-backed browser journeys (not standalone qualification)
+        run: pnpm run test:e2e:demo:browser

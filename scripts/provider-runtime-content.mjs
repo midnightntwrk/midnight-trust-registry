@@ -4,6 +4,7 @@ import { join, relative, sep } from "node:path";
 
 const MAX_ENTRIES = 500_000;
 
+/** @param {string} path @param {import("node:fs").Stats} before */
 async function fileHash(path, before) {
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(path)) hash.update(chunk);
@@ -17,6 +18,7 @@ async function fileHash(path, before) {
 }
 
 /** Content-only digest survives a reviewed ownership/permission transfer. */
+/** @param {string} root */
 export async function providerRuntimeContent(root) {
   /** @type {(string | number)[][]} */
   const entries = [];

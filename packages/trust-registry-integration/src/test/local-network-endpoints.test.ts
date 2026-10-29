@@ -13,7 +13,16 @@ describe("isolated local service endpoints", () => {
     ["http://[::1]:9944", ["[::1]"], ["http:"]],
     ["http://[fd00::1]:9944", ["[fd00::1]"], ["http:"]],
   ])("accepts approved local endpoint %s", (url, allowedHosts, protocols) => {
-    expect(localNetworkEndpoint(url, allowedHosts, protocols)).toBe(new URL(url).toString());
+    const expected = new URL(url);
+    if (["node", "indexer"].includes(expected.hostname)) expected.hostname = `${expected.hostname}.`;
+    expect(localNetworkEndpoint(url, allowedHosts, protocols)).toBe(expected.toString());
+  });
+
+  it("roots an approved short service name before handing it to the network client", () => {
+    expect(localNetworkEndpoint("http://node:9944/rpc", ["node"], ["http:"]))
+      .toBe("http://node.:9944/rpc");
+    expect(localNetworkEndpoint("ws://indexer:8080/graphql/ws", ["indexer"], ["ws:"]))
+      .toBe("ws://indexer.:8080/graphql/ws");
   });
 
   it.each([

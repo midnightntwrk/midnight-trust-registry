@@ -157,6 +157,9 @@ marks it observed. Callers must preserve the journal and must not replace it
 to bypass this gate. An operator-only recovery path for a never-observed
 reservation is still missing; [#220](https://github.com/midnightntwrk/midnight-trust-registry/issues/220)
 blocks the local RC until it is designed, tested, and independently reviewed.
+If a later finalized read reveals the proposal after an earlier `not-observed`
+result, reconcile the same journal entry again; the earlier absence never
+authorizes a second submission or journal reset.
 A conflicting finalized observation also leaves the reservation blocked and
 must be handled by that recovery/security process, not by deleting the file.
 The journal now persists the validated prepared action sequence, kind, and

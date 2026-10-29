@@ -56,15 +56,16 @@ git verify-commit "$SOURCE_SHA"
 shasum -a 256 "$INSTALL/install-inventory.json"
 # Compare the signer fingerprint and inventory digest with independently
 # approved values before continuing. The checker alone cannot do that.
-node scripts/check-standalone-install.mjs "$INSTALL"
+node scripts/check-standalone-install.mjs "$INSTALL" "$SOURCE_SHA"
 node scripts/standalone-setup-wizard.mjs init "$SETUP" "$INSTALL"
 node scripts/standalone-setup-wizard.mjs prepare-stack "$SETUP" "$PROJECT" 39944 38088 36300
 node scripts/load-standalone-install-images.mjs "$INSTALL"
 
 # Copy the exact node, indexer, and proof-server tags returned by the loader.
-export TR_NODE_IMAGE=tr-standalone/node:sha-SOURCE_SHA
-export TR_INDEXER_IMAGE=tr-standalone/indexer:sha-SOURCE_SHA
-export TR_PROOF_SERVER_IMAGE=tr-standalone/proof-server:sha-SOURCE_SHA
+export TR_NODE_IMAGE="tr-standalone/node:sha-$SOURCE_SHA"
+export TR_INDEXER_IMAGE="tr-standalone/indexer:sha-$SOURCE_SHA"
+export TR_PROOF_SERVER_IMAGE="tr-standalone/proof-server:sha-$SOURCE_SHA"
+export TR_API_IMAGE="tr-standalone/api:sha-$SOURCE_SHA"
 docker compose --env-file "$SETUP/stack.env" -p "$PROJECT" \
   -f "$INSTALL/compose.yml" -f "$INSTALL/compose.offline.yml" config -q
 docker compose --env-file "$SETUP/stack.env" -p "$PROJECT" \
@@ -74,12 +75,50 @@ node scripts/standalone-setup-wizard.mjs collect-genesis-candidate "$SETUP"
 node scripts/standalone-setup-wizard.mjs status "$SETUP"
 ```
 
+Collect the candidate with **only** the node, indexer, and proof-server
+attached to the dedicated ledger bridge. If an installation-only relay was
+used for another check, stop and remove it first; the collector rejects an
+extra attachment. Reattach the verified relay only later for the optional
+`draft-genesis-pin` loopback RPC check, then remove it again before continuing
+offline observations. Never remove an unknown container without inspecting it.
+
 The candidate file is explicitly **untrusted**. Compare its hash to an
 independently reviewed chain specification. The human reviewer, not the
 installer or an AI agent, signs the exact genesis approval bytes with their
 own GPG key. A ticket ID is optional; the reviewed chain-spec digest is not.
+The `standalone` profile uses Midnight's local ledger network ID
+`undeployed`; that ID is not a Trust Registry deployment status and does
+not replace the per-installation genesis pin or finalized contract receipt.
 Likewise, governance must approve real maintenance public keys, threshold,
 and custody roles. A 1-of-3 development smoke roster is not release approval.
+
+### Review the node's genesis provenance
+
+The reviewer needs a source independent of the running node and its review
+packet. For the currently pinned Midnight node 1.0.400 image, start with the
+[official source release](https://github.com/midnightntwrk/midnight-node/releases/tag/node-1.0.400)
+and its configuration inputs. Authenticate the release commit and the pinned
+image digest through channels the operator controls, then compare the image's
+`dev` configuration and `undeployed` genesis input bytes with that source.
+The image's `GIT_CONTENT_HASH` identifies a source **tree**, not a commit;
+check the tree of the authenticated release commit rather than treating the
+environment variable as a signature. A matching Docker tag is not sufficient
+because tags can move; use the manifest digest from the verified install.
+The older 1.0.0 image is retained only in historical smoke evidence. It
+predates the ledger-8 security fix described in the 1.0.400 release notes
+and is not an acceptable new RC install pin.
+Even identical packaged `dev` genesis input files do not guarantee the same
+genesis hash across node binaries: the 1.0.400 upgrade changed the hash
+reported by a fresh local node. Never carry an older setup's pin or approval
+forward to a new node image.
+
+This comparison establishes which published inputs the image packaged, not
+the expected genesis hash. Independently derive or verify that hash from the
+reviewed chain specification, compare it with the proposed pin, and record
+the reviewed specification's immutable reference and digest before signing.
+Running a second command in the same node image or accepting the node's RPC
+report is not independent verification. If no independent derivation is
+available, leave the wizard unsigned and the deployment gate open.
 
 To prepare a private review packet, follow the
 [verified temporary relay procedure](https://github.com/midnightntwrk/midnight-trust-registry/blob/milestone-0.1.0/docs/guide/standalone-offline-runtime.md#first-run-setup-wizard-initial-slice),
@@ -126,6 +165,10 @@ node scripts/check-standalone-journey-prerequisites.mjs "$SETUP" "$SOURCE_SHA"
 ```
 
 The second command exits 2 until its recorded ledger prerequisites are met.
+Its `nextSafeAction` identifies the first operator step; `blockedActions`
+lists downstream steps to defer. In particular, do not attempt deployment
+while it reports a source mismatch or unsigned genesis approval. Re-run it
+after each gate rather than executing every listed action at once.
 Even exit 0 is not a full E2E pass: it does not verify the complete key
 inventory, authenticated finality, a signed API plan, actor actions, or
 host/browser egress denial. A setup created from an older source SHA cannot
@@ -191,7 +234,11 @@ names cases `L01`-`S01`: issuer/verifier/auditor grants, maintainer and
 recognition actions, DID and live VC-status checks, negative authorization
 cases, egress-denied actor work, restart and distinct-project restore, and
 independent human security review. Record each as `pass`, `fail`, or `not-run`
-with raw receipts. After deployment and the signed API plan exist, run the
+with raw receipts. A `pass` label alone does not complete the inventory: attach
+raw evidence, record a current operator decision with `decide`, and re-decide
+if later evidence is attached. The checker verifies the private file and
+decision hash chain, not receipt authenticity or the reviewer's authority.
+After deployment and the signed API plan exist, run the
 read-only API observation against the same setup, verified bundle, and exact
 signed source revision:
 
@@ -227,12 +274,17 @@ node scripts/check-standalone-acceptance-evidence.mjs init \
 # After saving a redacted raw receipt under $EVIDENCE_DIR/L01/deploy.log:
 node scripts/check-standalone-acceptance-evidence.mjs attach \
   "$EVIDENCE_DIR" "$SOURCE_SHA" L01 L01/deploy.log
+# Only after a human has reviewed the raw receipt:
+node scripts/check-standalone-acceptance-evidence.mjs decide \
+  "$EVIDENCE_DIR" "$SOURCE_SHA" L01 pass \
+  operator:alice finalized-readback-reviewed
 pnpm check:standalone-acceptance-evidence "$EVIDENCE_DIR" "$SOURCE_SHA"
 ```
 
 Attaching a file hashes it but deliberately leaves the case `not-run` until
-an operator assesses the receipt and changes its verdict. Preserve the raw
-file and do not reuse it for a different case.
+an operator assesses the receipt. `decide` then creates a private, hash-linked
+record of the explicit verdict; it does not authenticate the reviewer or the
+receipt. Preserve the raw file and do not reuse it for a different case.
 
 The checker exits 2 while cases are not marked `pass`, 1 for invalid or
 source-mismatched evidence, and 0 only for a complete hash-consistent
@@ -245,3 +297,35 @@ bundle, with a non-author human security verdict. The current read-only API
 profile cannot by itself complete the write-dependent actor cases. Keep the
 promotion PR draft until its local-only scope and all release gates are
 explicitly updated and independently reviewed.
+
+## Check the actor port before preparing signatures
+
+Once a signed-plan API is running, capture its health response **inside the
+dedicated API container** and compare it with the reviewed plan digest. This
+is an early stop check for case `A01`, not an end-to-end test. The packaged
+read-only CLI currently reports no governed proposal ports, so it is expected
+to exit 2 until a reviewed writer is installed. Do not try to work around a
+missing port with a simulator or mock provider.
+
+```sh
+umask 077
+API_CONTAINER=$(docker compose --env-file "$SETUP/stack.env" -p "$PROJECT" \
+  -f "$INSTALL/compose.yml" -f "$INSTALL/compose.offline.yml" \
+  -f "$INSTALL/compose.api.yml" ps -q api)
+test -n "$API_CONTAINER"
+docker exec "$API_CONTAINER" node -e \
+  'fetch("http://127.0.0.1:4400/health", {signal: AbortSignal.timeout(5000)})
+    .then(async (response) => { if (!response.ok) throw Error("API health failed");
+      process.stdout.write(await response.text()); })
+    .catch((error) => { console.error(error.message); process.exitCode = 1; })' \
+  > "$EVIDENCE_DIR/api-health.json"
+pnpm check:standalone-actor-capability \
+  "$EVIDENCE_DIR/api-health.json" "$SIGNED_PLAN_SHA256" issuer
+```
+
+Exit 0 means only that the issuer port is configured on an API reporting the
+reviewed plan and a nonzero finalized checkpoint. It does not verify the port's
+implementation, the saved health response's independent authenticity,
+live status authority, authenticated finality, transaction,
+or current authorization. Preserve the output as a pre-actor observation;
+`A01` remains `not-run` until the actual signed, finalized journey completes.

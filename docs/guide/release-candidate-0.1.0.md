@@ -72,6 +72,22 @@ generated file was built from the recorded
 source revision: run the full build and pack on the clean, signed candidate
 tree before producing the manifest. The manifest does not authenticate its own
 distribution channel or prove any test, review, or network claim.
+The protected publish job generates and verifies this manifest against the
+packed tarball set, runs a clean-consumer smoke, and rechecks each selected
+tarball's manifest-pinned size and SHA-256 immediately before its `npm publish`
+call. This catches accidental or intervening artifact mutation; it does not
+defend against a compromised publish runner changing files after that check.
+If a version already exists during a resumed publish job, the job compares
+the registry's SHA-512 integrity metadata with the exact manifest-checked
+tarball before skipping that immutable version. Missing, weak, or mismatched
+integrity stops the job; a non-404 lookup failure is not treated as permission
+to publish. A failed or empty package catalog also stops the job instead of
+silently succeeding without publishing anything. Offline shell tests cover
+these resume and failure paths without contacting a registry. A matching
+registry integrity value supports idempotent recovery
+from a partial publish, but it does not replace independent approval of the
+manifest or authenticate the registry itself.
+The release owner must still approve the reviewed manifest and channel.
 The private admin-console, applicant-portal, API, CLI, and integration
 tarballs are local-only artifacts, not a public npm support promise.
 

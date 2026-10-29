@@ -11,11 +11,12 @@ import yaml from "js-yaml";
 import { verifyReleaseCandidateArtifacts } from "./release-candidate-manifest.mjs";
 import { matchesApprovedRuntimeHealthcheck } from "./runtime-healthcheck.mjs";
 import { staticImageIdentityFromArchive, validateStaticImageManifest } from "./static-runtime-archive.mjs";
+import { STANDALONE_IMAGE_REFERENCE } from "./standalone-image-reference.mjs";
+export { STANDALONE_IMAGE_REFERENCE } from "./standalone-image-reference.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
 const REVISION = /^[0-9a-f]{40}$/u;
 const ROLES = ["node", "indexer", "proof-server"];
-export const STANDALONE_IMAGE_REFERENCE = /^[a-z0-9][a-z0-9./_:-]*@sha256:[0-9a-f]{64}$/u;
 const IMAGE_ID = /^sha256:[0-9a-f]{64}$/u;
 const FINGERPRINT = /^[0-9A-F]{40}$/u;
 
@@ -231,7 +232,12 @@ async function regularFiles(directory, prefix = "") {
 }
 
 /** Verifies staged bytes only. It does not prove image provenance, deployment, or offline behavior. */
-export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages = verifyReleaseCandidateArtifacts) {
+/** @param {string | null} [expectedSourceRevision] */
+export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages = verifyReleaseCandidateArtifacts,
+  expectedSourceRevision = null) {
+  if (expectedSourceRevision !== null && !REVISION.test(expectedSourceRevision)) {
+    throw new Error("Expected install source revision must be a full lowercase commit SHA");
+  }
   const root = await realpath(resolve(bundleRoot));
   const inventoryBytes = await readFile(await regularBundleFile(root, "install-inventory.json"));
   const inventorySha256 = createHash("sha256").update(inventoryBytes).digest("hex");
@@ -246,6 +252,9 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
     || typeof inventory.proofParameters?.directory !== "string"
     || !Array.isArray(inventory.proofParameters?.files)) {
     throw new Error("Standalone install inventory format or required roles are invalid");
+  }
+  if (expectedSourceRevision !== null && inventory.sourceRevision !== expectedSourceRevision) {
+    throw new Error("Standalone install source revision differs from the selected candidate");
   }
   const hasApiOverlayPin = inventory.runtimeCompose?.apiPath !== undefined
     || inventory.runtimeCompose?.apiSha256 !== undefined;
@@ -394,17 +403,23 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
   }
   let installRelay = null;
   if (inventory.format === "tr-standalone-install-v6") {
-    if (inventory.installRelay?.path !== "install-relay.py"
+    if (inventory.installRelay?.path !== "install-relay.mjs"
       || !SHA256.test(inventory.installRelay.sha256)
-      || inventory.installRelay.imageRole !== "node") {
+      || !["node", "api"].includes(inventory.installRelay.imageRole)) {
       throw new Error("Standalone installation relay pin is missing or malformed");
     }
     const relayPath = await regularBundleFile(root, inventory.installRelay.path);
     if (await sha256(relayPath) !== inventory.installRelay.sha256) {
       throw new Error("Standalone installation relay bytes disagree with the install pin");
     }
+    const relayImage = inventory.installRelay.imageRole === "node"
+      ? verifiedImages.find((image) => image.role === "node")
+      : apiRuntime === null ? null
+        : { role: "api", reference: `tr-standalone/api:sha-${inventory.sourceRevision}`,
+          acceptedIds: [apiRuntime.configId, apiRuntime.imageId] };
+    if (!relayImage) throw new Error("Standalone installation relay image pin is missing");
     installRelay = { path: relayPath, sha256: inventory.installRelay.sha256,
-      image: verifiedImages.find((image) => image.role === "node") };
+      imageRole: inventory.installRelay.imageRole, image: relayImage };
   }
   const proofDirectory = bundlePath(root, inventory.proofParameters.directory);
   if (!(await lstat(proofDirectory)).isDirectory()) {
@@ -445,8 +460,9 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (process.argv.length !== 3) {
-    throw new Error("Usage: node scripts/check-standalone-install.mjs <bundle-directory>");
+  if (process.argv.length !== 3 && process.argv.length !== 4) {
+    throw new Error("Usage: node scripts/check-standalone-install.mjs <bundle-directory> [expected-source-revision]");
   }
-  console.log(JSON.stringify(await verifyStandaloneInstallBundle(process.argv[2])));
+  console.log(JSON.stringify(await verifyStandaloneInstallBundle(
+    process.argv[2], verifyReleaseCandidateArtifacts, process.argv[3] ?? null)));
 }

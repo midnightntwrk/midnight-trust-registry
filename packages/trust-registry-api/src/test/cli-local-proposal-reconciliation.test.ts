@@ -101,6 +101,29 @@ describe("signed local proposal reconciliation CLI", () => {
     });
   });
 
+  it("reconciles delayed inclusion without permitting a retry after an earlier absence", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    await journal.bindDeployment("registry:local", `0x${"a".repeat(64)}`, genesisHash);
+    await journal.executeOnce("issuer", authorizationId, evidenceCommitment,
+      async () => ({ eventHash }), reservationContext);
+    mocks.resolveProposal.mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ eventHash, evidenceCommitment });
+
+    await runTrustRegistryApiCli(args());
+    expect(await journal.read("issuer", authorizationId)).toMatchObject({ state: "submitted", eventHash });
+    expect(JSON.parse(output.join(""))).toMatchObject({
+      status: "not-observed", retryPermitted: false, releaseQualified: false,
+    });
+
+    output.length = 0;
+    await runTrustRegistryApiCli(args());
+    expect(await journal.read("issuer", authorizationId)).toMatchObject({ state: "observed", eventHash });
+    expect(JSON.parse(output.join(""))).toMatchObject({
+      status: "observed", retryPermitted: false, releaseQualified: false,
+    });
+    expect(mocks.resolveProposal).toHaveBeenCalledTimes(2);
+  });
+
   it("leaves a conflicting submission unchanged and emits no success report", async () => {
     const journal = new FileProposalSubmissionJournal(path);
     await journal.bindDeployment("registry:local", `0x${"a".repeat(64)}`, genesisHash);

@@ -34,6 +34,37 @@ const auditor = {
 };
 
 describe("admin console browser handlers", () => {
+  it("renders untrusted ledger labels and API errors as text, not markup", async () => {
+    const root = document.createElement("div");
+    document.body.replaceChildren(root);
+    const injected = `<img src=x onerror="window.__trInjected=true">`;
+    let failHealth = false;
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/health") return failHealth
+        ? Response.json({ title: "unavailable", detail: injected }, { status: 503 })
+        : Response.json({ status: "ok", sourceMode: "local-ledger", registryId: "registry:local",
+          localPlanSha256: "a".repeat(64), finalizedBlockHash: `0x${"b".repeat(64)}`,
+          generatedAt: "2026-10-25T00:00:00Z" });
+      if (path === "/v1/registry/summary") return Response.json({
+        issuerCounts: counts(), verifierCounts: counts(), auditorCounts: counts(), recognitionCounts: counts(),
+        registryLabel: injected, registryId: "registry:local", policyId: "policy:local",
+        currentEpochId: "epoch:local:1", epochCount: 1,
+      });
+      return Response.json({ entries: [] });
+    });
+    createAdminConsoleApp(root, {
+      initialUrl: new URL("http://127.0.0.1:4173/?apiBase=http://127.0.0.1:4400"),
+      storage: window.localStorage, fetchImpl: fetchImpl as typeof fetch, confirm: () => false,
+    });
+    await vi.waitFor(() => expect(root.textContent).toContain(injected));
+    expect(root.querySelector("img")).toBeNull();
+    failHealth = true;
+    root.querySelector<HTMLButtonElement>("[data-refresh]")!.click();
+    await vi.waitFor(() => expect(root.textContent).toContain(`unavailable: ${injected}`));
+    expect(root.querySelector("img")).toBeNull();
+  });
+
   it("removes governance controls when API health becomes unavailable", async () => {
     const root = document.createElement("div");
     document.body.replaceChildren(root);

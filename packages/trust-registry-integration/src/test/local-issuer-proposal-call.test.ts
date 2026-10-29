@@ -18,7 +18,10 @@ import {
 } from "@midnight-ntwrk/trust-registry-contract";
 
 import {
+  executeLocalIssuerProposalAfterReservation,
+  preflightLocalIssuerProposalSubmission,
   prepareLocalIssuerProposalCall,
+  prepareUnsignedLocalIssuerProposalCall,
   submitLocalIssuerProposalCall,
   type LocalIssuerProposalCall,
 } from "../local-issuer-proposal-call.js";
@@ -122,6 +125,113 @@ beforeEach(() => {
 });
 
 describe("local issuer proposal circuit call", () => {
+  it("preflights without broadcast and submits once after an external reservation", async () => {
+    const { call, ledger } = fixture();
+    const input = {
+      call, expectedGenesisHash: genesisHash,
+      readFinalizedLedger: async (address: string) => ({ contractAddress: address, genesisHash, ledger }),
+      providers: {} as Parameters<typeof executeLocalIssuerProposalAfterReservation>[0]["providers"],
+      readSubmissionProviderIdentity,
+    };
+    const { prepared } = await preflightLocalIssuerProposalSubmission(input);
+    expect(mocks.submitCallTx).not.toHaveBeenCalled();
+    mocks.submitCallTx.mockResolvedValueOnce({
+      private: { result: prepared.expectedEventHash }, public: { txId: "tx-external-reservation" },
+    });
+    await expect(executeLocalIssuerProposalAfterReservation(input)).resolves.toEqual({
+      eventHash: `0x${Buffer.from(prepared.expectedEventHash).toString("hex")}`,
+    });
+    expect(mocks.submitCallTx).toHaveBeenCalledOnce();
+  });
+
+  it("checks a post-proving guard at the SDK provider broadcast boundary", async () => {
+    const { call, ledger } = fixture();
+    const submitTx = vi.fn(async (_tx: unknown) => "tx-should-not-broadcast");
+    const assertReadyBeforeBroadcast = vi.fn(async () => { throw new Error("evidence expired"); });
+    const submitTxWithBroadcastGuard = vi.fn(async (tx, guard) => {
+      await Promise.resolve(); // The pinned transport may connect and authenticate first.
+      await guard();
+      return submitTx(tx);
+    });
+    mocks.submitCallTx.mockImplementationOnce(async (providers) => {
+      expect(assertReadyBeforeBroadcast).not.toHaveBeenCalled();
+      await Promise.resolve(); // The SDK may spend time proving and balancing first.
+      return providers.midnightProvider.submitTx({} as never);
+    });
+    await expect(executeLocalIssuerProposalAfterReservation({
+      call, expectedGenesisHash: genesisHash,
+      readFinalizedLedger: async (address) => ({ contractAddress: address, genesisHash, ledger }),
+      providers: { midnightProvider: { submitTx, submitTxWithBroadcastGuard } } as unknown as
+        Parameters<typeof executeLocalIssuerProposalAfterReservation>[0]["providers"],
+      readSubmissionProviderIdentity,
+    }, assertReadyBeforeBroadcast)).rejects.toThrow(/evidence expired/u);
+    expect(assertReadyBeforeBroadcast).toHaveBeenCalledOnce();
+    expect(mocks.submitCallTx).toHaveBeenCalledOnce();
+    expect(submitTxWithBroadcastGuard).toHaveBeenCalledOnce();
+    expect(submitTx).not.toHaveBeenCalled();
+  });
+
+  it("delegates one broadcast after the post-proving guard succeeds", async () => {
+    const { call, ledger } = fixture();
+    const tx = { id: "balanced" };
+    const submitTx = vi.fn(async (_tx: unknown) => "tx-broadcast");
+    const assertReadyBeforeBroadcast = vi.fn(async () => {});
+    const submitTxWithBroadcastGuard = vi.fn(async (tx, guard) => {
+      await guard();
+      return submitTx(tx);
+    });
+    const input = {
+      call, expectedGenesisHash: genesisHash,
+      readFinalizedLedger: async (address: string) => ({ contractAddress: address, genesisHash, ledger }),
+      providers: { midnightProvider: { submitTx, submitTxWithBroadcastGuard } } as unknown as
+        Parameters<typeof executeLocalIssuerProposalAfterReservation>[0]["providers"],
+      readSubmissionProviderIdentity,
+    };
+    const { prepared } = await preflightLocalIssuerProposalSubmission(input);
+    mocks.submitCallTx.mockImplementationOnce(async (providers) => {
+      expect(assertReadyBeforeBroadcast).not.toHaveBeenCalled();
+      await providers.midnightProvider.submitTx(tx as never);
+      return { private: { result: prepared.expectedEventHash }, public: { txId: "tx-broadcast" } };
+    });
+    await expect(executeLocalIssuerProposalAfterReservation(input, assertReadyBeforeBroadcast))
+      .resolves.toEqual({ eventHash: `0x${Buffer.from(prepared.expectedEventHash).toString("hex")}` });
+    expect(assertReadyBeforeBroadcast).toHaveBeenCalledOnce();
+    expect(submitTxWithBroadcastGuard).toHaveBeenCalledOnce();
+    expect(submitTx).toHaveBeenCalledExactlyOnceWith(tx);
+  });
+
+  it("fails closed when the selected provider cannot guard its transport send", async () => {
+    const { call, ledger } = fixture();
+    const submitTx = vi.fn(async (_tx: unknown) => "tx-should-not-broadcast");
+    await expect(executeLocalIssuerProposalAfterReservation({
+      call, expectedGenesisHash: genesisHash,
+      readFinalizedLedger: async (address) => ({ contractAddress: address, genesisHash, ledger }),
+      providers: { midnightProvider: { submitTx } } as unknown as
+        Parameters<typeof executeLocalIssuerProposalAfterReservation>[0]["providers"],
+      readSubmissionProviderIdentity,
+    }, async () => {})).rejects.toThrow(/transport broadcast guard/u);
+    expect(mocks.submitCallTx).not.toHaveBeenCalled();
+    expect(submitTx).not.toHaveBeenCalled();
+  });
+
+  it("prepares the exact unsigned signing context from current ledger state", () => {
+    const { call, ledger } = fixture();
+    const unsigned = prepareUnsignedLocalIssuerProposalCall(call, ledger);
+    const signed = prepareLocalIssuerProposalCall(call, ledger);
+    expect(unsigned.actionPayloadHash).toEqual(signed.actionPayloadHash);
+    expect(unsigned.actionKind).toEqual(signed.actionKind);
+    expect(unsigned.actionSequence).toBe(signed.actionSequence);
+    expect(unsigned.requiredThreshold).toBe(1n);
+    expect(unsigned.policyCommitment).toEqual(ledger.governancePolicyCommitment);
+    expect(unsigned.policyVersion).toBe(ledger.governancePolicyVersion);
+    expect(() => prepareUnsignedLocalIssuerProposalCall(call, {
+      ...ledger, governancePolicyCommitment: bytes32Commitment("stale-policy"),
+    })).toThrow(/not current/u);
+    expect(() => prepareUnsignedLocalIssuerProposalCall(call, {
+      ...ledger, issuerAuthorizationIds: { ...ledger.issuerAuthorizationIds, member: () => true },
+    })).toThrow(/already exists/u);
+  });
+
   it("preflights the finalized context and submits through a reservation", async () => {
     const { call, ledger } = fixture();
     const prepared = prepareLocalIssuerProposalCall(call, ledger);

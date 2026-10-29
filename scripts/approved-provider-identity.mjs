@@ -4,9 +4,14 @@ import { open } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 const MAX_MODULE_BYTES = 16 * 1024 * 1024;
-const IDENTITY_FIELDS = ["dev", "ino", "nlink", "size", "mode", "uid", "mtimeNs", "ctimeNs"];
+const IDENTITY_FIELDS = /** @type {const} */ (["dev", "ino", "nlink", "size", "mode", "uid", "mtimeNs", "ctimeNs"]);
+/** @typedef {Pick<import("node:fs").BigIntStats, (typeof IDENTITY_FIELDS)[number]>} ProviderIdentity */
 
-/** Bind an entry module to one regular inode, not just a mutable path. */
+/** Bind an entry module to one regular inode, not just a mutable path.
+ * @param {string} path
+ * @param {string} expectedSha256
+ * @returns {Promise<ProviderIdentity>}
+ */
 export async function readApprovedProviderIdentity(path, expectedSha256) {
   const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
@@ -25,13 +30,19 @@ export async function readApprovedProviderIdentity(path, expectedSha256) {
     if (sha256 !== expectedSha256) {
       throw new Error("Provider module bytes disagree with the approved SHA-256");
     }
-    return Object.fromEntries(IDENTITY_FIELDS.map((field) => [field, before[field]]));
+    return /** @type {ProviderIdentity} */ (Object.fromEntries(
+      IDENTITY_FIELDS.map((field) => [field, before[field]])));
   } finally {
     await handle.close();
   }
 }
 
-/** This narrows the hash-to-import window; immutable dependencies remain a separate gate. */
+/** This narrows the hash-to-import window; immutable dependencies remain a separate gate.
+ * @param {string} path
+ * @param {string} expectedSha256
+ * @param {ProviderIdentity} initialIdentity
+ * @param {(modulePath: string) => Promise<unknown>} [loadProvider]
+ */
 export async function loadRecheckedApprovedProvider(path, expectedSha256, initialIdentity,
   loadProvider = (modulePath) => import(pathToFileURL(modulePath).href)) {
   const current = await readApprovedProviderIdentity(path, expectedSha256);

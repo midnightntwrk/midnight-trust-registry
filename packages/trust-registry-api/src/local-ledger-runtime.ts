@@ -210,7 +210,7 @@ type ApprovedLocalLedgerRuntimePlanInput = {
 
 export async function loadApprovedLocalLedgerRuntimePlanWithDigest(
   input: ApprovedLocalLedgerRuntimePlanInput,
-): Promise<{ plan: LocalLedgerRuntimePlan; planSha256: string }> {
+): Promise<{ plan: LocalLedgerRuntimePlan; planSha256: string; reviewerFingerprint: string }> {
   const planBytes = await readBoundedLocalApprovalFile(input.planPath, 1024 * 1024);
   await verifyDetachedLocalReviewerSignature({
     documentBytes: planBytes,
@@ -260,8 +260,8 @@ export async function loadApprovedLocalLedgerRuntimePlanWithDigest(
         `images/${role}.manifest.json`, `images/${role}.image.tar`))
       || Object.keys(inventory.portalRuntimes ?? {}).sort().join(",") !== "admin,applicant"))
     || (installFormat === "tr-standalone-install-v6"
-      && (inventory.installRelay?.path !== "install-relay.py"
-        || inventory.installRelay.imageRole !== "node"
+      && (inventory.installRelay?.path !== "install-relay.mjs"
+        || !["node", "api"].includes(inventory.installRelay.imageRole)
         || typeof inventory.installRelay.sha256 !== "string"
         || !SHA256.test(inventory.installRelay.sha256)))) {
     throw new Error("Local API runtime inventory or release manifest disagrees with approved install artifacts");
@@ -284,7 +284,7 @@ export async function loadApprovedLocalLedgerRuntimePlanWithDigest(
       keyringDirectory: input.keyringDirectory,
       governanceReviewerFingerprint: input.reviewerFingerprint });
   }
-  return { plan, planSha256: digest(planBytes) };
+  return { plan, planSha256: digest(planBytes), reviewerFingerprint: input.reviewerFingerprint };
 }
 
 export async function loadApprovedLocalLedgerRuntimePlan(
@@ -340,6 +340,12 @@ export async function createApprovedLocalLedgerRuntimeSource(plan: LocalLedgerRu
       const ledger = await source.readFinalizedProposalLedger();
       assertPlanCurrent();
       return ledger;
+    },
+    async readIssuerProposalSnapshot() {
+      assertPlanCurrent();
+      const snapshot = await source.readIssuerProposalSnapshot();
+      assertPlanCurrent();
+      return { ...snapshot, genesisHash: plan.expectedGenesisHash };
     },
   };
 }

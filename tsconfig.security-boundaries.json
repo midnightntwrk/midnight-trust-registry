@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "target": "ES2022",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "files": [
+    "scripts/approved-provider-identity.mjs",
+    "scripts/immutable-provider-tree.mjs",
+    "scripts/local-deployment-plan-policy.mjs",
+    "scripts/local-verifier-key-insertion-plan-policy.mjs",
+    "scripts/provider-runtime-content.mjs",
+    "scripts/check-published-package-integrity.mjs",
+    "scripts/standalone-approval-policy.mjs",
+    "scripts/standalone-acceptance-decision-policy.mjs",
+    "scripts/standalone-api-approval-chain.mjs",
+    "scripts/standalone-genesis-review-policy.mjs",
+    "scripts/standalone-journey-prerequisites-policy.mjs",
+    "scripts/standalone-image-reference.mjs",
+    "scripts/verify-helm-mapping-signature.mjs"
+  ]
+}

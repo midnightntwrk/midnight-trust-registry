@@ -1,22 +1,7 @@
 name: Publish Packages
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Release version to publish, for example 0.1.0-rc1"
-        required: true
-        type: string
-      npm_tag:
-        description: "npm dist-tag to publish under"
-        required: false
-        default: "next"
-        type: string
-      registry:
-        description: "npm registry URL"
-        required: false
-        default: "https://registry.npmjs.org"
-        type: string
+  workflow_dispatch: {}
 
 permissions:
   contents: read
@@ -26,7 +11,7 @@ env:
   PNPM_CONFIG_FUND: "false"
 
 concurrency:
-  group: trust-registry-publish-${{ github.event.inputs.version }}
+  group: trust-registry-publish-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -35,7 +20,7 @@ jobs:
     if: github.ref == 'refs/heads/develop'
     environment:
       name: npm-publish
-      url: ${{ inputs.registry }}
+      url: https://www.npmjs.com/
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -53,7 +38,11 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-          registry-url: ${{ inputs.registry }}
+          registry-url: https://registry.npmjs.org
+
+      - name: Select committed release candidate
+        id: release
+        run: node scripts/select-publish-version.mjs --github-output
 
       - name: Read checked-in Compact version
         id: compact-version
@@ -106,7 +95,7 @@ jobs:
 
       - name: Require committed release version
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ steps.release.outputs.version }}
         run: node scripts/release-set-version.mjs --version "$VERSION" --check
 
       - name: Check workspace manifests
@@ -147,7 +136,7 @@ jobs:
 
       - name: Smoke test release tarballs before publish
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ steps.release.outputs.version }}
         run: >-
           pnpm run published-artifacts:smoke --
           --tarball-dir artifacts/npm-release
@@ -157,7 +146,7 @@ jobs:
       - name: Upload release tarballs
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # ratchet:actions/upload-artifact@v4
         with:
-          name: trust-registry-${{ inputs.version }}-tarballs
+          name: trust-registry-${{ steps.release.outputs.version }}-tarballs
           if-no-files-found: error
           path: |
             artifacts/npm-release/*.tgz
@@ -166,9 +155,9 @@ jobs:
       - name: Publish packages to npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_TAG: ${{ inputs.npm_tag }}
-          REGISTRY: ${{ inputs.registry }}
-          VERSION: ${{ inputs.version }}
+          NPM_TAG: next
+          REGISTRY: https://registry.npmjs.org
+          VERSION: ${{ steps.release.outputs.version }}
           MANIFEST_PATH: artifacts/npm-release.manifest.json
           TR_MANIFEST_GITHUB_VERIFIED_COMMIT: "true"
           GH_TOKEN: ${{ github.token }}
@@ -176,6 +165,6 @@ jobs:
 
       - name: Smoke test published packages
         env:
-          REGISTRY: ${{ inputs.registry }}
-          VERSION: ${{ inputs.version }}
+          REGISTRY: https://registry.npmjs.org
+          VERSION: ${{ steps.release.outputs.version }}
         run: ./scripts/release-smoke-npm-packages.sh

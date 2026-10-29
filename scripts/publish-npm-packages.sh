@@ -30,10 +30,13 @@ node --input-type=module -e '
   }
 ' "${manifest_path}" "${version}"
 
-published_version_for_package() {
-  local package_name="$1"
-  npm view "${package_name}@${version}" version --registry "${registry}" 2>/dev/null || true
-}
+lookup_error="$(mktemp)"
+trap 'rm -f "${lookup_error}"' EXIT
+workspaces="$(node scripts/trust-registry-workspace-catalog.mjs --publish-workspaces)"
+if [[ -z "${workspaces}" ]]; then
+  echo "::error::Publish workspace catalog is empty; refusing publish." >&2
+  exit 1
+fi
 
 while IFS= read -r workspace; do
   if [[ -z "${workspace}" ]]; then
@@ -57,12 +60,18 @@ while IFS= read -r workspace; do
     exit 1
   fi
 
-  published_version="$(published_version_for_package "${package_name}")"
-  if [[ "${published_version}" == "${version}" ]]; then
-    echo "[publish-npm-packages] ${package_name}@${version} already exists; skipping immutable npm publish."
+  if published_dist="$(npm view "${package_name}@${version}" dist --json --registry "${registry}" 2>"${lookup_error}")"; then
+    node scripts/check-publish-tarball.mjs "${manifest_path}" "${tarball}" "${package_name}" "${version}"
+    node scripts/check-published-package-integrity.mjs "${tarball}" "${published_dist}"
+    echo "[publish-npm-packages] ${package_name}@${version} already exists with matching bytes; skipping immutable npm publish."
     continue
   fi
+  if ! grep -Eq '^npm (error|ERR!) code E404$' "${lookup_error}"; then
+    echo "::error::Could not determine whether ${package_name}@${version} already exists; refusing publish." >&2
+    exit 1
+  fi
 
+  node scripts/check-publish-tarball.mjs "${manifest_path}" "${tarball}" "${package_name}" "${version}"
   echo "[publish-npm-packages] Publishing tested tarball ${tarball} with npm tag ${npm_tag}"
   npm publish "${tarball}" --ignore-scripts --access public --registry "${registry}" --tag "${npm_tag}"
-done < <(node scripts/trust-registry-workspace-catalog.mjs --publish-workspaces)
+done <<< "${workspaces}"

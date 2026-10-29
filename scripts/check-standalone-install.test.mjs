@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { STANDALONE_PROOF_PARAMETER_PATHS, verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { approvedRuntimeHealthcheck } from "./runtime-healthcheck.mjs";
@@ -175,6 +176,29 @@ test("verifies pinned packages, images, and all 18 proof parameters", async () =
     assert.ok(result.images.every((image) => image.acceptedIds.includes(
       `sha256:${image.reference.split("@sha256:")[1]}`)));
     assert.equal(result.proofParameterCount, 18);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects an install from a different selected source before package verification", async () => {
+  const { root } = await fixture();
+  try {
+    let packagesChecked = false;
+    const verifyPackages = () => { packagesChecked = true; };
+    await assert.rejects(verifyStandaloneInstallBundle(root, verifyPackages, "b".repeat(40)),
+      /source revision differs from the selected candidate/u);
+    assert.equal(packagesChecked, false);
+    await assert.rejects(verifyStandaloneInstallBundle(root, verifyPackages, "short-sha"),
+      /full lowercase commit SHA/u);
+    assert.equal(packagesChecked, false);
+    const script = fileURLToPath(new URL("./check-standalone-install.mjs", import.meta.url));
+    const cli = spawnSync(process.execPath, [script, root, "b".repeat(40)], { encoding: "utf8" });
+    assert.notEqual(cli.status, 0);
+    assert.match(cli.stderr, /source revision differs from the selected candidate/u);
+    const result = await verifyStandaloneInstallBundle(root, verifyPackages, revision);
+    assert.equal(result.sourceRevision, revision);
+    assert.equal(packagesChecked, true);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -394,12 +418,21 @@ test("v6 pins the installation relay script beside the complete runtime", async 
       applicant: await staticImageArchive(root, "applicant"),
     };
     const relay = Buffer.from("# fixed destination installation relay\n");
-    await writeFile(join(root, "install-relay.py"), relay);
-    inventory.installRelay = { path: "install-relay.py", sha256: sha(relay), imageRole: "node" };
+    await writeFile(join(root, "install-relay.mjs"), relay);
+    inventory.installRelay = { path: "install-relay.mjs", sha256: sha(relay), imageRole: "node" };
     await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
     const verified = await verifyStandaloneInstallBundle(root, () => {});
     assert.equal(verified.installRelay.sha256, sha(relay));
     assert.equal(verified.installRelay.image.reference, reference("node"));
+    inventory.installRelay.imageRole = "api";
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    const apiRelay = await verifyStandaloneInstallBundle(root, () => {});
+    assert.equal(apiRelay.installRelay.imageRole, "api");
+    assert.equal(apiRelay.installRelay.image.reference,
+      `tr-standalone/api:sha-${inventory.sourceRevision}`);
+    assert.ok(apiRelay.installRelay.image.acceptedIds.includes(apiRelay.apiRuntime.configId));
+    inventory.installRelay.imageRole = "node";
+    await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
     assert.equal(verified.runtimeApiComposeSha256, null);
     const apiCompose = Buffer.from("services:\n  api:\n    profiles: [runtime]\n");
     await writeFile(join(root, "compose.api.yml"), apiCompose);
@@ -439,9 +472,9 @@ test("v6 pins the installation relay script beside the complete runtime", async 
     await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /API Compose pin is missing/u);
     inventory.runtimeCompose.apiSha256 = sha(apiCompose);
     await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
-    await writeFile(join(root, "install-relay.py"), "changed\n");
+    await writeFile(join(root, "install-relay.mjs"), "changed\n");
     await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /relay bytes disagree/u);
-    await writeFile(join(root, "install-relay.py"), relay);
+    await writeFile(join(root, "install-relay.mjs"), relay);
     inventory.installRelay.imageRole = "indexer";
     await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
     await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /relay pin is missing/u);

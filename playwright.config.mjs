@@ -5,5 +5,5 @@ export default defineConfig({
   timeout: 30_000,
   retries: 0,
   workers: 1,
-  use: { channel: "chrome", headless: true },
+  use: { channel: process.env.CI ? undefined : "chrome", headless: true },
 });

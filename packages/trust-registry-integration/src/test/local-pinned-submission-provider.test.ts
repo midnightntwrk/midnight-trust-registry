@@ -90,13 +90,28 @@ describe("pinned local submission provider", () => {
       midnightProvider: pinned.midnightProvider, publicDataProvider: pinned.publicDataProvider,
     } as never)).resolves.toEqual({ contractAddress, genesisHash });
     expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
-      provider: expect.objectContaining({ endpoint: new URL(config.nodeWsUrl).toString(), autoConnectMs: false }),
+      provider: expect.objectContaining({ endpoint: "ws://node.:9944/", autoConnectMs: false }),
     }));
     expect(getBlockHash).toHaveBeenCalledWith(0);
     expect(mocks.disconnect).toHaveBeenCalled();
     await expect(pinned.readSubmissionProviderIdentity({
       midnightProvider: { submitTx: vi.fn() }, publicDataProvider: pinned.publicDataProvider,
     } as never)).rejects.toThrow(/not using the pinned/u);
+  });
+
+  it("rechecks guarded submission after node authentication and before transport send", async () => {
+    const pinned = createPinnedLocalSubmissionProvider(config);
+    const guard = vi.fn(async () => {
+      expect(getBlockHash).toHaveBeenCalledWith(0);
+      throw new Error("evidence expired during connection");
+    });
+    await expect(pinned.midnightProvider.submitTxWithBroadcastGuard(transaction, guard))
+      .rejects.toThrow(/evidence expired during connection/u);
+    expect(guard).toHaveBeenCalledOnce();
+    expect(sendMnTransaction).not.toHaveBeenCalled();
+    await expect(pinned.midnightProvider.submitTxWithBroadcastGuard(transaction, async () => {}))
+      .resolves.toBe("tx-issuer");
+    expect(sendMnTransaction).toHaveBeenCalledOnce();
   });
 
   it("bounds the SDK indexer wait while preserving other provider methods", async () => {

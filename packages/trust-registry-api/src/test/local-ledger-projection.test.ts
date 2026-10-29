@@ -20,6 +20,7 @@ import {
   createRecognitionScenarioFixture,
   createVerifierScenarioFixture,
 } from "@midnight-ntwrk/trust-registry-integration";
+import { deriveGovernancePolicySnapshot } from "@midnight-ntwrk/trust-registry-domain";
 
 import {
   assertCompletePolicyRevisionHistory,
@@ -551,6 +552,12 @@ describe("local ledger-bound API source", () => {
       });
       expect(source.localProposalContractAddress).toBe(address.toLowerCase());
       await expect(source.readFinalizedProposalLedger()).resolves.toBe(ledger);
+      await expect(source.readIssuerProposalSnapshot()).resolves.toEqual({
+        contractAddress: address,
+        finalizedBlockHash: view.finalizedBlockHash,
+        policySnapshot: deriveGovernancePolicySnapshot(snapshot.policy),
+        ledger,
+      });
       const current = await source.loadCurrentLedgerSelection!();
       expect(current.authorizationIds.issuer).toEqual(new Set(snapshot.issuerEntries.map(
         (entry) => entry.authorization.authorizationId)));
@@ -633,7 +640,10 @@ describe("local ledger-bound API source", () => {
       readFinalizedProposalLedger: finalizedReader })).toThrow(/membership proposals require side-effect-free/u);
     expect(() => createTrustRegistryApiServer({ source: boundSource, governedIssuerProposals: issuerPort,
       proposalSubmissionJournal: boundJournal, proposalAdmission: admission,
-      readFinalizedProposalLedger: finalizedReader })).not.toThrow();
+      readFinalizedProposalLedger: finalizedReader })).toThrow(/caller-verified signed-plan digest/u);
+    expect(() => createTrustRegistryApiServer({ source: boundSource, governedIssuerProposals: issuerPort,
+      proposalSubmissionJournal: boundJournal, proposalAdmission: admission,
+      readFinalizedProposalLedger: finalizedReader, localPlanSha256: "d".repeat(64) })).not.toThrow();
   });
 
   it("re-reads the finalized view for every HTTP query and fails closed", async () => {
@@ -687,7 +697,8 @@ describe("local ledger-bound API source", () => {
       const healthy = await fetch(`${url}/health`);
       expect(healthy.status).toBe(200);
       expect(healthy.headers.get("cache-control")).toBe("no-store");
-      expect(await healthy.json()).toMatchObject({ status: "ok", sourceMode: "local-ledger" });
+      expect(await healthy.json()).toMatchObject({ status: "ok", sourceMode: "local-ledger",
+        configuredGovernedProposalRoles: [] });
       expect(readCount).toBe(1);
       const malformedRequest = await fetch(`${url}/v1/trqp/authorizations/query`, {
         method: "POST",

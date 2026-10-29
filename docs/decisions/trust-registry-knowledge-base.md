@@ -2389,3 +2389,233 @@ unpublished signed/DCO branches. Focused observer/acceptance tests, the API's
 256-test suite, integration profile tests, typecheck, lint, docs build, and
 dependency audit passed in the writable checkout. Neither change provides a
 deployed actor journey or clears #219, #220, or the release security gates.
+
+### Local issuer proposal assembly, 2026-10-27
+
+The local-only issuer path now has a reviewer-visible terms binder, an unsigned
+Compact signing context from the selected policy and current verifier key, a
+side-effect-free SDK submission preflight, and an opt-in API issuer-port
+assembly. The assembly requires a captured pending/accepted admission pair,
+live DID/VP/VC-status and trusted-time verification, a finalized policy/ledger
+reader, and immutable provider-code checks. The packaged signed-plan CLI does
+not instantiate it and remains read-only. A failure after the API journal
+reserves an attempt remains quarantined for explicit recovery; it must not
+trigger an automatic retry.
+
+The private admission store now reads the pending and accepted records from
+one validated file state, and HTTP admission prefers that captured pair.
+The local-ledger source now returns the policy snapshot, Compact ledger, and
+finalized block hash from one bounded read; the approved-plan wrapper adds
+its signed genesis pin. These changes prevent mixed record/checkpoint reads,
+but do not independently authenticate local-node finality or provide a live
+VC-owned status adapter. The injected-port tests, 261 API tests, 104 API
+integration tests, build/typecheck/lint, docs checks, and low-level dependency
+audit passed locally at this stage. They are not a deployed offline E2E run.
+
+The dedicated b26 setup remained pre-deployment at inspection: no approved
+genesis, contract address, reconciled verifier keys, or maintenance transition;
+its install candidate also predates the new source. Do not reuse that setup as
+qualification evidence for these commits. The next candidate needs a new
+exact-source verified bundle and human-signed genesis/maintenance approvals,
+then real deployed readback, live status authority, egress-denied actor cases,
+restart/restore, and independent human security review. Keep #198 draft and
+the local 0.1.0 RC unqualified until those gates are evidenced.
+
+### Pre-actor API capability observation, 2026-10-27
+
+Before collecting issuer signatures for a standalone run, the operator can
+capture `/health` inside the dedicated API container and check it against the
+reviewed signed-plan SHA-256. The new bounded-file checker rejects non-local
+sources, malformed or zero finalized hashes, unknown or repeated roles, and
+missing requested ports. The currently packaged read-only CLI reports no
+issuer port, so this check exits 2 rather than inviting a doomed `A01` run.
+Even exit 0 proves only configured port presence; it does not authenticate
+the saved health response, finality, live VC status, or an actor transaction.
+The operator guide now expands source-scoped image tags correctly instead of
+using a literal `SOURCE_SHA` placeholder. Standalone topology tests and the
+docs build passed; no release evidence or genesis approval was inferred.
+
+The opt-in issuer port also requires an injected trusted-time reading on each
+prepare, preflight, and execute. It rejects accepted evidence outside the
+signed verified-at/expiry window before provider loading, and passes the
+same reading to the live evidence verifier. This closes an adapter omission
+path but does not establish trustworthy clock provenance; that remains a
+deployment-owned, independently reviewed dependency.
+The after-reservation SDK handoff now accepts an optional late readiness
+check. The local issuer port uses it to resample trusted time after SDK
+proving and pinned-node authentication, just before the transport send.
+The guarded path requires a pinned provider that supports this check;
+expiry before submission leaves the durable reservation
+for explicit reconciliation. This narrows but does not close the gap between
+local preflight time and a finalized ledger transition.
+
+### Standalone adopter test boundary, 2026-10-27
+
+At the local writer-plan-identity head, all four signed membership demo
+journeys and the API/UI demo smoke passed, as did 75 standalone topology
+tests. The membership journeys use the Compact simulator and fixture-backed
+identity/status inputs; the topology suite tests checkers and simulated
+boundaries. Neither is a deployed local-ledger actor E2E run.
+
+The retained b26 private setup belongs to an older source revision. Its
+wizard status has no approved genesis, deployment, reconciled verifier keys,
+or maintenance transition. The candidate-scoped journey prerequisite check
+therefore exits 2. Its `nextActions` field now gives the operator a specific
+step for each missing gate without changing `releaseQualified: false` or
+claiming that a recorded prerequisite proves independent finality. A future
+exact-source setup, human-signed approvals, reviewed writer dependencies,
+live VC status authority, and real offline actor receipts remain necessary.
+
+The lower-level deployment and verifier-key modules previously also accepted
+direct CLI invocation with an arbitrary JSON plan. Those paths checked plan
+shape, provider bytes, and the immutable import boundary, but did not first
+verify the wizard's signed genesis and committee approval chain. Direct
+invocation now exits before reading a plan or submitting. The wizard remains
+the supported operator entry point and imports the same lower-level functions
+only after its retained approval checks. This closes an accidental adoption
+bypass, not the separate authenticated-finality or provider-code review gates.
+
+The local manifest-backed publish workflow now rechecks each tarball's
+manifest-pinned size and SHA-256 immediately before handing that tarball to
+`npm publish`. A streaming file checker rejects missing, linked,
+duplicate-manifest, truncated, and same-size altered inputs. Artifact
+workspace tests include the tampered-byte negative. This narrows the gap
+between the full-set verification and individual publish calls, but does not
+approve the release channel, complete human security review, or eliminate a
+compromised-runner time-of-check/time-of-use window.
+
+The publisher now also rejects a failed or empty workspace catalog rather
+than treating process-substitution failure as a successful no-op. Its offline
+shell tests cover missing and existing registry versions, matching and changed
+registry integrity, and uncertain lookups; they stub npm I/O but run the real
+published-byte integrity helper. Exact-head CI, manifest approval, and
+independent release review remain separate gates.
+
+The application-status HTTP transport caps its signed-attestation response at
+64 KiB before JSON parsing, including when the authority omits or understates
+Content-Length. Oversized and invalid UTF-8 responses fail closed. This
+hardens the governed issuer evidence intake against untrusted status responses;
+it is not a VC-owned live status-authority deployment, authenticated ledger
+finality, or standalone actor-journey evidence.
+
+Issue #229 now wires the pre-existing broad checked-JS configuration into CI
+and adds a strict CI gate
+for provider inode identity, immutable import confinement, and optional Helm
+signature verification. The remaining non-strict approval, installer,
+maintenance, and release scripts are listed with migration priority and owner in
+`docs/plans/standalone-security-script-typecheck.md`. This does not type the
+large wizard or replace its adversarial tests and independent human review.
+
+The wizard's canonical reviewer metadata and release committee/custody
+validation now live in a strictly checked, side-effect-free policy module.
+Direct negatives cover noncanonical/missing fields, synthetic references,
+one-of-three smoke thresholds, duplicate keys, and duplicate custody roles.
+The wizard's existing approval and recovery suite still passes. This changes
+neither the required detached human signatures nor the pending real local
+deployment and offline actor acceptance gates.
+
+The fixture browser suite had drifted from the API's required side-effect-free
+proposal preflight and from the admin client's health-first loading. Its tests
+now provide the required fixture port, a health response, and the current
+governed-action error text. Applicant test teardown closes browser HTTP
+connections before awaiting server shutdown; a full Chrome run passed all nine
+specs. The browser-inclusive demo command is useful adoption coverage, not
+live local-ledger or egress-denied actor evidence.
+
+The opt-in local issuer port now repeats captured admission, authenticated
+finalized signing context, live evidence verification, and immutable provider
+code checks in the transport's pre-broadcast guard. It samples trusted time
+again as the final guard step so slow verification cannot silently carry
+expired evidence into the send. Injected-dependency tests block transport on
+revoked status, advanced governance sequence, and expiry during guard work.
+A caught guard failure still leaves the durable proposal reservation for
+reconciliation; it is not proof of non-inclusion or permission to retry.
+The API unit suite, issuer HTTP integration, typecheck, docs check, audit, and
+the browser-inclusive fixture demo passed. Codex CLI review found and the
+follow-up fixed the late-expiry gap, then found no actionable regression in
+the correction. These tests and review do not implement a live VC-owned status
+adapter, authenticate a deployed ledger, or close the human release review.
+
+The wizard's restricted API approval-chain export decision now lives in a
+strictly checked pure module. It preserves canonical signed-document byte
+checks, approval hash links, source/install pins, deployment receipt matching,
+and unambiguous maintenance readback before exporting only the public-key
+approval evidence. Missing record fields, zero finalized hashes, and duplicate
+signed JSON keys fail closed. The wizard still owns private-file I/O and
+detached-signature verification; the extracted decision does not verify a
+signature or authenticate finality independently. Both checked-JS gates and
+the 102-case wizard suite passed. The remaining wizard sequencing and installer
+adapters stay in the #229 migration inventory.
+
+The genesis-review packet's candidate/pin comparison is also isolated in a
+strictly checked pure module. It requires the selected standalone profile,
+source and inventory pins, observed dedicated bridge, pinned node image,
+canonical node-reported candidate, and loopback-only proposed pin. The image
+reference syntax is shared with the installer rather than duplicated. New
+negatives cover missing or primitive inputs, malformed observation and image,
+wrong host lists, noncanonical time, and wrong numeric types. This comparison
+still uses values reported by the same node: it is **not** an independent
+chain-spec review, detached human approval, or deployed-ledger evidence.
+
+The standalone acceptance inventory now requires each `pass` case to be
+backed by its latest private operator decision record, with the record's
+prior status and evidence list matching the case history. A raw attachment
+after the decision makes that case incomplete until it is reviewed again.
+This prevents an accidental manual `pass` label or stale decision from
+producing `completeInventory: true`; it does not authenticate the operator,
+receipt, finality, or security verdict. The #230 fresh-process journal and
+provider-construction tests are now explicitly described in the actor-path
+guide, separately from deployed restart/restore acceptance. The standalone
+topology suite (76 tests), documentation build, and low-level audit passed.
+
+The acceptance checker is now part of the broad security-script `checkJs`
+gate in Quality CI. Its private-file and decision-chain tests continue to
+cover runtime behavior. The script's parsed input objects are not yet in the
+strict no-implicit-any boundary, and typechecking does not authenticate an
+operator decision or live ledger receipt.
+
+The decision-chain evaluator has since been extracted into a side-effect-free
+module in the strict no-implicit-any gate. It rejects malformed or reordered
+records, mismatched source and prior status, and a `pass` made stale by later
+evidence. The original CLI continues to own private-file reads and digests.
+This improves reviewability of the acceptance inventory but does not change
+the self-attested nature of decisions or make a fixture browser run a local
+ledger qualification.
+
+The protected npm publish job now verifies the registry's SHA-512 integrity
+against each exact manifest-checked tarball before skipping an already
+published immutable version. A lookup error other than an explicit npm 404,
+or missing/weak/mismatched integrity metadata, stops publication. Tampered
+tarball and malformed metadata negatives cover this idempotent resume path.
+This closes an artifact-byte gap in #236 locally; exact-head protected CI,
+release-owner approval, and independent review remain required before the
+release gate can be considered satisfied.
+
+The local standalone node pin was advanced from 1.0.0 to the arm64 manifest of
+the official 1.0.400 security release. The latter includes the ledger-8.1.3
+canonical contract-call fix; retaining 1.0.0 as the next RC install would miss
+that patch. A disposable three-service bridge showed node, existing indexer,
+and proof server healthy, with indexer GraphQL reachable. A node-only restart
+preserved its self-reported genesis and an earlier block. Despite matching
+hashes for the `dev` configuration and packaged `undeployed` genesis inputs,
+the fresh node reported a **different genesis hash** from the old b28 node.
+The prior proposed pin cannot be reused; the complete new chain specification
+needs independent review and a new human signature. The test project and its
+fresh volumes were removed; b28 private evidence and volumes were retained.
+Node 1.0.400 lacks Python, so new v6 bundles host the pinned installation
+relay in the separately verified API image with its normal API healthcheck
+disabled for that one temporary container. The relay verifier still accepts
+historical node-hosted bundles for audit and checks the new API image identity,
+entrypoint, mount, effective loopback ports, and network attachments. These
+are implementation and pre-deployment compatibility findings, not a deployed
+contract, independent finality, offline actor, or release approval.
+
+The opt-in local issuer writer now requires its authenticated snapshot reader
+to return the same deployment image checked by the read-only signed API plan:
+network, contract, full verifier-key hashes, maintenance authority and
+governance action count. It checks these on preparation and every SDK reread,
+so a governance mutation cannot be submitted under a stale manually signed
+plan merely because contract and genesis still match. The reader callback
+must still independently authenticate finality; the packaged CLI does not
+instantiate the writer, and these injected-dependency tests are not a live
+standalone actor journey.

@@ -222,7 +222,7 @@ describe("isolated local Trust Registry deployment", () => {
       expect(result.readback.state.verifierKeySha256).toEqual(releaseManifest.verifierKeySha256);
     }
     expect(mocks.indexerPublicDataProvider).toHaveBeenCalledWith(
-      "http://indexer:8080/graphql", "ws://indexer:8080/graphql/ws",
+      "http://indexer.:8080/graphql", "ws://indexer.:8080/graphql/ws",
     );
   });
 

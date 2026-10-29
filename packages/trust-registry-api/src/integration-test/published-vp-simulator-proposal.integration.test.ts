@@ -223,6 +223,9 @@ describe("published VP proof to governed issuer decision", () => {
       const address = server.address();
       if (address === null || typeof address === "string") throw new Error("API listener address unavailable");
       const base = `http://127.0.0.1:${address.port}`;
+      const health = await fetch(`${base}/health`);
+      expect(health.status).toBe(200);
+      expect(await health.json()).toMatchObject({ configuredGovernedProposalRoles: ["issuer"] });
       const proposalEndpoint = `${base}/v1/governed/issuer/${issuer.authorizationId}/proposal`;
       const proposalPreparedResponse = await fetch(`${proposalEndpoint}/prepare`, {
         method: "POST",
