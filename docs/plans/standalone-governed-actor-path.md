@@ -180,7 +180,14 @@ The port separately requires a deployment-trusted time source and rejects
 accepted application evidence before its verified-at time or at/after expiry
 on every prepare, preflight, and execute. The same sampled time is passed to
 the live evidence callback; this explicit guard does not authenticate that
-callback or make the host clock a trusted source. After SDK proving/balancing
+callback or make the host clock a trusted source. The callback must now return
+a versioned result bound to the signed source and deployment, selected
+finalized block, application, evidence commitment, governed status-policy
+commitment, status registry and authority method, and sampled trusted time.
+Missing or substituted results fail closed. This binding is still an adapter
+assertion, not proof that DID, VC, or status authority responses were verified;
+the host must use a published VC-owned live adapter and an independently
+authenticated finality source. After SDK proving/balancing
 and pinned-node genesis verification, the transport broadcast guard repeats
 the captured-admission, authenticated-ledger, trusted-time, and live-evidence
 checks. It rejects a changed signing context and rechecks approved provider

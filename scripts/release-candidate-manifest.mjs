@@ -17,7 +17,13 @@ const SHA256 = /^[0-9a-f]{64}$/u;
 const CONTRACT_PREFIX = "package/dist/managed/trust-registry";
 const CONTRACT_SOURCE_ENTRY = "package/src/trust-registry.compact";
 const GENERATED_CONTRACT_ENTRY = `${CONTRACT_PREFIX}/contract/index.js`;
+/** @typedef {{workspace: string, name: string, version: string, filename: string, sha256: string, sizeBytes: number}} ReleasePackageEntry */
+/** @typedef {{format: string, sourceRevision: string, packageVersion: string, compactCompilerVersion: string, lockfileSha256: string, contractSourceSha256: string, generatedContractSha256: string, verifierKeySha256: unknown, packages: ReleasePackageEntry[]}} ReleaseCandidateManifest */
+/** @param {unknown} value @returns {value is Record<string, unknown>} */
+const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+/** @param {string | Buffer} value */
 const hashBytes = (value) => createHash("sha256").update(value).digest("hex");
+/** @param {string} path */
 const sha256 = (path) => {
   const hash = createHash("sha256");
   const fd = openSync(path, "r");
@@ -32,10 +38,13 @@ const sha256 = (path) => {
     closeSync(fd);
   }
 };
+/** @param {string} path @returns {unknown} */
 const json = (path) => JSON.parse(readFileSync(path, "utf8"));
 
+/** @param {string} name @param {string} version */
 const packedFilename = (name, version) =>
   `${name.replace(/^@/u, "").replace("/", "-")}-${version}.tgz`;
+/** @param {string} artifactDir @param {Set<string>} filenames */
 const assertExactTarballs = (artifactDir, filenames) => {
   const present = readdirSync(artifactDir).filter((name) => name.endsWith(".tgz"));
   if (present.length !== filenames.size || present.some((name) => !filenames.has(name))) {
@@ -43,6 +52,18 @@ const assertExactTarballs = (artifactDir, filenames) => {
   }
 };
 
+/** @param {string} path */
+const packedTarballSize = (path) => {
+  if (!existsSync(path)) throw new Error(`Packed artifact is missing or empty: ${path}`);
+  const file = lstatSync(path);
+  if (!file.isFile() || file.nlink !== 1) {
+    throw new Error(`Packed artifact must be a single-link regular file: ${path}`);
+  }
+  if (file.size === 0) throw new Error(`Packed artifact is missing or empty: ${path}`);
+  return file.size;
+};
+
+/** @param {string} tarball */
 export function packedEntries(tarball) {
   const paths = run("tar", ["-tzf", tarball]).split("\n").filter(Boolean);
   const verbose = run("tar", ["-tvzf", tarball]).split("\n").filter(Boolean);
@@ -57,16 +78,21 @@ export function packedEntries(tarball) {
   }
   return paths;
 }
+/** @param {string} tarball @param {string} name @param {string} version */
 const assertPackedPackageIdentity = (tarball, name, version) => {
+  /** @type {unknown} */
   const manifest = JSON.parse(readPackedTarEntry(tarball, "package/package.json").toString("utf8"));
-  if (manifest.name !== name || manifest.version !== version) {
+  if (!isRecord(manifest) || manifest.name !== name || manifest.version !== version) {
     throw new Error(`Packed package identity differs from candidate workspace: ${name}`);
   }
 };
+/** @param {string} tarball @returns {unknown} */
 const packedContractInfo = (tarball) => JSON.parse(readPackedTarEntry(tarball,
   `${CONTRACT_PREFIX}/compiler/contract-info.json`).toString("utf8"));
+/** @param {string} name */
 const verifierKeyEntry = (name) => `${CONTRACT_PREFIX}/keys/${name}.verifier`;
 
+/** @param {string} tarball @param {unknown} contractInfo */
 function verifierKeyHashes(tarball, contractInfo) {
   const entries = packedEntries(tarball);
   assertFullPackedContract(entries, contractInfo);
@@ -84,21 +110,25 @@ function verifierKeyHashes(tarball, contractInfo) {
   }
 }
 
+/** @param {{repoRoot: string, artifactDir: string, revision: string, workspaces?: readonly string[], publish?: readonly string[]}} input */
 export function buildReleaseCandidateManifest(input) {
   const { repoRoot, artifactDir, revision, workspaces = artifactWorkspaces,
     publish = publishWorkspaces } = input;
   if (!HASH.test(revision)) throw new Error("Release source must be a full Git commit SHA");
   const packageRoot = json(join(repoRoot, "package.json"));
+  if (!isRecord(packageRoot) || typeof packageRoot.version !== "string"
+    || typeof packageRoot.packageManager !== "string") {
+    throw new Error("Release root package identity is invalid");
+  }
   const packages = workspaces.map((workspace) => {
     const manifest = json(join(repoRoot, workspace, "package.json"));
-    if (manifest.version !== packageRoot.version || typeof manifest.name !== "string") {
+    if (!isRecord(manifest) || manifest.version !== packageRoot.version
+      || typeof manifest.name !== "string" || typeof manifest.version !== "string") {
       throw new Error(`${workspace}: package identity or version disagrees with the release`);
     }
     const filename = packedFilename(manifest.name, manifest.version);
     const path = join(artifactDir, filename);
-    if (!existsSync(path) || statSync(path).size === 0) {
-      throw new Error(`${workspace}: packed artifact is missing or empty: ${filename}`);
-    }
+    const sizeBytes = packedTarballSize(path);
     const entries = packedEntries(path);
     assertCanonicalPackedPaths(entries);
     assertRequiredPackedPaths(entries, workspace);
@@ -109,7 +139,7 @@ export function buildReleaseCandidateManifest(input) {
       version: manifest.version,
       publication: publish.includes(workspace) ? "npm" : "local-only",
       filename,
-      sizeBytes: statSync(path).size,
+      sizeBytes,
       sha256: sha256(path),
     };
   });
@@ -123,6 +153,9 @@ export function buildReleaseCandidateManifest(input) {
   const contractInfoPath = join(repoRoot,
     "contracts/trust-registry/dist/managed/trust-registry/compiler/contract-info.json");
   const contractInfo = json(contractInfoPath);
+  if (!isRecord(contractInfo) || typeof contractInfo["compiler-version"] !== "string") {
+    throw new Error("Generated contract metadata is invalid");
+  }
   const compactCompilerVersion = readFileSync(join(repoRoot, ".compact-version"), "utf8").trim();
   if (contractInfo["compiler-version"] !== compactCompilerVersion) {
     throw new Error("Generated contract compiler version differs from the candidate toolchain pin");
@@ -152,7 +185,10 @@ export function buildReleaseCandidateManifest(input) {
       throw new Error(`Packed verifier key does not match the candidate tree: ${name}`);
     }
   }
-  const dependencies = packageRoot.dependencies ?? {};
+  const dependencies = isRecord(packageRoot.dependencies) ? packageRoot.dependencies : {};
+  if (Object.values(dependencies).some((value) => typeof value !== "string")) {
+    throw new Error("Release identity dependencies must be version strings");
+  }
   return {
     format: "tr-release-candidate-manifest-v2",
     sourceRevision: revision,
@@ -171,6 +207,7 @@ export function buildReleaseCandidateManifest(input) {
   };
 }
 
+/** @param {string[]} paths @param {unknown} contractInfo */
 export function assertFullPackedContract(paths, contractInfo) {
   assertCanonicalPackedPaths(paths);
   const files = paths.map((path) => path.replace(/^package\//u, ""));
@@ -180,6 +217,7 @@ export function assertFullPackedContract(paths, contractInfo) {
   if (missing.length > 0) throw new Error(`Packed contract has incomplete proof artifacts: ${missing.join(" and ")}`);
 }
 
+/** @param {string[]} paths */
 export function assertCanonicalPackedPaths(paths) {
   const listed = paths.filter((path) => path.length > 0);
   const normalized = listed.map((path) => path.endsWith("/") ? path.slice(0, -1) : path);
@@ -200,6 +238,7 @@ export function assertCanonicalPackedPaths(paths) {
   }
 }
 
+/** @param {string[]} paths @param {string} workspace */
 export function assertRequiredPackedPaths(paths, workspace) {
   const required = packageManifestCatalog.get(workspace)?.requiredPackedPaths;
   if (!Array.isArray(required) || required.length === 0) {
@@ -213,10 +252,26 @@ export function assertRequiredPackedPaths(paths, workspace) {
   }
 }
 
+/** @param {unknown} value @returns {value is ReleasePackageEntry} */
+const isReleasePackageEntry = (value) => isRecord(value)
+  && typeof value.workspace === "string" && typeof value.name === "string"
+  && typeof value.version === "string" && typeof value.filename === "string"
+  && typeof value.sha256 === "string" && typeof value.sizeBytes === "number";
+
+/** @param {unknown} value @returns {value is ReleaseCandidateManifest} */
+const isReleaseCandidateManifest = (value) => isRecord(value)
+  && typeof value.format === "string" && typeof value.sourceRevision === "string"
+  && typeof value.packageVersion === "string" && typeof value.compactCompilerVersion === "string"
+  && typeof value.lockfileSha256 === "string" && typeof value.contractSourceSha256 === "string"
+  && typeof value.generatedContractSha256 === "string"
+  && Array.isArray(value.packages)
+  && value.packages.every(isReleasePackageEntry);
+
+/** @param {unknown} manifest @param {string} artifactDir @param {readonly string[]} [workspaces] */
 export function verifyReleaseCandidateArtifacts(manifest, artifactDir, workspaces = artifactWorkspaces) {
-  if (manifest?.format !== "tr-release-candidate-manifest-v2"
+  if (!isReleaseCandidateManifest(manifest)
+    || manifest.format !== "tr-release-candidate-manifest-v2"
     || !HASH.test(manifest.sourceRevision)
-    || !Array.isArray(manifest.packages)
     || manifest.packages.length !== workspaces.length) {
     throw new Error("Release candidate manifest format or package count is invalid");
   }
@@ -245,7 +300,7 @@ export function verifyReleaseCandidateArtifacts(manifest, artifactDir, workspace
     seen.add(entry.workspace);
     filenames.add(entry.filename);
     const path = join(artifactDir, entry.filename);
-    if (!existsSync(path) || statSync(path).size !== entry.sizeBytes || sha256(path) !== entry.sha256) {
+    if (packedTarballSize(path) !== entry.sizeBytes || sha256(path) !== entry.sha256) {
       throw new Error(`Release candidate artifact hash or size mismatch: ${entry.filename}`);
     }
     const entries = packedEntries(path);
@@ -262,20 +317,23 @@ export function verifyReleaseCandidateArtifacts(manifest, artifactDir, workspace
     throw new Error("Release candidate packed contract source or generated contract hash mismatch");
   }
   const contractInfo = packedContractInfo(contractTarball);
-  if (contractInfo["compiler-version"] !== manifest.compactCompilerVersion) {
+  if (!isRecord(contractInfo)
+    || contractInfo["compiler-version"] !== manifest.compactCompilerVersion) {
     throw new Error("Release candidate compiler version differs from packed contract metadata");
   }
   const expectedHashes = verifierKeyHashes(contractTarball, contractInfo);
   const actualHashes = manifest.verifierKeySha256;
-  if (actualHashes === null || typeof actualHashes !== "object" || Array.isArray(actualHashes)
+  if (!isRecord(actualHashes)
     || Object.keys(actualHashes).length !== Object.keys(expectedHashes).length
     || Object.keys(actualHashes).some((name, index) => name !== Object.keys(expectedHashes)[index]
+      || typeof actualHashes[name] !== "string"
       || !SHA256.test(actualHashes[name]) || actualHashes[name] !== expectedHashes[name])) {
     throw new Error("Release candidate verifier-key hashes are invalid or incomplete");
   }
   return manifest.packages.map(({ filename }) => join(artifactDir, filename));
 }
 
+/** @param {string} command @param {string[]} args @param {boolean} [trim] */
 const run = (command, args, trim = true) => {
   const result = spawnSync(command, args, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   if (result.status !== 0) {
@@ -284,6 +342,7 @@ const run = (command, args, trim = true) => {
   return trim ? result.stdout.trim() : result.stdout;
 };
 
+/** @param {string} revision */
 function verifySignedHead(revision) {
   if (process.env.TR_MANIFEST_GITHUB_VERIFIED_COMMIT !== "true") {
     run("git", ["verify-commit", "HEAD"]);
@@ -303,6 +362,7 @@ function verifySignedHead(revision) {
   }
 }
 
+/** @param {string} tarball @param {string} entry */
 const readPackedTarEntry = (tarball, entry) => {
   const result = spawnSync("tar", ["-xOzf", tarball, entry], { maxBuffer: 64 * 1024 * 1024 });
   if (result.status !== 0) {
@@ -312,6 +372,7 @@ const readPackedTarEntry = (tarball, entry) => {
   return result.stdout;
 };
 
+/** @param {string} tarball @param {string} entry */
 export const hashPackedTarEntry = (tarball, entry) => hashBytes(readPackedTarEntry(tarball, entry));
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

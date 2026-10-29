@@ -75,6 +75,34 @@ they can all run today. The implementation sequence is in
    have the reviewer sign the exact generated approval draft. Review and sign
    the maintenance roster separately. Do not use the demo-reference script,
    a node-reported hash alone, or an AI-generated signature as approval.
+   Keep the review packet with this installation's private evidence, not in a
+   PR or a shared log. The proposed pin requires the verified temporary relay
+   described in the detailed guide; collect the candidate before attaching
+   that relay, and remove it again after drafting the pin:
+
+   ```sh
+   node scripts/standalone-setup-wizard.mjs collect-genesis-candidate /absolute/private/setup
+   # Attach the reviewed installation relay, then:
+   node scripts/standalone-setup-wizard.mjs draft-genesis-pin /absolute/private/setup
+   # Stop and remove that relay before continuing:
+   pnpm prepare:standalone-genesis-review /absolute/private/setup
+   node scripts/check-standalone-journey-prerequisites.mjs /absolute/private/setup "$SOURCE_SHA"
+   ```
+
+   Set `SOURCE_SHA` to the full commit used for the verified bundle. Before
+   approval, the last command must exit 2 with `genesisApproved` as the first
+   missing gate (unless an earlier setup gate is missing). The packet and pin
+   remain node-derived, untrusted proposals. The reviewer must authenticate
+   the chain specification independently and sign the wizard's later exact
+   approval draft, not this packet. Do not proceed to deployment merely
+   because the node report matches the proposed pin.
+   Once genesis is approved, the prerequisite report must next require the
+   signed release roster and its reviewed deployment plan. The wizard rejects
+   deployment without this pre-deployment committee approval. The separate
+   deployment-bound committee signature can follow finalized deployment
+   before the remaining verifier-key insertions. Reconcile every key before
+   transitioning maintenance authority; neither signature substitutes for
+   the other.
 4. **Deploy and reconcile once.** Stage the exact signed source and verified
    packages with `stage-provider-runtime.mjs`; independently record its source,
    inventory, and content digests. Transfer it to a new root-owned code tree

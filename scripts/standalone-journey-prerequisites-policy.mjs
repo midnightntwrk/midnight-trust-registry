@@ -6,9 +6,10 @@ const NEXT_ACTION = Object.freeze({
   installStaged: "Verify and stage the pinned install inventory and image bytes for this source revision.",
   stackObserved: "Start the dedicated local-ledger stack and observe its isolated bridge and pinned images.",
   genesisApproved: "Independently review the real chain specification, then sign the exact genesis approval with the reviewer key.",
+  releaseRosterApproved: "Review and sign the release maintenance roster, threshold, public keys, custody roles, and deployment plan before deployment.",
   deploymentObserved: "Deploy through the approved provider and record finalized constructor and contract readback.",
+  committeeApproved: "Bind the approved roster to the finalized deployment and record its separate signed approval.",
   recordedKeyInsertionsReconciled: "Reconcile every staged verifier-key insertion against finalized deployment readback.",
-  committeeApproved: "Approve and sign the release committee roster, threshold, public keys, and custody roles.",
   maintenanceObserved: "Transition to the approved committee and record finalized authority and counter readback.",
 });
 const GATE_ORDER = Object.keys(NEXT_ACTION);
@@ -42,16 +43,20 @@ export function assessStandaloneJourneyPrerequisites(status, expectedSourceRevis
     stackObserved: status.stackConfiguration === "observed-ledger-bridge-only",
     genesisApproved: status.localLedger === "operator-pinned-reviewer-signature-verified"
       && nonzeroHash(status.approvedGenesisHash),
+    releaseRosterApproved: status.maintenanceApproval
+      === "roster-signature-verified-deployment-binding-pending"
+      || status.maintenanceApproval
+        === "deployment-bound-roster-signature-verified-transition-pending",
     deploymentObserved: status.deployment === "observed"
       && nonzeroHash(status.deployedContractAddress),
+    committeeApproved: status.maintenanceApproval
+      === "deployment-bound-roster-signature-verified-transition-pending",
     recordedKeyInsertionsReconciled: status.stagedVerifierKeys.length > 0
       && status.stagedVerifierKeys.every((entry) => isRecord(entry)
         && typeof entry.circuitName === "string" && entry.circuitName.length > 0
         && entry.state === "verified")
       && new Set(status.stagedVerifierKeys.map((entry) => entry.circuitName)).size
         === status.stagedVerifierKeys.length,
-    committeeApproved: status.maintenanceApproval
-      === "deployment-bound-roster-signature-verified-transition-pending",
     maintenanceObserved: status.maintenanceTransition === "observed"
       && status.maintenanceLastReadback === "observed"
       && status.maintenanceTransitionAlert === null,

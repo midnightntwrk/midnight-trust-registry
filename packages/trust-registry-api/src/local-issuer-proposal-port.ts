@@ -1,4 +1,8 @@
-import type { ApplicationEvidenceSubmission, GovernancePolicySnapshot } from "@midnight-ntwrk/trust-registry-domain";
+import {
+  computeIssuerStatusPolicyBindingCommitment,
+  type ApplicationEvidenceSubmission,
+  type GovernancePolicySnapshot,
+} from "@midnight-ntwrk/trust-registry-domain";
 import type { TrustRegistryJubjubSignature } from "@midnight-ntwrk/trust-registry-contract";
 import {
   executeLocalIssuerProposalAfterReservation,
@@ -52,6 +56,20 @@ type InstalledProviderVerification = {
   releaseQualified: false;
 };
 
+export type LiveIssuerEvidenceVerification = {
+  format: "tr-live-issuer-evidence-verification-v1";
+  sourceRevision: string;
+  networkId: string;
+  contractAddress: string;
+  finalizedBlockHash: string;
+  applicationId: string;
+  evidenceCommitment: string;
+  statusPolicyBindingCommitment: string;
+  statusRegistryId: string;
+  statusAuthorityVerificationMethod: string;
+  trustedTimeMs: number;
+};
+
 export class LocalIssuerEvidenceTimeRejectedError extends Error {
   constructor() {
     super("Accepted issuer evidence is not current at trusted time");
@@ -77,13 +95,13 @@ export type LocalIssuerProposalPortDependencies = {
   readAuthenticatedFinalizedSnapshot(contractAddress: string): Promise<FinalizedIssuerSnapshot>;
   /** Return trusted time for each prepare/preflight/execute, not the API host clock. */
   readTrustedTimeMs(): Promise<number>;
-  /** Resolve DID, VP, VC status authority, and challenge from live local services at this trusted time. */
+  /** Independently resolve DID, VP, VC status authority, and challenge from live local services. The returned binding is not itself proof of that verification. */
   verifyLiveEvidence(input: CapturedIssuerAdmission & {
     terms: LocalIssuerProposalTerms;
     submittedEvidence: ApplicationEvidenceSubmission;
     snapshot: FinalizedIssuerSnapshot;
     trustedTimeMs: number;
-  }): Promise<void>;
+  }): Promise<LiveIssuerEvidenceVerification>;
   /** Recheck the immutable installed provider tree and exact-source digest before every SDK use. */
   assertApprovedProviderCode(): Promise<InstalledProviderVerification>;
   loadApprovedSubmissionProviders(): Promise<SubmissionProviders>;
@@ -166,7 +184,20 @@ export function createBoundLocalIssuerProposalPort(
       policySnapshot: snapshot.policySnapshot, ledger: snapshot.ledger,
     });
     const trustedTimeMs = await assertEvidenceCurrent(submittedEvidence);
-    await dependencies.verifyLiveEvidence({ terms, ...admission, submittedEvidence, snapshot, trustedTimeMs });
+    const verified = await dependencies.verifyLiveEvidence({ terms, ...admission, submittedEvidence, snapshot, trustedTimeMs });
+    if (verified?.format !== "tr-live-issuer-evidence-verification-v1"
+      || verified.sourceRevision !== dependencies.plan.sourceRevision
+      || verified.networkId !== dependencies.plan.networkId
+      || verified.contractAddress !== dependencies.plan.contractAddress
+      || verified.finalizedBlockHash !== snapshot.finalizedBlockHash
+      || verified.applicationId !== terms.applicationId
+      || verified.evidenceCommitment !== submittedEvidence.commitment
+      || verified.statusPolicyBindingCommitment !== computeIssuerStatusPolicyBindingCommitment(terms.statusPolicyBinding)
+      || verified.statusRegistryId !== terms.statusPolicyBinding.statusRegistryId
+      || verified.statusAuthorityVerificationMethod !== terms.statusPolicyBinding.statusAuthorityVerificationMethod
+      || verified.trustedTimeMs !== trustedTimeMs) {
+      throw new Error("Live issuer evidence result differs from the approved deployment, evidence, or status policy");
+    }
     return prepared;
   };
 

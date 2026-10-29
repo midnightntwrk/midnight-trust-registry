@@ -2498,6 +2498,13 @@ hardens the governed issuer evidence intake against untrusted status responses;
 it is not a VC-owned live status-authority deployment, authenticated ledger
 finality, or standalone actor-journey evidence.
 
+The RPC checkpoint reader (local and public) now caps each
+genesis/finalized-head JSON-RPC response at 8 KiB and rejects malformed UTF-8
+or JSON before accepting a hash.
+The limit applies even without an honest Content-Length header. This prevents
+an unbounded node response from exhausting the actor host; a pinned local node
+is still not an independently authenticated finality source.
+
 Issue #229 now wires the pre-existing broad checked-JS configuration into CI
 and adds a strict CI gate
 for provider inode identity, immutable import confinement, and optional Helm
@@ -2505,6 +2512,12 @@ signature verification. The remaining non-strict approval, installer,
 maintenance, and release scripts are listed with migration priority and owner in
 `docs/plans/standalone-security-script-typecheck.md`. This does not type the
 large wizard or replace its adversarial tests and independent human review.
+
+Provider staging now delegates its expected-workspace, unique archive-name,
+and SHA-256 catalog decision to a strictly checked pure policy. Malformed and
+duplicate catalog entries are rejected before extraction. The staging I/O
+shell and its installer dependencies remain outside the strict gate; this
+does not qualify the install or prove any deployed actor journey.
 
 The wizard's canonical reviewer metadata and release committee/custody
 validation now live in a strictly checked, side-effect-free policy module.
@@ -2619,3 +2632,35 @@ plan merely because contract and genesis still match. The reader callback
 must still independently authenticate finality; the packaged CLI does not
 instantiate the writer, and these injected-dependency tests are not a live
 standalone actor journey.
+
+The local API v3 approval-chain verifier now requires the genesis approval's
+detached GPG signature to use the same pinned reviewer fingerprint as the
+committee, deployment approval, and signed API plan. A second valid public key
+in the keyring can no longer become the genesis trust anchor merely by being
+named in an otherwise valid approval entry. The focused test signs a substitute
+genesis document with a real second GPG key and confirms rejection; the full
+API test suite passed. This is one #234 identity link, not proof that the
+maintenance readback is independently finalized, that the deployment is
+qualified, or that the human security review is complete. A future reviewer
+rotation needs an explicit signed protocol rather than a silent keyring change.
+
+The local deployment and staged-reconciliation shell is now in the strict
+security-script type gate. Its plan type distinguishes full from staged
+deployment, so only the staged call carries an initial verifier-key name.
+Parsed release manifests and provider factory results enter as `unknown` at
+the dynamic-code boundary; a malformed or empty verifier-key hash catalog
+stops before endpoint observation or provider import. The test fixture now
+uses a realistic nonempty catalog and adds an early-denial case. Strict
+typechecking does not prove that a dynamically loaded provider is benign or
+that its output is a finalized ledger result; immutable installation, signed
+approval, and live reconciliation remain separate gates.
+
+The staged verifier-key insertion shell is also in the strict type gate. Its
+plan type no longer intersects incompatible deployment and insertion format
+literals; the checked code narrows an approved staged receipt before
+comparing it to the setup record and routes submit versus read-only
+reconciliation through distinct typed functions. It treats parsed manifests
+and provider material as untrusted boundary values and rejects a malformed
+verifier-key catalog before endpoint or provider use. This does not prove a
+key was inserted on a deployed local ledger or that finality is independently
+authenticated.

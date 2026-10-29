@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { linkSync, mkdtempSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, test } from "node:test";
@@ -145,6 +145,22 @@ test("candidate manifest binds signed source inputs and exact package bytes", ()
   assert.equal(manifest.packages[0].sha256,
     createHash("sha256").update(readFileSync(contractTarball)).digest("hex"));
   assert.equal(verifyReleaseCandidateArtifacts(manifest, input.artifactDir, input.workspaces).length, 2);
+  const retainedTarball = join(root, "artifacts/retained-contract.tar");
+  renameSync(contractTarball, retainedTarball);
+  for (const linkTarball of [symlinkSync, linkSync]) {
+    linkTarball(retainedTarball, contractTarball);
+    assert.throws(() => buildReleaseCandidateManifest(input), /single-link regular file/u);
+    assert.throws(() => verifyReleaseCandidateArtifacts(manifest, input.artifactDir, input.workspaces),
+      /single-link regular file/u);
+    rmSync(contractTarball);
+  }
+  renameSync(retainedTarball, contractTarball);
+  for (const malformed of [null, 7, { ...manifest, packages: [null, manifest.packages[1]] },
+    { ...manifest, packages: [{ ...manifest.packages[0], sizeBytes: "wrong" }, manifest.packages[1]] },
+    { ...manifest, lockfileSha256: 7 }]) {
+    assert.throws(() => verifyReleaseCandidateArtifacts(malformed, input.artifactDir, input.workspaces),
+      /manifest format or package count is invalid/u);
+  }
   const domainEntrypoint = join(root, "packed-domain/package/dist/index.js");
   rmSync(domainEntrypoint);
   symlinkSync("browser.js", domainEntrypoint);

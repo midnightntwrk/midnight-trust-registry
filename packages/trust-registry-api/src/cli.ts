@@ -51,6 +51,9 @@ const HELP_TEXT = `Usage:
     --local-ledger-keyring DIRECTORY --local-ledger-reviewer FINGERPRINT
     --role issuer|verifier|auditor|maintainer|recognition --authorization-id ID
     --submission-journal ABSOLUTE_PATH
+  trust-registry-api compact-local-proposal-journal --local-ledger-plan PATH --local-ledger-signature PATH
+    --local-ledger-keyring DIRECTORY --local-ledger-reviewer FINGERPRINT
+    --submission-journal ABSOLUTE_PATH
   trust-registry-api inspect-local-proposal-recovery --local-ledger-plan PATH --local-ledger-signature PATH
     --local-ledger-keyring DIRECTORY --local-ledger-reviewer FINGERPRINT
     --role issuer|verifier|auditor|maintainer|recognition --authorization-id ID
@@ -77,6 +80,7 @@ It is not actor-journey, process-identity, independent-finality, or release evid
 An absent local proposal is not proof of failed submission and never permits retry.
 Initialize an empty private journal against the signed deployment before submission.
 Reconciliation requires that binding and updates only an exact-matching entry after verified readback.
+Archive compaction rechecks observed history and retains all attempts; it never permits retry.
 Recovery inspection is read-only. Its candidate report never permits retry or journal release.
 Draft and verify are also read-only: they do not authenticate chain finality or release a reservation.
 
@@ -90,6 +94,7 @@ Examples:
 export type TrustRegistryApiCliOptions = {
   command: "serve" | "check-local-ledger-plan" | "observe-local-ledger-api"
     | "observe-local-proposal" | "init-local-proposal-journal" | "reconcile-local-proposal"
+    | "compact-local-proposal-journal"
     | "inspect-local-proposal-recovery" | "draft-local-proposal-recovery-decision"
     | "verify-local-proposal-recovery-decision";
   host: string;
@@ -126,6 +131,7 @@ export const parseTrustRegistryApiCliArgs = (
   if (command !== "serve" && command !== "check-local-ledger-plan"
     && command !== "observe-local-ledger-api" && command !== "observe-local-proposal"
     && command !== "init-local-proposal-journal" && command !== "reconcile-local-proposal"
+    && command !== "compact-local-proposal-journal"
     && command !== "inspect-local-proposal-recovery"
     && command !== "draft-local-proposal-recovery-decision"
     && command !== "verify-local-proposal-recovery-decision") {
@@ -296,7 +302,8 @@ export const parseTrustRegistryApiCliArgs = (
     || command === "verify-local-proposal-recovery-decision";
   if (command === "check-local-ledger-plan" || command === "observe-local-ledger-api"
     || command === "observe-local-proposal" || command === "init-local-proposal-journal"
-    || command === "reconcile-local-proposal" || recoveryCommand) {
+    || command === "reconcile-local-proposal" || command === "compact-local-proposal-journal"
+    || recoveryCommand) {
     const allowed = new Set(["--local-ledger-plan", "--local-ledger-signature",
       "--local-ledger-keyring", "--local-ledger-reviewer"]);
     if (command === "observe-local-ledger-api") allowed.add("--api-origin");
@@ -306,6 +313,7 @@ export const parseTrustRegistryApiCliArgs = (
       allowed.add("--authorization-id");
     }
     if (command === "reconcile-local-proposal" || command === "init-local-proposal-journal"
+      || command === "compact-local-proposal-journal"
       || recoveryCommand) {
       allowed.add("--submission-journal");
     }
@@ -351,8 +359,9 @@ export const parseTrustRegistryApiCliArgs = (
         || options.recoveryKeyringDirectory === undefined)) {
       throw new Error("Recovery decision verification requires --recovery-decision, --recovery-signature, and --recovery-keyring");
     }
-    if (command === "init-local-proposal-journal" && options.submissionJournalPath === undefined) {
-      throw new Error("Local journal initialization requires --submission-journal");
+    if ((command === "init-local-proposal-journal" || command === "compact-local-proposal-journal")
+      && options.submissionJournalPath === undefined) {
+      throw new Error("Local journal operation requires --submission-journal");
     }
     return options;
   }
@@ -529,6 +538,45 @@ export const runTrustRegistryApiCli = async (
       state: attempt.state,
       eventHash: attempt.eventHash,
       evidenceCommitment: attempt.evidenceCommitment,
+      retryPermitted: false,
+      releaseQualified: false,
+    }, null, 2)}\n`);
+    return;
+  }
+  if (options.command === "compact-local-proposal-journal") {
+    const plan = await loadApprovedLocalLedgerRuntimePlan({
+      planPath: options.localLedgerPlanPath!,
+      signaturePath: options.localLedgerSignaturePath!,
+      keyringDirectory: options.localLedgerKeyringDirectory!,
+      reviewerFingerprint: options.localLedgerReviewerFingerprint!,
+      requireApiRuntimePin: true,
+      requireApprovalChain: true,
+    });
+    const source = await createApprovedLocalLedgerRuntimeSource(plan);
+    const snapshot = await source.loadSnapshot();
+    const journal = new FileProposalSubmissionJournal(options.submissionJournalPath!);
+    await journal.assertDeploymentBinding(
+      snapshot.registry.registryId, plan.contractAddress, plan.expectedGenesisHash,
+    );
+    let finalizedLedger: ReturnType<FinalizedProposalLedgerReader> | undefined;
+    const readFinalizedLedger = (): ReturnType<FinalizedProposalLedgerReader> =>
+      finalizedLedger ??= source.readFinalizedProposalLedger();
+    const result = await journal.compactObservedArchives(async (role, id) => {
+      const proposal = await resolveCompactProposalEvidenceSnapshot(
+        readFinalizedLedger, snapshot.registry.registryId, role, id,
+        Buffer.from(plan.contractAddress.slice(2), "hex"),
+      );
+      return proposal === null ? null : {
+        eventHash: proposal.eventHash,
+        evidenceCommitment: proposal.evidenceCommitment,
+      };
+    });
+    process.stdout.write(`${JSON.stringify({
+      format: "tr-local-proposal-journal-compaction-v1",
+      registryId: snapshot.registry.registryId,
+      contractAddress: plan.contractAddress,
+      ...result,
+      independentFinality: "not-verified",
       retryPermitted: false,
       releaseQualified: false,
     }, null, 2)}\n`);

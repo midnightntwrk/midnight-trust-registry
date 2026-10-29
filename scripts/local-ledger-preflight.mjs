@@ -10,19 +10,29 @@ const HASH = /^0x[0-9a-f]{64}$/u;
 const REVISION = /^[0-9a-f]{40}$/u;
 const FIELDS = ["allowedHosts", "expectedGenesisHash", "format", "networkId", "rpcUrl", "sourceRevision"];
 
-/** Node observation only; an operator must approve the genesis from another channel. */
-export async function checkLocalLedgerPreflight(plan, fetchImpl) {
-  if (plan === null || typeof plan !== "object" || Array.isArray(plan)
-    || Object.keys(plan).sort().join("\0") !== FIELDS.join("\0")
-    || plan.format !== "tr-local-ledger-pin-v1" || plan.networkId !== getLocalNetworkProfile().networkId
-    || !REVISION.test(plan.sourceRevision)
-    || !HASH.test(plan.expectedGenesisHash)
-    || /^0x0{64}$/u.test(plan.expectedGenesisHash)
-    || typeof plan.rpcUrl !== "string"
-    || !Array.isArray(plan.allowedHosts) || plan.allowedHosts.length === 0
-    || plan.allowedHosts.some((host) => typeof host !== "string" || host.length === 0)) {
+/** @typedef {{allowedHosts: string[], expectedGenesisHash: string, format: "tr-local-ledger-pin-v1",
+ * networkId: "undeployed", rpcUrl: string, sourceRevision: string}} LocalLedgerPin */
+/** @param {unknown} value @returns {value is Record<string, unknown>} */
+const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+
+/** Node observation only; an operator must approve the genesis from another channel.
+ * @param {unknown} candidate
+ * @param {typeof fetch} [fetchImpl]
+ */
+export async function checkLocalLedgerPreflight(candidate, fetchImpl) {
+  if (!isRecord(candidate)
+    || Object.keys(candidate).sort().join("\0") !== FIELDS.join("\0")
+    || candidate.format !== "tr-local-ledger-pin-v1"
+    || candidate.networkId !== getLocalNetworkProfile().networkId
+    || typeof candidate.sourceRevision !== "string" || !REVISION.test(candidate.sourceRevision)
+    || typeof candidate.expectedGenesisHash !== "string" || !HASH.test(candidate.expectedGenesisHash)
+    || /^0x0{64}$/u.test(candidate.expectedGenesisHash)
+    || typeof candidate.rpcUrl !== "string"
+    || !Array.isArray(candidate.allowedHosts) || candidate.allowedHosts.length === 0
+    || candidate.allowedHosts.some((host) => typeof host !== "string" || host.length === 0)) {
     throw new Error("Local ledger preflight requires an exact approved network, source, and genesis pin");
   }
+  const plan = /** @type {LocalLedgerPin} */ (/** @type {unknown} */ (candidate));
   const source = createLocalRpcFinalizedCheckpointSource({
     rpcUrl: plan.rpcUrl,
     expectedGenesisHash: plan.expectedGenesisHash,

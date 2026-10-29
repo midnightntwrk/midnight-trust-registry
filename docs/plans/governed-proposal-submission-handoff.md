@@ -259,15 +259,32 @@ segment, so rotation does not permit replay. Operators must not delete a
 referenced segment, manifest, or lock file to make capacity available. A
 lagging `not-observed` read never justifies clearing a reservation.
 
+When several small archives approach the 64-segment limit,
+`compactObservedArchives(readFinalized)` rechecks every archived event and
+repacks them into fewer bounded segments. It preserves every observed attempt
+and the unchanged active segment; it does not reclaim an authorization or
+clear a pending reservation. It syncs replacement segments before the atomic
+manifest update, then removes only formerly referenced archive files. If the
+history cannot fit in fewer segments, it makes no change and the operator must
+stop before the hard cap rather than deleting evidence. A crash may leave
+unreferenced segments, which require the same quiesced backup review as
+rotation.
+
 Local operator procedure:
 
 1. Quiesce submissions and preserve a byte-for-byte private backup of the
    manifest, every referenced segment, and any unresolved original journal.
 2. Check `inspectCapacity()` and reconcile pending attempts against an
    independently authenticated finalized reader. Do not retry absent records.
-3. Call `rotateObserved(readFinalized)` under the same journal path, then reopen the journal
-   and confirm that archived IDs remain non-submittable and pending IDs retain
-   their previous state. Resume submissions only after that check passes.
+3. Call `rotateObserved(readFinalized)` under the same journal path. If the
+   archive count is nearing 64, call `compactObservedArchives(readFinalized)`
+   while still quiesced. The signed local-ledger CLI exposes the latter as
+   `trust-registry-api compact-local-proposal-journal` with the approved plan,
+   reviewer evidence, and absolute `--submission-journal` path. Its reader is
+   bound to that plan but is **not** independent finality authentication; the
+   operator must supply and review that assurance separately. Reopen the
+   journal and confirm archived IDs remain non-submittable and pending IDs
+   retain their previous state. Resume only after that check passes.
 4. If startup fails, stop submissions and restore the complete backup set;
    never create a blank journal at the same path. Inspect unreferenced segment
    files only while quiesced, and remove one only after verifying that no

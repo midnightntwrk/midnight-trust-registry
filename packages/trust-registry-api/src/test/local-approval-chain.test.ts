@@ -31,17 +31,18 @@ it("verifies signed standalone approvals and rejects substitution", async () => 
     const publicKey = execFileSync("gpg", ["--homedir", signer, "--batch", "--export", fingerprint!]);
     execFileSync("gpg", ["--homedir", verifier, "--batch", "--import"],
       { input: publicKey, stdio: ["pipe", "pipe", "pipe"] });
-    const signed = async (document: object, name: string) => {
+    const signed = async (document: object, name: string, signingFingerprint = fingerprint!) => {
       const path = join(root, `${name}.json`);
       const signaturePath = join(root, `${name}.sig`);
       const documentBytes = Buffer.from(`${JSON.stringify(document)}\n`);
       await writeFile(path, documentBytes);
-      execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--detach-sign",
+      execFileSync("gpg", ["--homedir", signer, "--batch", "--yes", "--local-user",
+        signingFingerprint, "--detach-sign",
         "--output", signaturePath, path]);
       const signatureBytes = await readFile(signaturePath);
       return { documentBase64: documentBytes.toString("base64"),
         documentSha256: sha256(documentBytes), signatureBase64: signatureBytes.toString("base64"),
-        signatureSha256: sha256(signatureBytes), reviewerFingerprint: fingerprint! };
+        signatureSha256: sha256(signatureBytes), reviewerFingerprint: signingFingerprint };
     };
     const sourceRevision = "a".repeat(40);
     const verifierKeySha256 = { first: "1".repeat(64), second: "2".repeat(64) };
@@ -66,11 +67,12 @@ it("verifies signed standalone approvals and rejects substitution", async () => 
       expectedGenesisHash, contractAddress,
       verifierKeySha256,
       maintenanceAuthority: { committee, threshold: 2, counter: "2" } };
-    const genesisApproval = await signed({ format: "tr-local-genesis-approval-v1", sourceRevision,
+    const genesisDocument = { format: "tr-local-genesis-approval-v1", sourceRevision,
       setupId: "setup-a", stackProject: "tr-local", installInventorySha256, networkId: "undeployed",
       pinSha256: "f".repeat(64), expectedGenesisHash, rpcUrl: "http://127.0.0.1:29944",
       reviewerFingerprint: fingerprint, reviewedReference: "reviewed-genesis-sha256",
-      approvedAt: "2026-10-25T00:00:00.000Z" }, "genesis");
+      approvedAt: "2026-10-25T00:00:00.000Z" };
+    const genesisApproval = await signed(genesisDocument, "genesis");
     const deploymentPlanSha256 = "7".repeat(64);
     const committeeApproval = await signed({ format: "tr-local-committee-approval-v2",
       sourceRevision, installInventorySha256, genesisApprovalSha256: genesisApproval.documentSha256,
@@ -101,6 +103,38 @@ it("verifies signed standalone approvals and rejects substitution", async () => 
       verifyLocalApiApprovalChain({ chainBytes: Buffer.from(`${JSON.stringify(candidate)}\n`),
         plan: selectedPlan, keyringDirectory: verifier, governanceReviewerFingerprint: reviewer });
     await expect(verify(chain)).resolves.toBeUndefined();
+    execFileSync("gpg", ["--homedir", signer, "--batch", "--pinentry-mode", "loopback",
+      "--passphrase", "", "--quick-generate-key", "Alternate Reviewer <alternate@example.test>",
+      "ed25519", "sign", "0"], { stdio: "pipe", timeout: 30_000 });
+    const alternateKeys = execFileSync("gpg", ["--homedir", signer, "--batch", "--with-colons",
+      "--list-secret-keys"], { encoding: "utf8" });
+    const alternateFingerprint = alternateKeys.split("\n")
+      .filter((line) => line.startsWith("fpr:"))
+      .map((line) => line.split(":")[9])
+      .find((value) => value !== fingerprint);
+    expect(alternateFingerprint).toMatch(/^[A-F0-9]{40}$/u);
+    const alternatePublicKey = execFileSync("gpg", ["--homedir", signer, "--batch", "--export",
+      alternateFingerprint!]);
+    execFileSync("gpg", ["--homedir", verifier, "--batch", "--import"],
+      { input: alternatePublicKey, stdio: ["pipe", "pipe", "pipe"] });
+    const alternateGenesis = await signed({ ...genesisDocument,
+      reviewerFingerprint: alternateFingerprint }, "alternate-genesis", alternateFingerprint);
+    await expect(verify({ ...chain, genesisApproval: alternateGenesis }))
+      .rejects.toThrow(/approved deployment or maintenance state/u);
+    const alternateCommittee = await signed({
+      ...JSON.parse(Buffer.from(committeeApproval.documentBase64, "base64").toString("utf8")),
+      genesisApprovalSha256: alternateGenesis.documentSha256,
+    }, "alternate-committee");
+    const alternateDeployment = await signed({
+      ...JSON.parse(Buffer.from(committeeDeploymentApproval.documentBase64, "base64").toString("utf8")),
+      committeeApprovalSha256: alternateCommittee.documentSha256,
+    }, "alternate-deployment");
+    const alternateChain = { ...chain, genesisApproval: alternateGenesis,
+      committeeApproval: alternateCommittee,
+      committeeDeploymentApproval: alternateDeployment,
+      maintenanceReadback: { ...chain.maintenanceReadback,
+        committeeDeploymentApprovalSha256: alternateDeployment.documentSha256 } };
+    await expect(verify(alternateChain)).resolves.toBeUndefined();
     await expect(verify({ ...chain, contractAddress: `0x${"0".repeat(64)}` }))
       .rejects.toThrow(/contractAddress/u);
     await expect(verify({ ...chain, committeeApproval: { ...committeeApproval,
@@ -146,6 +180,13 @@ it("verifies signed standalone approvals and rejects substitution", async () => 
     await signRuntime(runtime);
     await expect(load()).resolves.toMatchObject({ format: "tr-local-api-runtime-v3",
       contractAddress });
+    const alternateChainBytes = Buffer.from(`${JSON.stringify(alternateChain)}\n`);
+    await writeFile(chainPath, alternateChainBytes);
+    await signRuntime({ ...runtime, approvalChainSha256: sha256(alternateChainBytes) });
+    await expect(load()).resolves.toMatchObject({ format: "tr-local-api-runtime-v3",
+      contractAddress });
+    await writeFile(chainPath, chainBytes);
+    await signRuntime(runtime);
     const legacy = Object.fromEntries(Object.entries(runtime)
       .filter(([key]) => key !== "approvalChainPath" && key !== "approvalChainSha256"));
     await signRuntime({ ...legacy, format: "tr-local-api-runtime-v2" });

@@ -878,6 +878,29 @@ proof-parameter path. Its output and setup record omit the credentials. It
 does not start Compose. It refuses a project with existing containers, ledger
 network, or node/indexer volumes; the operator must still confirm that the
 loopback ports are unused before `up` and keep the Docker context unchanged.
+If Docker reports `all predefined address pools have been fully subnetted`,
+do not run `docker network prune` or delete another project's network or
+volumes. First inspect `docker network ls` and the subnet of every existing
+bridge with `docker network inspect`; also check host/VPN routes. Choose an
+unused private subnet for this installation, not a subnet copied from these
+instructions. Set `TR_STACK_NAME` to the wizard's prepared project and
+`TR_LEDGER_SUBNET` to that reviewed subnet. Verify that the selected network
+name does not already exist, then create only its internal ledger bridge
+with the labels Compose expects:
+
+```sh
+docker network create --driver bridge --internal --subnet "$TR_LEDGER_SUBNET" \
+  --label "com.docker.compose.project=$TR_STACK_NAME" \
+  --label com.docker.compose.network=ledger "${TR_STACK_NAME}_ledger"
+```
+
+Retry the *same*
+verified Compose files with `--pull never`, then require `observe-stack` to
+match the network, image IDs, Compose paths, and denied-egress canary. A
+manually allocated internal bridge is an installation workaround, not proof
+that the host, wallet, API, browser, or backup process has no external egress.
+Keep its network and named volumes for the setup's restart/recovery evidence;
+do not destroy an older project's resources to free a default address pool.
 Export the selected project and
 port variables in the shell when running topology and egress checks; Compose's
 `--env-file` alone does not configure those separate processes. Keep the

@@ -32,6 +32,7 @@ import {
   createBoundLocalIssuerProposalPort,
   LocalIssuerEvidenceTimeRejectedError,
   type FinalizedIssuerSnapshot,
+  type LocalIssuerProposalPortDependencies,
 } from "../local-issuer-proposal-port.js";
 import type { PendingApplicationRecord } from "../pending-application-registration.js";
 
@@ -270,7 +271,21 @@ describe("local issuer proposal terms", () => {
       },
     } })).toThrow(/No current evidence-verifier key/u);
 
-    const verifyLiveEvidence = vi.fn(async () => {});
+    const liveEvidenceResult = (input: Parameters<LocalIssuerProposalPortDependencies["verifyLiveEvidence"]>[0]) => ({
+      format: "tr-live-issuer-evidence-verification-v1" as const,
+      sourceRevision: approvedIssuerPlan.sourceRevision,
+      networkId: input.snapshot.networkId,
+      contractAddress: input.snapshot.contractAddress,
+      finalizedBlockHash: input.snapshot.finalizedBlockHash,
+      applicationId: input.terms.applicationId,
+      evidenceCommitment: input.submittedEvidence.commitment,
+      statusPolicyBindingCommitment: computeIssuerStatusPolicyBindingCommitment(input.terms.statusPolicyBinding),
+      statusRegistryId: input.terms.statusPolicyBinding.statusRegistryId,
+      statusAuthorityVerificationMethod: input.terms.statusPolicyBinding.statusAuthorityVerificationMethod,
+      trustedTimeMs: input.trustedTimeMs,
+    });
+    const verifyLiveEvidence = vi.fn(async (input: Parameters<LocalIssuerProposalPortDependencies["verifyLiveEvidence"]>[0]) =>
+      liveEvidenceResult(input));
     const readTrustedTimeMs = vi.fn(async () => Date.parse("2026-10-13T00:00:02.000Z"));
     const providerContentSha256 = "c".repeat(64);
     const approvedPlanSha256 = "e".repeat(64);
@@ -439,7 +454,7 @@ describe("local issuer proposal terms", () => {
     expect(submitCallTx).toHaveBeenCalledOnce();
     expect(submitTx).not.toHaveBeenCalled();
 
-    verifyLiveEvidence.mockResolvedValueOnce(undefined)
+    verifyLiveEvidence.mockImplementationOnce(async (input) => liveEvidenceResult(input))
       .mockRejectedValueOnce(new Error("live status revoked before broadcast"));
     submitCallTx.mockImplementationOnce(async (providers) =>
       providers.midnightProvider.submitTx({} as never));
@@ -500,6 +515,27 @@ describe("local issuer proposal terms", () => {
     await expect(port.preflightSubmission!(pending.authorizationId, evidence,
       signers, verifierSignature, context, localTerms)).rejects.toThrow(/provider identity differs/u);
     expect(submitTx).not.toHaveBeenCalled();
+
+    verifyLiveEvidence.mockResolvedValueOnce(undefined as never);
+    await expect(port.prepare(pending.authorizationId, evidence, localTerms))
+      .rejects.toThrow(/Live issuer evidence result differs/u);
+    for (const changed of [
+      { format: "tr-live-issuer-evidence-verification-v0" },
+      { sourceRevision: "f".repeat(40) },
+      { networkId: "preview" },
+      { contractAddress: `0x${"f".repeat(64)}` },
+      { finalizedBlockHash: `0x${"f".repeat(64)}` },
+      { applicationId: "application:issuer:other" },
+      { evidenceCommitment: `0x${"f".repeat(64)}` },
+      { statusPolicyBindingCommitment: `0x${"f".repeat(64)}` },
+      { statusRegistryId: `0x${"f".repeat(64)}` },
+      { statusAuthorityVerificationMethod: "did:midnight:other#key-1" },
+      { trustedTimeMs: 0 },
+    ]) {
+      verifyLiveEvidence.mockImplementationOnce(async (input) => ({ ...liveEvidenceResult(input), ...changed } as never));
+      await expect(port.prepare(pending.authorizationId, evidence, localTerms))
+        .rejects.toThrow(/Live issuer evidence result differs/u);
+    }
 
     const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse(writerApproval.notAfter) + 1);
     try {

@@ -207,6 +207,23 @@ describe("API CLI binding", () => {
     ]) expect(() => parseTrustRegistryApiCliArgs(args)).toThrow();
   });
 
+  it("compacts only a bound private journal using complete signed local evidence", () => {
+    const compact = ["compact-local-proposal-journal", ...localArgs.slice(1),
+      "--submission-journal", "/run/trust-registry/proposals.json"];
+    expect(parseTrustRegistryApiCliArgs(compact)).toMatchObject({
+      command: "compact-local-proposal-journal",
+      submissionJournalPath: "/run/trust-registry/proposals.json",
+    });
+    for (const args of [
+      compact.slice(0, -2),
+      [...compact.slice(0, -1), "relative/proposals.json"],
+      [...compact, "--role", "issuer"],
+      [...compact, "--authorization-id", "issuer:1"],
+      [...compact, "--snapshot", "fixture.json"],
+      [...compact, "--unsafe-demo-mutations"],
+    ]) expect(() => parseTrustRegistryApiCliArgs(args)).toThrow();
+  });
+
   it("refuses public demo mutation listeners", () => {
     for (const host of ["0.0.0.0", "::", "192.0.2.1", "registry.example", "localhost"]) {
       expect(() => parseTrustRegistryApiCliArgs([

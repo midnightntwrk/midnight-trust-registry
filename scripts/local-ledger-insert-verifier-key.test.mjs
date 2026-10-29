@@ -101,6 +101,18 @@ test("checks source and provider bytes before network or provider access", async
   assert.deepEqual(steps, []);
 });
 
+test("malformed verifier-key catalog stops before endpoint or provider use", async () => {
+  const path = join(root, "malformed-manifest.json");
+  await writeFile(path, JSON.stringify({
+    format: "tr-release-candidate-manifest-v2", sourceRevision,
+    verifierKeySha256: { authorizeMaintainerChange: "not-a-hash" },
+  }));
+  const steps = [];
+  await assert.rejects(runLocalVerifierKeyInsertion({ ...plan, releaseManifestPath: path },
+    dependencies(steps)), /verifier-key catalog is malformed/u);
+  assert.deepEqual(steps, []);
+});
+
 test("real verifier-key insertion stops without an immutable provider root", async () => {
   const previous = process.env.TR_IMMUTABLE_PROVIDER_ROOT;
   delete process.env.TR_IMMUTABLE_PROVIDER_ROOT;

@@ -42,5 +42,8 @@ test("rejects malformed or unapproved pins before querying the node", async () =
   await assert.rejects(checkLocalLedgerPreflight({ ...plan, expectedGenesisHash: `0x${"0".repeat(64)}` }, fetchImpl), /exact approved/u);
   await assert.rejects(checkLocalLedgerPreflight({ ...plan, networkId: "preprod" }, fetchImpl), /exact approved/u);
   await assert.rejects(checkLocalLedgerPreflight({ ...plan, added: "unreviewed" }, fetchImpl), /exact approved/u);
+  await assert.rejects(checkLocalLedgerPreflight({ ...plan, sourceRevision: null }, fetchImpl), /exact approved/u);
+  await assert.rejects(checkLocalLedgerPreflight({ ...plan, expectedGenesisHash: null }, fetchImpl), /exact approved/u);
+  await assert.rejects(checkLocalLedgerPreflight({ ...plan, allowedHosts: ["127.0.0.1", null] }, fetchImpl), /exact approved/u);
   assert.equal(requests, 0);
 });
