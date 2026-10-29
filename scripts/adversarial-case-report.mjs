@@ -49,6 +49,15 @@ export const parseAdversarialTap = (tap) => {
   };
 };
 
+export const assertCompletedAdversarialRun = (result, report) => {
+  if (result.signal !== null || ![0, 1].includes(result.status)) {
+    throw new Error(`Isolated test runner did not complete normally: ${result.signal ?? result.status}`);
+  }
+  if ((result.status === 0) !== (report.summary.failed === 0)) {
+    throw new Error(`Isolated test exit status disagrees with per-case outcomes: ${result.status}`);
+  }
+};
+
 export const runIsolatedAdversarialCases = (files = isolatedAdversarialTestFiles()) => {
   assert.ok(files.length > 0, "No isolated adversarial test files found");
   const result = spawnSync(process.execPath, ["--test", "--test-reporter=tap", ...files], {
@@ -61,9 +70,7 @@ export const runIsolatedAdversarialCases = (files = isolatedAdversarialTestFiles
   if (result.error) throw result.error;
   if (!result.stdout) throw new Error(`Isolated test runner produced no TAP: ${result.stderr?.slice(-500)}`);
   const report = parseAdversarialTap(result.stdout);
-  if ((result.status === 0) !== (report.summary.failed === 0)) {
-    throw new Error(`Isolated test exit status disagrees with per-case outcomes: ${result.status}`);
-  }
+  assertCompletedAdversarialRun(result, report);
   return report;
 };
 

@@ -9,6 +9,7 @@ const topology = {
   kind: "standalone-api-runtime-topology-observation",
   releaseQualified: false,
   sourceRevision,
+  installInventorySha256: "9".repeat(64),
   apiContainerId: "c".repeat(64),
   apiStartedAt: "2026-10-24T10:00:00.000Z",
   apiRestartCount: 0,
@@ -22,6 +23,7 @@ const report = {
   apiOrigin: "http://127.0.0.1:4400",
   planSourceRevision: sourceRevision,
   planSha256: "d".repeat(64),
+  planInstallInventorySha256: topology.installInventorySha256,
   planContractAddress: `0x${"a".repeat(64)}`,
   planExpectedGenesisHash: `0x${"b".repeat(64)}`,
   selectedStateSha256: "f".repeat(64),
@@ -56,6 +58,7 @@ test("probes loopback from the verified API container, then rechecks its identit
     sourceRevision, apiContainerId: topology.apiContainerId,
     apiStartedAt: topology.apiStartedAt, apiRestartCount: topology.apiRestartCount,
     networkId: topology.networkId,
+    installInventorySha256: topology.installInventorySha256,
     planSha256: report.planSha256, planNotAfter: report.planNotAfter,
     planContractAddress: report.planContractAddress,
     planExpectedGenesisHash: report.planExpectedGenesisHash,
@@ -79,6 +82,9 @@ test("does not exec when topology or reviewer input is invalid", async () => {
   await assert.rejects(probeStandaloneApiCurrentReads("/bundle", env, {
     observe: async () => ({ ...topology, apiContainerId: "not-an-id" }), execDocker,
   }), /topology observation is incomplete/u);
+  await assert.rejects(probeStandaloneApiCurrentReads("/bundle", env, {
+    observe: async () => ({ ...topology, installInventorySha256: "bad" }), execDocker,
+  }), /topology observation is incomplete/u);
   await assert.rejects(probeStandaloneApiCurrentReads("/bundle", {
     TR_API_REVIEWER_FINGERPRINT: "bad",
   }, { observe: async () => topology, execDocker }), /fingerprint is missing/u);
@@ -89,6 +95,7 @@ test("rejects malformed and source-mismatched packaged readback", async () => {
   const observe = async () => topology;
   for (const stdout of ["not-json", JSON.stringify({ ...report, releaseQualified: true }),
     JSON.stringify({ ...report, format: "tr-local-api-current-read-observation-v1" }),
+    JSON.stringify({ ...report, planInstallInventorySha256: "bad" }),
     JSON.stringify({ ...report, planContractAddress: `0x${"0".repeat(64)}` }),
     JSON.stringify({ ...report, planExpectedGenesisHash: "invalid" }),
     JSON.stringify({ ...report, planSourceRevision: "b".repeat(40) })]) {
@@ -96,6 +103,14 @@ test("rejects malformed and source-mismatched packaged readback", async () => {
       observe, execDocker: async () => stdout,
     }), /did not return JSON|invalid report|source differs/u);
   }
+});
+
+test("rejects a signed plan for a different verified install inventory", async () => {
+  await assert.rejects(probeStandaloneApiCurrentReads("/bundle", env, {
+    observe: async () => topology,
+    execDocker: async () => JSON.stringify({ ...report,
+      planInstallInventorySha256: "8".repeat(64) }),
+  }), /plan install inventory differs/u);
 });
 
 test("rejects a replaced container or network after the HTTP probe", async () => {
@@ -112,6 +127,14 @@ test("rejects a replaced container or network after the HTTP probe", async () =>
     observe: async () => {
       observed += 1;
       return observed === 1 ? topology : { ...topology, networkId: "other" };
+    },
+    execDocker: async () => JSON.stringify(report),
+  }), /changed during current-read probe/u);
+  observed = 0;
+  await assert.rejects(probeStandaloneApiCurrentReads("/bundle", env, {
+    observe: async () => {
+      observed += 1;
+      return observed === 1 ? topology : { ...topology, installInventorySha256: "8".repeat(64) };
     },
     execDocker: async () => JSON.stringify(report),
   }), /changed during current-read probe/u);

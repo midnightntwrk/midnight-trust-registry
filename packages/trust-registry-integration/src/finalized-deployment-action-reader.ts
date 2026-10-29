@@ -9,6 +9,7 @@ import type {
   TrustedDeploymentActionReader,
 } from "@midnight-ntwrk/trust-registry-client";
 import { TrustRegistryContract, type MaintainerStatus } from "@midnight-ntwrk/trust-registry-contract/contract";
+import { getLocalNetworkProfile } from "./network-profiles.js";
 
 export type FinalizedNetworkCheckpoint = {
   networkId: string;
@@ -118,7 +119,7 @@ export function createCheckpointedDeploymentActionReader(input: {
   return createDeploymentActionReader(input, false);
 }
 
-/** Local-only reader for the isolated `undeployed` network; never use for public qualification. */
+/** Local-only reader for the isolated standalone profile; never use for public qualification. */
 export function createLocalCheckpointedDeploymentActionReader(input: {
   publicDataProvider: Pick<PublicDataProvider, "queryContractState">;
   checkpointSource: TrustedFinalizedCheckpointSource;
@@ -134,8 +135,9 @@ function createDeploymentActionReader(input: {
     const address = canonicalAddress(contractAddress);
     const checkpoint = await input.checkpointSource.readCurrentFinalizedCheckpoint();
     if (checkpoint === null) return null;
+    const localNetworkId = getLocalNetworkProfile().networkId;
     if (!/^[a-z][a-z0-9-]*$/u.test(checkpoint.networkId)
-      || (localOnly ? checkpoint.networkId !== "undeployed" : checkpoint.networkId === "undeployed")
+      || (localOnly ? checkpoint.networkId !== localNetworkId : checkpoint.networkId === localNetworkId)
       || !/^[0-9a-fA-F]{64}$/u.test(checkpoint.blockHash)
       || /^0{64}$/u.test(checkpoint.blockHash)) {
       throw new Error("Trusted finalized checkpoint is malformed");

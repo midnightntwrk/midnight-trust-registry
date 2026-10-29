@@ -11,7 +11,7 @@ import { draftProposalRecoveryDecision, loadApprovedProposalRecoveryDecision,
 
 const hash = (value: string): string => createHash("sha256").update(value).digest("hex");
 const candidate = {
-  format: "tr-local-proposal-recovery-candidate-v2",
+  format: "tr-local-proposal-recovery-candidate-v3",
   networkId: "undeployed",
   registryId: "registry:test",
   contractAddress: `0x${"1".repeat(64)}`,
@@ -29,6 +29,8 @@ const candidate = {
   reservationActionKind: `0x${"9".repeat(64)}`,
   reservationActionPayloadHash: `0x${"a".repeat(64)}`,
   finalizedGovernanceActionCount: "4",
+  finalizedLastActionKind: `0x${"b".repeat(64)}`,
+  finalizedLastActionPayloadHash: `0x${"c".repeat(64)}`,
   observedEventHash: null,
   reason: "sequence-invalidated-record-absent",
   reviewCandidate: true,
@@ -60,7 +62,7 @@ describe("signed local proposal recovery decision", () => {
       const evidence = '{"independentReview":"test-only"}\n';
       await writeFile(finalityEvidencePath, evidence);
       const decision = {
-        format: "tr-local-proposal-recovery-decision-v2",
+        format: "tr-local-proposal-recovery-decision-v3",
         decision: "abandon-invalidated-action",
         candidateSha256: proposalRecoveryCandidateDigest(candidate),
         finalityEvidenceSha256: hash(evidence),
@@ -78,6 +80,8 @@ describe("signed local proposal recovery decision", () => {
         reservationActionKind: candidate.reservationActionKind,
         reservationActionPayloadHash: candidate.reservationActionPayloadHash,
         finalizedGovernanceActionCount: candidate.finalizedGovernanceActionCount,
+        finalizedLastActionKind: candidate.finalizedLastActionKind,
+        finalizedLastActionPayloadHash: candidate.finalizedLastActionPayloadHash,
         finalizedBlockHash: candidate.finalizedBlockHash,
         approvedPlanSha256: candidate.approvedPlanSha256,
       } as const;
@@ -140,6 +144,16 @@ describe("signed local proposal recovery decision", () => {
       await expect(loadApprovedProposalRecoveryDecision({ ...input,
         candidate: { ...candidate, finalizedGovernanceActionCount: "3" } }))
         .rejects.toThrow(/invalidated/u);
+      await expect(loadApprovedProposalRecoveryDecision({ ...input,
+        candidate: { ...candidate, finalizedGovernanceActionCount: "5" } }))
+        .rejects.toThrow(/invalidated/u);
+      await expect(loadApprovedProposalRecoveryDecision({ ...input,
+        candidate: { ...candidate, finalizedLastActionKind: candidate.reservationActionKind,
+          finalizedLastActionPayloadHash: candidate.reservationActionPayloadHash } }))
+        .rejects.toThrow(/invalidated/u);
+      await expect(loadApprovedProposalRecoveryDecision({ ...input,
+        candidate: { ...candidate, finalizedLastActionKind: null } }))
+        .rejects.toThrow(/invalidated/u);
       await writeFile(decisionPath, `${JSON.stringify(decision)}\nchanged`);
       await expect(loadApprovedProposalRecoveryDecision(input))
         .rejects.toThrow(/detached reviewer signature/u);
@@ -147,6 +161,9 @@ describe("signed local proposal recovery decision", () => {
       await expect(loadApprovedProposalRecoveryDecision(input))
         .rejects.toThrow(/exact candidate/u);
       await sign({ ...decision, reservationActionPayloadHash: `0x${"b".repeat(64)}` });
+      await expect(loadApprovedProposalRecoveryDecision(input))
+        .rejects.toThrow(/exact candidate/u);
+      await sign({ ...decision, finalizedLastActionPayloadHash: `0x${"d".repeat(64)}` });
       await expect(loadApprovedProposalRecoveryDecision(input))
         .rejects.toThrow(/exact candidate/u);
       await sign({ ...decision, format: "tr-local-proposal-recovery-decision-v1" });

@@ -74,6 +74,20 @@ configuration observation, not an authenticated write or release verdict.
   policy/status authority, substituted evidence, duplicate signer, invalid
   sequence, unavailable finality, and unresolved journal reservation without
   an unintended transaction.
+
+For ambiguous reservations under #220, the Compact authorization digest uses
+the current `governanceActionCount` as its action sequence. A different
+finalized action consumes that sequence, making the old signed vote stale.
+This is a necessary but insufficient recovery invariant: an advanced counter
+alone does not show whether the reserved action itself executed. An operator
+recovery decision would need independently authenticated finality and the
+action recorded at the reserved sequence, prove that its exact kind and
+payload differ, and preserve the original authorization ID and decision in
+the private journal. A null indexer result, elapsed time, or this simulator
+test cannot release a reservation. Read-only v3 candidate inspection and a
+distinct-reviewer signed-decision draft/verification command now exist, but
+they neither authenticate finality nor mutate the journal. There is still no
+safe command to release or abandon the reserved attempt.
 - Restart and distinct-project restore retain deployment, journal, and current
   state; an ambiguous write is reconciled only under independently reviewed
   evidence. Host, wallet, browser, API, proof-server, and container egress

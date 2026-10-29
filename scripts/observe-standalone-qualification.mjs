@@ -9,6 +9,7 @@ import { assessStandaloneJourneyPrerequisites } from "./check-standalone-journey
 import { observeStandaloneCurrentQueryJourney } from "./check-standalone-current-query-journey.mjs";
 import { observeStandaloneApiRestart } from "./check-standalone-api-restart.mjs";
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
+import { assertApiRestartScope, assertCurrentQueryScope } from "./standalone-qualification-scope-policy.mjs";
 import { standaloneSetupStatus } from "./standalone-setup-wizard.mjs";
 
 const SHA = /^[0-9a-f]{40}$/u;
@@ -55,8 +56,10 @@ export async function observeStandaloneQualification(setupDirectory, bundle, sou
 
   const query = dependencies.query ?? observeStandaloneCurrentQueryJourney;
   report.currentQuery = await query(setupDirectory, bundle, env);
+  assertCurrentQueryScope(report.currentQuery);
   if (report.currentQuery?.format !== "tr-standalone-current-query-journey-v2"
     || report.currentQuery.sourceRevision !== sourceRevision
+    || report.currentQuery.installInventorySha256 !== install.inventorySha256
     || report.currentQuery.networkId !== status.stackNetworkId
     || report.currentQuery.planContractAddress !== status.deployedContractAddress
     || report.currentQuery.planExpectedGenesisHash !== status.approvedGenesisHash
@@ -66,8 +69,10 @@ export async function observeStandaloneQualification(setupDirectory, bundle, sou
   if (apiRestart) {
     const restart = dependencies.restart ?? observeStandaloneApiRestart;
     report.apiRestart = await restart(setupDirectory, bundle, env);
+    assertApiRestartScope(report.apiRestart);
     if (report.apiRestart?.format !== "tr-standalone-api-restart-observation-v1"
       || report.apiRestart.sourceRevision !== sourceRevision
+      || report.apiRestart.installInventorySha256 !== install.inventorySha256
       || report.apiRestart.apiContainerId !== report.currentQuery.apiContainerId
       || report.apiRestart.networkId !== report.currentQuery.networkId
       || report.apiRestart.planSha256 !== report.currentQuery.planSha256

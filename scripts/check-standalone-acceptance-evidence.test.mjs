@@ -96,12 +96,19 @@ const observation = (candidate) => ({
   currentQuery: {
     format: "tr-standalone-current-query-journey-v2",
     sourceRevision: candidate.sourceRevision,
+    installInventorySha256: candidate.installInventorySha256,
     networkId: "f".repeat(64),
     apiContainerId: "1".repeat(64),
     planSha256: candidate.signedPlanSha256,
     planExpectedGenesisHash: candidate.genesisHash,
     planContractAddress: candidate.contractAddress,
     selectedStateSha256: "2".repeat(64),
+    apiEgressCanaryDenied: true,
+    apiDnsCanaryDenied: true,
+    actorJourneys: "not-run",
+    hostAndBrowserEgress: "not-verified",
+    independentFinality: "not-verified",
+    planToDeploymentBinding: "not-verified",
     releaseQualified: false,
   },
   apiRestart: "not-run",
@@ -132,9 +139,16 @@ test("read-only observation binds to one acceptance candidate without passing ca
     assert.throws(() => assessStandaloneObservationBinding(candidate, { ...observed, ...change }), /differs/u);
   }
   for (const change of [
+    { installInventorySha256: "9".repeat(64) },
     { planSha256: "9".repeat(64) },
     { planExpectedGenesisHash: `0x${"9".repeat(64)}` },
     { planContractAddress: `0x${"9".repeat(64)}` },
+    { apiEgressCanaryDenied: false },
+    { apiDnsCanaryDenied: false },
+    { actorJourneys: "pass" },
+    { hostAndBrowserEgress: "verified" },
+    { independentFinality: "verified" },
+    { planToDeploymentBinding: "verified" },
   ]) {
     assert.throws(() => assessStandaloneObservationBinding(candidate,
       { ...observed, currentQuery: { ...observed.currentQuery, ...change } }), /differs/u);
@@ -142,16 +156,23 @@ test("read-only observation binds to one acceptance candidate without passing ca
   const restart = {
     format: "tr-standalone-api-restart-observation-v1",
     sourceRevision: candidate.sourceRevision,
+    installInventorySha256: candidate.installInventorySha256,
     networkId: observed.currentQuery.networkId,
     apiContainerId: observed.currentQuery.apiContainerId,
     planSha256: candidate.signedPlanSha256,
     selectedStateSha256: observed.currentQuery.selectedStateSha256,
+    apiEgressCanaryDenied: true,
+    apiDnsCanaryDenied: true,
     releaseQualified: false,
   };
   assert.equal(assessStandaloneObservationBinding(candidate,
     { ...observed, apiRestart: restart }).apiRestartBound, true);
   assert.throws(() => assessStandaloneObservationBinding(candidate,
     { ...observed, apiRestart: { ...restart, networkId: "0".repeat(64) } }), /differs/u);
+  assert.throws(() => assessStandaloneObservationBinding(candidate,
+    { ...observed, apiRestart: { ...restart, installInventorySha256: "9".repeat(64) } }), /differs/u);
+  assert.throws(() => assessStandaloneObservationBinding(candidate,
+    { ...observed, apiRestart: { ...restart, apiDnsCanaryDenied: false } }), /differs/u);
   const pending = { ...observed, prerequisites: { ...observed.prerequisites,
     ledgerPrerequisitesObserved: false, missing: ["deploymentObserved"] }, currentQuery: "not-run" };
   assert.equal(assessStandaloneObservationBinding(candidate, pending).readOnlyObservationBound, false);

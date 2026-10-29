@@ -46,6 +46,14 @@ test("fails closed for missing approval, unresolved key or alert", () => {
   ]);
 });
 
+test("inconsistent retained approval evidence requires investigation, not re-signing", () => {
+  for (const field of ["localLedger", "maintenanceApproval"]) {
+    assert.throws(() => assessStandaloneJourneyPrerequisites({
+      ...approved, [field]: "invalid-approval-evidence-investigate",
+    }), /Stored approval evidence is inconsistent; preserve and investigate/u);
+  }
+});
+
 test("empty key evidence and active setup lock block the journey", () => {
   const report = assessStandaloneJourneyPrerequisites({
     ...approved, stagedVerifierKeys: [], setupLock: "present-inspect-before-removal",

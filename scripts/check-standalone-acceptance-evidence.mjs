@@ -160,12 +160,19 @@ export function assessStandaloneObservationBinding(manifest, observation) {
     || observation.prerequisites.missing.length !== 0
     || query?.format !== "tr-standalone-current-query-journey-v2"
     || query.sourceRevision !== manifest.sourceRevision
+    || query.installInventorySha256 !== manifest.installInventorySha256
     || !SHA256.test(query.networkId ?? "")
     || !SHA256.test(query.apiContainerId ?? "")
     || !SHA256.test(query.selectedStateSha256 ?? "")
     || query.planSha256 !== manifest.signedPlanSha256
     || query.planExpectedGenesisHash !== manifest.genesisHash
     || query.planContractAddress !== manifest.contractAddress
+    || query.apiEgressCanaryDenied !== true
+    || query.apiDnsCanaryDenied !== true
+    || query.actorJourneys !== "not-run"
+    || query.hostAndBrowserEgress !== "not-verified"
+    || query.independentFinality !== "not-verified"
+    || query.planToDeploymentBinding !== "not-verified"
     || query.releaseQualified !== false) {
     throw new Error("Observed current query differs from acceptance plan or deployment");
   }
@@ -173,10 +180,14 @@ export function assessStandaloneObservationBinding(manifest, observation) {
   if (restart !== "not-run" && (query === "not-run"
     || restart?.format !== "tr-standalone-api-restart-observation-v1"
     || restart.sourceRevision !== manifest.sourceRevision
+    || restart.installInventorySha256 !== manifest.installInventorySha256
+    || restart.installInventorySha256 !== query.installInventorySha256
     || restart.networkId !== query.networkId
     || restart.apiContainerId !== query.apiContainerId
     || restart.planSha256 !== query.planSha256
     || restart.selectedStateSha256 !== query.selectedStateSha256
+    || restart.apiEgressCanaryDenied !== true
+    || restart.apiDnsCanaryDenied !== true
     || restart.releaseQualified !== false)) {
     throw new Error("API restart observation differs from the current-query observation");
   }

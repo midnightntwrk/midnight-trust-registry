@@ -7,16 +7,19 @@ import { assessStandaloneJourneyPrerequisites } from "./check-standalone-journey
 import { observeStandaloneApiEgress } from "./check-standalone-api-egress.mjs";
 import { probeStandaloneApiCurrentReads } from "./check-standalone-api-reads.mjs";
 import { standaloneSetupStatus } from "./standalone-setup-wizard.mjs";
+import { assertCurrentQueryProcessIdentity } from "./standalone-current-query-process-policy.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
 const BLOCK_HASH = /^0x[0-9a-f]{64}$/u;
 const ROLES = ["issuer", "verifier", "auditor", "recognition"];
 
-function checkedRead(report, sourceRevision) {
+function checkedRead(report, status) {
+  assertCurrentQueryProcessIdentity(report);
   if (report?.format !== "tr-standalone-api-current-read-probe-v4"
-    || report.releaseQualified !== false || report.sourceRevision !== sourceRevision
+    || report.releaseQualified !== false || report.sourceRevision !== status.sourceRevision
     || report.routeReadback !== "same-container-signed-plan-current-only"
     || !SHA256.test(report.planSha256 ?? "")
+    || !SHA256.test(report.installInventorySha256 ?? "")
     || !BLOCK_HASH.test(report.planContractAddress ?? "")
     || /^0x0{64}$/u.test(report.planContractAddress)
     || !BLOCK_HASH.test(report.planExpectedGenesisHash ?? "")
@@ -33,6 +36,12 @@ function checkedRead(report, sourceRevision) {
       && Number.isSafeInteger(report.resolvedLookups?.[role])
       && report.resolvedLookups[role] > 0)) {
     throw new Error("Live current-query readback is incomplete or has no resolved actor role");
+  }
+  if (report.planContractAddress !== status.deployedContractAddress
+    || report.planExpectedGenesisHash !== status.approvedGenesisHash
+    || report.networkId !== status.stackNetworkId
+    || report.installInventorySha256 !== status.installInventorySha256) {
+    throw new Error("Live signed API runtime differs from the approved wizard install, deployment, genesis, or network");
   }
   return report;
 }
@@ -61,16 +70,23 @@ export async function observeStandaloneCurrentQueryJourney(setupDirectory, bundl
   if (!prerequisites.ledgerPrerequisitesObserved) {
     throw new Error(`Standalone ledger prerequisites missing: ${prerequisites.missing.join(", ")}`);
   }
+  if (typeof status.stackProject !== "string" || status.stackProject.length === 0
+    || status.stackProject !== env.TR_STACK_NAME
+    || !SHA256.test(status.stackNetworkId ?? "")
+    || !SHA256.test(status.installInventorySha256 ?? "")) {
+    throw new Error("Approved wizard install, project, or network differs from the selected API runtime");
+  }
 
   const read = dependencies.read ?? probeStandaloneApiCurrentReads;
   const egress = dependencies.egress ?? observeStandaloneApiEgress;
-  const first = checkedRead(await read(bundle, env), status.sourceRevision);
+  const first = checkedRead(await read(bundle, env), status);
   const denial = checkedEgress(await egress(bundle, env), first);
-  const second = checkedRead(await read(bundle, env), status.sourceRevision);
+  const second = checkedRead(await read(bundle, env), status);
   if (second.apiContainerId !== first.apiContainerId
     || second.apiStartedAt !== first.apiStartedAt
     || second.apiRestartCount !== first.apiRestartCount
     || second.networkId !== first.networkId
+    || second.installInventorySha256 !== first.installInventorySha256
     || second.planSha256 !== first.planSha256
     || second.planContractAddress !== first.planContractAddress
     || second.planExpectedGenesisHash !== first.planExpectedGenesisHash
@@ -79,13 +95,14 @@ export async function observeStandaloneCurrentQueryJourney(setupDirectory, bundl
     || second.currentEpochId !== first.currentEpochId
     || ROLES.some((role) => second.counts[role] !== first.counts[role]
       || second.resolvedLookups[role] !== first.resolvedLookups[role])) {
-    throw new Error("Current-query deployment, signed plan, or selected actor reads changed during egress probe");
+    throw new Error("Current-query install, deployment, signed plan, or selected actor reads changed during egress probe");
   }
   return {
     format: "tr-standalone-current-query-journey-v2",
     sourceRevision: status.sourceRevision,
     apiContainerId: first.apiContainerId,
     networkId: first.networkId,
+    installInventorySha256: first.installInventorySha256,
     planSha256: first.planSha256,
     planContractAddress: first.planContractAddress,
     planExpectedGenesisHash: first.planExpectedGenesisHash,
