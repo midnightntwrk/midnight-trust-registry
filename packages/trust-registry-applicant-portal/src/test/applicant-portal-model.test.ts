@@ -18,6 +18,8 @@ const HASH_B = `0x${"2".repeat(64)}`;
 const HASH_C = `0x${"3".repeat(64)}`;
 const HASH_D = `0x${"4".repeat(64)}`;
 const HASH_E = `0x${"5".repeat(64)}`;
+const ISSUER_RESOURCE_ID = `tr:issuer-resource:v1:${"a".repeat(64)}`;
+const STATUS_POLICY_BINDING_COMMITMENT = "0x2bd4155f627f06c4d2bf046e68cb53aa1355d876fd36b21f1a5fa8f174a80b30";
 
 type EvidenceBundle = PublicInspection["activeIssuers"][number]["evidence"];
 
@@ -43,6 +45,15 @@ const summary: TrustRegistryApiSummary = {
     proposed: 0,
     authorized: 0,
     active: 1,
+    suspended: 0,
+    revoked: 0,
+    superseded: 0,
+    archived: 0,
+  },
+  auditorCounts: {
+    proposed: 0,
+    authorized: 0,
+    active: 0,
     suspended: 0,
     revoked: 0,
     superseded: 0,
@@ -88,6 +99,7 @@ const policy: EvidenceBundle["policy"] = {
     },
   ],
   decisionRules: ["maintainer threshold applies"],
+  recognitionAccreditorAnchors: [],
   disputeRules: ["appeal to maintainers"],
   retentionRules: ["retain historical evidence"],
   emergencyRules: ["suspend on incident evidence"],
@@ -115,7 +127,7 @@ const createAuthorizationMutationResponse = (
 ): TrustRegistryApiApplicationMutationResponse =>
   TrustRegistryApiApplicationMutationResponseSchema.parse({
     sourceMode: "workspace",
-    workspaceVersion: "1",
+    workspaceVersion: "3",
     workspaceUpdatedAt: "2026-05-23T05:00:00Z",
     snapshotGeneratedAt: "2026-05-23T05:00:00Z",
     currentEpochId: "epoch:003",
@@ -133,9 +145,10 @@ const createAuthorizationMutationResponse = (
         subjectDid: `did:midnight:testnet:${target}`,
         role: target,
         resourceType: target === "issuer" ? "credential-family" : "request-profile",
-        resourceId: target === "issuer" ? "degree-scope" : "age-gate",
+        resourceId: target === "issuer" ? ISSUER_RESOURCE_ID : "age-gate",
         policyId: "policy:default",
         trustLevel: target === "issuer" ? "gold" : "silver",
+        ...(target === "issuer" ? { statusPolicyBindingCommitment: STATUS_POLICY_BINDING_COMMITMENT } : {}),
         status: "proposed",
         lifecycleEventRoot: HASH_A,
         proposedAt: "2026-05-23T05:00:00Z",
@@ -161,14 +174,27 @@ const createAuthorizationMutationResponse = (
           subjectDid: `did:midnight:testnet:${target}`,
           role: target,
           resourceType: target === "issuer" ? "credential-family" : "request-profile",
-          resourceId: target === "issuer" ? "degree-scope" : "age-gate",
+          resourceId: target === "issuer" ? ISSUER_RESOURCE_ID : "age-gate",
           policyId: "policy:default",
           trustLevel: target === "issuer" ? "gold" : "silver",
+          ...(target === "issuer" ? { statusPolicyBindingCommitment: STATUS_POLICY_BINDING_COMMITMENT } : {}),
           status: "proposed",
           lifecycleEventRoot: HASH_A,
           proposedAt: "2026-05-23T05:00:00Z",
           evidenceHash: HASH_B,
         },
+        ...(target === "issuer" ? {
+          statusPolicyBinding: {
+            version: "tr-issuer-status-policy-v1",
+            trustRegistryId: "registry:kanon-portal",
+            issuerAuthorizationId: "auth:issuer:degree:v1",
+            statusRegistryId: HASH_A,
+            statusAuthorityVerificationMethod: "did:midnight:testnet:issuer#status-key",
+            statusPolicyId: "policy:status:degree",
+            statusPolicyVersion: "v1",
+            statusPolicyContentCommitment: HASH_B,
+          },
+        } : {}),
       },
     },
   });
@@ -176,7 +202,7 @@ const createAuthorizationMutationResponse = (
 const createRecognitionMutationResponse = (): TrustRegistryApiApplicationMutationResponse =>
   TrustRegistryApiApplicationMutationResponseSchema.parse({
     sourceMode: "workspace",
-    workspaceVersion: "1",
+    workspaceVersion: "3",
     workspaceUpdatedAt: "2026-05-23T05:00:00Z",
     snapshotGeneratedAt: "2026-05-23T05:00:00Z",
     currentEpochId: "epoch:003",
@@ -241,7 +267,7 @@ const createRecognitionMutationResponse = (): TrustRegistryApiApplicationMutatio
 const createEpochMutationResponse = (): TrustRegistryApiApplicationMutationResponse =>
   TrustRegistryApiApplicationMutationResponseSchema.parse({
     sourceMode: "workspace",
-    workspaceVersion: "1",
+    workspaceVersion: "3",
     workspaceUpdatedAt: "2026-05-23T05:00:00Z",
     snapshotGeneratedAt: "2026-05-23T05:00:00Z",
     currentEpochId: "epoch:004",
@@ -258,6 +284,7 @@ const createEpochMutationResponse = (): TrustRegistryApiApplicationMutationRespo
 
 const inspection: PublicInspection = {
   summary,
+  activeAuditors: [],
   activeIssuers: [
     {
       label: "degree",
@@ -434,6 +461,28 @@ describe("trust registry applicant portal model", () => {
     expect(cards).toHaveLength(3);
     expect(cards[0]?.label).toBe("degree");
     expect(cards[2]?.target).toBe("recognition");
+
+    const verifier = inspection.activeVerifiers[0];
+    expect(verifier).toBeDefined();
+    if (verifier === undefined) return;
+    const auditorCards = toInspectionCards({
+      ...inspection,
+      activeAuditors: [{
+        ...verifier,
+        label: "identity-audit",
+        authorization: {
+          ...verifier.authorization,
+          authorizationId: "auth:auditor:identity-audit:v1",
+          role: "auditor",
+          subjectDid: "did:midnight:testnet:auditor",
+        },
+      }],
+    });
+    expect(auditorCards[0]).toMatchObject({
+      label: "identity-audit",
+      target: "auditor",
+      subject: "did:midnight:testnet:auditor",
+    });
   });
 
   it("describes authorization submissions in user-facing language", () => {

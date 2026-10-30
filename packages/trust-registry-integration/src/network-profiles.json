@@ -1,0 +1,29 @@
+{
+  "format": "tr-network-profiles-v1",
+  "profiles": [
+    {
+      "id": "standalone",
+      "networkId": "undeployed",
+      "kind": "self-hosted-local",
+      "genesisPinPolicy": "per-installation"
+    },
+    {
+      "id": "preview",
+      "networkId": "preview",
+      "kind": "public",
+      "genesisPinPolicy": "reviewed-network"
+    },
+    {
+      "id": "preprod",
+      "networkId": "preprod",
+      "kind": "public",
+      "genesisPinPolicy": "reviewed-network"
+    },
+    {
+      "id": "mainnet",
+      "networkId": "mainnet",
+      "kind": "public",
+      "genesisPinPolicy": "reviewed-network"
+    }
+  ]
+}

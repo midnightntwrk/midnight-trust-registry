@@ -7,6 +7,12 @@ import {
   RecognitionRecordSchema,
   RegistryRecordSchema,
   TrustRegistryEvidenceBundleSchema,
+  computeAuthorizationStatementLeafHash,
+  computeGovernancePolicySnapshotCommitment,
+  computeMerkleRootFromProof,
+  computeRecognitionStatementLeafHash,
+  compareRfc3339Instants,
+  deriveGovernancePolicySnapshot,
   type AuthorizationRecord,
   type EpochCommitment,
   type GovernancePolicyRecord,
@@ -21,6 +27,7 @@ const WorkspaceTargetIdSchema = z.string().trim().min(1);
 export const MutableSnapshotTargetSchema = z.enum([
   "issuer",
   "verifier",
+  "auditor",
   "recognition",
 ]);
 
@@ -45,6 +52,40 @@ export const TrustRegistryRecognitionSnapshotEntrySchema = z.object({
 export type TrustRegistryRecognitionSnapshotEntry = z.infer<
   typeof TrustRegistryRecognitionSnapshotEntrySchema
 >;
+
+// Snapshot consistency is not an independently authenticated epoch or quorum witness.
+const hasConsistentSnapshotProof = (
+  bundle: TrustRegistryEvidenceBundle,
+  leafHash: string,
+  epochs: readonly EpochCommitment[],
+  registryId: string,
+): boolean => {
+  const epoch = epochs.find((candidate) => candidate.epochId === bundle.epoch.epochId);
+  if (epoch === undefined
+    || epoch.registryId !== bundle.epoch.registryId
+    || epoch.stateRoot !== bundle.epoch.stateRoot
+    || epoch.eventRoot !== bundle.epoch.eventRoot
+    || epoch.policyRoot !== bundle.epoch.policyRoot
+    || compareRfc3339Instants(epoch.validFrom, bundle.epoch.validFrom) !== 0
+    || compareRfc3339Instants(epoch.validUntil, bundle.epoch.validUntil) !== 0
+    || JSON.stringify(epoch.maintainerSignatures) !== JSON.stringify(bundle.epoch.maintainerSignatures)
+    || bundle.epoch.registryId !== registryId
+    || bundle.policy.registryId !== registryId
+    || bundle.inclusionProof.leafHash !== leafHash
+    || bundle.inclusionProof.root !== bundle.epoch.stateRoot
+    || bundle.inclusionProof.path[0] !== bundle.epoch.eventRoot) return false;
+  try {
+    return computeGovernancePolicySnapshotCommitment(
+      deriveGovernancePolicySnapshot(bundle.policy),
+    ) === bundle.epoch.policyRoot && computeMerkleRootFromProof(
+      leafHash,
+      bundle.inclusionProof.path,
+      bundle.inclusionProof.leafIndex,
+    ) === bundle.epoch.stateRoot;
+  } catch {
+    return false;
+  }
+};
 
 export const TrustRegistryOperatorWorkspaceOperationSchema = z.discriminatedUnion(
   "operation",
@@ -100,19 +141,138 @@ export const TrustRegistryOperatorSnapshotSchema = z.object({
   epochs: z.array(EpochCommitmentSchema).min(1),
   issuerEntries: z.array(TrustRegistryAuthorizationSnapshotEntrySchema),
   verifierEntries: z.array(TrustRegistryAuthorizationSnapshotEntrySchema),
+  auditorEntries: z.array(TrustRegistryAuthorizationSnapshotEntrySchema),
   recognitionEntries: z.array(TrustRegistryRecognitionSnapshotEntrySchema),
+  evidenceArchive: z.array(TrustRegistryEvidenceBundleSchema),
   notes: z.array(z.string()).default([]),
+}).superRefine((snapshot, ctx) => {
+  for (const [role, entries] of [
+    ["issuer", snapshot.issuerEntries],
+    ["verifier", snapshot.verifierEntries],
+    ["auditor", snapshot.auditorEntries],
+  ] as const) {
+    for (const [index, entry] of entries.entries()) {
+      const expectedLeafHash = computeAuthorizationStatementLeafHash(entry.authorization);
+      if (entry.authorization.role !== role
+        || entry.authorization.registryId !== snapshot.registry.registryId
+        || entry.evidence.authorization === undefined
+        || entry.evidence.authorization?.authorizationId !== entry.authorization.authorizationId
+        || entry.evidence.authorization?.role !== role
+        || entry.evidence.registryId !== snapshot.registry.registryId
+        || computeAuthorizationStatementLeafHash(entry.evidence.authorization) !== expectedLeafHash
+        || !hasConsistentSnapshotProof(
+          entry.evidence, expectedLeafHash, snapshot.epochs, snapshot.registry.registryId,
+        )) {
+        ctx.addIssue({
+          code: "custom",
+          path: [`${role}Entries`, index],
+          message: `${role} entry must contain a matching statement and internally consistent snapshot proof`,
+        });
+      }
+    }
+  }
+  for (const [index, entry] of snapshot.recognitionEntries.entries()) {
+    const expectedLeafHash = computeRecognitionStatementLeafHash(entry.recognition);
+    if (entry.recognition.registryId !== snapshot.registry.registryId
+      || entry.evidence.recognition === undefined
+      || entry.evidence.recognition?.recognitionId !== entry.recognition.recognitionId
+      || computeRecognitionStatementLeafHash(entry.evidence.recognition) !== expectedLeafHash
+      || entry.evidence.registryId !== snapshot.registry.registryId
+      || !hasConsistentSnapshotProof(
+        entry.evidence, expectedLeafHash, snapshot.epochs, snapshot.registry.registryId,
+      )) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["recognitionEntries", index],
+        message: "recognition entry must contain a matching statement and internally consistent snapshot proof",
+      });
+    }
+  }
+  const archivedIds = new Set<string>();
+  for (const [index, bundle] of snapshot.evidenceArchive.entries()) {
+    const authorization = bundle.authorization;
+    const recognition = bundle.recognition;
+    const recordId = authorization?.authorizationId ?? recognition?.recognitionId;
+    const recordKind = authorization?.role ?? "recognition";
+    const archiveId = `${recordKind}:${recordId ?? "missing"}:${bundle.epoch.epochId}`;
+    const current = authorization === undefined
+      ? snapshot.recognitionEntries.find((entry) => entry.recognition.recognitionId === recordId)
+      : [
+          ...snapshot.issuerEntries,
+          ...snapshot.verifierEntries,
+          ...snapshot.auditorEntries,
+        ].find((entry) => entry.authorization.authorizationId === recordId);
+    const sameIdentity = current === undefined || (authorization === undefined
+      ? "recognition" in current
+        && current.recognition.recognizedAuthorityDid === recognition?.recognizedAuthorityDid
+        && current.recognition.recognizedRegistryId === recognition?.recognizedRegistryId
+        && current.recognition.scope.resourceType === recognition?.scope.resourceType
+        && current.recognition.scope.resourceId === recognition?.scope.resourceId
+        && Object.keys(current.recognition.scope.context ?? {}).length === Object.keys(recognition?.scope.context ?? {}).length
+        && Object.entries(current.recognition.scope.context ?? {}).every(
+          ([key, value]) => recognition?.scope.context?.[key] === value,
+        )
+      : "authorization" in current
+        && current.authorization.role === authorization.role
+        && current.authorization.subjectDid === authorization.subjectDid
+        && current.authorization.resourceType === authorization.resourceType
+        && current.authorization.resourceId === authorization.resourceId);
+    const leafHash = authorization === undefined
+      ? recognition === undefined ? null : computeRecognitionStatementLeafHash(recognition)
+      : computeAuthorizationStatementLeafHash(authorization);
+    if (archivedIds.has(archiveId) || !sameIdentity || leafHash === null
+      || (authorization !== undefined && recognition !== undefined)
+      || bundle.registryId !== snapshot.registry.registryId
+      || (authorization?.registryId ?? recognition?.registryId) !== snapshot.registry.registryId
+      || !hasConsistentSnapshotProof(bundle, leafHash, snapshot.epochs, snapshot.registry.registryId)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["evidenceArchive", index],
+        message: "archived evidence must have a unique record and epoch with a matching snapshot proof",
+      });
+    }
+    archivedIds.add(archiveId);
+  }
 });
 
 export type TrustRegistryOperatorSnapshot = z.infer<
   typeof TrustRegistryOperatorSnapshotSchema
 >;
 
+export const MAX_CONSUMED_MUTATION_NONCES = 10_000;
+export const MAX_CONSUMED_MUTATION_NONCES_PER_ACTOR = 512;
+
+const CanonicalNonceTimestampSchema = z.string().datetime({ offset: false }).refine((value) =>
+  Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value);
+
+export const ConsumedMutationNonceSchema = z.object({
+  actorKey: z.string().regex(/^0x[0-9a-f]{64}$/u),
+  expiresAt: CanonicalNonceTimestampSchema,
+});
+
 export const TrustRegistryOperatorWorkspaceSchema = z.object({
-  workspaceVersion: z.literal("1"),
+  workspaceVersion: z.literal("3"),
   updatedAt: z.string().datetime({ offset: true }),
   registryLabel: SnapshotEntryLabelSchema,
   operations: z.array(TrustRegistryOperatorWorkspaceOperationSchema),
+  consumedMutationNonces: z.record(
+    z.string().regex(/^0x[0-9a-f]{64}$/u),
+    ConsumedMutationNonceSchema,
+  ).superRefine((entries, ctx) => {
+    if (Object.keys(entries).length > MAX_CONSUMED_MUTATION_NONCES) {
+      ctx.addIssue({ code: "custom", message: "Too many unexpired mutation nonces" });
+    }
+    const byActor = new Map<string, number>();
+    for (const entry of Object.values(entries)) {
+      const count = (byActor.get(entry.actorKey) ?? 0) + 1;
+      if (count > MAX_CONSUMED_MUTATION_NONCES_PER_ACTOR) {
+        ctx.addIssue({ code: "custom", message: "Too many unexpired mutation nonces for one actor" });
+        break;
+      }
+      byActor.set(entry.actorKey, count);
+    }
+  }),
+  mutationNonceClock: CanonicalNonceTimestampSchema.nullable(),
   snapshot: TrustRegistryOperatorSnapshotSchema,
 });
 
@@ -131,6 +291,7 @@ export type TrustRegistrySummary = {
   epochCount: number;
   issuerCounts: Record<AuthorizationRecord["status"], number>;
   verifierCounts: Record<AuthorizationRecord["status"], number>;
+  auditorCounts: Record<AuthorizationRecord["status"], number>;
   recognitionCounts: Record<RecognitionRecord["status"], number>;
 };
 
@@ -200,6 +361,7 @@ export const buildSummary = (
 ): TrustRegistrySummary => {
   const issuerCounts = defaultAuthorizationStatusCounts();
   const verifierCounts = defaultAuthorizationStatusCounts();
+  const auditorCounts = defaultAuthorizationStatusCounts();
   const recognitionCounts = defaultRecognitionStatusCounts();
 
   for (const entry of snapshot.issuerEntries) {
@@ -208,6 +370,10 @@ export const buildSummary = (
 
   for (const entry of snapshot.verifierEntries) {
     verifierCounts[entry.authorization.status] += 1;
+  }
+
+  for (const entry of snapshot.auditorEntries) {
+    auditorCounts[entry.authorization.status] += 1;
   }
 
   for (const entry of snapshot.recognitionEntries) {
@@ -225,6 +391,7 @@ export const buildSummary = (
     epochCount: snapshot.epochs.length,
     issuerCounts,
     verifierCounts,
+    auditorCounts,
     recognitionCounts,
   };
 };
@@ -238,6 +405,7 @@ export const serializeJson = (value: unknown): string =>
   `${JSON.stringify(value, null, 2)}\n`;
 
 export type SnapshotRegistryState = {
+  auditorEntries: readonly TrustRegistryAuthorizationSnapshotEntry[];
   currentEpoch: EpochCommitment;
   epochs: readonly EpochCommitment[];
   issuerEntries: readonly TrustRegistryAuthorizationSnapshotEntry[];

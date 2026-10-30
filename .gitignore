@@ -1,7 +1,10 @@
 node_modules/
 dist/
+/packages/*/dist-other-*/
 .turbo/
 coverage/
+logs/tests/
+test-results/
 artifacts/
 *.tsbuildinfo
 src/managed/

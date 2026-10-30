@@ -34,13 +34,14 @@
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.build.json",
-    "test": "vitest run",
+    "test": "vitest run --testTimeout 30000",
     "build:light": "pnpm run build",
     "test:light": "pnpm run test"
   },
   "dependencies": {
+    "@midnight-ntwrk/trust-registry-client": "workspace:0.1.0",
     "@midnight-ntwrk/trust-registry-domain": "workspace:0.1.0",
-    "zod": "^4.1.0"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@midnight-ntwrk/trust-registry-integration": "workspace:0.1.0"

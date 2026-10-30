@@ -1,0 +1,31 @@
+pragma language_version >= 0.20;
+
+import CompactStandardLibrary;
+include "composable";
+
+export struct RegistryDisclosures {}
+
+import VC<NoPublicClaims, NoClaimCommitments, ExplicitHolderBinding, NoStatusBinding> prefix RegistryVC_;
+import VP<RegistryDisclosures, ExplicitHolderBinding> prefix RegistryVP_;
+import CredentialPresentationRelations<
+  NoPublicClaims,
+  NoClaimCommitments,
+  RegistryDisclosures,
+  ExplicitHolderBinding,
+  NoStatusBinding
+> prefix RegistryRelations_;
+
+export pure circuit credentialBodyRoot(credential: RegistryVC_Credential): Bytes<32> {
+  return RegistryVC_credentialBodyRoot(credential);
+}
+
+export pure circuit presentationBodyRoot(presentation: RegistryVP_Presentation): Bytes<32> {
+  return RegistryVP_presentationBodyRoot(presentation);
+}
+
+export pure circuit assertCredentialPresentationEnvelopeLink(
+  credential: RegistryVC_Credential,
+  presentation: RegistryVP_Presentation
+): [] {
+  RegistryRelations_assertMatchingCredentialPresentation(credential, presentation);
+}

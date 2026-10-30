@@ -1,10 +1,13 @@
 import { z } from "zod";
 
 import { DidSchema, HashHexSchema, ScopedIdentifierSchema, UriSchema } from "./ids.js";
+import { compareRfc3339Instants } from "./instant.js";
+import { RecognitionAccreditorAnchorSchema } from "./recognition-accreditation.js";
 import {
   assertAscendingTimestamps,
   LifecycleStatusSchema,
 } from "./lifecycle.js";
+import { IssuerGovernedResourceIdSchema, RequestGovernedResourceIdSchema } from "./scope.js";
 
 const NonEmptyStringSchema = z.string().trim().min(1);
 const TimestampSchema = z.string().datetime({ offset: true });
@@ -124,7 +127,7 @@ export const RegistryRecordSchema = BaseRecordSchema.extend({
 export const GovernancePolicyRecordSchema = BaseRecordSchema.extend({
   policyId: ScopedIdentifierSchema,
   registryId: ScopedIdentifierSchema,
-  version: NonEmptyStringSchema,
+  version: z.string().regex(/^v[1-9][0-9]*$/u),
   policyUri: UriSchema,
   policyTemplates: z.array(GovernancePolicyTemplateSchema).min(1),
   decisionBindings: z.array(GovernancePolicyBindingSchema).min(1),
@@ -132,11 +135,19 @@ export const GovernancePolicyRecordSchema = BaseRecordSchema.extend({
   disputeRules: z.array(NonEmptyStringSchema).min(1),
   retentionRules: z.array(NonEmptyStringSchema).min(1),
   emergencyRules: z.array(NonEmptyStringSchema).min(1),
+  recognitionAccreditorAnchors: z.array(RecognitionAccreditorAnchorSchema).default([]),
   effectiveFrom: TimestampSchema,
   effectiveUntil: TimestampSchema.optional(),
   supersededAt: TimestampSchema.optional(),
   archivedAt: TimestampSchema.optional(),
 }).superRefine((record, ctx) => {
+  if (record.supersededAt !== undefined && record.effectiveUntil === undefined) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Superseded policies require an explicit effectiveUntil",
+      path: ["effectiveUntil"],
+    });
+  }
   refineEffectiveWindow(
     ctx,
     record.effectiveFrom,
@@ -153,6 +164,24 @@ export const GovernancePolicyRecordSchema = BaseRecordSchema.extend({
       ["archivedAt", record.archivedAt],
     ],
   );
+
+  const anchorScopes = new Set<string>();
+  for (const [index, anchor] of record.recognitionAccreditorAnchors.entries()) {
+    if (anchor.targetRegistryId !== record.registryId
+      || anchor.policyId !== record.policyId
+      || anchor.policyVersion !== record.version) {
+      ctx.addIssue({ code: "custom", path: ["recognitionAccreditorAnchors", index],
+        message: "Recognition accreditor anchor must belong to this policy revision" });
+    }
+    const scope = JSON.stringify([
+      anchor.recognizedRegistryId, anchor.scopeResourceType, anchor.scopeResourceId,
+    ]);
+    if (anchorScopes.has(scope)) {
+      ctx.addIssue({ code: "custom", path: ["recognitionAccreditorAnchors", index],
+        message: "Recognition accreditor anchors must have distinct external registry and resource scopes" });
+    }
+    anchorScopes.add(scope);
+  }
 
   const templatesById = new Map<string, z.infer<typeof GovernancePolicyTemplateSchema>>();
   const templateFamilies = new Set<z.infer<typeof GovernanceDecisionFamilySchema>>();
@@ -255,6 +284,7 @@ export const AuthorizationRecordSchema = BaseRecordSchema.extend({
   resourceId: ScopedIdentifierSchema,
   policyId: ScopedIdentifierSchema,
   trustLevel: TrustLevelSchema,
+  statusPolicyBindingCommitment: HashHexSchema.optional(),
   proposedAt: TimestampSchema,
   authorizedAt: TimestampSchema.optional(),
   activeFrom: TimestampSchema.optional(),
@@ -266,7 +296,55 @@ export const AuthorizationRecordSchema = BaseRecordSchema.extend({
   archivedAt: TimestampSchema.optional(),
   evidenceHash: HashHexSchema,
 }).superRefine((record, ctx) => {
-  if (record.status !== "proposed" && record.authorizedAt === undefined) {
+  if (record.role === "issuer" && !IssuerGovernedResourceIdSchema.safeParse(record.resourceId).success) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Issuer authorization resource id must be a canonical composite issuer resource id",
+      path: ["resourceId"],
+    });
+  }
+  if (record.role === "issuer" && ![
+    "credential-family", "schema", "schema-version", "credential-definition", "status-method-requirement",
+  ].includes(record.resourceType)) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Issuer authorization resource type is invalid",
+      path: ["resourceType"],
+    });
+  }
+  if ((record.role === "verifier" || record.role === "auditor")
+    && !RequestGovernedResourceIdSchema.safeParse(record.resourceId).success) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Request authorization resource id must be a canonical composite request resource id",
+      path: ["resourceId"],
+    });
+  }
+  if ((record.role === "verifier" || record.role === "auditor") && record.resourceType !== "request-profile") {
+    ctx.addIssue({
+      code: "custom",
+      message: "Request authorization resource type must be request-profile",
+      path: ["resourceType"],
+    });
+  }
+  if (record.role === "issuer" && record.statusPolicyBindingCommitment === undefined) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Issuer authorization requires a status policy binding commitment",
+      path: ["statusPolicyBindingCommitment"],
+    });
+  }
+  if (record.role !== "issuer" && record.statusPolicyBindingCommitment !== undefined) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Only issuer authorization may carry a status policy binding commitment",
+      path: ["statusPolicyBindingCommitment"],
+    });
+  }
+  if ((record.status !== "proposed" && record.status !== "archived"
+    || record.activeFrom !== undefined || record.issuedAt !== undefined
+    || record.suspendedAt !== undefined || record.revokedAt !== undefined
+    || record.supersededAt !== undefined) && record.authorizedAt === undefined) {
     ctx.addIssue({
       code: "custom",
       message: "authorizedAt is required once an authorization leaves proposed state",
@@ -274,7 +352,9 @@ export const AuthorizationRecordSchema = BaseRecordSchema.extend({
     });
   }
   if (
-    ["active", "suspended", "revoked", "superseded", "archived"].includes(record.status) &&
+    (["active", "suspended", "revoked", "superseded"].includes(record.status)
+      || record.status === "archived" && (record.suspendedAt !== undefined
+        || record.revokedAt !== undefined || record.supersededAt !== undefined)) &&
     record.activeFrom === undefined
   ) {
     ctx.addIssue({
@@ -330,7 +410,10 @@ export const RecognitionRecordSchema = BaseRecordSchema.extend({
   supersededAt: TimestampSchema.optional(),
   archivedAt: TimestampSchema.optional(),
 }).superRefine((record, ctx) => {
-  if (record.status !== "proposed" && record.authorizedAt === undefined) {
+  if ((record.status !== "proposed" && record.status !== "archived"
+    || record.effectiveFrom !== undefined || record.suspendedAt !== undefined
+    || record.revokedAt !== undefined || record.supersededAt !== undefined)
+    && record.authorizedAt === undefined) {
     ctx.addIssue({
       code: "custom",
       message: "authorizedAt is required once a recognition leaves proposed state",
@@ -338,7 +421,9 @@ export const RecognitionRecordSchema = BaseRecordSchema.extend({
     });
   }
   if (
-    ["active", "suspended", "revoked", "superseded", "archived"].includes(record.status)
+    (["active", "suspended", "revoked", "superseded"].includes(record.status)
+      || record.status === "archived" && (record.suspendedAt !== undefined
+        || record.revokedAt !== undefined || record.supersededAt !== undefined))
     && record.effectiveFrom === undefined
   ) {
     ctx.addIssue({
@@ -378,7 +463,7 @@ export const EpochCommitmentSchema = z
     policyRoot: HashHexSchema,
     validFrom: TimestampSchema,
     validUntil: TimestampSchema,
-    maintainerSignatures: z.array(MaintainerSignatureSchema).min(1),
+    maintainerSignatures: z.tuple([MaintainerSignatureSchema]),
   })
   .superRefine((record, ctx) => {
     refineEffectiveWindow(
@@ -429,7 +514,10 @@ function refineEffectiveWindow(
     return;
   }
 
-  if (Date.parse(fromValue) > Date.parse(untilValue)) {
+  if (!TimestampSchema.safeParse(fromValue).success || !TimestampSchema.safeParse(untilValue).success) {
+    return;
+  }
+  if (compareRfc3339Instants(fromValue, untilValue) > 0) {
     ctx.addIssue({
       code: "custom",
       message: `${untilField ?? "until"} must not be earlier than ${fromField}`,

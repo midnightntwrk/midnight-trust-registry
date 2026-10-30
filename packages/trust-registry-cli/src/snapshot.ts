@@ -33,6 +33,7 @@ export type SnapshotRecordKind =
   | "policy"
   | "issuer"
   | "verifier"
+  | "auditor"
   | "recognition"
   | "epoch";
 
@@ -62,6 +63,10 @@ export const listIssuerEntries = (
 export const listVerifierEntries = (
   snapshot: SnapshotRegistryState,
 ): readonly TrustRegistryAuthorizationSnapshotEntry[] => snapshot.verifierEntries;
+
+export const listAuditorEntries = (
+  snapshot: SnapshotRegistryState,
+): readonly TrustRegistryAuthorizationSnapshotEntry[] => snapshot.auditorEntries;
 
 export const listRecognitionEntries = (
   snapshot: SnapshotRegistryState,
@@ -97,6 +102,19 @@ export const findVerifierEntry = (
     throw new Error(`unknown verifier authorization: ${authorizationId}`);
   }
 
+  return entry;
+};
+
+export const findAuditorEntry = (
+  snapshot: SnapshotRegistryState,
+  authorizationId: string,
+): TrustRegistryAuthorizationSnapshotEntry => {
+  const entry = snapshot.auditorEntries.find(
+    (candidate) => candidate.authorization.authorizationId === authorizationId,
+  );
+  if (entry === undefined) {
+    throw new Error(`unknown auditor authorization: ${authorizationId}`);
+  }
   return entry;
 };
 
@@ -179,6 +197,19 @@ export const inspectVerifierEntryAtTimestamp = (
   };
 };
 
+export const inspectAuditorEntryAtTimestamp = (
+  snapshot: SnapshotRegistryState,
+  authorizationId: string,
+  evaluatedAt: string,
+): SnapshotTemporalAuthorizationInspection => {
+  const entry = findAuditorEntry(snapshot, authorizationId);
+  return {
+    entry,
+    epoch: findEpochAtTimestamp(snapshot, evaluatedAt),
+    ...evaluateAuthorizationRecordAtTime(entry.authorization, evaluatedAt),
+  };
+};
+
 export const inspectRecognitionEntryAtTimestamp = (
   snapshot: SnapshotRegistryState,
   recognitionId: string,
@@ -238,6 +269,25 @@ export const resolveVerifierEntryAtTimestamp = (
       };
 };
 
+export const resolveAuditorEntryAtTimestamp = (
+  snapshot: SnapshotRegistryState,
+  evaluatedAt: string,
+  predicate: (entry: TrustRegistryAuthorizationSnapshotEntry) => boolean,
+): SnapshotTemporalAuthorizationInspection | null => {
+  const entry = selectAuthorizationEntryAtTime(
+    snapshot.auditorEntries,
+    evaluatedAt,
+    predicate,
+  );
+  return entry === null
+    ? null
+    : {
+        entry,
+        epoch: findEpochAtTimestamp(snapshot, evaluatedAt),
+        ...evaluateAuthorizationRecordAtTime(entry.authorization, evaluatedAt),
+      };
+};
+
 export const resolveRecognitionEntryAtTimestamp = (
   snapshot: SnapshotRegistryState,
   evaluatedAt: string,
@@ -259,7 +309,7 @@ export const resolveRecognitionEntryAtTimestamp = (
 
 export const exportEvidenceBundle = (
   snapshot: SnapshotRegistryState,
-  kind: Extract<SnapshotRecordKind, "issuer" | "verifier" | "recognition">,
+  kind: Extract<SnapshotRecordKind, "issuer" | "verifier" | "auditor" | "recognition">,
   id: string,
 ): TrustRegistryEvidenceBundle => {
   switch (kind) {
@@ -267,6 +317,8 @@ export const exportEvidenceBundle = (
       return findIssuerEntry(snapshot, id).evidence;
     case "verifier":
       return findVerifierEntry(snapshot, id).evidence;
+    case "auditor":
+      return findAuditorEntry(snapshot, id).evidence;
     case "recognition":
       return findRecognitionEntry(snapshot, id).evidence;
   }
@@ -283,6 +335,7 @@ export const renderSummary = (summary: TrustRegistrySummary): string =>
     `Epochs: ${summary.epochCount}`,
     `Issuers: ${renderStatusCounts(summary.issuerCounts)}`,
     `Verifiers: ${renderStatusCounts(summary.verifierCounts)}`,
+    `Auditors: ${renderStatusCounts(summary.auditorCounts)}`,
     `Recognitions: ${renderStatusCounts(summary.recognitionCounts)}`,
   ].join("\n");
 
@@ -351,6 +404,11 @@ export const renderSnapshotRecord = (
         throw new Error("--id is required for verifier inspection");
       }
       return findVerifierEntry(snapshot, id);
+    case "auditor":
+      if (id === undefined) {
+        throw new Error("--id is required for auditor inspection");
+      }
+      return findAuditorEntry(snapshot, id);
     case "recognition":
       if (id === undefined) {
         throw new Error("--id is required for recognition inspection");

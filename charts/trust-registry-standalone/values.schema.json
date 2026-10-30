@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["deploymentPhase", "images", "node", "storage", "secrets", "imagePullPolicy", "networkPolicy"],
+  "properties": {
+    "deploymentPhase": { "enum": ["bootstrap", "runtime"] },
+    "images": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["node", "indexer", "proofServer", "api", "admin", "applicant"],
+      "properties": {
+        "node": { "$ref": "#/definitions/image" },
+        "indexer": { "$ref": "#/definitions/image" },
+        "proofServer": { "$ref": "#/definitions/image" },
+        "api": { "$ref": "#/definitions/image" },
+        "admin": { "$ref": "#/definitions/image" },
+        "applicant": { "$ref": "#/definitions/image" }
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["beneficiary"],
+      "properties": { "beneficiary": { "type": "string", "pattern": "^[0-9a-fA-F]{64}$" } }
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodeClaim", "indexerClaim", "proofParametersClaim"],
+      "properties": {
+        "nodeClaim": { "$ref": "#/definitions/name" },
+        "indexerClaim": { "$ref": "#/definitions/name" },
+        "proofParametersClaim": { "$ref": "#/definitions/name" }
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["indexerName", "apiApprovalName", "apiKeyringName", "apiReviewerFingerprint"],
+      "properties": {
+        "indexerName": { "$ref": "#/definitions/name" },
+        "apiApprovalName": { "$ref": "#/definitions/name" },
+        "apiKeyringName": { "$ref": "#/definitions/name" },
+        "apiReviewerFingerprint": { "type": "string", "pattern": "^[0-9A-F]{40}$" }
+      }
+    },
+    "imagePullPolicy": { "const": "Never" },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dnsNamespaceLabels", "dnsPodLabels"],
+      "properties": {
+        "dnsNamespaceLabels": { "$ref": "#/definitions/labels" },
+        "dnsPodLabels": { "$ref": "#/definitions/labels" }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "node": { "type": "object" },
+        "indexer": { "type": "object" },
+        "proofServer": { "type": "object" },
+        "api": { "type": "object" },
+        "admin": { "type": "object" },
+        "applicant": { "type": "object" }
+      }
+    }
+  },
+  "definitions": {
+    "image": { "type": "string", "pattern": "^(localhost(:[0-9]{1,5})?|[a-z0-9][a-z0-9.-]*\\.[a-z0-9][a-z0-9.-]*(:[0-9]{1,5})?|[a-z0-9][a-z0-9-]*:[0-9]{1,5})(/[a-z0-9][a-z0-9._-]*)+@sha256:[0-9a-f]{64}$" },
+    "name": { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", "maxLength": 63 },
+    "labels": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    }
+  }
+}

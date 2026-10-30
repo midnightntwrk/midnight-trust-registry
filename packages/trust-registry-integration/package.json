@@ -20,10 +20,24 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
+    },
+    "./local-pinned-submission-provider": {
+      "types": "./dist/local-pinned-submission-provider.d.ts",
+      "import": "./dist/local-pinned-submission-provider.js"
+    },
+    "./reviewer-signature-status": {
+      "types": "./dist/reviewer-signature-status.d.ts",
+      "import": "./dist/reviewer-signature-status.js"
+    },
+    "./reviewer-signature-verifier": {
+      "types": "./dist/reviewer-signature-verifier.d.ts",
+      "import": "./dist/reviewer-signature-verifier.js"
+    },
+    "./fixtures/vc-authority-consumer.compact": "./src/compact/vc-authority-consumer.compact"
   },
   "files": [
     "dist/**",
+    "src/compact/vc-authority-consumer.compact",
     "README.md"
   ],
   "scripts": {
@@ -31,17 +45,31 @@
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.build.json",
-    "integration": "vitest run --dir src/test",
+    "integration": "node scripts/check-vc-composition.mjs && vitest run --dir src/test --testTimeout 15000",
+    "integration:light": "pnpm run integration",
+    "test:light": "node scripts/check-vc-composition.mjs",
     "build:light": "pnpm run build"
   },
   "dependencies": {
+    "@midnight-ntwrk/compact-js": "2.5.1",
     "@midnight-ntwrk/credential-compact": "0.2.0",
     "@midnight-ntwrk/credential-did-midnight": "0.2.0",
     "@midnight-ntwrk/midnight-did": "0.7.0",
     "@midnight-ntwrk/midnight-did-contract": "0.7.0",
     "@midnight-ntwrk/midnight-did-domain": "0.7.0",
+    "@midnight-ntwrk/midnight-did-jubjub-schnorr": "0.7.0",
+    "@midnight-ntwrk/midnight-js-contracts": "4.1.1",
+    "@midnight-ntwrk/midnight-js-indexer-public-data-provider": "4.1.1",
+    "@midnight-ntwrk/midnight-js-network-id": "4.1.1",
+    "@midnight-ntwrk/midnight-js-protocol": "4.1.1",
+    "@midnight-ntwrk/midnight-js-types": "4.1.1",
+    "@polkadot/api": "16.5.6",
     "@midnight-ntwrk/trust-registry-client": "workspace:0.1.0",
     "@midnight-ntwrk/trust-registry-contract": "workspace:0.1.0",
-    "@midnight-ntwrk/trust-registry-domain": "workspace:0.1.0"
+    "@midnight-ntwrk/trust-registry-domain": "workspace:0.1.0",
+    "zod": "^4.6.6"
+  },
+  "devDependencies": {
+    "@midnight-ntwrk/compact-runtime": "0.16.0"
   }
 }

@@ -1,14 +1,19 @@
 # Trust Registry Execution Backlog
 
 Status: active
-Updated: 2026-10-05
+Updated: 2026-10-28
 
 The [0.1.0 reference profile](../spec/milestone-0.1.0.md) is the product
 contract. The [0.1.0 issue plan](milestone-0.1.0-issues.md) contains the
 ordered, testable implementation slices and is the source of truth for milestone
-acceptance. GitHub [milestone 0.1.0](https://github.com/midnightntwrk/midnight-trust-registry/milestone/1)
-tracks their execution. The broad [v1 specification](../spec/trust-registry.md)
-continues to describe the longer-term system.
+acceptance. The first RC is **self-hosted local/offline runtime only**: install
+may use the network, but the qualified runtime may not use external egress.
+Preprod and other public networks, historical API/TRQP decisions, and
+Kubernetes/Helm qualification are outside this RC. GitHub
+[milestone 0.1.0](https://github.com/midnightntwrk/midnight-trust-registry/milestone/1)
+tracks execution. The broad [v1 specification](../spec/trust-registry.md)
+continues to describe the longer-term system. A simulator, mocked provider,
+or self-attested wizard status is not deployed local-ledger evidence.
 
 ## Delivered Foundation
 
@@ -27,13 +32,64 @@ Merged on `develop` before this milestone plan:
   [ADR-0002](../decisions/adr-0002-resource-and-request-profile-canonicalization.md),
   and an initial on-chain application evidence hash binding.
 
-These are components of a reference implementation, not proof that a real
-VC/VP-backed application or authenticated HTTP governance journey works yet.
-The current simulator generates a deterministic stand-in evidence signature,
-the Compact contract checks evidence hashes but not the evidence verifier's
-DID-bound signature, and the local mutation API does not authenticate callers.
+These are components of a reference implementation, not proof that one real
+VC/VP-backed application and authenticated HTTP governance journey works end
+to end. Published DID/VC-backed intake and signed local HTTP mutations now
+have focused tests, but they drive separate state paths: the intake reaches the
+Compact simulator, while the HTTP gateway replays an operator workspace. The
+local workspace's fixture maintainer is not a Compact-backed 2-of-3 approval
+bundle. Combined VP/proposal HTTP hosts now require a receipt-backed admission
+port. A deterministic local issuer journey now projects registration preflight
+and public lookup from one Compact simulator and connects signed registration,
+VP receipt, 2-of-3 governed transitions, and epoch-backed lookup. Applicant
+records and accepted evidence now have a private file-backed local adapter,
+but challenge consumption, receipt acceptance, and governance are not one
+atomic transaction. A read-only resolution route recovers a lost submit
+receipt for all four membership roles by matching admitted evidence to a
+Compact proposal event, but `not-observed` cannot justify a retry. The next
+functional slice must provide a deployable authoritative host and a finality-
+aware handoff for uncertain submissions. The Compact contract
+checks evidence hashes but does not itself resolve the evidence verifier's DID
+assertion key.
 
-## 0.1.0 Critical Path
+## Current Local RC Critical Path
+
+The [executable issue plan](milestone-0.1.0-issues.md) and
+[operator acceptance cases](../guide/standalone-local-journey.md#operator-acceptance-record)
+control the release decision. Draft implementation PRs #238-#240 provide
+reviewable code and tests, not a qualified deployment. Promotion PR #198
+remains draft. Do not convert a passing light, demo, browser-fixture, or
+read-only observer test into an `A01`-`A04` actor verdict.
+
+| Gate | Work still required | Release evidence |
+| --- | --- | --- |
+| Local ledger and approvals | [#219](https://github.com/midnightntwrk/midnight-trust-registry/issues/219), [#233](https://github.com/midnightntwrk/midnight-trust-registry/issues/233), [#234](https://github.com/midnightntwrk/midnight-trust-registry/issues/234) | One source-matched install, independently signed genesis and release committee, deployed contract, authenticated finalized constructor/authority/verifier-key readback, and signed API plan bound to those receipts. |
+| Offline actor journeys | [#219](https://github.com/midnightntwrk/midnight-trust-registry/issues/219), [#90](https://github.com/midnightntwrk/midnight-trust-registry/issues/90) | Real local issuer, verifier, auditor, maintainer, recognition, and relying-party paths with a VC-owned live status-authority adapter, governed writes and current reads, plus host/container/wallet/browser/prover egress-denial evidence. The packaged signed-plan API CLI is still read-only. |
+| Recovery | [#220](https://github.com/midnightntwrk/midnight-trust-registry/issues/220), [#230](https://github.com/midnightntwrk/midnight-trust-registry/issues/230) | Deployed restart and distinct-project restore, checkpoint continuity, durable ambiguous-attempt quarantine, and independently authenticated recovery disposition. Process and synthetic-snapshot tests are not deployed recovery. |
+| Artifact and security review | [#236](https://github.com/midnightntwrk/midnight-trust-registry/issues/236), [#237](https://github.com/midnightntwrk/midnight-trust-registry/issues/237), [#232](https://github.com/midnightntwrk/midnight-trust-registry/issues/232) | Manifest-backed exact-source packages/images/proving keys, disposition of the red external scanner findings, and a non-author human review of the same candidate with signed findings and release-owner sign-off. A GPG verifier checks bytes, not reviewer independence or finding truth. |
+
+Use the private `L01`-`S01` acceptance inventory to retain commands, receipts,
+checkpoints, negative outcomes, and reviewer decisions for **one** candidate.
+Its `allOperatorCasesPassed` field is a self-attested inventory result, not
+release qualification; independent finality and security disposition remain
+separate gates. The current-only API requires operator-reviewed re-signing and
+a controlled restart after each governed mutation. Never publish wallet
+material, private acceptance evidence, or generated proving secrets in a PR.
+
+## Historical Functional Path
+
+The following table records the earlier simulator and package implementation
+plan. Its issue wording and statuses need reconciliation before closure. It is
+not the current RC release sequence; #39 historical API/TRQP routes are
+deferred, while #218 Helm is optional. The scoped issues above take precedence
+for local runtime qualification.
+
+The original order was DID/VC/VP intake and Compact-governed decisions
+(#76, #67, #77), simulator-backed actor cases (#58, #78), API/UI/query and
+adversarial cases (#59, #60), then VC consumer anchors (#79, #73). Those
+tests remain useful regression coverage, but their issue status cannot be
+read as proof of the deployed local runtime. #39 historical routes were in
+that original order and are now deferred from this RC.
 
 | Slice | Existing issue or planned issue | Exit evidence |
 | --- | --- | --- |

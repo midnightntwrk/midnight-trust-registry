@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { compareRfc3339Instants } from "./instant.js";
+
 export const LifecycleStatusSchema = z.enum([
   "proposed",
   "authorized",
@@ -15,10 +17,10 @@ export type LifecycleStatus = z.infer<typeof LifecycleStatusSchema>;
 const lifecycleTransitionMap: Record<LifecycleStatus, LifecycleStatus[]> = {
   proposed: ["authorized", "archived"],
   authorized: ["active", "revoked", "archived"],
-  active: ["suspended", "revoked", "superseded", "archived"],
-  suspended: ["active", "revoked", "superseded", "archived"],
+  active: ["suspended", "revoked", "archived"],
+  suspended: ["revoked", "archived"],
   revoked: ["archived"],
-  superseded: ["archived"],
+  superseded: [],
   archived: [],
 };
 
@@ -41,7 +43,7 @@ export function assertLifecycleTransition(
 export function assertAscendingTimestamps(
   entries: Array<readonly [field: string, value: string | undefined]>,
 ): void {
-  let lastTimestamp = -Infinity;
+  let lastTimestamp: string | undefined;
   let lastField = "start";
 
   for (const [field, value] of entries) {
@@ -49,15 +51,18 @@ export function assertAscendingTimestamps(
       continue;
     }
 
-    const timestamp = Date.parse(value);
-    if (Number.isNaN(timestamp)) {
+    let comparison = 0;
+    try {
+      comparison = lastTimestamp === undefined ? compareRfc3339Instants(value, value)
+        : compareRfc3339Instants(value, lastTimestamp);
+    } catch {
       throw new Error(`Invalid timestamp in ${field}`);
     }
-    if (timestamp < lastTimestamp) {
+    if (comparison < 0) {
       throw new Error(`${field} must not be earlier than ${lastField}`);
     }
 
-    lastTimestamp = timestamp;
+    lastTimestamp = value;
     lastField = field;
   }
 }

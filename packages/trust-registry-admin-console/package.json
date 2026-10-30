@@ -2,9 +2,27 @@
   "name": "@midnight-ntwrk/trust-registry-admin-console",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
+  "engines": {
+    "node": ">=24",
+    "pnpm": ">=10"
+  },
   "main": "./dist/index.js",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/midnightntwrk/midnight-trust-registry.git",
+    "directory": "packages/trust-registry-admin-console"
+  },
+  "exports": {
+    "./api": {
+      "types": "./dist/api.d.ts",
+      "import": "./dist/api.js",
+      "default": "./dist/api.js"
+    }
+  },
   "files": [
     "dist/**",
     "README.md"
@@ -15,12 +33,16 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.build.json && node ./scripts/copy-static.mjs",
     "test": "vitest run",
+    "integration": "pnpm run test",
+    "integration:light": "pnpm run test",
     "serve": "pnpm run build && node ./scripts/serve.mjs",
     "build:light": "pnpm run build",
     "test:light": "pnpm run test"
   },
   "dependencies": {
-    "@midnight-ntwrk/trust-registry-api": "workspace:0.1.0",
-    "@midnight-ntwrk/trust-registry-cli": "workspace:0.1.0"
+    "@midnight-ntwrk/trust-registry-api": "workspace:0.1.0"
+  },
+  "devDependencies": {
+    "happy-dom": "21.0.4"
   }
 }

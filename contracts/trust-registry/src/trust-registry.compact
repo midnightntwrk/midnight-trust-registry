@@ -63,6 +63,7 @@ export struct IssuerAuthorizationRecord {
   resourceType: IssuerResourceType,
   resourceId: Bytes<32>,
   policyId: Bytes<32>,
+  statusPolicyBindingCommitment: Bytes<32>,
   trustLevel: Bytes<32>,
   status: AuthorizationStatus,
   proposedAtSequence: Uint<64>,
@@ -79,7 +80,7 @@ export struct IssuerAuthorizationRecord {
 export struct VerifierAuthorizationRecord {
   authorizationId: Bytes<32>,
   subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
+  requestResourceId: Bytes<32>,
   allowedAttributeSetCommitment: Bytes<32>,
   allowedPredicateSetCommitment: Bytes<32>,
   disclosureLevelCommitment: Bytes<32>,
@@ -97,10 +98,60 @@ export struct VerifierAuthorizationRecord {
   lifecycleEventHash: Bytes<32>,
 }
 
+export enum EvidenceVerifierKeyStatus {
+  active,
+  suspended,
+  revoked,
+  retired
+}
+
+export struct EvidenceVerifierKeyRecord {
+  authorizationId: Bytes<32>,
+  verifierDidCommitment: Bytes<32>,
+  keyIdCommitment: Bytes<32>,
+  publicKey: JubjubPoint,
+  suite: Bytes<32>,
+  policyCommitment: Bytes<32>,
+  policyVersion: Uint<64>,
+  status: EvidenceVerifierKeyStatus,
+  registeredAtSequence: Uint<64>,
+  suspendedAtSequence: Uint<64>,
+  revokedAtSequence: Uint<64>,
+  retiredAtSequence: Uint<64>,
+  lastStatusSequence: Uint<64>,
+  predecessorAuthorizationId: Bytes<32>,
+  lifecycleEventHash: Bytes<32>,
+}
+
+export enum VcAuthorityKeyStatus {
+  active,
+  suspended,
+  revoked,
+  retired
+}
+
+export struct VcAuthorityKeyRecord {
+  keyIdCommitment: Bytes<32>,
+  authorityDidCommitment: Bytes<32>,
+  authorityMethodIdCommitment: Bytes<32>,
+  publicKey: JubjubPoint,
+  networkIdCommitment: Bytes<32>,
+  consumerContractAddress: Bytes<32>,
+  domainCommitment: Bytes<32>,
+  policyCommitment: Bytes<32>,
+  policyVersion: Uint<64>,
+  status: VcAuthorityKeyStatus,
+  registeredAtSequence: Uint<64>,
+  retiredAtSequence: Uint<64>,
+  lastStatusSequence: Uint<64>,
+  predecessorKeyIdCommitment: Bytes<32>,
+  lifecycleEventHash: Bytes<32>,
+}
+
 export struct AuditorAuthorizationRecord {
   authorizationId: Bytes<32>,
   subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
+  requestResourceId: Bytes<32>,
   allowedAttributeSetCommitment: Bytes<32>,
   allowedPredicateSetCommitment: Bytes<32>,
   disclosureLevelCommitment: Bytes<32>,
@@ -143,6 +194,7 @@ export struct EpochCommitmentRecord {
   stateRoot: Bytes<32>,
   eventRoot: Bytes<32>,
   policyRoot: Bytes<32>,
+  publicationPolicyCommitment: Bytes<32>,
   validFromSequence: Uint<64>,
   validUntilSequence: Uint<64>,
   publishedAtSequence: Uint<64>,
@@ -155,6 +207,71 @@ export struct EpochCommitmentRecord {
 export struct JubjubSignature {
   announcement: JubjubPoint,
   response: Field,
+}
+
+export struct IssuerProposalEvidenceRecord {
+  evidenceVerifierAuthorizationId: Bytes<32>,
+  evidenceVerifierDidCommitment: Bytes<32>,
+  evidenceVerifierKeyIdCommitment: Bytes<32>,
+  evidenceVerifierSuite: Bytes<32>,
+  activePolicyCommitment: Bytes<32>,
+  activePolicyVersion: Uint<64>,
+  evidenceCommitment: Bytes<32>,
+  verifierSignatureAnnouncement: JubjubPoint,
+  verifierSignatureResponse: Field,
+  proposalGovernanceEventHash: Bytes<32>,
+}
+
+export struct VerifierProposalEvidenceRecord {
+  evidenceVerifierAuthorizationId: Bytes<32>,
+  evidenceVerifierDidCommitment: Bytes<32>,
+  evidenceVerifierKeyIdCommitment: Bytes<32>,
+  evidenceVerifierSuite: Bytes<32>,
+  activePolicyCommitment: Bytes<32>,
+  activePolicyVersion: Uint<64>,
+  evidenceCommitment: Bytes<32>,
+  verifierSignatureAnnouncement: JubjubPoint,
+  verifierSignatureResponse: Field,
+  proposalGovernanceEventHash: Bytes<32>,
+}
+
+export struct AuditorProposalEvidenceRecord {
+  evidenceVerifierAuthorizationId: Bytes<32>,
+  evidenceVerifierDidCommitment: Bytes<32>,
+  evidenceVerifierKeyIdCommitment: Bytes<32>,
+  evidenceVerifierSuite: Bytes<32>,
+  activePolicyCommitment: Bytes<32>,
+  activePolicyVersion: Uint<64>,
+  evidenceCommitment: Bytes<32>,
+  verifierSignatureAnnouncement: JubjubPoint,
+  verifierSignatureResponse: Field,
+  proposalGovernanceEventHash: Bytes<32>,
+}
+
+export struct MaintainerProposalEvidenceRecord {
+  evidenceVerifierAuthorizationId: Bytes<32>,
+  evidenceVerifierDidCommitment: Bytes<32>,
+  evidenceVerifierKeyIdCommitment: Bytes<32>,
+  evidenceVerifierSuite: Bytes<32>,
+  activePolicyCommitment: Bytes<32>,
+  activePolicyVersion: Uint<64>,
+  evidenceCommitment: Bytes<32>,
+  verifierSignatureAnnouncement: JubjubPoint,
+  verifierSignatureResponse: Field,
+  proposalGovernanceEventHash: Bytes<32>,
+}
+
+export struct RecognitionProposalEvidenceRecord {
+  evidenceVerifierAuthorizationId: Bytes<32>,
+  evidenceVerifierDidCommitment: Bytes<32>,
+  evidenceVerifierKeyIdCommitment: Bytes<32>,
+  evidenceVerifierSuite: Bytes<32>,
+  activePolicyCommitment: Bytes<32>,
+  activePolicyVersion: Uint<64>,
+  evidenceCommitment: Bytes<32>,
+  verifierSignatureAnnouncement: JubjubPoint,
+  verifierSignatureResponse: Field,
+  proposalGovernanceEventHash: Bytes<32>,
 }
 
 export struct MaintainerAuthorizationSigner {
@@ -189,8 +306,13 @@ struct AuthorizedMaintainerAction {
 export ledger contractVersion: Uint<32>;
 export ledger initialized: Boolean;
 export ledger registryId: Bytes<32>;
+export sealed ledger deploymentNetworkIdCommitment: Bytes<32>;
 export ledger registryDidCommitment: Bytes<32>;
 export ledger governancePolicyCommitment: Bytes<32>;
+export ledger governancePolicyVersion: Uint<64>;
+export ledger governancePolicyCommitmentsByVersion: Map<Uint<64>, Bytes<32>>;
+export ledger governancePolicyVersionsByCommitment: Map<Bytes<32>, Uint<64>>;
+export ledger governancePolicyEffectiveFromByVersion: Map<Uint<64>, Uint<64>>;
 export ledger maintainerThreshold: Uint<64>;
 export ledger emergencyMaintainerThreshold: Uint<64>;
 export ledger archivalMaintainerThreshold: Uint<64>;
@@ -201,45 +323,72 @@ export ledger maintainerRecords: Map<Bytes<32>, MaintainerRecord>;
 export ledger maintainerMembershipCount: Counter;
 export ledger maintainerMembershipIds: Set<Bytes<32>>;
 export ledger maintainerMembershipRecords: Map<Bytes<32>, MaintainerMembershipRecord>;
+export ledger maintainerProposalEvidenceRecords: Map<Bytes<32>, MaintainerProposalEvidenceRecord>;
 export ledger currentMaintainerMembershipIdsByDidCommitment: Map<Bytes<32>, Bytes<32>>;
 export ledger currentMaintainerMembershipIdsByKeyId: Map<Bytes<32>, Bytes<32>>;
 export ledger governanceEventHashes: Set<Bytes<32>>;
 export ledger lastGovernanceEventHash: Bytes<32>;
 export ledger lastAuthorizedActionKind: Bytes<32>;
 export ledger lastAuthorizedActionPayloadHash: Bytes<32>;
+export ledger lastAuthorizedPolicyCommitment: Bytes<32>;
 export ledger lastAuthorizedMaintainerKeyId: Bytes<32>;
 export ledger lastAuthorizedSignerSetHash: Bytes<32>;
 export ledger issuerAuthorizationCount: Counter;
 export ledger activeIssuerAuthorizationCount: Uint<64>;
 export ledger issuerAuthorizationIds: Set<Bytes<32>>;
 export ledger issuerAuthorizationRecords: Map<Bytes<32>, IssuerAuthorizationRecord>;
+export ledger issuerProposalEvidenceRecords: Map<Bytes<32>, IssuerProposalEvidenceRecord>;
 export ledger currentIssuerAuthorizationIdsByScopeKey: Map<Bytes<32>, Bytes<32>>;
 export ledger verifierAuthorizationCount: Counter;
 export ledger activeVerifierAuthorizationCount: Uint<64>;
 export ledger verifierAuthorizationIds: Set<Bytes<32>>;
 export ledger verifierAuthorizationRecords: Map<Bytes<32>, VerifierAuthorizationRecord>;
+export ledger verifierProposalEvidenceRecords: Map<Bytes<32>, VerifierProposalEvidenceRecord>;
 export ledger currentVerifierAuthorizationIdsByScopeKey: Map<Bytes<32>, Bytes<32>>;
+export ledger evidenceVerifierKeyCount: Counter;
+export ledger evidenceVerifierKeyAuthorizationIds: Set<Bytes<32>>;
+export ledger evidenceVerifierKeyRecords: Map<Bytes<32>, EvidenceVerifierKeyRecord>;
+export ledger currentEvidenceVerifierKeyIdsByScopeKey: Map<Bytes<32>, Bytes<32>>;
+export ledger evidenceVerifierKeyIdsByKeyIdCommitment: Map<Bytes<32>, Bytes<32>>;
+export ledger vcAuthorityKeyIds: Set<Bytes<32>>;
+export ledger vcAuthorityKeyRecords: Map<Bytes<32>, VcAuthorityKeyRecord>;
+export ledger currentVcAuthorityKeyIdsByConsumer: Map<Bytes<32>, Bytes<32>>;
 export ledger auditorAuthorizationCount: Counter;
 export ledger activeAuditorAuthorizationCount: Uint<64>;
 export ledger auditorAuthorizationIds: Set<Bytes<32>>;
 export ledger auditorAuthorizationRecords: Map<Bytes<32>, AuditorAuthorizationRecord>;
+export ledger auditorProposalEvidenceRecords: Map<Bytes<32>, AuditorProposalEvidenceRecord>;
 export ledger currentAuditorAuthorizationIdsByScopeKey: Map<Bytes<32>, Bytes<32>>;
 export ledger recognitionCount: Counter;
 export ledger activeRecognitionCount: Uint<64>;
 export ledger recognitionIds: Set<Bytes<32>>;
 export ledger recognitionRecords: Map<Bytes<32>, RecognitionRecord>;
+export ledger recognitionProposalEvidenceRecords: Map<Bytes<32>, RecognitionProposalEvidenceRecord>;
 export ledger currentRecognitionIdsByScopeKey: Map<Bytes<32>, Bytes<32>>;
 export ledger epochCommitmentCount: Counter;
 export ledger epochCommitmentIds: Set<Bytes<32>>;
 export ledger epochCommitmentRecords: Map<Bytes<32>, EpochCommitmentRecord>;
 export ledger latestEpochCommitmentId: Bytes<32>;
 
-constructor() {
+constructor(
+  nextRegistryId: Bytes<32>,
+  nextRegistryDidCommitment: Bytes<32>,
+  nextGovernancePolicyCommitment: Bytes<32>,
+  bootstrapMaintainerId: Bytes<32>,
+  bootstrapMaintainerDidCommitment: Bytes<32>,
+  bootstrapMaintainerKeyId: Bytes<32>,
+  bootstrapMaintainerPublicKey: JubjubPoint,
+  nextMaintainerThreshold: Uint<64>,
+  networkIdCommitment: Bytes<32>
+) {
+  assert(networkIdCommitment != pad(32, ""), "Deployment network id commitment must be set");
+  deploymentNetworkIdCommitment = disclose(networkIdCommitment);
   contractVersion = 1;
   initialized = false;
   registryId = pad(32, "midnight:tr:unset");
   registryDidCommitment = pad(32, "midnight:tr:unset");
   governancePolicyCommitment = pad(32, "midnight:tr:unset");
+  governancePolicyVersion = 0;
   maintainerThreshold = 0;
   emergencyMaintainerThreshold = 0;
   archivalMaintainerThreshold = 0;
@@ -252,8 +401,19 @@ constructor() {
   lastGovernanceEventHash = pad(32, "midnight:tr:none");
   lastAuthorizedActionKind = pad(32, "midnight:tr:none");
   lastAuthorizedActionPayloadHash = pad(32, "midnight:tr:none");
+  lastAuthorizedPolicyCommitment = pad(32, "midnight:tr:unset");
   lastAuthorizedMaintainerKeyId = pad(32, "midnight:tr:none");
   lastAuthorizedSignerSetHash = pad(32, "midnight:tr:none");
+  initializeRegistry(
+    nextRegistryId,
+    nextRegistryDidCommitment,
+    nextGovernancePolicyCommitment,
+    bootstrapMaintainerId,
+    bootstrapMaintainerDidCommitment,
+    bootstrapMaintainerKeyId,
+    bootstrapMaintainerPublicKey,
+    nextMaintainerThreshold
+  );
 }
 
 export pure circuit assertValidMaintainerThreshold(
@@ -281,6 +441,14 @@ export pure circuit assertValidMaintainerThresholdPolicy(
   assertValidMaintainerThreshold(activeCount, defaultThreshold);
   assertValidMaintainerThreshold(activeCount, emergencyThreshold);
   assertValidMaintainerThreshold(activeCount, archivalThreshold);
+  if (activeCount > 1) {
+    assert(
+      defaultThreshold < activeCount
+        && emergencyThreshold < activeCount
+        && archivalThreshold < activeCount,
+      "Maintainer policy must leave a non-conflicted removal quorum"
+    );
+  }
 }
 
 export pure circuit assertSingleSignatureMaintainerThreshold(
@@ -294,7 +462,7 @@ export pure circuit assertSingleSignatureMaintainerThreshold(
   );
 }
 
-export pure circuit maintainerActionDigest(
+pure circuit maintainerActionDigest(
   registryIdValue: Bytes<32>,
   actionKind: Bytes<32>,
   actionPayloadHash: Bytes<32>,
@@ -311,6 +479,307 @@ export pure circuit maintainerActionDigest(
   ];
 }
 
+export pure circuit applicationEvidenceSignatureDigest(
+  keyIdCommitment: Bytes<32>,
+  evidenceCommitment: Bytes<32>
+): Vector<4, Field> {
+  assert(keyIdCommitment != pad(32, ""), "Evidence verifier key id must be set");
+  assert(evidenceCommitment != pad(32, ""), "Application evidence commitment must be set");
+  return [
+    transientHash<Bytes<32>>(pad(32, "tr:app:evidence:sig:v1")),
+    transientHash<Bytes<32>>(keyIdCommitment),
+    transientHash<Bytes<32>>(evidenceCommitment),
+    1 as Field
+  ];
+}
+
+export pure circuit issuerEvidenceBoundProposalPayloadHash(
+  baseIssuerPayloadHash: Bytes<32>,
+  evidenceVerifierAuthorizationId: Bytes<32>,
+  evidenceVerifierKeyIdCommitment: Bytes<32>,
+  activePolicyCommitment: Bytes<32>,
+  activePolicyVersion: Uint<64>
+): Bytes<32> {
+  assert(baseIssuerPayloadHash != pad(32, ""), "Issuer proposal payload hash must be set");
+  assert(evidenceVerifierAuthorizationId != pad(32, ""), "Evidence verifier authorization id must be set");
+  assert(evidenceVerifierKeyIdCommitment != pad(32, ""), "Evidence verifier key id must be set");
+  assert(activePolicyCommitment != pad(32, ""), "Active policy commitment must be set");
+  assert(activePolicyVersion > 0, "Active policy version must be positive");
+  return persistentHash<Vector<6, Bytes<32>>>([
+    pad(32, "tr:issuer:evidence:bound:v1"),
+    baseIssuerPayloadHash,
+    evidenceVerifierAuthorizationId,
+    evidenceVerifierKeyIdCommitment,
+    activePolicyCommitment,
+    ((activePolicyVersion as Field) as Bytes<32>)
+  ]);
+}
+
+export pure circuit issuerProposalEvidenceSignatureDigest(
+  registryIdValue: Bytes<32>,
+  networkIdCommitment: Bytes<32>,
+  contractAddress: Bytes<32>,
+  evidenceVerifierKeyIdCommitment: Bytes<32>,
+  boundPayloadHash: Bytes<32>
+): Vector<4, Field> {
+  assert(registryIdValue != pad(32, ""), "Registry id must be set");
+  assert(networkIdCommitment != pad(32, ""), "Deployment network must be set");
+  assert(contractAddress != pad(32, ""), "Contract address must be set");
+  assert(evidenceVerifierKeyIdCommitment != pad(32, ""), "Evidence verifier key id must be set");
+  assert(boundPayloadHash != pad(32, ""), "Bound issuer proposal payload hash must be set");
+  return [
+    transientHash<Bytes<32>>(pad(32, "tr:issuer:evidence:sig:v2")),
+    transientHash<Bytes<32>>(registryIdValue),
+    transientHash<Bytes<32>>(evidenceVerifierKeyIdCommitment),
+    transientHash<Bytes<32>>(persistentHash<Vector<4, Bytes<32>>>([
+      pad(32, "tr:evidence:deployment:v1"), networkIdCommitment, contractAddress, boundPayloadHash
+    ]))
+  ];
+}
+
+export pure circuit verifierEvidenceBoundProposalPayloadHash(
+  baseVerifierPayloadHash: Bytes<32>,
+  evidenceVerifierAuthorizationId: Bytes<32>,
+  evidenceVerifierKeyIdCommitment: Bytes<32>,
+  activePolicyCommitment: Bytes<32>,
+  activePolicyVersion: Uint<64>
+): Bytes<32> {
+  assert(baseVerifierPayloadHash != pad(32, ""), "Verifier proposal payload hash must be set");
+  assert(evidenceVerifierAuthorizationId != pad(32, ""), "Evidence verifier authorization id must be set");
+  assert(evidenceVerifierKeyIdCommitment != pad(32, ""), "Evidence verifier key id must be set");
+  assert(activePolicyCommitment != pad(32, ""), "Active policy commitment must be set");
+  assert(activePolicyVersion > 0, "Active policy version must be positive");
+  return persistentHash<Vector<6, Bytes<32>>>([
+    pad(32, "tr:verifier:evidence:bound:v1"),
+    baseVerifierPayloadHash,
+    evidenceVerifierAuthorizationId,
+    evidenceVerifierKeyIdCommitment,
+    activePolicyCommitment,
+    ((activePolicyVersion as Field) as Bytes<32>)
+  ]);
+}
+
+export pure circuit verifierProposalEvidenceSignatureDigest(
+  registryIdValue: Bytes<32>,
+  networkIdCommitment: Bytes<32>,
+  contractAddress: Bytes<32>,
+  evidenceVerifierKeyIdCommitment: Bytes<32>,
+  boundPayloadHash: Bytes<32>
+): Vector<4, Field> {
+  assert(registryIdValue != pad(32, ""), "Registry id must be set");
+  assert(networkIdCommitment != pad(32, ""), "Deployment network must be set");
+  assert(contractAddress != pad(32, ""), "Contract address must be set");
+  assert(evidenceVerifierKeyIdCommitment != pad(32, ""), "Evidence verifier key id must be set");
+  assert(boundPayloadHash != pad(32, ""), "Bound verifier proposal payload hash must be set");
+  return [
+    transientHash<Bytes<32>>(pad(32, "tr:verifier:evidence:sig:v2")),
+    transientHash<Bytes<32>>(registryIdValue),
+    transientHash<Bytes<32>>(evidenceVerifierKeyIdCommitment),
+    transientHash<Bytes<32>>(persistentHash<Vector<4, Bytes<32>>>([
+      pad(32, "tr:evidence:deployment:v1"), networkIdCommitment, contractAddress, boundPayloadHash
+    ]))
+  ];
+}
+
+export pure circuit auditorEvidenceBoundProposalPayloadHash(
+  baseAuditorPayloadHash: Bytes<32>,
+  evidenceVerifierAuthorizationId: Bytes<32>,
+  evidenceVerifierKeyIdCommitment: Bytes<32>,
+  activePolicyCommitment: Bytes<32>,
+  activePolicyVersion: Uint<64>
+): Bytes<32> {
+  assert(baseAuditorPayloadHash != pad(32, ""), "Auditor proposal payload hash must be set");
+  assert(evidenceVerifierAuthorizationId != pad(32, ""), "Evidence verifier authorization id must be set");
+  assert(evidenceVerifierKeyIdCommitment != pad(32, ""), "Evidence verifier key id must be set");
+  assert(activePolicyCommitment != pad(32, ""), "Active policy commitment must be set");
+  assert(activePolicyVersion > 0, "Active policy version must be positive");
+  return persistentHash<Vector<6, Bytes<32>>>([
+    pad(32, "tr:auditor:evidence:bound:v1"),
+    baseAuditorPayloadHash,
+    evidenceVerifierAuthorizationId,
+    evidenceVerifierKeyIdCommitment,
+    activePolicyCommitment,
+    ((activePolicyVersion as Field) as Bytes<32>)
+  ]);
+}
+
+export pure circuit auditorProposalEvidenceSignatureDigest(
+  registryIdValue: Bytes<32>,
+  networkIdCommitment: Bytes<32>,
+  contractAddress: Bytes<32>,
+  evidenceVerifierKeyIdCommitment: Bytes<32>,
+  boundPayloadHash: Bytes<32>
+): Vector<4, Field> {
+  assert(registryIdValue != pad(32, ""), "Registry id must be set");
+  assert(networkIdCommitment != pad(32, ""), "Deployment network must be set");
+  assert(contractAddress != pad(32, ""), "Contract address must be set");
+  assert(evidenceVerifierKeyIdCommitment != pad(32, ""), "Evidence verifier key id must be set");
+  assert(boundPayloadHash != pad(32, ""), "Bound auditor proposal payload hash must be set");
+  return [
+    transientHash<Bytes<32>>(pad(32, "tr:auditor:evidence:sig:v2")),
+    transientHash<Bytes<32>>(registryIdValue),
+    transientHash<Bytes<32>>(evidenceVerifierKeyIdCommitment),
+    transientHash<Bytes<32>>(persistentHash<Vector<4, Bytes<32>>>([
+      pad(32, "tr:evidence:deployment:v1"), networkIdCommitment, contractAddress, boundPayloadHash
+    ]))
+  ];
+}
+
+export pure circuit maintainerEvidenceBoundProposalPayloadHash(
+  baseMaintainerPayloadHash: Bytes<32>,
+  evidenceVerifierAuthorizationId: Bytes<32>,
+  evidenceVerifierKeyIdCommitment: Bytes<32>,
+  activePolicyCommitment: Bytes<32>,
+  activePolicyVersion: Uint<64>
+): Bytes<32> {
+  assert(baseMaintainerPayloadHash != pad(32, ""), "Maintainer proposal payload hash must be set");
+  assert(evidenceVerifierAuthorizationId != pad(32, ""), "Evidence verifier authorization id must be set");
+  assert(evidenceVerifierKeyIdCommitment != pad(32, ""), "Evidence verifier key id must be set");
+  assert(activePolicyCommitment != pad(32, ""), "Active policy commitment must be set");
+  assert(activePolicyVersion > 0, "Active policy version must be positive");
+  return persistentHash<Vector<6, Bytes<32>>>([
+    pad(32, "tr:maintainer:evidence:bound:v1"),
+    baseMaintainerPayloadHash,
+    evidenceVerifierAuthorizationId,
+    evidenceVerifierKeyIdCommitment,
+    activePolicyCommitment,
+    ((activePolicyVersion as Field) as Bytes<32>)
+  ]);
+}
+
+export pure circuit maintainerProposalEvidenceSignatureDigest(
+  registryIdValue: Bytes<32>,
+  networkIdCommitment: Bytes<32>,
+  contractAddress: Bytes<32>,
+  evidenceVerifierKeyIdCommitment: Bytes<32>,
+  boundPayloadHash: Bytes<32>
+): Vector<4, Field> {
+  assert(registryIdValue != pad(32, ""), "Registry id must be set");
+  assert(networkIdCommitment != pad(32, ""), "Deployment network must be set");
+  assert(contractAddress != pad(32, ""), "Contract address must be set");
+  assert(evidenceVerifierKeyIdCommitment != pad(32, ""), "Evidence verifier key id must be set");
+  assert(boundPayloadHash != pad(32, ""), "Bound maintainer proposal payload hash must be set");
+  return [
+    transientHash<Bytes<32>>(pad(32, "tr:maintainer:evidence:sig:v2")),
+    transientHash<Bytes<32>>(registryIdValue),
+    transientHash<Bytes<32>>(evidenceVerifierKeyIdCommitment),
+    transientHash<Bytes<32>>(persistentHash<Vector<4, Bytes<32>>>([
+      pad(32, "tr:evidence:deployment:v1"), networkIdCommitment, contractAddress, boundPayloadHash
+    ]))
+  ];
+}
+
+export pure circuit recognitionEvidenceBoundProposalPayloadHash(
+  baseRecognitionPayloadHash: Bytes<32>,
+  evidenceVerifierAuthorizationId: Bytes<32>,
+  evidenceVerifierKeyIdCommitment: Bytes<32>,
+  activePolicyCommitment: Bytes<32>,
+  activePolicyVersion: Uint<64>
+): Bytes<32> {
+  assert(baseRecognitionPayloadHash != pad(32, ""), "Recognition proposal payload hash must be set");
+  assert(evidenceVerifierAuthorizationId != pad(32, ""), "Evidence verifier authorization id must be set");
+  assert(evidenceVerifierKeyIdCommitment != pad(32, ""), "Evidence verifier key id must be set");
+  assert(activePolicyCommitment != pad(32, ""), "Active policy commitment must be set");
+  assert(activePolicyVersion > 0, "Active policy version must be positive");
+  return persistentHash<Vector<6, Bytes<32>>>([
+    pad(32, "tr:recognition:evidence:bound:v1"),
+    baseRecognitionPayloadHash,
+    evidenceVerifierAuthorizationId,
+    evidenceVerifierKeyIdCommitment,
+    activePolicyCommitment,
+    ((activePolicyVersion as Field) as Bytes<32>)
+  ]);
+}
+
+export pure circuit recognitionProposalEvidenceSignatureDigest(
+  registryIdValue: Bytes<32>,
+  networkIdCommitment: Bytes<32>,
+  contractAddress: Bytes<32>,
+  evidenceVerifierKeyIdCommitment: Bytes<32>,
+  boundPayloadHash: Bytes<32>
+): Vector<4, Field> {
+  assert(registryIdValue != pad(32, ""), "Registry id must be set");
+  assert(networkIdCommitment != pad(32, ""), "Deployment network must be set");
+  assert(contractAddress != pad(32, ""), "Contract address must be set");
+  assert(evidenceVerifierKeyIdCommitment != pad(32, ""), "Evidence verifier key id must be set");
+  assert(boundPayloadHash != pad(32, ""), "Bound recognition proposal payload hash must be set");
+  return [
+    transientHash<Bytes<32>>(pad(32, "tr:recognition:evidence:sig:v2")),
+    transientHash<Bytes<32>>(registryIdValue),
+    transientHash<Bytes<32>>(evidenceVerifierKeyIdCommitment),
+    transientHash<Bytes<32>>(persistentHash<Vector<4, Bytes<32>>>([
+      pad(32, "tr:evidence:deployment:v1"), networkIdCommitment, contractAddress, boundPayloadHash
+    ]))
+  ];
+}
+
+export pure circuit deploymentBoundActionPayloadHash(
+  networkIdCommitment: Bytes<32>,
+  contractAddress: Bytes<32>,
+  policyCommitment: Bytes<32>,
+  actionPayloadHash: Bytes<32>
+): Bytes<32> {
+  assert(networkIdCommitment != pad(32, ""), "Network id commitment must be set");
+  assert(contractAddress != pad(32, ""), "Contract address must be set");
+  assert(policyCommitment != pad(32, ""), "Policy commitment must be set");
+  assert(actionPayloadHash != pad(32, ""), "Action payload hash must be set");
+  return persistentHash<Vector<5, Bytes<32>>>([
+    pad(32, "tr:deployment:action:v1"),
+    networkIdCommitment,
+    contractAddress,
+    policyCommitment,
+    actionPayloadHash
+  ]);
+}
+
+export pure circuit deploymentBoundMaintainerActionDigest(
+  registryIdValue: Bytes<32>,
+  networkIdCommitment: Bytes<32>,
+  contractAddress: Bytes<32>,
+  policyCommitment: Bytes<32>,
+  actionKind: Bytes<32>,
+  actionPayloadHash: Bytes<32>,
+  actionSequence: Uint<64>
+): Vector<4, Field> {
+  return maintainerActionDigest(
+    registryIdValue,
+    actionKind,
+    deploymentBoundActionPayloadHash(
+      networkIdCommitment,
+      contractAddress,
+      policyCommitment,
+      actionPayloadHash
+    ),
+    actionSequence
+  );
+}
+
+pure circuit signerKeyIdLess(left: Bytes<32>, right: Bytes<32>): Boolean {
+  const leftHigh = slice<16>(left, 16) as Uint<128>;
+  const rightHigh = slice<16>(right, 16) as Uint<128>;
+  const leftLow = slice<16>(left, 0) as Uint<128>;
+  const rightLow = slice<16>(right, 0) as Uint<128>;
+  return leftHigh < rightHigh || (leftHigh == rightHigh && leftLow < rightLow);
+}
+
+pure circuit hashCanonicalMaintainerSignerSet(
+  signerCount: Uint<64>,
+  signer1KeyId: Bytes<32>,
+  signer2KeyId: Bytes<32>,
+  signer3KeyId: Bytes<32>,
+  signer4KeyId: Bytes<32>,
+  signer5KeyId: Bytes<32>
+): Bytes<32> {
+  return persistentHash<Vector<6, Bytes<32>>>([
+    ((signerCount as Field) as Bytes<32>),
+    signer1KeyId,
+    signer2KeyId,
+    signer3KeyId,
+    signer4KeyId,
+    signer5KeyId
+  ]);
+}
+
 export pure circuit maintainerSignerSetHash(
   signerCount: Uint<64>,
   signer1KeyId: Bytes<32>,
@@ -324,14 +793,39 @@ export pure circuit maintainerSignerSetHash(
     signerCount <= 5,
     "Maintainer signer count exceeds supported bundle capacity"
   );
-  return persistentHash<Vector<6, Bytes<32>>>([
-    ((signerCount as Field) as Bytes<32>),
+  assert(signer1KeyId != pad(32, ""), "Maintainer signer key must be nonzero");
+  if (signerCount < 2) {
+    assert(signer2KeyId == pad(32, ""), "Unused maintainer signer slots must be zero");
+  }
+  if (signerCount < 3) {
+    assert(signer3KeyId == pad(32, ""), "Unused maintainer signer slots must be zero");
+  }
+  if (signerCount < 4) {
+    assert(signer4KeyId == pad(32, ""), "Unused maintainer signer slots must be zero");
+  }
+  if (signerCount < 5) {
+    assert(signer5KeyId == pad(32, ""), "Unused maintainer signer slots must be zero");
+  }
+  if (signerCount > 1) {
+    assert(signerKeyIdLess(signer1KeyId, signer2KeyId), "Maintainer signer keys must be sorted");
+  }
+  if (signerCount > 2) {
+    assert(signerKeyIdLess(signer2KeyId, signer3KeyId), "Maintainer signer keys must be sorted");
+  }
+  if (signerCount > 3) {
+    assert(signerKeyIdLess(signer3KeyId, signer4KeyId), "Maintainer signer keys must be sorted");
+  }
+  if (signerCount > 4) {
+    assert(signerKeyIdLess(signer4KeyId, signer5KeyId), "Maintainer signer keys must be sorted");
+  }
+  return hashCanonicalMaintainerSignerSet(
+    signerCount,
     signer1KeyId,
     signer2KeyId,
     signer3KeyId,
     signer4KeyId,
     signer5KeyId
-  ]);
+  );
 }
 
 export pure circuit schnorrChallengeDigest(
@@ -346,6 +840,45 @@ export pure circuit schnorrChallengeDigest(
 
 pure circuit maintainerPublicKeyCommitment(publicKey: JubjubPoint): Bytes<32> {
   return upgradeFromTransient(transientHash<JubjubPoint>(publicKey));
+}
+
+pure circuit assertNonIdentitySignerPoint(point: JubjubPoint): [] {
+  assert(
+    jubjubPointX(point) != 0 || jubjubPointY(point) != 1,
+    "Jubjub signer point must not be identity"
+  );
+}
+
+circuit assertPrimeOrderMaintainerKey(publicKey: JubjubPoint): [] {
+  assertNonIdentitySignerPoint(publicKey);
+  const subgroupCheck = ecAdd(
+    ecMul(
+      publicKey,
+      6554484396890773809930967563523245729705921265872317281365359162392183254198 as Field
+    ),
+    publicKey
+  );
+  assert(
+    jubjubPointX(subgroupCheck) == 0 && jubjubPointY(subgroupCheck) == 1,
+    "Maintainer public key must have prime order"
+  );
+}
+
+circuit assertPrimeOrderEvidenceVerifierKey(publicKey: JubjubPoint): [] {
+  const x = jubjubPointX(publicKey);
+  const y = jubjubPointY(publicKey);
+  assert(x != 0 || y != 1, "Evidence verifier public key must not be identity");
+  const subgroupCheck = ecAdd(
+    ecMul(
+      publicKey,
+      6554484396890773809930967563523245729705921265872317281365359162392183254198 as Field
+    ),
+    publicKey
+  );
+  assert(
+    jubjubPointX(subgroupCheck) == 0 && jubjubPointY(subgroupCheck) == 1,
+    "Evidence verifier public key must have prime order"
+  );
 }
 
 pure circuit issuerResourceTypeLabel(
@@ -401,7 +934,7 @@ pure circuit assertIssuerAuthorizationFields(
 pure circuit assertVerifierAuthorizationFields(
   authorizationIdValue: Bytes<32>,
   subjectDidCommitmentValue: Bytes<32>,
-  requestProfileIdValue: Bytes<32>,
+  requestResourceIdValue: Bytes<32>,
   allowedAttributeSetCommitmentValue: Bytes<32>,
   allowedPredicateSetCommitmentValue: Bytes<32>,
   disclosureLevelCommitmentValue: Bytes<32>,
@@ -418,8 +951,8 @@ pure circuit assertVerifierAuthorizationFields(
     "Verifier subject DID commitment must be set"
   );
   assert(
-    requestProfileIdValue != pad(32, ""),
-    "Verifier request profile id must be set"
+    requestResourceIdValue != pad(32, ""),
+    "Verifier request resource id must be set"
   );
   assert(
     allowedAttributeSetCommitmentValue != pad(32, ""),
@@ -450,7 +983,7 @@ pure circuit assertVerifierAuthorizationFields(
 pure circuit assertAuditorAuthorizationFields(
   authorizationIdValue: Bytes<32>,
   subjectDidCommitmentValue: Bytes<32>,
-  requestProfileIdValue: Bytes<32>,
+  requestResourceIdValue: Bytes<32>,
   allowedAttributeSetCommitmentValue: Bytes<32>,
   allowedPredicateSetCommitmentValue: Bytes<32>,
   disclosureLevelCommitmentValue: Bytes<32>,
@@ -467,8 +1000,8 @@ pure circuit assertAuditorAuthorizationFields(
     "Auditor subject DID commitment must be set"
   );
   assert(
-    requestProfileIdValue != pad(32, ""),
-    "Auditor request profile id must be set"
+    requestResourceIdValue != pad(32, ""),
+    "Auditor request resource id must be set"
   );
   assert(
     allowedAttributeSetCommitmentValue != pad(32, ""),
@@ -598,17 +1131,15 @@ pure circuit assertMaintainerRemovalKeepsThreshold(
   currentEmergencyMaintainerThreshold: Uint<64>,
   currentArchivalMaintainerThreshold: Uint<64>
 ): [] {
+  assert(
+    currentActiveMaintainerCount > 1,
+    "Maintainer removal would violate the configured maintainer threshold policy"
+  );
   assertValidMaintainerThresholdPolicy(
-    currentActiveMaintainerCount,
+    (currentActiveMaintainerCount - (1 as Uint<64>)) as Uint<64>,
     currentMaintainerThreshold,
     currentEmergencyMaintainerThreshold,
     currentArchivalMaintainerThreshold
-  );
-  assert(
-    currentActiveMaintainerCount > currentMaintainerThreshold
-      && currentActiveMaintainerCount > currentEmergencyMaintainerThreshold
-      && currentActiveMaintainerCount > currentArchivalMaintainerThreshold,
-    "Maintainer removal would violate the configured maintainer threshold policy"
   );
 }
 
@@ -673,7 +1204,7 @@ export pure circuit issuerAuthorizationScopeKey(
 
 export pure circuit verifierAuthorizationScopeKey(
   subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
+  requestResourceId: Bytes<32>,
   allowedAttributeSetCommitment: Bytes<32>,
   allowedPredicateSetCommitment: Bytes<32>,
   disclosureLevelCommitment: Bytes<32>
@@ -683,8 +1214,8 @@ export pure circuit verifierAuthorizationScopeKey(
     "Verifier subject DID commitment must be set"
   );
   assert(
-    requestProfileId != pad(32, ""),
-    "Verifier request profile id must be set"
+    requestResourceId != pad(32, ""),
+    "Verifier request resource id must be set"
   );
   assert(
     allowedAttributeSetCommitment != pad(32, ""),
@@ -700,16 +1231,29 @@ export pure circuit verifierAuthorizationScopeKey(
   );
   return persistentHash<Vector<5, Bytes<32>>>([
     subjectDidCommitment,
-    requestProfileId,
+    requestResourceId,
     allowedAttributeSetCommitment,
     allowedPredicateSetCommitment,
     disclosureLevelCommitment
   ]);
 }
 
+export pure circuit evidenceVerifierKeyScopeKey(
+  verifierDidCommitment: Bytes<32>,
+  policyCommitment: Bytes<32>
+): Bytes<32> {
+  assert(verifierDidCommitment != pad(32, ""), "Evidence verifier DID commitment must be set");
+  assert(policyCommitment != pad(32, ""), "Evidence verifier policy commitment must be set");
+  return persistentHash<Vector<3, Bytes<32>>>([
+    pad(32, "tr:ev:key:scope:v1"),
+    verifierDidCommitment,
+    policyCommitment
+  ]);
+}
+
 export pure circuit auditorAuthorizationScopeKey(
   subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
+  requestResourceId: Bytes<32>,
   allowedAttributeSetCommitment: Bytes<32>,
   allowedPredicateSetCommitment: Bytes<32>,
   disclosureLevelCommitment: Bytes<32>
@@ -719,8 +1263,8 @@ export pure circuit auditorAuthorizationScopeKey(
     "Auditor subject DID commitment must be set"
   );
   assert(
-    requestProfileId != pad(32, ""),
-    "Auditor request profile id must be set"
+    requestResourceId != pad(32, ""),
+    "Auditor request resource id must be set"
   );
   assert(
     allowedAttributeSetCommitment != pad(32, ""),
@@ -736,7 +1280,7 @@ export pure circuit auditorAuthorizationScopeKey(
   );
   return persistentHash<Vector<5, Bytes<32>>>([
     subjectDidCommitment,
-    requestProfileId,
+    requestResourceId,
     allowedAttributeSetCommitment,
     allowedPredicateSetCommitment,
     disclosureLevelCommitment
@@ -779,6 +1323,7 @@ export pure circuit createIssuerAuthorizationPayloadHash(
   resourceType: IssuerResourceType,
   resourceId: Bytes<32>,
   policyId: Bytes<32>,
+  statusPolicyBindingCommitment: Bytes<32>,
   trustLevel: Bytes<32>,
   evidenceHash: Bytes<32>
 ): Bytes<32> {
@@ -790,12 +1335,17 @@ export pure circuit createIssuerAuthorizationPayloadHash(
     trustLevel,
     evidenceHash
   );
-  return persistentHash<Vector<7, Bytes<32>>>([
+  assert(
+    statusPolicyBindingCommitment != pad(32, ""),
+    "Issuer status policy binding commitment must be set"
+  );
+  return persistentHash<Vector<8, Bytes<32>>>([
     authorizationId,
     subjectDidCommitment,
     issuerResourceTypeLabel(resourceType),
     resourceId,
     policyId,
+    statusPolicyBindingCommitment,
     trustLevel,
     evidenceHash
   ]);
@@ -804,7 +1354,7 @@ export pure circuit createIssuerAuthorizationPayloadHash(
 export pure circuit createVerifierAuthorizationPayloadHash(
   authorizationId: Bytes<32>,
   subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
+  requestResourceId: Bytes<32>,
   allowedAttributeSetCommitment: Bytes<32>,
   allowedPredicateSetCommitment: Bytes<32>,
   disclosureLevelCommitment: Bytes<32>,
@@ -815,7 +1365,7 @@ export pure circuit createVerifierAuthorizationPayloadHash(
   assertVerifierAuthorizationFields(
     authorizationId,
     subjectDidCommitment,
-    requestProfileId,
+    requestResourceId,
     allowedAttributeSetCommitment,
     allowedPredicateSetCommitment,
     disclosureLevelCommitment,
@@ -826,7 +1376,7 @@ export pure circuit createVerifierAuthorizationPayloadHash(
   return persistentHash<Vector<9, Bytes<32>>>([
     authorizationId,
     subjectDidCommitment,
-    requestProfileId,
+    requestResourceId,
     allowedAttributeSetCommitment,
     allowedPredicateSetCommitment,
     disclosureLevelCommitment,
@@ -836,10 +1386,40 @@ export pure circuit createVerifierAuthorizationPayloadHash(
   ]);
 }
 
+export pure circuit createEvidenceVerifierKeyPayloadHash(
+  authorizationId: Bytes<32>,
+  didCommitment: Bytes<32>,
+  keyIdCommitment: Bytes<32>,
+  publicKey: JubjubPoint,
+  suite: Bytes<32>,
+  policyCommitment: Bytes<32>,
+  policyVersion: Uint<64>
+): Bytes<32> {
+  assert(authorizationId != pad(32, ""), "Evidence verifier authorization id must be set");
+  assert(didCommitment != pad(32, ""), "Evidence verifier DID commitment must be set");
+  assert(keyIdCommitment != pad(32, ""), "Evidence verifier key id commitment must be set");
+  assert(
+    suite == pad(32, "jubjub-schnorr"),
+    "Only the Midnight Jubjub Schnorr evidence suite is supported"
+  );
+  assert(policyCommitment != pad(32, ""), "Evidence verifier policy commitment must be set");
+  assert(policyVersion > 0, "Evidence verifier policy version must be positive");
+  return persistentHash<Vector<8, Bytes<32>>>([
+    pad(32, "tr:ev:key:create:v1"),
+    authorizationId,
+    didCommitment,
+    keyIdCommitment,
+    maintainerPublicKeyCommitment(publicKey),
+    suite,
+    policyCommitment,
+    ((policyVersion as Field) as Bytes<32>)
+  ]);
+}
+
 export pure circuit createAuditorAuthorizationPayloadHash(
   authorizationId: Bytes<32>,
   subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
+  requestResourceId: Bytes<32>,
   allowedAttributeSetCommitment: Bytes<32>,
   allowedPredicateSetCommitment: Bytes<32>,
   disclosureLevelCommitment: Bytes<32>,
@@ -850,7 +1430,7 @@ export pure circuit createAuditorAuthorizationPayloadHash(
   assertAuditorAuthorizationFields(
     authorizationId,
     subjectDidCommitment,
-    requestProfileId,
+    requestResourceId,
     allowedAttributeSetCommitment,
     allowedPredicateSetCommitment,
     disclosureLevelCommitment,
@@ -861,7 +1441,7 @@ export pure circuit createAuditorAuthorizationPayloadHash(
   return persistentHash<Vector<9, Bytes<32>>>([
     authorizationId,
     subjectDidCommitment,
-    requestProfileId,
+    requestResourceId,
     allowedAttributeSetCommitment,
     allowedPredicateSetCommitment,
     disclosureLevelCommitment,
@@ -938,6 +1518,7 @@ export pure circuit createMaintainerMembershipPayloadHash(
   trustLevel: Bytes<32>,
   evidenceHash: Bytes<32>
 ): Bytes<32> {
+  assertNonIdentitySignerPoint(publicKey);
   assertMaintainerMembershipFields(
     maintainerId,
     maintainerDidCommitment,
@@ -954,6 +1535,93 @@ export pure circuit createMaintainerMembershipPayloadHash(
     policyId,
     trustLevel,
     evidenceHash
+  ]);
+}
+
+export pure circuit createVcAuthorityDomainCommitment(
+  networkIdCommitment: Bytes<32>,
+  consumerContractAddress: Bytes<32>,
+  registryIdCommitment: Bytes<32>,
+  registryContractAddress: Bytes<32>,
+  authorityDidCommitment: Bytes<32>,
+  authorityMethodIdCommitment: Bytes<32>
+): Bytes<32> {
+  return persistentHash<Vector<7, Bytes<32>>>([
+    pad(32, "tr:vc-authority-domain:v1"),
+    networkIdCommitment,
+    consumerContractAddress,
+    registryIdCommitment,
+    registryContractAddress,
+    authorityDidCommitment,
+    authorityMethodIdCommitment
+  ]);
+}
+
+export pure circuit createVcAuthorityKeyPayloadHash(
+  keyIdCommitment: Bytes<32>,
+  authorityDidCommitment: Bytes<32>,
+  authorityMethodIdCommitment: Bytes<32>,
+  publicKey: JubjubPoint,
+  networkIdCommitment: Bytes<32>,
+  consumerContractAddress: Bytes<32>,
+  domainCommitment: Bytes<32>,
+  policyCommitment: Bytes<32>,
+  policyVersion: Uint<64>
+): Bytes<32> {
+  assert(keyIdCommitment != pad(32, ""), "VC authority key id must be set");
+  assert(authorityDidCommitment != pad(32, ""), "VC authority DID must be set");
+  assert(authorityMethodIdCommitment != pad(32, ""), "VC authority method id must be set");
+  assert(networkIdCommitment != pad(32, ""), "VC authority network must be set");
+  assert(consumerContractAddress != pad(32, ""), "VC authority consumer must be set");
+  assert(domainCommitment != pad(32, ""), "VC authority domain must be set");
+  assert(policyCommitment != pad(32, ""), "VC authority policy must be set");
+  assert(policyVersion > 0, "VC authority policy version must be positive");
+  return persistentHash<Vector<10, Bytes<32>>>([
+    pad(32, "tr:vc-authority:key:create:v1"),
+    keyIdCommitment,
+    authorityDidCommitment,
+    authorityMethodIdCommitment,
+    maintainerPublicKeyCommitment(publicKey),
+    networkIdCommitment,
+    consumerContractAddress,
+    domainCommitment,
+    policyCommitment,
+    ((policyVersion as Field) as Bytes<32>)
+  ]);
+}
+
+export pure circuit updateVcAuthorityKeyPayloadHash(
+  keyIdCommitment: Bytes<32>,
+  previousLifecycleEventHash: Bytes<32>,
+  reasonHash: Bytes<32>
+): Bytes<32> {
+  assert(keyIdCommitment != pad(32, ""), "VC authority key id must be set");
+  assert(previousLifecycleEventHash != pad(32, ""), "Previous VC authority event must be set");
+  assert(reasonHash != pad(32, ""), "VC authority reason must be set");
+  return persistentHash<Vector<4, Bytes<32>>>([
+    pad(32, "tr:vc-authority:key:update:v1"),
+    keyIdCommitment,
+    previousLifecycleEventHash,
+    reasonHash
+  ]);
+}
+
+export pure circuit rotateVcAuthorityKeyPayloadHash(
+  oldKeyIdCommitment: Bytes<32>,
+  previousLifecycleEventHash: Bytes<32>,
+  newCreatePayloadHash: Bytes<32>,
+  reasonHash: Bytes<32>
+): Bytes<32> {
+  assert(oldKeyIdCommitment != pad(32, ""), "Old VC authority key id must be set");
+  assert(previousLifecycleEventHash != pad(32, ""), "Previous VC authority event must be set");
+  assert(newCreatePayloadHash != pad(32, ""), "New VC authority payload must be set");
+  assert(reasonHash != pad(32, ""), "VC authority rotation reason must be set");
+  return persistentHash<Vector<5, Bytes<32>>>([
+    pad(32, "tr:vc-authority:key:rotate:v1"),
+    oldKeyIdCommitment,
+    previousLifecycleEventHash,
+    newCreatePayloadHash,
+    reasonHash
   ]);
 }
 
@@ -1002,6 +1670,41 @@ export pure circuit updateVerifierAuthorizationPayloadHash(
     authorizationId,
     previousLifecycleEventHash,
     evidenceHash
+  ]);
+}
+
+export pure circuit updateEvidenceVerifierKeyPayloadHash(
+  authorizationId: Bytes<32>,
+  previousLifecycleEventHash: Bytes<32>,
+  reasonHash: Bytes<32>
+): Bytes<32> {
+  assert(authorizationId != pad(32, ""), "Evidence verifier authorization id must be set");
+  assert(previousLifecycleEventHash != pad(32, ""), "Evidence verifier lifecycle event hash must be set");
+  assert(reasonHash != pad(32, ""), "Evidence verifier reason hash must be set");
+  return persistentHash<Vector<4, Bytes<32>>>([
+    pad(32, "tr:ev:key:update:v1"),
+    authorizationId,
+    previousLifecycleEventHash,
+    reasonHash
+  ]);
+}
+
+export pure circuit rotateEvidenceVerifierKeyPayloadHash(
+  oldAuthorizationId: Bytes<32>,
+  oldLifecycleEventHash: Bytes<32>,
+  newCreatePayloadHash: Bytes<32>,
+  reasonHash: Bytes<32>
+): Bytes<32> {
+  assert(oldAuthorizationId != pad(32, ""), "Old evidence verifier authorization id must be set");
+  assert(oldLifecycleEventHash != pad(32, ""), "Old evidence verifier lifecycle event hash must be set");
+  assert(newCreatePayloadHash != pad(32, ""), "New evidence verifier payload hash must be set");
+  assert(reasonHash != pad(32, ""), "Evidence verifier reason hash must be set");
+  return persistentHash<Vector<5, Bytes<32>>>([
+    pad(32, "tr:ev:key:rotate:v1"),
+    oldAuthorizationId,
+    oldLifecycleEventHash,
+    newCreatePayloadHash,
+    reasonHash
   ]);
 }
 
@@ -1072,26 +1775,72 @@ export pure circuit updateMaintainerMembershipPayloadHash(
 }
 
 export pure circuit updateMaintainerThresholdPolicyPayloadHash(
+  previousPolicyCommitment: Bytes<32>,
+  nextPolicyCommitment: Bytes<32>,
+  nextPolicyVersion: Uint<64>,
   defaultThreshold: Uint<64>,
   emergencyThreshold: Uint<64>,
   archivalThreshold: Uint<64>
 ): Bytes<32> {
-  return persistentHash<Vector<3, Bytes<32>>>([
+  return persistentHash<Vector<6, Bytes<32>>>([
+    previousPolicyCommitment,
+    nextPolicyCommitment,
+    ((nextPolicyVersion as Field) as Bytes<32>),
     ((defaultThreshold as Field) as Bytes<32>),
     ((emergencyThreshold as Field) as Bytes<32>),
     ((archivalThreshold as Field) as Bytes<32>)
   ]);
 }
 
+export pure circuit recoverMaintainerMembershipPayloadHash(
+  previousPolicyCommitment: Bytes<32>,
+  nextPolicyCommitment: Bytes<32>,
+  nextPolicyVersion: Uint<64>,
+  defaultThreshold: Uint<64>,
+  emergencyThreshold: Uint<64>,
+  archivalThreshold: Uint<64>,
+  maintainerId: Bytes<32>,
+  previousLifecycleEventHash: Bytes<32>,
+  evidenceHash: Bytes<32>
+): Bytes<32> {
+  const policyPayloadHash = updateMaintainerThresholdPolicyPayloadHash(
+    previousPolicyCommitment,
+    nextPolicyCommitment,
+    nextPolicyVersion,
+    defaultThreshold,
+    emergencyThreshold,
+    archivalThreshold
+  );
+  const removalPayloadHash = updateMaintainerMembershipPayloadHash(
+    maintainerId,
+    previousLifecycleEventHash,
+    evidenceHash
+  );
+  return persistentHash<Vector<3, Bytes<32>>>([
+    pad(32, "tr:maintainer:recover:v1"),
+    policyPayloadHash,
+    removalPayloadHash
+  ]);
+}
+
 export pure circuit governanceEventHash(
   registryIdValue: Bytes<32>,
+  networkIdCommitment: Bytes<32>,
+  contractAddress: Bytes<32>,
+  policyCommitment: Bytes<32>,
   maintainerSignerSetHashValue: Bytes<32>,
   actionKind: Bytes<32>,
   actionPayloadHash: Bytes<32>,
   actionSequence: Uint<64>
 ): Bytes<32> {
-  return persistentHash<Vector<5, Bytes<32>>>([
+  assert(networkIdCommitment != pad(32, ""), "Network id commitment must be set");
+  assert(contractAddress != pad(32, ""), "Contract address must be set");
+  return persistentHash<Vector<9, Bytes<32>>>([
+    pad(32, "tr:deployment:event:v1"),
     registryIdValue,
+    networkIdCommitment,
+    contractAddress,
+    policyCommitment,
     maintainerSignerSetHashValue,
     actionKind,
     actionPayloadHash,
@@ -1099,7 +1848,25 @@ export pure circuit governanceEventHash(
   ]);
 }
 
-export circuit initializeRegistry(
+export pure circuit registryInitializationEventHash(
+  registryIdValue: Bytes<32>,
+  networkIdCommitment: Bytes<32>,
+  policyCommitment: Bytes<32>,
+  maintainerSignerSetHashValue: Bytes<32>,
+  actionPayloadHash: Bytes<32>
+): Bytes<32> {
+  assert(networkIdCommitment != pad(32, ""), "Network id commitment must be set");
+  return persistentHash<Vector<6, Bytes<32>>>([
+    pad(32, "tr:deployment:init:v1"),
+    registryIdValue,
+    networkIdCommitment,
+    policyCommitment,
+    maintainerSignerSetHashValue,
+    actionPayloadHash
+  ]);
+}
+
+circuit initializeRegistry(
   nextRegistryId: Bytes<32>,
   nextRegistryDidCommitment: Bytes<32>,
   nextGovernancePolicyCommitment: Bytes<32>,
@@ -1135,6 +1902,7 @@ export circuit initializeRegistry(
     bootstrapMaintainerKeyId != pad(32, ""),
     "Bootstrap maintainer key id must be set"
   );
+  assertPrimeOrderMaintainerKey(bootstrapMaintainerPublicKey);
   assertValidMaintainerThreshold(1, nextMaintainerThreshold);
 
   const disclosedRegistryId = disclose(nextRegistryId);
@@ -1169,18 +1937,22 @@ export circuit initializeRegistry(
     )
   );
   const initializationEventHash = disclose(
-    governanceEventHash(
+    registryInitializationEventHash(
       disclosedRegistryId,
+      deploymentNetworkIdCommitment,
+      disclosedGovernancePolicyCommitment,
       initializationSignerSetHash,
-      pad(32, "midnight:tr:init"),
-      initializationPayloadHash,
-      0
+      initializationPayloadHash
     )
   );
 
   registryId = disclosedRegistryId;
   registryDidCommitment = disclosedRegistryDidCommitment;
   governancePolicyCommitment = disclosedGovernancePolicyCommitment;
+  governancePolicyVersion = 1;
+  governancePolicyCommitmentsByVersion.insert(1, disclosedGovernancePolicyCommitment);
+  governancePolicyVersionsByCommitment.insert(disclosedGovernancePolicyCommitment, 1);
+  governancePolicyEffectiveFromByVersion.insert(1, 0);
   maintainerThreshold = disclose(nextMaintainerThreshold);
   emergencyMaintainerThreshold = disclose(nextMaintainerThreshold);
   archivalMaintainerThreshold = disclose(nextMaintainerThreshold);
@@ -1240,6 +2012,7 @@ export circuit initializeRegistry(
   lastGovernanceEventHash = initializationEventHash;
   lastAuthorizedActionKind = pad(32, "midnight:tr:init");
   lastAuthorizedActionPayloadHash = initializationPayloadHash;
+  lastAuthorizedPolicyCommitment = disclosedGovernancePolicyCommitment;
   lastAuthorizedMaintainerKeyId = disclosedMaintainerKeyId;
   lastAuthorizedSignerSetHash = initializationSignerSetHash;
   initialized = true;
@@ -1254,6 +2027,10 @@ export pure circuit actionUsesEmergencyMaintainerThreshold(
     || actionKind == pad(32, "tr:issuer:revoke")
     || actionKind == pad(32, "tr:verifier:suspend")
     || actionKind == pad(32, "tr:verifier:revoke")
+    || actionKind == pad(32, "tr:evidence-verifier:suspend")
+    || actionKind == pad(32, "tr:evidence-verifier:revoke")
+    || actionKind == pad(32, "tr:vc-authority:key:suspend")
+    || actionKind == pad(32, "tr:vc-authority:key:revoke")
     || actionKind == pad(32, "tr:auditor:suspend")
     || actionKind == pad(32, "tr:auditor:revoke")
     || actionKind == pad(32, "tr:recognition:suspend")
@@ -1276,6 +2053,12 @@ export pure circuit actionScopedMaintainerThreshold(
   emergencyThreshold: Uint<64>,
   archivalThreshold: Uint<64>
 ): Uint<64> {
+  if (actionKind == pad(32, "tr:maintainer:recover")) {
+    if (defaultThreshold > emergencyThreshold) {
+      return defaultThreshold;
+    }
+    return emergencyThreshold;
+  }
   if (actionUsesEmergencyMaintainerThreshold(actionKind)) {
     return emergencyThreshold;
   }
@@ -1291,6 +2074,9 @@ circuit verifyAuthorizedMaintainerSigner(
 ): Bytes<32> {
   const disclosedMaintainerKeyId = disclose(signer.keyId);
   const disclosedMaintainerPublicKey = disclose(signer.publicKey);
+
+  assertNonIdentitySignerPoint(disclosedMaintainerPublicKey);
+  assertNonIdentitySignerPoint(signer.signature.announcement);
 
   assert(
     disclosedMaintainerKeyId != pad(32, ""),
@@ -1324,6 +2110,17 @@ circuit verifyAuthorizedMaintainerSigner(
   return disclosedMaintainerKeyId;
 }
 
+pure circuit assertDistinctMaintainerSignerPublicKeys(
+  left: JubjubPoint,
+  right: JubjubPoint
+): [] {
+  assert(
+    jubjubPointX(left) != jubjubPointX(right)
+      || jubjubPointY(left) != jubjubPointY(right),
+    "Maintainer signer public keys must be distinct"
+  );
+}
+
 circuit finalizeAuthorizedMaintainerAction(
   actionSequence: Uint<64>,
   actionKind: Bytes<32>,
@@ -1336,7 +2133,7 @@ circuit finalizeAuthorizedMaintainerAction(
   signer5KeyId: Bytes<32>
 ): AuthorizedMaintainerAction {
   const signerSetHash = disclose(
-    maintainerSignerSetHash(
+    hashCanonicalMaintainerSignerSet(
       signerCount,
       signer1KeyId,
       signer2KeyId,
@@ -1348,6 +2145,9 @@ circuit finalizeAuthorizedMaintainerAction(
   const eventHash = disclose(
     governanceEventHash(
       registryId,
+      deploymentNetworkIdCommitment,
+      kernel.self().bytes,
+      governancePolicyCommitment,
       signerSetHash,
       actionKind,
       actionPayloadHash,
@@ -1360,6 +2160,7 @@ circuit finalizeAuthorizedMaintainerAction(
   lastGovernanceEventHash = eventHash;
   lastAuthorizedActionKind = actionKind;
   lastAuthorizedActionPayloadHash = actionPayloadHash;
+  lastAuthorizedPolicyCommitment = governancePolicyCommitment;
   lastAuthorizedMaintainerKeyId = signer1KeyId;
   lastAuthorizedSignerSetHash = signerSetHash;
   return AuthorizedMaintainerAction {
@@ -1384,34 +2185,34 @@ circuit assertAuthorizedMaintainerActionExcludesDid(
   const signer1Record = maintainerRecords.lookup(authorizedAction.signer1KeyId);
   assert(
     signer1Record.didCommitment != excludedDidCommitment,
-    "Maintainer may not approve their own onboarding"
+    "Maintainer may not approve a governed action involving their own DID"
   );
   if (authorizedAction.signerCount > 1) {
     const signer2Record = maintainerRecords.lookup(authorizedAction.signer2KeyId);
     assert(
       signer2Record.didCommitment != excludedDidCommitment,
-      "Maintainer may not approve their own onboarding"
+      "Maintainer may not approve a governed action involving their own DID"
     );
   }
   if (authorizedAction.signerCount > 2) {
     const signer3Record = maintainerRecords.lookup(authorizedAction.signer3KeyId);
     assert(
       signer3Record.didCommitment != excludedDidCommitment,
-      "Maintainer may not approve their own onboarding"
+      "Maintainer may not approve a governed action involving their own DID"
     );
   }
   if (authorizedAction.signerCount > 3) {
     const signer4Record = maintainerRecords.lookup(authorizedAction.signer4KeyId);
     assert(
       signer4Record.didCommitment != excludedDidCommitment,
-      "Maintainer may not approve their own onboarding"
+      "Maintainer may not approve a governed action involving their own DID"
     );
   }
   if (authorizedAction.signerCount > 4) {
     const signer5Record = maintainerRecords.lookup(authorizedAction.signer5KeyId);
     assert(
       signer5Record.didCommitment != excludedDidCommitment,
-      "Maintainer may not approve their own onboarding"
+      "Maintainer may not approve a governed action involving their own DID"
     );
   }
 }
@@ -1422,6 +2223,7 @@ circuit performAuthorizedMaintainerAction(
   actionPayloadHash: Bytes<32>
 ): AuthorizedMaintainerAction {
   assert(initialized, "Trust registry is not initialized");
+  assert(contractVersion == 1, "Unsupported trust registry format");
 
   const disclosedActionKind = disclose(actionKind);
   const disclosedActionPayloadHash = disclose(actionPayloadHash);
@@ -1433,8 +2235,11 @@ circuit performAuthorizedMaintainerAction(
     archivalMaintainerThreshold
   );
   const actionSequence = governanceActionCount.read();
-  const digest = maintainerActionDigest(
+  const digest = deploymentBoundMaintainerActionDigest(
     registryId,
+    deploymentNetworkIdCommitment,
+    kernel.self().bytes,
+    governancePolicyCommitment,
     disclosedActionKind,
     disclosedActionPayloadHash,
     actionSequence
@@ -1472,8 +2277,12 @@ circuit performAuthorizedMaintainerAction(
     digest
   );
   assert(
-    signer2KeyId != signer1KeyId,
-    "Maintainer signer set must not contain duplicates"
+    signerKeyIdLess(signer1KeyId, signer2KeyId),
+    "Maintainer signer keys must be sorted"
+  );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer1.publicKey,
+    authorizationBundle.signer2.publicKey
   );
   if (disclosedSignerCount == 2) {
     return finalizeAuthorizedMaintainerAction(
@@ -1494,8 +2303,16 @@ circuit performAuthorizedMaintainerAction(
     digest
   );
   assert(
-    signer3KeyId != signer1KeyId && signer3KeyId != signer2KeyId,
-    "Maintainer signer set must not contain duplicates"
+    signerKeyIdLess(signer2KeyId, signer3KeyId),
+    "Maintainer signer keys must be sorted"
+  );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer1.publicKey,
+    authorizationBundle.signer3.publicKey
+  );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer2.publicKey,
+    authorizationBundle.signer3.publicKey
   );
   if (disclosedSignerCount == 3) {
     return finalizeAuthorizedMaintainerAction(
@@ -1516,10 +2333,20 @@ circuit performAuthorizedMaintainerAction(
     digest
   );
   assert(
-    signer4KeyId != signer1KeyId
-      && signer4KeyId != signer2KeyId
-      && signer4KeyId != signer3KeyId,
-    "Maintainer signer set must not contain duplicates"
+    signerKeyIdLess(signer3KeyId, signer4KeyId),
+    "Maintainer signer keys must be sorted"
+  );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer1.publicKey,
+    authorizationBundle.signer4.publicKey
+  );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer2.publicKey,
+    authorizationBundle.signer4.publicKey
+  );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer3.publicKey,
+    authorizationBundle.signer4.publicKey
   );
   if (disclosedSignerCount == 4) {
     return finalizeAuthorizedMaintainerAction(
@@ -1540,11 +2367,24 @@ circuit performAuthorizedMaintainerAction(
     digest
   );
   assert(
-    signer5KeyId != signer1KeyId
-      && signer5KeyId != signer2KeyId
-      && signer5KeyId != signer3KeyId
-      && signer5KeyId != signer4KeyId,
-    "Maintainer signer set must not contain duplicates"
+    signerKeyIdLess(signer4KeyId, signer5KeyId),
+    "Maintainer signer keys must be sorted"
+  );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer1.publicKey,
+    authorizationBundle.signer5.publicKey
+  );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer2.publicKey,
+    authorizationBundle.signer5.publicKey
+  );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer3.publicKey,
+    authorizationBundle.signer5.publicKey
+  );
+  assertDistinctMaintainerSignerPublicKeys(
+    authorizationBundle.signer4.publicKey,
+    authorizationBundle.signer5.publicKey
   );
   if (disclosedSignerCount == 5) {
     return finalizeAuthorizedMaintainerAction(
@@ -1586,6 +2426,35 @@ circuit requireMaintainerMembershipRecord(
     "Maintainer membership is not registered"
   );
   return maintainerMembershipRecords.lookup(maintainerId);
+}
+
+circuit assertCurrentMaintainerProposalEvidence(
+  maintainerId: Bytes<32>,
+  evidenceHash: Bytes<32>
+): [] {
+  assert(
+    maintainerProposalEvidenceRecords.member(maintainerId),
+    "Maintainer proposal evidence is not registered"
+  );
+  const proposal = maintainerProposalEvidenceRecords.lookup(maintainerId);
+  assert(
+    proposal.evidenceCommitment == evidenceHash,
+    "Maintainer proposal evidence commitment has changed"
+  );
+  assert(
+    proposal.activePolicyCommitment == governancePolicyCommitment
+      && proposal.activePolicyVersion == governancePolicyVersion,
+    "Maintainer proposal evidence policy is not current"
+  );
+  const key = requireActiveEvidenceVerifierKey(
+    proposal.evidenceVerifierAuthorizationId
+  );
+  assert(
+    key.verifierDidCommitment == proposal.evidenceVerifierDidCommitment
+      && key.keyIdCommitment == proposal.evidenceVerifierKeyIdCommitment
+      && key.suite == proposal.evidenceVerifierSuite,
+    "Maintainer proposal evidence verifier key has changed"
+  );
 }
 
 circuit currentMaintainerMembershipRecord(
@@ -1654,9 +2523,99 @@ circuit requireVerifierAuthorizationRecord(
   return verifierAuthorizationRecords.lookup(authorizationId);
 }
 
+circuit requireEvidenceVerifierKeyRecord(
+  authorizationId: Bytes<32>
+): EvidenceVerifierKeyRecord {
+  assert(authorizationId != pad(32, ""), "Evidence verifier authorization id must be set");
+  assert(
+    evidenceVerifierKeyAuthorizationIds.member(authorizationId),
+    "Evidence verifier key is not registered"
+  );
+  return evidenceVerifierKeyRecords.lookup(authorizationId);
+}
+
+circuit requireActiveEvidenceVerifierKey(
+  authorizationId: Bytes<32>
+): EvidenceVerifierKeyRecord {
+  const record = requireEvidenceVerifierKeyRecord(authorizationId);
+  assert(record.status == EvidenceVerifierKeyStatus.active, "Evidence verifier key is not active");
+  assert(
+    record.policyCommitment == governancePolicyCommitment
+      && record.policyVersion == governancePolicyVersion,
+    "Evidence verifier key policy is not current"
+  );
+  const scopeKey = disclose(
+    evidenceVerifierKeyScopeKey(record.verifierDidCommitment, record.policyCommitment)
+  );
+  assert(
+    currentEvidenceVerifierKeyIdsByScopeKey.member(scopeKey)
+      && currentEvidenceVerifierKeyIdsByScopeKey.lookup(scopeKey) == authorizationId,
+    "Evidence verifier key is not current for its scope"
+  );
+  return record;
+}
+
+circuit assertCurrentIssuerProposalEvidence(
+  authorizationId: Bytes<32>,
+  evidenceHash: Bytes<32>
+): [] {
+  assert(
+    issuerProposalEvidenceRecords.member(authorizationId),
+    "Issuer proposal evidence is not registered"
+  );
+  const proposal = issuerProposalEvidenceRecords.lookup(authorizationId);
+  assert(
+    proposal.evidenceCommitment == evidenceHash,
+    "Issuer proposal evidence commitment has changed"
+  );
+  assert(
+    proposal.activePolicyCommitment == governancePolicyCommitment
+      && proposal.activePolicyVersion == governancePolicyVersion,
+    "Issuer proposal evidence policy is not current"
+  );
+  const key = requireActiveEvidenceVerifierKey(
+    proposal.evidenceVerifierAuthorizationId
+  );
+  assert(
+    key.verifierDidCommitment == proposal.evidenceVerifierDidCommitment
+      && key.keyIdCommitment == proposal.evidenceVerifierKeyIdCommitment
+      && key.suite == proposal.evidenceVerifierSuite,
+    "Issuer proposal evidence verifier key has changed"
+  );
+}
+
+circuit assertCurrentVerifierProposalEvidence(
+  authorizationId: Bytes<32>,
+  evidenceHash: Bytes<32>
+): [] {
+  assert(
+    verifierProposalEvidenceRecords.member(authorizationId),
+    "Verifier proposal evidence is not registered"
+  );
+  const proposal = verifierProposalEvidenceRecords.lookup(authorizationId);
+  assert(
+    proposal.evidenceCommitment == evidenceHash,
+    "Verifier proposal evidence commitment has changed"
+  );
+  assert(
+    proposal.activePolicyCommitment == governancePolicyCommitment
+      && proposal.activePolicyVersion == governancePolicyVersion,
+    "Verifier proposal evidence policy is not current"
+  );
+  const key = requireActiveEvidenceVerifierKey(
+    proposal.evidenceVerifierAuthorizationId
+  );
+  assert(
+    key.verifierDidCommitment == proposal.evidenceVerifierDidCommitment
+      && key.keyIdCommitment == proposal.evidenceVerifierKeyIdCommitment
+      && key.suite == proposal.evidenceVerifierSuite,
+    "Verifier proposal evidence verifier key has changed"
+  );
+}
+
 circuit currentVerifierAuthorizationRecord(
   subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
+  requestResourceId: Bytes<32>,
   allowedAttributeSetCommitment: Bytes<32>,
   allowedPredicateSetCommitment: Bytes<32>,
   disclosureLevelCommitment: Bytes<32>
@@ -1664,7 +2623,7 @@ circuit currentVerifierAuthorizationRecord(
   const scopeKey = disclose(
     verifierAuthorizationScopeKey(
       disclose(subjectDidCommitment),
-      disclose(requestProfileId),
+      disclose(requestResourceId),
       disclose(allowedAttributeSetCommitment),
       disclose(allowedPredicateSetCommitment),
       disclose(disclosureLevelCommitment)
@@ -1693,9 +2652,38 @@ circuit requireAuditorAuthorizationRecord(
   return auditorAuthorizationRecords.lookup(authorizationId);
 }
 
+circuit assertCurrentAuditorProposalEvidence(
+  authorizationId: Bytes<32>,
+  evidenceHash: Bytes<32>
+): [] {
+  assert(
+    auditorProposalEvidenceRecords.member(authorizationId),
+    "Auditor proposal evidence is not registered"
+  );
+  const proposal = auditorProposalEvidenceRecords.lookup(authorizationId);
+  assert(
+    proposal.evidenceCommitment == evidenceHash,
+    "Auditor proposal evidence commitment has changed"
+  );
+  assert(
+    proposal.activePolicyCommitment == governancePolicyCommitment
+      && proposal.activePolicyVersion == governancePolicyVersion,
+    "Auditor proposal evidence policy is not current"
+  );
+  const key = requireActiveEvidenceVerifierKey(
+    proposal.evidenceVerifierAuthorizationId
+  );
+  assert(
+    key.verifierDidCommitment == proposal.evidenceVerifierDidCommitment
+      && key.keyIdCommitment == proposal.evidenceVerifierKeyIdCommitment
+      && key.suite == proposal.evidenceVerifierSuite,
+    "Auditor proposal evidence verifier key has changed"
+  );
+}
+
 circuit currentAuditorAuthorizationRecord(
   subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
+  requestResourceId: Bytes<32>,
   allowedAttributeSetCommitment: Bytes<32>,
   allowedPredicateSetCommitment: Bytes<32>,
   disclosureLevelCommitment: Bytes<32>
@@ -1703,7 +2691,7 @@ circuit currentAuditorAuthorizationRecord(
   const scopeKey = disclose(
     auditorAuthorizationScopeKey(
       disclose(subjectDidCommitment),
-      disclose(requestProfileId),
+      disclose(requestResourceId),
       disclose(allowedAttributeSetCommitment),
       disclose(allowedPredicateSetCommitment),
       disclose(disclosureLevelCommitment)
@@ -1763,14 +2751,13 @@ circuit requireEpochCommitmentRecord(
   return epochCommitmentRecords.lookup(epochId);
 }
 
-export circuit authorizeMaintainerAction(
+export circuit authorizeMaintainerAuditEvent(
   authorizationBundle: MaintainerAuthorizationBundle,
-  actionKind: Bytes<32>,
   actionPayloadHash: Bytes<32>
 ): Bytes<32> {
   const authorizedAction = performAuthorizedMaintainerAction(
     authorizationBundle,
-    actionKind,
+    pad(32, "tr:audit:generic"),
     actionPayloadHash
   );
   return authorizedAction.eventHash;
@@ -1778,10 +2765,14 @@ export circuit authorizeMaintainerAction(
 
 export circuit updateMaintainerThresholdPolicy(
   authorizationBundle: MaintainerAuthorizationBundle,
+  nextPolicyCommitment: Bytes<32>,
+  nextPolicyVersion: Uint<64>,
   defaultThreshold: Uint<64>,
   emergencyThreshold: Uint<64>,
   archivalThreshold: Uint<64>
 ): Bytes<32> {
+  const disclosedNextPolicyCommitment = disclose(nextPolicyCommitment);
+  const disclosedNextPolicyVersion = disclose(nextPolicyVersion);
   const disclosedDefaultThreshold = disclose(defaultThreshold);
   const disclosedEmergencyThreshold = disclose(emergencyThreshold);
   const disclosedArchivalThreshold = disclose(archivalThreshold);
@@ -1791,8 +2782,17 @@ export circuit updateMaintainerThresholdPolicy(
     disclosedEmergencyThreshold,
     disclosedArchivalThreshold
   );
+  assert(disclosedNextPolicyCommitment != pad(32, ""), "Policy commitment must be set");
+  assert(disclosedNextPolicyVersion == governancePolicyVersion + 1, "Policy version must increase by one");
+  assert(
+    !governancePolicyVersionsByCommitment.member(disclosedNextPolicyCommitment),
+    "Policy commitment must not reuse a historical snapshot"
+  );
   const actionPayloadHash = disclose(
     updateMaintainerThresholdPolicyPayloadHash(
+      governancePolicyCommitment,
+      disclosedNextPolicyCommitment,
+      disclosedNextPolicyVersion,
       disclosedDefaultThreshold,
       disclosedEmergencyThreshold,
       disclosedArchivalThreshold
@@ -1807,6 +2807,11 @@ export circuit updateMaintainerThresholdPolicy(
   maintainerThreshold = disclosedDefaultThreshold;
   emergencyMaintainerThreshold = disclosedEmergencyThreshold;
   archivalMaintainerThreshold = disclosedArchivalThreshold;
+  governancePolicyCommitment = disclosedNextPolicyCommitment;
+  governancePolicyVersion = disclosedNextPolicyVersion;
+  governancePolicyCommitmentsByVersion.insert(disclosedNextPolicyVersion, disclosedNextPolicyCommitment);
+  governancePolicyVersionsByCommitment.insert(disclosedNextPolicyCommitment, disclosedNextPolicyVersion);
+  governancePolicyEffectiveFromByVersion.insert(disclosedNextPolicyVersion, governanceActionCount.read());
   return authorizedAction.eventHash;
 }
 
@@ -1818,22 +2823,40 @@ export circuit proposeMaintainerMembership(
   candidatePublicKey: JubjubPoint,
   policyId: Bytes<32>,
   trustLevel: Bytes<32>,
-  evidenceHash: Bytes<32>
+  evidenceHash: Bytes<32>,
+  evidenceVerifierAuthorizationId: Bytes<32>,
+  evidenceVerifierKeyIdCommitment: Bytes<32>,
+  evidenceSignature: JubjubSignature
 ): Bytes<32> {
   const disclosedMaintainerId = disclose(maintainerId);
   const disclosedMaintainerDidCommitment = disclose(maintainerDidCommitment);
   const disclosedCandidateKeyId = disclose(candidateKeyId);
   const disclosedCandidatePublicKey = disclose(candidatePublicKey);
+  assertPrimeOrderMaintainerKey(disclosedCandidatePublicKey);
   const disclosedPolicyId = disclose(policyId);
   const disclosedTrustLevel = disclose(trustLevel);
   const disclosedEvidenceHash = disclose(evidenceHash);
+  const disclosedEvidenceVerifierAuthorizationId = disclose(evidenceVerifierAuthorizationId);
+  const disclosedEvidenceVerifierKeyIdCommitment = disclose(evidenceVerifierKeyIdCommitment);
+  const disclosedEvidenceSignature = disclose(evidenceSignature);
+  const evidenceVerifierKey = requireActiveEvidenceVerifierKey(
+    disclosedEvidenceVerifierAuthorizationId
+  );
+  assert(
+    evidenceVerifierKey.keyIdCommitment == disclosedEvidenceVerifierKeyIdCommitment,
+    "Evidence verifier key id does not match the registered key"
+  );
+  assert(
+    evidenceVerifierKey.suite == pad(32, "jubjub-schnorr"),
+    "Evidence verifier suite is not supported"
+  );
   const didScopeKey = disclose(
     maintainerMembershipScopeKey(disclosedMaintainerDidCommitment)
   );
   const keyScopeKey = disclose(
     maintainerMembershipKeyScopeKey(disclosedCandidateKeyId)
   );
-  const actionPayloadHash = disclose(
+  const baseMaintainerPayloadHash = disclose(
     createMaintainerMembershipPayloadHash(
       disclosedMaintainerId,
       disclosedMaintainerDidCommitment,
@@ -1844,6 +2867,29 @@ export circuit proposeMaintainerMembership(
       disclosedEvidenceHash
     )
   );
+  const actionPayloadHash = disclose(
+    maintainerEvidenceBoundProposalPayloadHash(
+      baseMaintainerPayloadHash,
+      disclosedEvidenceVerifierAuthorizationId,
+      disclosedEvidenceVerifierKeyIdCommitment,
+      evidenceVerifierKey.policyCommitment,
+      evidenceVerifierKey.policyVersion
+    )
+  );
+  Schnorr_schnorrVerifyDigest(
+    maintainerProposalEvidenceSignatureDigest(
+      registryId,
+      deploymentNetworkIdCommitment,
+      kernel.self().bytes,
+      disclosedEvidenceVerifierKeyIdCommitment,
+      actionPayloadHash
+    ),
+    Schnorr_SchnorrSignature {
+      announcement: disclosedEvidenceSignature.announcement,
+      response: disclosedEvidenceSignature.response
+    },
+    evidenceVerifierKey.publicKey
+  );
   const authorizedAction = performAuthorizedMaintainerAction(
     authorizationBundle,
     pad(32, "tr:maintainer:propose"),
@@ -1853,6 +2899,10 @@ export circuit proposeMaintainerMembership(
   assert(
     !maintainerMembershipIds.member(disclosedMaintainerId),
     "Maintainer membership already exists"
+  );
+  assert(
+    !maintainerProposalEvidenceRecords.member(disclosedMaintainerId),
+    "Maintainer proposal evidence already exists"
   );
   if (currentMaintainerMembershipIdsByDidCommitment.member(didScopeKey)) {
     const currentDidRecord = maintainerMembershipRecords.lookup(
@@ -1901,6 +2951,21 @@ export circuit proposeMaintainerMembership(
       lifecycleEventHash: authorizedAction.eventHash
     }
   );
+  maintainerProposalEvidenceRecords.insert(
+    disclosedMaintainerId,
+    MaintainerProposalEvidenceRecord {
+      evidenceVerifierAuthorizationId: disclosedEvidenceVerifierAuthorizationId,
+      evidenceVerifierDidCommitment: evidenceVerifierKey.verifierDidCommitment,
+      evidenceVerifierKeyIdCommitment: evidenceVerifierKey.keyIdCommitment,
+      evidenceVerifierSuite: evidenceVerifierKey.suite,
+      activePolicyCommitment: evidenceVerifierKey.policyCommitment,
+      activePolicyVersion: evidenceVerifierKey.policyVersion,
+      evidenceCommitment: disclosedEvidenceHash,
+      verifierSignatureAnnouncement: disclosedEvidenceSignature.announcement,
+      verifierSignatureResponse: disclosedEvidenceSignature.response,
+      proposalGovernanceEventHash: authorizedAction.eventHash
+    }
+  );
   currentMaintainerMembershipIdsByDidCommitment.insert(
     didScopeKey,
     disclosedMaintainerId
@@ -1928,6 +2993,10 @@ export circuit authorizeMaintainerMembership(
   assert(
     disclosedEvidenceHash == currentRecord.evidenceHash,
     "Maintainer authorization evidence must match the proposed application"
+  );
+  assertCurrentMaintainerProposalEvidence(
+    disclosedMaintainerId,
+    disclosedEvidenceHash
   );
   const actionPayloadHash = disclose(
     updateMaintainerMembershipPayloadHash(
@@ -1985,6 +3054,10 @@ export circuit activateMaintainerMembership(
   assert(
     disclosedEvidenceHash == currentRecord.evidenceHash,
     "Maintainer activation evidence must match the proposed application"
+  );
+  assertCurrentMaintainerProposalEvidence(
+    disclosedMaintainerId,
+    disclosedEvidenceHash
   );
   const actionPayloadHash = disclose(
     updateMaintainerMembershipPayloadHash(
@@ -2047,6 +3120,52 @@ export circuit activateMaintainerMembership(
   return authorizedAction.eventHash;
 }
 
+// Both ordinary suspension and recovery use the same membership transition.
+circuit applyMaintainerSuspension(
+  currentRecord: MaintainerMembershipRecord,
+  evidenceHash: Bytes<32>,
+  authorizedAction: AuthorizedMaintainerAction
+): [] {
+  const currentMaintainerRecord = maintainerRecords.lookup(currentRecord.keyId);
+
+  maintainerMembershipRecords.insert(
+    currentRecord.maintainerId,
+    MaintainerMembershipRecord {
+      maintainerId: currentRecord.maintainerId,
+      maintainerDidCommitment: currentRecord.maintainerDidCommitment,
+      keyId: currentRecord.keyId,
+      publicKey: currentRecord.publicKey,
+      policyId: currentRecord.policyId,
+      trustLevel: currentRecord.trustLevel,
+      status: AuthorizationStatus.suspended,
+      proposedAtSequence: currentRecord.proposedAtSequence,
+      authorizedAtSequence: currentRecord.authorizedAtSequence,
+      activeFromSequence: currentRecord.activeFromSequence,
+      suspendedAtSequence: authorizedAction.actionSequence,
+      revokedAtSequence: currentRecord.revokedAtSequence,
+      archivedAtSequence: currentRecord.archivedAtSequence,
+      lastStatusSequence: authorizedAction.actionSequence,
+      evidenceHash: evidenceHash,
+      lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  maintainerRecords.insert(
+    currentRecord.keyId,
+    MaintainerRecord {
+      maintainerId: currentMaintainerRecord.maintainerId,
+      didCommitment: currentMaintainerRecord.didCommitment,
+      keyId: currentMaintainerRecord.keyId,
+      publicKey: currentMaintainerRecord.publicKey,
+      status: MaintainerStatus.suspended,
+      joinedAtSequence: currentMaintainerRecord.joinedAtSequence,
+      lastStatusSequence: authorizedAction.actionSequence
+    }
+  );
+  activeMaintainerCount = disclose(
+    (activeMaintainerCount - (1 as Uint<64>)) as Uint<64>
+  );
+}
+
 export circuit suspendMaintainerMembership(
   authorizationBundle: MaintainerAuthorizationBundle,
   maintainerId: Bytes<32>,
@@ -2071,50 +3190,89 @@ export circuit suspendMaintainerMembership(
     pad(32, "tr:maintainer:suspend"),
     actionPayloadHash
   );
+  assertAuthorizedMaintainerActionExcludesDid(
+    authorizedAction,
+    currentRecord.maintainerDidCommitment
+  );
   assertMaintainerRemovalKeepsThreshold(
     activeMaintainerCount,
     maintainerThreshold,
     emergencyMaintainerThreshold,
     archivalMaintainerThreshold
   );
-  const currentMaintainerRecord = maintainerRecords.lookup(currentRecord.keyId);
+  applyMaintainerSuspension(currentRecord, disclosedEvidenceHash, authorizedAction);
+  return authorizedAction.eventHash;
+}
 
-  maintainerMembershipRecords.insert(
-    disclosedMaintainerId,
-    MaintainerMembershipRecord {
-      maintainerId: currentRecord.maintainerId,
-      maintainerDidCommitment: currentRecord.maintainerDidCommitment,
-      keyId: currentRecord.keyId,
-      publicKey: currentRecord.publicKey,
-      policyId: currentRecord.policyId,
-      trustLevel: currentRecord.trustLevel,
-      status: AuthorizationStatus.suspended,
-      proposedAtSequence: currentRecord.proposedAtSequence,
-      authorizedAtSequence: currentRecord.authorizedAtSequence,
-      activeFromSequence: currentRecord.activeFromSequence,
-      suspendedAtSequence: authorizedAction.actionSequence,
-      revokedAtSequence: currentRecord.revokedAtSequence,
-      archivedAtSequence: currentRecord.archivedAtSequence,
-      lastStatusSequence: authorizedAction.actionSequence,
-      evidenceHash: disclosedEvidenceHash,
-      lifecycleEventHash: authorizedAction.eventHash
-    }
+export circuit recoverMaintainerMembership(
+  authorizationBundle: MaintainerAuthorizationBundle,
+  maintainerId: Bytes<32>,
+  evidenceHash: Bytes<32>,
+  nextPolicyCommitment: Bytes<32>,
+  nextPolicyVersion: Uint<64>,
+  defaultThreshold: Uint<64>,
+  emergencyThreshold: Uint<64>,
+  archivalThreshold: Uint<64>
+): Bytes<32> {
+  const disclosedMaintainerId = disclose(maintainerId);
+  const disclosedEvidenceHash = disclose(evidenceHash);
+  const disclosedNextPolicyCommitment = disclose(nextPolicyCommitment);
+  const disclosedNextPolicyVersion = disclose(nextPolicyVersion);
+  const disclosedDefaultThreshold = disclose(defaultThreshold);
+  const disclosedEmergencyThreshold = disclose(emergencyThreshold);
+  const disclosedArchivalThreshold = disclose(archivalThreshold);
+  const currentRecord = requireMaintainerMembershipRecord(disclosedMaintainerId);
+  assert(
+    currentRecord.status == AuthorizationStatus.active,
+    "Maintainer membership must be active to recover"
   );
-  maintainerRecords.insert(
-    currentRecord.keyId,
-    MaintainerRecord {
-      maintainerId: currentMaintainerRecord.maintainerId,
-      didCommitment: currentMaintainerRecord.didCommitment,
-      keyId: currentMaintainerRecord.keyId,
-      publicKey: currentMaintainerRecord.publicKey,
-      status: MaintainerStatus.suspended,
-      joinedAtSequence: currentMaintainerRecord.joinedAtSequence,
-      lastStatusSequence: authorizedAction.actionSequence
-    }
+  assert(
+    activeMaintainerCount > 1,
+    "Cannot remove the last active maintainer"
   );
-  activeMaintainerCount = disclose(
-    (activeMaintainerCount - (1 as Uint<64>)) as Uint<64>
+  assertValidMaintainerThresholdPolicy(
+    (activeMaintainerCount - (1 as Uint<64>)) as Uint<64>,
+    disclosedDefaultThreshold,
+    disclosedEmergencyThreshold,
+    disclosedArchivalThreshold
   );
+  assert(disclosedNextPolicyCommitment != pad(32, ""), "Policy commitment must be set");
+  assert(disclosedNextPolicyVersion == governancePolicyVersion + 1, "Policy version must increase by one");
+  assert(
+    !governancePolicyVersionsByCommitment.member(disclosedNextPolicyCommitment),
+    "Policy commitment must not reuse a historical snapshot"
+  );
+  const actionPayloadHash = disclose(
+    recoverMaintainerMembershipPayloadHash(
+      governancePolicyCommitment,
+      disclosedNextPolicyCommitment,
+      disclosedNextPolicyVersion,
+      disclosedDefaultThreshold,
+      disclosedEmergencyThreshold,
+      disclosedArchivalThreshold,
+      disclosedMaintainerId,
+      currentRecord.lifecycleEventHash,
+      disclosedEvidenceHash
+    )
+  );
+  const authorizedAction = performAuthorizedMaintainerAction(
+    authorizationBundle,
+    pad(32, "tr:maintainer:recover"),
+    actionPayloadHash
+  );
+  assertAuthorizedMaintainerActionExcludesDid(
+    authorizedAction,
+    currentRecord.maintainerDidCommitment
+  );
+  applyMaintainerSuspension(currentRecord, disclosedEvidenceHash, authorizedAction);
+  maintainerThreshold = disclosedDefaultThreshold;
+  emergencyMaintainerThreshold = disclosedEmergencyThreshold;
+  archivalMaintainerThreshold = disclosedArchivalThreshold;
+  governancePolicyCommitment = disclosedNextPolicyCommitment;
+  governancePolicyVersion = disclosedNextPolicyVersion;
+  governancePolicyCommitmentsByVersion.insert(disclosedNextPolicyVersion, disclosedNextPolicyCommitment);
+  governancePolicyVersionsByCommitment.insert(disclosedNextPolicyCommitment, disclosedNextPolicyVersion);
+  governancePolicyEffectiveFromByVersion.insert(disclosedNextPolicyVersion, governanceActionCount.read());
   return authorizedAction.eventHash;
 }
 
@@ -2143,6 +3301,10 @@ export circuit revokeMaintainerMembership(
     authorizationBundle,
     pad(32, "tr:maintainer:revoke"),
     actionPayloadHash
+  );
+  assertAuthorizedMaintainerActionExcludesDid(
+    authorizedAction,
+    currentRecord.maintainerDidCommitment
   );
   if (currentRecord.status == AuthorizationStatus.active) {
     assertMaintainerRemovalKeepsThreshold(
@@ -2228,6 +3390,10 @@ export circuit archiveMaintainerMembership(
     pad(32, "tr:maintainer:archive"),
     actionPayloadHash
   );
+  assertAuthorizedMaintainerActionExcludesDid(
+    authorizedAction,
+    currentRecord.maintainerDidCommitment
+  );
   if (currentRecord.status == AuthorizationStatus.active) {
     assertMaintainerRemovalKeepsThreshold(
       activeMaintainerCount,
@@ -2292,6 +3458,18 @@ export circuit getMaintainerMembership(
   return requireMaintainerMembershipRecord(disclose(maintainerId));
 }
 
+export circuit getMaintainerProposalEvidence(
+  maintainerId: Bytes<32>
+): MaintainerProposalEvidenceRecord {
+  assert(initialized, "Trust registry is not initialized");
+  const disclosedMaintainerId = disclose(maintainerId);
+  assert(
+    maintainerProposalEvidenceRecords.member(disclosedMaintainerId),
+    "Maintainer proposal evidence is not registered"
+  );
+  return maintainerProposalEvidenceRecords.lookup(disclosedMaintainerId);
+}
+
 export circuit getCurrentMaintainerMembership(
   maintainerDidCommitment: Bytes<32>
 ): MaintainerMembershipRecord {
@@ -2306,16 +3484,35 @@ export circuit proposeIssuerAuthorization(
   resourceType: IssuerResourceType,
   resourceId: Bytes<32>,
   policyId: Bytes<32>,
+  statusPolicyBindingCommitment: Bytes<32>,
   trustLevel: Bytes<32>,
-  evidenceHash: Bytes<32>
+  evidenceHash: Bytes<32>,
+  evidenceVerifierAuthorizationId: Bytes<32>,
+  evidenceVerifierKeyIdCommitment: Bytes<32>,
+  evidenceSignature: JubjubSignature
 ): Bytes<32> {
   const disclosedAuthorizationId = disclose(authorizationId);
   const disclosedSubjectDidCommitment = disclose(subjectDidCommitment);
   const disclosedResourceType = disclose(resourceType);
   const disclosedResourceId = disclose(resourceId);
   const disclosedPolicyId = disclose(policyId);
+  const disclosedStatusPolicyBindingCommitment = disclose(statusPolicyBindingCommitment);
   const disclosedTrustLevel = disclose(trustLevel);
   const disclosedEvidenceHash = disclose(evidenceHash);
+  const disclosedEvidenceVerifierAuthorizationId = disclose(evidenceVerifierAuthorizationId);
+  const disclosedEvidenceVerifierKeyIdCommitment = disclose(evidenceVerifierKeyIdCommitment);
+  const disclosedEvidenceSignature = disclose(evidenceSignature);
+  const evidenceVerifierKey = requireActiveEvidenceVerifierKey(
+    disclosedEvidenceVerifierAuthorizationId
+  );
+  assert(
+    evidenceVerifierKey.keyIdCommitment == disclosedEvidenceVerifierKeyIdCommitment,
+    "Evidence verifier key id does not match the registered key"
+  );
+  assert(
+    evidenceVerifierKey.suite == pad(32, "jubjub-schnorr"),
+    "Evidence verifier suite is not supported"
+  );
   const scopeKey = disclose(
     issuerAuthorizationScopeKey(
       disclosedSubjectDidCommitment,
@@ -2323,16 +3520,40 @@ export circuit proposeIssuerAuthorization(
       disclosedResourceId
     )
   );
-  const actionPayloadHash = disclose(
+  const baseIssuerPayloadHash = disclose(
     createIssuerAuthorizationPayloadHash(
       disclosedAuthorizationId,
       disclosedSubjectDidCommitment,
       disclosedResourceType,
       disclosedResourceId,
       disclosedPolicyId,
+      disclosedStatusPolicyBindingCommitment,
       disclosedTrustLevel,
       disclosedEvidenceHash
     )
+  );
+  const actionPayloadHash = disclose(
+    issuerEvidenceBoundProposalPayloadHash(
+      baseIssuerPayloadHash,
+      disclosedEvidenceVerifierAuthorizationId,
+      disclosedEvidenceVerifierKeyIdCommitment,
+      evidenceVerifierKey.policyCommitment,
+      evidenceVerifierKey.policyVersion
+    )
+  );
+  Schnorr_schnorrVerifyDigest(
+    issuerProposalEvidenceSignatureDigest(
+      registryId,
+      deploymentNetworkIdCommitment,
+      kernel.self().bytes,
+      disclosedEvidenceVerifierKeyIdCommitment,
+      actionPayloadHash
+    ),
+    Schnorr_SchnorrSignature {
+      announcement: disclosedEvidenceSignature.announcement,
+      response: disclosedEvidenceSignature.response
+    },
+    evidenceVerifierKey.publicKey
   );
   const authorizedAction = performAuthorizedMaintainerAction(
     authorizationBundle,
@@ -2343,6 +3564,10 @@ export circuit proposeIssuerAuthorization(
   assert(
     !issuerAuthorizationIds.member(disclosedAuthorizationId),
     "Issuer authorization already exists"
+  );
+  assert(
+    !issuerProposalEvidenceRecords.member(disclosedAuthorizationId),
+    "Issuer proposal evidence already exists"
   );
   if (currentIssuerAuthorizationIdsByScopeKey.member(scopeKey)) {
     const currentRecord = issuerAuthorizationRecords.lookup(
@@ -2364,6 +3589,7 @@ export circuit proposeIssuerAuthorization(
       resourceType: disclosedResourceType,
       resourceId: disclosedResourceId,
       policyId: disclosedPolicyId,
+      statusPolicyBindingCommitment: disclosedStatusPolicyBindingCommitment,
       trustLevel: disclosedTrustLevel,
       status: AuthorizationStatus.proposed,
       proposedAtSequence: authorizedAction.actionSequence,
@@ -2375,6 +3601,21 @@ export circuit proposeIssuerAuthorization(
       lastStatusSequence: authorizedAction.actionSequence,
       evidenceHash: disclosedEvidenceHash,
       lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  issuerProposalEvidenceRecords.insert(
+    disclosedAuthorizationId,
+    IssuerProposalEvidenceRecord {
+      evidenceVerifierAuthorizationId: disclosedEvidenceVerifierAuthorizationId,
+      evidenceVerifierDidCommitment: evidenceVerifierKey.verifierDidCommitment,
+      evidenceVerifierKeyIdCommitment: evidenceVerifierKey.keyIdCommitment,
+      evidenceVerifierSuite: evidenceVerifierKey.suite,
+      activePolicyCommitment: evidenceVerifierKey.policyCommitment,
+      activePolicyVersion: evidenceVerifierKey.policyVersion,
+      evidenceCommitment: disclosedEvidenceHash,
+      verifierSignatureAnnouncement: disclosedEvidenceSignature.announcement,
+      verifierSignatureResponse: disclosedEvidenceSignature.response,
+      proposalGovernanceEventHash: authorizedAction.eventHash
     }
   );
   currentIssuerAuthorizationIdsByScopeKey.insert(scopeKey, disclosedAuthorizationId);
@@ -2398,6 +3639,10 @@ export circuit authorizeIssuerAuthorization(
     disclosedEvidenceHash == currentRecord.evidenceHash,
     "Issuer authorization evidence must match the proposed application"
   );
+  assertCurrentIssuerProposalEvidence(
+    disclosedAuthorizationId,
+    disclosedEvidenceHash
+  );
   const actionPayloadHash = disclose(
     updateIssuerAuthorizationPayloadHash(
       disclosedAuthorizationId,
@@ -2410,6 +3655,10 @@ export circuit authorizeIssuerAuthorization(
     pad(32, "tr:issuer:authorize"),
     actionPayloadHash
   );
+  assertAuthorizedMaintainerActionExcludesDid(
+    authorizedAction,
+    currentRecord.subjectDidCommitment
+  );
 
   issuerAuthorizationRecords.insert(
     disclosedAuthorizationId,
@@ -2419,6 +3668,7 @@ export circuit authorizeIssuerAuthorization(
       resourceType: currentRecord.resourceType,
       resourceId: currentRecord.resourceId,
       policyId: currentRecord.policyId,
+      statusPolicyBindingCommitment: currentRecord.statusPolicyBindingCommitment,
       trustLevel: currentRecord.trustLevel,
       status: AuthorizationStatus.authorized,
       proposedAtSequence: currentRecord.proposedAtSequence,
@@ -2431,92 +3681,6 @@ export circuit authorizeIssuerAuthorization(
       evidenceHash: disclosedEvidenceHash,
       lifecycleEventHash: authorizedAction.eventHash
     }
-  );
-  return authorizedAction.eventHash;
-}
-
-export circuit createIssuerAuthorization(
-  authorizationBundle: MaintainerAuthorizationBundle,
-  authorizationId: Bytes<32>,
-  subjectDidCommitment: Bytes<32>,
-  resourceType: IssuerResourceType,
-  resourceId: Bytes<32>,
-  policyId: Bytes<32>,
-  trustLevel: Bytes<32>,
-  evidenceHash: Bytes<32>
-): Bytes<32> {
-  const disclosedAuthorizationId = disclose(authorizationId);
-  const disclosedSubjectDidCommitment = disclose(subjectDidCommitment);
-  const disclosedResourceType = disclose(resourceType);
-  const disclosedResourceId = disclose(resourceId);
-  const disclosedPolicyId = disclose(policyId);
-  const disclosedTrustLevel = disclose(trustLevel);
-  const disclosedEvidenceHash = disclose(evidenceHash);
-  const scopeKey = disclose(
-    issuerAuthorizationScopeKey(
-      disclosedSubjectDidCommitment,
-      disclosedResourceType,
-      disclosedResourceId
-    )
-  );
-  const actionPayloadHash = disclose(
-    createIssuerAuthorizationPayloadHash(
-      disclosedAuthorizationId,
-      disclosedSubjectDidCommitment,
-      disclosedResourceType,
-      disclosedResourceId,
-      disclosedPolicyId,
-      disclosedTrustLevel,
-      disclosedEvidenceHash
-    )
-  );
-  const authorizedAction = performAuthorizedMaintainerAction(
-    authorizationBundle,
-    pad(32, "tr:issuer:create"),
-    actionPayloadHash
-  );
-
-  assert(
-    !issuerAuthorizationIds.member(disclosedAuthorizationId),
-    "Issuer authorization already exists"
-  );
-  if (currentIssuerAuthorizationIdsByScopeKey.member(scopeKey)) {
-    const currentRecord = issuerAuthorizationRecords.lookup(
-      currentIssuerAuthorizationIdsByScopeKey.lookup(scopeKey)
-    );
-    assert(
-      currentRecord.status == AuthorizationStatus.revoked
-        || currentRecord.status == AuthorizationStatus.archived,
-      "Issuer authorization scope already has a live authorization"
-    );
-  }
-
-  issuerAuthorizationIds.insert(disclosedAuthorizationId);
-  issuerAuthorizationRecords.insert(
-    disclosedAuthorizationId,
-    IssuerAuthorizationRecord {
-      authorizationId: disclosedAuthorizationId,
-      subjectDidCommitment: disclosedSubjectDidCommitment,
-      resourceType: disclosedResourceType,
-      resourceId: disclosedResourceId,
-      policyId: disclosedPolicyId,
-      trustLevel: disclosedTrustLevel,
-      status: AuthorizationStatus.active,
-      proposedAtSequence: authorizedAction.actionSequence,
-      authorizedAtSequence: authorizedAction.actionSequence,
-      activeFromSequence: authorizedAction.actionSequence,
-      suspendedAtSequence: 0,
-      revokedAtSequence: 0,
-      archivedAtSequence: 0,
-      lastStatusSequence: authorizedAction.actionSequence,
-      evidenceHash: disclosedEvidenceHash,
-      lifecycleEventHash: authorizedAction.eventHash
-    }
-  );
-  currentIssuerAuthorizationIdsByScopeKey.insert(scopeKey, disclosedAuthorizationId);
-  issuerAuthorizationCount.increment(1);
-  activeIssuerAuthorizationCount = disclose(
-    (activeIssuerAuthorizationCount + (1 as Uint<64>)) as Uint<64>
   );
   return authorizedAction.eventHash;
 }
@@ -2537,6 +3701,10 @@ export circuit activateIssuerAuthorization(
     disclosedEvidenceHash == currentRecord.evidenceHash,
     "Issuer activation evidence must match the proposed application"
   );
+  assertCurrentIssuerProposalEvidence(
+    disclosedAuthorizationId,
+    disclosedEvidenceHash
+  );
   const actionPayloadHash = disclose(
     updateIssuerAuthorizationPayloadHash(
       disclosedAuthorizationId,
@@ -2549,6 +3717,10 @@ export circuit activateIssuerAuthorization(
     pad(32, "tr:issuer:activate"),
     actionPayloadHash
   );
+  assertAuthorizedMaintainerActionExcludesDid(
+    authorizedAction,
+    currentRecord.subjectDidCommitment
+  );
 
   issuerAuthorizationRecords.insert(
     disclosedAuthorizationId,
@@ -2558,6 +3730,7 @@ export circuit activateIssuerAuthorization(
       resourceType: currentRecord.resourceType,
       resourceId: currentRecord.resourceId,
       policyId: currentRecord.policyId,
+      statusPolicyBindingCommitment: currentRecord.statusPolicyBindingCommitment,
       trustLevel: currentRecord.trustLevel,
       status: AuthorizationStatus.active,
       proposedAtSequence: currentRecord.proposedAtSequence,
@@ -2610,6 +3783,7 @@ export circuit suspendIssuerAuthorization(
       resourceType: currentRecord.resourceType,
       resourceId: currentRecord.resourceId,
       policyId: currentRecord.policyId,
+      statusPolicyBindingCommitment: currentRecord.statusPolicyBindingCommitment,
       trustLevel: currentRecord.trustLevel,
       status: AuthorizationStatus.suspended,
       proposedAtSequence: currentRecord.proposedAtSequence,
@@ -2664,6 +3838,7 @@ export circuit revokeIssuerAuthorization(
       resourceType: currentRecord.resourceType,
       resourceId: currentRecord.resourceId,
       policyId: currentRecord.policyId,
+      statusPolicyBindingCommitment: currentRecord.statusPolicyBindingCommitment,
       trustLevel: currentRecord.trustLevel,
       status: AuthorizationStatus.revoked,
       proposedAtSequence: currentRecord.proposedAtSequence,
@@ -2722,6 +3897,7 @@ export circuit archiveIssuerAuthorization(
       resourceType: currentRecord.resourceType,
       resourceId: currentRecord.resourceId,
       policyId: currentRecord.policyId,
+      statusPolicyBindingCommitment: currentRecord.statusPolicyBindingCommitment,
       trustLevel: currentRecord.trustLevel,
       status: AuthorizationStatus.archived,
       proposedAtSequence: currentRecord.proposedAtSequence,
@@ -2748,6 +3924,18 @@ export circuit getIssuerAuthorization(
 ): IssuerAuthorizationRecord {
   assert(initialized, "Trust registry is not initialized");
   return requireIssuerAuthorizationRecord(disclose(authorizationId));
+}
+
+export circuit getIssuerProposalEvidence(
+  authorizationId: Bytes<32>
+): IssuerProposalEvidenceRecord {
+  assert(initialized, "Trust registry is not initialized");
+  const disclosedAuthorizationId = disclose(authorizationId);
+  assert(
+    issuerProposalEvidenceRecords.member(disclosedAuthorizationId),
+    "Issuer proposal evidence is not registered"
+  );
+  return issuerProposalEvidenceRecords.lookup(disclosedAuthorizationId);
 }
 
 export circuit getCurrentIssuerAuthorization(
@@ -2780,21 +3968,630 @@ export circuit assertIssuerAuthorized(
   );
 }
 
+export circuit registerVcAuthorityKey(
+  authorizationBundle: MaintainerAuthorizationBundle,
+  keyIdCommitment: Bytes<32>,
+  authorityDidCommitment: Bytes<32>,
+  authorityMethodIdCommitment: Bytes<32>,
+  publicKey: JubjubPoint,
+  networkIdCommitment: Bytes<32>,
+  consumerContractAddress: Bytes<32>,
+  policyCommitment: Bytes<32>,
+  policyVersion: Uint<64>
+): Bytes<32> {
+  assert(initialized, "Trust registry is not initialized");
+  const disclosedKeyId = disclose(keyIdCommitment);
+  const disclosedDid = disclose(authorityDidCommitment);
+  const disclosedMethod = disclose(authorityMethodIdCommitment);
+  const disclosedKey = disclose(publicKey);
+  const disclosedNetwork = disclose(networkIdCommitment);
+  const disclosedConsumer = disclose(consumerContractAddress);
+  const disclosedPolicy = disclose(policyCommitment);
+  const disclosedPolicyVersion = disclose(policyVersion);
+  assertPrimeOrderMaintainerKey(disclosedKey);
+  assert(
+    disclosedPolicy == governancePolicyCommitment
+      && disclosedPolicyVersion == governancePolicyVersion,
+    "VC authority key policy must be current"
+  );
+  assert(!vcAuthorityKeyIds.member(disclosedKeyId), "VC authority key id already exists");
+  if (currentVcAuthorityKeyIdsByConsumer.member(disclosedConsumer)) {
+    const previous = vcAuthorityKeyRecords.lookup(
+      currentVcAuthorityKeyIdsByConsumer.lookup(disclosedConsumer)
+    );
+    assert(
+      previous.status == VcAuthorityKeyStatus.revoked
+        || previous.status == VcAuthorityKeyStatus.retired,
+      "VC authority consumer already has a live key"
+    );
+  }
+  const domainCommitment = disclose(createVcAuthorityDomainCommitment(
+    disclosedNetwork,
+    disclosedConsumer,
+    registryId,
+    kernel.self().bytes,
+    disclosedDid,
+    disclosedMethod
+  ));
+  const actionPayloadHash = disclose(createVcAuthorityKeyPayloadHash(
+    disclosedKeyId,
+    disclosedDid,
+    disclosedMethod,
+    disclosedKey,
+    disclosedNetwork,
+    disclosedConsumer,
+    domainCommitment,
+    disclosedPolicy,
+    disclosedPolicyVersion
+  ));
+  const authorizedAction = performAuthorizedMaintainerAction(
+    authorizationBundle,
+    pad(32, "tr:vc-authority:key:register"),
+    actionPayloadHash
+  );
+  assertAuthorizedMaintainerActionExcludesDid(authorizedAction, disclosedDid);
+  vcAuthorityKeyIds.insert(disclosedKeyId);
+  vcAuthorityKeyRecords.insert(disclosedKeyId, VcAuthorityKeyRecord {
+    keyIdCommitment: disclosedKeyId,
+    authorityDidCommitment: disclosedDid,
+    authorityMethodIdCommitment: disclosedMethod,
+    publicKey: disclosedKey,
+    networkIdCommitment: disclosedNetwork,
+    consumerContractAddress: disclosedConsumer,
+    domainCommitment: domainCommitment,
+    policyCommitment: disclosedPolicy,
+    policyVersion: disclosedPolicyVersion,
+    status: VcAuthorityKeyStatus.active,
+    registeredAtSequence: authorizedAction.actionSequence,
+    retiredAtSequence: 0,
+    lastStatusSequence: authorizedAction.actionSequence,
+    predecessorKeyIdCommitment: pad(32, ""),
+    lifecycleEventHash: authorizedAction.eventHash
+  });
+  currentVcAuthorityKeyIdsByConsumer.insert(disclosedConsumer, disclosedKeyId);
+  return authorizedAction.eventHash;
+}
+
+export circuit getVcAuthorityKey(keyIdCommitment: Bytes<32>): VcAuthorityKeyRecord {
+  assert(initialized, "Trust registry is not initialized");
+  const disclosedKeyId = disclose(keyIdCommitment);
+  assert(vcAuthorityKeyIds.member(disclosedKeyId), "VC authority key is not registered");
+  return vcAuthorityKeyRecords.lookup(disclosedKeyId);
+}
+
+export circuit suspendVcAuthorityKey(
+  authorizationBundle: MaintainerAuthorizationBundle,
+  keyIdCommitment: Bytes<32>,
+  reasonHash: Bytes<32>
+): Bytes<32> {
+  assert(initialized, "Trust registry is not initialized");
+  const disclosedKeyId = disclose(keyIdCommitment);
+  assert(vcAuthorityKeyIds.member(disclosedKeyId), "VC authority key is not registered");
+  const current = vcAuthorityKeyRecords.lookup(disclosedKeyId);
+  assert(current.status == VcAuthorityKeyStatus.active, "VC authority key must be active to suspend");
+  const payloadHash = disclose(updateVcAuthorityKeyPayloadHash(
+    disclosedKeyId,
+    current.lifecycleEventHash,
+    disclose(reasonHash)
+  ));
+  const authorizedAction = performAuthorizedMaintainerAction(
+    authorizationBundle,
+    pad(32, "tr:vc-authority:key:suspend"),
+    payloadHash
+  );
+  assertAuthorizedMaintainerActionExcludesDid(authorizedAction, current.authorityDidCommitment);
+  vcAuthorityKeyRecords.insert(disclosedKeyId, VcAuthorityKeyRecord {
+    keyIdCommitment: current.keyIdCommitment,
+    authorityDidCommitment: current.authorityDidCommitment,
+    authorityMethodIdCommitment: current.authorityMethodIdCommitment,
+    publicKey: current.publicKey,
+    networkIdCommitment: current.networkIdCommitment,
+    consumerContractAddress: current.consumerContractAddress,
+    domainCommitment: current.domainCommitment,
+    policyCommitment: current.policyCommitment,
+    policyVersion: current.policyVersion,
+    status: VcAuthorityKeyStatus.suspended,
+    registeredAtSequence: current.registeredAtSequence,
+    retiredAtSequence: current.retiredAtSequence,
+    lastStatusSequence: authorizedAction.actionSequence,
+    predecessorKeyIdCommitment: current.predecessorKeyIdCommitment,
+    lifecycleEventHash: authorizedAction.eventHash
+  });
+  return authorizedAction.eventHash;
+}
+
+export circuit revokeVcAuthorityKey(
+  authorizationBundle: MaintainerAuthorizationBundle,
+  keyIdCommitment: Bytes<32>,
+  reasonHash: Bytes<32>
+): Bytes<32> {
+  assert(initialized, "Trust registry is not initialized");
+  const disclosedKeyId = disclose(keyIdCommitment);
+  assert(vcAuthorityKeyIds.member(disclosedKeyId), "VC authority key is not registered");
+  const current = vcAuthorityKeyRecords.lookup(disclosedKeyId);
+  assert(
+    current.status == VcAuthorityKeyStatus.active
+      || current.status == VcAuthorityKeyStatus.suspended,
+    "VC authority key must be active or suspended to revoke"
+  );
+  const payloadHash = disclose(updateVcAuthorityKeyPayloadHash(
+    disclosedKeyId,
+    current.lifecycleEventHash,
+    disclose(reasonHash)
+  ));
+  const authorizedAction = performAuthorizedMaintainerAction(
+    authorizationBundle,
+    pad(32, "tr:vc-authority:key:revoke"),
+    payloadHash
+  );
+  assertAuthorizedMaintainerActionExcludesDid(authorizedAction, current.authorityDidCommitment);
+  vcAuthorityKeyRecords.insert(disclosedKeyId, VcAuthorityKeyRecord {
+    keyIdCommitment: current.keyIdCommitment,
+    authorityDidCommitment: current.authorityDidCommitment,
+    authorityMethodIdCommitment: current.authorityMethodIdCommitment,
+    publicKey: current.publicKey,
+    networkIdCommitment: current.networkIdCommitment,
+    consumerContractAddress: current.consumerContractAddress,
+    domainCommitment: current.domainCommitment,
+    policyCommitment: current.policyCommitment,
+    policyVersion: current.policyVersion,
+    status: VcAuthorityKeyStatus.revoked,
+    registeredAtSequence: current.registeredAtSequence,
+    retiredAtSequence: current.retiredAtSequence,
+    lastStatusSequence: authorizedAction.actionSequence,
+    predecessorKeyIdCommitment: current.predecessorKeyIdCommitment,
+    lifecycleEventHash: authorizedAction.eventHash
+  });
+  return authorizedAction.eventHash;
+}
+
+export circuit rotateVcAuthorityKey(
+  authorizationBundle: MaintainerAuthorizationBundle,
+  oldKeyIdCommitment: Bytes<32>,
+  newKeyIdCommitment: Bytes<32>,
+  newAuthorityMethodIdCommitment: Bytes<32>,
+  newPublicKey: JubjubPoint,
+  reasonHash: Bytes<32>
+): Bytes<32> {
+  assert(initialized, "Trust registry is not initialized");
+  const disclosedOldKeyId = disclose(oldKeyIdCommitment);
+  const disclosedNewKeyId = disclose(newKeyIdCommitment);
+  const disclosedNewMethod = disclose(newAuthorityMethodIdCommitment);
+  const disclosedNewKey = disclose(newPublicKey);
+  assertPrimeOrderMaintainerKey(disclosedNewKey);
+  assert(vcAuthorityKeyIds.member(disclosedOldKeyId), "Old VC authority key is not registered");
+  assert(!vcAuthorityKeyIds.member(disclosedNewKeyId), "New VC authority key id already exists");
+  const old = vcAuthorityKeyRecords.lookup(disclosedOldKeyId);
+  assert(old.status == VcAuthorityKeyStatus.active, "Old VC authority key must be active to rotate");
+  assert(
+    currentVcAuthorityKeyIdsByConsumer.member(old.consumerContractAddress)
+      && currentVcAuthorityKeyIdsByConsumer.lookup(old.consumerContractAddress) == disclosedOldKeyId,
+    "Old VC authority key is not current for its consumer"
+  );
+  const newDomain = disclose(createVcAuthorityDomainCommitment(
+    old.networkIdCommitment,
+    old.consumerContractAddress,
+    registryId,
+    kernel.self().bytes,
+    old.authorityDidCommitment,
+    disclosedNewMethod
+  ));
+  const newCreatePayloadHash = disclose(createVcAuthorityKeyPayloadHash(
+    disclosedNewKeyId,
+    old.authorityDidCommitment,
+    disclosedNewMethod,
+    disclosedNewKey,
+    old.networkIdCommitment,
+    old.consumerContractAddress,
+    newDomain,
+    governancePolicyCommitment,
+    governancePolicyVersion
+  ));
+  const payloadHash = disclose(rotateVcAuthorityKeyPayloadHash(
+    disclosedOldKeyId,
+    old.lifecycleEventHash,
+    newCreatePayloadHash,
+    disclose(reasonHash)
+  ));
+  const authorizedAction = performAuthorizedMaintainerAction(
+    authorizationBundle,
+    pad(32, "tr:vc-authority:key:rotate"),
+    payloadHash
+  );
+  assertAuthorizedMaintainerActionExcludesDid(authorizedAction, old.authorityDidCommitment);
+  vcAuthorityKeyRecords.insert(disclosedOldKeyId, VcAuthorityKeyRecord {
+    keyIdCommitment: old.keyIdCommitment,
+    authorityDidCommitment: old.authorityDidCommitment,
+    authorityMethodIdCommitment: old.authorityMethodIdCommitment,
+    publicKey: old.publicKey,
+    networkIdCommitment: old.networkIdCommitment,
+    consumerContractAddress: old.consumerContractAddress,
+    domainCommitment: old.domainCommitment,
+    policyCommitment: old.policyCommitment,
+    policyVersion: old.policyVersion,
+    status: VcAuthorityKeyStatus.retired,
+    registeredAtSequence: old.registeredAtSequence,
+    retiredAtSequence: authorizedAction.actionSequence,
+    lastStatusSequence: authorizedAction.actionSequence,
+    predecessorKeyIdCommitment: old.predecessorKeyIdCommitment,
+    lifecycleEventHash: authorizedAction.eventHash
+  });
+  vcAuthorityKeyIds.insert(disclosedNewKeyId);
+  vcAuthorityKeyRecords.insert(disclosedNewKeyId, VcAuthorityKeyRecord {
+    keyIdCommitment: disclosedNewKeyId,
+    authorityDidCommitment: old.authorityDidCommitment,
+    authorityMethodIdCommitment: disclosedNewMethod,
+    publicKey: disclosedNewKey,
+    networkIdCommitment: old.networkIdCommitment,
+    consumerContractAddress: old.consumerContractAddress,
+    domainCommitment: newDomain,
+    policyCommitment: governancePolicyCommitment,
+    policyVersion: governancePolicyVersion,
+    status: VcAuthorityKeyStatus.active,
+    registeredAtSequence: authorizedAction.actionSequence,
+    retiredAtSequence: 0,
+    lastStatusSequence: authorizedAction.actionSequence,
+    predecessorKeyIdCommitment: disclosedOldKeyId,
+    lifecycleEventHash: authorizedAction.eventHash
+  });
+  currentVcAuthorityKeyIdsByConsumer.insert(old.consumerContractAddress, disclosedNewKeyId);
+  return authorizedAction.eventHash;
+}
+
+export circuit getCurrentVcAuthorityKey(consumerContractAddress: Bytes<32>): VcAuthorityKeyRecord {
+  assert(initialized, "Trust registry is not initialized");
+  const disclosedConsumer = disclose(consumerContractAddress);
+  assert(
+    currentVcAuthorityKeyIdsByConsumer.member(disclosedConsumer),
+    "VC authority consumer has no current key"
+  );
+  const record = vcAuthorityKeyRecords.lookup(
+    currentVcAuthorityKeyIdsByConsumer.lookup(disclosedConsumer)
+  );
+  assert(record.status == VcAuthorityKeyStatus.active, "VC authority key is not active");
+  assert(
+    record.policyCommitment == governancePolicyCommitment
+      && record.policyVersion == governancePolicyVersion,
+    "VC authority key policy is not current"
+  );
+  return record;
+}
+
+export circuit registerEvidenceVerifierKey(
+  authorizationBundle: MaintainerAuthorizationBundle,
+  verifierAuthorizationId: Bytes<32>,
+  verifierDidCommitment: Bytes<32>,
+  keyIdCommitment: Bytes<32>,
+  publicKey: JubjubPoint,
+  suite: Bytes<32>,
+  policyCommitment: Bytes<32>,
+  policyVersion: Uint<64>
+): Bytes<32> {
+  const disclosedAuthorizationId = disclose(verifierAuthorizationId);
+  const disclosedDidCommitment = disclose(verifierDidCommitment);
+  const disclosedKeyIdCommitment = disclose(keyIdCommitment);
+  const disclosedPublicKey = disclose(publicKey);
+  assertPrimeOrderEvidenceVerifierKey(disclosedPublicKey);
+  const disclosedSuite = disclose(suite);
+  const disclosedPolicyCommitment = disclose(policyCommitment);
+  const disclosedPolicyVersion = disclose(policyVersion);
+  assert(
+    disclosedPolicyCommitment == governancePolicyCommitment
+      && disclosedPolicyVersion == governancePolicyVersion,
+    "Evidence verifier key policy must be current"
+  );
+  const scopeKey = disclose(
+    evidenceVerifierKeyScopeKey(disclosedDidCommitment, disclosedPolicyCommitment)
+  );
+  const actionPayloadHash = disclose(
+    createEvidenceVerifierKeyPayloadHash(
+      disclosedAuthorizationId,
+      disclosedDidCommitment,
+      disclosedKeyIdCommitment,
+      disclosedPublicKey,
+      disclosedSuite,
+      disclosedPolicyCommitment,
+      disclosedPolicyVersion
+    )
+  );
+  assert(
+    !evidenceVerifierKeyAuthorizationIds.member(disclosedAuthorizationId),
+    "Evidence verifier authorization id already exists"
+  );
+  assert(
+    !evidenceVerifierKeyIdsByKeyIdCommitment.member(disclosedKeyIdCommitment),
+    "Evidence verifier key id is already active or historical"
+  );
+  if (currentEvidenceVerifierKeyIdsByScopeKey.member(scopeKey)) {
+    const currentRecord = evidenceVerifierKeyRecords.lookup(
+      currentEvidenceVerifierKeyIdsByScopeKey.lookup(scopeKey)
+    );
+    assert(
+      currentRecord.status == EvidenceVerifierKeyStatus.revoked
+        || currentRecord.status == EvidenceVerifierKeyStatus.retired,
+      "Evidence verifier scope already has a live key"
+    );
+  }
+  const authorizedAction = performAuthorizedMaintainerAction(
+    authorizationBundle,
+    pad(32, "tr:evidence-verifier:register"),
+    actionPayloadHash
+  );
+  assertAuthorizedMaintainerActionExcludesDid(authorizedAction, disclosedDidCommitment);
+  evidenceVerifierKeyAuthorizationIds.insert(disclosedAuthorizationId);
+  evidenceVerifierKeyIdsByKeyIdCommitment.insert(
+    disclosedKeyIdCommitment,
+    disclosedAuthorizationId
+  );
+  evidenceVerifierKeyRecords.insert(
+    disclosedAuthorizationId,
+    EvidenceVerifierKeyRecord {
+      authorizationId: disclosedAuthorizationId,
+      verifierDidCommitment: disclosedDidCommitment,
+      keyIdCommitment: disclosedKeyIdCommitment,
+      publicKey: disclosedPublicKey,
+      suite: disclosedSuite,
+      policyCommitment: disclosedPolicyCommitment,
+      policyVersion: disclosedPolicyVersion,
+      status: EvidenceVerifierKeyStatus.active,
+      registeredAtSequence: authorizedAction.actionSequence,
+      suspendedAtSequence: 0,
+      revokedAtSequence: 0,
+      retiredAtSequence: 0,
+      lastStatusSequence: authorizedAction.actionSequence,
+      predecessorAuthorizationId: pad(32, ""),
+      lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  currentEvidenceVerifierKeyIdsByScopeKey.insert(scopeKey, disclosedAuthorizationId);
+  evidenceVerifierKeyCount.increment(1);
+  return authorizedAction.eventHash;
+}
+
+export circuit suspendEvidenceVerifierKey(
+  authorizationBundle: MaintainerAuthorizationBundle,
+  verifierAuthorizationId: Bytes<32>,
+  reasonHash: Bytes<32>
+): Bytes<32> {
+  const disclosedAuthorizationId = disclose(verifierAuthorizationId);
+  const currentRecord = requireEvidenceVerifierKeyRecord(disclosedAuthorizationId);
+  assert(
+    currentRecord.status == EvidenceVerifierKeyStatus.active,
+    "Evidence verifier key must be active to suspend"
+  );
+  const actionPayloadHash = disclose(
+    updateEvidenceVerifierKeyPayloadHash(
+      disclosedAuthorizationId,
+      currentRecord.lifecycleEventHash,
+      disclose(reasonHash)
+    )
+  );
+  const authorizedAction = performAuthorizedMaintainerAction(
+    authorizationBundle,
+    pad(32, "tr:evidence-verifier:suspend"),
+    actionPayloadHash
+  );
+  evidenceVerifierKeyRecords.insert(
+    disclosedAuthorizationId,
+    EvidenceVerifierKeyRecord {
+      authorizationId: currentRecord.authorizationId,
+      verifierDidCommitment: currentRecord.verifierDidCommitment,
+      keyIdCommitment: currentRecord.keyIdCommitment,
+      publicKey: currentRecord.publicKey,
+      suite: currentRecord.suite,
+      policyCommitment: currentRecord.policyCommitment,
+      policyVersion: currentRecord.policyVersion,
+      status: EvidenceVerifierKeyStatus.suspended,
+      registeredAtSequence: currentRecord.registeredAtSequence,
+      suspendedAtSequence: authorizedAction.actionSequence,
+      revokedAtSequence: currentRecord.revokedAtSequence,
+      retiredAtSequence: currentRecord.retiredAtSequence,
+      lastStatusSequence: authorizedAction.actionSequence,
+      predecessorAuthorizationId: currentRecord.predecessorAuthorizationId,
+      lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  return authorizedAction.eventHash;
+}
+
+export circuit revokeEvidenceVerifierKey(
+  authorizationBundle: MaintainerAuthorizationBundle,
+  verifierAuthorizationId: Bytes<32>,
+  reasonHash: Bytes<32>
+): Bytes<32> {
+  const disclosedAuthorizationId = disclose(verifierAuthorizationId);
+  const currentRecord = requireEvidenceVerifierKeyRecord(disclosedAuthorizationId);
+  assert(
+    currentRecord.status == EvidenceVerifierKeyStatus.active
+      || currentRecord.status == EvidenceVerifierKeyStatus.suspended,
+    "Evidence verifier key must be active or suspended to revoke"
+  );
+  const actionPayloadHash = disclose(
+    updateEvidenceVerifierKeyPayloadHash(
+      disclosedAuthorizationId,
+      currentRecord.lifecycleEventHash,
+      disclose(reasonHash)
+    )
+  );
+  const authorizedAction = performAuthorizedMaintainerAction(
+    authorizationBundle,
+    pad(32, "tr:evidence-verifier:revoke"),
+    actionPayloadHash
+  );
+  evidenceVerifierKeyRecords.insert(
+    disclosedAuthorizationId,
+    EvidenceVerifierKeyRecord {
+      authorizationId: currentRecord.authorizationId,
+      verifierDidCommitment: currentRecord.verifierDidCommitment,
+      keyIdCommitment: currentRecord.keyIdCommitment,
+      publicKey: currentRecord.publicKey,
+      suite: currentRecord.suite,
+      policyCommitment: currentRecord.policyCommitment,
+      policyVersion: currentRecord.policyVersion,
+      status: EvidenceVerifierKeyStatus.revoked,
+      registeredAtSequence: currentRecord.registeredAtSequence,
+      suspendedAtSequence: currentRecord.suspendedAtSequence,
+      revokedAtSequence: authorizedAction.actionSequence,
+      retiredAtSequence: currentRecord.retiredAtSequence,
+      lastStatusSequence: authorizedAction.actionSequence,
+      predecessorAuthorizationId: currentRecord.predecessorAuthorizationId,
+      lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  return authorizedAction.eventHash;
+}
+
+export circuit rotateEvidenceVerifierKey(
+  authorizationBundle: MaintainerAuthorizationBundle,
+  oldAuthorizationId: Bytes<32>,
+  newAuthorizationId: Bytes<32>,
+  newKeyIdCommitment: Bytes<32>,
+  newPublicKey: JubjubPoint,
+  reasonHash: Bytes<32>
+): Bytes<32> {
+  const disclosedOldAuthorizationId = disclose(oldAuthorizationId);
+  const disclosedNewAuthorizationId = disclose(newAuthorizationId);
+  const disclosedNewKeyIdCommitment = disclose(newKeyIdCommitment);
+  const disclosedNewPublicKey = disclose(newPublicKey);
+  assertPrimeOrderEvidenceVerifierKey(disclosedNewPublicKey);
+  const oldRecord = requireEvidenceVerifierKeyRecord(disclosedOldAuthorizationId);
+  assert(
+    oldRecord.status == EvidenceVerifierKeyStatus.active,
+    "Evidence verifier key must be active to rotate"
+  );
+  const oldScopeKey = disclose(
+    evidenceVerifierKeyScopeKey(oldRecord.verifierDidCommitment, oldRecord.policyCommitment)
+  );
+  assert(
+    currentEvidenceVerifierKeyIdsByScopeKey.member(oldScopeKey)
+      && currentEvidenceVerifierKeyIdsByScopeKey.lookup(oldScopeKey) == disclosedOldAuthorizationId,
+    "Old evidence verifier key is not current for its scope"
+  );
+  const newScopeKey = disclose(
+    evidenceVerifierKeyScopeKey(oldRecord.verifierDidCommitment, governancePolicyCommitment)
+  );
+  assert(
+    !evidenceVerifierKeyAuthorizationIds.member(disclosedNewAuthorizationId),
+    "Evidence verifier authorization id already exists"
+  );
+  assert(
+    !evidenceVerifierKeyIdsByKeyIdCommitment.member(disclosedNewKeyIdCommitment),
+    "Evidence verifier key id is already active or historical"
+  );
+  if (currentEvidenceVerifierKeyIdsByScopeKey.member(newScopeKey)) {
+    const newScopeRecord = evidenceVerifierKeyRecords.lookup(
+      currentEvidenceVerifierKeyIdsByScopeKey.lookup(newScopeKey)
+    );
+    assert(
+      newScopeRecord.authorizationId == disclosedOldAuthorizationId
+        || newScopeRecord.status == EvidenceVerifierKeyStatus.revoked
+        || newScopeRecord.status == EvidenceVerifierKeyStatus.retired,
+      "New evidence verifier scope already has a live key"
+    );
+  }
+  const newCreatePayloadHash = disclose(
+    createEvidenceVerifierKeyPayloadHash(
+      disclosedNewAuthorizationId,
+      oldRecord.verifierDidCommitment,
+      disclosedNewKeyIdCommitment,
+      disclosedNewPublicKey,
+      oldRecord.suite,
+      governancePolicyCommitment,
+      governancePolicyVersion
+    )
+  );
+  const actionPayloadHash = disclose(
+    rotateEvidenceVerifierKeyPayloadHash(
+      disclosedOldAuthorizationId,
+      oldRecord.lifecycleEventHash,
+      newCreatePayloadHash,
+      disclose(reasonHash)
+    )
+  );
+  const authorizedAction = performAuthorizedMaintainerAction(
+    authorizationBundle,
+    pad(32, "tr:evidence-verifier:rotate"),
+    actionPayloadHash
+  );
+  assertAuthorizedMaintainerActionExcludesDid(
+    authorizedAction,
+    oldRecord.verifierDidCommitment
+  );
+  evidenceVerifierKeyRecords.insert(
+    disclosedOldAuthorizationId,
+    EvidenceVerifierKeyRecord {
+      authorizationId: oldRecord.authorizationId,
+      verifierDidCommitment: oldRecord.verifierDidCommitment,
+      keyIdCommitment: oldRecord.keyIdCommitment,
+      publicKey: oldRecord.publicKey,
+      suite: oldRecord.suite,
+      policyCommitment: oldRecord.policyCommitment,
+      policyVersion: oldRecord.policyVersion,
+      status: EvidenceVerifierKeyStatus.retired,
+      registeredAtSequence: oldRecord.registeredAtSequence,
+      suspendedAtSequence: oldRecord.suspendedAtSequence,
+      revokedAtSequence: oldRecord.revokedAtSequence,
+      retiredAtSequence: authorizedAction.actionSequence,
+      lastStatusSequence: authorizedAction.actionSequence,
+      predecessorAuthorizationId: oldRecord.predecessorAuthorizationId,
+      lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  evidenceVerifierKeyAuthorizationIds.insert(disclosedNewAuthorizationId);
+  evidenceVerifierKeyIdsByKeyIdCommitment.insert(
+    disclosedNewKeyIdCommitment,
+    disclosedNewAuthorizationId
+  );
+  evidenceVerifierKeyRecords.insert(
+    disclosedNewAuthorizationId,
+    EvidenceVerifierKeyRecord {
+      authorizationId: disclosedNewAuthorizationId,
+      verifierDidCommitment: oldRecord.verifierDidCommitment,
+      keyIdCommitment: disclosedNewKeyIdCommitment,
+      publicKey: disclosedNewPublicKey,
+      suite: oldRecord.suite,
+      policyCommitment: governancePolicyCommitment,
+      policyVersion: governancePolicyVersion,
+      status: EvidenceVerifierKeyStatus.active,
+      registeredAtSequence: authorizedAction.actionSequence,
+      suspendedAtSequence: 0,
+      revokedAtSequence: 0,
+      retiredAtSequence: 0,
+      lastStatusSequence: authorizedAction.actionSequence,
+      predecessorAuthorizationId: disclosedOldAuthorizationId,
+      lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  currentEvidenceVerifierKeyIdsByScopeKey.insert(newScopeKey, disclosedNewAuthorizationId);
+  evidenceVerifierKeyCount.increment(1);
+  return authorizedAction.eventHash;
+}
+
+export circuit getEvidenceVerifierKey(
+  verifierAuthorizationId: Bytes<32>
+): EvidenceVerifierKeyRecord {
+  assert(initialized, "Trust registry is not initialized");
+  return requireEvidenceVerifierKeyRecord(disclose(verifierAuthorizationId));
+}
+
 export circuit proposeVerifierAuthorization(
   authorizationBundle: MaintainerAuthorizationBundle,
   authorizationId: Bytes<32>,
   subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
+  requestResourceId: Bytes<32>,
   allowedAttributeSetCommitment: Bytes<32>,
   allowedPredicateSetCommitment: Bytes<32>,
   disclosureLevelCommitment: Bytes<32>,
   policyId: Bytes<32>,
   trustLevel: Bytes<32>,
-  evidenceHash: Bytes<32>
+  evidenceHash: Bytes<32>,
+  evidenceVerifierAuthorizationId: Bytes<32>,
+  evidenceVerifierKeyIdCommitment: Bytes<32>,
+  evidenceSignature: JubjubSignature
 ): Bytes<32> {
   const disclosedAuthorizationId = disclose(authorizationId);
   const disclosedSubjectDidCommitment = disclose(subjectDidCommitment);
-  const disclosedRequestProfileId = disclose(requestProfileId);
+  const disclosedRequestResourceId = disclose(requestResourceId);
   const disclosedAllowedAttributeSetCommitment = disclose(
     allowedAttributeSetCommitment
   );
@@ -2807,20 +4604,34 @@ export circuit proposeVerifierAuthorization(
   const disclosedPolicyId = disclose(policyId);
   const disclosedTrustLevel = disclose(trustLevel);
   const disclosedEvidenceHash = disclose(evidenceHash);
+  const disclosedEvidenceVerifierAuthorizationId = disclose(evidenceVerifierAuthorizationId);
+  const disclosedEvidenceVerifierKeyIdCommitment = disclose(evidenceVerifierKeyIdCommitment);
+  const disclosedEvidenceSignature = disclose(evidenceSignature);
+  const evidenceVerifierKey = requireActiveEvidenceVerifierKey(
+    disclosedEvidenceVerifierAuthorizationId
+  );
+  assert(
+    evidenceVerifierKey.keyIdCommitment == disclosedEvidenceVerifierKeyIdCommitment,
+    "Evidence verifier key id does not match the registered key"
+  );
+  assert(
+    evidenceVerifierKey.suite == pad(32, "jubjub-schnorr"),
+    "Evidence verifier suite is not supported"
+  );
   const scopeKey = disclose(
     verifierAuthorizationScopeKey(
       disclosedSubjectDidCommitment,
-      disclosedRequestProfileId,
+      disclosedRequestResourceId,
       disclosedAllowedAttributeSetCommitment,
       disclosedAllowedPredicateSetCommitment,
       disclosedDisclosureLevelCommitment
     )
   );
-  const actionPayloadHash = disclose(
+  const baseVerifierPayloadHash = disclose(
     createVerifierAuthorizationPayloadHash(
       disclosedAuthorizationId,
       disclosedSubjectDidCommitment,
-      disclosedRequestProfileId,
+      disclosedRequestResourceId,
       disclosedAllowedAttributeSetCommitment,
       disclosedAllowedPredicateSetCommitment,
       disclosedDisclosureLevelCommitment,
@@ -2828,6 +4639,29 @@ export circuit proposeVerifierAuthorization(
       disclosedTrustLevel,
       disclosedEvidenceHash
     )
+  );
+  const actionPayloadHash = disclose(
+    verifierEvidenceBoundProposalPayloadHash(
+      baseVerifierPayloadHash,
+      disclosedEvidenceVerifierAuthorizationId,
+      disclosedEvidenceVerifierKeyIdCommitment,
+      evidenceVerifierKey.policyCommitment,
+      evidenceVerifierKey.policyVersion
+    )
+  );
+  Schnorr_schnorrVerifyDigest(
+    verifierProposalEvidenceSignatureDigest(
+      registryId,
+      deploymentNetworkIdCommitment,
+      kernel.self().bytes,
+      disclosedEvidenceVerifierKeyIdCommitment,
+      actionPayloadHash
+    ),
+    Schnorr_SchnorrSignature {
+      announcement: disclosedEvidenceSignature.announcement,
+      response: disclosedEvidenceSignature.response
+    },
+    evidenceVerifierKey.publicKey
   );
   const authorizedAction = performAuthorizedMaintainerAction(
     authorizationBundle,
@@ -2838,6 +4672,10 @@ export circuit proposeVerifierAuthorization(
   assert(
     !verifierAuthorizationIds.member(disclosedAuthorizationId),
     "Verifier authorization already exists"
+  );
+  assert(
+    !verifierProposalEvidenceRecords.member(disclosedAuthorizationId),
+    "Verifier proposal evidence already exists"
   );
   if (currentVerifierAuthorizationIdsByScopeKey.member(scopeKey)) {
     const currentRecord = verifierAuthorizationRecords.lookup(
@@ -2856,7 +4694,7 @@ export circuit proposeVerifierAuthorization(
     VerifierAuthorizationRecord {
       authorizationId: disclosedAuthorizationId,
       subjectDidCommitment: disclosedSubjectDidCommitment,
-      requestProfileId: disclosedRequestProfileId,
+      requestResourceId: disclosedRequestResourceId,
       allowedAttributeSetCommitment: disclosedAllowedAttributeSetCommitment,
       allowedPredicateSetCommitment: disclosedAllowedPredicateSetCommitment,
       disclosureLevelCommitment: disclosedDisclosureLevelCommitment,
@@ -2872,6 +4710,21 @@ export circuit proposeVerifierAuthorization(
       lastStatusSequence: authorizedAction.actionSequence,
       evidenceHash: disclosedEvidenceHash,
       lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  verifierProposalEvidenceRecords.insert(
+    disclosedAuthorizationId,
+    VerifierProposalEvidenceRecord {
+      evidenceVerifierAuthorizationId: disclosedEvidenceVerifierAuthorizationId,
+      evidenceVerifierDidCommitment: evidenceVerifierKey.verifierDidCommitment,
+      evidenceVerifierKeyIdCommitment: evidenceVerifierKey.keyIdCommitment,
+      evidenceVerifierSuite: evidenceVerifierKey.suite,
+      activePolicyCommitment: evidenceVerifierKey.policyCommitment,
+      activePolicyVersion: evidenceVerifierKey.policyVersion,
+      evidenceCommitment: disclosedEvidenceHash,
+      verifierSignatureAnnouncement: disclosedEvidenceSignature.announcement,
+      verifierSignatureResponse: disclosedEvidenceSignature.response,
+      proposalGovernanceEventHash: authorizedAction.eventHash
     }
   );
   currentVerifierAuthorizationIdsByScopeKey.insert(
@@ -2898,6 +4751,10 @@ export circuit authorizeVerifierAuthorization(
     disclosedEvidenceHash == currentRecord.evidenceHash,
     "Verifier authorization evidence must match the proposed application"
   );
+  assertCurrentVerifierProposalEvidence(
+    disclosedAuthorizationId,
+    disclosedEvidenceHash
+  );
   const actionPayloadHash = disclose(
     updateVerifierAuthorizationPayloadHash(
       disclosedAuthorizationId,
@@ -2910,13 +4767,14 @@ export circuit authorizeVerifierAuthorization(
     pad(32, "tr:verifier:authorize"),
     actionPayloadHash
   );
+  assertAuthorizedMaintainerActionExcludesDid(authorizedAction, currentRecord.subjectDidCommitment);
 
   verifierAuthorizationRecords.insert(
     disclosedAuthorizationId,
     VerifierAuthorizationRecord {
       authorizationId: currentRecord.authorizationId,
       subjectDidCommitment: currentRecord.subjectDidCommitment,
-      requestProfileId: currentRecord.requestProfileId,
+      requestResourceId: currentRecord.requestResourceId,
       allowedAttributeSetCommitment: currentRecord.allowedAttributeSetCommitment,
       allowedPredicateSetCommitment:
         currentRecord.allowedPredicateSetCommitment,
@@ -2938,111 +4796,6 @@ export circuit authorizeVerifierAuthorization(
   return authorizedAction.eventHash;
 }
 
-export circuit createVerifierAuthorization(
-  authorizationBundle: MaintainerAuthorizationBundle,
-  authorizationId: Bytes<32>,
-  subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
-  allowedAttributeSetCommitment: Bytes<32>,
-  allowedPredicateSetCommitment: Bytes<32>,
-  disclosureLevelCommitment: Bytes<32>,
-  policyId: Bytes<32>,
-  trustLevel: Bytes<32>,
-  evidenceHash: Bytes<32>
-): Bytes<32> {
-  const disclosedAuthorizationId = disclose(authorizationId);
-  const disclosedSubjectDidCommitment = disclose(subjectDidCommitment);
-  const disclosedRequestProfileId = disclose(requestProfileId);
-  const disclosedAllowedAttributeSetCommitment = disclose(
-    allowedAttributeSetCommitment
-  );
-  const disclosedAllowedPredicateSetCommitment = disclose(
-    allowedPredicateSetCommitment
-  );
-  const disclosedDisclosureLevelCommitment = disclose(
-    disclosureLevelCommitment
-  );
-  const disclosedPolicyId = disclose(policyId);
-  const disclosedTrustLevel = disclose(trustLevel);
-  const disclosedEvidenceHash = disclose(evidenceHash);
-  const scopeKey = disclose(
-    verifierAuthorizationScopeKey(
-      disclosedSubjectDidCommitment,
-      disclosedRequestProfileId,
-      disclosedAllowedAttributeSetCommitment,
-      disclosedAllowedPredicateSetCommitment,
-      disclosedDisclosureLevelCommitment
-    )
-  );
-  const actionPayloadHash = disclose(
-    createVerifierAuthorizationPayloadHash(
-      disclosedAuthorizationId,
-      disclosedSubjectDidCommitment,
-      disclosedRequestProfileId,
-      disclosedAllowedAttributeSetCommitment,
-      disclosedAllowedPredicateSetCommitment,
-      disclosedDisclosureLevelCommitment,
-      disclosedPolicyId,
-      disclosedTrustLevel,
-      disclosedEvidenceHash
-    )
-  );
-  const authorizedAction = performAuthorizedMaintainerAction(
-    authorizationBundle,
-    pad(32, "tr:verifier:create"),
-    actionPayloadHash
-  );
-
-  assert(
-    !verifierAuthorizationIds.member(disclosedAuthorizationId),
-    "Verifier authorization already exists"
-  );
-  if (currentVerifierAuthorizationIdsByScopeKey.member(scopeKey)) {
-    const currentRecord = verifierAuthorizationRecords.lookup(
-      currentVerifierAuthorizationIdsByScopeKey.lookup(scopeKey)
-    );
-    assert(
-      currentRecord.status == AuthorizationStatus.revoked
-        || currentRecord.status == AuthorizationStatus.archived,
-      "Verifier authorization scope already has a live authorization"
-    );
-  }
-
-  verifierAuthorizationIds.insert(disclosedAuthorizationId);
-  verifierAuthorizationRecords.insert(
-    disclosedAuthorizationId,
-    VerifierAuthorizationRecord {
-      authorizationId: disclosedAuthorizationId,
-      subjectDidCommitment: disclosedSubjectDidCommitment,
-      requestProfileId: disclosedRequestProfileId,
-      allowedAttributeSetCommitment: disclosedAllowedAttributeSetCommitment,
-      allowedPredicateSetCommitment: disclosedAllowedPredicateSetCommitment,
-      disclosureLevelCommitment: disclosedDisclosureLevelCommitment,
-      policyId: disclosedPolicyId,
-      trustLevel: disclosedTrustLevel,
-      status: AuthorizationStatus.active,
-      proposedAtSequence: authorizedAction.actionSequence,
-      authorizedAtSequence: authorizedAction.actionSequence,
-      activeFromSequence: authorizedAction.actionSequence,
-      suspendedAtSequence: 0,
-      revokedAtSequence: 0,
-      archivedAtSequence: 0,
-      lastStatusSequence: authorizedAction.actionSequence,
-      evidenceHash: disclosedEvidenceHash,
-      lifecycleEventHash: authorizedAction.eventHash
-    }
-  );
-  currentVerifierAuthorizationIdsByScopeKey.insert(
-    scopeKey,
-    disclosedAuthorizationId
-  );
-  verifierAuthorizationCount.increment(1);
-  activeVerifierAuthorizationCount = disclose(
-    (activeVerifierAuthorizationCount + (1 as Uint<64>)) as Uint<64>
-  );
-  return authorizedAction.eventHash;
-}
-
 export circuit activateVerifierAuthorization(
   authorizationBundle: MaintainerAuthorizationBundle,
   authorizationId: Bytes<32>,
@@ -3059,6 +4812,10 @@ export circuit activateVerifierAuthorization(
     disclosedEvidenceHash == currentRecord.evidenceHash,
     "Verifier activation evidence must match the proposed application"
   );
+  assertCurrentVerifierProposalEvidence(
+    disclosedAuthorizationId,
+    disclosedEvidenceHash
+  );
   const actionPayloadHash = disclose(
     updateVerifierAuthorizationPayloadHash(
       disclosedAuthorizationId,
@@ -3071,13 +4828,14 @@ export circuit activateVerifierAuthorization(
     pad(32, "tr:verifier:activate"),
     actionPayloadHash
   );
+  assertAuthorizedMaintainerActionExcludesDid(authorizedAction, currentRecord.subjectDidCommitment);
 
   verifierAuthorizationRecords.insert(
     disclosedAuthorizationId,
     VerifierAuthorizationRecord {
       authorizationId: currentRecord.authorizationId,
       subjectDidCommitment: currentRecord.subjectDidCommitment,
-      requestProfileId: currentRecord.requestProfileId,
+      requestResourceId: currentRecord.requestResourceId,
       allowedAttributeSetCommitment: currentRecord.allowedAttributeSetCommitment,
       allowedPredicateSetCommitment:
         currentRecord.allowedPredicateSetCommitment,
@@ -3132,7 +4890,7 @@ export circuit suspendVerifierAuthorization(
     VerifierAuthorizationRecord {
       authorizationId: currentRecord.authorizationId,
       subjectDidCommitment: currentRecord.subjectDidCommitment,
-      requestProfileId: currentRecord.requestProfileId,
+      requestResourceId: currentRecord.requestResourceId,
       allowedAttributeSetCommitment: currentRecord.allowedAttributeSetCommitment,
       allowedPredicateSetCommitment:
         currentRecord.allowedPredicateSetCommitment,
@@ -3189,7 +4947,7 @@ export circuit revokeVerifierAuthorization(
     VerifierAuthorizationRecord {
       authorizationId: currentRecord.authorizationId,
       subjectDidCommitment: currentRecord.subjectDidCommitment,
-      requestProfileId: currentRecord.requestProfileId,
+      requestResourceId: currentRecord.requestResourceId,
       allowedAttributeSetCommitment: currentRecord.allowedAttributeSetCommitment,
       allowedPredicateSetCommitment:
         currentRecord.allowedPredicateSetCommitment,
@@ -3250,7 +5008,7 @@ export circuit archiveVerifierAuthorization(
     VerifierAuthorizationRecord {
       authorizationId: currentRecord.authorizationId,
       subjectDidCommitment: currentRecord.subjectDidCommitment,
-      requestProfileId: currentRecord.requestProfileId,
+      requestResourceId: currentRecord.requestResourceId,
       allowedAttributeSetCommitment: currentRecord.allowedAttributeSetCommitment,
       allowedPredicateSetCommitment:
         currentRecord.allowedPredicateSetCommitment,
@@ -3284,9 +5042,21 @@ export circuit getVerifierAuthorization(
   return requireVerifierAuthorizationRecord(disclose(authorizationId));
 }
 
+export circuit getVerifierProposalEvidence(
+  authorizationId: Bytes<32>
+): VerifierProposalEvidenceRecord {
+  assert(initialized, "Trust registry is not initialized");
+  const disclosedAuthorizationId = disclose(authorizationId);
+  assert(
+    verifierProposalEvidenceRecords.member(disclosedAuthorizationId),
+    "Verifier proposal evidence is not registered"
+  );
+  return verifierProposalEvidenceRecords.lookup(disclosedAuthorizationId);
+}
+
 export circuit getCurrentVerifierAuthorization(
   subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
+  requestResourceId: Bytes<32>,
   allowedAttributeSetCommitment: Bytes<32>,
   allowedPredicateSetCommitment: Bytes<32>,
   disclosureLevelCommitment: Bytes<32>
@@ -3294,7 +5064,7 @@ export circuit getCurrentVerifierAuthorization(
   assert(initialized, "Trust registry is not initialized");
   return currentVerifierAuthorizationRecord(
     subjectDidCommitment,
-    requestProfileId,
+    requestResourceId,
     allowedAttributeSetCommitment,
     allowedPredicateSetCommitment,
     disclosureLevelCommitment
@@ -3303,7 +5073,7 @@ export circuit getCurrentVerifierAuthorization(
 
 export circuit assertVerifierAuthorized(
   subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
+  requestResourceId: Bytes<32>,
   allowedAttributeSetCommitment: Bytes<32>,
   allowedPredicateSetCommitment: Bytes<32>,
   disclosureLevelCommitment: Bytes<32>
@@ -3311,7 +5081,7 @@ export circuit assertVerifierAuthorized(
   assert(initialized, "Trust registry is not initialized");
   const currentRecord = currentVerifierAuthorizationRecord(
     subjectDidCommitment,
-    requestProfileId,
+    requestResourceId,
     allowedAttributeSetCommitment,
     allowedPredicateSetCommitment,
     disclosureLevelCommitment
@@ -3326,17 +5096,20 @@ export circuit proposeAuditorAuthorization(
   authorizationBundle: MaintainerAuthorizationBundle,
   authorizationId: Bytes<32>,
   subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
+  requestResourceId: Bytes<32>,
   allowedAttributeSetCommitment: Bytes<32>,
   allowedPredicateSetCommitment: Bytes<32>,
   disclosureLevelCommitment: Bytes<32>,
   policyId: Bytes<32>,
   trustLevel: Bytes<32>,
-  evidenceHash: Bytes<32>
+  evidenceHash: Bytes<32>,
+  evidenceVerifierAuthorizationId: Bytes<32>,
+  evidenceVerifierKeyIdCommitment: Bytes<32>,
+  evidenceSignature: JubjubSignature
 ): Bytes<32> {
   const disclosedAuthorizationId = disclose(authorizationId);
   const disclosedSubjectDidCommitment = disclose(subjectDidCommitment);
-  const disclosedRequestProfileId = disclose(requestProfileId);
+  const disclosedRequestResourceId = disclose(requestResourceId);
   const disclosedAllowedAttributeSetCommitment = disclose(
     allowedAttributeSetCommitment
   );
@@ -3349,20 +5122,34 @@ export circuit proposeAuditorAuthorization(
   const disclosedPolicyId = disclose(policyId);
   const disclosedTrustLevel = disclose(trustLevel);
   const disclosedEvidenceHash = disclose(evidenceHash);
+  const disclosedEvidenceVerifierAuthorizationId = disclose(evidenceVerifierAuthorizationId);
+  const disclosedEvidenceVerifierKeyIdCommitment = disclose(evidenceVerifierKeyIdCommitment);
+  const disclosedEvidenceSignature = disclose(evidenceSignature);
+  const evidenceVerifierKey = requireActiveEvidenceVerifierKey(
+    disclosedEvidenceVerifierAuthorizationId
+  );
+  assert(
+    evidenceVerifierKey.keyIdCommitment == disclosedEvidenceVerifierKeyIdCommitment,
+    "Evidence verifier key id does not match the registered key"
+  );
+  assert(
+    evidenceVerifierKey.suite == pad(32, "jubjub-schnorr"),
+    "Evidence verifier suite is not supported"
+  );
   const scopeKey = disclose(
     auditorAuthorizationScopeKey(
       disclosedSubjectDidCommitment,
-      disclosedRequestProfileId,
+      disclosedRequestResourceId,
       disclosedAllowedAttributeSetCommitment,
       disclosedAllowedPredicateSetCommitment,
       disclosedDisclosureLevelCommitment
     )
   );
-  const actionPayloadHash = disclose(
+  const baseAuditorPayloadHash = disclose(
     createAuditorAuthorizationPayloadHash(
       disclosedAuthorizationId,
       disclosedSubjectDidCommitment,
-      disclosedRequestProfileId,
+      disclosedRequestResourceId,
       disclosedAllowedAttributeSetCommitment,
       disclosedAllowedPredicateSetCommitment,
       disclosedDisclosureLevelCommitment,
@@ -3370,6 +5157,29 @@ export circuit proposeAuditorAuthorization(
       disclosedTrustLevel,
       disclosedEvidenceHash
     )
+  );
+  const actionPayloadHash = disclose(
+    auditorEvidenceBoundProposalPayloadHash(
+      baseAuditorPayloadHash,
+      disclosedEvidenceVerifierAuthorizationId,
+      disclosedEvidenceVerifierKeyIdCommitment,
+      evidenceVerifierKey.policyCommitment,
+      evidenceVerifierKey.policyVersion
+    )
+  );
+  Schnorr_schnorrVerifyDigest(
+    auditorProposalEvidenceSignatureDigest(
+      registryId,
+      deploymentNetworkIdCommitment,
+      kernel.self().bytes,
+      disclosedEvidenceVerifierKeyIdCommitment,
+      actionPayloadHash
+    ),
+    Schnorr_SchnorrSignature {
+      announcement: disclosedEvidenceSignature.announcement,
+      response: disclosedEvidenceSignature.response
+    },
+    evidenceVerifierKey.publicKey
   );
   const authorizedAction = performAuthorizedMaintainerAction(
     authorizationBundle,
@@ -3380,6 +5190,10 @@ export circuit proposeAuditorAuthorization(
   assert(
     !auditorAuthorizationIds.member(disclosedAuthorizationId),
     "Auditor authorization already exists"
+  );
+  assert(
+    !auditorProposalEvidenceRecords.member(disclosedAuthorizationId),
+    "Auditor proposal evidence already exists"
   );
   if (currentAuditorAuthorizationIdsByScopeKey.member(scopeKey)) {
     const currentRecord = auditorAuthorizationRecords.lookup(
@@ -3398,7 +5212,7 @@ export circuit proposeAuditorAuthorization(
     AuditorAuthorizationRecord {
       authorizationId: disclosedAuthorizationId,
       subjectDidCommitment: disclosedSubjectDidCommitment,
-      requestProfileId: disclosedRequestProfileId,
+      requestResourceId: disclosedRequestResourceId,
       allowedAttributeSetCommitment: disclosedAllowedAttributeSetCommitment,
       allowedPredicateSetCommitment: disclosedAllowedPredicateSetCommitment,
       disclosureLevelCommitment: disclosedDisclosureLevelCommitment,
@@ -3414,6 +5228,21 @@ export circuit proposeAuditorAuthorization(
       lastStatusSequence: authorizedAction.actionSequence,
       evidenceHash: disclosedEvidenceHash,
       lifecycleEventHash: authorizedAction.eventHash
+    }
+  );
+  auditorProposalEvidenceRecords.insert(
+    disclosedAuthorizationId,
+    AuditorProposalEvidenceRecord {
+      evidenceVerifierAuthorizationId: disclosedEvidenceVerifierAuthorizationId,
+      evidenceVerifierDidCommitment: evidenceVerifierKey.verifierDidCommitment,
+      evidenceVerifierKeyIdCommitment: evidenceVerifierKey.keyIdCommitment,
+      evidenceVerifierSuite: evidenceVerifierKey.suite,
+      activePolicyCommitment: evidenceVerifierKey.policyCommitment,
+      activePolicyVersion: evidenceVerifierKey.policyVersion,
+      evidenceCommitment: disclosedEvidenceHash,
+      verifierSignatureAnnouncement: disclosedEvidenceSignature.announcement,
+      verifierSignatureResponse: disclosedEvidenceSignature.response,
+      proposalGovernanceEventHash: authorizedAction.eventHash
     }
   );
   currentAuditorAuthorizationIdsByScopeKey.insert(
@@ -3440,6 +5269,10 @@ export circuit authorizeAuditorAuthorization(
     disclosedEvidenceHash == currentRecord.evidenceHash,
     "Auditor authorization evidence must match the proposed application"
   );
+  assertCurrentAuditorProposalEvidence(
+    disclosedAuthorizationId,
+    disclosedEvidenceHash
+  );
   const actionPayloadHash = disclose(
     updateAuditorAuthorizationPayloadHash(
       disclosedAuthorizationId,
@@ -3452,13 +5285,14 @@ export circuit authorizeAuditorAuthorization(
     pad(32, "tr:auditor:authorize"),
     actionPayloadHash
   );
+  assertAuthorizedMaintainerActionExcludesDid(authorizedAction, currentRecord.subjectDidCommitment);
 
   auditorAuthorizationRecords.insert(
     disclosedAuthorizationId,
     AuditorAuthorizationRecord {
       authorizationId: currentRecord.authorizationId,
       subjectDidCommitment: currentRecord.subjectDidCommitment,
-      requestProfileId: currentRecord.requestProfileId,
+      requestResourceId: currentRecord.requestResourceId,
       allowedAttributeSetCommitment: currentRecord.allowedAttributeSetCommitment,
       allowedPredicateSetCommitment:
         currentRecord.allowedPredicateSetCommitment,
@@ -3480,111 +5314,6 @@ export circuit authorizeAuditorAuthorization(
   return authorizedAction.eventHash;
 }
 
-export circuit createAuditorAuthorization(
-  authorizationBundle: MaintainerAuthorizationBundle,
-  authorizationId: Bytes<32>,
-  subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
-  allowedAttributeSetCommitment: Bytes<32>,
-  allowedPredicateSetCommitment: Bytes<32>,
-  disclosureLevelCommitment: Bytes<32>,
-  policyId: Bytes<32>,
-  trustLevel: Bytes<32>,
-  evidenceHash: Bytes<32>
-): Bytes<32> {
-  const disclosedAuthorizationId = disclose(authorizationId);
-  const disclosedSubjectDidCommitment = disclose(subjectDidCommitment);
-  const disclosedRequestProfileId = disclose(requestProfileId);
-  const disclosedAllowedAttributeSetCommitment = disclose(
-    allowedAttributeSetCommitment
-  );
-  const disclosedAllowedPredicateSetCommitment = disclose(
-    allowedPredicateSetCommitment
-  );
-  const disclosedDisclosureLevelCommitment = disclose(
-    disclosureLevelCommitment
-  );
-  const disclosedPolicyId = disclose(policyId);
-  const disclosedTrustLevel = disclose(trustLevel);
-  const disclosedEvidenceHash = disclose(evidenceHash);
-  const scopeKey = disclose(
-    auditorAuthorizationScopeKey(
-      disclosedSubjectDidCommitment,
-      disclosedRequestProfileId,
-      disclosedAllowedAttributeSetCommitment,
-      disclosedAllowedPredicateSetCommitment,
-      disclosedDisclosureLevelCommitment
-    )
-  );
-  const actionPayloadHash = disclose(
-    createAuditorAuthorizationPayloadHash(
-      disclosedAuthorizationId,
-      disclosedSubjectDidCommitment,
-      disclosedRequestProfileId,
-      disclosedAllowedAttributeSetCommitment,
-      disclosedAllowedPredicateSetCommitment,
-      disclosedDisclosureLevelCommitment,
-      disclosedPolicyId,
-      disclosedTrustLevel,
-      disclosedEvidenceHash
-    )
-  );
-  const authorizedAction = performAuthorizedMaintainerAction(
-    authorizationBundle,
-    pad(32, "tr:auditor:create"),
-    actionPayloadHash
-  );
-
-  assert(
-    !auditorAuthorizationIds.member(disclosedAuthorizationId),
-    "Auditor authorization already exists"
-  );
-  if (currentAuditorAuthorizationIdsByScopeKey.member(scopeKey)) {
-    const currentRecord = auditorAuthorizationRecords.lookup(
-      currentAuditorAuthorizationIdsByScopeKey.lookup(scopeKey)
-    );
-    assert(
-      currentRecord.status == AuthorizationStatus.revoked
-        || currentRecord.status == AuthorizationStatus.archived,
-      "Auditor authorization scope already has a live authorization"
-    );
-  }
-
-  auditorAuthorizationIds.insert(disclosedAuthorizationId);
-  auditorAuthorizationRecords.insert(
-    disclosedAuthorizationId,
-    AuditorAuthorizationRecord {
-      authorizationId: disclosedAuthorizationId,
-      subjectDidCommitment: disclosedSubjectDidCommitment,
-      requestProfileId: disclosedRequestProfileId,
-      allowedAttributeSetCommitment: disclosedAllowedAttributeSetCommitment,
-      allowedPredicateSetCommitment: disclosedAllowedPredicateSetCommitment,
-      disclosureLevelCommitment: disclosedDisclosureLevelCommitment,
-      policyId: disclosedPolicyId,
-      trustLevel: disclosedTrustLevel,
-      status: AuthorizationStatus.active,
-      proposedAtSequence: authorizedAction.actionSequence,
-      authorizedAtSequence: authorizedAction.actionSequence,
-      activeFromSequence: authorizedAction.actionSequence,
-      suspendedAtSequence: 0,
-      revokedAtSequence: 0,
-      archivedAtSequence: 0,
-      lastStatusSequence: authorizedAction.actionSequence,
-      evidenceHash: disclosedEvidenceHash,
-      lifecycleEventHash: authorizedAction.eventHash
-    }
-  );
-  currentAuditorAuthorizationIdsByScopeKey.insert(
-    scopeKey,
-    disclosedAuthorizationId
-  );
-  auditorAuthorizationCount.increment(1);
-  activeAuditorAuthorizationCount = disclose(
-    (activeAuditorAuthorizationCount + (1 as Uint<64>)) as Uint<64>
-  );
-  return authorizedAction.eventHash;
-}
-
 export circuit activateAuditorAuthorization(
   authorizationBundle: MaintainerAuthorizationBundle,
   authorizationId: Bytes<32>,
@@ -3601,6 +5330,10 @@ export circuit activateAuditorAuthorization(
     disclosedEvidenceHash == currentRecord.evidenceHash,
     "Auditor activation evidence must match the proposed application"
   );
+  assertCurrentAuditorProposalEvidence(
+    disclosedAuthorizationId,
+    disclosedEvidenceHash
+  );
   const actionPayloadHash = disclose(
     updateAuditorAuthorizationPayloadHash(
       disclosedAuthorizationId,
@@ -3613,13 +5346,14 @@ export circuit activateAuditorAuthorization(
     pad(32, "tr:auditor:activate"),
     actionPayloadHash
   );
+  assertAuthorizedMaintainerActionExcludesDid(authorizedAction, currentRecord.subjectDidCommitment);
 
   auditorAuthorizationRecords.insert(
     disclosedAuthorizationId,
     AuditorAuthorizationRecord {
       authorizationId: currentRecord.authorizationId,
       subjectDidCommitment: currentRecord.subjectDidCommitment,
-      requestProfileId: currentRecord.requestProfileId,
+      requestResourceId: currentRecord.requestResourceId,
       allowedAttributeSetCommitment: currentRecord.allowedAttributeSetCommitment,
       allowedPredicateSetCommitment:
         currentRecord.allowedPredicateSetCommitment,
@@ -3674,7 +5408,7 @@ export circuit suspendAuditorAuthorization(
     AuditorAuthorizationRecord {
       authorizationId: currentRecord.authorizationId,
       subjectDidCommitment: currentRecord.subjectDidCommitment,
-      requestProfileId: currentRecord.requestProfileId,
+      requestResourceId: currentRecord.requestResourceId,
       allowedAttributeSetCommitment: currentRecord.allowedAttributeSetCommitment,
       allowedPredicateSetCommitment:
         currentRecord.allowedPredicateSetCommitment,
@@ -3731,7 +5465,7 @@ export circuit revokeAuditorAuthorization(
     AuditorAuthorizationRecord {
       authorizationId: currentRecord.authorizationId,
       subjectDidCommitment: currentRecord.subjectDidCommitment,
-      requestProfileId: currentRecord.requestProfileId,
+      requestResourceId: currentRecord.requestResourceId,
       allowedAttributeSetCommitment: currentRecord.allowedAttributeSetCommitment,
       allowedPredicateSetCommitment:
         currentRecord.allowedPredicateSetCommitment,
@@ -3792,7 +5526,7 @@ export circuit archiveAuditorAuthorization(
     AuditorAuthorizationRecord {
       authorizationId: currentRecord.authorizationId,
       subjectDidCommitment: currentRecord.subjectDidCommitment,
-      requestProfileId: currentRecord.requestProfileId,
+      requestResourceId: currentRecord.requestResourceId,
       allowedAttributeSetCommitment: currentRecord.allowedAttributeSetCommitment,
       allowedPredicateSetCommitment:
         currentRecord.allowedPredicateSetCommitment,
@@ -3826,9 +5560,21 @@ export circuit getAuditorAuthorization(
   return requireAuditorAuthorizationRecord(disclose(authorizationId));
 }
 
+export circuit getAuditorProposalEvidence(
+  authorizationId: Bytes<32>
+): AuditorProposalEvidenceRecord {
+  assert(initialized, "Trust registry is not initialized");
+  const disclosedAuthorizationId = disclose(authorizationId);
+  assert(
+    auditorProposalEvidenceRecords.member(disclosedAuthorizationId),
+    "Auditor proposal evidence is not registered"
+  );
+  return auditorProposalEvidenceRecords.lookup(disclosedAuthorizationId);
+}
+
 export circuit getCurrentAuditorAuthorization(
   subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
+  requestResourceId: Bytes<32>,
   allowedAttributeSetCommitment: Bytes<32>,
   allowedPredicateSetCommitment: Bytes<32>,
   disclosureLevelCommitment: Bytes<32>
@@ -3836,7 +5582,7 @@ export circuit getCurrentAuditorAuthorization(
   assert(initialized, "Trust registry is not initialized");
   return currentAuditorAuthorizationRecord(
     subjectDidCommitment,
-    requestProfileId,
+    requestResourceId,
     allowedAttributeSetCommitment,
     allowedPredicateSetCommitment,
     disclosureLevelCommitment
@@ -3845,7 +5591,7 @@ export circuit getCurrentAuditorAuthorization(
 
 export circuit assertAuditorAuthorized(
   subjectDidCommitment: Bytes<32>,
-  requestProfileId: Bytes<32>,
+  requestResourceId: Bytes<32>,
   allowedAttributeSetCommitment: Bytes<32>,
   allowedPredicateSetCommitment: Bytes<32>,
   disclosureLevelCommitment: Bytes<32>
@@ -3853,7 +5599,7 @@ export circuit assertAuditorAuthorized(
   assert(initialized, "Trust registry is not initialized");
   const currentRecord = currentAuditorAuthorizationRecord(
     subjectDidCommitment,
-    requestProfileId,
+    requestResourceId,
     allowedAttributeSetCommitment,
     allowedPredicateSetCommitment,
     disclosureLevelCommitment
@@ -3861,6 +5607,35 @@ export circuit assertAuditorAuthorized(
   assert(
     currentRecord.status == AuthorizationStatus.active,
     "Auditor authorization is not active"
+  );
+}
+
+circuit assertCurrentRecognitionProposalEvidence(
+  recognitionId: Bytes<32>,
+  evidenceHash: Bytes<32>
+): [] {
+  assert(
+    recognitionProposalEvidenceRecords.member(recognitionId),
+    "Recognition proposal evidence is not registered"
+  );
+  const proposal = recognitionProposalEvidenceRecords.lookup(recognitionId);
+  assert(
+    proposal.evidenceCommitment == evidenceHash,
+    "Recognition proposal evidence commitment has changed"
+  );
+  assert(
+    proposal.activePolicyCommitment == governancePolicyCommitment
+      && proposal.activePolicyVersion == governancePolicyVersion,
+    "Recognition proposal evidence policy is not current"
+  );
+  const key = requireActiveEvidenceVerifierKey(
+    proposal.evidenceVerifierAuthorizationId
+  );
+  assert(
+    key.verifierDidCommitment == proposal.evidenceVerifierDidCommitment
+      && key.keyIdCommitment == proposal.evidenceVerifierKeyIdCommitment
+      && key.suite == proposal.evidenceVerifierSuite,
+    "Recognition proposal evidence verifier key has changed"
   );
 }
 
@@ -3873,7 +5648,10 @@ export circuit proposeRecognition(
   scopeResourceId: Bytes<32>,
   policyId: Bytes<32>,
   trustLevel: Bytes<32>,
-  evidenceHash: Bytes<32>
+  evidenceHash: Bytes<32>,
+  evidenceVerifierAuthorizationId: Bytes<32>,
+  evidenceVerifierKeyIdCommitment: Bytes<32>,
+  evidenceSignature: JubjubSignature
 ): Bytes<32> {
   const disclosedRecognitionId = disclose(recognitionId);
   const disclosedRecognizedAuthorityDidCommitment = disclose(
@@ -3885,6 +5663,20 @@ export circuit proposeRecognition(
   const disclosedPolicyId = disclose(policyId);
   const disclosedTrustLevel = disclose(trustLevel);
   const disclosedEvidenceHash = disclose(evidenceHash);
+  const disclosedEvidenceVerifierAuthorizationId = disclose(evidenceVerifierAuthorizationId);
+  const disclosedEvidenceVerifierKeyIdCommitment = disclose(evidenceVerifierKeyIdCommitment);
+  const disclosedEvidenceSignature = disclose(evidenceSignature);
+  const evidenceVerifierKey = requireActiveEvidenceVerifierKey(
+    disclosedEvidenceVerifierAuthorizationId
+  );
+  assert(
+    evidenceVerifierKey.keyIdCommitment == disclosedEvidenceVerifierKeyIdCommitment,
+    "Evidence verifier key id does not match the registered key"
+  );
+  assert(
+    evidenceVerifierKey.suite == pad(32, "jubjub-schnorr"),
+    "Evidence verifier suite is not supported"
+  );
   const scopeKey = disclose(
     recognitionScopeKey(
       disclosedRecognizedAuthorityDidCommitment,
@@ -3893,7 +5685,7 @@ export circuit proposeRecognition(
       disclosedScopeResourceId
     )
   );
-  const actionPayloadHash = disclose(
+  const baseRecognitionPayloadHash = disclose(
     createRecognitionPayloadHash(
       disclosedRecognitionId,
       disclosedRecognizedAuthorityDidCommitment,
@@ -3904,6 +5696,29 @@ export circuit proposeRecognition(
       disclosedTrustLevel,
       disclosedEvidenceHash
     )
+  );
+  const actionPayloadHash = disclose(
+    recognitionEvidenceBoundProposalPayloadHash(
+      baseRecognitionPayloadHash,
+      disclosedEvidenceVerifierAuthorizationId,
+      disclosedEvidenceVerifierKeyIdCommitment,
+      evidenceVerifierKey.policyCommitment,
+      evidenceVerifierKey.policyVersion
+    )
+  );
+  Schnorr_schnorrVerifyDigest(
+    recognitionProposalEvidenceSignatureDigest(
+      registryId,
+      deploymentNetworkIdCommitment,
+      kernel.self().bytes,
+      disclosedEvidenceVerifierKeyIdCommitment,
+      actionPayloadHash
+    ),
+    Schnorr_SchnorrSignature {
+      announcement: disclosedEvidenceSignature.announcement,
+      response: disclosedEvidenceSignature.response
+    },
+    evidenceVerifierKey.publicKey
   );
   const authorizedAction = performAuthorizedMaintainerAction(
     authorizationBundle,
@@ -3950,6 +5765,21 @@ export circuit proposeRecognition(
       lifecycleEventHash: authorizedAction.eventHash
     }
   );
+  recognitionProposalEvidenceRecords.insert(
+    disclosedRecognitionId,
+    RecognitionProposalEvidenceRecord {
+      evidenceVerifierAuthorizationId: disclosedEvidenceVerifierAuthorizationId,
+      evidenceVerifierDidCommitment: evidenceVerifierKey.verifierDidCommitment,
+      evidenceVerifierKeyIdCommitment: evidenceVerifierKey.keyIdCommitment,
+      evidenceVerifierSuite: evidenceVerifierKey.suite,
+      activePolicyCommitment: evidenceVerifierKey.policyCommitment,
+      activePolicyVersion: evidenceVerifierKey.policyVersion,
+      evidenceCommitment: disclosedEvidenceHash,
+      verifierSignatureAnnouncement: disclosedEvidenceSignature.announcement,
+      verifierSignatureResponse: disclosedEvidenceSignature.response,
+      proposalGovernanceEventHash: authorizedAction.eventHash
+    }
+  );
   currentRecognitionIdsByScopeKey.insert(scopeKey, disclosedRecognitionId);
   recognitionCount.increment(1);
   return authorizedAction.eventHash;
@@ -3967,6 +5797,11 @@ export circuit authorizeRecognition(
     currentRecord.status == AuthorizationStatus.proposed,
     "Recognition must be proposed to authorize"
   );
+  assert(
+    disclosedEvidenceHash == currentRecord.evidenceHash,
+    "Recognition evidence must match the proposed application"
+  );
+  assertCurrentRecognitionProposalEvidence(disclosedRecognitionId, disclosedEvidenceHash);
   const actionPayloadHash = disclose(
     updateRecognitionPayloadHash(
       disclosedRecognitionId,
@@ -3978,6 +5813,10 @@ export circuit authorizeRecognition(
     authorizationBundle,
     pad(32, "tr:recognition:authorize"),
     actionPayloadHash
+  );
+  assertAuthorizedMaintainerActionExcludesDid(
+    authorizedAction,
+    currentRecord.recognizedAuthorityDidCommitment
   );
 
   recognitionRecords.insert(
@@ -4006,100 +5845,6 @@ export circuit authorizeRecognition(
   return authorizedAction.eventHash;
 }
 
-export circuit createRecognition(
-  authorizationBundle: MaintainerAuthorizationBundle,
-  recognitionId: Bytes<32>,
-  recognizedAuthorityDidCommitment: Bytes<32>,
-  recognizedRegistryId: Bytes<32>,
-  scopeResourceType: Bytes<32>,
-  scopeResourceId: Bytes<32>,
-  policyId: Bytes<32>,
-  trustLevel: Bytes<32>,
-  evidenceHash: Bytes<32>
-): Bytes<32> {
-  const disclosedRecognitionId = disclose(recognitionId);
-  const disclosedRecognizedAuthorityDidCommitment = disclose(
-    recognizedAuthorityDidCommitment
-  );
-  const disclosedRecognizedRegistryId = disclose(recognizedRegistryId);
-  const disclosedScopeResourceType = disclose(scopeResourceType);
-  const disclosedScopeResourceId = disclose(scopeResourceId);
-  const disclosedPolicyId = disclose(policyId);
-  const disclosedTrustLevel = disclose(trustLevel);
-  const disclosedEvidenceHash = disclose(evidenceHash);
-  const scopeKey = disclose(
-    recognitionScopeKey(
-      disclosedRecognizedAuthorityDidCommitment,
-      disclosedRecognizedRegistryId,
-      disclosedScopeResourceType,
-      disclosedScopeResourceId
-    )
-  );
-  const actionPayloadHash = disclose(
-    createRecognitionPayloadHash(
-      disclosedRecognitionId,
-      disclosedRecognizedAuthorityDidCommitment,
-      disclosedRecognizedRegistryId,
-      disclosedScopeResourceType,
-      disclosedScopeResourceId,
-      disclosedPolicyId,
-      disclosedTrustLevel,
-      disclosedEvidenceHash
-    )
-  );
-  const authorizedAction = performAuthorizedMaintainerAction(
-    authorizationBundle,
-    pad(32, "tr:recognition:create"),
-    actionPayloadHash
-  );
-
-  assert(
-    !recognitionIds.member(disclosedRecognitionId),
-    "Recognition already exists"
-  );
-  if (currentRecognitionIdsByScopeKey.member(scopeKey)) {
-    const currentRecord = recognitionRecords.lookup(
-      currentRecognitionIdsByScopeKey.lookup(scopeKey)
-    );
-    assert(
-      currentRecord.status == AuthorizationStatus.revoked
-        || currentRecord.status == AuthorizationStatus.archived,
-      "Recognition scope already has a live recognition"
-    );
-  }
-
-  recognitionIds.insert(disclosedRecognitionId);
-  recognitionRecords.insert(
-    disclosedRecognitionId,
-    RecognitionRecord {
-      recognitionId: disclosedRecognitionId,
-      recognizedAuthorityDidCommitment:
-        disclosedRecognizedAuthorityDidCommitment,
-      recognizedRegistryId: disclosedRecognizedRegistryId,
-      scopeResourceType: disclosedScopeResourceType,
-      scopeResourceId: disclosedScopeResourceId,
-      policyId: disclosedPolicyId,
-      trustLevel: disclosedTrustLevel,
-      status: AuthorizationStatus.active,
-      proposedAtSequence: authorizedAction.actionSequence,
-      authorizedAtSequence: authorizedAction.actionSequence,
-      effectiveFromSequence: authorizedAction.actionSequence,
-      suspendedAtSequence: 0,
-      revokedAtSequence: 0,
-      archivedAtSequence: 0,
-      lastStatusSequence: authorizedAction.actionSequence,
-      evidenceHash: disclosedEvidenceHash,
-      lifecycleEventHash: authorizedAction.eventHash
-    }
-  );
-  currentRecognitionIdsByScopeKey.insert(scopeKey, disclosedRecognitionId);
-  recognitionCount.increment(1);
-  activeRecognitionCount = disclose(
-    (activeRecognitionCount + (1 as Uint<64>)) as Uint<64>
-  );
-  return authorizedAction.eventHash;
-}
-
 export circuit activateRecognition(
   authorizationBundle: MaintainerAuthorizationBundle,
   recognitionId: Bytes<32>,
@@ -4112,6 +5857,11 @@ export circuit activateRecognition(
     currentRecord.status == AuthorizationStatus.authorized,
     "Recognition must be authorized to activate"
   );
+  assert(
+    disclosedEvidenceHash == currentRecord.evidenceHash,
+    "Recognition activation evidence must match the proposed application"
+  );
+  assertCurrentRecognitionProposalEvidence(disclosedRecognitionId, disclosedEvidenceHash);
   const actionPayloadHash = disclose(
     updateRecognitionPayloadHash(
       disclosedRecognitionId,
@@ -4123,6 +5873,10 @@ export circuit activateRecognition(
     authorizationBundle,
     pad(32, "tr:recognition:activate"),
     actionPayloadHash
+  );
+  assertAuthorizedMaintainerActionExcludesDid(
+    authorizedAction,
+    currentRecord.recognizedAuthorityDidCommitment
   );
 
   recognitionRecords.insert(
@@ -4333,6 +6087,18 @@ export circuit getRecognition(
   return requireRecognitionRecord(disclose(recognitionId));
 }
 
+export circuit getRecognitionProposalEvidence(
+  recognitionId: Bytes<32>
+): RecognitionProposalEvidenceRecord {
+  assert(initialized, "Trust registry is not initialized");
+  const disclosedRecognitionId = disclose(recognitionId);
+  assert(
+    recognitionProposalEvidenceRecords.member(disclosedRecognitionId),
+    "Recognition proposal evidence is not registered"
+  );
+  return recognitionProposalEvidenceRecords.lookup(disclosedRecognitionId);
+}
+
 export circuit getCurrentRecognition(
   recognizedAuthorityDidCommitment: Bytes<32>,
   recognizedRegistryId: Bytes<32>,
@@ -4402,6 +6168,27 @@ export circuit publishEpochCommitment(
     !epochCommitmentIds.member(disclosedEpochId),
     "Epoch commitment already exists"
   );
+  assert(
+    governancePolicyVersionsByCommitment.member(disclosedPolicyRoot),
+    "Epoch policy root must be a committed governance policy"
+  );
+  assert(
+    disclosedValidFromSequence <= authorizedAction.actionSequence,
+    "Epoch cannot start after its publication action"
+  );
+  const epochPolicyVersion = governancePolicyVersionsByCommitment.lookup(disclosedPolicyRoot);
+  assert(
+    disclosedValidFromSequence >= governancePolicyEffectiveFromByVersion.lookup(epochPolicyVersion),
+    "Epoch policy root is not effective at this sequence"
+  );
+  if (epochPolicyVersion < governancePolicyVersion) {
+    assert(
+      disclosedValidFromSequence < governancePolicyEffectiveFromByVersion.lookup(
+        (epochPolicyVersion + (1 as Uint<64>)) as Uint<64>
+      ),
+      "Epoch policy root is superseded at this sequence"
+    );
+  }
 
   epochCommitmentIds.insert(disclosedEpochId);
   epochCommitmentRecords.insert(
@@ -4411,6 +6198,7 @@ export circuit publishEpochCommitment(
       stateRoot: disclosedStateRoot,
       eventRoot: disclosedEventRoot,
       policyRoot: disclosedPolicyRoot,
+      publicationPolicyCommitment: governancePolicyCommitment,
       validFromSequence: disclosedValidFromSequence,
       validUntilSequence: disclosedValidUntilSequence,
       publishedAtSequence: authorizedAction.actionSequence,

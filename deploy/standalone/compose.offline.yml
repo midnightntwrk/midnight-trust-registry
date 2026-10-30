@@ -1,0 +1,12 @@
+# Apply only after verified archive load on a clean local host.
+# The operator must set exact tags returned by load-standalone-install-images.mjs.
+services:
+  node:
+    image: ${TR_NODE_IMAGE:?loaded local node image required}
+    pull_policy: never
+  indexer:
+    image: ${TR_INDEXER_IMAGE:?loaded local indexer image required}
+    pull_policy: never
+  proof-server:
+    image: ${TR_PROOF_SERVER_IMAGE:?loaded local proof image required}
+    pull_policy: never

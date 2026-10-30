@@ -48,6 +48,16 @@ export type MidnightDidLedgerFixtureOptions = {
   serviceEndpoint?: string;
   serviceType?: string;
   verificationMethodId?: string;
+  schnorrJubjubPublicKey?: { x: bigint; y: bigint };
+  schnorrJubjubAssertionMethods?: ReadonlyArray<{
+    id: string;
+    publicKey: { x: bigint; y: bigint };
+  }>;
+  schnorrJubjubAuthenticationMethods?: ReadonlyArray<{
+    id: string;
+    publicKey: { x: bigint; y: bigint };
+  }>;
+  capabilityInvocation?: boolean;
   version?: bigint;
   created?: bigint;
   updated?: bigint;
@@ -66,6 +76,21 @@ export const createMidnightDidLedgerFixture = (
 
   const contractAddress = parsedDid.id;
   const verificationMethodId = options.verificationMethodId ?? "auth-1";
+  const nativeKey = options.schnorrJubjubPublicKey;
+  const implicitMethods = nativeKey === undefined ? [] : [{ id: verificationMethodId, publicKey: nativeKey }];
+  const authenticationMethods = options.schnorrJubjubAuthenticationMethods
+    ?? (options.schnorrJubjubAssertionMethods === undefined ? implicitMethods : []);
+  const assertionMethods = options.schnorrJubjubAssertionMethods
+    ?? (options.schnorrJubjubAuthenticationMethods === undefined ? implicitMethods : []);
+  const nativeMethodsById = new Map<string, { x: bigint; y: bigint }>();
+  for (const { id, publicKey } of [...authenticationMethods, ...assertionMethods]) {
+    const previous = nativeMethodsById.get(id);
+    if (previous !== undefined && (previous.x !== publicKey.x || previous.y !== publicKey.y)) {
+      throw new Error("DID fixture method id cannot refer to different public keys");
+    }
+    nativeMethodsById.set(id, publicKey);
+  }
+  const nativeMethods = [...nativeMethodsById].map(([id, publicKey]) => ({ id, publicKey }));
   const serviceEndpoint =
     options.serviceEndpoint ?? `https://resolver.example/${contractAddress}`;
   const version = options.version ?? 1n;
@@ -81,7 +106,7 @@ export const createMidnightDidLedgerFixture = (
     deactivated: false,
     operationCount: 1n,
     alsoKnownAs: makeIterable<string>([]),
-    verificationMethods: makeIterablePairs<string, unknown>([
+    verificationMethods: makeIterablePairs<string, unknown>(nativeMethods.length === 0 ? [
       [
         verificationMethodId,
         {
@@ -94,12 +119,18 @@ export const createMidnightDidLedgerFixture = (
           },
         },
       ],
-    ]),
-    schnorrJubjubVerificationMethods: makeIterablePairs<string, unknown>([]),
-    authenticationRelation: makeIterable<string>([verificationMethodId]),
-    assertionMethodRelation: makeIterable<string>([verificationMethodId]),
+    ] : []),
+    schnorrJubjubVerificationMethods: makeIterablePairs<string, unknown>(
+      nativeMethods.map(({ id, publicKey }) => [id, { id, publicKey }]),
+    ),
+    authenticationRelation: makeIterable<string>(
+      nativeMethods.length === 0 ? [verificationMethodId] : authenticationMethods.map(({ id }) => id),
+    ),
+    assertionMethodRelation: makeIterable<string>(
+      nativeMethods.length === 0 ? [verificationMethodId] : assertionMethods.map(({ id }) => id),
+    ),
     keyAgreementRelation: makeIterable<string>([]),
-    capabilityInvocationRelation: makeIterable<string>([]),
+    capabilityInvocationRelation: makeIterable<string>(options.capabilityInvocation ? [verificationMethodId] : []),
     capabilityDelegationRelation: makeIterable<string>([]),
     services: makeIterablePairs<string, unknown>([
       [

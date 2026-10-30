@@ -6,21 +6,33 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   applyWorkspaceOperation,
+  collectDistinctEpochs,
+  createDemoSnapshot,
   createOperatorWorkspace,
   resolveWorkspaceOperationRecord,
   writeSnapshotToFile,
   writeWorkspaceToFile,
+  TrustRegistryOperatorSnapshotSchema,
   type TrustRegistryAuthorizationSnapshotEntry,
   type TrustRegistryRecognitionSnapshotEntry,
   type TrustRegistryOperatorWorkspace,
 } from "@midnight-ntwrk/trust-registry-cli";
+import { requestGovernedResourceId } from "@midnight-ntwrk/trust-registry-domain";
+import {
+  LocalTrustRegistryIntegrationHarness,
+  bytes32Commitment,
+  createAuditorAuthorizationScopeFixture,
+  createAuditorScenarioFixture,
+} from "@midnight-ntwrk/trust-registry-integration";
 
 import {
   createInMemorySource,
   createSnapshotFileSource,
+  createTrqpSourceFromStateSource,
   createWorkspaceFileSource,
 } from "../source.js";
 import { createTrustRegistryApiServer } from "../server.js";
+import { computeOperatorWorkspaceCommitment } from "../workspace-commitment.js";
 
 type ServerHarness = {
   close: () => Promise<void>;
@@ -71,8 +83,12 @@ const asRecognitionRecord = (
 
 const startServer = async (
   source: Parameters<typeof createTrustRegistryApiServer>[0]["source"],
+  clock?: () => string,
+  corsPolicy?: "public" | "none",
 ): Promise<ServerHarness> => {
-  const server = createTrustRegistryApiServer({ source });
+  const server = createTrustRegistryApiServer({ source, allowUnsafeDemoMutations: true,
+    ...(clock === undefined ? {} : { clock }),
+    ...(corsPolicy === undefined ? {} : { corsPolicy }) });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => resolve());
@@ -108,6 +124,221 @@ describe("trust registry api", () => {
 
   afterEach(async () => {
     await rm(tempDir, { force: true, recursive: true });
+  });
+
+  it("omits wildcard CORS when the private-listener policy is selected", async () => {
+    const server = await startServer(createInMemorySource(createDemoSnapshot()), undefined, "none");
+    try {
+      for (const method of ["GET", "OPTIONS"]) {
+        const response = await fetch(`${server.url}/health`, {
+          method, headers: { Origin: "https://unapproved.example" },
+        });
+        expect(response.headers.get("access-control-allow-origin")).toBeNull();
+      }
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("serves a non-cacheable mutation context only for a mutable workspace", async () => {
+    const workspacePath = join(tempDir, "mutation-context.json");
+    const workspace = createOperatorWorkspace({ label: "mutation-context" });
+    await writeWorkspaceToFile(workspacePath, workspace);
+    const evaluatedAt = "2026-10-15T05:00:00.000Z";
+    const server = await startServer(createWorkspaceFileSource(workspacePath), () => evaluatedAt);
+    try {
+      const first = await fetch(`${server.url}/v1/registry/mutation-context`);
+      expect(first.status).toBe(200);
+      expect(first.headers.get("cache-control")).toBe("no-store");
+      const firstContext = await first.json();
+      expect(firstContext).toEqual({
+        registryId: workspace.snapshot.registry.registryId,
+        expectedEpochId: workspace.snapshot.currentEpoch.epochId,
+        expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(workspace),
+        evaluatedAt,
+      });
+      expect(JSON.stringify(firstContext)).not.toContain("operations");
+
+      const next = applyWorkspaceOperation(workspace, { operation: "submit", target: "issuer", label: "context-issuer" });
+      await writeWorkspaceToFile(workspacePath, next);
+      const second = await fetch(`${server.url}/v1/registry/mutation-context`);
+      expect(second.status).toBe(200);
+      expect(await second.json()).toEqual({
+        registryId: next.snapshot.registry.registryId,
+        expectedEpochId: next.snapshot.currentEpoch.epochId,
+        expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(next),
+        evaluatedAt,
+      });
+      expect(computeOperatorWorkspaceCommitment(next)).not.toBe(firstContext.expectedWorkspaceCommitment);
+    } finally {
+      await server.close();
+    }
+
+    const snapshotServer = await startServer(createInMemorySource(workspace.snapshot));
+    try {
+      const unavailable = await fetch(`${snapshotServer.url}/v1/registry/mutation-context`);
+      expect(unavailable.status).toBe(409);
+      expect((await unavailable.json()).type).toMatch(/workspace-source-required/u);
+    } finally {
+      await snapshotServer.close();
+    }
+  });
+
+  it("keeps auditor current and historical lookups role-disjoint and scope-bound", async () => {
+    const snapshot = createDemoSnapshot({ label: "auditor-query" });
+    const [active, archived] = snapshot.auditorEntries;
+    if (active === undefined || archived === undefined) {
+      throw new Error("expected active and archived auditor fixtures");
+    }
+    const server = await startServer(createInMemorySource(snapshot));
+    const lookup = (role: string, resourceId: string, at?: string) => fetch(
+      `${server.url}/v1/authorizations/${at === undefined ? "resolve" : "evaluate"}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          role,
+          subjectDid: active.authorization.subjectDid,
+          resourceId,
+          ...(at === undefined ? {} : { at }),
+        }),
+      },
+    );
+    try {
+      const summary = await (await fetch(`${server.url}/v1/registry/summary`)).json();
+      expect(summary.auditorCounts.active).toBe(1);
+      expect(summary.auditorCounts.archived).toBe(1);
+
+      const activeList = await fetch(`${server.url}/v1/authorizations/auditor?status=active`);
+      expect(activeList.status).toBe(200);
+      expect((await activeList.json()).entries[0].authorization.authorizationId).toBe(
+        active.authorization.authorizationId,
+      );
+      const archivedList = await fetch(`${server.url}/v1/authorizations/auditor?status=archived`);
+      expect(archivedList.status).toBe(200);
+      expect((await archivedList.json()).entries[0].authorization.authorizationId).toBe(
+        archived.authorization.authorizationId,
+      );
+
+      const resolved = await lookup("auditor", active.authorization.resourceId);
+      expect(resolved.status).toBe(200);
+      expect((await resolved.json()).authorization.authorizationId).toBe(active.authorization.authorizationId);
+      const current = await lookup("auditor", active.authorization.resourceId, active.authorization.activeFrom);
+      expect(current.status).toBe(200);
+      expect((await current.json()).trustedAtTime).toBe(true);
+      const historical = await fetch(`${server.url}/v1/authorizations/auditor/${archived.authorization.authorizationId}/evidence`);
+      expect(historical.status).toBe(200);
+      expect((await historical.json()).authorization.status).toBe("archived");
+
+      expect((await lookup("verifier", active.authorization.resourceId)).status).toBe(404);
+      expect((await lookup("auditor", "request-profile:compliance")).status).toBe(400);
+    } finally {
+      await server.close();
+    }
+
+  });
+
+  it("returns a conflict rather than an internal error for duplicate auditor submissions", async () => {
+    const workspacePath = join(tempDir, "auditor-workspace.json");
+    await writeWorkspaceToFile(workspacePath, createOperatorWorkspace({ label: "auditor-duplicate" }));
+    const server = await startServer(createWorkspaceFileSource(workspacePath));
+    const submit = () => fetch(`${server.url}/v1/applications`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ target: "auditor", label: "compliance" }),
+    });
+    try {
+      expect((await submit()).status).toBe(201);
+      const duplicate = await submit();
+      expect(duplicate.status).toBe(409);
+      expect((await duplicate.json()).type).toMatch(/duplicate-application$/);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("does not collapse same-profile auditor grants with different purposes", async () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("auditor-scope-query");
+    const first = createAuditorScenarioFixture("same-profile");
+    const secondAuthorizationId = "auth:auditor:same-profile:other-purpose:v1";
+    const secondPurpose = "financial-compliance";
+    const secondResourceId = requestGovernedResourceId({
+      ...createAuditorAuthorizationScopeFixture(first),
+      purpose: secondPurpose,
+    });
+    const second = {
+      ...first,
+      authorizationId: secondAuthorizationId,
+      authorizationIdCommitment: bytes32Commitment(secondAuthorizationId),
+      purpose: secondPurpose,
+      scopeResourceId: secondResourceId,
+      requestResourceIdCommitment: bytes32Commitment(secondResourceId),
+    };
+    expect(second.subjectDid).toBe(first.subjectDid);
+    expect(second.requestProfileId).toBe(first.requestProfileId);
+    expect(second.scopeResourceId).not.toBe(first.scopeResourceId);
+
+    harness.authorizeAuditor(first);
+    harness.authorizeAuditor(second);
+    harness.suspendAuditor(second);
+    harness.revokeAuditor(second);
+    harness.archiveAuditor(second);
+    const activeEvidence = harness.evaluateCurrentAuditorDecision(first);
+    const historicalEvidence = harness.buildAuditorHistoricalEvidence(second);
+    const currentEpoch = harness.publishRegistryEpoch("auditor-query-current");
+    const epochs = collectDistinctEpochs([activeEvidence, historicalEvidence]);
+    if (!epochs.some((epoch) => epoch.epochId === currentEpoch.epochId)) {
+      epochs.push(currentEpoch);
+    }
+    const snapshot = TrustRegistryOperatorSnapshotSchema.parse({
+      snapshotVersion: "1",
+      generatedAt: currentEpoch.validUntil,
+      registryLabel: "auditor-scope-query",
+      registry: harness.registryRecord,
+      policy: harness.policyRecord,
+      currentEpoch,
+      epochs,
+      issuerEntries: [],
+      verifierEntries: [],
+      auditorEntries: [
+        { label: "first", authorization: activeEvidence.authorization, evidence: activeEvidence },
+        { label: "second", authorization: historicalEvidence.authorization, evidence: historicalEvidence },
+      ],
+      recognitionEntries: [],
+      evidenceArchive: [],
+      notes: [],
+    });
+    const server = await startServer(createInMemorySource(snapshot));
+    const lookup = (resourceId: string, at?: string) => fetch(
+      `${server.url}/v1/authorizations/${at === undefined ? "resolve" : "evaluate"}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          role: "auditor",
+          subjectDid: first.subjectDid,
+          resourceId,
+          ...(at === undefined ? {} : { at }),
+        }),
+      },
+    );
+    try {
+      const firstResult = await lookup(first.scopeResourceId);
+      const secondResult = await lookup(second.scopeResourceId);
+      expect(firstResult.status).toBe(200);
+      expect(secondResult.status).toBe(200);
+      expect((await firstResult.json()).authorization.authorizationId).toBe(first.authorizationId);
+      expect((await secondResult.json()).authorization.authorizationId).toBe(second.authorizationId);
+      expect((await lookup(first.requestProfileId)).status).toBe(400);
+      const historical = await lookup(second.scopeResourceId, historicalEvidence.authorization?.activeFrom);
+      expect(historical.status).toBe(200);
+      expect((await historical.json()).trustedAtTime).toBe(true);
+      const noCurrentTrust = await lookup(second.scopeResourceId, historicalEvidence.authorization?.archivedAt);
+      expect(noCurrentTrust.status).toBe(200);
+      expect((await noCurrentTrust.json()).trustedAtTime).toBe(false);
+    } finally {
+      await server.close();
+    }
   });
 
   it("serves registry summary, scoped authorization resolution, and evidence from a workspace file", async () => {
@@ -179,6 +410,7 @@ describe("trust registry api", () => {
       expect(healthResponse.status).toBe(200);
       const health = await healthResponse.json();
       expect(health.sourceMode).toBe("workspace");
+      expect(health.configuredGovernedProposalRoles).toEqual([]);
 
       const listResponse = await fetch(
         `${server.url}/v1/authorizations/issuer?status=active`,
@@ -260,6 +492,7 @@ describe("trust registry api", () => {
             authority_id: workspace.snapshot.registry.registryDid,
             action: "issue",
             resource: list.entries[0].authorization.resourceId,
+            context: { time: evidence.epoch.validFrom },
           }),
         },
       );
@@ -282,9 +515,47 @@ describe("trust registry api", () => {
           }),
         },
       );
-      expect(trqpEvidenceResponse.status).toBe(200);
-      const trqpEvidence = await trqpEvidenceResponse.json();
-      expect(trqpEvidence.bundle.authorization.authorizationId).toBe(issuerId);
+      expect(trqpEvidenceResponse.status).toBe(424);
+      expect((await trqpEvidenceResponse.json()).type).toMatch(/epoch-evidence-unavailable$/);
+
+      const historicalTrqpResponse = await fetch(
+        `${server.url}/v1/trqp/authorizations/evidence`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            entity_id: list.entries[0].authorization.subjectDid,
+            authority_id: workspace.snapshot.registry.registryDid,
+            action: "issue",
+            resource: list.entries[0].authorization.resourceId,
+            context: { time: evidence.epoch.validFrom },
+          }),
+        },
+      );
+      expect(historicalTrqpResponse.status).toBe(200);
+      const historicalTrqp = await historicalTrqpResponse.json();
+      expect(historicalTrqp.authorized).toBe(true);
+      expect(historicalTrqp.time_evaluated).toBe(evidence.epoch.validFrom);
+      expect(historicalTrqp.bundle.epoch.epochId).toBe(evidence.epoch.epochId);
+
+      const unanchoredTrqpResponse = await fetch(
+        `${server.url}/v1/trqp/authorizations/query`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            entity_id: list.entries[0].authorization.subjectDid,
+            authority_id: workspace.snapshot.registry.registryDid,
+            action: "issue",
+            resource: list.entries[0].authorization.resourceId,
+            context: { time: "2026-05-21T00:00:00Z" },
+          }),
+        },
+      );
+      expect(unanchoredTrqpResponse.status).toBe(200);
+      const unanchoredDecision = await unanchoredTrqpResponse.json();
+      expect(unanchoredDecision.time_evaluated).toBe("2026-05-21T00:00:00Z");
+      expect(unanchoredDecision.message).toMatch(/snapshot projection, not proof/);
 
       const missingEpochResolveResponse = await fetch(
         `${server.url}/v1/epochs/resolve?at=${encodeURIComponent("2026-05-21T00:00:00Z")}`,
@@ -294,6 +565,591 @@ describe("trust registry api", () => {
       expect(missingEpochResolveProblem.type).toMatch(/epoch-not-found$/);
     } finally {
       await server.close();
+    }
+  });
+
+  it("uses a record-specific evidence epoch despite another overlapping epoch", async () => {
+    const snapshot = createDemoSnapshot({ label: "epoch-mismatch" });
+    const entry = snapshot.issuerEntries.find((candidate) => candidate.authorization.status === "active");
+    if (entry === undefined) throw new Error("expected an active issuer");
+    const evidenceEpoch = entry.evidence.epoch;
+    const queryTime = new Date(Date.parse(evidenceEpoch.validFrom) + 1).toISOString();
+    expect(Date.parse(queryTime)).toBeLessThan(Date.parse(evidenceEpoch.validUntil));
+    const alteredSnapshot = {
+      ...snapshot,
+      epochs: [...snapshot.epochs, {
+        ...evidenceEpoch,
+        epochId: `${evidenceEpoch.epochId}:overlap`,
+        validFrom: queryTime,
+      }],
+    };
+    const server = await startServer(createInMemorySource(TrustRegistryOperatorSnapshotSchema.parse(alteredSnapshot)));
+    try {
+      const response = await fetch(`${server.url}/v1/trqp/authorizations/query`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          entity_id: entry.authorization.subjectDid,
+          authority_id: snapshot.registry.registryDid,
+          action: "issue",
+          resource: entry.authorization.resourceId,
+          context: { time: queryTime },
+        }),
+      });
+      expect(response.status).toBe(200);
+      expect((await response.json()).authorized).toBe(true);
+
+      const unavailable = await fetch(`${server.url}/v1/trqp/authorizations/query`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          entity_id: entry.authorization.subjectDid,
+          authority_id: snapshot.registry.registryDid,
+          action: "issue",
+          resource: entry.authorization.resourceId,
+          context: { time: new Date(Date.parse(evidenceEpoch.validUntil) + 1).toISOString() },
+        }),
+      });
+      expect(unavailable.status).toBe(200);
+      expect((await unavailable.json()).message).toMatch(/snapshot projection, not proof/);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("uses the same instant for implicit and explicit TRQP requests without overstating an unaccepted root", async () => {
+    const snapshot = createDemoSnapshot({ label: "trqp-current-projection" });
+    const entry = snapshot.issuerEntries.find((candidate) => candidate.authorization.status === "active");
+    if (entry === undefined) throw new Error("expected an active issuer");
+    const at = entry.evidence.epoch.validFrom;
+    const request = {
+      entity_id: entry.authorization.subjectDid,
+      authority_id: snapshot.registry.registryDid,
+      action: "issue",
+      resource: entry.authorization.resourceId,
+    };
+    const epochSpelling = {
+      ...snapshot,
+      epochs: snapshot.epochs.map((epoch) => epoch.epochId === entry.evidence.epoch.epochId
+        ? { ...epoch,
+          validFrom: epoch.validFrom.replace(/Z$/, "+00:00"),
+          validUntil: epoch.validUntil.replace(/Z$/, "+00:00") }
+        : epoch),
+    };
+    const server = await startServer(createInMemorySource(epochSpelling), () => at);
+    const post = (path: string, body: object) => fetch(`${server.url}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    try {
+      const implicit = await post("/v1/trqp/authorizations/query", request);
+      const explicit = await post("/v1/trqp/authorizations/query", {
+        ...request, context: { time: at },
+      });
+      expect(implicit.status).toBe(200);
+      expect(explicit.status).toBe(200);
+      const implicitDecision = await implicit.json();
+      const explicitDecision = await explicit.json();
+      expect(implicitDecision.authorized).toBe(explicitDecision.authorized);
+      expect(implicitDecision.time_evaluated).toBe(at);
+      expect(explicitDecision.time_evaluated).toBe(at);
+      expect(implicitDecision.time_requested).toBeUndefined();
+      expect(explicitDecision.time_requested).toBe(at);
+      expect((await post("/v1/trqp/authorizations/evidence", request)).status).toBe(200);
+    } finally {
+      await server.close();
+    }
+
+    const persistedPath = join(tempDir, "equivalent-epoch-spelling.json");
+    await writeSnapshotToFile(persistedPath, epochSpelling);
+    const persistedServer = await startServer(createSnapshotFileSource(persistedPath), () => at);
+    try {
+      const evidence = await fetch(`${persistedServer.url}/v1/trqp/authorizations/evidence`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request),
+      });
+      expect(evidence.status).toBe(200);
+    } finally {
+      await persistedServer.close();
+    }
+
+    const unaccepted = {
+      ...snapshot,
+      epochs: snapshot.epochs.map((epoch) => epoch.epochId === entry.evidence.epoch.epochId
+        ? { ...epoch, stateRoot: `0x${"f".repeat(64)}` }
+        : epoch),
+    };
+    // A custom source can project records, but cannot turn a mismatched root into evidence.
+    const unacceptedServer = await startServer({
+      mode: "memory",
+      async loadSnapshot() { return unaccepted; },
+    }, () => at);
+    try {
+      const query = await fetch(`${unacceptedServer.url}/v1/trqp/authorizations/query`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request),
+      });
+      const evidence = await fetch(`${unacceptedServer.url}/v1/trqp/authorizations/evidence`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request),
+      });
+      expect(query.status).toBe(200);
+      expect((await query.json()).message).toMatch(/snapshot projection, not proof/);
+      expect(evidence.status).toBe(424);
+    } finally {
+      await unacceptedServer.close();
+    }
+  });
+
+  it("does not project an expired active authorization as trusted at snapshot time", async () => {
+    const snapshot = createDemoSnapshot({ label: "expired-current-trqp" });
+    const entry = snapshot.issuerEntries.find((candidate) => candidate.authorization.status === "active");
+    if (entry?.authorization.activeFrom === undefined) throw new Error("expected active issuer");
+    const effectiveUntil = new Date(Date.parse(entry.authorization.activeFrom) + 1).toISOString();
+    const generatedAt = entry.evidence.epoch.validUntil;
+    expect(Date.parse(effectiveUntil)).toBeLessThan(Date.parse(generatedAt));
+    const expired = {
+      ...entry,
+      authorization: { ...entry.authorization, effectiveUntil },
+      evidence: {
+        ...entry.evidence,
+        authorization: { ...entry.authorization, effectiveUntil },
+      },
+    };
+    const source = createTrqpSourceFromStateSource({
+      mode: "memory",
+      async loadSnapshot() {
+        return {
+          ...snapshot,
+          generatedAt,
+          issuerEntries: snapshot.issuerEntries.map((candidate) =>
+            candidate.authorization.authorizationId === entry.authorization.authorizationId ? expired : candidate),
+        };
+      },
+    });
+    const decision = await source.getAuthorizationDecision({
+      entity_id: entry.authorization.subjectDid,
+      authority_id: snapshot.registry.registryDid,
+      action: "issue",
+      resource: entry.authorization.resourceId,
+    }, generatedAt);
+    expect(decision).not.toBeNull();
+    if (decision === null) throw new Error("expected a current decision");
+    expect(decision.statusAtTime).toBe("active");
+    expect(decision.trustedAtTime).toBe(false);
+    const justAfterExpiry = effectiveUntil.replace(/Z$/, "001Z");
+    const submillisecondDecision = await source.getAuthorizationDecision({
+      entity_id: entry.authorization.subjectDid,
+      authority_id: snapshot.registry.registryDid,
+      action: "issue",
+      resource: entry.authorization.resourceId,
+    }, justAfterExpiry);
+    expect(submillisecondDecision?.trustedAtTime).toBe(false);
+  });
+
+  it("rejects epoch evidence one microsecond after validUntil", async () => {
+    const snapshot = createDemoSnapshot({ label: "submillisecond-evidence-expiry" });
+    const entry = snapshot.issuerEntries.find((candidate) => candidate.authorization.status === "active");
+    if (entry === undefined) throw new Error("expected an active issuer");
+    const justAfter = new Date(Date.parse(entry.evidence.epoch.validUntil)).toISOString().replace(/Z$/, "001Z");
+    const server = await startServer(createInMemorySource(snapshot));
+    try {
+      const evidence = await fetch(`${server.url}/v1/trqp/authorizations/evidence`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          entity_id: entry.authorization.subjectDid,
+          authority_id: snapshot.registry.registryDid,
+          action: "issue",
+          resource: entry.authorization.resourceId,
+          context: { time: justAfter },
+        }),
+      });
+      expect(evidence.status).toBe(424);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("selects the newest authorization epoch beyond millisecond precision", async () => {
+    const snapshot = createDemoSnapshot({ label: "fractional-epoch-order" });
+    const entry = snapshot.issuerEntries.find((candidate) => candidate.authorization.status === "active");
+    if (entry === undefined) throw new Error("expected active issuer evidence");
+    const start = new Date(Date.parse(entry.evidence.epoch.validFrom) + 1).toISOString().slice(0, -1);
+    const at = new Date(Date.parse(entry.evidence.epoch.validFrom) + 2).toISOString();
+    const olderEpoch = {
+      ...entry.evidence.epoch,
+      epochId: `${entry.evidence.epoch.epochId}:zzzz`,
+      validFrom: `${start}0000001Z`,
+    };
+    const newerEpoch = {
+      ...entry.evidence.epoch,
+      epochId: `${entry.evidence.epoch.epochId}:aaaa`,
+      validFrom: `${start}0000002Z`,
+    };
+    const source = createTrqpSourceFromStateSource(createInMemorySource({
+      ...snapshot,
+      epochs: [...snapshot.epochs, olderEpoch, newerEpoch],
+      issuerEntries: snapshot.issuerEntries.map((candidate) =>
+        candidate === entry ? { ...entry, evidence: { ...entry.evidence, epoch: olderEpoch } } : candidate),
+      evidenceArchive: [...snapshot.evidenceArchive, { ...entry.evidence, epoch: newerEpoch }],
+    }));
+    const decision = await source.getAuthorizationDecision({
+      entity_id: entry.authorization.subjectDid,
+      authority_id: snapshot.registry.registryDid,
+      action: "issue",
+      resource: entry.authorization.resourceId,
+    }, at);
+    expect(decision?.trustedAtTime).toBe(true);
+    expect(decision?.bundle?.epoch.epochId).toBe(newerEpoch.epochId);
+  });
+
+  it("selects the newest recognition epoch beyond millisecond precision", async () => {
+    const snapshot = createDemoSnapshot({ label: "fractional-recognition-epoch-order" });
+    const entry = snapshot.recognitionEntries[0];
+    if (entry === undefined) throw new Error("expected recognition evidence");
+    const start = new Date(Date.parse(entry.evidence.epoch.validFrom) + 1).toISOString().slice(0, -1);
+    const at = new Date(Date.parse(entry.evidence.epoch.validFrom) + 2).toISOString();
+    const olderEpoch = {
+      ...entry.evidence.epoch,
+      epochId: `${entry.evidence.epoch.epochId}:zzzz`,
+      validFrom: `${start}0000001Z`,
+    };
+    const newerEpoch = {
+      ...entry.evidence.epoch,
+      epochId: `${entry.evidence.epoch.epochId}:aaaa`,
+      validFrom: `${start}0000002Z`,
+    };
+    const source = createTrqpSourceFromStateSource(createInMemorySource({
+      ...snapshot,
+      epochs: [...snapshot.epochs, olderEpoch, newerEpoch],
+      recognitionEntries: snapshot.recognitionEntries.map((candidate) =>
+        candidate === entry ? { ...entry, evidence: { ...entry.evidence, epoch: olderEpoch } } : candidate),
+      evidenceArchive: [...snapshot.evidenceArchive, { ...entry.evidence, epoch: newerEpoch }],
+    }));
+    const decision = await source.getRecognitionDecision({
+      entity_id: entry.recognition.recognizedAuthorityDid,
+      authority_id: snapshot.registry.registryDid,
+      action: entry.recognition.scope.resourceType,
+      resource: entry.recognition.scope.resourceId,
+      context: { recognized_registry_id: entry.recognition.recognizedRegistryId },
+    }, at);
+    expect(decision?.trustedAtTime).toBe(true);
+    expect(decision?.bundle?.epoch.epochId).toBe(newerEpoch.epochId);
+  });
+
+  it("requires exact recognition context rather than treating omission as a wildcard", async () => {
+    const snapshot = createDemoSnapshot({ label: "recognition-context-lookup" });
+    const original = snapshot.recognitionEntries[0];
+    if (original === undefined) throw new Error("expected recognition fixture");
+    if (original.evidence.recognition === undefined) throw new Error("expected recognition evidence");
+    const evidenceRecognition = original.evidence.recognition;
+    const context = { purpose: "assurance" };
+    const source = createInMemorySource({
+      ...snapshot,
+      recognitionEntries: [{
+        ...original,
+        recognition: { ...original.recognition, scope: { ...original.recognition.scope, context } },
+        evidence: {
+          ...original.evidence,
+          recognition: {
+            ...evidenceRecognition,
+            scope: { ...evidenceRecognition.scope, context },
+          },
+        },
+      }],
+    });
+    const server = await startServer(source);
+    try {
+      const request = {
+        recognizedAuthorityDid: original.recognition.recognizedAuthorityDid,
+        recognizedRegistryId: original.recognition.recognizedRegistryId,
+        scopeResourceType: original.recognition.scope.resourceType,
+        scopeResourceId: original.recognition.scope.resourceId,
+      };
+      const query = async (body: object) => fetch(`${server.url}/v1/recognitions/resolve`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+      });
+      expect((await query(request)).status).toBe(404);
+      expect((await query({ ...request, scopeContext: { purpose: "other" } })).status).toBe(404);
+      expect((await query({ ...request, scopeContext: context })).status).toBe(200);
+      const trqpRequest = {
+        entity_id: request.recognizedAuthorityDid,
+        authority_id: snapshot.registry.registryDid,
+        action: request.scopeResourceType,
+        resource: request.scopeResourceId,
+        context: {
+          time: original.evidence.epoch.validFrom,
+          recognized_registry_id: request.recognizedRegistryId,
+        },
+      };
+      const trqpQuery = async (body: object) => fetch(`${server.url}/v1/trqp/recognitions/query`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+      });
+      expect((await trqpQuery(trqpRequest)).status).toBe(404);
+      expect((await trqpQuery({ ...trqpRequest, context: {
+        ...trqpRequest.context, scope_context: context,
+      } })).status).toBe(200);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("reports the proved statement epoch when an unrelated epoch overlaps the instant", async () => {
+    const snapshot = createDemoSnapshot({ label: "overlapping-evidence-epoch" });
+    const entry = snapshot.issuerEntries.find((candidate) => candidate.authorization.status === "active");
+    if (entry === undefined) throw new Error("expected an active issuer");
+    const at = new Date(Date.parse(entry.evidence.epoch.validFrom) + 1_000).toISOString();
+    const unrelatedEpoch = {
+      ...entry.evidence.epoch,
+      epochId: `${entry.evidence.epoch.epochId}:unrelated`,
+      validFrom: at,
+    };
+    const server = await startServer(createInMemorySource({
+      ...snapshot,
+      epochs: [...snapshot.epochs, unrelatedEpoch],
+    }));
+    try {
+      const request = {
+        role: "issuer",
+        subjectDid: entry.authorization.subjectDid,
+        resourceId: entry.authorization.resourceId,
+        at,
+      };
+      const plain = await fetch(`${server.url}/v1/authorizations/evaluate`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request),
+      });
+      const evidence = await fetch(`${server.url}/v1/authorizations/evaluate/evidence`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request),
+      });
+      expect(plain.status).toBe(200);
+      expect(evidence.status).toBe(200);
+      expect((await plain.json()).epoch.epochId).toBe(unrelatedEpoch.epochId);
+      const result = await evidence.json();
+      expect(result.epoch).toEqual(result.bundle.epoch);
+      expect(result.epoch.epochId).toBe(entry.evidence.epoch.epochId);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("serves archived issuer evidence for its epoch after a later revocation", async () => {
+    let workspace = createOperatorWorkspace({ label: "trqp-issuer-archive" });
+    const submitted = applyOperation(workspace, {
+      operation: "submit", target: "issuer", label: "archived-degree",
+    });
+    workspace = submitted.nextWorkspace;
+    const authorizationId = asAuthorizationRecord(submitted.record).authorization.authorizationId;
+    workspace = applyWorkspaceOperation(workspace, {
+      operation: "approve", target: "issuer", id: authorizationId,
+    });
+    const activeWorkspace = applyWorkspaceOperation(workspace, {
+      operation: "activate", target: "issuer", id: authorizationId,
+    });
+    const activeBundle = activeWorkspace.snapshot.issuerEntries[0]?.evidence;
+    if (activeBundle?.authorization === undefined) throw new Error("expected active issuer evidence");
+    const revokedWorkspace = applyWorkspaceOperation(activeWorkspace, {
+      operation: "revoke", target: "issuer", id: authorizationId,
+    });
+    const snapshot = revokedWorkspace.snapshot;
+    expect(snapshot.issuerEntries[0]?.authorization.status).toBe("revoked");
+    expect(snapshot.evidenceArchive).toContainEqual(activeBundle);
+    const server = await startServer(createInMemorySource(snapshot));
+    try {
+      const response = await fetch(`${server.url}/v1/trqp/authorizations/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          entity_id: activeBundle.authorization.subjectDid,
+          authority_id: snapshot.registry.registryDid,
+          action: "issue",
+          resource: activeBundle.authorization.resourceId,
+          context: { time: activeBundle.epoch.validFrom },
+        }),
+      });
+      expect(response.status).toBe(200);
+      const result = await response.json();
+      expect(result.authorized).toBe(true);
+      expect(result.bundle.authorization.status).toBe("active");
+      expect(result.bundle.epoch.epochId).toBe(activeBundle.epoch.epochId);
+      const nativeRequest = {
+        role: "issuer",
+        subjectDid: activeBundle.authorization.subjectDid,
+        resourceId: activeBundle.authorization.resourceId,
+        at: activeBundle.epoch.validFrom,
+      };
+      const native = await fetch(`${server.url}/v1/authorizations/evaluate/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(nativeRequest),
+      });
+      expect(native.status).toBe(200);
+      const nativeResult = await native.json();
+      expect(nativeResult.trustedAtTime).toBe(true);
+      expect(nativeResult.bundle.authorization.status).toBe("active");
+      expect(nativeResult.bundle.epoch.epochId).toBe(activeBundle.epoch.epochId);
+      expect(nativeResult.epoch).toEqual(nativeResult.bundle.epoch);
+      const wrongScope = await fetch(`${server.url}/v1/authorizations/evaluate/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ...nativeRequest,
+          resourceId: `${nativeRequest.resourceId.slice(0, -1)}${nativeRequest.resourceId.endsWith("a") ? "b" : "a"}`,
+        }),
+      });
+      expect(wrongScope.status).toBe(404);
+    } finally {
+      await server.close();
+    }
+
+    const missingArchive = await startServer(createInMemorySource({ ...snapshot, evidenceArchive: [] }));
+    try {
+      const response = await fetch(`${missingArchive.url}/v1/authorizations/evaluate/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          role: "issuer",
+          subjectDid: activeBundle.authorization.subjectDid,
+          resourceId: activeBundle.authorization.resourceId,
+          at: activeBundle.epoch.validFrom,
+        }),
+      });
+      expect(response.status).toBe(424);
+      expect((await response.json()).type).toMatch(/epoch-evidence-unavailable$/u);
+    } finally {
+      await missingArchive.close();
+    }
+
+    expect(TrustRegistryOperatorSnapshotSchema.safeParse({
+      ...snapshot,
+      evidenceArchive: [activeBundle, activeBundle],
+    }).success).toBe(false);
+    expect(TrustRegistryOperatorSnapshotSchema.safeParse({
+      ...snapshot,
+      evidenceArchive: [{ ...activeBundle, inclusionProof: {
+        ...activeBundle.inclusionProof, leafHash: "0".repeat(64),
+      } }],
+    }).success).toBe(false);
+  });
+
+  it("serves archived recognition evidence without using its later revoked bundle", async () => {
+    let workspace = createOperatorWorkspace({ label: "trqp-recognition-archive" });
+    const submitted = applyOperation(workspace, {
+      operation: "submit", target: "recognition", label: "archived-registry",
+    });
+    workspace = submitted.nextWorkspace;
+    const recognitionId = asRecognitionRecord(submitted.record).recognition.recognitionId;
+    workspace = applyWorkspaceOperation(workspace, {
+      operation: "approve", target: "recognition", id: recognitionId,
+    });
+    const activeWorkspace = applyWorkspaceOperation(workspace, {
+      operation: "activate", target: "recognition", id: recognitionId,
+    });
+    const activeBundle = activeWorkspace.snapshot.recognitionEntries[0]?.evidence;
+    if (activeBundle?.recognition === undefined) throw new Error("expected active recognition evidence");
+    const revokedWorkspace = applyWorkspaceOperation(activeWorkspace, {
+      operation: "revoke", target: "recognition", id: recognitionId,
+    });
+    const snapshot = revokedWorkspace.snapshot;
+    expect(snapshot.evidenceArchive).toContainEqual(activeBundle);
+    const server = await startServer(createInMemorySource(snapshot));
+    try {
+      const response = await fetch(`${server.url}/v1/trqp/recognitions/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          entity_id: activeBundle.recognition.recognizedAuthorityDid,
+          authority_id: snapshot.registry.registryDid,
+          action: activeBundle.recognition.scope.resourceType,
+          resource: activeBundle.recognition.scope.resourceId,
+          context: {
+            recognized_registry_id: activeBundle.recognition.recognizedRegistryId,
+            time: activeBundle.epoch.validFrom,
+          },
+        }),
+      });
+      expect(response.status).toBe(200);
+      const result = await response.json();
+      expect(result.recognized).toBe(true);
+      expect(result.bundle.recognition.status).toBe("active");
+      expect(result.bundle.epoch.epochId).toBe(activeBundle.epoch.epochId);
+      const native = await fetch(`${server.url}/v1/recognitions/evaluate/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          recognizedAuthorityDid: activeBundle.recognition.recognizedAuthorityDid,
+          recognizedRegistryId: activeBundle.recognition.recognizedRegistryId,
+          scopeResourceType: activeBundle.recognition.scope.resourceType,
+          scopeResourceId: activeBundle.recognition.scope.resourceId,
+          at: activeBundle.epoch.validFrom,
+        }),
+      });
+      expect(native.status).toBe(200);
+      const nativeResult = await native.json();
+      expect(nativeResult.trustedAtTime).toBe(true);
+      expect(nativeResult.bundle.recognition.status).toBe("active");
+      expect(nativeResult.bundle.epoch.epochId).toBe(activeBundle.epoch.epochId);
+      expect(nativeResult.epoch).toEqual(nativeResult.bundle.epoch);
+      const wrongContext = await fetch(`${server.url}/v1/recognitions/evaluate/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          recognizedAuthorityDid: activeBundle.recognition.recognizedAuthorityDid,
+          recognizedRegistryId: activeBundle.recognition.recognizedRegistryId,
+          scopeResourceType: activeBundle.recognition.scope.resourceType,
+          scopeResourceId: activeBundle.recognition.scope.resourceId,
+          scopeContext: { purpose: "different" },
+          at: activeBundle.epoch.validFrom,
+        }),
+      });
+      expect(wrongContext.status).toBe(404);
+    } finally {
+      await server.close();
+    }
+
+    const verifier = createDemoSnapshot({ label: "dual-recognition-proof" })
+      .verifierEntries[0]?.authorization;
+    if (verifier === undefined) throw new Error("expected demo verifier");
+    const dualBundle = {
+      ...activeBundle,
+      authorization: {
+        ...verifier,
+        registryId: activeBundle.registryId,
+        subjectDid: activeBundle.subjectDid,
+      },
+    };
+    const poisonedServer = await startServer(createInMemorySource({
+      ...snapshot,
+      evidenceArchive: snapshot.evidenceArchive.map((bundle) =>
+        bundle.bundleId === activeBundle.bundleId ? dualBundle : bundle),
+    }));
+    try {
+      const response = await fetch(`${poisonedServer.url}/v1/trqp/recognitions/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          entity_id: activeBundle.recognition.recognizedAuthorityDid,
+          authority_id: snapshot.registry.registryDid,
+          action: activeBundle.recognition.scope.resourceType,
+          resource: activeBundle.recognition.scope.resourceId,
+          context: {
+            recognized_registry_id: activeBundle.recognition.recognizedRegistryId,
+            time: activeBundle.epoch.validFrom,
+          },
+        }),
+      });
+      expect(response.status).toBe(424);
+      const native = await fetch(`${poisonedServer.url}/v1/recognitions/evaluate/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          recognizedAuthorityDid: activeBundle.recognition.recognizedAuthorityDid,
+          recognizedRegistryId: activeBundle.recognition.recognizedRegistryId,
+          scopeResourceType: activeBundle.recognition.scope.resourceType,
+          scopeResourceId: activeBundle.recognition.scope.resourceId,
+          at: activeBundle.epoch.validFrom,
+        }),
+      });
+      expect(native.status).toBe(424);
+    } finally {
+      await poisonedServer.close();
     }
   });
 
@@ -436,7 +1292,7 @@ describe("trust registry api", () => {
     } finally {
       await server.close();
     }
-  }, 30_000);
+  }, 90_000);
 
   it("returns structured mutation problems and accepts epoch publish without a body", async () => {
     const workspace = createOperatorWorkspace({ label: "kanon-write-errors" });
@@ -607,6 +1463,7 @@ describe("trust registry api", () => {
             context: {
               recognized_registry_id:
                 recognition.recognition.recognizedRegistryId,
+              time: recognition.evidence.epoch.validFrom,
             },
           }),
         },
@@ -634,9 +1491,8 @@ describe("trust registry api", () => {
           }),
         },
       );
-      expect(trqpEvidenceResponse.status).toBe(200);
-      const trqpEvidence = await trqpEvidenceResponse.json();
-      expect(trqpEvidence.bundle.recognition.recognitionId).toBe(recognitionId);
+      expect(trqpEvidenceResponse.status).toBe(424);
+      expect((await trqpEvidenceResponse.json()).type).toMatch(/epoch-evidence-unavailable$/);
     } finally {
       await server.close();
     }

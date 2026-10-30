@@ -1,0 +1,15 @@
+ARG BASE_IMAGE
+#checkov:skip=CKV_DOCKER_7: build-static-runtime-image validates BASE_IMAGE as an immutable sha256 digest
+FROM ${BASE_IMAGE}
+
+ARG ROLE
+ENV NODE_ENV=production TR_STATIC_ROLE=${ROLE}
+WORKDIR /app
+COPY public/ /app/public/
+COPY serve-static.mjs entrypoint.mjs /app/
+USER 1000:1000
+EXPOSE 4173
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:4173/',{signal:AbortSignal.timeout(4000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+ENTRYPOINT []
+CMD ["node", "/app/entrypoint.mjs", "--host", "0.0.0.0", "--port", "4173"]

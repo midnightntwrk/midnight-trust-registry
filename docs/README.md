@@ -2,6 +2,10 @@
 
 This documentation set is the source of truth for the initial `midnight-trust-registry` implementation.
 
+The human-oriented [documentation site](../docs-site/index.md) guides new readers through
+the current local reference implementation. The specifications and ADRs below remain
+authoritative for protocol requirements and open decisions.
+
 The [0.1.0 reference profile](spec/milestone-0.1.0.md) defines the next
 release gate. The general specification below describes the longer-term v1
 system; the [0.1.0 issue plan](plans/milestone-0.1.0-issues.md) names the
@@ -13,14 +17,18 @@ remaining implementation and test work.
 2. [0.1.0 executable issue plan](plans/milestone-0.1.0-issues.md)
 3. [Trust Registry general specification](spec/trust-registry.md)
 4. [Application evidence protocol](spec/application-evidence.md)
-5. [Architecture boundaries](architecture/trust-registry-boundaries.md)
-6. [Implementation plan](plans/trust-registry-implementation-plan.md)
-7. [Execution backlog](plans/trust-registry-backlog.md)
-8. [Research requirements memo](research/trust-registry-requirements-memo.md)
-9. [Decisions and open questions](decisions/trust-registry-decisions.md)
-10. [ADR-0001: governance evidence and policy snapshots](decisions/adr-0001-governance-evidence-and-policy-snapshots.md)
-11. [ADR-0002: resource and request-profile canonicalization](decisions/adr-0002-resource-and-request-profile-canonicalization.md)
-12. [Repo-local knowledge base](decisions/trust-registry-knowledge-base.md)
+5. [Issuer status-policy binding draft](spec/issuer-status-policy-binding.md)
+6. [Architecture boundaries](architecture/trust-registry-boundaries.md)
+7. [Implementation plan](plans/trust-registry-implementation-plan.md)
+8. [Execution backlog](plans/trust-registry-backlog.md)
+9. [Research requirements memo](research/trust-registry-requirements-memo.md)
+10. [Decisions and open questions](decisions/trust-registry-decisions.md)
+11. [ADR-0001: governance evidence and policy snapshots](decisions/adr-0001-governance-evidence-and-policy-snapshots.md)
+12. [ADR-0002: resource and request-profile canonicalization](decisions/adr-0002-resource-and-request-profile-canonicalization.md)
+13. [ADR-0003: composite issuer resource identity](decisions/adr-0003-composite-issuer-resource-identity.md)
+14. [ADR-0004: composite verifier and auditor request identity](decisions/adr-0004-composite-request-scope-identity.md)
+15. [ADR-0005: DID-signed mutation intents](decisions/adr-0005-did-signed-mutation-intents.md)
+16. [Repo-local knowledge base](decisions/trust-registry-knowledge-base.md)
 
 ## Repository Boundary
 

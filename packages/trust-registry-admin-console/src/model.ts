@@ -2,18 +2,19 @@ import type {
   TrustRegistryApiApplicationAction,
   TrustRegistryApiApplicationTarget,
   TrustRegistryApiApplicationMutationResponse,
+  TrustRegistryApiAuthorizationListResponse,
+  TrustRegistryApiRecognitionListResponse,
   TrustRegistryApiSummary,
 } from "@midnight-ntwrk/trust-registry-api";
-import type {
-  TrustRegistryAuthorizationSnapshotEntry,
-  TrustRegistryRecognitionSnapshotEntry,
-} from "@midnight-ntwrk/trust-registry-cli";
+
+type AuthorizationEntry = TrustRegistryApiAuthorizationListResponse["entries"][number];
+type RecognitionEntry = TrustRegistryApiRecognitionListResponse["entries"][number];
 
 export type ReviewTarget = TrustRegistryApiApplicationTarget;
 export type ReviewAction = TrustRegistryApiApplicationAction;
 export type ReviewStatus =
-  | TrustRegistryAuthorizationSnapshotEntry["authorization"]["status"]
-  | TrustRegistryRecognitionSnapshotEntry["recognition"]["status"];
+  | AuthorizationEntry["authorization"]["status"]
+  | RecognitionEntry["recognition"]["status"];
 
 export type ReviewCard = {
   detailRows: readonly { label: string; value: string }[];
@@ -29,10 +30,13 @@ export type ReviewCard = {
 };
 
 export type ReviewBoard = {
-  recognitions: readonly TrustRegistryRecognitionSnapshotEntry[];
+  sourceMode: "snapshot" | "workspace" | "memory" | "local-ledger";
+  localPlanSha256?: string;
+  auditors: readonly AuthorizationEntry[];
+  recognitions: readonly RecognitionEntry[];
   summary: TrustRegistryApiSummary;
-  verifiers: readonly TrustRegistryAuthorizationSnapshotEntry[];
-  issuers: readonly TrustRegistryAuthorizationSnapshotEntry[];
+  verifiers: readonly AuthorizationEntry[];
+  issuers: readonly AuthorizationEntry[];
 };
 
 export type ReviewBoardMutation = TrustRegistryApiApplicationMutationResponse;
@@ -62,7 +66,7 @@ export const REVIEW_STATUS_LABELS: Record<ReviewStatus, string> = {
 const REVIEW_ACTIONS_BY_STATUS: Record<ReviewStatus, readonly ReviewAction[]> = {
   proposed: ["approve", "archive"],
   authorized: ["activate", "revoke", "archive"],
-  active: ["suspend", "revoke"],
+  active: ["suspend", "revoke", "archive"],
   suspended: ["revoke", "archive"],
   revoked: ["archive"],
   superseded: [],
@@ -80,7 +84,7 @@ const defaultBuckets = (): ReviewStatusBucket => ({
 });
 
 const latestAuthorizationTimestamp = (
-  entry: TrustRegistryAuthorizationSnapshotEntry,
+  entry: AuthorizationEntry,
 ): string =>
   entry.authorization.archivedAt
   ?? entry.authorization.supersededAt
@@ -92,7 +96,7 @@ const latestAuthorizationTimestamp = (
   ?? entry.authorization.proposedAt;
 
 const latestRecognitionTimestamp = (
-  entry: TrustRegistryRecognitionSnapshotEntry,
+  entry: RecognitionEntry,
 ): string =>
   entry.recognition.archivedAt
   ?? entry.recognition.supersededAt
@@ -110,30 +114,72 @@ export const getReviewActions = (
   status: ReviewStatus,
 ): readonly ReviewAction[] => REVIEW_ACTIONS_BY_STATUS[status];
 
+export const describeActionConfirmation = (
+  card: ReviewCard,
+  action: ReviewAction,
+): string =>
+  `Confirm ${action} for ${card.target} record ${card.id} (${card.status})? This governed action cannot be undone from the console.`;
+
+export const executeReviewAction = async (
+  card: ReviewCard,
+  action: ReviewAction,
+  confirm: (message: string) => boolean | Promise<boolean>,
+  mutate: (target: ReviewTarget, id: string, action: ReviewAction) => Promise<ReviewBoardMutation>,
+): Promise<ReviewBoardMutation | null> => {
+  if (!getReviewActions(card.status).includes(action)) {
+    throw new Error(`${action} is not available for ${card.status} ${card.target} record`);
+  }
+  if (!(await confirm(describeActionConfirmation(card, action)))) return null;
+  return mutate(card.target, card.id, action);
+};
+
+export const executeEpochPublication = async (
+  label: string,
+  confirm: (message: string) => boolean | Promise<boolean>,
+  publish: (label: string) => Promise<ReviewBoardMutation>,
+): Promise<ReviewBoardMutation | null> => {
+  if (!(await confirm(`Confirm publishing a new registry epoch${label.trim().length === 0 ? "" : ` (${label.trim()})`}? This anchors the current state root.`))) {
+    return null;
+  }
+  return publish(label);
+};
+
 export const toAuthorizationReviewCard = (
-  target: Extract<ReviewTarget, "issuer" | "verifier">,
-  entry: TrustRegistryAuthorizationSnapshotEntry,
-): ReviewCard => ({
-  detailRows: [
-    { label: "Authorization ID", value: entry.authorization.authorizationId },
-    { label: "Subject DID", value: entry.authorization.subjectDid },
-    { label: "Scope", value: `${entry.authorization.resourceType}:${entry.authorization.resourceId}` },
-    { label: "Trust level", value: entry.authorization.trustLevel },
-    { label: "Policy", value: entry.authorization.policyId },
-  ],
-  id: entry.authorization.authorizationId,
-  key: `${target}:${entry.authorization.authorizationId}`,
-  label: entry.label,
-  scope: `${entry.authorization.resourceType}:${entry.authorization.resourceId}`,
-  status: entry.authorization.status,
-  subject: entry.authorization.subjectDid,
-  target,
-  trustLevel: entry.authorization.trustLevel,
-  updatedAt: latestAuthorizationTimestamp(entry),
-});
+  target: Extract<ReviewTarget, "issuer" | "verifier" | "auditor">,
+  entry: AuthorizationEntry,
+): ReviewCard => {
+  if (entry.authorization.role !== target) {
+    throw new Error(`Cannot render ${entry.authorization.role} authorization as ${target} review card`);
+  }
+  if (target !== "issuer" && (entry.authorization.resourceType !== "request-profile"
+    || !/^tr:request-resource:v1:[0-9a-f]{64}$/u.test(entry.authorization.resourceId))) {
+    throw new Error(`Cannot render ${target} authorization without a canonical composite request resource ID`);
+  }
+  return {
+    detailRows: [
+      { label: "Authorization ID", value: entry.authorization.authorizationId },
+      { label: "Subject DID", value: entry.authorization.subjectDid },
+      { label: "Scope", value: `${entry.authorization.resourceType}:${entry.authorization.resourceId}` },
+      { label: "Governed resource ID", value: entry.authorization.resourceId },
+      { label: "Trust level", value: entry.authorization.trustLevel },
+      { label: "Policy", value: entry.authorization.policyId },
+      { label: "Evidence epoch", value: entry.evidence.epoch.epochId },
+      { label: "Evidence state root", value: entry.evidence.epoch.stateRoot },
+    ],
+    id: entry.authorization.authorizationId,
+    key: `${target}:${entry.authorization.authorizationId}`,
+    label: entry.label,
+    scope: `${entry.authorization.resourceType}:${entry.authorization.resourceId}`,
+    status: entry.authorization.status,
+    subject: entry.authorization.subjectDid,
+    target,
+    trustLevel: entry.authorization.trustLevel,
+    updatedAt: latestAuthorizationTimestamp(entry),
+  };
+};
 
 export const toRecognitionReviewCard = (
-  entry: TrustRegistryRecognitionSnapshotEntry,
+  entry: RecognitionEntry,
 ): ReviewCard => ({
   detailRows: [
     { label: "Recognition ID", value: entry.recognition.recognitionId },
@@ -159,6 +205,7 @@ export const buildReviewCards = (
 ): readonly ReviewCard[] => [
   ...board.issuers.map((entry) => toAuthorizationReviewCard("issuer", entry)),
   ...board.verifiers.map((entry) => toAuthorizationReviewCard("verifier", entry)),
+  ...board.auditors.map((entry) => toAuthorizationReviewCard("auditor", entry)),
   ...board.recognitions.map(toRecognitionReviewCard),
 ].sort(statusSort);
 

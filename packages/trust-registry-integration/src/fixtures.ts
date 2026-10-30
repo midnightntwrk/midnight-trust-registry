@@ -7,14 +7,27 @@ import {
 } from "@midnight-ntwrk/midnight-did";
 import {
   createScopedIdentifier,
+  issuerGovernedResourceId,
+  requestGovernedResourceId,
   sha256Hex,
+  type AuthorizationScope,
+  type AuthorizationRecord,
+  type IssuerGovernedResourceType,
 } from "@midnight-ntwrk/trust-registry-domain";
-import {
-  createMaintainerFixture as createContractMaintainerFixture,
-} from "@midnight-ntwrk/trust-registry-contract";
 import {
   IssuerResourceType,
 } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+
+export const issuerResourceTypeDetails = {
+  [IssuerResourceType.credentialFamily]: { governedType: "credentialFamily", recordType: "credential-family" },
+  [IssuerResourceType.schema]: { governedType: "schema", recordType: "schema" },
+  [IssuerResourceType.schemaVersion]: { governedType: "schemaVersion", recordType: "schema-version" },
+  [IssuerResourceType.credentialDefinition]: { governedType: "credentialDefinition", recordType: "credential-definition" },
+  [IssuerResourceType.statusMethodRequirement]: { governedType: "statusMethodRequirement", recordType: "status-method-requirement" },
+} as const satisfies Record<
+  IssuerResourceType,
+  { governedType: IssuerGovernedResourceType; recordType: AuthorizationRecord["resourceType"] }
+>;
 
 export const bytes32Commitment = (value: string): Uint8Array =>
   Buffer.from(sha256Hex(value).slice(2), "hex");
@@ -41,7 +54,12 @@ export type IssuerScenarioFixture = {
   resourceId: string;
   resourceIdCommitment: Uint8Array;
   trustLevel: string;
-  referencedStatusRegistryId: string;
+  authorizationScope: Extract<AuthorizationScope, { role: "issuer" }>;
+  statusRegistryId: string;
+  statusAuthorityVerificationMethod: string;
+  statusPolicyId: string;
+  statusPolicyVersion: string;
+  statusPolicyContentCommitment: string;
 };
 
 export type VerifierScenarioFixture = {
@@ -50,7 +68,9 @@ export type VerifierScenarioFixture = {
   subjectDid: string;
   subjectDidCommitment: Uint8Array;
   requestProfileId: string;
-  requestProfileIdCommitment: Uint8Array;
+  purpose: string;
+  credentialScopeCommitment: string;
+  requestResourceIdCommitment: Uint8Array;
   allowedAttributeSetId: string;
   allowedAttributeSetCommitment: Uint8Array;
   allowedPredicateSetId: string;
@@ -82,7 +102,9 @@ export type AuditorScenarioFixture = {
   subjectDid: string;
   subjectDidCommitment: Uint8Array;
   requestProfileId: string;
-  requestProfileIdCommitment: Uint8Array;
+  purpose: string;
+  credentialScopeCommitment: string;
+  requestResourceIdCommitment: Uint8Array;
   allowedAttributeSetId: string;
   allowedAttributeSetCommitment: Uint8Array;
   allowedPredicateSetId: string;
@@ -103,27 +125,80 @@ export type MaintainerScenarioFixture = {
   trustLevel: string;
 };
 
+export const createIssuerAuthorizationScopeFixture = (
+  fixture: IssuerScenarioFixture,
+): Extract<AuthorizationScope, { role: "issuer" }> => fixture.authorizationScope;
+
+const createRequestAuthorizationScopeFixture = (
+  role: "verifier" | "auditor",
+  fixture: VerifierScenarioFixture | AuditorScenarioFixture,
+): Extract<AuthorizationScope, { role: "verifier" | "auditor" }> => ({
+  version: "tr-scope-v1",
+  role,
+  requestProfileId: fixture.requestProfileId,
+  purpose: fixture.purpose,
+  credentialScopeCommitment: fixture.credentialScopeCommitment,
+  allowedAttributes: [fixture.allowedAttributeSetId],
+  allowedPredicates: [fixture.allowedPredicateSetId],
+  disclosureLevel: fixture.disclosureLevelId,
+});
+
+export const createVerifierAuthorizationScopeFixture = (
+  fixture: VerifierScenarioFixture,
+): Extract<AuthorizationScope, { role: "verifier" }> => ({
+  ...createRequestAuthorizationScopeFixture("verifier", fixture),
+  role: "verifier",
+});
+
+export const createAuditorAuthorizationScopeFixture = (
+  fixture: AuditorScenarioFixture,
+): Extract<AuthorizationScope, { role: "auditor" }> => ({
+  ...createRequestAuthorizationScopeFixture("auditor", fixture),
+  role: "auditor",
+});
+
+export const createMaintainerAuthorizationScopeFixture = (
+  registryId: string,
+): Extract<AuthorizationScope, { role: "maintainer" }> => ({
+  version: "tr-scope-v1",
+  role: "maintainer",
+  registryId,
+});
+
 export const createIssuerScenarioFixture = (
   label: string,
+  resourceType: IssuerResourceType = IssuerResourceType.credentialFamily,
 ): IssuerScenarioFixture => {
   const authorizationId = createScopedIdentifier("auth", "issuer", label, "v1");
   const subjectDid = createMidnightDid(`issuer:${label}`);
-  const resourceId = createScopedIdentifier("credential-family", label, "v1");
+  const authorizationScope: Extract<AuthorizationScope, { role: "issuer" }> = {
+    version: "tr-scope-v1",
+    role: "issuer",
+    credentialFamilyId: createScopedIdentifier("credential-family", label, "v1"),
+    schemaId: createScopedIdentifier("schema", label, "v1"),
+    schemaVersion: "1.0.0",
+    credentialDefinitionId: createScopedIdentifier("credential-definition", label, "v1"),
+    statusMethod: "midnight-status-registry-v1",
+  };
+  const resourceKind = issuerResourceTypeDetails[resourceType]?.governedType;
+  if (resourceKind === undefined) throw new RangeError("Unsupported issuer resource type");
+  const resourceId = issuerGovernedResourceId(authorizationScope, resourceKind);
 
   return {
     authorizationId,
     authorizationIdCommitment: bytes32Commitment(authorizationId),
     subjectDid,
     subjectDidCommitment: bytes32Commitment(subjectDid),
-    resourceType: IssuerResourceType.credentialFamily,
+    resourceType,
     resourceId,
     resourceIdCommitment: bytes32Commitment(resourceId),
     trustLevel: "approved",
-    referencedStatusRegistryId: createScopedIdentifier(
-      "status-registry",
-      label,
-      "v1",
-    ),
+    authorizationScope,
+    statusRegistryId: sha256Hex(`status-registry:${label}`),
+    statusAuthorityVerificationMethod: `${subjectDid}#status-1`,
+    statusPolicyId: createScopedIdentifier("status-policy", label, "v1"),
+    statusPolicyVersion: "v1",
+    statusPolicyContentCommitment: sha256Hex(`status-policy-content:${label}`),
   };
 };
 
@@ -182,14 +257,18 @@ export const createVerifierScenarioFixture = (
     label,
     "selective",
   );
-  const scopeResourceId = createScopedIdentifier(
-    "request-profile-scope",
-    label,
-    "v1",
-    "minimal",
-    "adult",
-    "selective",
-  );
+  const purpose = "admission";
+  const credentialScopeCommitment = sha256Hex(`credential-scope:${requestProfileId}`);
+  const scopeResourceId = requestGovernedResourceId({
+    version: "tr-scope-v1",
+    role: "verifier",
+    requestProfileId,
+    purpose,
+    credentialScopeCommitment,
+    allowedAttributes: [allowedAttributeSetId],
+    allowedPredicates: [allowedPredicateSetId],
+    disclosureLevel: disclosureLevelId,
+  });
 
   return {
     authorizationId,
@@ -197,7 +276,9 @@ export const createVerifierScenarioFixture = (
     subjectDid,
     subjectDidCommitment: bytes32Commitment(subjectDid),
     requestProfileId,
-    requestProfileIdCommitment: bytes32Commitment(requestProfileId),
+    purpose,
+    credentialScopeCommitment,
+    requestResourceIdCommitment: bytes32Commitment(scopeResourceId),
     allowedAttributeSetId,
     allowedAttributeSetCommitment: bytes32Commitment(allowedAttributeSetId),
     allowedPredicateSetId,
@@ -244,14 +325,18 @@ export const createAuditorScenarioFixture = (
     label,
     "restricted",
   );
-  const scopeResourceId = createScopedIdentifier(
-    "audit-request-scope",
-    label,
-    "v1",
-    "minimal",
-    "compliance",
-    "restricted",
-  );
+  const purpose = "admission";
+  const credentialScopeCommitment = sha256Hex(`credential-scope:${requestProfileId}`);
+  const scopeResourceId = requestGovernedResourceId({
+    version: "tr-scope-v1",
+    role: "auditor",
+    requestProfileId,
+    purpose,
+    credentialScopeCommitment,
+    allowedAttributes: [allowedAttributeSetId],
+    allowedPredicates: [allowedPredicateSetId],
+    disclosureLevel: disclosureLevelId,
+  });
 
   return {
     authorizationId,
@@ -259,7 +344,9 @@ export const createAuditorScenarioFixture = (
     subjectDid,
     subjectDidCommitment: bytes32Commitment(subjectDid),
     requestProfileId,
-    requestProfileIdCommitment: bytes32Commitment(requestProfileId),
+    purpose,
+    credentialScopeCommitment,
+    requestResourceIdCommitment: bytes32Commitment(scopeResourceId),
     allowedAttributeSetId,
     allowedAttributeSetCommitment: bytes32Commitment(allowedAttributeSetId),
     allowedPredicateSetId,
@@ -281,15 +368,13 @@ export const createMaintainerScenarioFixture = (
     "v1",
   );
   const subjectDid = createMidnightDid(`maintainer:${label}`);
-  const keyMaterial = createContractMaintainerFixture(label, 33);
-
   return {
     maintainerId,
     maintainerIdCommitment: bytes32Commitment(maintainerId),
     subjectDid,
     subjectDidCommitment: bytes32Commitment(subjectDid),
-    keyId: keyMaterial.keyId,
-    seed: keyMaterial.seed,
+    keyId: bytes32Commitment(`${subjectDid}#key-1`),
+    seed: bytes32Commitment(`maintainer-fixture-key:${label}`),
     trustLevel: "governance-approved",
   };
 };

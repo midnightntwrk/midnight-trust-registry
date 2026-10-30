@@ -1,12 +1,21 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { artifactWorkspaces, packageManifestCatalog } from "./trust-registry-workspace-catalog.mjs";
+import {
+  artifactWorkspaces,
+  compactContractArtifactCatalog,
+  packageManifestCatalog,
+} from "./trust-registry-workspace-catalog.mjs";
+import { missingFullContractArtifacts, proofCircuitNames, unexpectedLightContractArtifacts } from "./package-contents-policy.mjs";
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const lightMode = process.argv.includes("--light");
+const compactManagedDirectories = new Map(compactContractArtifactCatalog.map((entry) =>
+  [entry.workspace, entry.compactManagedDirectory]));
 
 const disallowedFilePatterns = [
   /^coverage\//u,
@@ -35,14 +44,16 @@ const parsePackOutput = (workspace, stdout) => {
 const errors = [];
 
 for (const workspace of artifactWorkspaces) {
-  const result = spawnSync(
-    "npm",
-    ["pack", "--dry-run", "--json", "--ignore-scripts"],
-    {
-      cwd: path.join(repoRoot, workspace),
-      encoding: "utf8",
-    },
-  );
+  const isContractWorkspace = compactManagedDirectories.has(workspace);
+  // npm re-parses the multi-gigabyte contract tarball and can fail with Z_BUF_ERROR.
+  const result = isContractWorkspace
+    ? spawnSync("pnpm", [
+      "--config.ignore-scripts=true", "--filter", `./${workspace}`,
+      "pack", "--dry-run", "--json",
+    ], { cwd: repoRoot, encoding: "utf8" })
+    : spawnSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], {
+      cwd: path.join(repoRoot, workspace), encoding: "utf8",
+    });
 
   if (result.status !== 0) {
     errors.push(
@@ -64,6 +75,31 @@ for (const workspace of artifactWorkspaces) {
     );
   }
 
+  const compactManagedDirectory = compactManagedDirectories.get(workspace);
+  if (compactManagedDirectory !== undefined) {
+    if (lightMode) {
+      const unexpected = unexpectedLightContractArtifacts(filePaths, compactManagedDirectory);
+      if (unexpected.length > 0) {
+        errors.push(`${workspace}: light package contains unexpected generated artifacts: ${unexpected.join(", ")}`);
+      }
+    } else {
+      const contractInfoPath = `dist/managed/${compactManagedDirectory}/compiler/contract-info.json`;
+      if (!filePaths.includes(contractInfoPath)) {
+        errors.push(`${workspace}: full package is missing ${contractInfoPath}`);
+      } else {
+        try {
+          const contractInfo = JSON.parse(readFileSync(path.join(repoRoot, workspace, contractInfoPath), "utf8"));
+          const missing = missingFullContractArtifacts(filePaths, compactManagedDirectory, proofCircuitNames(contractInfo));
+          if (missing.length > 0) {
+            errors.push(`${workspace}: full package has incomplete proof artifacts: ${missing.join(" and ")}`);
+          }
+        } catch (error) {
+          errors.push(`${workspace}: cannot validate Compact contract info: ${error.message}`);
+        }
+      }
+    }
+  }
+
   const missingRequired = (expected?.requiredPackedPaths ?? []).filter(
     (requiredPath) => !filePaths.includes(requiredPath),
   );
@@ -75,7 +111,7 @@ for (const workspace of artifactWorkspaces) {
   }
 
   console.log(
-    `[check-package-contents] ${workspace}: ${filePaths.length} files, ${packument.size} packed bytes`,
+    `[check-package-contents] ${workspace}: ${filePaths.length} files${packument.size === undefined ? "" : `, ${packument.size} packed bytes`}`,
   );
 }
 

@@ -1,0 +1,271 @@
+import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+
+import { approvedMappingSigner, staticImageIdentityFromArchive, verifyHelmImageMapping,
+  verifyMappingSignature } from "./check-helm-image-mapping.mjs";
+import { validateStaticImageManifest } from "./static-runtime-archive.mjs";
+import { approvedRuntimeHealthcheck } from "./runtime-healthcheck.mjs";
+
+const revision = "a".repeat(40);
+const inventorySha256 = "b".repeat(64);
+const valuesSha256 = "7".repeat(64);
+const archiveSha256 = "c".repeat(64);
+const configId = `sha256:${"d".repeat(64)}`;
+const imageId = `sha256:${"1".repeat(64)}`;
+const roles = ["node", "indexer", "proofServer", "api", "admin", "applicant"];
+const images = roles.map((role) => ({ role,
+  reference: `registry.example.test/tr/${role.toLowerCase()}@sha256:${"e".repeat(64)}`,
+  archiveSha256, imageId, configId }));
+
+test("rejects malformed static image manifest inputs before asset digest checks", () => {
+  for (const invalid of [null, [], "portal", { format: "tr-static-runtime-image-v1" },
+    { format: "tr-static-runtime-image-v1", assets: [null] }]) {
+    assert.throws(() => validateStaticImageManifest(invalid, "admin", revision, archiveSha256),
+      /static image manifest is invalid/u);
+  }
+});
+
+test("runtime healthcheck rejects inherited role names", () => {
+  assert.throws(() => approvedRuntimeHealthcheck("toString"), /Unknown runtime healthcheck role/u);
+});
+const bundle = {
+  sourceRevision: revision,
+  inventorySha256,
+  images: ["node", "indexer", "proof-server"].map((role) => ({ role,
+    acceptedIds: [configId, imageId], configId })),
+  apiRuntime: { imageId, configId },
+};
+const inventory = {
+  format: "tr-standalone-install-v4",
+  images: ["node", "indexer", "proof-server"].map((role) => ({ role, archiveSha256 })),
+  apiRuntime: { archiveSha256 },
+};
+const portals = {
+  admin: { archiveSha256, acceptedIds: [configId, imageId], configId },
+  applicant: { archiveSha256, acceptedIds: [configId, imageId], configId },
+};
+const values = { deploymentPhase: "runtime", imagePullPolicy: "Never",
+  images: Object.fromEntries(images.map(({ role, reference }) => [role, reference])) };
+const receipt = { format: "tr-helm-image-mapping-v1", sourceRevision: revision,
+  inventorySha256, valuesSha256, images };
+
+test("accepts an exact six-role image mapping", () => {
+  assert.deepEqual(verifyHelmImageMapping(bundle, inventory, portals, values, receipt, valuesSha256), {
+    sourceRevision: revision, inventorySha256, mappedRoles: roles, deploymentPhase: "runtime",
+  });
+});
+
+test("v5/v6 mapping uses the verified bundled portal images, not external manifests", () => {
+  for (const format of ["tr-standalone-install-v5", "tr-standalone-install-v6"]) {
+    const bundledInventory = { ...inventory, format,
+      portalRuntimes: { admin: { archiveSha256 }, applicant: { archiveSha256 } } };
+    const bundledImages = { ...bundle, portalRuntimes: {
+      admin: { acceptedIds: [imageId], configId },
+      applicant: { acceptedIds: [imageId], configId },
+    } };
+    assert.equal(verifyHelmImageMapping(bundledImages, bundledInventory, null, values, receipt,
+      valuesSha256).mappedRoles.length, 6);
+    const changed = structuredClone(bundledImages);
+    changed.portalRuntimes.admin.acceptedIds = [];
+    assert.throws(() => verifyHelmImageMapping(changed, bundledInventory, portals, values,
+      receipt, valuesSha256), /admin/u);
+    const wrongArchive = structuredClone(bundledInventory);
+    wrongArchive.portalRuntimes.applicant.archiveSha256 = "f".repeat(64);
+    assert.throws(() => verifyHelmImageMapping(bundledImages, wrongArchive, null, values,
+      receipt, valuesSha256), /applicant/u);
+  }
+});
+
+test("rejects changed registry references and archive identities", () => {
+  const changed = structuredClone(receipt);
+  changed.images[0].reference = `registry.example.test/tr/other@sha256:${"e".repeat(64)}`;
+  assert.throws(() => verifyHelmImageMapping(bundle, inventory, portals, values, changed, valuesSha256), /node/u);
+  changed.images[0].reference = receipt.images[0].reference;
+  changed.images[0].archiveSha256 = "f".repeat(64);
+  assert.throws(() => verifyHelmImageMapping(bundle, inventory, portals, values, changed, valuesSha256), /node/u);
+  changed.images[0].archiveSha256 = archiveSha256;
+  changed.images[0].imageId = `sha256:${"f".repeat(64)}`;
+  assert.throws(() => verifyHelmImageMapping(bundle, inventory, portals, values, changed, valuesSha256), /node/u);
+  changed.images[0].imageId = imageId;
+  changed.images[0].configId = `sha256:${"f".repeat(64)}`;
+  assert.throws(() => verifyHelmImageMapping(bundle, inventory, portals, values, changed, valuesSha256), /node/u);
+});
+
+test("rejects missing roles, tag references, unpinned inventory, and pulls", () => {
+  assert.throws(() => verifyHelmImageMapping(bundle, inventory, portals, values,
+    { ...receipt, images: images.slice(1) }, valuesSha256), /roles/u);
+  const tagged = structuredClone(receipt);
+  tagged.images[0].reference = "registry.example.test/tr/node:latest";
+  assert.throws(() => verifyHelmImageMapping(bundle, inventory, portals, values, tagged, valuesSha256), /node/u);
+  tagged.images[0].reference = `midnightntwrk/node@sha256:${"e".repeat(64)}`;
+  assert.throws(() => verifyHelmImageMapping(bundle, inventory, portals, values, tagged, valuesSha256), /node/u);
+  assert.throws(() => verifyHelmImageMapping(bundle, inventory, portals,
+    { ...values, imagePullPolicy: "Always" }, receipt, valuesSha256), /disagree/u);
+  assert.throws(() => verifyHelmImageMapping(bundle,
+    { ...inventory, format: "tr-standalone-install-v3" }, portals, values, receipt, valuesSha256), /disagree/u);
+});
+
+test("rejects stale source, inventory, and portal identities", () => {
+  assert.throws(() => verifyHelmImageMapping(bundle, inventory, portals, values,
+    { ...receipt, sourceRevision: "f".repeat(40) }, valuesSha256), /disagree/u);
+  assert.throws(() => verifyHelmImageMapping(bundle, inventory, portals, values,
+    { ...receipt, inventorySha256: "f".repeat(64) }, valuesSha256), /disagree/u);
+  assert.throws(() => verifyHelmImageMapping(bundle, inventory,
+    { ...portals, admin: { archiveSha256, acceptedIds: [], configId } }, values,
+    receipt, valuesSha256), /admin/u);
+  assert.throws(() => verifyHelmImageMapping(bundle, inventory, portals, values,
+    { ...receipt, valuesSha256: "f".repeat(64) }, valuesSha256), /disagree/u);
+});
+
+test("static archive config ID is checked against runtime revision and role", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-static-archive-test-"));
+  try {
+    const config = Buffer.from(JSON.stringify({ os: "linux", architecture: "arm64",
+      config: { Labels: { "org.opencontainers.image.revision": revision },
+        User: "1000:1000", WorkingDir: "/app", Env: ["TR_STATIC_ROLE=admin"],
+        Cmd: ["node", "/app/entrypoint.mjs", "--host", "0.0.0.0", "--port", "4173"] } }));
+    const digest = createHash("sha256").update(config).digest("hex");
+    await mkdir(join(root, "blobs", "sha256"), { recursive: true });
+    await writeFile(join(root, "blobs", "sha256", digest), config);
+    await writeFile(join(root, "manifest.json"), JSON.stringify([{
+      Config: `blobs/sha256/${digest}`, RepoTags: null,
+    }]));
+    const archive = join(root, "image.tar");
+    execFileSync("tar", ["-cf", archive, "-C", root, "manifest.json", `blobs/sha256/${digest}`]);
+    assert.deepEqual(staticImageIdentityFromArchive(archive, "admin", revision), {
+      configId: `sha256:${digest}`, acceptedIds: [`sha256:${digest}`],
+    });
+    assert.throws(() => staticImageIdentityFromArchive(archive, "applicant", revision), /runtime/u);
+    assert.throws(() => staticImageIdentityFromArchive(archive, "admin", "f".repeat(40)), /runtime/u);
+    const duplicateRole = Buffer.from(JSON.stringify({ os: "linux", architecture: "arm64",
+      config: { Labels: { "org.opencontainers.image.revision": revision },
+        User: "1000:1000", WorkingDir: "/app",
+        Env: ["TR_STATIC_ROLE=admin", "TR_STATIC_ROLE=applicant"],
+        Cmd: ["node", "/app/entrypoint.mjs", "--host", "0.0.0.0", "--port", "4173"] } }));
+    const duplicateDigest = createHash("sha256").update(duplicateRole).digest("hex");
+    await writeFile(join(root, "blobs", "sha256", duplicateDigest), duplicateRole);
+    await writeFile(join(root, "manifest.json"), JSON.stringify([{
+      Config: `blobs/sha256/${duplicateDigest}`, RepoTags: null,
+    }]));
+    const duplicateArchive = join(root, "duplicate.tar");
+    execFileSync("tar", ["-cf", duplicateArchive, "-C", root, "manifest.json",
+      `blobs/sha256/${duplicateDigest}`]);
+    assert.throws(() => staticImageIdentityFromArchive(duplicateArchive, "admin", revision),
+      /runtime/u);
+    await writeFile(join(root, "manifest.json"), JSON.stringify([{
+      Config: `blobs/sha256/${digest}`, RepoTags: null,
+    }]));
+    const imageManifest = Buffer.from(JSON.stringify({ schemaVersion: 2,
+      config: { digest: `sha256:${digest}` }, layers: [] }));
+    const imageDigest = createHash("sha256").update(imageManifest).digest("hex");
+    const imageIndex = Buffer.from(JSON.stringify({ schemaVersion: 2,
+      manifests: [{ digest: `sha256:${imageDigest}`, platform: { os: "linux", architecture: "arm64" } }] }));
+    const indexDigest = createHash("sha256").update(imageIndex).digest("hex");
+    await writeFile(join(root, "blobs", "sha256", imageDigest), imageManifest);
+    await writeFile(join(root, "blobs", "sha256", indexDigest), imageIndex);
+    await writeFile(join(root, "index.json"), JSON.stringify({ schemaVersion: 2,
+      manifests: [{ digest: `sha256:${indexDigest}` }] }));
+    const ociArchive = join(root, "oci.tar");
+    execFileSync("tar", ["-cf", ociArchive, "-C", root, "index.json", "manifest.json",
+      `blobs/sha256/${digest}`, `blobs/sha256/${imageDigest}`, `blobs/sha256/${indexDigest}`]);
+    assert.deepEqual(staticImageIdentityFromArchive(ociArchive, "admin", revision), {
+      configId: `sha256:${digest}`,
+      topDigest: `sha256:${indexDigest}`,
+      acceptedIds: [`sha256:${digest}`, `sha256:${imageDigest}`, `sha256:${indexDigest}`],
+    });
+    await writeFile(join(root, "index.json"), "{invalid-json");
+    const invalidArchive = join(root, "invalid.tar");
+    execFileSync("tar", ["-cf", invalidArchive, "-C", root, "index.json", "manifest.json",
+      `blobs/sha256/${digest}`]);
+    assert.throws(() => staticImageIdentityFromArchive(invalidArchive, "admin", revision));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("detached mapping signature covers the exact bytes and approved signer", async (t) => {
+  if (spawnSync("gpg", ["--version"], { stdio: "ignore" }).status !== 0
+    || spawnSync("gpgv", ["--version"], { stdio: "ignore" }).status !== 0) {
+    t.skip("gpg and gpgv are required");
+    return;
+  }
+  // macOS per-user temp paths can exceed the gpg-agent Unix socket limit.
+  const root = await mkdtemp("/tmp/tr-helm-gpg-");
+  try {
+    const home = join(root, "signer");
+    await mkdir(home, { mode: 0o700 });
+    execFileSync("gpg", ["--homedir", home, "--batch", "--pinentry-mode", "loopback",
+      "--passphrase", "", "--quick-generate-key", "Helm Reviewer <reviewer@example.test>",
+      "ed25519", "sign", "0"], { stdio: "pipe", timeout: 30_000 });
+    const listing = execFileSync("gpg", ["--homedir", home, "--batch", "--with-colons",
+      "--list-secret-keys"], { encoding: "utf8" });
+    const fingerprint = listing.split("\n").find((line) => line.startsWith("fpr:"))?.split(":")[9];
+    assert.match(fingerprint, /^[0-9A-F]{40}$/u);
+    const keyring = join(root, "reviewer.gpg");
+    await writeFile(keyring, execFileSync("gpg", ["--homedir", home, "--batch", "--export", fingerprint]));
+    const bytes = Buffer.from('{"format":"tr-helm-image-mapping-v1"}\n');
+    const signature = join(root, "mapping.sig");
+    execFileSync("gpg", ["--homedir", home, "--batch", "--yes", "--detach-sign",
+      "--output", signature], { input: bytes, stdio: ["pipe", "pipe", "pipe"] });
+    assert.equal(verifyMappingSignature(bytes, signature, keyring, fingerprint), fingerprint);
+    assert.throws(() => verifyMappingSignature(Buffer.from("changed"), signature, keyring,
+      fingerprint), /valid detached signature/u);
+    assert.throws(() => verifyMappingSignature(bytes, signature, keyring,
+      "B".repeat(40)), /valid detached signature/u);
+    const linkedKeyring = join(root, "linked-keyring.gpg");
+    const linkedSignature = join(root, "linked-mapping.sig");
+    await symlink(keyring, linkedKeyring);
+    await symlink(signature, linkedSignature);
+    assert.throws(() => verifyMappingSignature(bytes, signature, linkedKeyring, fingerprint));
+    assert.throws(() => verifyMappingSignature(bytes, linkedSignature, keyring, fingerprint));
+    assert.throws(() => verifyMappingSignature(bytes, "mapping.sig", keyring, fingerprint), /absolute/u);
+    const fakeBin = join(root, "fake-bin");
+    await mkdir(fakeBin);
+    const marker = join(root, "path-gpgv-called");
+    await writeFile(join(fakeBin, "gpgv"), `#!/bin/sh\nprintf called > '${marker}'\nexit 0\n`, { mode: 0o700 });
+    const oldPath = process.env.PATH;
+    const oldHome = process.env.GNUPGHOME;
+    try {
+      process.env.PATH = `${fakeBin}:${oldPath}`;
+      process.env.GNUPGHOME = join(root, "untrusted-home");
+      assert.equal(verifyMappingSignature(bytes, signature, keyring, fingerprint), fingerprint);
+      await assert.rejects(readFile(marker), { code: "ENOENT" });
+    } finally {
+      process.env.PATH = oldPath;
+      if (oldHome === undefined) delete process.env.GNUPGHOME;
+      else process.env.GNUPGHOME = oldHome;
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("GPG status accepts a pinned primary and rejects ambiguous or weak signatures", () => {
+  const signer = "A".repeat(40);
+  const primary = "B".repeat(40);
+  const signedAt = Math.floor(Date.now() / 1000) - 30;
+  const valid = `[GNUPG:] VALIDSIG ${signer} 2026-10-20 ${signedAt} 0 4 0 22 8 00 ${primary}\n`;
+  const status = `[GNUPG:] GOODSIG ${signer.slice(-16)} Reviewer\n${valid}`;
+  assert.equal(approvedMappingSigner(status, primary), primary);
+  assert.throws(() => approvedMappingSigner(status, signer), /valid detached signature/u);
+  assert.throws(() => approvedMappingSigner(status, "C".repeat(40)), /valid detached signature/u);
+  assert.throws(() => approvedMappingSigner(`${status}[GNUPG:] REVKEYSIG ${signer}\n`, primary), /valid detached signature/u);
+  assert.throws(() => approvedMappingSigner(`${status}[GNUPG:] EXPKEYSIG ${signer}\n`, primary), /valid detached signature/u);
+  for (const invalid of [
+    `${status}${valid}`,
+    `${status}[GNUPG:] GOODSIG ${signer.slice(-16)} Second\n`,
+    status.replace(" 22 8 00 ", " 22 2 00 "),
+    status.replace(" 22 8 00 ", " 22 8 01 "),
+    `${status}[GNUPG:] BADSIG ${signer}\n`,
+    `${status}[GNUPG:] NO_PUBKEY ${signer}\n`,
+    `${status}[GNUPG:] PLAINTEXT_LENGTH 10\n`,
+    status.replace(`${signedAt} 0`, `${signedAt} ${signedAt - 1}`),
+  ]) {
+    assert.throws(() => approvedMappingSigner(invalid, primary));
+  }
+});

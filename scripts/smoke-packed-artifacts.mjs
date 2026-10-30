@@ -11,12 +11,16 @@ import {
   artifactWorkspaces,
   packageManifestCatalog,
 } from "./trust-registry-workspace-catalog.mjs";
+import { verifyReleaseCandidateArtifacts } from "./release-candidate-manifest.mjs";
+import { snapshotReleaseTarballs } from "./snapshot-release-tarballs.mjs";
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 const parseArgs = () => {
   const options = {
     artifactsDir: artifactDirectory,
+    actorJourney: false,
+    vcConsumer: false,
   };
   const args = process.argv.slice(2);
 
@@ -28,6 +32,15 @@ const parseArgs = () => {
       case "--artifacts-dir":
         options.artifactsDir = args[++index];
         break;
+      case "--manifest":
+        options.manifest = args[++index];
+        break;
+      case "--actor-journey":
+        options.actorJourney = true;
+        break;
+      case "--vc-consumer":
+        options.vcConsumer = true;
+        break;
       case "--help":
         console.log(
           [
@@ -35,6 +48,9 @@ const parseArgs = () => {
             "",
             "Options:",
             `  --artifacts-dir <dir>  Tarball directory. Defaults to ${artifactDirectory}.`,
+            "  --manifest <path>     Verify the candidate manifest before installing any tarball.",
+            "  --actor-journey       Run four signed HTTP journeys and the recognition VC/VP scenario from packed packages.",
+            "  --vc-consumer         Compile the packed Ledger 8 consumer fixture and check its pinned authority domain.",
           ].join("\n"),
         );
         process.exit(0);
@@ -81,16 +97,24 @@ const ensureArtifacts = (artifactsPath) => {
   });
 };
 
-const { artifactsDir } = parseArgs();
+const { artifactsDir, manifest, actorJourney, vcConsumer } = parseArgs();
 const resolvedArtifactsDir = path.resolve(repoRoot, artifactsDir);
-fs.mkdirSync(resolvedArtifactsDir, { recursive: true });
-ensureArtifacts(resolvedArtifactsDir);
-
-const tarballPaths = fs
-  .readdirSync(resolvedArtifactsDir)
-  .filter((fileName) => fileName.endsWith(".tgz"))
-  .sort()
-  .map((fileName) => path.join(resolvedArtifactsDir, fileName));
+let tarballPaths;
+let candidateManifest;
+if (manifest !== undefined) {
+  if (typeof manifest !== "string" || manifest.length === 0) {
+    throw new Error("--manifest requires a file path");
+  }
+  candidateManifest = JSON.parse(fs.readFileSync(path.resolve(repoRoot, manifest), "utf8"));
+  tarballPaths = verifyReleaseCandidateArtifacts(candidateManifest, resolvedArtifactsDir);
+} else {
+  fs.mkdirSync(resolvedArtifactsDir, { recursive: true });
+  ensureArtifacts(resolvedArtifactsDir);
+  tarballPaths = fs.readdirSync(resolvedArtifactsDir)
+    .filter((fileName) => fileName.endsWith(".tgz"))
+    .sort()
+    .map((fileName) => path.join(resolvedArtifactsDir, fileName));
+}
 
 if (tarballPaths.length !== artifactWorkspaces.length) {
   throw new Error(
@@ -101,6 +125,10 @@ if (tarballPaths.length !== artifactWorkspaces.length) {
 const smokeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "trust-registry-pack-smoke-"));
 
 try {
+  if (candidateManifest !== undefined) {
+    tarballPaths = snapshotReleaseTarballs(candidateManifest, resolvedArtifactsDir,
+      path.join(smokeRoot, "verified-packages"));
+  }
   fs.writeFileSync(
     path.join(smokeRoot, "package.json"),
     `${JSON.stringify({ name: "trust-registry-pack-smoke", private: true, type: "module" }, null, 2)}\n`,
@@ -121,10 +149,63 @@ try {
       "  await import(specifier);",
       "  console.log(`[smoke-packed-artifacts] imported ${specifier}`);",
       "}",
+      'const contract = await import("@midnight-ntwrk/trust-registry-contract");',
+      'const fixtures = await import("@midnight-ntwrk/trust-registry-contract/testing");',
+      'if ("labelToBytes32" in contract || typeof fixtures.labelToBytes32 !== "function") {',
+      '  throw new Error("Trust Registry contract fixture exports crossed the package boundary");',
+      '}',
+      'const client = await import("@midnight-ntwrk/trust-registry-client");',
+      'const simulator = await import("@midnight-ntwrk/trust-registry-client/simulator");',
+      'if ("TrustRegistrySimulatorClient" in client || typeof simulator.TrustRegistrySimulatorClient !== "function") {',
+      '  throw new Error("Trust Registry client simulator exports crossed the package boundary");',
+      '}',
     ].join("\n"),
   );
 
   run("node", ["smoke.mjs"], { cwd: smokeRoot });
+  fs.copyFileSync(
+    path.join(repoRoot, "scripts/packed-consumer-scenario.mjs"),
+    path.join(smokeRoot, "packed-consumer-scenario.mjs"),
+  );
+  run("node", ["packed-consumer-scenario.mjs"], { cwd: smokeRoot });
+  if (vcConsumer) {
+    fs.copyFileSync(
+      path.join(repoRoot, "scripts/packed-vc-consumer-scenario.mjs"),
+      path.join(smokeRoot, "packed-vc-consumer-scenario.mjs"),
+    );
+    const compactVersion = fs.readFileSync(path.join(repoRoot, ".compact-version"), "utf8").trim();
+    run("node", ["packed-vc-consumer-scenario.mjs", compactVersion], { cwd: smokeRoot });
+    console.log("[smoke-packed-artifacts] Packed Ledger 8 consumer fixture passed.");
+  }
+  if (actorJourney) {
+    for (const script of [
+      "demo-signed-membership-journey.mjs",
+      "packed-recognition-journey.mjs",
+      "workspace-lock-fixture.mjs",
+      "hold-workspace-lock.mjs",
+      "probe-workspace-restart.mjs",
+    ]) {
+      fs.copyFileSync(path.join(repoRoot, "scripts", script), path.join(smokeRoot, script));
+    }
+    for (const role of ["issuer", "verifier", "auditor", "maintainer"]) {
+      run("node", ["demo-signed-membership-journey.mjs", role], { cwd: smokeRoot });
+      console.log(`[smoke-packed-artifacts] Packed ${role} actor journey passed.`);
+    }
+    const recognitionReport = JSON.parse(run("node", ["packed-recognition-journey.mjs"], { cwd: smokeRoot }));
+    if (recognitionReport.demo !== "packed-recognition-journey"
+      || recognitionReport.proposalSignatureVerified !== true
+      || recognitionReport.proposalApiEvidenceVerified !== true
+      || !/^0x[0-9a-f]{64}$/u.test(recognitionReport.evidenceCommitment)
+      || !Array.isArray(recognitionReport.signerKeyIds)
+      || recognitionReport.signerKeyIds.length < 2
+      || !Array.isArray(recognitionReport.expectedRejections)
+      || !recognitionReport.expectedRejections.includes("missing-proposal-evidence:404")
+      || !recognitionReport.expectedRejections.includes("unavailable-ledger-reader:503")
+      || "vp" in recognitionReport || "assertion" in recognitionReport) {
+      throw new Error("Packed recognition journey did not return a scrubbed, verified evidence report");
+    }
+    console.log("[smoke-packed-artifacts] Packed recognition journey passed.");
+  }
   run(path.join(smokeRoot, "node_modules/.bin/trust-registry"), ["--help"], {
     cwd: smokeRoot,
   });
@@ -132,4 +213,4 @@ try {
   fs.rmSync(smokeRoot, { force: true, recursive: true });
 }
 
-console.log("[smoke-packed-artifacts] Local artifact tarballs install and import cleanly.");
+console.log("[smoke-packed-artifacts] Local artifact tarballs install and verify a consumer scenario.");

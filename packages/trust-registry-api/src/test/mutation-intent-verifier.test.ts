@@ -1,0 +1,136 @@
+import { Buffer } from "node:buffer";
+
+import { MidnightNetwork } from "@midnight-ntwrk/midnight-did";
+import {
+  deriveJubjubPublicKey,
+  deriveJubjubPublicKeyFromSeed,
+  encodeJubjubSignature,
+  signJubjubPayloadFromSeed,
+} from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
+import { mutationIntentDigestBytes, type MutationIntent } from "@midnight-ntwrk/trust-registry-domain";
+import {
+  createMidnightDid,
+  createMidnightDidLedgerFixture,
+  createMidnightDidResolver,
+} from "@midnight-ntwrk/trust-registry-integration";
+import { describe, expect, it } from "vitest";
+
+import { MutationIntentDidResolutionUnavailableError, verifyMutationIntentDidSignature } from "../mutation-intent-verifier.js";
+
+const seed = new Uint8Array(32).fill(73);
+const did = createMidnightDid("mutation-intent-verifier");
+const keyId = `${did}#assertion-1`;
+const intent: MutationIntent = {
+  version: "tr-mutation-intent-v1",
+  registryId: "tr:registry:demo",
+  actorDid: did,
+  actorKeyId: keyId,
+  actorRole: "applicant",
+  action: "submit",
+  target: "auditor",
+  targetId: "auth:auditor:alice:v1",
+  scopeCommitment: `0x${"11".repeat(32)}`,
+  payloadCommitment: `0x${"22".repeat(32)}`,
+  nonce: `0x${"33".repeat(32)}`,
+  expectedWorkspaceCommitment: `0x${"44".repeat(32)}`,
+  expectedEpochId: "epoch:1",
+  issuedAt: "2026-10-10T00:00:00.000Z",
+  expiresAt: "2026-10-10T00:05:00.000Z",
+};
+
+const signatureFor = (value: MutationIntent, signingSeed = seed) => ({
+  keyId: value.actorKeyId,
+  algorithm: "jubjub-schnorr" as const,
+  value: `0x${Buffer.from(encodeJubjubSignature(signJubjubPayloadFromSeed(
+    signingSeed,
+    mutationIntentDigestBytes(value),
+  ))).toString("hex")}`,
+});
+
+const resolverWithKey = (capabilityInvocation = false) => createMidnightDidResolver([
+  createMidnightDidLedgerFixture(did, {
+    verificationMethodId: "assertion-1",
+    schnorrJubjubPublicKey: deriveJubjubPublicKeyFromSeed(seed),
+    capabilityInvocation,
+  }),
+]);
+
+describe("Midnight DID mutation-intent signatures", () => {
+  it("verifies applicant authentication and maintainer capability invocation", async () => {
+    const resolver = resolverWithKey(true);
+    expect(await verifyMutationIntentDidSignature(intent, signatureFor(intent), resolver)).toBe(true);
+    const maintainer: MutationIntent = { ...intent, actorRole: "maintainer", action: "approve" };
+    expect(await verifyMutationIntentDidSignature(maintainer, signatureFor(maintainer), resolver)).toBe(true);
+    expect(await verifyMutationIntentDidSignature(maintainer, signatureFor(maintainer), resolverWithKey())).toBe(false);
+  });
+
+  it("rejects wrong key, changed payload, malformed signature, and invalid intent without trapping", async () => {
+    const resolver = resolverWithKey();
+    const signature = signatureFor(intent);
+    expect(await verifyMutationIntentDidSignature({ ...intent, payloadCommitment: `0x${"55".repeat(32)}` }, signature, resolver)).toBe(false);
+    expect(await verifyMutationIntentDidSignature(intent, { ...signature, keyId: `${did}#other` }, resolver)).toBe(false);
+    expect(await verifyMutationIntentDidSignature(intent, signatureFor(intent, new Uint8Array(32).fill(74)), resolver)).toBe(false);
+    expect(await verifyMutationIntentDidSignature(intent, { ...signature, value: `0x${"ff".repeat(96)}` }, resolver)).toBe(false);
+    expect(await verifyMutationIntentDidSignature({ ...intent, issuedAt: "not-a-time" }, signature, resolver)).toBe(false);
+    expect(await verifyMutationIntentDidSignature(intent, signature, { resolveResult: async () => null })).toBe(false);
+  });
+
+  it("selects the signed DID method among two authentication keys and rejects a retired method", async () => {
+    const secondSeed = new Uint8Array(32).fill(74);
+    const first = { id: "assertion-1", publicKey: deriveJubjubPublicKeyFromSeed(seed) };
+    const second = { id: "assertion-2", publicKey: deriveJubjubPublicKeyFromSeed(secondSeed) };
+    const twoKeys = createMidnightDidResolver([
+      createMidnightDidLedgerFixture(did, { schnorrJubjubAuthenticationMethods: [first, second] }),
+    ]);
+    const secondIntent = { ...intent, actorKeyId: `${did}#assertion-2` };
+    expect(await verifyMutationIntentDidSignature(intent, signatureFor(intent), twoKeys)).toBe(true);
+    expect(await verifyMutationIntentDidSignature(secondIntent, signatureFor(secondIntent, secondSeed), twoKeys)).toBe(true);
+    expect(await verifyMutationIntentDidSignature(secondIntent, signatureFor(secondIntent, seed), twoKeys)).toBe(false);
+    expect(await verifyMutationIntentDidSignature(secondIntent, {
+      ...signatureFor(intent), keyId: secondIntent.actorKeyId,
+    }, twoKeys)).toBe(false);
+
+    const rotated = createMidnightDidResolver([
+      createMidnightDidLedgerFixture(did, { schnorrJubjubAuthenticationMethods: [second], version: 2n }),
+    ]);
+    expect(await verifyMutationIntentDidSignature(intent, signatureFor(intent), rotated)).toBe(false);
+    expect(await verifyMutationIntentDidSignature(secondIntent, signatureFor(secondIntent, secondSeed), rotated)).toBe(true);
+  });
+
+  it("rejects a forged identity-key signature that requires no secret key", async () => {
+    const nonce = 7n;
+    const forgedSignature = {
+      keyId,
+      algorithm: "jubjub-schnorr" as const,
+      value: `0x${Buffer.from(encodeJubjubSignature({
+        announcement: deriveJubjubPublicKey(nonce),
+        response: nonce,
+      })).toString("hex")}`,
+    };
+    const identityKeyResolver = createMidnightDidResolver([
+      createMidnightDidLedgerFixture(did, {
+        verificationMethodId: "assertion-1",
+        schnorrJubjubPublicKey: { x: 0n, y: 1n },
+      }),
+    ]);
+    expect(await verifyMutationIntentDidSignature(intent, forgedSignature, identityKeyResolver)).toBe(false);
+  });
+
+  it("distinguishes a retryable DID resolver outage from an invalid signature", async () => {
+    const outage = new Error("RPC unavailable");
+    await expect(verifyMutationIntentDidSignature(intent, signatureFor(intent), {
+      resolveResult: async () => { throw outage; },
+    })).rejects.toMatchObject({
+      name: MutationIntentDidResolutionUnavailableError.name,
+      cause: outage,
+    });
+    const wrongNetwork = createMidnightDidResolver([
+      createMidnightDidLedgerFixture(did, {
+        verificationMethodId: "assertion-1",
+        schnorrJubjubPublicKey: deriveJubjubPublicKeyFromSeed(seed),
+      }),
+    ], MidnightNetwork.Testnet);
+    await expect(verifyMutationIntentDidSignature(intent, signatureFor(intent), wrongNetwork))
+      .resolves.toBe(false);
+  });
+});

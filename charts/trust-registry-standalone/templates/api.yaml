@@ -1,0 +1,136 @@
+{{- if eq .Values.deploymentPhase "runtime" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "tr.componentName" (dict "root" . "component" "api") }}
+  labels:
+    {{- include "tr.labels" (dict "root" . "component" "api") | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "tr.selector" (dict "root" . "component" "api") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "tr.labels" (dict "root" . "component" "api") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector:
+        kubernetes.io/arch: arm64
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: stage-approval
+          image: {{ .Values.images.api | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command: [sh, -ec]
+          args:
+            - |
+              umask 077
+              rm -f /run/trust-registry/api-plan.json /run/trust-registry/api-plan.sig
+              rm -f /run/trust-registry/install-inventory.json /run/trust-registry/release-manifest.json
+              rm -f /run/trust-registry/snapshot.json
+              rm -rf /run/trust-registry/reviewer-keyring
+              mkdir /run/trust-registry/reviewer-keyring
+              cp /input/approval/api-plan.json /run/trust-registry/api-plan.json
+              cp /input/approval/api-plan.sig /run/trust-registry/api-plan.sig
+              cp /input/approval/install-inventory.json /run/trust-registry/install-inventory.json
+              cp /input/approval/release-manifest.json /run/trust-registry/release-manifest.json
+              cp /input/approval/snapshot.json /run/trust-registry/snapshot.json
+              cp /input/keyring/pubring.kbx /run/trust-registry/reviewer-keyring/pubring.kbx
+              chmod 600 /run/trust-registry/api-plan.json /run/trust-registry/api-plan.sig
+              chmod 600 /run/trust-registry/install-inventory.json /run/trust-registry/release-manifest.json
+              chmod 600 /run/trust-registry/snapshot.json /run/trust-registry/reviewer-keyring/pubring.kbx
+              chmod 700 /run/trust-registry/reviewer-keyring
+          resources:
+            {{- toYaml .Values.resources.api | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: approval-input
+              mountPath: /input/approval
+              readOnly: true
+            - name: keyring-input
+              mountPath: /input/keyring
+              readOnly: true
+            - name: approval-runtime
+              mountPath: /run/trust-registry
+      containers:
+        - name: api
+          image: {{ .Values.images.api | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          args:
+            - serve
+            - --local-ledger-plan
+            - /run/trust-registry/api-plan.json
+            - --local-ledger-signature
+            - /run/trust-registry/api-plan.sig
+            - --local-ledger-keyring
+            - /run/trust-registry/reviewer-keyring
+            - --local-ledger-reviewer
+            - {{ .Values.secrets.apiReviewerFingerprint | quote }}
+            - --host
+            - 0.0.0.0
+            - --cluster-bind
+            - --serve-portals
+          ports:
+            - name: http
+              containerPort: 4400
+          startupProbe:
+            exec:
+              command: [node, -e, "fetch('http://127.0.0.1:4400/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+            timeoutSeconds: 20
+            periodSeconds: 10
+            failureThreshold: 120
+          readinessProbe:
+            exec:
+              command: [node, -e, "fetch('http://127.0.0.1:4400/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+            timeoutSeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: [node, -e, "const s=require('node:net').connect(4400,'127.0.0.1');s.setTimeout(2000);s.on('connect',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1));s.on('timeout',()=>process.exit(1))"]
+            timeoutSeconds: 5
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.resources.api | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: approval-runtime
+              mountPath: /run/trust-registry
+              readOnly: true
+            - name: temporary
+              mountPath: /tmp
+      volumes:
+        - name: approval-input
+          secret:
+            secretName: {{ .Values.secrets.apiApprovalName | quote }}
+            defaultMode: 288
+        - name: keyring-input
+          secret:
+            secretName: {{ .Values.secrets.apiKeyringName | quote }}
+            defaultMode: 288
+        - name: approval-runtime
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+        - name: temporary
+          emptyDir:
+            medium: Memory
+            sizeLimit: 32Mi
+{{- end }}
