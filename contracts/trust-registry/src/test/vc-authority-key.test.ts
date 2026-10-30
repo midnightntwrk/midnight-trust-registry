@@ -284,27 +284,37 @@ describe("governed VC authority keys", () => {
     expect(registry.simulator.getVcAuthorityKey(first.keyIdCommitment).status).toBe(VcAuthorityKeyStatus.revoked);
   });
 
-  it("atomically retires an active or suspended key and links the current replacement", () => {
-    for (const suspendFirst of [false, true]) {
-      const registry = fixture();
-      const first = candidate("one", 41);
-      const replacement = candidate("two", 42);
-      register(registry, first);
-      if (suspendFirst) update(registry, first.keyIdCommitment, "suspend", labelToBytes32("reason:suspend"));
-      const eventHash = rotate(registry, first.keyIdCommitment, replacement, labelToBytes32("reason:rotate"));
-      const retired = registry.simulator.getVcAuthorityKey(first.keyIdCommitment);
-      const current = registry.simulator.getCurrentVcAuthorityKey(first.consumerContractAddress);
-      expect(retired.status).toBe(VcAuthorityKeyStatus.retired);
-      expect(retired.retiredAtSequence).toBe(current.registeredAtSequence);
-      expect(Buffer.from(retired.lifecycleEventHash)).toEqual(Buffer.from(eventHash));
-      expect(current.status).toBe(VcAuthorityKeyStatus.active);
-      expect(Buffer.from(current.predecessorKeyIdCommitment)).toEqual(Buffer.from(first.keyIdCommitment));
-      expect(Buffer.from(current.authorityDidCommitment)).toEqual(Buffer.from(first.authorityDidCommitment));
-      expect(Buffer.from(current.authorityMethodIdCommitment)).toEqual(Buffer.from(replacement.authorityMethodIdCommitment));
-      expect(Buffer.from(current.lifecycleEventHash)).toEqual(Buffer.from(eventHash));
-      expect(() => rotate(registry, first.keyIdCommitment, candidate("three", 43), labelToBytes32("reason:again")))
-        .toThrow();
-    }
+  it("atomically retires an active key and links the current replacement", () => {
+    const registry = fixture();
+    const first = candidate("one", 41);
+    const replacement = candidate("two", 42);
+    register(registry, first);
+    const eventHash = rotate(registry, first.keyIdCommitment, replacement, labelToBytes32("reason:rotate"));
+    const retired = registry.simulator.getVcAuthorityKey(first.keyIdCommitment);
+    const current = registry.simulator.getCurrentVcAuthorityKey(first.consumerContractAddress);
+    expect(retired.status).toBe(VcAuthorityKeyStatus.retired);
+    expect(retired.retiredAtSequence).toBe(current.registeredAtSequence);
+    expect(Buffer.from(retired.lifecycleEventHash)).toEqual(Buffer.from(eventHash));
+    expect(current.status).toBe(VcAuthorityKeyStatus.active);
+    expect(Buffer.from(current.predecessorKeyIdCommitment)).toEqual(Buffer.from(first.keyIdCommitment));
+    expect(Buffer.from(current.authorityDidCommitment)).toEqual(Buffer.from(first.authorityDidCommitment));
+    expect(Buffer.from(current.authorityMethodIdCommitment)).toEqual(Buffer.from(replacement.authorityMethodIdCommitment));
+    expect(Buffer.from(current.lifecycleEventHash)).toEqual(Buffer.from(eventHash));
+    expect(() => rotate(registry, first.keyIdCommitment, candidate("three", 43), labelToBytes32("reason:again")))
+      .toThrow();
+  });
+
+  it("does not reactivate a suspended authority through ordinary key rotation", () => {
+    const registry = fixture();
+    const first = candidate("one", 41);
+    register(registry, first);
+    update(registry, first.keyIdCommitment, "suspend", labelToBytes32("reason:suspend"));
+    const actionCount = registry.simulator.getLedger().governanceActionCount;
+    expect(() => rotate(registry, first.keyIdCommitment, candidate("two", 42), labelToBytes32("reason:rotate")))
+      .toThrow(/must be active to rotate/u);
+    expect(registry.simulator.getVcAuthorityKey(first.keyIdCommitment).status).toBe(VcAuthorityKeyStatus.suspended);
+    expect(registry.simulator.getLedger().governanceActionCount).toBe(actionCount);
+    expect(() => registry.simulator.getCurrentVcAuthorityKey(first.consumerContractAddress)).toThrow();
   });
 
   it("rejects a substituted rotation payload and keeps the old key current", () => {

@@ -1153,7 +1153,8 @@ export const createTrustRegistryApiServer = (
         || (segments.length === 4 && segments[1] === "recognition-evidence"
           && (segments[3] === "challenges" || segments[3] === "submissions" || segments[3] === "accepted"))
         || (segments.length === 6 && segments[1] === "governed" && segments[2] === "recognition"
-          && segments[4] === "proposal" && (segments[5] === "resolve" || segments[5] === "evidence"))
+          && segments[4] === "proposal" && (segments[5] === "prepare" || segments[5] === "submit"
+            || segments[5] === "resolve" || segments[5] === "evidence"))
         || (segments.length === 2 && segments[1] === "pending-applications")
       );
 
@@ -1525,6 +1526,7 @@ export const createTrustRegistryApiServer = (
         }
         const recognitionId = parseApplicationIdentifier(segments[3]!, problemBaseUri);
         response.setHeader("cache-control", "no-store");
+        await authorizeRecognitionRequest(recognitionId, request);
         const body = await parseJsonBody(request,
           (value) => (segments[5] === "prepare"
             ? GovernedRecognitionProposalPrepareRequestSchema
