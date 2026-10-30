@@ -319,6 +319,7 @@ describe("private recognition accreditation HTTP", () => {
     })).resolves.toBe("admitted");
     const preparedResponse = await post(`${proposalPath}/prepare`, proposalRequest);
     expect(preparedResponse.status, await preparedResponse.clone().text()).toBe(200);
+    expect(preparedResponse.headers.get("access-control-allow-origin")).toBeNull();
     const prepared = await preparedResponse.json() as PreparedGovernedRecognitionProposal;
     expect(prepared.evidenceHash).toBe(result.evidenceCommitment);
     const signature = signDeploymentBoundMaintainerActionFromSeed(
@@ -352,6 +353,7 @@ describe("private recognition accreditation HTTP", () => {
     expect(harness.simulator.getLedger().recognitionCount).toBe(0n);
     const submitted = await post(`${proposalPath}/submit`, submitBody);
     expect(submitted.status).toBe(202);
+    expect(submitted.headers.get("access-control-allow-origin")).toBeNull();
     expect(harness.simulator.getLedger().recognitionCount).toBe(1n);
     expect(`0x${Buffer.from(harness.simulator.getRecognition(recognitionFixture.recognitionIdCommitment).evidenceHash).toString("hex")}`)
       .toBe(receipt.evidenceCommitment);

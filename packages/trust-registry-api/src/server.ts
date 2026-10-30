@@ -1573,7 +1573,7 @@ export const createTrustRegistryApiServer = (
             },
             clock: () => Date.parse(options.clock?.() ?? new Date().toISOString()),
           });
-          writeJson(response, segments[5] === "prepare" ? 200 : 202, result);
+          writeJson(response, segments[5] === "prepare" ? 200 : 202, result, false);
           return;
         } catch (error) {
           if (error instanceof HttpProblem) throw error;
