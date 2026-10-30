@@ -52,11 +52,11 @@ async function listen(server: Server): Promise<string> {
   return `http://127.0.0.1:${address.port.toString()}`;
 }
 
-const post = (url: string, body: unknown, authorized = true) => fetch(url, {
+const post = (url: string, body: unknown, authorized: boolean | string = true) => fetch(url, {
   method: "POST",
   headers: {
     "content-type": "application/json",
-    ...(authorized ? { "x-authority-did": authorityDid } : {}),
+    ...(authorized ? { "x-authority-did": typeof authorized === "string" ? authorized : authorityDid } : {}),
   },
   body: JSON.stringify(body),
 });
@@ -302,6 +302,11 @@ describe("private recognition accreditation HTTP", () => {
     const proposalPath = `${base}/v1/governed/recognition/${recognitionId}/proposal`;
     const receipt = result.receipt as { receiptId: string; evidenceCommitment: string };
     const proposalRequest = { receiptId: receipt.receiptId, evidenceCommitment: receipt.evidenceCommitment };
+    const deniedPrepare = await post(`${proposalPath}/prepare`, proposalRequest, false);
+    expect(deniedPrepare.status).toBe(403);
+    expect(deniedPrepare.headers.get("access-control-allow-origin")).toBeNull();
+    expect((await post(`${proposalPath}/prepare`, proposalRequest, "did:midnight:wrong-authority")).status).toBe(403);
+    expect(harness.simulator.getLedger().recognitionCount).toBe(0n);
     await expect(withRecognitionProposalAdmission({
       recognitionId,
       readBinding: () => proposalPort.readBinding(recognitionId),
@@ -314,6 +319,7 @@ describe("private recognition accreditation HTTP", () => {
     })).resolves.toBe("admitted");
     const preparedResponse = await post(`${proposalPath}/prepare`, proposalRequest);
     expect(preparedResponse.status, await preparedResponse.clone().text()).toBe(200);
+    expect(preparedResponse.headers.get("access-control-allow-origin")).toBeNull();
     const prepared = await preparedResponse.json() as PreparedGovernedRecognitionProposal;
     expect(prepared.evidenceHash).toBe(result.evidenceCommitment);
     const signature = signDeploymentBoundMaintainerActionFromSeed(
@@ -330,7 +336,7 @@ describe("private recognition accreditation HTTP", () => {
     const verifierSignature = harness.signRecognitionProposalEvidence(
       harness.prepareRecognitionProposalAction(recognitionFixture, Buffer.from(receipt.evidenceCommitment.slice(2), "hex")),
     );
-    const submitted = await post(`${proposalPath}/submit`, {
+    const submitBody = {
       ...proposalRequest,
       prepared,
       signers: [{
@@ -339,8 +345,15 @@ describe("private recognition accreditation HTTP", () => {
         signature: `0x${Buffer.from(encodeJubjubSignature(signature)).toString("hex")}`,
       }],
       evidenceVerifierSignature: `0x${Buffer.from(encodeJubjubSignature(verifierSignature)).toString("hex")}`,
-    });
+    };
+    const deniedSubmit = await post(`${proposalPath}/submit`, submitBody, false);
+    expect(deniedSubmit.status).toBe(403);
+    expect(deniedSubmit.headers.get("access-control-allow-origin")).toBeNull();
+    expect((await post(`${proposalPath}/submit`, submitBody, "did:midnight:wrong-authority")).status).toBe(403);
+    expect(harness.simulator.getLedger().recognitionCount).toBe(0n);
+    const submitted = await post(`${proposalPath}/submit`, submitBody);
     expect(submitted.status).toBe(202);
+    expect(submitted.headers.get("access-control-allow-origin")).toBeNull();
     expect(harness.simulator.getLedger().recognitionCount).toBe(1n);
     expect(`0x${Buffer.from(harness.simulator.getRecognition(recognitionFixture.recognitionIdCommitment).evidenceHash).toString("hex")}`)
       .toBe(receipt.evidenceCommitment);

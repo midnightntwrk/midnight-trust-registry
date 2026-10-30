@@ -4162,11 +4162,7 @@ export circuit rotateVcAuthorityKey(
   assert(vcAuthorityKeyIds.member(disclosedOldKeyId), "Old VC authority key is not registered");
   assert(!vcAuthorityKeyIds.member(disclosedNewKeyId), "New VC authority key id already exists");
   const old = vcAuthorityKeyRecords.lookup(disclosedOldKeyId);
-  assert(
-    old.status == VcAuthorityKeyStatus.active
-      || old.status == VcAuthorityKeyStatus.suspended,
-    "Old VC authority key must be active or suspended to rotate"
-  );
+  assert(old.status == VcAuthorityKeyStatus.active, "Old VC authority key must be active to rotate");
   assert(
     currentVcAuthorityKeyIdsByConsumer.member(old.consumerContractAddress)
       && currentVcAuthorityKeyIdsByConsumer.lookup(old.consumerContractAddress) == disclosedOldKeyId,

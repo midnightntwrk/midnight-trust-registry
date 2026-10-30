@@ -373,6 +373,9 @@ revocation, and rotation; the candidate authority DID cannot authorize its
 own key enrollment. Suspension stops current-key reads immediately without
 erasing the record. Revocation is terminal for that key ID; a successor
 requires a new governed registration and a consumer-pinned anchor update.
+Ordinary rotation requires an active predecessor; it MUST NOT turn a suspended
+authority into an active successor without a separate governed revocation and
+registration decision.
 Logical action sequences, not wall-clock time, order key events. Registration
 of a new key MUST NOT imply that an already deployed consumer accepts it.
 
