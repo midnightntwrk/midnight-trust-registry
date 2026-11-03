@@ -1,44 +1,28 @@
 name: Publish Packages
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Release version to publish, for example 0.1.0-rc1"
-        required: true
-        type: string
-      npm_tag:
-        description: "npm dist-tag to publish under"
-        required: false
-        default: "next"
-        type: string
-      registry:
-        description: "npm registry URL"
-        required: false
-        default: "https://registry.npmjs.org"
-        type: string
+  workflow_dispatch: {}
 
 permissions:
   contents: read
 
 env:
-  COMPACT_COMPILER_VERSION: 0.30.0
   PNPM_CONFIG_AUDIT: "false"
   PNPM_CONFIG_FUND: "false"
 
 concurrency:
-  group: trust-registry-publish-${{ github.event.inputs.version }}
+  group: trust-registry-publish-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  publish:
-    name: Publish core packages
+  prepare:
+    name: Prepare reviewable release bytes
     if: github.ref == 'refs/heads/develop'
-    environment:
-      name: npm-publish
-      url: ${{ inputs.registry }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      manifest_sha256: ${{ steps.manifest.outputs.sha256 }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -54,26 +38,74 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-          registry-url: ${{ inputs.registry }}
+          registry-url: https://registry.npmjs.org
+
+      - name: Select committed release candidate
+        id: release
+        run: node scripts/select-publish-version.mjs --github-output
+
+      - name: Read checked-in Compact version
+        id: compact-version
+        run: node scripts/check-compact-version.mjs --github-output
+
+      - name: Restore pinned Compact installation
+        id: compact-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.local/bin/compact
+            ~/.compact/
+          key: tr-compact-v3-ubuntu24.04-setup836895c8-${{ runner.os }}-${{ runner.arch }}-${{ steps.compact-version.outputs.version }}
 
       - name: Set up Compact toolchain
+        if: steps.compact-cache.outputs.cache-hit != 'true'
         uses: midnightntwrk/setup-compact-action@836895c8fffbbea6bd986af2b17e8941ff29d1f8 # v1
         with:
-          compact-version: ${{ env.COMPACT_COMPILER_VERSION }}
+          compact-version: ${{ steps.compact-version.outputs.version }}
+          cache-enabled: 'false'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Add cached Compact to PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Verify Compact installation
-        run: compact compile --version
+        run: node scripts/check-compact-version.mjs --check-installed
+        env:
+          TR_COMPACT_CACHE_HIT: ${{ steps.compact-cache.outputs.cache-hit }}
+
+      - name: Verify Compact cache paths
+        if: steps.compact-cache.outputs.cache-hit != 'true'
+        run: test -x "$HOME/.local/bin/compact" && test -x "$HOME/.compact/bin/compactc"
+
+      - name: Save verified Compact installation
+        if: steps.compact-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.local/bin/compact
+            ~/.compact/
+          key: tr-compact-v3-ubuntu24.04-setup836895c8-${{ runner.os }}-${{ runner.arch }}-${{ steps.compact-version.outputs.version }}
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --prefer-offline
 
-      - name: Stamp release version
+      - name: Validate Compact workflow semantics
+        run: pnpm run check:compact-version
+
+      - name: Require committed release version
         env:
-          VERSION: ${{ inputs.version }}
-        run: node scripts/release-set-version.mjs --version "$VERSION"
+          VERSION: ${{ steps.release.outputs.version }}
+        run: node scripts/release-set-version.mjs --version "$VERSION" --check
 
       - name: Check workspace manifests
         run: pnpm run check:workspace-manifests
+
+      - name: Verify installed DID and VC runtime
+        run: pnpm run check:installed-identity-runtime
+
+      - name: Run light test suite before publish
+        run: pnpm run test:light
 
       - name: Build repository
         run: pnpm run build
@@ -81,32 +113,185 @@ jobs:
       - name: Check package contents
         run: pnpm run packages:check-contents
 
-      - name: Run light test suite before publish
-        run: pnpm run test:light
-
       - name: Pack local release artifacts
         run: pnpm run artifacts:pack -- --output-dir artifacts/npm-release
 
+      - name: Generate exact-source release manifest
+        env:
+          TR_MANIFEST_GITHUB_VERIFIED_COMMIT: "true"
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          node scripts/release-candidate-manifest.mjs
+          --artifact-dir artifacts/npm-release
+          --output artifacts/npm-release.manifest.json
+
+      - name: Verify manifest and exact release tarballs
+        env:
+          TR_MANIFEST_GITHUB_VERIFIED_COMMIT: "true"
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          node scripts/release-candidate-manifest.mjs
+          --artifact-dir artifacts/npm-release
+          --verify artifacts/npm-release.manifest.json
+
       - name: Smoke test release tarballs before publish
-        run: pnpm run published-artifacts:smoke -- --tarball-dir artifacts/npm-release
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: >-
+          pnpm run published-artifacts:smoke --
+          --tarball-dir artifacts/npm-release
+          --manifest artifacts/npm-release.manifest.json
+          --version "$VERSION"
+
+      - name: Record manifest digest for release review
+        id: manifest
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          digest="$(sha256sum artifacts/npm-release.manifest.json | cut -d ' ' -f 1)"
+          printf 'sha256=%s\n' "$digest" >> "$GITHUB_OUTPUT"
+          printf 'Source: `%s`\nVersion: `%s`\nManifest SHA-256: `%s`\n' \
+            "$GITHUB_SHA" "$VERSION" "$digest" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload release tarballs
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # ratchet:actions/upload-artifact@v4
         with:
-          name: trust-registry-${{ inputs.version }}-tarballs
+          name: trust-registry-${{ steps.release.outputs.version }}-tarballs
           if-no-files-found: error
-          path: artifacts/npm-release/*.tgz
+          path: |
+            artifacts/npm-release/*.tgz
+            artifacts/npm-release.manifest.json
+
+  publish:
+    name: Publish reviewed core packages
+    needs: prepare
+    if: github.ref == 'refs/heads/develop'
+    environment:
+      name: npm-publish
+      url: https://www.npmjs.com/
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout exact release source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+          registry-url: https://registry.npmjs.org
+
+      - name: Select committed release candidate
+        id: release
+        run: node scripts/select-publish-version.mjs --github-output
+
+      - name: Match prepared source and version
+        env:
+          PREPARED_VERSION: ${{ needs.prepare.outputs.version }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: test "$VERSION" = "$PREPARED_VERSION"
+
+      - name: Read checked-in Compact version
+        id: compact-version
+        run: node scripts/check-compact-version.mjs --github-output
+
+      - name: Restore pinned Compact installation
+        id: compact-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.local/bin/compact
+            ~/.compact/
+          key: tr-compact-v3-ubuntu24.04-setup836895c8-${{ runner.os }}-${{ runner.arch }}-${{ steps.compact-version.outputs.version }}
+
+      - name: Set up Compact toolchain
+        if: steps.compact-cache.outputs.cache-hit != 'true'
+        uses: midnightntwrk/setup-compact-action@836895c8fffbbea6bd986af2b17e8941ff29d1f8 # v1
+        with:
+          compact-version: ${{ steps.compact-version.outputs.version }}
+          cache-enabled: 'false'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Add cached Compact to PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Verify Compact installation
+        run: node scripts/check-compact-version.mjs --check-installed
+        env:
+          TR_COMPACT_CACHE_HIT: ${{ steps.compact-cache.outputs.cache-hit }}
+
+      - name: Verify Compact cache paths
+        if: steps.compact-cache.outputs.cache-hit != 'true'
+        run: test -x "$HOME/.local/bin/compact" && test -x "$HOME/.compact/bin/compactc"
+
+      - name: Save verified Compact installation
+        if: steps.compact-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.local/bin/compact
+            ~/.compact/
+          key: tr-compact-v3-ubuntu24.04-setup836895c8-${{ runner.os }}-${{ runner.arch }}-${{ steps.compact-version.outputs.version }}
+
+      - name: Install exact-source dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: Validate Compact workflow semantics
+        run: pnpm run check:compact-version
+
+      - name: Rebuild full Compact artifacts for source verification
+        run: pnpm run build
+
+      - name: Download reviewed release tarballs
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: trust-registry-${{ needs.prepare.outputs.version }}-tarballs
+          path: artifacts
+
+      - name: Match reviewed manifest digest
+        env:
+          PREPARED_MANIFEST_SHA256: ${{ needs.prepare.outputs.manifest_sha256 }}
+        run: node scripts/check-reviewed-manifest-digest.mjs artifacts/npm-release.manifest.json "$PREPARED_MANIFEST_SHA256"
+
+      - name: Verify manifest and exact release tarballs after approval
+        env:
+          TR_MANIFEST_GITHUB_VERIFIED_COMMIT: "true"
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          node scripts/release-candidate-manifest.mjs
+          --artifact-dir artifacts/npm-release
+          --verify artifacts/npm-release.manifest.json
+
+      - name: Smoke test downloaded release tarballs
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: >-
+          pnpm run published-artifacts:smoke --
+          --tarball-dir artifacts/npm-release
+          --manifest artifacts/npm-release.manifest.json
+          --version "$VERSION"
 
       - name: Publish packages to npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_TAG: ${{ inputs.npm_tag }}
-          REGISTRY: ${{ inputs.registry }}
-          VERSION: ${{ inputs.version }}
+          NPM_TAG: next
+          REGISTRY: https://registry.npmjs.org
+          VERSION: ${{ needs.prepare.outputs.version }}
+          MANIFEST_PATH: artifacts/npm-release.manifest.json
+          TR_MANIFEST_GITHUB_VERIFIED_COMMIT: "true"
+          GH_TOKEN: ${{ github.token }}
         run: ./scripts/publish-npm-packages.sh
 
       - name: Smoke test published packages
         env:
-          REGISTRY: ${{ inputs.registry }}
-          VERSION: ${{ inputs.version }}
+          REGISTRY: https://registry.npmjs.org
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: ./scripts/release-smoke-npm-packages.sh

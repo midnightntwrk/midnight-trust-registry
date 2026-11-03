@@ -76,6 +76,7 @@ Do not use this repository for:
 | `packages/trust-registry-applicant-portal` | `@midnight-ntwrk/trust-registry-applicant-portal` | Applicant-facing UI for issuer/verifier/auditor submissions. |
 | `adapters/trqp` | `@midnight-ntwrk/trust-registry-trqp-adapter` | TRQP-compatible registry and evidence projection. |
 | `adapters/openid-federation` | `@midnight-ntwrk/trust-registry-openid-federation-adapter` | OpenID Federation metadata and trust-chain projection experiments. |
+| `docs-site` | `@midnight-ntwrk/trust-registry-docs` | VitePress guide, diagrams, and OpenAPI artifact; not published to npm. |
 
 ## Current Layout
 
@@ -86,6 +87,7 @@ docs/research/      Public research-derived requirements
 docs/decisions/     Design decisions and open questions
                      plus repo-local execution knowledge
 docs/architecture/  Repo boundaries and integration diagrams
+docs-site/          Published documentation site and OpenAPI inventory
 packages/           TypeScript workspaces for registry domain and clients
 scripts/            Local validation helpers
 run.sh              Repository entrypoint for light/full validation
@@ -142,6 +144,32 @@ or compact scripts, then validate the generated surface through tests.
 6. Push and open PRs against `develop` or the previous branch when stacking.
 7. Ask for second-opinion review when the change affects protocol, governance, package layout, Compact contracts, CI, or security boundaries.
 
+At each phase exit, inventory local worktrees, branches, containers, volumes,
+temporary build targets, and ignored artifacts. Remove obsolete worktrees and
+reproducible targets yourself only after checking Git status, unpublished
+commits, ownership, and whether any generated outputs are preserved in a
+verified bundle. Keep proving/verifier keys, signed install bundles, private
+approval evidence, and active ledger volumes. If an item cannot safely be
+removed, record exactly why it was retained; do not leave cleanup for the user
+or another agent. Never reset a worktree destructively to make it removable or
+touch sibling-project infrastructure.
+
+For issue-backed `0.1.0` product increments, target `milestone-0.1.0` rather
+than `develop` and follow [the milestone delivery harness](docs/plans/milestone-0.1.0-delivery-harness.md).
+Agent/operator merge into that branch is permitted only after green CI on the
+exact head and a documented current-head LLM review, internal or external.
+No branch-protection rule or GitHub code-owner approval is required on the
+milestone train; the operator verifies these two gates manually. Cap each PR
+at three completed review/fix rounds. After round three, file a linked
+follow-up for remaining advisory findings; unresolved blockers stop the PR.
+Keep using signed/DCO commits and PRs rather than direct milestone pushes.
+PRs into `develop` and `main` retain human merge authority and their existing
+protections.
+
+Before autonomous milestone merges, verify current-head `Milestone Build, Package, and Test`,
+`scan`, and `Typecheck, Audit, and Packaging Baseline` are green, along with
+any other applicable CI jobs. Do not treat red or pending CI as advisory.
+
 Commit form:
 
 ```bash
@@ -153,7 +181,7 @@ git commit -S -s -m "<type>: <subject>"
 Minimum validation for docs-only changes:
 
 ```bash
-./scripts/check-docs.sh
+./run.sh docs
 git diff --check
 ```
 

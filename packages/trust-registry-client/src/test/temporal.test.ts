@@ -256,6 +256,56 @@ describe("trust registry temporal helpers", () => {
     expect(selected?.recognition.recognitionId).toBe("recognition:gaia-x:v1");
   });
 
+  it("keeps an active authorization while a newer renewal is pending", () => {
+    const active: AuthorizationRecord = {
+      ...authorizationRecord,
+      status: "active",
+      revokedAt: undefined,
+    };
+    const pending: AuthorizationRecord = {
+      ...active,
+      authorizationId: "auth:issuer:degree:v2",
+      status: "proposed",
+      proposedAt: "2026-05-20T00:25:00Z",
+      authorizedAt: undefined,
+      activeFrom: undefined,
+    };
+    const at = "2026-05-20T00:30:00Z";
+    expect(selectAuthorizationEntryAtTime(
+      [{ authorization: active }, { authorization: pending }], at,
+    )?.authorization.authorizationId).toBe(active.authorizationId);
+
+    const revoked = { ...pending, status: "revoked" as const,
+      authorizedAt: "2026-05-20T00:26:00Z",
+      activeFrom: "2026-05-20T00:27:00Z",
+      revokedAt: "2026-05-20T00:29:00Z" };
+    const selected = selectAuthorizationEntryAtTime(
+      [{ authorization: active }, { authorization: revoked }], at,
+    );
+    expect(selected?.authorization.authorizationId).toBe(revoked.authorizationId);
+    expect(selected && evaluateAuthorizationRecordAtTime(selected.authorization, at).trustedAtTime).toBe(false);
+  });
+
+  it("keeps active recognition while a newer proposal is pending", () => {
+    const active: RecognitionRecord = {
+      ...recognitionRecord,
+      status: "active",
+      suspendedAt: undefined,
+    };
+    const pending: RecognitionRecord = {
+      ...active,
+      recognitionId: "recognition:gaia-x:v2",
+      status: "proposed",
+      proposedAt: "2026-05-20T00:20:00Z",
+      authorizedAt: undefined,
+      effectiveFrom: undefined,
+    };
+    expect(selectRecognitionEntryAtTime(
+      [{ recognition: active }, { recognition: pending }],
+      "2026-05-20T00:25:00Z",
+    )?.recognition.recognitionId).toBe(active.recognitionId);
+  });
+
   it("rejects invalid timestamps", () => {
     expect(() =>
       evaluateAuthorizationRecordAtTime(authorizationRecord, "not-a-date")

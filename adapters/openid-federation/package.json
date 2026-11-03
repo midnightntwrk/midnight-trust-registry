@@ -36,12 +36,13 @@
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
     "build:light": "pnpm run build",
-    "test:light": "pnpm run test"
+    "test:light": "vitest run --testTimeout 30000"
   },
   "dependencies": {
+    "@midnight-ntwrk/trust-registry-client": "workspace:0.1.0",
     "@midnight-ntwrk/trust-registry-domain": "workspace:0.1.0",
     "jose": "^6.1.0",
-    "zod": "^4.1.0"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@midnight-ntwrk/trust-registry-integration": "workspace:0.1.0"

@@ -29,7 +29,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -104,7 +105,8 @@ input {
 }
 
 .toolbar label,
-.detail-panel label {
+.detail-panel label,
+.proposal-panel label {
   display: grid;
   gap: 0.35rem;
   font-size: 0.86rem;
@@ -365,6 +367,63 @@ input {
   display: flex;
   flex-wrap: wrap;
   gap: 0.6rem;
+}
+
+.governed-panel {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid rgba(24, 33, 39, 0.14);
+  border-radius: 18px;
+  background: rgba(236, 244, 237, 0.65);
+}
+
+.proposal-panel {
+  margin: 1.25rem 0;
+  background: rgba(255, 248, 239, 0.88);
+}
+
+.proposal-panel h2 {
+  margin: 0;
+  font-size: clamp(1.35rem, 2vw, 1.8rem);
+}
+
+.proposal-panel form {
+  max-width: 68rem;
+}
+
+.proposal-evidence {
+  width: 100%;
+  min-height: 8rem;
+  resize: vertical;
+  font-size: 0.78rem;
+}
+
+.governed-panel h3,
+.governed-panel p {
+  margin: 0;
+}
+
+.governed-panel form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.governed-context {
+  max-height: 18rem;
+  margin: 0;
+  padding: 0.85rem;
+  overflow: auto;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.8);
+  font-size: 0.75rem;
+}
+
+.governed-signers {
+  width: 100%;
+  min-height: 9rem;
+  resize: vertical;
+  font-size: 0.78rem;
 }
 
 .empty-state {

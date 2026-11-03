@@ -6,7 +6,11 @@ Date: 2026-05-23
 
 The formal decisions for application evidence and scope canonicalization are
 [ADR-0001](adr-0001-governance-evidence-and-policy-snapshots.md) and
-[ADR-0002](adr-0002-resource-and-request-profile-canonicalization.md).
+[ADR-0002](adr-0002-resource-and-request-profile-canonicalization.md), with
+[ADR-0003](adr-0003-composite-issuer-resource-identity.md) specifying the
+type-separated full-scope issuer resource identity.
+[ADR-0004](adr-0004-composite-request-scope-identity.md) extends this exact
+scope binding to verifier and auditor request resources.
 
 - Use Midnight DID by default for party and registry identifiers.
 - Use Midnight VC and VP packages as the default application evidence surface.
@@ -42,6 +46,7 @@ The formal decisions for application evidence and scope canonicalization are
 - For the first VC-backed integration slice, consume the official `@midnight-ntwrk/midnight-did-credentials` and `@midnight-ntwrk/midnight-did-credentials-status-registry` packages from packed tarballs under `tooling/vendor/` instead of modeling VC status evidence locally inside TR.
 - Superseding dependency decision (2026-10-05): remove those retired private VC tarballs. Use published `@midnight-ntwrk/credential-compact@0.2.0` and `@midnight-ntwrk/credential-did-midnight@0.2.0` with Midnight DID `0.7.0`. The new core does not own status-registry authority; retain that as an explicit integration backlog item rather than reimplementing VC status semantics in TR.
 - Superseded VC status flow: the issuer bundle's `referencedStatusRegistryId` is not covered by the signed authorization leaf, and the old status-registry helpers are retired. Verify only anchored issuer decisions today; status authority and revocation checks must wait for the authenticated binding tracked in #76.
+- Status binding decision (2026-10-08): the issuer proposal signs a canonical V1 status-policy digest, the ledger retains it across lifecycle transitions, and the epoch authorization leaf authenticates it. Issuer evidence carries the preimage and common client verification rejects missing, substituted, or legacy unanchored metadata. This authenticates the accepted registry and authority identifier only; DID-method resolution and VC non-revocation remain #90/#76 follow-ups.
 - Keep the Turbo workspace graph acyclic: `@midnight-ntwrk/trust-registry-client` test coverage may consume integration fixtures by source import, but the client package manifest must not depend on `@midnight-ntwrk/trust-registry-integration`.
 - Implement the first TRQP slice as a dedicated read-only adapter workspace under `adapters/trqp`, backed by an abstract source interface instead of direct contract or simulator coupling.
 - Use `registryDid` as the canonical TRQP `authority_id`; keep the local `registryId` as a Midnight profile field in metadata responses.
@@ -71,18 +76,18 @@ The formal decisions for application evidence and scope canonicalization are
 - Keep the applicant portal package API-scoped: import public response types from `@midnight-ntwrk/trust-registry-api` instead of reaching into CLI snapshot types directly.
 - Treat `?apiBase=` as a session-only local override in the applicant portal; do not silently replace the saved default URL in browser storage.
 - Implement the first on-chain application-state slice for issuer authorization before widening mutable operator surfaces: add explicit `proposed`, `authorized`, and `active` issuer states, and keep verifier, recognition, auditor, and maintainer application flows as follow-on slices.
-- Keep the existing direct maintainer `createIssuerAuthorization` path as a compatibility shortcut for bootstrap or migration flows while the governed application workflows are being rolled out; new integration coverage should prefer the proposal, approval, and activation path.
-- Treat the issuer application-state enum expansion as a wire-format break for persisted ordinal interpretations of `AuthorizationStatus`; pre-existing deployed state would need migration or redeployment before adopting this slice.
+- Require issuer applications to use proposal, approval, and activation; bootstrap does not bypass this lifecycle.
+- Treat the issuer application-state enum as the initial wire format; this repository has no released state to migrate.
 - Apply the same governed application-state pattern to verifier and recognition records before adding mutable operator/API submission surfaces: `proposed` claims scope, `authorized` records approval, and `active` is the only state accepted by authorization assertions.
 - Model auditor onboarding as a dedicated authorization family that mirrors the verifier composite scope shape instead of overloading verifier records or recognition. This keeps auditor evidence role-specific while reusing the same request-profile, attribute, predicate, and disclosure commitments.
 - Sequence the next stack after operator reporting around the missing governance seams: issuer application workflow, then verifier/recognition/auditor application flows, then maintainer membership and multi-maintainer quorum execution before operator/API mutation surfaces.
 - Implement the first maintainer-governance slice as a dedicated `MaintainerMembershipRecord` family, separate from the active signer key table. This keeps append-only maintainer onboarding history explicit while preserving a narrow active-key surface for contract authorization checks.
-- Keep bootstrap maintainer initialization as a special-case active membership created by `initializeRegistry`, but require every non-bootstrap maintainer to pass through `proposed -> authorized -> active`.
+- Keep bootstrap maintainer initialization as a special-case active membership created atomically by the constructor, but require every non-bootstrap maintainer to pass through `proposed -> authorized -> active`.
 - Refuse duplicate live maintainer identity enrollment and refuse maintainer deactivation when it would drop the registry below the configured maintainer threshold.
 - Implement quorum execution with a fixed-capacity signer bundle instead of a dynamic signer list. The v1 contract supports up to `5` approving maintainers per governed action so the core registry can cover `3-of-5` and `5-of-7` governance patterns without introducing dynamic Compact arrays into the authorization surface.
 - Keep maintainer quorum policy explicit and stateful: bootstrap starts at `1-of-1`, then the registry lifts thresholds through a governed `tr:policy:thresholds:update` action after additional maintainers are activated.
 - Scope maintainer quorum rules by action family before the richer policy-template slice lands: use the default threshold for onboarding and ordinary governance actions, a dedicated emergency threshold for suspend/revoke actions, and a dedicated archival threshold for archive actions.
-- Keep `lastAuthorizedMaintainerKeyId` and epoch publication signatures submitter-oriented in v1: they record `signer1`, while the full approving quorum is bound into the governance-event chain via `signerSetHash`.
+- Keep `lastAuthorizedMaintainerKeyId` and epoch publication first-signer evidence as a pointer to `signer1`, now the lowest key-ID commitment in the strictly sorted bundle. Neither field authenticates the transaction submitter; the full approving quorum is bound into the governance-event chain via `signerSetHash`.
 - Keep simulator-generated epoch publication quorum-aware once thresholds rise above `1`: internal evidence publication may auto-select active co-maintainers to satisfy the live default threshold, but operator-facing harness calls must still pass explicit co-authorizers when the action itself is governed.
 - Treat quorum execution as the current Compact cost boundary: as of `2026-05-22`, a fresh cache-miss `./run.sh --light` path compiles `54` circuits and spent about `19` minutes inside the contract build during `typecheck:light`, so any further signer-bundle expansion or duplicate build wiring needs explicit review.
 - Implement the first governance-policy template slice in the domain, evidence, simulator, and operator-report surfaces before widening the Compact contract. The v1 contract continues to anchor one policy commitment plus threshold state, while typed policy templates and decision-family bindings explain how maintainer, member, emergency, archival, and auditor decisions should be interpreted off-chain.

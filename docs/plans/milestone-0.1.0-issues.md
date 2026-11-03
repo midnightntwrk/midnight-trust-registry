@@ -1,9 +1,22 @@
 # 0.1.0 Executable Issue Plan
 
 Status: active milestone backlog
-Updated: 2026-10-05
+Updated: 2026-10-28
 GitHub milestone: [Midnight Trust Registry 0.1.0](https://github.com/midnightntwrk/midnight-trust-registry/milestone/1)
 Normative scope: [0.1.0 reference profile](../spec/milestone-0.1.0.md)
+
+The first release candidate is self-hosted local/offline runtime only. The
+[standalone qualification gates](../guide/standalone-offline-runtime.md) are
+required in addition to the simulator-based functional issue plan below.
+Live Preprod qualification is deferred to a later public-network release;
+mocked-provider and simulator tests are not local deployment evidence.
+Kubernetes and Helm are optional deployment paths, not 0.1.0 release
+criteria. A non-Kubernetes self-hosted installation can qualify the RC if
+it satisfies the same real local-ledger, offline actor, recovery, and
+security gates. Keep #218 tracked independently without gating #45.
+The local 0.1.0 RC returns current decisions only. Historical API/TRQP
+decision and evidence routes remain explicitly out of scope and must fail
+closed; issue #39 remains tracked for a later profile, not as a local RC gate.
 
 Issue numbers are the tracker identifiers. The order below is the dependency
 order, not a promise that every issue requires a separate PR. A PR may close
@@ -19,14 +32,69 @@ issues #54-#57 and ADRs are inputs, not work to recreate.
 | 3 | [#76](https://github.com/midnightntwrk/midnight-trust-registry/issues/76) | Real VC/VP evidence attestation: applicant and evidence verifier | #75 |
 | 4 | [#67](https://github.com/midnightntwrk/midnight-trust-registry/issues/67) | DID-bound on-chain evidence signature | #75, #76 |
 | 5 | [#77](https://github.com/midnightntwrk/midnight-trust-registry/issues/77) | Authenticated mutation gateway: applicant, maintainer, operator | #67, #75 |
-| 6 | [#39](https://github.com/midnightntwrk/midnight-trust-registry/issues/39) | Historical API and TRQP evidence | Scope profile and #67 |
-| 7 | [#79](https://github.com/midnightntwrk/midnight-trust-registry/issues/79) | Produce authenticated issuer/verifier decision evidence | #75, #39 |
-| 8 | [#73](https://github.com/midnightntwrk/midnight-trust-registry/issues/73) | Publish VC-compatible signer descriptors and authority proofs for Ledger 8 consumers | #67, #79 |
-| 9 | [#58](https://github.com/midnightntwrk/midnight-trust-registry/issues/58) | Issuer VC/VP governed journey | #67, #77, #39, #73 |
-| 10 | [#78](https://github.com/midnightntwrk/midnight-trust-registry/issues/78) | Other governed role journeys: verifier, auditor, recognition, maintainer | #58, #67, #77 |
-| 11 | [#59](https://github.com/midnightntwrk/midnight-trust-registry/issues/59) | Applicant, operator, relying-party HTTP/UI journey | #77, #58, #73 |
-| 12 | [#60](https://github.com/midnightntwrk/midnight-trust-registry/issues/60) | Adversarial and historical security matrix | #58, #78, #73 |
-| 13 | [#45](https://github.com/midnightntwrk/midnight-trust-registry/issues/45) | Release candidate and attestable package gate | All prior milestone issues |
+| 6 | [#79](https://github.com/midnightntwrk/midnight-trust-registry/issues/79) | Produce authenticated current issuer/verifier decision evidence | #75, #67 |
+| 7 | [#73](https://github.com/midnightntwrk/midnight-trust-registry/issues/73) | Publish VC-compatible signer descriptors and authority proofs for Ledger 8 consumers | #67, #79 |
+| 8 | [#58](https://github.com/midnightntwrk/midnight-trust-registry/issues/58) | Issuer VC/VP governed journey | #67, #77, #73 |
+| 9 | [#78](https://github.com/midnightntwrk/midnight-trust-registry/issues/78) | Other governed role journeys: verifier, auditor, recognition, maintainer | #58, #67, #77 |
+| 10 | [#59](https://github.com/midnightntwrk/midnight-trust-registry/issues/59) | Applicant, operator, relying-party HTTP/UI journey | #77, #58, #73 |
+| 11 | [#60](https://github.com/midnightntwrk/midnight-trust-registry/issues/60) | Adversarial current-decision matrix and historical-route rejection | #58, #78, #73 |
+| 12 | [#219](https://github.com/midnightntwrk/midnight-trust-registry/issues/219) | Finalized local-ledger API and offline actor journeys | #58, #59, #77, #90 VC-owned status adapter |
+| 13 | [#220](https://github.com/midnightntwrk/midnight-trust-registry/issues/220) | Audited recovery of never-observed ambiguous proposal reservations | #219 finalized reader and journal |
+| 14 | [#45](https://github.com/midnightntwrk/midnight-trust-registry/issues/45) | Local-only release candidate and attestable package gate | All in-scope RC gates, including #219 and #220 |
+
+The numbered map records implementation dependencies, not a complete
+release verdict. For the local RC, #45 also requires explicit disposition of
+the [external scan findings](https://github.com/midnightntwrk/midnight-trust-registry/issues/237),
+exact-source [manifest-backed publish](https://github.com/midnightntwrk/midnight-trust-registry/issues/236),
+the [provider-code identity](https://github.com/midnightntwrk/midnight-trust-registry/issues/233)
+and [plan-to-deployment](https://github.com/midnightntwrk/midnight-trust-registry/issues/234)
+boundaries, and a [non-author human security review](https://github.com/midnightntwrk/midnight-trust-registry/issues/232)
+of the same install candidate. The [strict GPG parity](https://github.com/midnightntwrk/midnight-trust-registry/issues/235)
+and [restart quarantine](https://github.com/midnightntwrk/midnight-trust-registry/issues/230)
+follow-ups must be reconciled against their acceptance criteria before they
+are treated as complete. Draft PRs and local signed commits are implementation
+evidence only. The acceptance procedure and private `L01`-`S01` evidence
+inventory are in the [operator journey](../guide/standalone-local-journey.md#operator-acceptance-record).
+
+Deferred from this local RC: [#39](https://github.com/midnightntwrk/midnight-trust-registry/issues/39)
+historical API/TRQP evidence and the historical-route acceptance text still
+present in older GitHub issues. Their tracker wording must be reconciled before
+claiming those issues closed; this plan does not silently close them.
+
+[#218](https://github.com/midnightntwrk/midnight-trust-registry/issues/218)
+remains open outside the 0.1.0 milestone as an optional Helm deployment path.
+Its cluster qualification is not a dependency of #45.
+
+## Ambiguous Proposal Recovery Gate (#220)
+
+The real-journal issuer HTTP test, using a simulator-backed finalized reader,
+now rejects an insufficient maintainer quorum before reservation. That closes
+one deterministic pre-broadcast failure path, not recovery of a genuinely
+ambiguous submission.
+The read-only recovery candidate marks a reserved proposal for review only
+when the finalized governance counter has advanced beyond its signed sequence
+and the proposal record appears absent in the same view. The current indexer
+state read has no machine-verifiable absence proof, so the report cannot
+authorize a journal release, retry, or replacement journal.
+
+Before #220 can close, the approved recovery policy and implementation must:
+
+- Authenticate the advanced counter and record absence against one finalized
+  checkpoint, or require a separately approved signed invalidation proof;
+  indexer-null, elapsed time, and a second unbound read are insufficient.
+- Preserve a durable no-replay tombstone and the original attempt, signer
+  context, evidence commitment, decision, and checkpoint under the journal's
+  single-host lock. Recheck the attempt digest at the mutation point; do not
+  let a direct journal writer substitute an unsigned sequence context.
+- Reject a subsequent proposal if node restart or restore rolls the chain
+  behind an accepted release checkpoint. A matching genesis hash alone does
+  not prove continuity, and a released original ID must never become reusable.
+- Exercise delayed inclusion, conflicting observations, reader outage,
+  crash/restart, rollback, tampered decisions, capacity, and cross-process
+  races; obtain independent security review before enabling release.
+
+Until these conditions have evidence, the global reservation remains
+fail-closed even when a candidate report suggests sequence invalidation.
 
 ## Use-Case Ownership
 
@@ -40,7 +108,8 @@ suite #60 adds adversarial mutations, not a substitute for the lead tests.
 | UC-05 issuer, UC-06 verifier, UC-07 auditor applications | #58, #78, #78 respectively | Real VC/VP eligibility, exact scope, quorum, negative status |
 | UC-08 quorum decision, UC-09 lifecycle action | #58, #78 respectively | Bound commitment and threshold-specific transition |
 | UC-10 external recognition | #78 | No transitive local authorization |
-| UC-11 epoch, UC-12 historical query | #39 | Accepted root, signer/policy history, tampered-proof rejection |
+| UC-11 current epoch | #219 | Accepted finalized root, current signer/policy context, tampered-proof rejection |
+| UC-12 historical query | Deferred #39 | Explicit out-of-scope response; no historical decision claim in this RC |
 | UC-13 holder presentation | #58 | VC proof, status, and issuer trust evaluated separately |
 | UC-14 auditor request | #78 | Exact mandate, no automatic data access |
 | UC-15 VC consumer anchor | #73 | Authority proof, pinned Ledger 8 anchor, monotonic updates |
@@ -76,15 +145,21 @@ Validation: `./run.sh --light`, focused Compact tests, `./run.sh integration`.
 
 ### #39, #58, #59, #60, and #45: acceptance alignment
 
-- #39 MUST return a historical epoch, policy version, exact scope, and
-  independently verifiable proof for native API requests; TRQP historical
-  responses remain a named extension. Its UC-11 fixture MUST publish a valid
-  epoch and reject an invalid root or signer before that view can be queried.
+- #39 historical decision/evidence acceptance is deferred from the local RC.
+  The RC MUST return an explicit out-of-scope response for historical API and
+  TRQP decision routes. Current epoch evidence MUST reject invalid roots and
+  signers; simulator fixtures do not qualify finalized local readback.
 - #58 MUST consume the real evidence-verifier adapter and DID-bound contract
   path and the #73 signer descriptor, then test accepted, wrong-scope, suspended,
   revoked, expired, and wrong-registry issuer outcomes. Its credential decision
   MUST use the VC composed `VC<>::assertAuthorizedIssuerProof` path, not the
   metadata-only descriptor helper.
+  The local VP fixture keeps authentication and assertion keys as separate
+  relationships on one Midnight DID. The governed simulator demo now joins VP
+  intake, 2-of-3 approval, active epoch, authority-signed descriptor, and the
+  compiled `VC<>::assertAuthorizedIssuerProof` consumer path. Production
+  finalized-state adapters and separately governed credential-definition and
+  status checks remain open; this simulator result alone does not close #58.
 - #59 MUST exercise authenticated applicant and maintainer intents through the
   public API/UI, assert fail-closed stale/replayed writes, and compare the
   public query with client evidence verification.
@@ -123,12 +198,12 @@ Subtasks:
       client, API, TRQP adapter, and OpenID Federation projection where used.
 - [ ] Resolve whether a rejected proposal is terminal and how a superseding
       application references its predecessor; update lifecycle fixtures.
-- [ ] Include an explicit migration note for old ordinal-status or root-only
-      policy records.
+- [ ] Document the fresh-deployment boundary: prototype ordinal-status and
+      root-only policy records are not accepted by the 0.1.0 profile.
 
 Definition of done: the same input yields the same 32-byte scope and policy
 commitments across implementations; mismatched version/scope fails closed;
-existing live records retain their historical policy interpretation. Tests
+historical records retain their policy interpretation within this format. Tests
 cover each role plus field order, array order, version change, wildcard, and
 duplicate-ID negatives. Validation: `./run.sh --light` and
 `./run.sh integration` for contract-facing changes.
@@ -140,9 +215,10 @@ Depends on: ADR-0001, ADR-0002, #49. Labels: `trust-registry`, `governance`,
 
 Tracker title: `feat(evidence): verify Midnight VC/VP eligibility and sign application attestations`
 
-Why: the current simulator fabricates `SHA-256(commitment:keyId)` as a
-signature. A real 0.1.0 journey needs actual DID, VC/VP, status, and policy
-verification before on-chain governance.
+Why: a real 0.1.0 journey needs DID-bound assertion-key authorization and
+actual VC/VP, status, and policy verification before on-chain governance.
+The simulator now uses a real test-key JubJub signature over the evidence
+commitment, but its verifier key is not yet resolved from a DID.
 
 Subtasks:
 
@@ -185,6 +261,8 @@ Why: a VC `AuthorizedSignerDescriptor` must be derived from a real governed
 grant and active DID key, not from a caller-provided boolean or root. Current
 TR bundles prove authorization history but do not bind an exact DID method,
 observed DID version, and the authority context needed for descriptor signing.
+The [decision-evidence client profile](decision-evidence-client.md) defines
+the fail-closed trust boundary and ordered implementation slices.
 
 Subtasks:
 
@@ -211,7 +289,7 @@ listed mutation fails before #73 may sign it. The package and JSON schema are
 documented and independently testable from a clean checkout. Validation:
 `./run.sh --light`, `./run.sh integration`, and focused evidence-vector tests.
 
-Depends on: #75 and #39. Labels: `trust-registry`, `backend`, `security`, `e2e`.
+Depends on: #75 and the current epoch proof profile. Labels: `trust-registry`, `backend`, `security`, `e2e`.
 
 ## Issue #73: Publish VC signer descriptors and authority proofs
 
@@ -222,6 +300,9 @@ not the older transcript-digest draft.
 - [ ] Map #79's verified decision to VC `AuthorizedSignerDescriptor` v1 with
       exact native field order, role, method/key, relationship, DID state
       version, policy commitment, and monotonic decision sequence.
+      The local candidate adapter now uses trusted current-state readers and
+      checks the exact DID binding and sequence; production reader/finality
+      implementations and authority proof issuance remain required.
 - [x] Align the published Midnight DID dependency to 0.7.0 and verify the
       adapter's canonical fragment and DID-state mapping without importing
       sibling repository source.
@@ -236,15 +317,30 @@ not the older transcript-digest draft.
 - [ ] Specify `domainCommitment` preimage (network, consumer contract,
       registry, authority), governed authority key lifecycle, and the signer
       service's refusal to sign a decision without a committed quorum.
+      Local registration preparation checks canonical DID/method/network
+      preimages and the exact registry address before constructing the quorum
+      payload; the simulator reads the registered key and refuses signing after
+      a governed suspension. Finalized production reads remain open.
 - [ ] Produce the VC authority `Proof` with `createdAt == decisionSequence`;
       sign the domain-bound decision root with a native Jubjub key.
+      A simulator fixture now exercises this exact VC proof circuit through
+      an injected signer port; governed production key custody and issuance
+      remain open.
 - [ ] Compile/run a Ledger 8 consumer fixture with a locally pinned authority;
       reject witness-supplied anchors, wrong domain/method/key/scope, stale
       sequence, DID-version rollback, and revoked-to-active replay.
+      The local compiled consumer pins the authority in constructor ledger
+      state and rejects wrong-domain installation, method/key substitution,
+      stale sequence, DID-version rollback, and revoked-to-active replay.
+      Production anchor deployment remains open.
 - [ ] In the consumer fixture, use the VC composed
       `VC<>::assertAuthorizedIssuerProof` for credential decisions and prove
       that a forged credential signature fails despite matching descriptor
       metadata. Use `assertAuthorizedVerifierProof` for signed verifier requests.
+      The local consumer exercises both circuits, including positive signatures,
+      wrong-scope and forged-signature rejections. Both local descriptors now
+      derive from simulator TR decisions; production finality and governed
+      scope mappings remain open.
 - [ ] Document asynchronous revocation delivery and the distinction between
       current VC descriptor semantics and separate TR historical epoch queries.
 

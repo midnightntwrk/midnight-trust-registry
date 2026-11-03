@@ -12,6 +12,7 @@ export const TrqpContextSchema = z.object({
   time: TimestampSchema.optional(),
   locator: NonEmptyStringSchema.optional(),
   recognized_registry_id: NonEmptyStringSchema.optional(),
+  scope_context: z.record(z.string(), z.string()).optional(),
 }).catchall(z.unknown());
 
 export const TrqpAuthorizationRequestSchema = z.object({

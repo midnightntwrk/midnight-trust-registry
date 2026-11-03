@@ -1,17 +1,7 @@
 name: Published Package Smoke
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Published package version, for example 0.1.0-rc1"
-        required: true
-        type: string
-      registry:
-        description: "npm registry URL"
-        required: false
-        default: "https://registry.npmjs.org"
-        type: string
+  workflow_dispatch: {}
 
 permissions:
   contents: read
@@ -21,7 +11,7 @@ env:
   PNPM_CONFIG_FUND: "false"
 
 concurrency:
-  group: trust-registry-release-smoke-${{ github.event.inputs.version }}
+  group: trust-registry-release-smoke-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -40,10 +30,14 @@ jobs:
         with:
           node-version-file: .nvmrc
 
+      - name: Select committed release candidate
+        id: release
+        run: node scripts/select-publish-version.mjs --github-output
+
       - name: Smoke test published packages
         env:
-          REGISTRY: ${{ inputs.registry }}
-          VERSION: ${{ inputs.version }}
+          REGISTRY: https://registry.npmjs.org
+          VERSION: ${{ steps.release.outputs.version }}
         run: |
           node scripts/smoke-published-artifacts.mjs \
             --version "$VERSION" \

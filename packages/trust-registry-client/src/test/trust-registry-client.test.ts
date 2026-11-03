@@ -1,6 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { JubjubPoint } from "@midnight-ntwrk/compact-runtime";
 
 import {
+  computeGovernancePolicySnapshotCommitment,
+  computeIssuerStatusPolicyBindingCommitment,
+  deriveGovernancePolicySnapshot,
+} from "@midnight-ntwrk/trust-registry-domain";
+
+import {
+  createAuditorAuthorizationScopeFixture,
   createAuditorScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
   createIssuerScenarioFixture,
@@ -8,15 +16,150 @@ import {
   createVerifierScenarioFixture,
 } from "../../../trust-registry-integration/src/index.js";
 
-import { TrustRegistrySimulatorClient } from "../index.js";
+import {
+  bytes32Commitment,
+  verifyTrustRegistryEvidenceBundle,
+} from "../index.js";
+import { TrustRegistrySimulatorClient } from "../simulator-client.js";
+import { defaultSequenceToTimestamp, hashHexToBytes32 } from "../utils.js";
+import * as ClientRoot from "../index.js";
+
+const changeLastHexNibble = (hash: string): string =>
+  `${hash.slice(0, -1)}${hash.endsWith("0") ? "1" : "0"}`;
 
 describe("trust registry client", () => {
+  it("verifies an exact auditor mandate without granting data access", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("audit-mandate-check");
+    const auditor = createAuditorScenarioFixture("audit-mandate-check");
+    const verifier = createVerifierScenarioFixture("audit-mandate-check");
+    const client = new TrustRegistrySimulatorClient(harness.simulator);
+    harness.authorizeAuditor(auditor);
+    harness.authorizeVerifier(verifier);
+    const scope = createAuditorAuthorizationScopeFixture(auditor);
+    const bundle = harness.evaluateCurrentAuditorDecision(auditor);
+    const options = {
+      expectedRegistryId: harness.registryId,
+      expectedSubjectDid: auditor.subjectDid,
+      evaluationTime: bundle.generatedAt,
+    };
+    const mandate = client.verifyAuditorRequestMandate(bundle, scope, options);
+    expect(mandate).toEqual({
+      authorizationId: auditor.authorizationId,
+      auditorDid: auditor.subjectDid,
+      requestResourceId: auditor.scopeResourceId,
+      scopeCommitment: expect.stringMatching(/^0x[0-9a-f]{64}$/u),
+      epochId: bundle.epoch.epochId,
+    });
+    for (const changed of [
+      { ...scope, purpose: "unapproved-audit-purpose" },
+      { ...scope, allowedAttributes: [...scope.allowedAttributes, "audit-attribute-set:extra"] },
+      { ...scope, allowedPredicates: [...scope.allowedPredicates, "audit-predicate-set:extra"] },
+      { ...scope, disclosureLevel: "audit-disclosure-level:unrestricted" },
+    ]) {
+      expect(() => client.verifyAuditorRequestMandate(bundle, changed, options))
+        .toThrow(/resource mismatch/u);
+    }
+    expect(() => client.verifyAuditorRequestMandate(bundle, scope, {
+      ...options, expectedRegistryId: "registry:wrong",
+    })).toThrow(/registry mismatch/u);
+    expect(() => client.verifyAuditorRequestMandate(bundle, scope, {
+      ...options, expectedSubjectDid: verifier.subjectDid,
+    })).toThrow(/Subject DID mismatch/u);
+    expect(() => client.verifyAuditorRequestMandate(bundle, scope, {
+      ...options, expectedRegistryId: undefined as unknown as string,
+    })).toThrow(/requires expected registry/u);
+    expect(() => client.verifyAuditorRequestMandate(bundle, scope, {
+      ...options, expectedSubjectDid: undefined as unknown as string,
+    })).toThrow(/requires expected registry/u);
+    expect(() => client.verifyAuditorRequestMandate(bundle, scope, {
+      ...options, evaluationTime: undefined as unknown as string,
+    })).toThrow(/requires expected registry/u);
+    const liveRecord = harness.simulator.getAuditorAuthorization(auditor.authorizationIdCommitment);
+    for (const [field, replacement, message] of [
+      ["policyId", bytes32Commitment("policy:substituted"), /current governed policy mismatch/u],
+      ["trustLevel", bytes32Commitment("trust-level:substituted"), /current trust level mismatch/u],
+      ["lifecycleEventHash", new Uint8Array(32), /current lifecycle event mismatch/u],
+    ] as const) {
+      const changed = vi.spyOn(harness.simulator, "getAuditorAuthorization")
+        .mockReturnValue({ ...liveRecord, [field]: replacement });
+      try {
+        expect(() => client.verifyAuditorRequestMandate(bundle, scope, options)).toThrow(message);
+      } finally {
+        changed.mockRestore();
+      }
+    }
+    expect(() => client.verifyAuditorRequestMandate(
+      harness.evaluateCurrentVerifierDecision(verifier), scope, options,
+    )).toThrow();
+    harness.suspendAuditor(auditor);
+    expect(() => client.verifyAuditorRequestMandate(bundle, scope, options))
+      .toThrow(/not active in current ledger state/u);
+    const suspendedBundle = harness.buildAuditorHistoricalEvidence(auditor);
+    expect(() => client.verifyAuditorRequestMandate(
+      suspendedBundle, scope, { ...options, evaluationTime: suspendedBundle.generatedAt },
+    )).toThrow(/not active/u);
+    harness.revokeAuditor(auditor);
+    expect(() => client.verifyAuditorRequestMandate(bundle, scope, options))
+      .toThrow(/not active in current ledger state/u);
+  }, 30_000);
+
+  it("keeps simulator helpers out of the production root", () => {
+    expect(ClientRoot).not.toHaveProperty("TrustRegistrySimulatorClient");
+    expect(TrustRegistrySimulatorClient).toBeDefined();
+  });
+  it("rejects every raw record read if the ledger format changes after construction", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const client = new TrustRegistrySimulatorClient(harness.simulator);
+    expect(Reflect.get(client, "simulator")).toBeUndefined();
+    const ledger = harness.simulator.getLedger();
+    const wrongFormat = vi.spyOn(harness.simulator, "getLedger").mockImplementation(() => ({
+      ...ledger,
+      contractVersion: 2n,
+    }));
+    const id = new Uint8Array(32);
+    const request = {
+      subjectDid: id,
+      requestResourceId: id,
+      allowedAttributeSetCommitment: id,
+      allowedPredicateSetCommitment: id,
+      disclosureLevelCommitment: id,
+    };
+    try {
+      const reads = [
+        () => client.getIssuerAuthorizationById(id),
+        () => client.getCurrentIssuerAuthorization({ subjectDid: id, resourceType: createIssuerScenarioFixture("format").resourceType, resourceId: id }),
+        () => client.getVerifierAuthorizationById(id),
+        () => client.getCurrentVerifierAuthorization(request),
+        () => client.getAuditorAuthorizationById(id),
+        () => client.getCurrentAuditorAuthorization(request),
+        () => client.getRecognitionById(id),
+        () => client.getCurrentRecognition({ recognizedAuthorityDid: id, recognizedRegistryId: id, scopeResourceType: id, scopeResourceId: id }),
+        () => client.getEpochCommitmentById(id),
+        () => client.getCurrentEpochCommitment(),
+        () => client.getMaintainerMembershipById(id),
+        () => client.getCurrentMaintainerMembership(id),
+        () => client.getMaintainerRecordByKeyId(id),
+      ];
+      for (const read of reads) {
+        expect(read).toThrow(/Unsupported trust registry format/);
+      }
+    } finally {
+      wrongFormat.mockRestore();
+    }
+  }, 20_000);
+
   it("queries current and historical issuer state plus the published epoch anchor", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("degree");
 
     harness.authorizeIssuer(issuer);
     const bundle = harness.evaluateCurrentIssuerDecision(issuer);
+
+    expect(bundle.epoch.policyRoot).toBe(
+      computeGovernancePolicySnapshotCommitment(
+        deriveGovernancePolicySnapshot(bundle.policy),
+      ),
+    );
     const client = new TrustRegistrySimulatorClient(harness.simulator);
 
     const currentRecord = client.getCurrentIssuerAuthorization({
@@ -49,6 +192,95 @@ describe("trust registry client", () => {
     expect(activeBundle.inclusionProof.proofType).toBe("merkle-inclusion");
     expect(activeBundle.inclusionProof.root).toBe(activeBundle.epoch.stateRoot);
     expect(activeBundle.inclusionProof.path[0]).toBe(activeBundle.epoch.eventRoot);
+    expect(activeBundle.statusPolicyBinding).toBeDefined();
+    expect(activeBundle.authorization?.statusPolicyBindingCommitment).toBe(
+      computeIssuerStatusPolicyBindingCommitment(activeBundle.statusPolicyBinding!),
+    );
+
+    expect(() => client.verifyIssuerAuthorizationBundle({
+      ...activeBundle,
+      statusPolicyBinding: undefined,
+    }, { expectedRegistryId: harness.registryId })).toThrow(/preimage is missing/i);
+    expect(() => client.verifyIssuerAuthorizationBundle({
+      ...activeBundle,
+      statusPolicyBinding: {
+        ...activeBundle.statusPolicyBinding!,
+        statusRegistryId: `0x${"9".repeat(64)}`,
+      },
+    }, { expectedRegistryId: harness.registryId })).toThrow(/does not match governed authorization/i);
+    const epochRecord = client.getEpochCommitmentById(activeBundle.epoch.epochId);
+    const maintainerRecord = client.getMaintainerRecordByKeyId(epochRecord.maintainerKeyId);
+    const deploymentContext = {
+      networkIdCommitment: harness.simulator.getLedger().deploymentNetworkIdCommitment,
+      contractAddress: hashHexToBytes32(harness.simulator.contractAddress),
+    };
+    const equivalentEpochSpelling = {
+      ...activeBundle,
+      epoch: {
+        ...activeBundle.epoch,
+        validFrom: activeBundle.epoch.validFrom.replace(/Z$/, "+00:00"),
+        validUntil: activeBundle.epoch.validUntil.replace(/Z$/, "+00:00"),
+      },
+    };
+    expect(() => client.verifyIssuerAuthorizationBundle(equivalentEpochSpelling, {})).not.toThrow();
+    const tamperedEpochRegistry = {
+      ...activeBundle,
+      epoch: { ...activeBundle.epoch, registryId: "registry:evil" },
+    };
+    expect(() => client.verifyIssuerAuthorizationBundle(tamperedEpochRegistry, {}))
+      .toThrow(/Epoch registry mismatch/);
+    expect(() => verifyTrustRegistryEvidenceBundle(tamperedEpochRegistry, {
+      ...deploymentContext,
+      epochRecord,
+      maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
+      registryIdCommitment: bytes32Commitment(harness.registryId),
+    })).toThrow(/Epoch registry mismatch/);
+    expect(() => client.verifyIssuerAuthorizationBundle({
+      ...activeBundle,
+      registryId: undefined as never,
+    }, {})).toThrow(/Bundle registry ID is missing or malformed/);
+    expect(() => client.verifyIssuerAuthorizationBundle({
+      ...activeBundle,
+      authorization: { ...activeBundle.authorization!, registryId: "registry:evil" },
+    }, {})).toThrow(/Authorization registry mismatch/);
+    const tamperedRegistry = {
+      ...activeBundle,
+      registryId: "registry:evil",
+      epoch: { ...activeBundle.epoch, registryId: "registry:evil" },
+      authorization: { ...activeBundle.authorization!, registryId: "registry:evil" },
+    };
+    expect(() => client.verifyIssuerAuthorizationBundle(tamperedRegistry, {}))
+      .toThrow(/does not match the simulator ledger/);
+    expect(() => verifyTrustRegistryEvidenceBundle(tamperedRegistry, {
+      ...deploymentContext,
+      epochRecord,
+      maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
+      registryIdCommitment: bytes32Commitment(harness.registryId),
+    })).toThrow(/Registry ID commitment does not match/);
+    expect(() => verifyTrustRegistryEvidenceBundle({
+      ...activeBundle,
+      statusPolicyBinding: {
+        ...activeBundle.statusPolicyBinding!,
+        statusAuthorityVerificationMethod: "did:midnight:attacker#status-1",
+      },
+    }, {
+      ...deploymentContext,
+      expectedRegistryId: harness.registryId,
+      epochRecord,
+      maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
+      registryIdCommitment: bytes32Commitment(harness.registryId),
+    })).toThrow(/does not match governed authorization/i);
+    expect(() => client.verifyIssuerAuthorizationBundle({
+      ...activeBundle,
+      referencedStatusRegistryId: "status-registry:attacker:v1",
+    }, { expectedRegistryId: harness.registryId })).toThrow(/unanchored issuer status metadata/i);
+    expect(() => client.verifyIssuerAuthorizationBundle({
+      ...activeBundle,
+      authorization: {
+        ...activeBundle.authorization!,
+        statusPolicyBindingCommitment: `0x${"8".repeat(64)}`,
+      },
+    }, { expectedRegistryId: harness.registryId })).toThrow(/leaf hash/i);
 
     expect(() =>
       client.verifyIssuerAuthorizationBundle(activeBundle, {
@@ -70,7 +302,7 @@ describe("trust registry client", () => {
           ...activeBundle,
           inclusionProof: {
             ...activeBundle.inclusionProof,
-            leafHash: `${activeBundle.inclusionProof.leafHash.slice(0, -1)}0`,
+            leafHash: changeLastHexNibble(activeBundle.inclusionProof.leafHash),
           },
         },
         {
@@ -85,7 +317,7 @@ describe("trust registry client", () => {
           ...activeBundle,
           inclusionProof: {
             ...activeBundle.inclusionProof,
-            path: [`${activeBundle.inclusionProof.path[0]!.slice(0, -1)}0`],
+            path: [changeLastHexNibble(activeBundle.inclusionProof.path[0]!)],
           },
         },
         {
@@ -138,6 +370,55 @@ describe("trust registry client", () => {
         },
       ),
     ).toThrow(/invalid literal|merkle-inclusion/i);
+  }, 20_000);
+
+  it("rejects an epoch record missing its publication policy commitment", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness();
+    const issuer = createIssuerScenarioFixture("missing-policy-epoch");
+    harness.authorizeIssuer(issuer);
+    const bundle = harness.evaluateCurrentIssuerDecision(issuer);
+    const client = new TrustRegistrySimulatorClient(harness.simulator);
+    const epochRecord = client.getEpochCommitmentById(bundle.epoch.epochId);
+    const maintainerRecord = client.getMaintainerRecordByKeyId(epochRecord.maintainerKeyId);
+    const deploymentContext = {
+      networkIdCommitment: harness.simulator.getLedger().deploymentNetworkIdCommitment,
+      contractAddress: hashHexToBytes32(harness.simulator.contractAddress),
+    };
+
+    expect(() => verifyTrustRegistryEvidenceBundle(bundle, {
+      ...deploymentContext,
+      epochRecord: { ...epochRecord, publicationPolicyCommitment: undefined as never },
+      maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
+      registryIdCommitment: bytes32Commitment(harness.registryId),
+    })).toThrow(/Epoch publication policy commitment is missing or malformed/);
+    expect(() => verifyTrustRegistryEvidenceBundle(bundle, {
+      ...deploymentContext,
+      epochRecord: { ...epochRecord, publicationPolicyCommitment: new Uint8Array(32) },
+      maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
+      registryIdCommitment: bytes32Commitment(harness.registryId),
+    })).toThrow(/Epoch publication policy commitment is missing or malformed/);
+    for (const malformed of [new Uint8Array(31), new Uint8Array(33), new Uint8Array(32), "not-bytes"]) {
+      expect(() => verifyTrustRegistryEvidenceBundle(bundle, {
+        ...deploymentContext,
+        epochRecord,
+        maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
+        registryIdCommitment: malformed as never,
+      })).toThrow(/Registry ID commitment is missing or malformed/);
+    }
+
+    let verifierFault: unknown;
+    try {
+      verifyTrustRegistryEvidenceBundle(bundle, {
+        ...deploymentContext,
+        epochRecord: { ...epochRecord, publishedAtSequence: "invalid" as never },
+        maintainerPublicKey: maintainerRecord.publicKey as JubjubPoint,
+        registryIdCommitment: bytes32Commitment(harness.registryId),
+      });
+    } catch (error) {
+      verifierFault = error;
+    }
+    expect(verifierFault).toHaveProperty("message", "Epoch maintainer signature is invalid");
+    expect((verifierFault as Error).cause).toBeInstanceOf(Error);
   });
 
   it("preserves issuer proposal and approval evidence while rejecting non-active decisions by default", () => {
@@ -211,7 +492,65 @@ describe("trust registry client", () => {
         expectedRecognizedRegistryId: recognition.recognizedRegistryId,
       }),
     ).not.toThrow();
+    expect(() => client.verifyRecognitionBundle({
+      ...recognitionBundle,
+      recognition: { ...recognitionBundle.recognition!, registryId: "registry:evil" },
+    }, {})).toThrow(/Recognition registry mismatch/);
   });
+
+  it("uses the supplied sequence clock for policy supersession across every simulator verifier", () => {
+    const harness = new LocalTrustRegistryIntegrationHarness("policy-clock");
+    const client = new TrustRegistrySimulatorClient(harness.simulator);
+    const issuer = createIssuerScenarioFixture("policy-clock");
+    const verifier = createVerifierScenarioFixture("policy-clock");
+    const auditor = createAuditorScenarioFixture("policy-clock");
+    const recognition = createRecognitionScenarioFixture("policy-clock");
+    harness.authorizeIssuer(issuer);
+    const issuerBundle = harness.evaluateCurrentIssuerDecision(issuer);
+    harness.authorizeVerifier(verifier);
+    const verifierBundle = harness.evaluateCurrentVerifierDecision(verifier);
+    harness.authorizeAuditor(auditor);
+    const auditorBundle = harness.evaluateCurrentAuditorDecision(auditor);
+    harness.authorizeRecognition(recognition);
+    const recognitionBundle = harness.evaluateCurrentRecognitionDecision(recognition);
+    harness.updateMaintainerThresholdPolicy(1n, 1n, 1n);
+
+    const effectiveSequence = harness.simulator.getLedger().governancePolicyEffectiveFromByVersion.lookup(2n);
+    const defaultCutoffMs = Date.parse(defaultSequenceToTimestamp(effectiveSequence));
+    const beforeDefaultCutoff = new Date(defaultCutoffMs - 60_000).toISOString();
+    const afterDefaultCutoff = new Date(defaultCutoffMs + 60_000).toISOString();
+    const earlyCutoff = new Date(defaultCutoffMs - 2 * 60_000).toISOString();
+    const lateCutoff = new Date(defaultCutoffMs + 2 * 60_000).toISOString();
+    const clockWithCutoff = (cutoff: string) => (sequence: bigint) =>
+      sequence === effectiveSequence ? cutoff : defaultSequenceToTimestamp(sequence);
+    const optionsFor = (evaluationTime: string, sequenceToTimestamp?: (sequence: bigint) => string) => ({
+      evaluationTime,
+      ...(sequenceToTimestamp === undefined ? {} : { sequenceToTimestamp }),
+    });
+    const verify = [
+      (evaluationTime: string, sequenceToTimestamp?: (sequence: bigint) => string) =>
+        client.verifyIssuerAuthorizationBundle(issuerBundle, optionsFor(evaluationTime, sequenceToTimestamp)),
+      (evaluationTime: string, sequenceToTimestamp?: (sequence: bigint) => string) =>
+        client.verifyVerifierAuthorizationBundle(verifierBundle, optionsFor(evaluationTime, sequenceToTimestamp)),
+      (evaluationTime: string, sequenceToTimestamp?: (sequence: bigint) => string) =>
+        client.verifyAuditorAuthorizationBundle(auditorBundle, optionsFor(evaluationTime, sequenceToTimestamp)),
+      (evaluationTime: string, sequenceToTimestamp?: (sequence: bigint) => string) =>
+        client.verifyRecognitionBundle(recognitionBundle, optionsFor(evaluationTime, sequenceToTimestamp)),
+      (evaluationTime: string, sequenceToTimestamp?: (sequence: bigint) => string) =>
+        client.verifyAuditorRequestMandate(auditorBundle, createAuditorAuthorizationScopeFixture(auditor), {
+          expectedRegistryId: harness.registryId,
+          expectedSubjectDid: auditor.subjectDid,
+          ...optionsFor(evaluationTime, sequenceToTimestamp),
+        }),
+    ];
+    for (const check of verify) {
+      expect(() => check(beforeDefaultCutoff)).not.toThrow();
+      expect(() => check(afterDefaultCutoff)).toThrow(/Policy snapshot is superseded/u);
+      expect(() => check(afterDefaultCutoff, clockWithCutoff(lateCutoff))).not.toThrow();
+      expect(() => check(beforeDefaultCutoff, clockWithCutoff(earlyCutoff)))
+        .toThrow(/Policy snapshot is superseded/u);
+    }
+  }, 30_000);
 
   it("rejects stale epochs and tampered maintainer signatures deterministically", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
@@ -233,6 +572,51 @@ describe("trust registry client", () => {
     if (originalSignature === undefined) {
       throw new Error("expected epoch signature");
     }
+    expect(() => client.verifyIssuerAuthorizationBundle({
+      ...bundle,
+      epoch: {
+        ...bundle.epoch,
+        maintainerSignatures: [{
+          ...originalSignature,
+          keyId: originalSignature.keyId.replace(/#key-1$/u, "#key-2"),
+        }],
+      },
+    }, {})).toThrow(/DID method does not match its accepted key commitment/u);
+    const extraSignatures = [originalSignature, {
+      ...originalSignature,
+      keyId: "did:midnight:untrusted#key-2",
+    }] as unknown as
+      typeof bundle.epoch.maintainerSignatures;
+    let cardinalityError: unknown;
+    try {
+      client.verifyIssuerAuthorizationBundle({
+        ...bundle,
+        epoch: {
+          ...bundle.epoch,
+          maintainerSignatures: extraSignatures,
+        },
+      }, {});
+    } catch (error) {
+      cardinalityError = error;
+    }
+    expect(cardinalityError).toHaveProperty("issues", expect.arrayContaining([
+      expect.objectContaining({ code: "too_big", path: ["epoch", "maintainerSignatures"] }),
+    ]));
+    let missingSignatureError: unknown;
+    try {
+      client.verifyIssuerAuthorizationBundle({
+        ...bundle,
+        epoch: {
+          ...bundle.epoch,
+          maintainerSignatures: [] as unknown as typeof bundle.epoch.maintainerSignatures,
+        },
+      }, {});
+    } catch (error) {
+      missingSignatureError = error;
+    }
+    expect(missingSignatureError).toHaveProperty("issues", expect.arrayContaining([
+      expect.objectContaining({ code: "too_small", path: ["epoch", "maintainerSignatures"] }),
+    ]));
     const tamperedSignature = `0x${
       originalSignature.signature.slice(2, 3) === "0" ? "1" : "0"
     }${originalSignature.signature.slice(3)}`;
@@ -261,9 +645,67 @@ describe("trust registry client", () => {
       client.verifyIssuerAuthorizationBundle(
         {
           ...bundle,
+          epoch: {
+            ...bundle.epoch,
+            maintainerSignatures: [{
+              ...originalSignature,
+              signature: `0x${"00".repeat(96)}`,
+            }],
+          },
+        },
+        {},
+      ),
+    ).toThrow("Epoch maintainer signature encoding is invalid");
+
+    for (const malformed of [
+      originalSignature.signature.slice(0, -1),
+      originalSignature.signature.toUpperCase(),
+      `${originalSignature.signature.slice(0, -1)}g`,
+    ]) {
+      let encodingError: unknown;
+      try {
+        client.verifyIssuerAuthorizationBundle({
+          ...bundle,
+          epoch: {
+            ...bundle.epoch,
+            maintainerSignatures: [{ ...originalSignature, signature: malformed }],
+          },
+        }, {});
+      } catch (error) {
+        encodingError = error;
+      }
+      expect(encodingError).toHaveProperty("message", "Epoch maintainer signature encoding is invalid");
+      expect(encodingError).toHaveProperty("cause.message", "Jubjub signature encoding is invalid");
+    }
+
+    expect(() => client.verifyIssuerAuthorizationBundle({
+      ...bundle,
+      epoch: {
+        ...bundle.epoch,
+        maintainerSignatures: [{ ...originalSignature, algorithm: "ed25519" }],
+      },
+    }, {})).toThrow(/signature algorithm is unsupported/);
+
+    expect(() =>
+      client.verifyIssuerAuthorizationBundle(
+        {
+          ...bundle,
           policy: {
             ...bundle.policy,
             policyId: "policy:other:v1",
+          },
+        },
+        {},
+      ),
+    ).toThrow(/statement policy ID does not match/i);
+
+    expect(() =>
+      client.verifyIssuerAuthorizationBundle(
+        {
+          ...bundle,
+          policy: {
+            ...bundle.policy,
+            decisionRules: [...bundle.policy.decisionRules, "unauthorized rule"],
           },
         },
         {},

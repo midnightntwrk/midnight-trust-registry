@@ -1,0 +1,6 @@
+apiVersion: v2
+name: trust-registry-standalone
+description: Private local-ledger Trust Registry runtime (installation requires approved external inputs)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

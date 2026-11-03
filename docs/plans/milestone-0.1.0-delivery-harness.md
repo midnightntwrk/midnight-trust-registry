@@ -1,0 +1,151 @@
+# Milestone 0.1.0 delivery harness
+
+`milestone-0.1.0` is a product integration train based on `develop`. It is not
+a release branch. The branch accepts issue-backed PRs after green current-head
+CI and a documented current-head LLM review, internal or external; promotion
+back to `develop` requires the normal human review policy. The milestone
+branch intentionally has no GitHub branch-protection rule. Its two merge gates
+are verified by the operator rather than enforced by GitHub settings.
+
+## Authority and scope
+
+| Target | Merge authority | Minimum evidence |
+| --- | --- | --- |
+| `milestone-0.1.0` | Agent/operator after manual checks | Green current-head CI and documented current-head LLM review |
+| `develop` | Human review | Existing protected-branch policy and integration evidence |
+| `main` | Human release review | Release policy and complete release validation |
+
+Use PRs rather than direct milestone pushes; never use `--admin` or force-push
+the milestone branch. Green CI is not a substitute for an LLM review. An
+internal or external LLM reviewer may satisfy the review gate for any PR;
+independent review is recommended for contract, cryptography, governance,
+security, credential trust decisions, and CI/merge-policy changes, but is not
+a separate merge requirement. Blocking review findings must be fixed before
+merge. Record advisory findings and their disposition in the PR, with a linked
+follow-up issue when deferred. DCO/GPG remain contribution conventions, not
+additional milestone branch-protection gates.
+
+## One-PR loop
+
+1. Select a ready issue with acceptance criteria and base `milestone-0.1.0`.
+2. Use an isolated `codex/` branch; run focused tests, then `./run.sh --light`.
+   Run `./run.sh integration` for contract, client, API, or UI behavior changes.
+3. Push DCO-signed and GPG-signed commits. Open a PR to the milestone branch
+   with a GitHub closing keyword or `Refs #N` in its body. Keep the PR below
+   GitHub's 250-commit PR-listing limit; larger trains require manual audit.
+4. Obtain an internal or external LLM review of the final diff. Fill
+   `## Review findings` with the reviewed head SHA, reviewer or tool, review
+   round, blocking/advisory dispositions, and, if external, a review link. A
+   new push invalidates prior exact-head review evidence; repeat the review
+   on the new head. This is an operator process, not a CI-attested approval.
+5. Confirm `Milestone Build, Package, and Test`, `scan`, and
+   `Typecheck, Audit, and Packaging Baseline` are green
+   for the current head, along with any other applicable CI jobs. Address
+   blocking review findings and confirm mergeability.
+   If the base moved, rebase or merge locally with a verified signature and DCO
+   trailer, then repeat the exact-head review. GitHub's Update branch button
+   can create an unsigned-off merge commit and does not satisfy the DCO policy.
+6. Re-read the PR head immediately before merging. Merge only with the
+   compare-and-swap guard; never use `--admin`:
+
+   ```bash
+   gh pr merge <number> -R midnightntwrk/midnight-trust-registry \
+     --merge --match-head-commit <reviewed-head-sha>
+   ```
+
+   No GitHub branch-protection setting enforces these gates. The operator must
+   check them; the SHA flag prevents a race with a subsequent push. Merge one
+   PR at a time, bottom-up for stacks.
+
+## Phase-exit cleanup
+
+Do not report a local development phase or merged stack slice complete until
+its worktrees and build targets have been inventoried. Remove obsolete
+worktrees and reproducible targets in the same phase, after verifying clean
+Git state, unpublished commits, and ownership. Preserve generated proving and
+verifier keys, signed install artifacts, private approval evidence, and active
+ledger volumes; verify an archive before removing an artifact-bearing
+worktree. Record any intentionally retained worktree or target with a concrete
+reason and next cleanup condition. Never transfer routine cleanup to the user
+or another agent, and never use a destructive reset to make cleanup possible.
+
+## Bounded review loop
+
+One round is one completed correctness/security review of a candidate head,
+followed by finding disposition and, if needed, a fix push. Record each round
+and its head in `## Review findings`.
+Allow at most three completed rounds per PR. Before round three, batch related
+fixes rather than pushing after each comment. After round three, do not start
+another automatic review/fix loop. Open a linked follow-up issue for any
+remaining advisory finding with owner, risk, and acceptance criteria. If a
+blocking finding remains, create a follow-up issue but leave the PR unmerged
+and explicitly blocked; never convert a security, correctness, data-integrity,
+or CI failure into an advisory solely to meet the round limit. A changed head
+without a valid final-head review cannot merge.
+
+## Hosted gates
+
+- `Milestone Build, Package, and Test`: unconditional Compact version check, `./run.sh --light`,
+  DID/VC integration scenarios, and `pnpm run demo:smoke` on milestone PRs,
+  even docs-only PRs. The existing path-filtered `CI` PR lane excludes
+  milestone to avoid a duplicate Compact build.
+- `Quality`: build, typecheck, and dependency audit on milestone PRs and train
+  PRs. Require its `Typecheck, Audit, and Packaging Baseline` job before
+  autonomous merges. Issue #84 tracks reducing its critical path; a slow check
+  is not an authorization to merge red CI.
+- `Scan`: security scan on every PR and milestone push.
+- Existing docs and PR-title checks remain applicable where triggered.
+
+The operator checks the current PR head and green results for `Milestone Build, Package, and Test`,
+`scan`, `Typecheck, Audit, and Packaging Baseline`, and any other applicable
+CI jobs before each merge. A stale, pending, failed, or cancelled current-head
+job is not green. No GitHub branch-protection or CODEOWNERS approval is required
+for this milestone branch. Issue #84 tracks a faster fail-closed Quality lane,
+not removal of the CI gate. Do not weaken `develop` or `main` protection.
+
+Before a milestone PR merge, record the completed review in a private JSON file
+with `format: "tr-milestone-current-head-review-v1"`,
+`repository: "midnightntwrk/midnight-trust-registry"`, the numeric `pullRequest`,
+the exact `headSha`, `verdict: "no-blockers"`, a named `reviewer`, an ISO-8601
+`reviewedAt`, and a nonempty `evidenceReference` to the full review and finding
+dispositions. Run `node scripts/check-milestone-merge-gates.mjs PR_NUMBER
+/absolute/path/to/review-record.json` immediately before merging. The read-only
+preflight checks the open, non-draft, mergeable PR and stable base/head; all
+reported exact-head check runs and commit statuses; GitHub-verified OpenPGP
+signatures and matching DCO trailers on every PR commit; and the review record's
+exact head. For repeated status contexts, the newest GitHub status ID wins even
+when creation timestamps share a second; a later failure cannot be hidden by
+an earlier success. Its fixture tests run in the light CI lane.
+
+The record is **not** a cryptographic review attestation. The operator must
+inspect the referenced review, its unresolved findings, and the live PR again
+at merge time; a passing preflight is point-in-time evidence, not merge
+authority. A post-merge review cannot retroactively satisfy a missing
+pre-merge review, as happened on #197. This safeguard applies to future PRs
+and does not repair that historical process gap.
+
+## Boundaries
+
+This is deliberately smaller than the `factory` harness: no custom Pi runtime,
+claim leases, metrics database, change-classification engine, or automated
+merger. Add those only when a measured delivery bottleneck justifies them.
+Review findings in the PR body are process evidence, not an enforced or
+cryptographic attestation. The operator must verify LLM review of the final
+head before merging; an internal review need not appear as a GitHub approval.
+Continue to verify signed commits and DCO trailers as a contribution practice.
+The earlier bootstrap and CODEOWNERS canary plan is superseded by the operator's
+decision not to protect this temporary milestone branch. Changes to the harness
+still require the same green CI and LLM review as other milestone PRs.
+
+Milestone pushes do not publish the shared Turbo cache used by PRs; only trusted
+`develop` and `main` pushes may publish it. [CI optimization issue #84](https://github.com/midnightntwrk/midnight-trust-registry/issues/84)
+tracks a measured path to faster, fail-closed routing.
+
+The milestone branch retains a scoped root `CODEOWNERS` file for review routing,
+not a required-approval gate. `develop` and `main` retain their existing root
+catch-all owner rule. A promotion PR into `develop` must restore that catch-all
+before merge; never promote the milestone-specific ownership file unchanged.
+
+After the pending milestone specification PR lands in `develop`, sync it into
+the train through a separate PR and rerun the complete train gates. Do not
+silently rebase or force-push the milestone branch.

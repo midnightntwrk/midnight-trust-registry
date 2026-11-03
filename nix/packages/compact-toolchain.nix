@@ -9,17 +9,22 @@ let
   platformInfo = {
     x86_64-linux = {
       compactPlatform = "x86_64-unknown-linux-musl";
-      sha256 = "sha256-AWNbsvcfEaheG1wGCITergL674pIw7WnXsHQJrehyl0=";
+      sha256 = "sha256-75nwiVASCtJQ+wXVe8P5wUDmy3TevYfZ88O+qtH0lJU=";
     };
     aarch64-darwin = {
       compactPlatform = "aarch64-darwin";
-      sha256 = "sha256-ritWqIO+2PnmpdCTzjSnF5mu6W+UOp+yW2t27YyuRcY=";
+      sha256 = "sha256-QKfLjKbOBSIuxJXfYhkPgDJkn4CcsRsV6M1ULSRem9o=";
     };
   };
 
   currentPlatform = platformInfo.${stdenv.hostPlatform.system} or null;
 
-  version = "0.30.0";
+  versionFile = builtins.readFile ../../.compact-version;
+  versionMatch = builtins.match "([0-9]+[.][0-9]+[.][0-9]+)\n" versionFile;
+  version = if versionMatch == null then
+    throw ".compact-version must contain one stable semver followed by LF"
+  else
+    builtins.elemAt versionMatch 0;
 in
 
 assert lib.asserts.assertMsg (currentPlatform != null) ''
@@ -39,9 +44,8 @@ stdenv.mkDerivation rec {
 
   nativeBuildInputs = [ unzip ];
 
-  # The compact devtool binary reads bin/compactc as a symlink and resolves
-  # its target string to locate the compiler. Relative symlinks break that
-  # lookup, so keep the absolute symlink layout intact inside the derivation.
+  # The devtool resolves bin/compactc as an absolute symlink. The compactc
+  # launcher then looks for compactc.bin and zkir beside its invocation path.
   dontRewriteSymlinks = true;
 
   installPhase = ''
@@ -53,8 +57,11 @@ stdenv.mkDerivation rec {
 
     mkdir -p $out/bin
     ln -s $out/versions/${version}/$compact_platform/compactc $out/bin/compactc
+    ln -s $out/versions/${version}/$compact_platform/compactc.bin $out/bin/compactc.bin
     ln -s $out/versions/${version}/$compact_platform/fixup-compact $out/bin/fixup-compact
     ln -s $out/versions/${version}/$compact_platform/format-compact $out/bin/format-compact
+    ln -s $out/versions/${version}/$compact_platform/zkir $out/bin/zkir
+    ln -s $out/versions/${version}/$compact_platform/zkir-v3 $out/bin/zkir-v3
 
     runHook postInstall
   '';

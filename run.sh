@@ -36,6 +36,7 @@ case "${RUN_COMMON_TARGET}" in
     ;;
   docs)
     pnpm run docs-check
+    pnpm run docs:build
     ;;
   lint)
     pnpm run ci:lint
@@ -68,7 +69,11 @@ case "${RUN_COMMON_TARGET}" in
     pnpm run clean:artifacts
     ;;
   integration)
-    pnpm run integration
+    if [[ "${RUN_COMMON_LIGHT}" == "1" ]]; then
+      pnpm run integration:light
+    else
+      pnpm run integration
+    fi
     ;;
   *)
     echo "[run] Unknown target: ${RUN_COMMON_TARGET}" >&2

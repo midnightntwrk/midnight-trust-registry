@@ -1,20 +1,78 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  EpochCommitmentSchema,
   TrustRegistryEvidenceBundleJsonSchema,
   TrustRegistryEvidenceBundleSchema,
   computeAuthorizationStatementLeafHash,
   computeMerkleRootFromProof,
   computeRecognitionStatementLeafHash,
   computeSingleStatementStateRoot,
+  computeIssuerStatusPolicyBindingCommitment,
+  issuerGovernedResourceIdFromScopeCommitment,
 } from "../index.js";
 
 const HASH_A = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const HASH_B = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const HASH_C = "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 const HASH_D = "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+const ISSUER_RESOURCE_ID = issuerGovernedResourceIdFromScopeCommitment(HASH_A, "credentialFamily");
+const STATUS_BINDING = {
+  version: "tr-issuer-status-policy-v1",
+  trustRegistryId: "registry:midnight:university",
+  issuerAuthorizationId: "auth:issuer:birth:v1",
+  statusRegistryId: HASH_C,
+  statusAuthorityVerificationMethod: "did:midnight:issuer:1#status-key",
+  statusPolicyId: "policy:status:birth",
+  statusPolicyVersion: "v1",
+  statusPolicyContentCommitment: HASH_D,
+} as const;
 
 describe("trust registry evidence bundle", () => {
+  it("requires one epoch signature in both bundle schemas", () => {
+    const epoch = {
+      epochId: "epoch:0001",
+      registryId: "registry:midnight:university",
+      stateRoot: HASH_A,
+      eventRoot: HASH_B,
+      policyRoot: HASH_C,
+      validFrom: "2026-05-20T02:00:00Z",
+      validUntil: "2026-05-20T03:00:00Z",
+      maintainerSignatures: [{
+        keyId: "did:midnight:maintainer:1#key-1",
+        algorithm: "jubjub-schnorr",
+        signature: "sig-1",
+      }],
+    };
+    expect(EpochCommitmentSchema.safeParse(epoch).success).toBe(true);
+    const invalid = EpochCommitmentSchema.safeParse({
+      ...epoch,
+      maintainerSignatures: [...epoch.maintainerSignatures, epoch.maintainerSignatures[0]],
+    });
+    expect(invalid.success).toBe(false);
+    if (invalid.success) throw new Error("expected cardinality rejection");
+    expect(invalid.error.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "too_big", path: ["maintainerSignatures"] }),
+    ]));
+    const missing = EpochCommitmentSchema.safeParse({
+      ...epoch,
+      maintainerSignatures: [],
+    });
+    expect(missing.success).toBe(false);
+    if (missing.success) throw new Error("expected missing-signature rejection");
+    expect(missing.error.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "too_small", path: ["maintainerSignatures"] }),
+    ]));
+    expect(
+      TrustRegistryEvidenceBundleJsonSchema.properties.epoch.properties
+        .maintainerSignatures.maxItems,
+    ).toBe(1);
+    expect(
+      TrustRegistryEvidenceBundleJsonSchema.properties.epoch.properties
+        .maintainerSignatures.minItems,
+    ).toBe(1);
+  });
+
   it("accepts authorization evidence bundles", () => {
     const parsed = TrustRegistryEvidenceBundleSchema.parse({
       bundleId: "bundle:issuer:birth:v1",
@@ -83,21 +141,27 @@ describe("trust registry evidence bundle", () => {
         subjectDid: "did:midnight:issuer:1",
         role: "issuer",
         resourceType: "credential-family",
-        resourceId: "vc-type:birth:v1",
+        resourceId: ISSUER_RESOURCE_ID,
         policyId: "policy:university:v1",
         trustLevel: "approved",
         status: "active",
+        statusPolicyBindingCommitment: computeIssuerStatusPolicyBindingCommitment(STATUS_BINDING),
         proposedAt: "2026-05-20T00:00:00Z",
         authorizedAt: "2026-05-20T01:00:00Z",
         activeFrom: "2026-05-20T01:00:00Z",
         evidenceHash: HASH_D,
         lifecycleEventRoot: HASH_A,
       },
+      statusPolicyBinding: STATUS_BINDING,
       referencedStatusRegistryId: "status-registry:birth:v1",
       referencedStatusPolicyUri: "https://registry.example/status-policy",
     });
 
     expect(parsed.authorization?.role).toBe("issuer");
+    expect(TrustRegistryEvidenceBundleSchema.safeParse({
+      ...parsed,
+      authorization: { ...parsed.authorization, role: "verifier" },
+    }).success).toBe(false);
   });
 
   it("rejects bundles without authorization or recognition", () => {
@@ -169,9 +233,15 @@ describe("trust registry evidence bundle", () => {
 
   it("exports a JSON schema with policy, epoch, inclusion, authorization, and recognition sections", () => {
     expect(TrustRegistryEvidenceBundleJsonSchema.required).toContain("policy");
+    expect(TrustRegistryEvidenceBundleJsonSchema.properties.policy.required).toContain("recognitionAccreditorAnchors");
+    expect(TrustRegistryEvidenceBundleJsonSchema.properties.policy.properties.recognitionAccreditorAnchors.items
+      .required).toContain("accreditorAssertionMethodId");
     expect(TrustRegistryEvidenceBundleJsonSchema.required).toContain("epoch");
     expect(TrustRegistryEvidenceBundleJsonSchema.required).toContain("inclusionProof");
     expect(TrustRegistryEvidenceBundleJsonSchema.properties.authorization).toBeDefined();
+    expect(TrustRegistryEvidenceBundleJsonSchema.properties.authorization.properties.statusPolicyBindingCommitment).toBeDefined();
+    expect(TrustRegistryEvidenceBundleJsonSchema.properties.statusPolicyBinding).toBeDefined();
+    expect(TrustRegistryEvidenceBundleJsonSchema.allOf).toHaveLength(2);
     expect(TrustRegistryEvidenceBundleJsonSchema.properties.recognition).toBeDefined();
   });
 
@@ -182,9 +252,10 @@ describe("trust registry evidence bundle", () => {
       subjectDid: "did:midnight:issuer:1",
       role: "issuer",
       resourceType: "credential-family",
-      resourceId: "vc-type:birth:v1",
+      resourceId: ISSUER_RESOURCE_ID,
       policyId: "policy:university:v1",
       trustLevel: "approved",
+      statusPolicyBindingCommitment: HASH_B,
       status: "active",
       lifecycleEventRoot: HASH_A,
       proposedAt: "2026-05-20T00:00:00Z",
@@ -198,9 +269,10 @@ describe("trust registry evidence bundle", () => {
       subjectDid: "did:midnight:issuer:1",
       role: "issuer",
       resourceType: "credential-family",
-      resourceId: "vc-type:birth:v1",
+      resourceId: ISSUER_RESOURCE_ID,
       policyId: "policy:university:v1",
       trustLevel: "silver",
+      statusPolicyBindingCommitment: HASH_B,
       status: "active",
       lifecycleEventRoot: HASH_A,
       proposedAt: "2026-05-20T00:00:00Z",
@@ -266,6 +338,19 @@ describe("trust registry evidence bundle", () => {
     ).toBe(recognitionLeaf);
     expect(() =>
       computeMerkleRootFromProof(authorizationLeaf, [HASH_B], 2),
+    ).toThrow(/out of range/i);
+    expect(() =>
+      computeMerkleRootFromProof(authorizationLeaf, [HASH_B], Number.MAX_SAFE_INTEGER + 1),
+    ).toThrow(/safe integer/i);
+    expect(() =>
+      computeMerkleRootFromProof(authorizationLeaf, [HASH_B], -1n),
+    ).toThrow(/out of range/i);
+    const deepPath = Array(54).fill(HASH_B) as string[];
+    expect(computeMerkleRootFromProof(authorizationLeaf, deepPath, 1n << 53n)).not.toBe(
+      computeMerkleRootFromProof(authorizationLeaf, deepPath, 0n),
+    );
+    expect(() =>
+      computeMerkleRootFromProof(authorizationLeaf, deepPath, 1n << 54n),
     ).toThrow(/out of range/i);
   });
 });

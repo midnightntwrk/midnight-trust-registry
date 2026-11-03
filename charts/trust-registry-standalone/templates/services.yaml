@@ -1,0 +1,20 @@
+{{- range $role, $port := dict "node" 9944 "indexer" 8088 "proof-server" 6300 "api" 4400 "admin" 4173 "applicant" 4173 }}
+{{- if or (eq $.Values.deploymentPhase "runtime") (has $role (list "node" "indexer" "proof-server")) }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tr.componentName" (dict "root" $ "component" $role) }}
+  labels:
+    {{- include "tr.labels" (dict "root" $ "component" $role) | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "tr.selector" (dict "root" $ "component" $role) | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ $port }}
+      targetPort: {{ $port }}
+      protocol: TCP
+{{- end }}
+{{- end }}

@@ -1,0 +1,12 @@
+ARG BASE_IMAGE
+#checkov:skip=CKV_DOCKER_7: build-api-runtime-image validates BASE_IMAGE as an immutable sha256 digest
+FROM ${BASE_IMAGE}
+
+ENV NODE_ENV=production
+WORKDIR /app
+COPY app/ /app/
+USER 1000:1000
+EXPOSE 4400
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:4400/health',{signal:AbortSignal.timeout(4000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+ENTRYPOINT ["node", "/app/bin/trust-registry-api.mjs"]

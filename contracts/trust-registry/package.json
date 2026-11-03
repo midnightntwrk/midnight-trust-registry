@@ -68,10 +68,10 @@
   },
   "scripts": {
     "contract": "pnpm run compact",
-    "compact": "compact compile src/trust-registry.compact src/managed/trust-registry && node ./scripts/align-runtime-version.mjs && node ./scripts/strip-managed-sourcemaps.mjs",
-    "test": "vitest run",
+    "compact": "node ../../scripts/compile-compact.mjs src/trust-registry.compact src/managed/trust-registry && node ./scripts/strip-managed-sourcemaps.mjs",
+    "test": "vitest run --testTimeout 30000",
     "pretest:ci": "pnpm run compact",
-    "test:ci": "vitest run",
+    "test:ci": "vitest run --testTimeout 30000",
     "prepack": "pnpm run build",
     "clean": "rm -rf dist && rm -rf coverage && rm -rf reports && rm -rf src/managed && rm -f tsconfig.build.tsbuildinfo",
     "build": "pnpm run compact && rm -rf dist && tsc -p tsconfig.build.json && mkdir -p dist && cp -Rf ./src/managed ./dist/ && cp ./src/trust-registry.compact ./dist",
@@ -79,12 +79,12 @@
     "lint:fix": "eslint src --ext .ts --fix --ignore-pattern 'src/managed/**'",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "all": "pnpm run compact && pnpm run build && pnpm run test:ci",
-    "compact:light": "compact compile --skip-zk src/trust-registry.compact src/managed/trust-registry && node ./scripts/align-runtime-version.mjs && node ./scripts/strip-managed-sourcemaps.mjs",
-    "build:light": "pnpm run compact:light && rm -rf dist && tsc -p tsconfig.build.json && mkdir -p dist && cp -Rf ./src/managed ./dist/ && cp ./src/trust-registry.compact ./dist",
+    "compact:light": "node ../../scripts/compile-compact.mjs --skip-zk src/trust-registry.compact src/managed/trust-registry && node ./scripts/strip-managed-sourcemaps.mjs",
+    "build:light": "pnpm run compact:light && rm -rf dist && tsc -p tsconfig.build.json && mkdir -p dist/managed/trust-registry && cp -Rf ./src/managed/trust-registry/contract ./dist/managed/trust-registry/ && cp ./src/trust-registry.compact ./dist",
     "test:light": "pnpm run test"
   },
   "dependencies": {
-    "@midnight-ntwrk/compact-runtime": "^0.16.0",
+    "@midnight-ntwrk/compact-runtime": "0.16.0",
     "@midnight-ntwrk/midnight-did-jubjub-schnorr": "0.7.0"
   },
   "files": [

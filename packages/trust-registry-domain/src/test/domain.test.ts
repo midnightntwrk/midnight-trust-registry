@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  assertAscendingTimestamps,
   assertLifecycleTransition,
   AuthorizationRecordSchema,
   createScopedIdentifier,
   GovernancePolicyRecordSchema,
+  issuerGovernedResourceIdFromScopeCommitment,
+  requestGovernedResourceIdFromScopeCommitment,
   ParticipantRecordSchema,
   RecognitionRecordSchema,
   RegistryRecordSchema,
@@ -16,6 +19,7 @@ const HASH_A = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 const HASH_B = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const HASH_C = "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 const HASH_D = "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+const ISSUER_RESOURCE_ID = issuerGovernedResourceIdFromScopeCommitment(HASH_A, "credentialFamily");
 
 const createPolicyTemplates = () => [
   {
@@ -148,10 +152,68 @@ describe("lifecycle transitions", () => {
     expect(() => assertLifecycleTransition("active", "authorized")).toThrow(
       /Invalid lifecycle transition/,
     );
+    expect(() => assertLifecycleTransition("suspended", "active")).toThrow(
+      /Invalid lifecycle transition/,
+    );
+    expect(() => assertLifecycleTransition("active", "superseded")).toThrow(
+      /Invalid lifecycle transition/,
+    );
+    expect(() => assertLifecycleTransition("superseded", "archived")).toThrow(
+      /Invalid lifecycle transition/,
+    );
+  });
+
+  it("orders lifecycle instants beyond milliseconds and across equivalent offsets", () => {
+    expect(() => assertAscendingTimestamps([
+      ["proposedAt", "2026-05-20T00:00:00.0000000001Z"],
+      ["authorizedAt", "2026-05-20T01:00:00.0000000001+01:00"],
+    ])).not.toThrow();
+    expect(() => assertAscendingTimestamps([
+      ["proposedAt", "2026-05-20T00:00:00.0000000002Z"],
+      ["authorizedAt", "2026-05-20T01:00:00.0000000001+01:00"],
+    ])).toThrow(/authorizedAt must not be earlier than proposedAt/u);
+    expect(() => assertAscendingTimestamps([["proposedAt", "invalid"]]))
+      .toThrow(/Invalid timestamp in proposedAt/u);
   });
 });
 
 describe("record schemas", () => {
+  it("rejects a policy effective window reversed only beyond milliseconds", () => {
+    const policy = createPolicyRecordInput();
+    expect(GovernancePolicyRecordSchema.safeParse({
+      ...policy,
+      effectiveFrom: "2026-05-20T00:00:00.0000000002Z",
+      effectiveUntil: "2026-05-20T00:00:00.0000000001Z",
+    }).success).toBe(false);
+    expect(GovernancePolicyRecordSchema.safeParse({ ...policy, effectiveUntil: "invalid" }).success)
+      .toBe(false);
+  });
+
+  it("rejects authorization approval before proposal within one millisecond", () => {
+    const result = AuthorizationRecordSchema.safeParse({
+      authorizationId: "auth:issuer:fractional:v1",
+      registryId: "registry:midnight:university",
+      subjectDid: "did:midnight:issuer:1",
+      role: "issuer",
+      resourceType: "credential-family",
+      resourceId: ISSUER_RESOURCE_ID,
+      policyId: "policy:university:v1",
+      trustLevel: "approved",
+      status: "active",
+      statusPolicyBindingCommitment: HASH_B,
+      proposedAt: "2026-05-20T00:00:00.0000000002Z",
+      authorizedAt: "2026-05-20T01:00:00.0000000001+01:00",
+      activeFrom: "2026-05-20T00:00:00.0000000003Z",
+      evidenceHash: HASH_C,
+      lifecycleEventRoot: HASH_A,
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.message.includes("authorizedAt must not be earlier")))
+        .toBe(true);
+    }
+  });
+
   it("accepts a registry record", () => {
     const parsed = RegistryRecordSchema.parse({
       registryId: "registry:midnight:university",
@@ -199,10 +261,11 @@ describe("record schemas", () => {
       subjectDid: "did:midnight:issuer:1",
       role: "issuer",
       resourceType: "credential-family",
-      resourceId: "vc-type:birth:v1",
+      resourceId: ISSUER_RESOURCE_ID,
       policyId: "policy:university:v1",
       trustLevel: "approved",
       status: "active",
+      statusPolicyBindingCommitment: HASH_B,
       proposedAt: "2026-05-20T00:00:00Z",
       authorizedAt: "2026-05-20T01:00:00Z",
       activeFrom: "2026-05-20T01:00:00Z",
@@ -230,6 +293,22 @@ describe("record schemas", () => {
     });
 
     expect(authorization.role).toBe("issuer");
+    expect(AuthorizationRecordSchema.safeParse({ ...authorization, resourceId: "1.0.0" }).success).toBe(false);
+    expect(AuthorizationRecordSchema.safeParse({ ...authorization, resourceType: "request-profile" }).success).toBe(false);
+    for (const role of ["verifier", "auditor"] as const) {
+      const requestRecord = {
+        ...authorization,
+        role,
+        resourceType: "request-profile",
+        resourceId: requestGovernedResourceIdFromScopeCommitment(HASH_A),
+        statusPolicyBindingCommitment: undefined,
+      };
+      expect(AuthorizationRecordSchema.safeParse(requestRecord).success).toBe(true);
+      expect(AuthorizationRecordSchema.safeParse({
+        ...requestRecord,
+        resourceId: "request-profile:admission",
+      }).success).toBe(false);
+    }
     expect(recognition.scope.resourceId).toBe("vc-type:degree:v1");
   });
 
@@ -250,7 +329,7 @@ describe("record schemas", () => {
         subjectDid: "did:midnight:issuer:1",
         role: "issuer",
         resourceType: "credential-family",
-        resourceId: "vc-type:birth:v1",
+        resourceId: ISSUER_RESOURCE_ID,
         policyId: "policy:university:v1",
         trustLevel: "approved",
         status: "active",
@@ -283,6 +362,47 @@ describe("record schemas", () => {
         lifecycleEventRoot: HASH_B,
       }),
     ).toThrow(/authorizedAt is required/);
+  });
+
+  it("accepts archived proposals without inventing approval or activation timestamps", () => {
+    const archivedAt = "2026-05-20T02:00:00Z";
+    const authorization = {
+      authorizationId: "auth:issuer:denied:v1",
+      registryId: "registry:midnight:university",
+      subjectDid: "did:midnight:issuer:1",
+      role: "issuer",
+      resourceType: "credential-family",
+      resourceId: ISSUER_RESOURCE_ID,
+      policyId: "policy:university:v1",
+      trustLevel: "approved",
+      status: "archived",
+      statusPolicyBindingCommitment: HASH_B,
+      proposedAt: "2026-05-20T00:00:00Z",
+      archivedAt,
+      evidenceHash: HASH_C,
+      lifecycleEventRoot: HASH_A,
+    };
+    const recognition = {
+      recognitionId: "rec:denied:issuer",
+      registryId: "registry:midnight:university",
+      recognizedAuthorityDid: "did:web:gaia-x.example",
+      recognizedRegistryId: "registry:gaia-x:edu",
+      scope: { resourceType: "recognized-scope", resourceId: "vc-type:degree:v1" },
+      policyId: "policy:university:v1",
+      trustLevel: "peer-approved",
+      status: "archived",
+      proposedAt: "2026-05-20T00:00:00Z",
+      archivedAt,
+      evidenceHash: HASH_D,
+      lifecycleEventRoot: HASH_B,
+    };
+
+    expect(AuthorizationRecordSchema.parse(authorization).activeFrom).toBeUndefined();
+    expect(RecognitionRecordSchema.parse(recognition).effectiveFrom).toBeUndefined();
+    expect(() => AuthorizationRecordSchema.parse({ ...authorization, activeFrom: archivedAt }))
+      .toThrow(/authorizedAt is required/u);
+    expect(() => RecognitionRecordSchema.parse({ ...recognition, effectiveFrom: archivedAt }))
+      .toThrow(/authorizedAt is required/u);
   });
 
   it("allows pre-activation recognition records without effectiveFrom", () => {

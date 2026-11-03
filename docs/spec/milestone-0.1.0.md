@@ -1,6 +1,6 @@
 # Trust Registry 0.1.0 Reference Profile
 
-Status: proposed release contract
+Status: proposed local/offline release contract; qualification incomplete
 Target: `0.1.0` on `develop`
 
 This profile narrows the [general specification](trust-registry.md) and the
@@ -11,19 +11,22 @@ reference implementation. `MUST` describes the behavior required to claim
 
 ## 1. Outcome And Boundary
 
-From a clean checkout, an engineer can run a local Midnight simulator journey
+From a clean install, an operator can run a self-hosted Midnight ledger journey
 in which a `did:midnight` applicant proves eligibility with a Midnight VC/VP,
 an authorized evidence verifier signs a commitment, a quorum of maintainers
 approves the exact application, an epoch anchors the decision, and a relying
-party independently verifies a current and historical scoped trust answer.
+party independently verifies a current scoped trust answer. Historical decision
+routes are deferred from this local-only RC.
 The same journey MUST expose applicant, maintainer, and query operations through
 the documented API and local applications. Negative cases MUST fail at the
 boundary where the violated rule is enforced.
 
-0.1.0 is a reference profile, not a claim of live network deployment or
-production service operation. The simulator is a test double for Midnight
-ledger execution. Tests MUST say when finality is simulated. Production
-deployment, public multi-tenant hosting, arbitrary DID methods, native
+0.1.0 is a self-hosted local/offline runtime profile, not a public-network or
+multi-tenant service claim. Installation may use the network; qualification and
+normal operation must succeed with external egress denied. Simulator and
+mocked-provider tests remain development evidence, never local deployment,
+finality, recovery, or offline-runtime evidence. Live Preprod qualification
+is deferred to a later public-network release. Arbitrary DID methods, native
 secp256k1/P-256/Ed25519 contract verification, transitive federation trust,
 and Ledger 8 synchronous cross-contract calls are outside this milestone.
 
@@ -34,7 +37,7 @@ and Ledger 8 synchronous cross-contract calls are outside this milestone.
 | Governance | Publish versioned eligibility, voting, emergency, audit, and retention rules | Registry policy and its anchor |
 | Federation | Optionally authenticate a registry publisher; never grant membership implicitly | External trust chain plus local recognition |
 | Registry | Commit application decisions, roles, scopes, evidence hashes, signer sets, and epochs | Trust Registry Compact state |
-| Query | Return current/historical decisions with verifiable evidence and explicit failures | Client/API projection of registry state |
+| Query | Return current finalized decisions with verifiable evidence and explicit failures; reject historical decisions | Client/API projection of registry state |
 | Credential | Verify applicant VC/VP and later issuer VC/status evidence | `midnight-verifiable-credentials` |
 | DID | Resolve identifiers and assertion methods, including historical keys | `midnight-did` |
 
@@ -67,12 +70,21 @@ for an exact audit profile, purpose, and disclosure limit. The verifier decides
 what it may disclose under the mandate, holder consent, and applicable policy;
 actual audit data exchange is off-registry. A verifier MUST NOT treat an audit
 grant as blanket access to presentations or personal information.
+The relying-party mandate check MUST bind the exact auditor DID and registry to
+the complete canonical audit request scope, verify active auditor evidence
+against an independently authenticated epoch, and return only mandate
+identifiers and commitments. A verifier grant, altered purpose or disclosure
+limit, and inactive auditor grant MUST fail. The verifier MUST also check a
+current auditor record from independently trusted ledger state at its chosen
+decision time; a previously active evidence bundle alone is historical proof,
+not a current mandate. The result is permission to
+consider an audit request, never permission to release data.
 
 ## 4. Use Cases
 
 | ID | Actor and goal | Preconditions / success evidence | Required rejection |
 | --- | --- | --- | --- |
-| UC-01 | Governor bootstraps a registry | Registry ID/DID, first maintainer key, policy commitment, and threshold recorded once | Duplicate initialization or missing bootstrap key |
+| UC-01 | Governor bootstraps a registry | Constructor records registry ID/DID, first maintainer key, policy commitment, and threshold before any external call | Invalid deployment inputs or a public first-call initializer |
 | UC-02 | Authority publishes policy revision | Immutable version and effective window are anchored; prior versions remain resolvable | Reinterpretation of old decisions by a new version |
 | UC-03 | Maintainer joins or leaves | Non-bootstrap proposal, independent quorum, activation/revocation event | Self-approval, duplicate signer, insufficient quorum, or removal below threshold |
 | UC-04 | Evidence verifier becomes authorized or rotates key | Governed DID, assertion method, public key, suite, policy scope, and validity history | Unknown key, inactive verifier, or signature after key retirement |
@@ -83,9 +95,9 @@ grant as blanket access to presentations or personal information.
 | UC-09 | Maintainers suspend, revoke, or archive | Action-specific threshold and timestamped event; current queries change | Wrong threshold, invalid transition, or silent deletion of history |
 | UC-10 | Maintainers recognize external authority | Exact action/resource/authority/registry scope and independent recognition evidence | Recognition used as local issuer, verifier, or admin grant |
 | UC-11 | Operator publishes an epoch | State/event/policy roots and signer evidence anchor a bounded view | Invalid root, signer, policy, or unpublished/unfinalized view |
-| UC-12 | Relying party evaluates at time T | Active scoped grant, accepted epoch, DID/key history, policy snapshot, and proof all verify | Wrong registry, scope, time, status, Merkle path, or stale epoch |
+| UC-12 | Relying party evaluates current trust | Active scoped grant, accepted finalized epoch, current DID/key and policy snapshot, and proof all verify | Wrong registry, scope, status, Merkle path, stale epoch, or historical request |
 | UC-13 | Holder presents a credential | Verifier checks VC proof, VC status, issuer grant at issuance, and applicable current policy | Registry lookup used as substitute for VC proof or status |
-| UC-14 | Auditor requests verifier information | Verifier can verify the auditor grant and exact request purpose | Blanket data access or holder tracking through the registry |
+| UC-14 | Auditor requests verifier information | Verifier can verify the auditor grant, exact request purpose, and matching active current ledger record | Blanket data access or holder tracking through the registry |
 | UC-15 | VC consumer installs a registry decision | A governed issuer or verifier grant yields a VC-compatible descriptor and authority proof accepted under a pinned local anchor | Witness-supplied authority, wrong network/contract, method/key/scope substitution, stale sequence, or revoked-to-active replay |
 
 ## 5. Application And Decision Protocol
@@ -107,8 +119,11 @@ grant as blanket access to presentations or personal information.
    policy version. Activation is a separate governed transition. Only an
    `active` grant passes authorization queries.
 6. A later suspend, revoke, archive, or policy replacement appends an event.
-   Historical decisions remain addressable with their original policy and
-   signer/key state. The operator publishes a new epoch for a new public view.
+   The operator publishes a new epoch for a new public view. Historical event
+   commitments remain in ledger state, but this current-only release does not
+   expose historical decision routes or infer a past answer from current maps.
+   A later profile must authenticate the original policy and signer/key state
+   before making historical decisions addressable.
 
 The 0.1.0 reference fixture bootstraps three maintainer DIDs and uses a
 2-of-3 threshold for ordinary, membership, emergency, and archival action
@@ -120,11 +135,81 @@ require a contract change. A maintainer cannot vote on its own admission,
 suspension, or removal, and no decision may leave fewer active maintainers
 than the live threshold. Other policies must preserve these invariants.
 
-Application states are `proposed -> authorized -> active`, followed by
-`suspended`, `revoked`, `superseded`, or `archived` as allowed by the existing
-lifecycle validators. A rejected proposal MUST be terminal or represented by
-an explicit rejection event before its scope can be reused; 0.1.0 issues
-must settle this currently missing transition. A superseding application gets
+For 0.1.0, when two or more maintainers are active, the ordinary, emergency,
+and archival thresholds MUST each be strictly less than the active count.
+An active target's DID MUST be absent from all signer slots of its suspension,
+revocation, or archival action. The resulting active set MUST satisfy the same
+threshold-headroom rule, except that one remaining maintainer may use threshold
+one and cannot be removed. Atomic recovery MUST use the larger of the old
+default and emergency thresholds, excluding the target DID, because it combines
+a policy revision and active suspension. Thus a 2-of-3 policy requires one old-quorum-signed
+atomic recovery action that suspends the target and commits a valid 1-of-2
+policy under one governance event. A standalone reduction to 1-of-3 followed
+by removal is unsafe because the target can act during the interval and MUST
+NOT be presented as the recovery procedure. All-member thresholds
+such as 2-of-2 and 3-of-3 are not accepted in this profile. A distinct
+recovery authority or override is deferred and MUST NOT be inferred from a
+single surviving key.
+
+A threshold-policy revision and registration of the evidence-verifier key under
+the new policy are separate governed ledger actions. Maintainers sign the
+revision against the old policy and its current action sequence; the registered
+key for the new version requires a fresh signature set against the new policy
+and next sequence, satisfying the new ordinary-action threshold. If the second
+action has not succeeded, operators MUST NOT accept new application evidence
+as authorized under the new policy. A local simulator may perform both steps
+with fixture keys for demonstrations; the external-signing path exposes both
+steps separately and does not imply atomic execution or network finality.
+
+Every governed-action signature MUST cover the versioned
+`tr:deployment:action:v1` payload hash of the pinned network commitment,
+executing contract address (`kernel.self().bytes`), current policy commitment,
+and exact action payload hash. The four-field JubJub Schnorr message then
+commits registry ID, action kind, that bound payload hash, and current action
+sequence. The contract MUST derive network and address from its own sealed
+ledger field and execution context, not from action arguments. The prepare
+API MUST expose the same domain, but its submit path MUST re-read it from the
+trusted Compact-backed port before prechecking signatures. Historical epoch
+signatures and post-deployment governance event hashes use the same deployment
+identity; a consumer MUST obtain that identity from an authenticated finalized
+ledger selection rather than an untrusted evidence bundle. The constructor
+executes under a dummy address, so its separately domain-separated initial
+event commits the declared network but cannot prove the eventual address.
+Signers MUST authenticate that the declared network matches the actual target
+deployment. The current Compact runtime does not prove that correspondence
+on-chain; local qualification must verify the target independently, while
+public-network qualification is deferred to a later release.
+
+The 0.1.0 authorization lifecycle has these reachable transitions:
+
+<!-- authorization-lifecycle-transitions:start -->
+| From | Allowed next states |
+| --- | --- |
+| `proposed` | `authorized`, `archived` |
+| `authorized` | `active`, `revoked`, `archived` |
+| `active` | `suspended`, `revoked`, `archived` |
+| `suspended` | `revoked`, `archived` |
+| `revoked` | `archived` |
+| `superseded` | none |
+| `archived` | none |
+<!-- authorization-lifecycle-transitions:end -->
+
+`superseded` remains a reserved schema and historical-projection value, not a
+reachable grant or application status in this profile. Policy-version
+supersession is checked through the policy snapshot; it does not silently
+transition an authorization record to `superseded`. The Compact action circuits,
+governed API routes, and simulator demo do not produce that grant transition;
+the client may still parse a historical record carrying the reserved value. A
+denied proposal is archived by a quorum-governed action before its exact scope
+can be reused. The original ID and proposal
+evidence remain in the ledger; a new application MUST use a new ID. Archival
+records the terminal decision but does not encode an off-chain denial reason.
+A private applicant-intake store MUST retain the old application and nonce,
+stop serving its pending VP binding, and release its exact-scope reservation
+only after its host independently verifies the matching archived ledger event.
+The new application MUST also use a new authorization ID. A caller-supplied
+HTTP flag or an unverified workspace status cannot release the reservation.
+A superseding application gets
 a new ID and explicit predecessor reference. No status change is inferred from
 a changed API response alone.
 
@@ -141,23 +226,75 @@ Issuer scope is the canonical tuple in
 credential family, schema ID/version, credential definition, and status method.
 Verifier and auditor scope is request profile, purpose, credential-scope
 commitment, sorted allowed attributes and predicates, and disclosure level.
+The on-ledger request resource ID commits the entire role-specific tuple per
+[ADR-0004](../decisions/adr-0004-composite-request-scope-identity.md), rather
+than using the bare request-profile ID as a key.
 Comparison is exact. No wildcard, delegated grant, implicit schema-version
 range, or transitive recognition is valid in 0.1.0. Domain, contract adapters,
 client, and API MUST share test vectors for the same canonical commitment.
 
-A current trust answer uses the latest accepted finalized epoch and evaluates
-the grant at the query time. A historical answer names the evaluation time and
-the epoch or ledger view that establishes it; it does not silently substitute
-today's policy or keys. For a credential issued at time T, an issuance-time
+A recognition proposal MUST bind the exact external authority DID commitment,
+external registry ID, resource scope, local policy version, and evidence
+commitment to a signature from an active, governed evidence-verifier key.
+Maintainer quorum is separate and signs that bound proposal. This proves a
+local verifier attested the scoped evidence; it does not independently prove
+the external registry's trust chain or finality. The reference simulator uses
+real Midnight DID and VC/VP signatures for the accreditation profile. Its
+accreditor anchor is committed in the maintainer-approved governance policy
+snapshot; the status source and evidence-verifier private key remain simulator
+fixtures rather than production dependencies.
+
+The reference Midnight DID authority-assertion profile is narrower than
+external accreditation. An authority assertion signs the target registry,
+recognition ID, authority DID, external registry ID, exact resource scope,
+exact accreditation-VP submission commitment, one-use challenge, and bounded
+validity interval with an assertion-method JubJub key. The verifier checks the
+current DID method and relationship, exact tuple, challenge, signature, and
+off-chain evaluation time. The authority can compute the exact submitted VP
+commitment before registry evaluation; it cannot sign a later status decision.
+After independently verifying the accredited VC/VP and status under the local
+anchor, the registry combines the verified authority and accreditation evidence
+into a separate redacted commitment. The local evidence verifier and maintainer
+quorum bind that commitment into Compact. A signed authority statement alone
+proves key control, not the truth or status of the accreditation. The joined
+simulator demo verifies credential, presentation, and assertion signatures and
+consumes one challenge before the Compact proposal; it checks the anchor against
+the current Compact policy commitment. Local accreditation status is now a
+policy-pinned, nonce-bound Midnight DID/JubJub attestation fetched from a fixture;
+it is not independent proof of live status-registry state. Public intake
+MUST resolve a governed active anchor and independently validate live status
+before it may expose this flow. `did:web` and
+non-JubJub authority proofs require a separate adapter and trust-anchor policy
+before they can enter this profile.
+
+The default independent accreditation path is a Midnight VC/VP from a
+separately trusted accreditor, bound to a locally governed accreditor-anchor
+policy and live credential status. The implementation sequence and required
+negative cases are recorded in
+[the recognition accreditation plan](../plans/recognition-accreditation-vp.md).
+
+A current trust answer uses an accepted finalized epoch for the selected
+statement, checks its event root against the current grant lifecycle and its
+policy root against current policy, and evaluates the grant at the query time.
+An unrelated statement's later epoch does not by itself supersede an unchanged
+grant. Requiring the latest publication of an otherwise unchanged statement
+needs an authenticated per-statement epoch index, not the ledger's global
+latest-epoch ID. The local 0.1.0 API MUST reject historical authorization,
+recognition, and TRQP decision/evidence requests rather than infer history from
+current maps or an unauthenticated indexer cursor. Historical answers require a
+future checkpoint-bound transition replay profile. For a credential issued at time T, an issuance-time
 issuer grant is necessary but insufficient: the verifier also checks the VC
 signature and status under VC rules and any current policy restriction. A
 revoked issuer cannot issue new credentials. Whether a revocation invalidates
 earlier credentials is explicit in the governing policy, never guessed by TR.
 
 Query outcomes MUST distinguish `active`, `not-authorized`, `suspended`,
-`revoked`, `superseded`, `archived`, `out-of-scope`, `expired-policy`,
+`revoked`, `archived`, `out-of-scope`, `expired-policy`,
 `stale-or-unfinalized-epoch`, and
 `invalid-evidence`. A missing or unverifiable historical anchor fails closed.
+The schema can represent a `superseded` historical grant, but 0.1.0 does not
+expose a transition that produces one; no current query may infer it from a
+newer application or policy revision.
 Query responses include registry ID, role, exact scope, policy ID/version,
 effective interval, epoch ID/root, and a verifiable evidence bundle. A listing
 or positive boolean without proof is informational only.
@@ -197,18 +334,50 @@ contract address. Issuer scope is VC `persistentHash<SchemaRef>` for the exact
 credential schema; verifier scope is a canonical commitment to the approved
 signed request profile. The richer ADR-0002 registry scope is evaluated before
 issuing this narrower VC descriptor, never silently widened by it.
+For issuer descriptors, the selected active TR grant MUST be for the exact
+`schema` resource committed to that scope. A family, version, definition, or
+status-method grant does not implicitly confer schema signer authority.
+The schema-level signer proof alone MUST NOT be represented as authorization
+for a credential definition, status method, or live credential status; a full
+decision requires a separate trusted check bound to the same grant and
+credential.
 
 The TR-owned `domainCommitment` preimage MUST include Midnight network,
 consuming contract, registry ID, and authority identity. The authority proof
+domain is Compact `persistentHash<Vector<7, Bytes<32>>>` over the padded
+`tr:vc-authority-domain:v1` tag, SHA-256 commitments of network ID, registry
+ID, authority DID, and absolute authority method ID, plus the raw 32-byte
+consumer and registry contract addresses in that order. The consumer MUST
+recompute the commitment from its pinned preimage and compare the pinned
+consumer address with `kernel.self().bytes` before accepting a signer proof.
+The authority proof
 binds `persistentHash<Vector<2, Bytes<32>>>([domainCommitment,
 descriptorRoot])` using the VC `midnight:vc:signer-auth:v1` context;
 `Proof.createdAt` equals the decision sequence, not wall-clock time.
 Published vectors MUST match the VC
 [signer-authorization conformance vectors](https://github.com/midnightntwrk/midnight-verifiable-credentials/blob/develop/conformance/vectors/signer-authorization.json).
-Authority-key rotation is governed and published with overlap/retirement
-rules. The signing service MUST only sign a decision already committed under
+Authority-key rotation is governed and published with zero registry overlap:
+the old key retires and the successor becomes current at one logical action
+sequence. The signing service MUST only sign a decision already committed under
 the required maintainer quorum; its single key is a portable attestation of
 that decision, not a replacement for quorum evidence.
+
+The registry MUST record the VC authority key as a distinct role from an
+evidence-verifier key. Its registration action commits the key ID, canonical
+authority DID and absolute method commitments, prime-order JubJub public key,
+network commitment, raw consumer address, recomputed domain commitment, and
+current governance policy/version. The ledger `registryId` used by this
+domain is the SHA-256 commitment of the canonical registry ID string. A
+policy-bound maintainer quorum MUST approve registration, suspension,
+revocation, and rotation; the candidate authority DID cannot authorize its
+own key enrollment. Suspension stops current-key reads immediately without
+erasing the record. Revocation is terminal for that key ID; a successor
+requires a new governed registration and a consumer-pinned anchor update.
+Ordinary rotation requires an active predecessor; it MUST NOT turn a suspended
+authority into an active successor without a separate governed revocation and
+registration decision.
+Logical action sequences, not wall-clock time, order key events. Registration
+of a new key MUST NOT imply that an already deployed consumer accepts it.
 
 The consumer MUST use the VC core's composed
 `VC<>::assertAuthorizedIssuerProof` when claiming an issuer-authorized
@@ -223,6 +392,13 @@ method, and key in its own ledger state, then verify the proof and monotonic
 descriptor update before materializing current authorization. A relayer may
 deliver a decision but has no authority. Revocation is not synchronous: until
 the consumer accepts the newer signed decision it sees its last stored state.
+Inactive descriptor production MUST select `suspended` or `revoked` explicitly,
+verify a matching current finalized grant and policy snapshot, accepted epoch
+publication quorum and inclusion proof, and the subject DID observation before
+the governed authority signs. The active-only evidence path MUST continue to
+reject inactive grants. A consumer MUST enforce increasing decision sequence
+and terminal revocation when installing an update; a caller-supplied prior
+descriptor is not a substitute for the consumer's stored prior state.
 Historical issuance-time authorization remains a separate TR query with an
 authenticated epoch; the current VC core descriptor does not prove historical
 trust. Recognition or OpenID Federation metadata alone never pins an
@@ -240,6 +416,12 @@ signatures on behalf of remote callers. Local fixture signing is explicitly
 test-only. Read endpoints MAY be public, but must not expose off-ledger VC/VP
 payloads or private operator data. A local operator workspace needs atomic
 single-writer behavior or a documented fail-closed concurrency guard.
+The reference workspace MUST retain each consumed signed-mutation nonce until
+the signed intent expires, prune expired entries inside that same atomic write
+boundary, and fail closed at its documented live-entry limit rather than evict
+a valid replay marker. Its nonce identity is scoped to registry, actor DID,
+and nonce. Workspace file format 2 rejects unsupported pre-release format 1;
+no silent compatibility default is permitted.
 
 TRQP v2 authorization and recognition queries are read-only projections of
 local decisions. Registry metadata, historical proof export, and audit profile
@@ -260,9 +442,10 @@ maintainer.
 - The API and local applications complete an applicant-to-quorum-to-epoch-to-
   relying-party journey using authenticated actor intents, without direct
   fixture-file edits.
-- Current and historical evidence is verified independently, including
-  policy/key rotation, suspension/revocation, wrong scope, stale epoch, and
-  tampered proof failures. Simulator finality is labeled as simulated.
+- Current evidence is verified independently, including policy/key rotation,
+  suspension/revocation, wrong scope, stale epoch, and tampered proof failures.
+  Historical API/TRQP decision and evidence routes return the explicit
+  out-of-scope response in this RC. Simulator finality is labeled as simulated.
 - UC-15 exports TR decision evidence plus VC-compatible issuer and verifier
   descriptors with authority proofs; a Ledger 8 consumer fixture pins its own
   anchor and rejects wrong domain/key/scope, stale sequence, and revoked
@@ -273,6 +456,12 @@ maintainer.
   `pnpm run demo:smoke`, artifact packing/smoke, and a fresh-checkout 0.1.0
   scenario pass. A release candidate has a source revision, Compact compiler
   version, artifact hashes, and an explicit list of deferred capabilities.
+- The [standalone qualification](../guide/standalone-offline-runtime.md) passes
+  on pinned install artifacts: real local-ledger deployment and independently
+  finalized readback, an approved threshold-maintenance transition, offline
+  end-to-end actor journeys with egress denied, service restart and backup/
+  restore recovery, and independent security review. Simulator and provider
+  mocks do not satisfy this gate.
 
 ## 10. References
 
@@ -280,5 +469,5 @@ maintainer.
 - [OpenID Federation 1.0](https://openid.net/specs/openid-federation-1_0.html): signed entity statements and trust chains for publisher authentication.
 - [OpenID Federation for Wallet Architectures draft](https://openid.net/specs/openid-federation-wallet-1_0.html): informative future wallet federation integration.
 - [VC signer authorization](https://github.com/midnightntwrk/midnight-verifiable-credentials/blob/develop/spec/signer-authorization.md), [Compact implementation](https://github.com/midnightntwrk/midnight-verifiable-credentials/blob/develop/packages/core/compact/src/credentials/signer-authorization.compact), and [conformance vectors](https://github.com/midnightntwrk/midnight-verifiable-credentials/blob/develop/conformance/vectors/signer-authorization.json): current issuer/verifier authority-anchor contract.
-- [Application Evidence Protocol](application-evidence.md), [ADR-0001](../decisions/adr-0001-governance-evidence-and-policy-snapshots.md), and [ADR-0002](../decisions/adr-0002-resource-and-request-profile-canonicalization.md) are the local v0.1 inputs.
+- [Application Evidence Protocol](application-evidence.md), [ADR-0001](../decisions/adr-0001-governance-evidence-and-policy-snapshots.md), [ADR-0002](../decisions/adr-0002-resource-and-request-profile-canonicalization.md), [ADR-0003](../decisions/adr-0003-composite-issuer-resource-identity.md), and [ADR-0004](../decisions/adr-0004-composite-request-scope-identity.md) are the local v0.1 inputs.
 - [Research requirements memo](../research/trust-registry-requirements-memo.md) traces the Kanon, MIT issuer registry governance, and other research sources.

@@ -35,6 +35,7 @@ root = Path.cwd()
 markdown_files = sorted(
     path for path in root.rglob("*.md")
     if ".git" not in path.parts
+    and path.relative_to(root).parts[0] != "artifacts"
     and "node_modules" not in path.parts
     and "dist" not in path.parts
     and ".turbo" not in path.parts
@@ -67,7 +68,10 @@ for path in markdown_files:
         if not target:
             continue
         target = unquote(target)
-        resolved = (path.parent / target).resolve()
+        if "docs-site" in path.parts and target.startswith("/"):
+            resolved = (root / "docs-site" / "public" / target.lstrip("/")).resolve()
+        else:
+            resolved = (path.parent / target).resolve()
         try:
             resolved.relative_to(root)
         except ValueError:
@@ -82,5 +86,8 @@ if problems:
         print(f"- {problem}", file=sys.stderr)
     sys.exit(1)
 PY
+
+node scripts/check-milestone-lifecycle.mjs
+node --test scripts/check-milestone-lifecycle.test.mjs
 
 echo "documentation check passed"
