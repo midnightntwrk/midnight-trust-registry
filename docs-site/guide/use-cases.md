@@ -7,7 +7,7 @@ One organization can hold multiple roles, but each role is a separate scoped gra
 | Governance authority | Publish eligibility, disputes, retention, and policy | Policy must be committed; charter does not bypass quorum |
 | Bootstrap governor | Initialize registry and first maintainers once | No continuing unilateral admission right |
 | Maintainer | Propose, vote, activate, suspend, revoke, archive, publish epochs | Registered DID-bound JubJub key and action-specific quorum; no self-approval |
-| Issuer applicant | Request a credential-family/schema/status-method grant | DID control and eligible VC/VP, then governance approval |
+| Issuer applicant | Request a scoped schema, credential-definition, or status-method grant | DID control and eligible VC/VP, then governance approval |
 | Verifier applicant | Request an exact presentation-request profile | No silent expansion of purpose or disclosure limit |
 | Auditor applicant | Request an exact audit mandate profile | Grant does not provide data access |
 | Evidence verifier | Verify private VC/VP off-chain and sign a redacted commitment | Must be a governed active key; cannot itself approve membership |
