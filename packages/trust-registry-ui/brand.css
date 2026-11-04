@@ -286,11 +286,11 @@
 }
 
 @media (max-width: 360px) {
-  .brand-bar { padding: 0.75rem 0.7rem; }
+  .brand-bar { gap: 0.75rem; padding: 0.75rem 0.7rem; }
   .brand-name { gap: 0.45rem; }
   .brand-logo { width: 5.1rem; }
   .brand-product { padding-left: 0.45rem; }
-  .brand-product-title { font-size: 0.98rem; white-space: nowrap; }
+  .brand-product-title { font-size: 1.1rem; white-space: nowrap; }
   .brand-product-context { font-size: 0.72rem; white-space: nowrap; }
   .mobile-task-menu > summary { min-width: 4.2rem; }
 }
