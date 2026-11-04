@@ -1326,10 +1326,38 @@ export const createApplicantPortalApp = (
     const issuerLocked = preparedIssuer === undefined ? "" : " disabled";
     const verifierLocked = preparedVerifier === undefined ? "" : " disabled";
     const maintainerLocked = preparedMaintainer === undefined ? "" : " disabled";
-    const taskLinks = `
-      <a href="#trust-records">Explore active records</a>
-      ${state.inspection?.sourceMode === "local-ledger" ? "" : `<a href="#demo-application">Try a local demo application</a>`}
+    const demoApplication = state.inspection === undefined || state.inspection.sourceMode === "local-ledger" ? "" : `
+      <form class="form-panel" id="demo-application" data-submit-form>
+        <div class="demo-copy">
+          <p class="eyebrow">Local fixture</p>
+          <h2>Try a local application</h2>
+          <p>Choose an application type and a name reviewers will recognize. An admin can review and activate this label-only fixture request next. It does not grant on-chain authority.</p>
+        </div>
+        <div class="demo-fields">
+          <label class="label">Application type
+            <select class="select" name="target">
+              ${TARGET_OPTIONS.map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)} · ${escapeHtml(option.description)}</option>`).join("")}
+            </select>
+          </label>
+          <label class="label">Name shown to reviewers
+            <input class="input" name="label" type="text" placeholder="Example issuer" required />
+          </label>
+          <button class="button" type="submit"${state.submitting ? " disabled" : ""}>Send demo application</button>
+        </div>
+      </form>
+    `;
+    const taskLinks = state.inspection === undefined ? `
+      <a href="#connection-details">Check connection</a>
+      <a href="#governed-requests">View role requirements</a>
+    ` : state.inspection.sourceMode === "local-ledger" ? `
+      <a href="#current-authorization-lookup">Look up authorization</a>
+      <a href="#current-recognition-lookup">Look up recognition</a>
+      <a href="#governed-requests">Prepare membership</a>
+      <a href="#connection-details">Connection details</a>
+    ` : `
+      <a href="#demo-application">Try a local demo application</a>
       <a href="#governed-requests">Prepare governed membership</a>
+      <a href="#trust-records">Explore active records</a>
       <a href="#connection-details">Connection details</a>
     `;
 
@@ -1352,7 +1380,9 @@ export const createApplicantPortalApp = (
                 : "Try a local application, browse records, or prepare a governed request. Demo records are not on-chain trust decisions."}</p>
             <div class="hero-actions">
               <a class="button" href="${state.inspection === undefined ? "#connection-details" : state.inspection.sourceMode === "local-ledger" ? "#governed-requests" : "#demo-application"}">${state.inspection === undefined ? "Check connection" : state.inspection.sourceMode === "local-ledger" ? "Choose a role" : "Try the demo"}</a>
-              <a class="button secondary" href="#trust-records">Explore records</a>
+              ${state.inspection === undefined ? "" : state.inspection.sourceMode === "local-ledger"
+                ? `<a class="button secondary" href="#current-authorization-lookup">Look up a record</a>`
+                : `<a class="button secondary" href="#trust-records">Explore records</a>`}
             </div>
           </div>
           <div class="hero-overview">
@@ -1401,11 +1431,12 @@ export const createApplicantPortalApp = (
           </details>
         </section>
         <section class="content">
+          ${demoApplication}
           <section class="journey-picker" id="governed-requests" aria-labelledby="journey-heading">
             <div class="journey-heading"><p class="eyebrow">Governed requests</p><h2 id="journey-heading">${state.inspection?.sourceMode === "local-ledger" ? "What would you like to do?" : "Applying beyond the demo?"}</h2>
               <p>Choose a role to inspect its exact authority, evidence, and signing requirements. Nothing is submitted until you confirm.</p>
             </div>
-            <p class="journey-prerequisite">${privateHost ? "Same-origin host selected. This browser cannot verify your session; the host must authenticate private requests." : "This local connection can prepare a request, but cannot submit governed evidence. Use an authenticated same-origin host for that step."}</p>
+            <p class="journey-prerequisite">${state.inspection === undefined ? "Connect to a registry source before preparing a governed request." : privateHost ? "Same-origin host selected. This browser cannot verify your session; the host must authenticate private requests." : "This local connection can prepare a request, but cannot submit governed evidence. Use an authenticated same-origin host for that step."}</p>
             <div class="journey-cards">
               <a href="#issuer-request" data-open-workflow="issuer-request"><strong>Become an issuer</strong><span>Request authority to issue a credential family.</span><em>Start issuer request &rarr;</em></a>
               <a href="#verifier-request" data-open-workflow="verifier-request"><strong>Become a verifier</strong><span>Request authority to verify a precise scope.</span><em>Start verifier request &rarr;</em></a>
@@ -1414,9 +1445,9 @@ export const createApplicantPortalApp = (
             </div>
           </section>
           ${state.inspection?.sourceMode === "local-ledger" ? `
-          <section class="form-panel">
+          <section class="form-panel" id="current-authorization-lookup">
             <h2>Current authorization lookup</h2>
-            <p>Query an exact DID, role, and governed resource from the current local-ledger view. This is an unverified API claim; independently verify finalized registry state before relying on it.</p>
+            <p>Broad browsing is unavailable in this mode. Query an exact DID, role, and governed resource instead. This is an unverified API claim; independently verify finalized registry state before relying on it.</p>
             <form data-current-authorization>
               <label class="label">Role<select class="select" name="role">
                 ${(["issuer", "verifier", "auditor"] as const).map((role) => `<option value="${role}"${state.currentAuthorizationQuery?.role === role ? " selected" : ""}>${role}</option>`).join("")}
@@ -1431,7 +1462,7 @@ export const createApplicantPortalApp = (
               <details><summary>Inspect returned authorization</summary><pre class="mono">${escapeHtml(JSON.stringify(state.currentAuthorizationResult, null, 2))}</pre></details>
             </div>`}
           </section>
-          <section class="form-panel">
+          <section class="form-panel" id="current-recognition-lookup">
             <h2>Current recognition lookup</h2>
             <p>Query an exact external authority and scope from the current local-ledger view. Recognition does not grant local membership. Independently verify finalized registry state before relying on this API claim.</p>
             <form data-current-recognition>
@@ -1501,21 +1532,6 @@ export const createApplicantPortalApp = (
               <button class="button" type="submit"${state.signedBusy || state.signedContext === undefined ? " disabled" : ""}>Submit signed intent</button>
             </form>
           </section>
-          <form class="form-panel" id="demo-application" data-submit-form>
-            <h2>Try a local application</h2>
-            <p>Choose an application type and a name reviewers will recognize. This submits a label-only fixture request; an admin can review and activate it next. It does not grant on-chain authority.</p>
-            <label class="label">
-              Application type
-              <select class="select" name="target">
-                ${TARGET_OPTIONS.map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)} · ${escapeHtml(option.description)}</option>`).join("")}
-              </select>
-            </label>
-            <label class="label">
-              Name shown to reviewers
-              <input class="input" name="label" type="text" placeholder="Example issuer" required />
-            </label>
-            <button class="button" type="submit"${state.submitting ? " disabled" : ""}>Send demo application</button>
-          </form>
           `}
           <section class="form-panel">
             <h2>Issuer membership request</h2>
@@ -1722,12 +1738,12 @@ export const createApplicantPortalApp = (
               <p data-recognition-admission>Accepted receipt: <span class="mono">${escapeHtml(state.recognitionAdmission.receiptId)}</span>. Evidence commitment: <span class="mono">${escapeHtml(state.recognitionAdmission.evidenceCommitment)}</span>.</p>
             `}
           </section>
-          <div class="lanes" id="trust-records">
+          ${state.inspection === undefined || state.inspection.sourceMode === "local-ledger" ? "" : `<div class="lanes" id="trust-records">
             ${renderInspectionLane("Active issuers", issuerCards, state.inspection === undefined || state.inspection.unavailableLists?.includes("issuer") === true)}
             ${renderInspectionLane("Active verifiers", verifierCards, state.inspection === undefined || state.inspection.unavailableLists?.includes("verifier") === true)}
             ${renderInspectionLane("Active auditors", auditorCards, state.inspection === undefined || state.inspection.unavailableLists?.includes("auditor") === true)}
             ${renderInspectionLane("Active recognitions", recognitionCards, state.inspection === undefined || state.inspection.unavailableLists?.includes("recognition") === true)}
-          </div>
+          </div>`}
         </section>
       </main>
     `;

@@ -95,6 +95,11 @@ test("applicant exact scope lookup keeps returned trust unverified", async ({ pa
     allowedLocalOrigins.add(host.base);
     await page.goto(`${host.base}/?apiBase=${encodeURIComponent(host.base)}`);
     await expect(page.locator(".source-badge")).toHaveText("API claim");
+    await expect(page.locator(".task-nav a").first()).toHaveAttribute("href", "#current-authorization-lookup");
+    await expect(page.locator(".hero-actions a").last()).toHaveAttribute("href", "#current-authorization-lookup");
+    await expect(page.locator("#trust-records")).toHaveCount(0);
+    await expect(page.locator("#demo-application")).toHaveCount(0);
+    await expect(page.locator("#current-recognition-lookup")).toBeVisible();
     await page.locator(".workspace-settings > summary").click();
     await expect(page.locator(".workspace-settings")).toContainText("Node-reported checkpoint time");
     await expect(page.locator(".workspace-settings")).toContainText("2026-10-27T00:00:00Z");

@@ -193,6 +193,11 @@ for (const app of ["admin-console", "applicant-portal"]) {
         ? "Connect to review records" : "Find your place in the registry" })).toBeVisible();
       if (app === "applicant-portal") {
         await expect(page.locator(".hero-actions a").first()).toHaveAttribute("href", "#connection-details");
+        await expect(page.locator('a[href="#demo-application"]')).toHaveCount(0);
+        await expect(page.locator("#demo-application")).toHaveCount(0);
+        await expect(page.locator("#trust-records")).toHaveCount(0);
+        await expect(page.locator(".hero-actions a")).toHaveCount(1);
+        await expect(page.locator(".journey-prerequisite")).toContainText("Connect to a registry source");
       }
       await expect(page.locator(".source-time")).toHaveCount(0);
       server.setHealthAvailable(true);
@@ -251,10 +256,15 @@ for (const [app, title] of [
         if (app === "applicant-portal") {
           await expect(page.locator(".hero-actions a").first()).toHaveAttribute("href", "#demo-application");
           const contentOrder = await page.evaluate(() => ({
+            demoTop: document.querySelector("#demo-application").getBoundingClientRect().top,
             rolesTop: document.querySelector(".journey-picker").getBoundingClientRect().top,
             recordsTop: document.querySelector("#trust-records").getBoundingClientRect().top,
+            firstContentId: document.querySelector(".content").firstElementChild.id,
           }));
+          expect(contentOrder.firstContentId).toBe("demo-application");
+          expect(contentOrder.demoTop).toBeLessThan(contentOrder.rolesTop);
           expect(contentOrder.rolesTop).toBeLessThan(contentOrder.recordsTop);
+          await expect(page.locator(".task-nav a").first()).toHaveAttribute("href", "#demo-application");
         }
         if (app === "admin-console" && width === 390) {
           const mobileOrder = await page.evaluate(() => ({

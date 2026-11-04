@@ -14,10 +14,10 @@ proposals, not evidence that a workflow is implemented or finalized.
 
 | Design intent | Local implementation and acceptance |
 | --- | --- |
-| Lead with the next task, not a protocol field | The fixture portal leads to a working demo application and separates governed role preparation; the local-ledger portal leads to role choice. Admin headings distinguish pending decisions from a quiet review workspace. API editing lives under Connection and source details. `ui-layout.spec.mjs` and `demo-application-handoff.spec.mjs` check this hierarchy. |
+| Lead with the next task, not a protocol field | The fixture portal puts its working demo application before governed role preparation in visual and keyboard order; the local-ledger portal leads to role choice. Admin headings distinguish pending decisions from a quiet review workspace. API editing lives under Connection and source details. `ui-layout.spec.mjs` and `demo-application-handoff.spec.mjs` check this hierarchy. |
 | One Midnight visual language | Both apps use the approved logo, Outfit, black/white/blue tokens, and shared navigation/status components. |
 | A compact review list with a bounded detail | Empty lifecycle lanes are omitted from the default admin view; selected detail stays beside the list on desktop and below it on mobile. |
-| Truthful source and certainty | A visible source strip identifies fixture, API claim, or unavailable state and offers Recheck. Epoch and technical identity stay in details. No fixture record is called final. |
+| Truthful source and certainty | A visible source strip identifies fixture, API claim, or unavailable state and offers Recheck. Navigation follows the source: fixture demo and browse, exact lookup for local-ledger API claims, connection recovery when unavailable. Broad browse is omitted rather than shown as empty in local-ledger mode. Epoch and technical identity stay in details. No fixture record is called final. |
 | Mobile task access | The desktop sidebar becomes a native keyboard-operable Menu at narrow widths. The mobile portal omits the nonessential snapshot card so the role path appears sooner; source status and Recheck remain visible. |
 
 The canvas is a visual reference, not a complete behavior specification. Its

@@ -29,11 +29,12 @@ describe("trust registry applicant portal app", () => {
     expect(root.querySelector(".source-panel")?.textContent).toContain("4 list(s) unavailable");
     expect(root.querySelector(".source-time")?.textContent).toContain("browser clock");
     expect(root.textContent).toContain("local");
-    expect(root.textContent).toContain("Current list unavailable. Do not infer trust from this lane.");
+    expect(root.textContent).toContain("Broad browsing is unavailable in this mode.");
     expect(root.textContent).not.toContain("No active entries in this lane yet.");
     expect(root.querySelectorAll(".metric strong")[2]?.textContent).toBe("n/a");
     expect(root.querySelectorAll(".metric strong")[3]?.textContent).toBe("n/a");
-    expect(root.querySelectorAll(".lane .empty-state")).toHaveLength(4);
+    expect(root.querySelector("#trust-records")).toBeNull();
+    expect(root.querySelector(".task-nav a")?.getAttribute("href")).toBe("#current-authorization-lookup");
     expect(root.querySelector("[data-issuer-application-form]")).not.toBeNull();
     expect(root.querySelector("[data-current-authorization]")).not.toBeNull();
     expect(root.querySelector("[data-historical-authorization]")).toBeNull();
