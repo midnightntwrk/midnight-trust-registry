@@ -50,6 +50,19 @@ same-origin host; a separate cross-origin demo API does not enable them. A
 same-origin URL check does not prove that a user session is authenticated; the
 host must authenticate each private request.
 
+### Clean-checkout smoke record
+
+On 2026-11-04, an agent used a detached clean checkout at `48d34c1b` with no
+pre-existing generated contract output. `pnpm install --frozen-lockfile`,
+`pnpm run build:light` (10 uncached tasks), and `pnpm run demo:prepare` passed.
+With the existing demo still on the default ports, the clean API ran on 4441
+using its CLI `--port` option, while `PORT=4183` and `PORT=4185` selected the
+admin and portal static-server ports. Chromium submitted a label-only issuer
+application, found it in admin, approved and activated it, and read the active
+record back in the portal. The source remained **Local fixture** throughout.
+This was an agent-run setup check, not an independent new-engineer trial or a
+deployed-ledger end-to-end result.
+
 ## Browser acceptance
 
 Run `pnpm run test:browser` in a clean checkout. It builds the prebuilt runtime
