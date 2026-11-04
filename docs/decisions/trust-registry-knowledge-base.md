@@ -3192,3 +3192,10 @@ and submits an externally signed maintainer workspace intent. The test checks
 the confirmation and POST payload and keeps the fixture-source warning in
 view. Its fixture signature is accepted only by a controlled test host; this
 is not proof of a valid ledger signature, quorum, or finalized deployment.
+
+The policy browser journey also changes a threshold after preparation and
+requires a fresh context. It then submits an external signer bundle for a
+fixture threshold revision, observes the explicit pending verifier warning,
+and submits verifier registration as a separate action. The fixture host
+accepts the signer bundle without cryptographic validation; the test verifies
+UI ordering and payloads, not Compact quorum or network finality.

@@ -365,3 +365,89 @@ test("fixture governance publishes an epoch and submits an externally signed wor
     await new Promise((done, reject) => server.close((error) => error ? reject(error) : done()));
   }
 });
+
+test("fixture policy revision requires a separate evidence-verifier registration", async ({ page, allowedLocalOrigins }) => {
+  const staticHandler = createStaticAssetHandler({
+    distDir: resolve("packages/trust-registry-admin-console/dist"),
+    name: "admin-console-policy-journey",
+  });
+  const hash = `0x${"a".repeat(64)}`;
+  const signer = { keyId: hash, publicKey: { x: "1", y: "2" }, signature: "0x0102" };
+  const posts = [];
+  const server = createServer(async (request, response) => {
+    const path = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+    if (path !== "/health" && !path.startsWith("/v1/")) {
+      await staticHandler(request, response);
+      return;
+    }
+    response.setHeader("content-type", "application/json");
+    if (path === "/health") {
+      response.end(JSON.stringify({ status: "ok", sourceMode: "workspace", registryId: "registry:policy-fixture" }));
+      return;
+    }
+    if (path === "/v1/registry/summary") {
+      response.end(JSON.stringify(summary("policy-fixture")));
+      return;
+    }
+    if (request.method === "POST") {
+      let body = "";
+      for await (const chunk of request) body += chunk;
+      posts.push({ path, body: JSON.parse(body) });
+      if (path.endsWith("/prepare")) {
+        response.end(JSON.stringify({ registryId: hash, policyCommitment: hash,
+          actionKind: hash, actionPayloadHash: hash,
+          actionSequence: path.includes("thresholds") ? "3" : "4" }));
+      } else if (path.endsWith("/submit")) {
+        response.statusCode = 202;
+        response.end(JSON.stringify({ eventHash: hash }));
+      } else {
+        response.statusCode = 404;
+        response.end(JSON.stringify({ title: "unexpected mutation" }));
+      }
+      return;
+    }
+    response.end(JSON.stringify({ entries: [] }));
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("expected TCP address");
+  const base = `http://127.0.0.1:${address.port}`;
+  try {
+    allowedLocalOrigins.add(base);
+    const confirmations = [];
+    page.on("dialog", async (dialog) => {
+      confirmations.push(dialog.message());
+      await dialog.accept();
+    });
+    await page.goto(`${base}/?apiBase=${encodeURIComponent(base)}`);
+    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    await page.locator(".advanced-workflows > summary").click();
+    await page.locator("[data-policy-prepare-thresholds]").click();
+    await expect(page.locator("[data-policy-context]")).toBeVisible();
+    await page.locator("[data-policy-threshold='default']").fill("3");
+    await expect(page.locator("[data-policy-context]")).toHaveCount(0);
+    await expect(page.locator("[data-policy-submit]")).toHaveCount(0);
+    await page.locator("[data-policy-prepare-thresholds]").click();
+    await expect(page.locator("[data-policy-context]")).toBeVisible();
+    await page.locator("[data-policy-signers]").fill(JSON.stringify([signer]));
+    await page.locator("[data-policy-submit] button[type='submit']").click();
+    await expect(page.locator("#task-policy")).toContainText("registration is still required");
+    expect(posts.find((post) => post.path.endsWith("thresholds/submit"))?.body).toMatchObject({
+      thresholds: { default: "3", emergency: "2", archival: "2" }, signers: [signer],
+    });
+    await page.locator("[data-policy-prepare-verifier]").click();
+    await expect(page.locator("[data-policy-context]")).toBeVisible();
+    await page.locator("[data-policy-signers]").fill(JSON.stringify([signer]));
+    await page.locator("[data-policy-submit] button[type='submit']").click();
+    await expect(page.locator(".alert.success")).toContainText("Evidence-verifier registration accepted");
+    await expect(page.locator("#task-policy")).not.toContainText("registration is still required");
+    expect(posts.find((post) => post.path.endsWith("evidence-verifier/submit"))?.body)
+      .toMatchObject({ signers: [signer] });
+    expect(confirmations).toHaveLength(2);
+    await expect(page.locator(".source-panel")).toContainText("not deployed ledger evidence");
+  } finally {
+    await page.close();
+    server.closeAllConnections();
+    await new Promise((done, reject) => server.close((error) => error ? reject(error) : done()));
+  }
+});
