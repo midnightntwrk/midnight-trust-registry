@@ -98,6 +98,11 @@ async function reviewLocalLayouts(page, testInfo, app) {
     if (process.env.TR_UI_CAPTURE === "1") {
       await page.evaluate(() => window.scrollTo(0, 0));
       await page.screenshot({ path: testInfo.outputPath(`${app}-local-lookup-${width}.png`), fullPage: true });
+      if (app === "applicant") {
+        await page.locator(".current-lookup-panel:not([hidden])").screenshot({
+          path: testInfo.outputPath(`${app}-selected-lookup-${width}.png`),
+        });
+      }
     }
     if (width <= 760) {
       await page.locator(".mobile-task-menu > summary").click();
@@ -115,6 +120,10 @@ async function reviewLocalLayouts(page, testInfo, app) {
       await page.screenshot({ path: testInfo.outputPath(`${app}-local-settings-${width}.png`), fullPage: true });
     }
     await page.locator(".settings-back").click();
+    if (app === "applicant") {
+      await expect(page.locator("#current-recognition-lookup")).toBeVisible();
+      await expect(page.locator("#current-authorization-lookup")).toBeHidden();
+    }
   }
 }
 
@@ -174,7 +183,8 @@ test("applicant exact scope lookup keeps returned trust unverified", async ({ pa
       .toBe(4);
     await expect(page.locator("#trust-records")).toHaveCount(0);
     await expect(page.locator("#demo-application")).toHaveCount(0);
-    await expect(page.locator("#current-recognition-lookup")).toBeVisible();
+    await expect(page.locator("#current-recognition-lookup")).toBeHidden();
+    await expect(page.locator(".lookup-switch a[aria-current='location']")).toHaveText("Authorization");
     await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
     await expect(page.locator(".settings-view")).toContainText("Node-reported checkpoint time");
     await expect(page.locator(".settings-view")).toContainText("2026-10-27T00:00:00Z");
@@ -188,6 +198,10 @@ test("applicant exact scope lookup keeps returned trust unverified", async ({ pa
     await expect(page.locator("[data-current-authorization-result]")).toContainText("active");
     await expect(page.locator("[data-current-authorization-result]")).toHaveAttribute("role", "status");
     await expect(authorizationButton).toBeFocused();
+    await page.locator(".lookup-switch a[href='#current-recognition-lookup']").click();
+    await expect(page.locator("#current-recognition-lookup")).toBeVisible();
+    await expect(page.locator("#current-authorization-lookup")).toBeHidden();
+    await expect(page.locator(".lookup-switch a[aria-current='location']")).toHaveText("External recognition");
     const form = page.locator("[data-current-recognition]");
     await form.locator("[name='recognizedAuthorityDid']").fill("did:web:authority.example");
     await form.locator("[name='recognizedRegistryId']").fill("external:registry");
@@ -205,6 +219,12 @@ test("applicant exact scope lookup keeps returned trust unverified", async ({ pa
       .toContainText("Unverified current API claim: active");
     await expect(page.locator("[data-current-recognition-result]")).toHaveAttribute("role", "status");
     await expect(recognitionButton).toBeFocused();
+    const lookupRequests = host.requests.filter((value) => value.startsWith("POST /v1/")).length;
+    await page.locator(".lookup-switch a[href='#current-authorization-lookup']").click();
+    await expect(page.locator("[data-current-authorization-result]")).toContainText("Unverified current API claim");
+    await page.locator(".lookup-switch a[href='#current-recognition-lookup']").click();
+    await expect(page.locator("[data-current-recognition-result]")).toContainText("Unverified current API claim");
+    expect(host.requests.filter((value) => value.startsWith("POST /v1/")).length).toBe(lookupRequests);
     await reviewLocalLayouts(page, testInfo, "applicant");
     await form.locator("[name='scopeResourceId']").fill("substituted-degree");
     await form.locator("button[type='submit']").click();
@@ -213,6 +233,29 @@ test("applicant exact scope lookup keeps returned trust unverified", async ({ pa
     expect(host.requests).toContain("POST /v1/authorizations/resolve");
     expect(host.requests).toContain("POST /v1/recognitions/resolve");
     expect(host.requests.some((value) => value === "GET /v1/authorizations/issuer")).toBe(false);
+  } finally {
+    await page.close();
+    await host.close();
+  }
+});
+
+test("applicant recognition deep link selects only the external lookup", async ({ page, allowedLocalOrigins }) => {
+  const host = await serveLocalApp("applicant-portal");
+  try {
+    allowedLocalOrigins.add(host.base);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`${host.base}/?apiBase=${encodeURIComponent(host.base)}#current-recognition-lookup`);
+    await expect(page.locator(".source-badge")).toHaveText("API claim");
+    await expect(page.locator("#current-recognition-lookup")).toBeVisible();
+    await expect(page.locator("#current-authorization-lookup")).toBeHidden();
+    await expect(page.locator(".lookup-switch a[aria-current='location']")).toHaveText("External recognition");
+    await expect(page.locator(".lookup-switch a")).toHaveCount(2);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    await page.locator(".lookup-switch a[href='#current-authorization-lookup']").click();
+    await expect(page.locator("#current-authorization-lookup")).toBeVisible();
+    const pickerTop = await page.locator(".lookup-picker").evaluate((element) => element.getBoundingClientRect().top);
+    expect(pickerTop).toBeGreaterThanOrEqual(-1);
+    expect(pickerTop).toBeLessThan(844);
   } finally {
     await page.close();
     await host.close();

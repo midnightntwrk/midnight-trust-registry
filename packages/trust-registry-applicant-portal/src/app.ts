@@ -264,6 +264,8 @@ export const createApplicantPortalApp = (
   // An explicit query parameter is a one-off override for local testing and
   // should not silently replace the persisted default.
   const queryBase = initialUrl.searchParams.get("apiBase");
+  let lookupActive: "authorization" | "recognition" = initialUrl.hash === "#current-recognition-lookup"
+    ? "recognition" : "authorization";
 
   const state: AppState = {
     apiBase: sameOriginApi ? initialUrl.origin
@@ -1493,7 +1495,7 @@ export const createApplicantPortalApp = (
         </section>
         <section class="settings-view" id="connection-details" aria-labelledby="settings-heading">
           <div class="settings-heading">
-            <a class="settings-back" href="${state.inspection?.sourceMode === "local-ledger" ? "#current-authorization-lookup" : "#governed-requests"}">&larr; Back to applicant workspace</a>
+            <a class="settings-back" href="${state.inspection?.sourceMode === "local-ledger" ? `#current-${lookupActive}-lookup` : "#governed-requests"}">&larr; Back to applicant workspace</a>
             <p class="eyebrow">Configuration</p>
             <h1 id="settings-heading">Workspace settings</h1>
             <p>Check the API source and the registry identity it reports. These are browser observations, not independently verified trust evidence.</p>
@@ -1539,9 +1541,19 @@ export const createApplicantPortalApp = (
           ${demoApplication}
           ${state.inspection?.sourceMode === "local-ledger" ? "" : journeyPicker}
           ${state.inspection?.sourceMode === "local-ledger" ? `
-          <section class="form-panel" id="current-authorization-lookup">
-            <h2>Current authorization lookup</h2>
-            <p>Broad browsing is unavailable in this mode. Query an exact DID, role, and governed resource instead. This is an unverified API claim; independently verify finalized registry state before relying on it.</p>
+          <section class="lookup-picker" aria-labelledby="lookup-picker-heading">
+            <p class="eyebrow">Current local ledger</p>
+            <h2 id="lookup-picker-heading">What are you checking?</h2>
+            <nav class="lookup-switch" aria-label="Current lookup type">
+              <a href="#current-authorization-lookup" aria-controls="current-authorization-lookup"${lookupActive === "authorization" ? ' aria-current="location"' : ""}>Authorization</a>
+              <a href="#current-recognition-lookup" aria-controls="current-recognition-lookup"${lookupActive === "recognition" ? ' aria-current="location"' : ""}>External recognition</a>
+            </nav>
+          </section>
+          <section class="form-panel current-lookup-panel" id="current-authorization-lookup"${lookupActive === "authorization" ? "" : " hidden"}>
+            <div class="lookup-copy">
+              <h2>Current authorization lookup</h2>
+              <p>Broad browsing is unavailable in this mode. Query an exact DID, role, and governed resource instead. This is an unverified API claim; independently verify finalized registry state before relying on it.</p>
+            </div>
             <form data-current-authorization>
               <label class="label">Role<select class="select" name="role">
                 ${(["issuer", "verifier", "auditor"] as const).map((role) => `<option value="${role}"${state.currentAuthorizationQuery?.role === role ? " selected" : ""}>${role}</option>`).join("")}
@@ -1556,9 +1568,11 @@ export const createApplicantPortalApp = (
               <details><summary>Inspect returned authorization</summary><pre class="mono">${escapeHtml(JSON.stringify(state.currentAuthorizationResult, null, 2))}</pre></details>
             </div>`}
           </section>
-          <section class="form-panel" id="current-recognition-lookup">
-            <h2>Current recognition lookup</h2>
-            <p>Query an exact external authority and scope from the current local-ledger view. Recognition does not grant local membership. Independently verify finalized registry state before relying on this API claim.</p>
+          <section class="form-panel current-lookup-panel" id="current-recognition-lookup"${lookupActive === "recognition" ? "" : " hidden"}>
+            <div class="lookup-copy">
+              <h2>Current recognition lookup</h2>
+              <p>Query an exact external authority and scope from the current local-ledger view. Recognition does not grant local membership. Independently verify finalized registry state before relying on this API claim.</p>
+            </div>
             <form data-current-recognition>
               <label class="label">Recognized authority DID<input class="input mono" name="recognizedAuthorityDid" value="${escapeHtml(state.currentRecognitionDraft?.recognizedAuthorityDid ?? state.currentRecognitionQuery?.recognizedAuthorityDid ?? "")}" required /></label>
               <label class="label">Recognized registry ID<input class="input mono" name="recognizedRegistryId" value="${escapeHtml(state.currentRecognitionDraft?.recognizedRegistryId ?? state.currentRecognitionQuery?.recognizedRegistryId ?? "")}" required /></label>
@@ -1911,6 +1925,18 @@ export const createApplicantPortalApp = (
   window.addEventListener("hashchange", () => {
     const shell = root.querySelector<HTMLElement>(".app-shell");
     if (shell !== null) shell.dataset.settingsActive = String(window.location.hash === "#connection-details");
+    const next = window.location.hash === "#current-recognition-lookup" ? "recognition"
+      : window.location.hash === "#current-authorization-lookup" ? "authorization" : undefined;
+    if (next === undefined || next === lookupActive) return;
+    lookupActive = next;
+    for (const target of ["authorization", "recognition"] as const) {
+      const section = root.querySelector<HTMLElement>(`#current-${target}-lookup`);
+      if (section !== null) section.hidden = target !== lookupActive;
+      const link = root.querySelector<HTMLAnchorElement>(`.lookup-switch a[href="#current-${target}-lookup"]`);
+      if (target === lookupActive) link?.setAttribute("aria-current", "location");
+      else link?.removeAttribute("aria-current");
+    }
+    root.querySelector<HTMLElement>(".lookup-picker")?.scrollIntoView({ block: "start" });
   });
   void refreshInspection();
 };

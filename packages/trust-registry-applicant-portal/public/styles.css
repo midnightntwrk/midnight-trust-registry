@@ -344,6 +344,45 @@ body { background: radial-gradient(circle at 100% 0, #e8e9ff 0, transparent 26re
 .lane-header h2, .form-panel h2 { font-size: 1.35rem; }
 @media (max-width: 900px) { .records-heading { display: grid; } .record-search { width: 100%; } .records-overview .lanes { grid-template-columns: minmax(0, 1fr); } }
 
+.lookup-picker {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: clamp(1rem, 2.2vw, 1.5rem);
+  border: 1px solid var(--midnight-border);
+  border-radius: 16px;
+  background: var(--midnight-white);
+}
+.lookup-picker h2 { margin: 0.25rem 0 0.85rem; font-size: 1.4rem; }
+.lookup-switch { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; max-width: 34rem; }
+.lookup-switch a {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--midnight-border);
+  border-radius: 9px;
+  color: var(--midnight-black);
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.lookup-switch a:hover { border-color: var(--midnight-blue); }
+.lookup-switch a:focus-visible { outline: 2px solid var(--midnight-blue); outline-offset: 2px; }
+.lookup-switch a[aria-current="location"] { border-color: var(--midnight-black); background: var(--midnight-black); color: var(--midnight-white); }
+.current-lookup-panel { display: grid; grid-column: 1 / -1; grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); align-items: start; gap: 0.7rem 2rem; }
+.current-lookup-panel[hidden] { display: none !important; }
+.current-lookup-panel .lookup-copy { grid-column: 1; min-width: 0; }
+.current-lookup-panel .lookup-copy p { margin: 0.75rem 0 0; }
+.current-lookup-panel form { display: grid; grid-column: 2; grid-row: 1; gap: 0.75rem; min-width: 0; }
+.current-lookup-panel > .alert, .current-lookup-panel > .panel { grid-column: 2; }
+@media (max-width: 980px) {
+  .current-lookup-panel { display: block; }
+  .current-lookup-panel form { margin-top: 1rem; }
+}
+@media (max-width: 480px) { .lookup-switch { grid-template-columns: minmax(0, 1fr); } }
+
 .journey-picker {
   grid-column: 1 / -1;
   min-width: 0;

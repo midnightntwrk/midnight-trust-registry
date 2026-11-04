@@ -107,7 +107,7 @@ repeatable UI acceptance evidence:
 | Submit an issuer proposal with two external maintainer signatures and a registered verifier signature, then read the direct accepted receipt without treating it as finality | `governed-proposal-recovery.spec.mjs` (Compact simulator and local admission host) |
 | Complete a fixture recognition challenge, submit an external assertion, recover the accepted receipt, and download query-bound historical recognition and authorization API claims | `recognition-evidence.spec.mjs` (same-origin fixture session) |
 | Edit either historical evidence query, discard its stale download, and keep the new draft through a source refresh | `recognition-evidence.spec.mjs` |
-| Resolve exact current authorization and separate external recognition scopes in local-ledger mode; reject a substituted recognition tuple, preserve a malformed-context draft and keyboard focus, and announce errors/results | `local-lookup.spec.mjs` (admin and applicant) |
+| Choose one local-ledger applicant task at a time: current authorization or external recognition. Keep the selected form and its prior result when switching tasks or returning from settings; never issue a lookup merely by switching. Resolve exact scopes, reject a substituted recognition tuple, preserve a malformed-context draft and keyboard focus, and announce errors/results | `local-lookup.spec.mjs` (admin and applicant) |
 | Keep registry-wide lifecycle counters off the local-ledger admin hero before and after an exact lookup; a fetched record is not a complete registry count | `local-lookup.spec.mjs` |
 | Show only registry identity and an API-reported epoch in the local-ledger applicant overview, not unavailable issuer/verifier list totals | `local-lookup.spec.mjs` |
 | Discard a previously visible API claim while Recheck is pending, remove exact lookup when the source becomes a fixture, and never reuse the old result when local-ledger mode returns; a denied follow-up lookup clears the prior success and announces the denial | `local-lookup.spec.mjs` (admin and applicant, controlled source switch and 403) |
@@ -138,8 +138,9 @@ not an independent new-user or assistive-technology review. The capture does
 not establish deployed-ledger behavior.
 
 A separate controlled local-ledger capture was inspected at 390 px in both
-apps and at 768 px in the portal. Authorization and external recognition stay
-separate, while results retain the **unverified API claim** label and the
+apps and at 768/1440 px in the portal. The applicant chooses authorization or
+external recognition without showing both long forms at once. Results retain
+the **unverified API claim** label and the
 independent-finality warning. The settings review at 390 px exposed another
 raw browser timestamp; settings now show the same readable UTC time as the
 source strip. These captures use a stubbed checkpoint, not a deployed contract.
