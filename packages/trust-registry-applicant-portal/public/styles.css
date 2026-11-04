@@ -403,7 +403,7 @@ body { background: radial-gradient(circle at 100% 0, #e8e9ff 0, transparent 26re
 .hero-overview .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 1rem; padding: 0; border: 0; }
 .hero-overview .metric { padding: 0.65rem; border-radius: 8px; background: var(--midnight-surface); }
 .hero-overview .metric strong { font-size: 1.15rem; }
-.hero > .source-panel, .hero > .workspace-settings, .hero > .alert { grid-column: 1 / -1; }
+.hero > .source-panel, .hero > .alert { grid-column: 1 / -1; }
 .connection-form { display: grid; gap: 0.75rem; min-width: 0; max-width: 34rem; margin: 0.9rem 0 1rem; }
 .connection-form .input { width: 100%; min-width: 0; max-width: 100%; }
 .role-workflow:not([open]) { display: none; }
@@ -443,7 +443,7 @@ body { background: radial-gradient(circle at 100% 0, #e8e9ff 0, transparent 26re
   .toolbar, .content { grid-template-columns: minmax(0, 1fr); }
   #demo-application { grid-template-columns: minmax(0, 1fr); }
   .hero { grid-template-columns: minmax(0, 1fr); }
-  .hero > .source-panel, .hero > .workspace-settings, .hero > .alert { grid-column: 1; }
+  .hero > .source-panel, .hero > .alert { grid-column: 1; }
 }
 
 @media (max-width: 620px) {

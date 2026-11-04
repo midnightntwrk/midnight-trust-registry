@@ -14,7 +14,7 @@ proposals, not evidence that a workflow is implemented or finalized.
 
 | Design intent | Local implementation and acceptance |
 | --- | --- |
-| Lead with the next task, not a protocol field | The default portal leads to governed role preparation. On loopback, `demo=1` opts into the label-only fixture application ahead of that path. Admin headings distinguish pending decisions from a quiet review workspace. API editing lives under Connection and source details. `ui-layout.spec.mjs` and `demo-application-handoff.spec.mjs` check this hierarchy. |
+| Lead with the next task, not a protocol field | The default portal leads to governed role preparation. On loopback, `demo=1` opts into the label-only fixture application ahead of that path. Admin headings distinguish pending decisions from a quiet review workspace. API editing lives in the separate Workspace settings view. `ui-layout.spec.mjs` and `demo-application-handoff.spec.mjs` check this hierarchy. |
 | Explain the applicant path before exposing forms | Four compact role choices lead to a role-specific disclosure. A four-step guide explains choice, evidence, external signing, and status inspection; a prerequisite card calls out DID, exact scope, and authenticated host. Opening a role does not submit it. |
 | One Midnight visual language | Both apps use the approved logo, Outfit, black/white/blue tokens, and shared navigation/status components. |
 | Compact discovery and a bounded review detail | The fixture portal searches visible active records by name, role, scope, or DID without changing registry state. Empty lifecycle lanes are omitted from the admin view; selected detail stays beside the list on desktop and below it on mobile. The detail explains its source and lifecycle before the decision summary. Exact IDs and external-signature preparation are separate disclosures. |
@@ -157,7 +157,10 @@ authenticated host. A registered application is not an approved grant.
 
 ## Settings and trust language
 
-Workspace settings expose endpoint, last browser check, source mode, registry
+The sidebar or mobile Menu opens a dedicated Workspace settings view. The main
+workspaces retain a compact source-status cue, but the detailed connection form
+and deployment identity do not compete with record workflows. Settings expose
+endpoint, last browser check, source mode, registry
 identity, and any approved local-plan digest reported by the API. Network
 profile, genesis anchor, and contract identity are shown as *not exposed* when
 the API does not return them. In local-ledger mode, the API's reported

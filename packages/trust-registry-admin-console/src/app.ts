@@ -742,10 +742,10 @@ export const createAdminConsoleApp = (
       void refreshBoard();
     });
 
-    root.querySelector<HTMLButtonElement>("[data-refresh]")?.addEventListener("click", () => {
+    root.querySelectorAll<HTMLButtonElement>("[data-refresh], [data-settings-refresh]").forEach((button) => button.addEventListener("click", () => {
       if (state.governedBusy) return;
       void refreshBoard();
-    });
+    }));
     root.querySelector<HTMLSelectElement>("[data-current-target]")?.addEventListener("change", (event) => {
       if (state.lookupBusy) ++boardRequestId;
       setState({ lookupTarget: (event.currentTarget as HTMLSelectElement).value as ReviewCard["target"],
@@ -1029,7 +1029,6 @@ export const createAdminConsoleApp = (
       ? document.activeElement?.getAttribute("data-focus-key") : null;
     pendingFocusKey = focusKey ?? pendingFocusKey;
     const advancedOpen = root.querySelector<HTMLDetailsElement>(".advanced-workflows")?.open ?? false;
-    const settingsOpen = root.querySelector<HTMLDetailsElement>(".workspace-settings")?.open ?? false;
     const previousGovernedActions = root.querySelector<HTMLDetailsElement>(".governed-actions");
     governedActionsOpen = previousGovernedActions?.open ?? false;
     governedActionsKey = previousGovernedActions?.dataset.recordKey;
@@ -1062,7 +1061,7 @@ export const createAdminConsoleApp = (
       <a href="#advanced-governance">Advanced governance</a>
     `;
     root.innerHTML = `
-      <main class="shell app-shell">
+      <main class="shell app-shell" data-settings-active="${window.location.hash === "#workspace-settings"}">
         <header class="brand-bar">
           <span class="brand-name"><img class="brand-logo" src="./midnight-logo.svg" alt="Midnight" /> <span class="brand-section">Trust Registry</span></span>
           <span class="brand-section">Admin console</span>
@@ -1089,8 +1088,19 @@ export const createAdminConsoleApp = (
             ${state.observedAt === undefined || state.loading ? "" : `<span class="source-time">Checked ${escapeHtml(state.observedAt)} (browser clock)</span>`}
             <button class="source-refresh" type="button" data-refresh data-focus-key="refresh"${state.loading || state.governedBusy ? " disabled" : ""}>Recheck</button>
           </div>
-          <details class="workspace-settings" id="workspace-settings"${settingsOpen ? " open" : ""}>
-            <summary>Connection and source details</summary>
+        </section>
+        <section class="settings-view" id="workspace-settings" aria-labelledby="settings-heading">
+          <div class="settings-heading">
+            <a class="settings-back" href="#review-board">&larr; Back to review workspace</a>
+            <p class="eyebrow">Configuration</p>
+            <h1 id="settings-heading">Workspace settings</h1>
+            <p>Check the source this browser is using and the deployment identity reported by the API. These details do not change registry governance.</p>
+          </div>
+          <div class="settings-cards">
+            <section class="settings-card" aria-labelledby="admin-connection-heading">
+              <p class="eyebrow">Connection</p>
+              <h2 id="admin-connection-heading">API and source</h2>
+              <p>Choose a local API for development, or inspect the same-origin endpoint managed by this host.</p>
             <form class="connection-form" data-api-base-form>
               <label>API base URL
                 <input class="input mono" type="url" name="apiBase" data-focus-key="api-base" value="${escapeHtml(state.apiBase)}"${sameOriginApi ? " disabled" : ""} />
@@ -1104,6 +1114,13 @@ export const createAdminConsoleApp = (
               <div><dt>Connection</dt><dd>${state.loading ? "Checking" : state.board === undefined ? "Unavailable" : "Responding at last check"}</dd></div>
               <div><dt>Source mode</dt><dd>${escapeHtml(state.board?.sourceMode ?? "Unavailable")}</dd></div>
               <div><dt>Browser check time</dt><dd>${escapeHtml(state.observedAt ?? "No successful check")}</dd></div>
+            </dl>
+            <button class="source-refresh" type="button" data-settings-refresh data-focus-key="settings-refresh"${state.loading || state.governedBusy ? " disabled" : ""}>Recheck connection</button>
+            </section>
+            <section class="settings-card" aria-labelledby="admin-identity-heading">
+              <p class="eyebrow">Read-only</p>
+              <h2 id="admin-identity-heading">Deployment identity</h2>
+              <dl class="settings-grid">
               <div><dt>Registry ID</dt><dd class="technical-id">${escapeHtml(state.board?.summary.registryId ?? "Not reported")}</dd></div>
               <div><dt>Registry DID</dt><dd class="technical-id">${escapeHtml(state.board?.summary.registryDid ?? "Not reported")}</dd></div>
               <div><dt>Current epoch ID</dt><dd class="technical-id">${escapeHtml(state.board?.summary.currentEpochId ?? "Not reported")}</dd></div>
@@ -1112,8 +1129,15 @@ export const createAdminConsoleApp = (
               <div><dt>Node-reported checkpoint time</dt><dd>${escapeHtml(state.board.nodeReportedAt ?? "Not reported")}</dd></div>`}
               <div><dt>Network profile, genesis, contract</dt><dd>Not exposed by this API response</dd></div>
             </dl>
-            <p class="settings-note">Deployment identity and governance cannot be changed here. A node-reported checkpoint and browser response are not independently authenticated finality or actor authorization.</p>
-          </details>
+            <p class="settings-callout">A node-reported checkpoint and browser response are not independently authenticated finality or actor authorization.</p>
+            </section>
+            <section class="settings-card" aria-labelledby="admin-signing-heading">
+              <p class="eyebrow">Security</p>
+              <h2 id="admin-signing-heading">External signing</h2>
+              <p>Governed actions require an external signer. This browser prepares exact context but does not hold private keys or establish actor authority.</p>
+            </section>
+          </div>
+          <div class="settings-footer"><strong>No account profile in this browser</strong><p>The authenticated host and external signer establish who may act. Deployment identity and governance cannot be changed here.</p></div>
         </section>
         ${state.board?.sourceMode === "local-ledger" ? `
           <section class="proposal-panel governed-panel" id="exact-lookup">
@@ -1270,5 +1294,9 @@ export const createAdminConsoleApp = (
   };
 
   render();
+  window.addEventListener("hashchange", () => {
+    const shell = root.querySelector<HTMLElement>(".app-shell");
+    if (shell !== null) shell.dataset.settingsActive = String(window.location.hash === "#workspace-settings");
+  });
   void refreshBoard();
 };

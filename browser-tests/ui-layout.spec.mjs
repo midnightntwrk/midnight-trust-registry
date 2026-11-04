@@ -88,18 +88,24 @@ for (const app of ["admin-console", "applicant-portal"]) {
       await page.goto(`${first.base}/?apiBase=${encodeURIComponent(first.base)}`);
       await expect(page.locator(".source-badge")).toHaveText("Local fixture");
       const firstReads = first.requests.length;
-      await page.locator(".workspace-settings > summary").click();
+      await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
       const form = page.locator("[data-api-base-form]");
+      await expect(page.locator(".settings-view")).toBeVisible();
+      await expect(page.locator(".hero")).toBeHidden();
       await expect(form.locator("[name='apiBase']")).toBeEnabled();
       await form.locator("[name='apiBase']").fill(second.base);
       await form.locator("button[type='submit']").click();
       await expect(form.locator("[name='apiBase']")).toHaveValue(second.base);
+      await expect(page.locator(".settings-view")).toBeVisible();
+      await page.locator("[data-settings-refresh]").click();
+      await expect(page.locator(".settings-view")).toBeVisible();
       await expect(page.locator(".source-badge")).toHaveText("Local fixture");
-      await expect(page.locator(".workspace-settings")).toContainText(`${second.base} (local development setting)`);
+      await expect(page.locator(".settings-view")).toContainText(`${second.base} (local development setting)`);
       expect(second.requests).toContain("GET /health");
       expect(second.requests).toContain("GET /v1/registry/summary");
       expect(first.requests).toHaveLength(firstReads);
       if (app === "applicant-portal") {
+        await page.locator(".settings-back").click();
         await page.locator(".advanced-tools > summary").click();
         await page.locator('[data-workflow="Recover external recognition"] > summary').click();
         await expect(page.locator("[data-recognition-challenge]")).toBeDisabled();
@@ -167,11 +173,11 @@ for (const app of ["admin-console", "applicant-portal"]) {
       await expect(page.locator("[data-api-base-form] [name='apiBase']")).toHaveValue(server.base);
       await expect(page.locator("[data-api-base-form] [name='apiBase']")).toBeDisabled();
       await expect(page.locator("[data-api-base-form] button[type='submit']")).toBeDisabled();
-      await page.locator(".workspace-settings > summary").click();
-      await expect(page.locator(".workspace-settings")).toContainText("managed by this host");
-      await expect(page.locator(".workspace-settings")).not.toContainText("outside.example");
+      await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
+      await expect(page.locator(".settings-view")).toContainText("managed by this host");
+      await expect(page.locator(".settings-view")).not.toContainText("outside.example");
       if (app === "applicant-portal") {
-        await expect(page.locator(".workspace-settings"))
+        await expect(page.locator(".settings-view"))
           .toContainText("Private actions require the authenticated same-origin host");
       }
     } finally {
@@ -281,10 +287,21 @@ for (const [app, title] of [
         await refresh.click();
         await expect(page.locator(".source-badge")).toHaveText("Local fixture");
         await expect(refresh).toBeFocused();
-        await page.locator(".workspace-settings > summary").click();
-        await expect(page.locator(".workspace-settings")).toHaveAttribute("open", "");
-        await expect(page.locator(".workspace-settings")).toContainText("Network profile, genesis, contract");
-        await expect(page.locator(".workspace-settings")).toContainText("Not exposed by this API response");
+        if (width <= 760) await page.locator(".mobile-task-menu > summary").click();
+        const settingsLink = width <= 760 ? page.locator(".mobile-task-menu nav a").filter({ hasText: "Workspace settings" })
+          : page.locator(".task-nav a").filter({ hasText: "Workspace settings" });
+        await settingsLink.click();
+        await expect(page.locator(".settings-view")).toBeVisible();
+        await expect(page.locator(".hero")).toBeHidden();
+        await expect(page.locator(".settings-view")).toContainText("Network profile, genesis, contract");
+        await expect(page.locator(".settings-view")).toContainText("Not exposed by this API response");
+        await expect(page.locator(".settings-view")).not.toHaveCSS("overflow-x", "scroll");
+        if (process.env.TR_UI_CAPTURE === "1") {
+          await page.screenshot({ path: testInfo.outputPath(`${app}-settings-${width}.png`), fullPage: true });
+        }
+        await page.locator(".settings-back").click();
+        await expect(page.locator(".settings-view")).toBeHidden();
+        await expect(page.locator(".hero")).toBeVisible();
         const links = width <= 760 ? page.locator(".mobile-task-menu nav a") : page.locator(".task-nav a");
         expect(await page.evaluate(() => {
           const ids = [...document.querySelectorAll("[id]")].map((element) => element.id);

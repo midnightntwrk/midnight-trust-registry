@@ -76,7 +76,7 @@ test("a late governance receipt cannot replace another registry's board", async 
       new Promise((_, reject) => setTimeout(() => reject(new Error("epoch publication request did not start")), 3000)),
     ]);
 
-    await page.locator(".workspace-settings > summary").click();
+    await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
     await page.locator("[data-api-base-form] [name='apiBase']").fill(`${base}/b`);
     await page.locator("[data-api-base-form] button[type='submit']").click();
     await expect(registryLabel).toHaveText("Registry B");
@@ -340,7 +340,9 @@ test("fixture governance publishes an epoch and submits an externally signed wor
     await page.locator("[data-epoch-label]").fill("reviewed fixture epoch");
     await page.locator("[data-epoch-form] button[type='submit']").click();
     await expect(page.locator("[data-epoch-label]")).toBeEmpty();
-    await expect(page.locator(".workspace-settings")).toContainText("epoch:ui-governance:2");
+    await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
+    await expect(page.locator(".settings-view")).toContainText("epoch:ui-governance:2");
+    await page.locator(".settings-back").click();
     expect(confirmations[0]).toContain("reviewed fixture epoch");
     expect(posted[0]).toEqual({ path: "/v1/epochs/publish", body: { label: "reviewed fixture epoch" } });
 

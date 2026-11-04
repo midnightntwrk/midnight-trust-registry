@@ -977,9 +977,9 @@ export const createApplicantPortalApp = (
       void refreshInspection();
     });
 
-    root.querySelector<HTMLButtonElement>("[data-refresh]")?.addEventListener("click", () => {
+    root.querySelectorAll<HTMLButtonElement>("[data-refresh], [data-settings-refresh]").forEach((button) => button.addEventListener("click", () => {
       void refreshInspection();
-    });
+    }));
 
     root.querySelector<HTMLFormElement>("[data-current-authorization]")?.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -1342,7 +1342,6 @@ export const createApplicantPortalApp = (
     const openWorkflows = new Set([...root.querySelectorAll<HTMLDetailsElement>(".workflow-disclosure[open]")]
       .map((details) => details.dataset.workflow));
     const advancedOpen = root.querySelector<HTMLDetailsElement>(".advanced-tools")?.open ?? false;
-    const settingsOpen = root.querySelector<HTMLDetailsElement>(".workspace-settings")?.open ?? false;
     const previousVpForm = root.querySelector<HTMLFormElement>("[data-application-vp-form]");
     const previousVp = previousVpForm?.querySelector<HTMLTextAreaElement>("[name='presentation']")?.value;
     const previousChallengeHash = previousVpForm?.dataset.challengeHash;
@@ -1392,16 +1391,16 @@ export const createApplicantPortalApp = (
       <a href="#current-authorization-lookup">Look up authorization</a>
       <a href="#current-recognition-lookup">Look up recognition</a>
       <a href="#governed-requests">Prepare membership</a>
-      <a href="#connection-details">Connection details</a>
+      <a href="#connection-details">Workspace settings</a>
     ` : `
       ${demoMode ? `<a href="#demo-application">Try a local demo application</a>` : ""}
       <a href="#governed-requests">Prepare governed membership</a>
       <a href="#trust-records">Explore active records</a>
-      <a href="#connection-details">Connection details</a>
+      <a href="#connection-details">Workspace settings</a>
     `;
 
     root.innerHTML = `
-      <main class="shell app-shell">
+      <main class="shell app-shell" data-settings-active="${window.location.hash === "#connection-details"}">
         <header class="brand-bar">
           <span class="brand-name"><img class="brand-logo" src="./midnight-logo.svg" alt="Midnight" /> <span class="brand-section">Trust Registry</span></span>
           <span class="brand-section">Applicant portal</span>
@@ -1444,8 +1443,19 @@ export const createApplicantPortalApp = (
             ${state.observedAt === undefined || state.loading ? "" : `<span class="source-time">Checked ${escapeHtml(state.observedAt)} (browser clock)</span>`}
             <button class="source-refresh" type="button" data-refresh data-focus-key="refresh"${state.loading ? " disabled" : ""}>Recheck</button>
           </div>
-          <details class="workspace-settings" id="connection-details"${settingsOpen ? " open" : ""}>
-            <summary>Connection and source details</summary>
+        </section>
+        <section class="settings-view" id="connection-details" aria-labelledby="settings-heading">
+          <div class="settings-heading">
+            <a class="settings-back" href="#governed-requests">&larr; Back to applicant workspace</a>
+            <p class="eyebrow">Configuration</p>
+            <h1 id="settings-heading">Workspace settings</h1>
+            <p>Check the API source and the registry identity it reports. These are browser observations, not independently verified trust evidence.</p>
+          </div>
+          <div class="settings-cards">
+            <section class="settings-card" aria-labelledby="portal-connection-heading">
+              <p class="eyebrow">Connection</p>
+              <h2 id="portal-connection-heading">API and source</h2>
+              <p>Choose a local API for development, or inspect the same-origin endpoint managed by this host.</p>
             <form class="connection-form" data-api-base-form>
               <label class="label">API base URL
                 <input class="input mono" type="url" name="apiBase" data-focus-key="api-base" value="${escapeHtml(state.apiBase)}"${sameOriginApi ? " disabled" : ""} />
@@ -1459,6 +1469,13 @@ export const createApplicantPortalApp = (
               <div><dt>Connection</dt><dd>${state.loading ? "Checking" : state.inspection === undefined ? "Unavailable" : "Responding at last check"}</dd></div>
               <div><dt>Source mode</dt><dd>${escapeHtml(state.inspection?.sourceMode ?? (state.inspection === undefined ? "Unavailable" : "Fixture workspace"))}</dd></div>
               <div><dt>Browser check time</dt><dd>${escapeHtml(state.observedAt ?? "No successful check")}</dd></div>
+            </dl>
+            <button class="source-refresh" type="button" data-settings-refresh data-focus-key="settings-refresh"${state.loading ? " disabled" : ""}>Recheck connection</button>
+            </section>
+            <section class="settings-card" aria-labelledby="portal-identity-heading">
+              <p class="eyebrow">Read-only</p>
+              <h2 id="portal-identity-heading">Deployment identity</h2>
+              <dl class="settings-grid">
               <div><dt>Registry ID</dt><dd class="technical-id">${escapeHtml(state.inspection?.summary.registryId ?? "Not reported")}</dd></div>
               <div><dt>Registry DID</dt><dd class="technical-id">${escapeHtml(state.inspection?.summary.registryDid ?? "Not reported")}</dd></div>
               <div><dt>Current epoch ID</dt><dd class="technical-id">${escapeHtml(state.inspection?.summary.currentEpochId ?? "Not reported")}</dd></div>
@@ -1466,8 +1483,10 @@ export const createApplicantPortalApp = (
               <div><dt>Node-reported checkpoint time</dt><dd>${escapeHtml(state.inspection.nodeReportedAt ?? "Not reported")}</dd></div>`}
               <div><dt>Network profile, genesis, contract</dt><dd>Not exposed by this API response</dd></div>
             </dl>
-            <p class="settings-note">Connection details are read-only deployment context, not an account profile or proof of finality. Private actions require the authenticated same-origin host.</p>
-          </details>
+            <p class="settings-callout">Node-reported data and a browser response do not establish finalized ledger state or actor authorization.</p>
+            </section>
+          </div>
+          <div class="settings-footer"><strong>No account profile in this browser</strong><p>Private actions require the authenticated same-origin host and external signing. Connection details are not proof of finality.</p></div>
         </section>
         <section class="content">
           ${demoApplication}
@@ -1867,5 +1886,9 @@ export const createApplicantPortalApp = (
   };
 
   render();
+  window.addEventListener("hashchange", () => {
+    const shell = root.querySelector<HTMLElement>(".app-shell");
+    if (shell !== null) shell.dataset.settingsActive = String(window.location.hash === "#connection-details");
+  });
   void refreshInspection();
 };
