@@ -58,8 +58,9 @@ describe("trust registry applicant portal app", () => {
     expect(root.textContent).toContain("local");
     expect(root.textContent).toContain("Broad browsing is unavailable in this mode.");
     expect(root.textContent).not.toContain("No active entries in this lane yet.");
-    expect(root.querySelectorAll(".metric strong")[2]?.textContent).toBe("n/a");
-    expect(root.querySelectorAll(".metric strong")[3]?.textContent).toBe("n/a");
+    expect(root.querySelector(".hero-overview")?.textContent).toContain("API-reported epoch");
+    expect(root.querySelectorAll(".hero-overview .metric")).toHaveLength(2);
+    expect(root.querySelector(".hero-overview")?.textContent).not.toContain("Active issuers");
     expect(root.querySelector("#trust-records")).toBeNull();
     expect(root.querySelector(".task-nav a")?.getAttribute("href")).toBe("#current-authorization-lookup");
     expect(root.querySelector(".hero-actions a")?.getAttribute("href")).toBe("#current-authorization-lookup");

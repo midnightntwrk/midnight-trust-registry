@@ -161,6 +161,10 @@ test("applicant exact scope lookup keeps returned trust unverified", async ({ pa
     allowedLocalOrigins.add(host.base);
     await page.goto(`${host.base}/?apiBase=${encodeURIComponent(host.base)}`);
     await expect(page.locator(".source-badge")).toHaveText("API claim");
+    await expect(page.locator(".hero-overview")).toContainText("Registry context");
+    await expect(page.locator(".hero-overview")).toContainText("API-reported epoch");
+    await expect(page.locator(".hero-overview .metric")).toHaveCount(2);
+    await expect(page.locator(".hero-overview")).not.toContainText("Active issuers");
     await expect(page.locator(".task-nav a").first()).toHaveAttribute("href", "#current-authorization-lookup");
     await expect(page.locator(".hero-actions a").first()).toHaveAttribute("href", "#current-authorization-lookup");
     await expect(page.locator(".source-panel")).toContainText("Broad lists are not offered in this mode");

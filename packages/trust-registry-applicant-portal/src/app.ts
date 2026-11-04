@@ -1459,12 +1459,13 @@ export const createApplicantPortalApp = (
             </div>
           </div>
           <div class="hero-overview">
-            <p class="eyebrow">Registry snapshot</p>
+            <p class="eyebrow">${state.inspection?.sourceMode === "local-ledger" ? "Registry context" : "Registry snapshot"}</p>
             <div class="panel metrics">
               <div class="metric"><span>Registry</span><strong>${escapeHtml(state.inspection?.summary.registryLabel ?? "Unavailable")}</strong></div>
-              <div class="metric"><span>Current epoch</span><strong>${state.inspection?.summary.epochCount === undefined ? "Unavailable" : `#${state.inspection.summary.epochCount.toString()}`}</strong></div>
-              <div class="metric"><span>Active issuers</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("issuer") ? "n/a" : state.inspection.activeIssuers.length.toString()}</strong></div>
-              <div class="metric"><span>Active verifiers</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("verifier") ? "n/a" : state.inspection.activeVerifiers.length.toString()}</strong></div>
+              <div class="metric"><span>${state.inspection?.sourceMode === "local-ledger" ? "API-reported epoch" : "Current epoch"}</span><strong>${state.inspection?.summary.epochCount === undefined ? "Unavailable" : `#${state.inspection.summary.epochCount.toString()}`}</strong></div>
+              ${state.inspection?.sourceMode === "local-ledger" ? "" : `
+                <div class="metric"><span>Active issuers</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("issuer") ? "n/a" : state.inspection.activeIssuers.length.toString()}</strong></div>
+                <div class="metric"><span>Active verifiers</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("verifier") ? "n/a" : state.inspection.activeVerifiers.length.toString()}</strong></div>`}
             </div>
           </div>
           ${state.error === undefined ? "" : `<div class="alert error">${escapeHtml(state.error)}</div>`}
