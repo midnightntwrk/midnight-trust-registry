@@ -366,7 +366,7 @@ for (const [app, title] of [
         expect(Math.abs(brandLockup.titleLeft - brandLockup.contextLeft)).toBeLessThan(2);
         expect(brandLockup.titleSize).toBeGreaterThan(brandLockup.contextSize);
         if (width > 760) {
-          expect(brandLockup.titleSize).toBeGreaterThanOrEqual(29);
+          expect(brandLockup.titleSize).toBeGreaterThanOrEqual(35);
           expect(brandLockup.contextSize).toBeGreaterThanOrEqual(14);
         }
         if (width === 320) expect(brandLockup.titleSize).toBeGreaterThanOrEqual(18);
@@ -517,7 +517,7 @@ for (const [app, title] of [
         expect(geometry.overflowing).toEqual([]);
         if (width === 390 || width === 320) {
           await page.addStyleTag({ content: "html { font-size: 200%; }" });
-          const zoomGeometry = await page.evaluate(() => ({
+          const readZoomGeometry = async () => page.evaluate(() => ({
             page: document.documentElement.scrollWidth,
             header: (() => {
               const brand = document.querySelector(".brand-name").getBoundingClientRect();
@@ -531,15 +531,31 @@ for (const [app, title] of [
               };
             })(),
             overflowing: [...document.querySelectorAll("body *")]
-              .filter((element) => element.scrollWidth > element.clientWidth + 1)
+              .filter((element) => !element.matches("input, textarea, select")
+                && element.scrollWidth > element.clientWidth + 1)
               .slice(0, 12).map((element) => `${element.tagName}.${element.className}:${element.scrollWidth}/${element.clientWidth}`),
           }));
+          const zoomGeometry = await readZoomGeometry();
           expect(zoomGeometry.header, JSON.stringify(zoomGeometry)).toEqual({
             overlap: false,
             brandInside: true,
             menuInside: true,
           });
-          if (width === 390) expect(zoomGeometry.page, JSON.stringify(zoomGeometry)).toBeLessThanOrEqual(width);
+          expect(zoomGeometry.page, JSON.stringify(zoomGeometry)).toBeLessThanOrEqual(width);
+          expect(zoomGeometry.overflowing).toEqual([]);
+          if (width === 320) {
+            const advanced = app === "admin-console" ? ".advanced-workflows" : ".advanced-tools";
+            await page.locator(`${advanced} > summary`).click();
+            const advancedGeometry = await readZoomGeometry();
+            expect(advancedGeometry.page, JSON.stringify(advancedGeometry)).toBeLessThanOrEqual(width);
+            expect(advancedGeometry.overflowing).toEqual([]);
+            await page.locator(".mobile-task-menu > summary").click();
+            await page.locator(".mobile-task-menu nav a").filter({ hasText: "Workspace settings" }).click();
+            await expect(page.locator(".settings-view")).toBeVisible();
+            const settingsGeometry = await readZoomGeometry();
+            expect(settingsGeometry.page, JSON.stringify(settingsGeometry)).toBeLessThanOrEqual(width);
+            expect(settingsGeometry.overflowing).toEqual([]);
+          }
         }
       }
     } finally {

@@ -455,26 +455,38 @@ body { background: radial-gradient(circle at 100% 0, #e8e9ff 0, transparent 26re
   .journey-cards { gap: 0.5rem; }
   .journey-cards a {
     display: grid;
-    grid-template-columns: 2rem minmax(0, 1fr) 1rem;
+    grid-template-columns: 2rem minmax(0, 1fr);
     grid-template-rows: auto auto;
     align-items: center;
-    gap: 0 0.65rem;
+    gap: 0 min(0.65rem, 10px);
     min-height: 4.7rem;
     padding: 0.65rem 0.75rem;
   }
   .journey-cards .role-mark { grid-column: 1; grid-row: 1 / 3; }
   .journey-cards strong { grid-column: 2; grid-row: 1; font-size: 1rem; }
   .journey-cards span:not(.role-mark) { grid-column: 2; grid-row: 2; font-size: 0.76rem; }
-  .journey-cards em { display: none; }
-  .journey-cards a::after { content: "\2192"; grid-column: 3; grid-row: 1 / 3; color: var(--midnight-blue); font-size: 1.2rem; }
+  .journey-cards em { display: block; grid-column: 2; grid-row: 3; margin-top: 0.15rem; font-size: 0.7rem; }
+  .journey-cards strong, .journey-cards span { overflow-wrap: anywhere; }
   .journey-guide { margin-top: 0.7rem; gap: 0.5rem; }
   .journey-steps, .journey-requirements { padding: 0.9rem; }
   .journey-guide h3 { margin-bottom: 0.55rem; }
   .journey-steps ol { grid-template-columns: minmax(0, 1fr); gap: 0.5rem; }
+  .form-panel { min-width: 0; padding: min(1rem, 12px); }
+  .form-panel h2, .form-panel .button { overflow-wrap: anywhere; white-space: normal; }
+  .workflow-disclosure > summary { padding: min(1rem, 12px); overflow-wrap: anywhere; }
+  .advanced-tools > .workflow-disclosure { margin: min(0.75rem, 12px); }
+  .input, .select, textarea, .button { min-width: 0; max-width: 100%; }
 }
 
 @media (max-width: 620px) {
   .shell { width: calc(100vw - 1rem); }
   .hero-intro { padding: 1.25rem; }
   .hero-overview { display: none; }
+}
+
+@media (max-width: 360px) {
+  .shell { width: calc(100vw - 16px); }
+  .hero-intro, .journey-picker, .journey-cards a, .journey-steps,
+  .journey-requirements, .records-overview, .lane, .card { padding: min(0.9rem, 12px); }
+  .journey-steps li { padding-left: min(2rem, 44px); overflow-wrap: anywhere; }
 }

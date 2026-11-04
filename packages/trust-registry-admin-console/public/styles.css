@@ -602,4 +602,14 @@ body {
   .board { grid-template-columns: minmax(0, 1fr); }
   .card-top { align-items: start; }
   .hero > .metrics { grid-template-columns: repeat(auto-fit, minmax(min(8rem, 100%), 1fr)); }
+  .hero-copy, .hero-copy > div, .proposal-panel form, .governed-panel form,
+  .proposal-panel > *, .governed-panel > * { min-width: 0; max-width: 100%; }
+  .input, select, textarea, .button { min-width: 0; max-width: 100%; }
+  .hero h1, .proposal-panel label, .proposal-panel h2,
+  .governed-panel p, .eyebrow { overflow-wrap: anywhere; }
+}
+
+@media (max-width: 360px) {
+  .shell { width: calc(100vw - 16px); }
+  .hero, .detail-panel, .review-filters, .card, .governed-panel { padding: min(1rem, 12px); }
 }
