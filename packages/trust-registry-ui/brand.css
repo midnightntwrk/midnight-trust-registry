@@ -37,6 +37,8 @@
 .brand-name {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
+  min-width: 0;
   gap: 0.7rem;
   color: var(--midnight-white);
   font-size: 1.15rem;
@@ -159,6 +161,7 @@
 .app-shell > .content { grid-row: 3; }
 
 @media (max-width: 760px) {
+  .brand-logo { width: min(8.7rem, 44vw); }
   .shell.app-shell {
     grid-template-columns: minmax(0, 1fr);
     gap: 0.75rem;

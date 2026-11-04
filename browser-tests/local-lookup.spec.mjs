@@ -14,6 +14,12 @@ const entry = { label: "Exact UI issuer", authorization: {
   trustLevel: "approved", status: "active", proposedAt: "2026-05-20T00:00:00Z",
   activeFrom: "2026-05-20T00:01:00Z",
 }, evidence: { epoch: { epochId: "epoch:local-ui:1", stateRoot: "0xroot" } } };
+const recognition = { label: "External authority", recognition: {
+  registryId, recognizedAuthorityDid: "did:web:authority.example",
+  recognizedRegistryId: "external:registry", status: "active",
+  scope: { resourceType: "credential-family", resourceId: "degree",
+    context: { purpose: "assurance" } },
+} };
 const counts = { proposed: 0, authorized: 0, active: 1, suspended: 0,
   revoked: 0, superseded: 0, archived: 0 };
 const emptyCounts = { ...counts, active: 0 };
@@ -42,6 +48,7 @@ async function serveLocalApp(app) {
     else if (path === "/v1/registry/summary") response.end(JSON.stringify(summary));
     else if (path === `/v1/authorizations/issuer/${encodeURIComponent(id)}`
       || path === "/v1/authorizations/resolve") response.end(JSON.stringify(entry));
+    else if (path === "/v1/recognitions/resolve") response.end(JSON.stringify(recognition));
     else {
       response.statusCode = 503;
       response.end(JSON.stringify({ title: "Broad lists unavailable" }));
@@ -95,7 +102,21 @@ test("applicant exact scope lookup keeps returned trust unverified", async ({ pa
     await page.locator("[data-current-authorization] button[type='submit']").click();
     await expect(page.locator("[data-current-authorization-result]")).toContainText("Unverified current API claim");
     await expect(page.locator("[data-current-authorization-result]")).toContainText("active");
+    const form = page.locator("[data-current-recognition]");
+    await form.locator("[name='recognizedAuthorityDid']").fill("did:web:authority.example");
+    await form.locator("[name='recognizedRegistryId']").fill("external:registry");
+    await form.locator("[name='scopeResourceType']").fill("credential-family");
+    await form.locator("[name='scopeResourceId']").fill("degree");
+    await form.locator("[name='scopeContext']").fill('{"purpose":"assurance"}');
+    await form.locator("button[type='submit']").click();
+    await expect(page.locator("[data-current-recognition-result]"))
+      .toContainText("Unverified current API claim: active");
+    await form.locator("[name='scopeResourceId']").fill("substituted-degree");
+    await form.locator("button[type='submit']").click();
+    await expect(page.locator("[data-current-recognition-result]")).toHaveCount(0);
+    await expect(page.locator("body")).toContainText("does not match the requested scope");
     expect(host.requests).toContain("POST /v1/authorizations/resolve");
+    expect(host.requests).toContain("POST /v1/recognitions/resolve");
     expect(host.requests.some((value) => value === "GET /v1/authorizations/issuer")).toBe(false);
   } finally {
     await page.close();

@@ -173,7 +173,7 @@ test("local-ledger board discards a lookup when its finalized checkpoint changes
   }
 });
 
-test("fixture admin review advances a proposed issuer through approval and activation", async ({ page, allowedLocalOrigins }) => {
+test("fixture admin review advances an issuer through approval, activation, risk, and archive", async ({ page, allowedLocalOrigins }) => {
   const staticHandler = createStaticAssetHandler({
     distDir: resolve("packages/trust-registry-admin-console/dist"),
     name: "admin-console-review-journey",
@@ -201,15 +201,20 @@ test("fixture admin review advances a proposed issuer through approval and activ
       ...(status === "active" ? { activeFrom: "2026-05-20T00:02:00Z" } : {}),
     }, evidence: { epoch: { epochId: "epoch:ui-review:1", stateRoot: "0xroot" } } };
     if (request.method === "POST") {
-      const action = path.endsWith("/approve") ? "approve" : path.endsWith("/activate") ? "activate" : null;
+      const action = ["approve", "activate", "suspend", "revoke", "archive"]
+        .find((candidate) => path.endsWith(`/${candidate}`)) ?? null;
       if (action === null || (action === "approve" && status !== "proposed")
-        || (action === "activate" && status !== "authorized")) {
+        || (action === "activate" && status !== "authorized")
+        || (action === "suspend" && status !== "active")
+        || (action === "revoke" && status !== "suspended")
+        || (action === "archive" && status !== "revoked")) {
         response.statusCode = 409;
         response.end(JSON.stringify({ title: "invalid review transition" }));
         return;
       }
       posted.push(path);
-      status = action === "approve" ? "authorized" : "active";
+      status = { approve: "authorized", activate: "active", suspend: "suspended",
+        revoke: "revoked", archive: "archived" }[action];
       entry.authorization.status = status;
       response.end(JSON.stringify({ recordKind: "authorization", operation: { operation: action }, entry }));
       return;
@@ -246,6 +251,12 @@ test("fixture admin review advances a proposed issuer through approval and activ
     await expect(page.locator(".card .status-chip")).toHaveText("Authorized");
     await page.locator('[data-action="activate"]').click();
     await expect(page.locator(".card .status-chip")).toHaveText("Active");
+    await page.locator('[data-action="suspend"]').click();
+    await expect(page.locator(".card .status-chip")).toHaveText("Suspended");
+    await page.locator('[data-action="revoke"]').click();
+    await expect(page.locator(".card .status-chip")).toHaveText("Revoked");
+    await page.locator('[data-action="archive"]').click();
+    await expect(page.locator(".card .status-chip")).toHaveText("Archived");
     await expect(page.locator(".source-panel")).toContainText("not deployed ledger evidence");
     await page.locator(".advanced-workflows > summary").click();
     await expect(page.locator(".governance-task-grid a")).toHaveCount(4);
@@ -254,6 +265,9 @@ test("fixture admin review advances a proposed issuer through approval and activ
     expect(posted).toEqual([
       `/v1/applications/issuer/${encodeURIComponent(id)}/approve`,
       `/v1/applications/issuer/${encodeURIComponent(id)}/activate`,
+      `/v1/applications/issuer/${encodeURIComponent(id)}/suspend`,
+      `/v1/applications/issuer/${encodeURIComponent(id)}/revoke`,
+      `/v1/applications/issuer/${encodeURIComponent(id)}/archive`,
     ]);
   } finally {
     await page.close();

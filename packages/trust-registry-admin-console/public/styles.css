@@ -484,6 +484,8 @@ body {
 .hero { background: var(--midnight-white); }
 .hero h1 { max-width: 18ch; font-size: clamp(2rem, 3.5vw, 3.2rem); line-height: 1.05; letter-spacing: -0.04em; }
 .toolbar { grid-template-columns: minmax(0, 32rem); }
+.toolbar form, .toolbar label, .toolbar .input { min-width: 0; max-width: 100%; }
+.toolbar .input { width: 100%; }
 .eyebrow { color: var(--midnight-blue); letter-spacing: 0.13em; }
 .button { background: var(--midnight-blue); border-radius: 10px; }
 .button.secondary { background: var(--midnight-blue-soft); color: var(--midnight-blue); }
@@ -508,6 +510,7 @@ body {
 .review-filters h2 { margin: 0.2rem 0; }
 .review-filters p { margin: 0; }
 .review-filters label { display: grid; gap: 0.3rem; min-width: 0; font-size: 0.82rem; }
+.review-filters .input { min-width: 0; width: 100%; max-width: 100%; }
 .workspace > *, .board, .column, .card, .card-top > div, .detail-panel, .detail-panel dl, .detail-panel dd { min-width: 0; }
 .board { grid-template-columns: minmax(0, 1fr); }
 .card { overflow: hidden; border-radius: 14px; box-shadow: none; }
@@ -549,5 +552,5 @@ body {
   .governance-task-grid { grid-template-columns: minmax(0, 1fr); }
   .board { grid-template-columns: minmax(0, 1fr); }
   .card-top { align-items: start; }
-  .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metrics { grid-template-columns: repeat(auto-fit, minmax(min(8rem, 100%), 1fr)); }
 }

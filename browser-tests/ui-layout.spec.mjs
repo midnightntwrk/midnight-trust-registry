@@ -39,6 +39,7 @@ const issuer = {
 
 async function serveApp(app) {
   let healthAvailable = true;
+  const packagedPath = app === "admin-console" ? "/admin/" : "/applicant/";
   const staticHandler = createStaticAssetHandler({
     distDir: resolve(`packages/trust-registry-${app}/dist`),
     name: `ui-layout-${app}`,
@@ -46,6 +47,7 @@ async function serveApp(app) {
   const server = createServer(async (request, response) => {
     const path = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
     if (path !== "/health" && !path.startsWith("/v1/")) {
+      if (path.startsWith(packagedPath)) request.url = (request.url ?? "/").replace(packagedPath, "/");
       await staticHandler(request, response);
       return;
     }
@@ -64,6 +66,7 @@ async function serveApp(app) {
   if (address === null || typeof address === "string") throw new Error("expected TCP address");
   return {
     base: `http://127.0.0.1:${address.port}`,
+    packagedPath,
     setHealthAvailable: (available) => { healthAvailable = available; },
     close: async () => {
       server.closeAllConnections();
@@ -73,6 +76,28 @@ async function serveApp(app) {
 }
 
 for (const app of ["admin-console", "applicant-portal"]) {
+  test(`${app} locks the packaged endpoint to its same-origin host`, async ({ page, allowedLocalOrigins }) => {
+    const server = await serveApp(app);
+    try {
+      allowedLocalOrigins.add(server.base);
+      await page.goto(`${server.base}${server.packagedPath}?apiBase=https://outside.example`);
+      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(page.locator("[data-api-base-form] [name='apiBase']")).toHaveValue(server.base);
+      await expect(page.locator("[data-api-base-form] [name='apiBase']")).toBeDisabled();
+      await expect(page.locator("[data-api-base-form] button[type='submit']")).toBeDisabled();
+      await page.locator(".workspace-settings > summary").click();
+      await expect(page.locator(".workspace-settings")).toContainText("managed by this host");
+      await expect(page.locator(".workspace-settings")).not.toContainText("outside.example");
+      if (app === "applicant-portal") {
+        await expect(page.locator(".workspace-settings"))
+          .toContainText("Private actions require the authenticated same-origin host");
+      }
+    } finally {
+      await page.close();
+      await server.close();
+    }
+  });
+
   test(`${app} distinguishes unavailable data from a live fixture`, async ({ page, allowedLocalOrigins }) => {
     const server = await serveApp(app);
     try {
@@ -149,6 +174,16 @@ for (const [app, title] of [
         }));
         expect(geometry.page, JSON.stringify(geometry)).toBeLessThanOrEqual(geometry.viewport + 1);
         expect(geometry.overflowing).toEqual([]);
+        if (width === 390) {
+          await page.addStyleTag({ content: "html { font-size: 200%; }" });
+          const zoomGeometry = await page.evaluate(() => ({
+            page: document.documentElement.scrollWidth,
+            overflowing: [...document.querySelectorAll("body *")]
+              .filter((element) => element.scrollWidth > element.clientWidth + 1)
+              .slice(0, 12).map((element) => `${element.tagName}.${element.className}:${element.scrollWidth}/${element.clientWidth}`),
+          }));
+          expect(zoomGeometry.page, JSON.stringify(zoomGeometry)).toBeLessThanOrEqual(390);
+        }
         if (process.env.TR_UI_CAPTURE === "1" && width !== 768) {
           await page.screenshot({ path: testInfo.outputPath(`${app}-${width}.png`), fullPage: true });
         }

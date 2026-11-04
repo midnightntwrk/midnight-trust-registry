@@ -3180,3 +3180,8 @@ hash and timestamp as provenance clues, distinct from the browser observation
 time. The UI does not authenticate the checkpoint or infer finality from those
 fields; the network profile, genesis anchor, and contract identity remain
 unexposed until the API supplies them with reviewed provenance.
+
+The browser acceptance matrix additionally covers the full fixture issuer
+lifecycle, exact external recognition with substituted-scope rejection,
+packaged same-origin endpoint locking, and 200% text reflow on mobile. These
+remain fixture and UI guarantees, not deployed standalone E2E evidence.
