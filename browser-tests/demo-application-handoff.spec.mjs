@@ -124,7 +124,9 @@ for (const target of ["issuer", "recognition"]) {
       await page.locator("#demo-application [name='target']").selectOption(target);
       await page.locator("#demo-application [name='label']").fill(label);
       await page.locator("#demo-application button[type='submit']").click();
-      await expect(page.locator(".alert.success")).toContainText(`Submitted ${label}`);
+      await expect(page.locator(".alert.success")).toHaveText(
+        `Submitted ${label} as ${target === "issuer" ? "an issuer" : "a recognition"} application (proposed).`,
+      );
       await expect(page.locator("#demo-application [name='label']")).toBeEmpty();
 
       await page.goto(`${base}/admin/?apiBase=${encodeURIComponent(base)}`);

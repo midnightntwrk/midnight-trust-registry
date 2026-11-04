@@ -112,7 +112,8 @@ export const describeSubmission = (
   }
 
   if (result.recordKind === "authorization") {
-    return `Submitted ${result.entry.label} as a ${result.operation.target} application (${result.entry.authorization.status}).`;
+    const article = result.operation.target === "issuer" ? "an" : "a";
+    return `Submitted ${result.entry.label} as ${article} ${result.operation.target} application (${result.entry.authorization.status}).`;
   }
 
   if (result.recordKind === "recognition") {

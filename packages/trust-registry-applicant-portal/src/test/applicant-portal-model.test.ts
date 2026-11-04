@@ -486,8 +486,8 @@ describe("trust registry applicant portal model", () => {
   });
 
   it("describes authorization submissions in user-facing language", () => {
-    expect(describeSubmission(createAuthorizationMutationResponse("issuer"))).toMatch(
-      /submitted degree/i,
+    expect(describeSubmission(createAuthorizationMutationResponse("issuer"))).toBe(
+      "Submitted degree as an issuer application (proposed).",
     );
   });
 
