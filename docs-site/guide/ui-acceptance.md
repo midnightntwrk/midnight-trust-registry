@@ -26,7 +26,9 @@ The default demo API is a local fixture workspace with unsafe demo mutations;
 do not expose these ports beyond loopback or interpret its records as deployed
 ledger state. The source panel and Workspace settings disclose that distinction.
 The portal's governed private-evidence actions require an authenticated
-same-origin host; a separate cross-origin demo API does not enable them.
+same-origin host; a separate cross-origin demo API does not enable them. A
+same-origin URL check does not prove that a user session is authenticated; the
+host must authenticate each private request.
 
 ## Browser acceptance
 
@@ -45,6 +47,7 @@ repeatable UI acceptance evidence:
 | Filter the fixture admin queue by text and lifecycle status before acting; filtered-out records cannot remain selected | `admin-console.spec.mjs`, admin unit tests |
 | Recover an accepted proposal after its HTTP response is lost, without repeating the mutation | `governed-proposal-recovery.spec.mjs` (four role cases) |
 | Submit an issuer proposal with two external maintainer signatures and a registered verifier signature, then read the direct accepted receipt without treating it as finality | `governed-proposal-recovery.spec.mjs` (Compact simulator and local admission host) |
+| Complete a fixture recognition challenge, submit an external assertion, recover the accepted receipt, and download a query-bound historical recognition API claim | `recognition-evidence.spec.mjs` (same-origin fixture session) |
 | Resolve exact current authorization and separate external recognition scopes in local-ledger mode; reject a substituted recognition tuple | `local-lookup.spec.mjs` (admin and applicant) |
 | Inspect settings/source provenance, retry after an unavailable response, retain keyboard focus, and avoid overflow at 390/768/1440 px | `ui-layout.spec.mjs` |
 | Reject an external endpoint override on packaged same-origin admin and portal paths while preserving the authenticated-host warning | `ui-layout.spec.mjs` |
@@ -64,10 +67,9 @@ readback, egress-denied actor journeys, and restart/restore evidence.
 ## Final acceptance still to cover
 
 The browser suite is not yet a pass for *all* successful UI use cases. Before
-closing the UI acceptance issue, Playwright must also exercise recognition
-accreditation, historical evidence export, and editable loopback endpoint
-settings. The selected contrast samples do not replace a full review of all
-states, overlays, and assistive technology. Each test must assert the exact
+closing the UI acceptance issue, Playwright must also exercise editable
+loopback endpoint settings. The selected contrast samples do not replace a
+full review of all states, overlays, and assistive technology. Each test must assert the exact
 source label, actor/action prerequisite, receipt or board
 readback, and absence of false finality. Deployed standalone actor E2E
 qualification remains a separate gate even after these browser cases pass.

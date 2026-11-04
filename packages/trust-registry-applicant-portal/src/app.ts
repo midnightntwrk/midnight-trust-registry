@@ -988,6 +988,33 @@ export const createApplicantPortalApp = (
         setState({ historicalRecognitionResult: undefined, historicalRecognitionError: formatApiError(error) });
       }
     });
+    root.querySelector<HTMLFormElement>("[data-historical-recognition]")?.addEventListener("input", () => {
+      ++historicalRecognitionRequestId;
+      state.historicalRecognitionBusy = false;
+      state.historicalRecognitionResult = undefined;
+      root.querySelector("[data-historical-recognition-result]")?.remove();
+      const submit = root.querySelector<HTMLButtonElement>("[data-historical-recognition] button[type='submit']");
+      if (submit !== null) submit.disabled = false;
+    });
+    root.querySelector<HTMLButtonElement>("[data-download-historical-recognition]")?.addEventListener("click", () => {
+      if (state.historicalRecognitionQuery === undefined || state.historicalRecognitionResult === undefined) return;
+      const payload = {
+        format: "midnight-trust-registry-unverified-api-claim-v1",
+        kind: "historical-recognition-evidence",
+        verifiedFinality: false,
+        query: state.historicalRecognitionQuery,
+        result: state.historicalRecognitionResult,
+      };
+      const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2) + "\n"], { type: "application/json" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "midnight-trust-registry-recognition-evidence.json";
+      link.hidden = true;
+      root.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
 
     root.querySelector<HTMLButtonElement>("[data-signed-context]")?.addEventListener("click", () => {
       void loadSignedContext();
@@ -1330,7 +1357,7 @@ export const createApplicantPortalApp = (
               <a href="#auditor-request" data-open-workflow="auditor-request"><strong>Auditor</strong><span>Request governed audit scope.</span><em>Prepare auditor request</em></a>
               <a href="#maintainer-request" data-open-workflow="maintainer-request"><strong>Maintainer</strong><span>Request committee membership.</span><em>Prepare maintainer request</em></a>
             </div>
-            <p class="journey-prerequisite">${privateHost ? "Authenticated same-origin host available for private evidence steps." : "Private evidence steps require an authenticated same-origin host; this connection can browse but cannot submit them."}</p>
+            <p class="journey-prerequisite">${privateHost ? "Same-origin host selected. This browser cannot verify your session; the host must authenticate private requests." : "Private evidence steps require an authenticated same-origin host; this connection can browse but cannot submit them."}</p>
           </section>
           ${state.inspection?.sourceMode === "local-ledger" ? `
           <section class="form-panel">
@@ -1397,12 +1424,13 @@ export const createApplicantPortalApp = (
               <label class="label">Scope resource ID<input class="input mono" name="scopeResourceId" value="${escapeHtml(state.historicalRecognitionQuery?.scopeResourceId ?? "")}" required /></label>
               <label class="label">Scope context JSON, if any<textarea class="input mono" name="scopeContext" rows="3" spellcheck="false">${escapeHtml(state.historicalRecognitionQuery?.scopeContext === undefined ? "" : JSON.stringify(state.historicalRecognitionQuery.scopeContext, null, 2))}</textarea></label>
               <label class="label">RFC3339 timestamp<input class="input mono" name="at" placeholder="2026-10-15T00:00:00Z" value="${escapeHtml(state.historicalRecognitionQuery?.at ?? "")}" required /></label>
-              <button class="button secondary" type="submit"${state.historicalRecognitionBusy ? " disabled" : ""}>Export recognition evidence</button>
+              <button class="button secondary" type="submit"${state.historicalRecognitionBusy ? " disabled" : ""}>Inspect recognition evidence</button>
             </form>
             ${state.historicalRecognitionError === undefined ? "" : `<div class="alert error">${escapeHtml(state.historicalRecognitionError)}</div>`}
             ${state.historicalRecognitionResult === undefined ? "" : `<div class="panel" data-historical-recognition-result>
               <p><strong>Unverified API claim:</strong> ${escapeHtml(state.historicalRecognitionResult.statusAtTime ?? "not yet proposed")} at ${escapeHtml(state.historicalRecognitionResult.evaluatedAt)}; recognized-at-time flag ${state.historicalRecognitionResult.trustedAtTime ? "true" : "false"}.</p>
               <p>Evidence epoch <span class="mono">${escapeHtml(state.historicalRecognitionResult.bundle.epoch.epochId)}</span>; policy <span class="mono">${escapeHtml(state.historicalRecognitionResult.bundle.policy.policyId)}</span>.</p>
+              <button class="button secondary" type="button" data-download-historical-recognition>Download unverified evidence JSON</button>
               <details><summary>Inspect raw recognition proof bundle</summary><pre class="mono">${escapeHtml(JSON.stringify(state.historicalRecognitionResult.bundle, null, 2))}</pre></details>
             </div>`}
           </section>

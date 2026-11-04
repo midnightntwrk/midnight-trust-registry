@@ -3212,3 +3212,11 @@ task navigation, source badge, and primary/secondary actions in both apps at
 the normal-text 4.5:1 threshold. They are a regression guard for solid
 surfaces, not a complete audit of every interaction state or assistive
 technology behavior.
+
+The portal now separates historical recognition inspection from a real JSON
+download. The exported object includes the exact query, returned bundle,
+format marker, and `verifiedFinality: false`; editing the query removes the
+stale result and download action. A browser fixture covers the one-use
+recognition challenge, accepted receipt recovery, query-bound export, and
+non-finality label. The same-origin eligibility cue no longer claims an
+authenticated session: only the host can authenticate each private request.
