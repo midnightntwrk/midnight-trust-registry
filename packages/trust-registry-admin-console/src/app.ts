@@ -58,6 +58,8 @@ type AppState = {
   proposalPrepared: PreparedGovernedProposal | undefined;
   proposalSignersJson: string;
   proposalVerifierSignature: string;
+  reviewQuery: string;
+  reviewStatus: ReviewStatus | "all";
   policyThresholds: GovernedThresholds;
   policyPhase: "thresholds" | "evidence-verifier" | undefined;
   policyPrepared: PreparedGovernedPolicyAction | undefined;
@@ -196,6 +198,8 @@ export const createAdminConsoleApp = (
     proposalPrepared: undefined,
     proposalSignersJson: "",
     proposalVerifierSignature: "",
+    reviewQuery: "",
+    reviewStatus: "all",
     policyThresholds: { default: "2", emergency: "2", archival: "2" },
     policyPhase: undefined,
     policyPrepared: undefined,
@@ -860,6 +864,17 @@ export const createAdminConsoleApp = (
         }
       });
     });
+    root.querySelector<HTMLInputElement>("[data-review-query]")?.addEventListener("input", (event) => {
+      const input = event.currentTarget as HTMLInputElement;
+      const start = input.selectionStart;
+      const end = input.selectionEnd;
+      setState({ reviewQuery: input.value });
+      const nextInput = root.querySelector<HTMLInputElement>("[data-review-query]");
+      if (nextInput !== null && start !== null && end !== null) nextInput.setSelectionRange(start, end);
+    });
+    root.querySelector<HTMLSelectElement>("[data-review-status]")?.addEventListener("change", (event) => {
+      setState({ reviewStatus: (event.currentTarget as HTMLSelectElement).value as ReviewStatus | "all" });
+    });
   };
 
   const renderMetrics = (board: ReviewBoard): string => `
@@ -904,9 +919,9 @@ export const createAdminConsoleApp = (
     </section>
   `;
 
-  const renderDetailPanel = (): string => {
+  const renderDetailPanel = (visibleKeys?: ReadonlySet<string>): string => {
     const card = selectedCard();
-    if (card === undefined) {
+    if (card === undefined || (visibleKeys !== undefined && !visibleKeys.has(card.key))) {
       return `
         <aside class="detail-panel">
           <div class="empty-state">
@@ -983,7 +998,13 @@ export const createAdminConsoleApp = (
     pendingFocusKey = focusKey ?? pendingFocusKey;
     const advancedOpen = root.querySelector<HTMLDetailsElement>(".advanced-workflows")?.open ?? false;
     const settingsOpen = root.querySelector<HTMLDetailsElement>(".workspace-settings")?.open ?? false;
-    const groupedCards = groupReviewCards(state.cards);
+    const normalizedQuery = state.reviewQuery.trim().toLocaleLowerCase();
+    const visibleCards = state.board?.sourceMode === "local-ledger" ? state.cards : state.cards.filter((card) =>
+      (state.reviewStatus === "all" || card.status === state.reviewStatus)
+      && (normalizedQuery.length === 0 || [card.label, card.target, card.status, card.trustLevel,
+        ...card.detailRows.map((row) => row.value)].some((value) => value.toLocaleLowerCase().includes(normalizedQuery))));
+    const groupedCards = groupReviewCards(visibleCards);
+    const visibleKeys = new Set(visibleCards.map((card) => card.key));
     root.innerHTML = `
       <main class="shell app-shell">
         <header class="brand-bar">
@@ -1149,13 +1170,27 @@ export const createAdminConsoleApp = (
         </section>`}
         </details>
         <section class="workspace" id="review-board">
+          ${state.board === undefined || state.board.sourceMode === "local-ledger" ? "" : `<div class="review-filters">
+            <div><p class="eyebrow">Review queue</p><h2>Find a trust record</h2><p>${visibleCards.length.toString()} of ${state.cards.length.toString()} records shown</p></div>
+            <label>Search label, role, or exact identifier
+              <input class="input" type="search" data-review-query data-focus-key="review-query" value="${escapeHtml(state.reviewQuery)}" autocomplete="off" />
+            </label>
+            <label>Lifecycle status
+              <select class="input" data-review-status data-focus-key="review-status">
+                <option value="all"${state.reviewStatus === "all" ? " selected" : ""}>All statuses</option>
+                ${REVIEW_STATUSES.map((status) => `<option value="${status}"${state.reviewStatus === status ? " selected" : ""}>${escapeHtml(REVIEW_STATUS_LABELS[status])}</option>`).join("")}
+              </select>
+            </label>
+          </div>`}
           ${state.board?.sourceMode === "local-ledger" ? `<div class="board" data-local-current-result>
             ${state.cards.map(renderCard).join("")}
           </div>` : `<div class="board">
-            ${REVIEW_STATUSES.filter((status) => status === "proposed"
-              || groupedCards[status].length > 0).map((status) => renderColumn(status, groupedCards[status])).join("")}
+            ${visibleCards.length === 0 && (state.reviewQuery.trim() !== "" || state.reviewStatus !== "all")
+              ? `<div class="empty-state"><p>No records match these filters. Try a different label or status.</p></div>`
+              : REVIEW_STATUSES.filter((status) => (state.reviewStatus === "all" && status === "proposed")
+                || groupedCards[status].length > 0).map((status) => renderColumn(status, groupedCards[status])).join("")}
           </div>`}
-          ${renderDetailPanel()}
+          ${renderDetailPanel(state.board?.sourceMode === "local-ledger" ? undefined : visibleKeys)}
         </section>
       </main>
     `;

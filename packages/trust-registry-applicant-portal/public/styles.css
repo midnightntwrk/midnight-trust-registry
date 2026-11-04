@@ -343,6 +343,30 @@ body { background: radial-gradient(circle at 100% 0, #e8e9ff 0, transparent 26re
 .journey-cards em { margin-top: auto; color: #aeb1ff; font-size: 0.78rem; font-style: normal; font-weight: 700; }
 .journey-prerequisite { margin: 0.85rem 0 0; color: #c8c9d8; font-size: 0.8rem; }
 .role-workflow:not([open]) { display: none; }
+.role-workflow form { display: grid; gap: 0.75rem; }
+.request-step {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 1.1rem 0 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--midnight-border);
+  font-size: 1rem;
+}
+.request-step:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+.request-step span {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  border-radius: 0.4rem;
+  background: var(--midnight-blue-soft);
+  color: var(--midnight-blue);
+  font-size: 0.75rem;
+}
+.role-workflow .step-hint { margin: 0; color: var(--midnight-muted); font-size: 0.85rem; line-height: 1.45; }
+.role-workflow .step-hint a { color: var(--midnight-blue); font-weight: 700; }
 
 @media (max-width: 1100px) {
   .journey-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }

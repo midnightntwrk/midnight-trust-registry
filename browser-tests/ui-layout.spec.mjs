@@ -121,6 +121,10 @@ for (const [app, title] of [
         await expect(page.locator(".workspace-settings")).toContainText("Not exposed by this API response");
         expect(await page.locator(".task-nav a").evaluateAll((links) => links.every((link) =>
           document.querySelector(link.getAttribute("href")) !== null))).toBe(true);
+        if (width === 390) {
+          expect(await page.locator(".task-nav a").evaluateAll((links) => links.every((link) =>
+            link.getBoundingClientRect().height >= 44))).toBe(true);
+        }
         if (app === "admin-console") {
           await expect(page.locator(".card")).toHaveCount(1);
           await page.locator(".card").click();
@@ -128,6 +132,13 @@ for (const [app, title] of [
           await page.locator(".technical-details > summary").click();
         } else {
           await page.locator(".record-identifiers > summary").click();
+          if (width === 390) {
+            await page.emulateMedia({ reducedMotion: "reduce" });
+            await page.locator('[data-open-workflow="issuer-request"]').focus();
+            await page.keyboard.press("Enter");
+            await expect(page.locator("#issuer-request")).toHaveAttribute("open", "");
+            await expect(page.locator("#issuer-request .request-step")).toHaveCount(3);
+          }
         }
         const geometry = await page.evaluate(() => ({
           viewport: window.innerWidth,

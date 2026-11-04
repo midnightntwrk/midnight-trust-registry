@@ -232,6 +232,16 @@ test("fixture admin review advances a proposed issuer through approval and activ
     await page.goto(`${base}/?apiBase=${encodeURIComponent(base)}`);
     await expect(page.locator(".source-badge")).toHaveText("Local fixture");
     await expect(page.locator(".card")).toContainText("UI review issuer");
+    await page.locator("[data-review-query]").fill("missing record");
+    await expect(page.getByText("No records match these filters.")).toBeVisible();
+    await expect(page.locator(".card")).toHaveCount(0);
+    await page.locator("[data-review-query]").fill("UI review issuer");
+    await expect(page.locator(".card")).toHaveCount(1);
+    await page.locator("[data-review-status]").selectOption("active");
+    await expect(page.locator(".card")).toHaveCount(0);
+    await page.locator("[data-review-status]").selectOption("all");
+    await expect(page.locator(".card")).toHaveCount(1);
+    expect(posted).toEqual([]);
     await page.locator('[data-action="approve"]').click();
     await expect(page.locator(".card .status-chip")).toHaveText("Authorized");
     await page.locator('[data-action="activate"]').click();

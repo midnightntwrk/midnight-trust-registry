@@ -233,6 +233,25 @@ describe("admin console browser handlers", () => {
     });
 
     await vi.waitFor(() => expect(root.textContent).toContain(auditor.authorization.resourceId));
+    const query = root.querySelector<HTMLInputElement>("[data-review-query]")!;
+    query.focus();
+    query.value = "not-a-record";
+    query.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(root.textContent).toContain("No records match these filters");
+    expect(root.querySelector("[data-select-key]")).toBeNull();
+    expect(root.querySelector(".detail-panel")?.textContent).toContain("Select a record");
+    const matchingQuery = root.querySelector<HTMLInputElement>("[data-review-query]")!;
+    matchingQuery.value = "compliance";
+    matchingQuery.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(root.querySelector("[data-select-key]")).not.toBeNull();
+    expect(document.activeElement).toBe(root.querySelector("[data-review-query]"));
+    const status = root.querySelector<HTMLSelectElement>("[data-review-status]")!;
+    status.value = "proposed";
+    status.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(root.textContent).toContain("No records match these filters");
+    const allStatus = root.querySelector<HTMLSelectElement>("[data-review-status]")!;
+    allStatus.value = "all";
+    allStatus.dispatchEvent(new Event("change", { bubbles: true }));
     root.querySelector<HTMLButtonElement>("[data-action='suspend']")!.click();
     await vi.waitFor(() => expect(confirm).toHaveBeenCalledWith(
       expect.stringContaining("auditor record auth:auditor:compliance"),

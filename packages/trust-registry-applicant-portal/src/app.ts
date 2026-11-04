@@ -1436,10 +1436,12 @@ export const createApplicantPortalApp = (
             <h2>Issuer membership request</h2>
             <p>Bind one exact credential family, schema/version, definition, status method, and governed resource type before signing with the applicant DID key.</p>
             <form data-issuer-application-form>
+              <h3 class="request-step"><span>01</span> Identify the applicant</h3>
               <label class="label">Application ID<input class="input mono" name="applicationId" value="${escapeHtml(issuerDraft?.applicationId ?? "")}"${issuerLocked} required /></label>
               <label class="label">Authorization ID<input class="input mono" name="authorizationId" value="${escapeHtml(issuerDraft?.authorizationId ?? "")}"${issuerLocked} required /></label>
               <label class="label">Applicant Midnight DID<input class="input mono" name="actorDid" value="${escapeHtml(issuerDraft?.actorDid ?? "")}"${issuerLocked} required /></label>
               <label class="label">Authentication method ID<input class="input mono" name="actorKeyId" value="${escapeHtml(issuerDraft?.actorKeyId ?? "")}"${issuerLocked} required /></label>
+              <h3 class="request-step"><span>02</span> Define the exact credential scope</h3>
               <label class="label">Credential family ID<input class="input mono" name="credentialFamilyId" value="${escapeHtml(issuerDraft?.credentialFamilyId ?? "")}"${issuerLocked} required /></label>
               <label class="label">Schema ID<input class="input mono" name="schemaId" value="${escapeHtml(issuerDraft?.schemaId ?? "")}"${issuerLocked} required /></label>
               <label class="label">Schema version<input class="input mono" name="schemaVersion" value="${escapeHtml(issuerDraft?.schemaVersion ?? "")}" pattern="[0-9]+[.][0-9]+[.][0-9]+"${issuerLocked} required /></label>
@@ -1448,6 +1450,8 @@ export const createApplicantPortalApp = (
               <label class="label">Governed resource type<select class="select" name="governedResourceType"${issuerLocked}>
                 ${(["credentialFamily", "schema", "schemaVersion", "credentialDefinition", "statusMethodRequirement"] as const).map((type) => `<option value="${type}"${(issuerDraft?.governedResourceType ?? "credentialFamily") === type ? " selected" : ""}>${type}</option>`).join("")}
               </select></label>
+              <h3 class="request-step"><span>03</span> Prepare, sign externally, and register</h3>
+              <p class="step-hint">Preparation fixes the exact scope and digest. A changed request needs a fresh digest and signature.</p>
               <button class="button secondary" type="button" data-prepare-issuer${!privateHost || state.evidenceBusy || state.memberPreparationBusy || preparedIssuer !== undefined ? " disabled" : ""}>Prepare signing digest</button>
               ${preparedIssuer === undefined ? "" : `
                 <p data-issuer-resource class="mono">Governed resource: ${escapeHtml(preparedIssuer.payload.governedResource.id)}</p>
@@ -1457,22 +1461,27 @@ export const createApplicantPortalApp = (
                 <button class="button secondary" type="button" data-reset-member>Change request or refresh context</button>
               `}
               <button class="button" type="submit"${!privateHost || state.evidenceBusy || state.memberPreparationBusy || preparedIssuer === undefined ? " disabled" : ""}>Register issuer application</button>
+              <p class="step-hint">After registration, continue to <a href="#pending-evidence" data-open-workflow="pending-evidence">one-use private evidence</a>. Registration alone is not approval.</p>
             </form>
           </section>
           <section class="form-panel">
             <h2>Verifier membership request</h2>
             <p>Bind the full presentation-request purpose, credential scope, allowed claims and predicates, and disclosure level before signing.</p>
             <form data-verifier-application-form>
+              <h3 class="request-step"><span>01</span> Identify the applicant</h3>
               <label class="label">Application ID<input class="input mono" name="applicationId" value="${escapeHtml(verifierDraft?.applicationId ?? "")}"${verifierLocked} required /></label>
               <label class="label">Authorization ID<input class="input mono" name="authorizationId" value="${escapeHtml(verifierDraft?.authorizationId ?? "")}"${verifierLocked} required /></label>
               <label class="label">Applicant Midnight DID<input class="input mono" name="actorDid" value="${escapeHtml(verifierDraft?.actorDid ?? "")}"${verifierLocked} required /></label>
               <label class="label">Authentication method ID<input class="input mono" name="actorKeyId" value="${escapeHtml(verifierDraft?.actorKeyId ?? "")}"${verifierLocked} required /></label>
+              <h3 class="request-step"><span>02</span> Define the exact request scope</h3>
               <label class="label">Request profile ID<input class="input mono" name="requestProfileId" value="${escapeHtml(verifierDraft?.requestProfileId ?? "")}"${verifierLocked} required /></label>
               <label class="label">Purpose<input class="input" name="purpose" value="${escapeHtml(verifierDraft?.purpose ?? "")}"${verifierLocked} required /></label>
               <label class="label">Credential-scope commitment<input class="input mono" name="credentialScopeCommitment" value="${escapeHtml(verifierDraft?.credentialScopeCommitment ?? "")}" pattern="0x[0-9a-f]{64}"${verifierLocked} required /></label>
               <label class="label">Allowed attributes, one per line<textarea class="input mono" name="allowedAttributes" rows="3"${verifierLocked}>${escapeHtml(verifierDraft?.allowedAttributes.join("\n") ?? "")}</textarea></label>
               <label class="label">Allowed predicates, one per line<textarea class="input mono" name="allowedPredicates" rows="3"${verifierLocked}>${escapeHtml(verifierDraft?.allowedPredicates.join("\n") ?? "")}</textarea></label>
               <label class="label">Disclosure level<input class="input" name="disclosureLevel" value="${escapeHtml(verifierDraft?.disclosureLevel ?? "")}"${verifierLocked} required /></label>
+              <h3 class="request-step"><span>03</span> Prepare, sign externally, and register</h3>
+              <p class="step-hint">Preparation fixes the exact scope and digest. A changed request needs a fresh digest and signature.</p>
               <button class="button secondary" type="button" data-prepare-verifier${!privateHost || state.evidenceBusy || state.memberPreparationBusy || preparedVerifier !== undefined ? " disabled" : ""}>Prepare signing digest</button>
               ${preparedVerifier === undefined ? "" : `
                 <p data-verifier-resource class="mono">Governed resource: ${escapeHtml(preparedVerifier.payload.governedResource.id)}</p>
@@ -1482,16 +1491,20 @@ export const createApplicantPortalApp = (
                 <button class="button secondary" type="button" data-reset-member>Change request or refresh context</button>
               `}
               <button class="button" type="submit"${!privateHost || state.evidenceBusy || state.memberPreparationBusy || preparedVerifier === undefined ? " disabled" : ""}>Register verifier application</button>
+              <p class="step-hint">After registration, continue to <a href="#pending-evidence" data-open-workflow="pending-evidence">one-use private evidence</a>. Registration alone is not approval.</p>
             </form>
           </section>
           <section class="form-panel">
             <h2>Maintainer membership request</h2>
             <p>The current API registry defines the exact maintainer scope. Sign the prepared digest with the applicant DID authentication key; approval by existing maintainers is still required.</p>
             <form data-maintainer-application-form>
+              <h3 class="request-step"><span>01</span> Identify the applicant and exact membership</h3>
               <label class="label">Application ID<input class="input mono" name="applicationId" value="${escapeHtml(maintainerDraft?.applicationId ?? "")}"${maintainerLocked} required /></label>
               <label class="label">Authorization ID<input class="input mono" name="authorizationId" value="${escapeHtml(maintainerDraft?.authorizationId ?? "")}"${maintainerLocked} required /></label>
               <label class="label">Applicant Midnight DID<input class="input mono" name="actorDid" value="${escapeHtml(maintainerDraft?.actorDid ?? "")}"${maintainerLocked} required /></label>
               <label class="label">Authentication method ID<input class="input mono" name="actorKeyId" value="${escapeHtml(maintainerDraft?.actorKeyId ?? "")}"${maintainerLocked} required /></label>
+              <h3 class="request-step"><span>02</span> Prepare, sign externally, and register</h3>
+              <p class="step-hint">The server supplies the governed registry scope. A changed context needs a fresh digest and signature.</p>
               <button class="button secondary" type="button" data-prepare-maintainer${!privateHost || state.evidenceBusy || state.memberPreparationBusy || preparedMaintainer !== undefined ? " disabled" : ""}>Prepare signing digest</button>
               ${preparedMaintainer === undefined ? "" : `
                 <p data-maintainer-resource class="mono">Governed registry: ${escapeHtml(preparedMaintainer.payload.governedResource.id)}</p>
@@ -1501,22 +1514,27 @@ export const createApplicantPortalApp = (
                 <button class="button secondary" type="button" data-reset-member>Change request or refresh context</button>
               `}
               <button class="button" type="submit"${!privateHost || state.evidenceBusy || state.memberPreparationBusy || preparedMaintainer === undefined ? " disabled" : ""}>Register maintainer application</button>
+              <p class="step-hint">After registration, continue to <a href="#pending-evidence" data-open-workflow="pending-evidence">one-use private evidence</a>. Existing maintainers still decide membership.</p>
             </form>
           </section>
           <section class="form-panel">
             <h2>Auditor request</h2>
             <p>Describe the complete audit scope and applicant DID. Prepare its canonical resource and signing digest, sign that digest outside this browser, then submit only the signature. A request-profile ID alone is not an auditor scope.</p>
             <form data-auditor-application-form>
+              <h3 class="request-step"><span>01</span> Identify the applicant</h3>
               <label class="label">Application ID<input class="input mono" name="applicationId" value="${escapeHtml(auditorDraft?.applicationId ?? "")}"${auditorLocked} /></label>
               <label class="label">Authorization ID<input class="input mono" name="authorizationId" value="${escapeHtml(auditorDraft?.authorizationId ?? "")}"${auditorLocked} /></label>
               <label class="label">Applicant Midnight DID<input class="input mono" name="actorDid" value="${escapeHtml(auditorDraft?.actorDid ?? "")}"${auditorLocked} /></label>
               <label class="label">Authentication method ID<input class="input mono" name="actorKeyId" value="${escapeHtml(auditorDraft?.actorKeyId ?? "")}"${auditorLocked} /></label>
+              <h3 class="request-step"><span>02</span> Define the complete audit scope</h3>
               <label class="label">Request profile ID<input class="input mono" name="requestProfileId" value="${escapeHtml(auditorDraft?.requestProfileId ?? "")}"${auditorLocked} required /></label>
               <label class="label">Purpose<input class="input" name="purpose" value="${escapeHtml(auditorDraft?.purpose ?? "")}"${auditorLocked} required /></label>
               <label class="label">Credential-scope commitment<input class="input mono" name="credentialScopeCommitment" value="${escapeHtml(auditorDraft?.credentialScopeCommitment ?? "")}" pattern="0x[0-9a-f]{64}"${auditorLocked} required /></label>
               <label class="label">Allowed attributes, one per line<textarea class="input mono" name="allowedAttributes" rows="3"${auditorLocked}>${escapeHtml(auditorDraft?.allowedAttributes.join("\n") ?? "")}</textarea></label>
               <label class="label">Allowed predicates, one per line<textarea class="input mono" name="allowedPredicates" rows="3"${auditorLocked}>${escapeHtml(auditorDraft?.allowedPredicates.join("\n") ?? "")}</textarea></label>
               <label class="label">Disclosure level<input class="input" name="disclosureLevel" value="${escapeHtml(auditorDraft?.disclosureLevel ?? "")}"${auditorLocked} required /></label>
+              <h3 class="request-step"><span>03</span> Prepare, sign externally, and register</h3>
+              <p class="step-hint">Preparation fixes the complete scope. A changed request needs a fresh digest and signature.</p>
               <button class="button secondary" type="button" data-prepare-auditor${!privateHost || state.evidenceBusy || state.auditorPreparationBusy || preparedAuditor !== undefined ? " disabled" : ""}>${state.auditorPreparationBusy ? "Preparing…" : "Prepare signing digest"}</button>
               ${preparedAuditor === undefined ? "" : `
                 <p data-auditor-resource class="mono">Governed resource: ${escapeHtml(preparedAuditor.payload.governedResource.id)}</p>
@@ -1529,6 +1547,7 @@ export const createApplicantPortalApp = (
                 ? `<label class="label">Advanced: externally DID-signed auditor application JSON<textarea class="input mono" name="auditorSignedApplication" rows="7" required></textarea></label>`
                 : `<textarea name="auditorSignedApplication" hidden></textarea>`}
               <button class="button" type="submit"${!privateHost || state.evidenceBusy || state.auditorPreparationBusy ? " disabled" : ""}>Register auditor application</button>
+              <p class="step-hint">After registration, continue to <a href="#pending-evidence" data-open-workflow="pending-evidence">one-use private evidence</a>. An audit request is not an active authorization.</p>
             </form>
             <form data-auditor-status-form>
               <label class="label">Auditor authorization ID
@@ -1538,7 +1557,7 @@ export const createApplicantPortalApp = (
             </form>
             ${state.auditorStatus === undefined ? "" : `<p data-auditor-status>Application: ${escapeHtml(state.auditorStatus.status)}. Current trust: ${state.auditorStatus.currentTrust ? "active" : "not active"}.</p>`}
           </section>
-          <section class="form-panel">
+          <section class="form-panel" id="pending-evidence">
             <h2>Pending membership evidence</h2>
             <p>Paste an externally DID-signed issuer, verifier, auditor, or maintainer application to register it, or load an existing pending ID. The server derives policy and resource from trusted state. Registration does not create or approve a ledger grant.</p>
             ${state.evidenceError === undefined ? "" : `<div class="alert error">${escapeHtml(state.evidenceError)}</div>`}

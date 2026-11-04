@@ -40,9 +40,11 @@ repeatable UI acceptance evidence:
 | Browse fixture records and review a bounded admin detail | `ui-layout.spec.mjs` |
 | Choose issuer, verifier, auditor, or maintainer and complete challenge-bound evidence admission with an external signature | `applicant-portal.spec.mjs` (four role cases) |
 | Confirm proposed issuer approval, then activation, and refresh the board | `admin-console.spec.mjs` (fixture review journey) |
+| Filter the fixture admin queue by text and lifecycle status before acting; filtered-out records cannot remain selected | `admin-console.spec.mjs`, admin unit tests |
 | Recover an accepted proposal after its HTTP response is lost, without repeating the mutation | `governed-proposal-recovery.spec.mjs` (four role cases) |
 | Resolve one exact current authorization in local-ledger mode without broad-list or fixture controls | `local-lookup.spec.mjs` (admin and applicant) |
 | Inspect settings/source provenance, retry after an unavailable response, retain keyboard focus, and avoid overflow at 390/768/1440 px | `ui-layout.spec.mjs` |
+| Open a governed issuer request by keyboard with reduced motion and verify the three visible preparation phases; keep mobile task targets at least 44 px high | `ui-layout.spec.mjs` |
 | Deny unapproved browser egress and discard stale local checkpoint responses | `browser-egress-control.spec.mjs`, `admin-console.spec.mjs` |
 
 The role tests use a controlled local admission host, the review journey uses a
@@ -52,6 +54,15 @@ handling, **not** a deployed Compact contract, authenticated finality, real
 network isolation, or production security. A release-qualified standalone E2E
 claim still requires the separately approved genesis/deployment, finalized
 readback, egress-denied actor journeys, and restart/restore evidence.
+
+In the fixture admin workspace, use **Review records** to search by label,
+role, or exact identifier and narrow by lifecycle status. Select a result to
+see its bounded detail and available actions; a filter never submits a
+mutation. The local-ledger adapter has no broad list, so its admin view keeps
+only exact-ID lookup. In the applicant portal, choose a role first, then
+complete the visible identify/scope/prepare phases. Sign the prepared digest
+outside the browser and continue to one-use private evidence on the same-origin
+authenticated host. A registered application is not an approved grant.
 
 ## Settings and trust language
 

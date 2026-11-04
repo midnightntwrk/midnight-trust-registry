@@ -3167,3 +3167,10 @@ settings checks, unavailable/retry, focus, and 390/768/1440 px layout. These
 are browser acceptance tests against controlled local hosts. They do not
 replace the real signed-genesis, authenticated finality, actor-egress, or
 restart/restore release qualification.
+
+The next workflow slice gives the fixture admin board text/status filters and
+keeps filtered-out selections out of the detail pane. Local-ledger mode still
+offers only exact-ID lookup. Applicant role forms now expose identify, scope,
+and external-signing phases with a link to the separate one-use private
+evidence task. This is presentation of the existing protocol, not browser key
+management or a new authorization path.

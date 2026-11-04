@@ -48,6 +48,8 @@ for (const applicant of cases) {
       await page.locator(`[data-open-workflow="${applicant.role}-request"]`).click();
       await expect(page.locator(`#${applicant.role}-request`)).toHaveAttribute("open", "");
       await expect(form).toBeVisible();
+      await form.locator('[data-open-workflow="pending-evidence"]').click();
+      await expect(page.locator("#pending-evidence")).toHaveAttribute("open", "");
       const applicationId = `application:${applicant.role}:browser:v1`;
       const draft = {
         applicationId,
