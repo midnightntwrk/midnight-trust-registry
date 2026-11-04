@@ -1515,7 +1515,7 @@ export const createApplicantPortalApp = (
               <div><dt>API endpoint</dt><dd class="technical-id">${escapeHtml(state.apiBase)}${sameOriginApi ? " (managed by this host)" : " (local development setting)"}</dd></div>
               <div><dt>Connection</dt><dd>${state.loading ? "Checking" : state.inspection === undefined ? "Unavailable" : "Responding at last check"}</dd></div>
               <div><dt>Source mode</dt><dd>${escapeHtml(state.inspection?.sourceMode ?? (state.inspection === undefined ? "Unavailable" : "Fixture workspace"))}</dd></div>
-              <div><dt>Browser check time</dt><dd>${escapeHtml(state.observedAt ?? "No successful check")}</dd></div>
+              <div><dt>Last checked in this browser</dt><dd>${state.observedAt === undefined ? "No successful check" : `<time datetime="${escapeHtml(state.observedAt)}">${escapeHtml(formatObservationTime(state.observedAt))}</time>`}</dd></div>
             </dl>
             <button class="source-refresh" type="button" data-settings-refresh data-focus-key="settings-refresh"${state.loading ? " disabled" : ""}>Recheck connection</button>
             </section>

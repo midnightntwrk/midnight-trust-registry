@@ -137,6 +137,13 @@ both were corrected and covered by UI tests. This is an agent-run visual pass,
 not an independent new-user or assistive-technology review. The capture does
 not establish deployed-ledger behavior.
 
+A separate controlled local-ledger capture was inspected at 390 px in both
+apps and at 768 px in the portal. Authorization and external recognition stay
+separate, while results retain the **unverified API claim** label and the
+independent-finality warning. The settings review at 390 px exposed another
+raw browser timestamp; settings now show the same readable UTC time as the
+source strip. These captures use a stubbed checkpoint, not a deployed contract.
+
 The automated axe checks are a repeatable baseline. They cannot establish that
 the flow is understandable with a screen reader, that keyboard order is useful
 for every action, or that every dynamic state has been sampled. Keep the

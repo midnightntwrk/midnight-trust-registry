@@ -89,6 +89,8 @@ describe("admin console browser handlers", () => {
     expect(root.querySelector(".source-time")?.textContent).toContain("browser clock");
     expect(root.querySelector(".source-time time")?.getAttribute("datetime")).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(root.querySelector(".source-time time")?.textContent).toContain("UTC");
+    expect(root.querySelector("#workspace-settings")?.textContent).toContain("Last checked in this browser");
+    expect(root.querySelector("#workspace-settings time")?.textContent).toContain("UTC");
     failHealth = true;
     root.querySelector<HTMLButtonElement>("[data-refresh]")!.focus();
     root.querySelector<HTMLButtonElement>("[data-refresh]")!.click();
