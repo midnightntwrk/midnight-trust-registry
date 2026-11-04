@@ -519,11 +519,27 @@ for (const [app, title] of [
           await page.addStyleTag({ content: "html { font-size: 200%; }" });
           const zoomGeometry = await page.evaluate(() => ({
             page: document.documentElement.scrollWidth,
+            header: (() => {
+              const brand = document.querySelector(".brand-name").getBoundingClientRect();
+              const menu = document.querySelector(".mobile-task-menu > summary").getBoundingClientRect();
+              const bar = document.querySelector(".brand-bar").getBoundingClientRect();
+              return {
+                overlap: brand.left < menu.right && menu.left < brand.right
+                  && brand.top < menu.bottom && menu.top < brand.bottom,
+                brandInside: brand.left >= bar.left - 1 && brand.right <= bar.right + 1,
+                menuInside: menu.left >= bar.left - 1 && menu.right <= bar.right + 1,
+              };
+            })(),
             overflowing: [...document.querySelectorAll("body *")]
               .filter((element) => element.scrollWidth > element.clientWidth + 1)
               .slice(0, 12).map((element) => `${element.tagName}.${element.className}:${element.scrollWidth}/${element.clientWidth}`),
           }));
-          expect(zoomGeometry.page, JSON.stringify(zoomGeometry)).toBeLessThanOrEqual(390);
+          expect(zoomGeometry.header, JSON.stringify(zoomGeometry)).toEqual({
+            overlap: false,
+            brandInside: true,
+            menuInside: true,
+          });
+          expect(zoomGeometry.page, JSON.stringify(zoomGeometry)).toBeLessThanOrEqual(width);
         }
       }
     } finally {
