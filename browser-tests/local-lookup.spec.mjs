@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { resolve } from "node:path";
 
+import { expectNoWcagViolations } from "./accessibility-audit.mjs";
 import { expect, test } from "./offline-browser-fixture.mjs";
 import { createStaticAssetHandler } from "../scripts/serve-static.mjs";
 
@@ -93,6 +94,7 @@ async function reviewLocalLayouts(page, testInfo, app) {
     await page.setViewportSize({ width, height: 900 });
     await expect(page.locator(".source-badge")).toHaveText("API claim");
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1);
+    if (width === 390) await expectNoWcagViolations(page, `${app} exact lookup`);
     if (process.env.TR_UI_CAPTURE === "1") {
       await page.evaluate(() => window.scrollTo(0, 0));
       await page.screenshot({ path: testInfo.outputPath(`${app}-local-lookup-${width}.png`), fullPage: true });
@@ -107,6 +109,7 @@ async function reviewLocalLayouts(page, testInfo, app) {
     await expect(page.locator(".settings-view")).toContainText(app === "admin"
       ? "not independently authenticated finality" : "do not establish finalized ledger state");
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1);
+    if (width === 390) await expectNoWcagViolations(page, `${app} local settings`);
     if (process.env.TR_UI_CAPTURE === "1") {
       await page.evaluate(() => window.scrollTo(0, 0));
       await page.screenshot({ path: testInfo.outputPath(`${app}-local-settings-${width}.png`), fullPage: true });

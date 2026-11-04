@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { resolve } from "node:path";
 
+import { expectNoWcagViolations } from "./accessibility-audit.mjs";
 import { expect, test } from "./offline-browser-fixture.mjs";
 import { createStaticAssetHandler } from "../scripts/serve-static.mjs";
 
@@ -306,6 +307,41 @@ for (const [app, title] of [
   ["admin-console", "Registry review workspace"],
   ["applicant-portal", "Find your place in the registry"],
 ]) {
+  test(`${app} has no automated WCAG A/AA violations in workspace, workflow, and settings views`, async ({ page, allowedLocalOrigins }) => {
+    const server = await serveApp(app);
+    try {
+      allowedLocalOrigins.add(server.base);
+      for (const width of [1440, 390]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
+        await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+        for (const view of ["workspace", "workflow", "settings"]) {
+          if (view === "workflow") {
+            if (app === "admin-console") {
+              await page.locator("#advanced-governance > summary").click();
+              await expect(page.locator("#advanced-governance")).toHaveAttribute("open", "");
+            } else {
+              await page.locator('[data-open-workflow="issuer-request"]').click();
+              await expect(page.locator("#issuer-request")).toBeVisible();
+            }
+          } else if (view === "settings") {
+            if (width <= 760) {
+              await page.locator(".mobile-task-menu > summary").click();
+              await page.locator(".mobile-task-menu nav a").filter({ hasText: "Workspace settings" }).click();
+            } else {
+              await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
+            }
+            await expect(page.locator(".settings-view")).toBeVisible();
+          }
+          await expectNoWcagViolations(page, `${app} ${view} at ${width}px`);
+        }
+      }
+    } finally {
+      await page.close();
+      await server.close();
+    }
+  });
+
   test(`${app} keeps long registry data within desktop and mobile viewports`, async ({ page, allowedLocalOrigins }, testInfo) => {
     const server = await serveApp(app);
     try {

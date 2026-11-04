@@ -3188,6 +3188,13 @@ claim when local-ledger mode returns. A subsequent denied exact lookup clears
 the previous success and announces the 403 at the form. This verifies browser
 state invalidation, not the authenticity of the fixture's source-mode report.
 
+The offline Chromium suite now runs pinned axe-core checks over both fixture
+workspaces, opened workflows, and settings at 390/1440 px, plus mobile
+local-ledger lookup results and settings. The checks cover tagged WCAG
+2.0/2.1/2.2 A/AA rules without allowing external browser requests. Zero
+reported violations is not a screen-reader usability review or deployed E2E
+evidence; the independent accessibility acceptance remains open.
+
 The browser acceptance matrix additionally covers the full fixture issuer
 lifecycle, exact external recognition with substituted-scope rejection,
 packaged same-origin endpoint locking, and 200% text reflow on mobile. These

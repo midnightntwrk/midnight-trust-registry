@@ -119,8 +119,15 @@ repeatable UI acceptance evidence:
 | Choose a label-only demo application type with visible radio options and keyboard navigation; retain the selection and avoid horizontal overflow at 200% mobile text size | `demo-application-handoff.spec.mjs`, `ui-layout.spec.mjs` |
 | Reflow long identifiers and controls at 200% root text size on a 390 px viewport without page-level horizontal scroll | `ui-layout.spec.mjs` |
 | Check browser-computed normal-text contrast for the brand lockup, navigation, source badge, and primary/secondary actions in both apps | `ui-layout.spec.mjs` (selected solid surfaces, at least 4.5:1) |
+| Audit rendered workspace, expanded workflow, and settings views at 390/1440 px, plus 390 px local-ledger results and settings, for automated WCAG 2.0/2.1/2.2 A/AA violations | `ui-layout.spec.mjs`, `local-lookup.spec.mjs` (`@axe-core/playwright`, no external browser requests) |
 | Serve the shared Midnight browser icon from each built app without a missing-resource response | `ui-layout.spec.mjs` |
 | Deny unapproved browser egress and discard stale local checkpoint responses | `browser-egress-control.spec.mjs`, `admin-console.spec.mjs` |
+
+The automated axe checks are a repeatable baseline. They cannot establish that
+the flow is understandable with a screen reader, that keyboard order is useful
+for every action, or that every dynamic state has been sampled. Keep the
+assistive-technology and visual review open rather than treating zero reported
+violations as full accessibility certification.
 
 The role tests use a controlled local admission host, the cross-app handoff
 and review journeys use fixture HTTP hosts, and local-ledger exact-lookup tests
