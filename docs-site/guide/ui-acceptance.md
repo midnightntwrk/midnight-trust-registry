@@ -5,6 +5,26 @@ the approved logo, black/white/blue tokens, a shared task navigation frame, and
 explicit source cues. The source cue is **Local fixture**, **API claim**, or
 **Unavailable**. It never labels a browser response as independently finalized.
 
+## UX Pilot comparison
+
+The single [Midnight Trust Registry UX Pilot canvas](https://uxpilot.ai/a/ui-design?page=djbLMyF7a2TuLoSWYUwc)
+contains the shared UI system, admin review workspace, applicant portal, mobile
+portal, workspace settings, and exact local-ledger lookup. These are design
+proposals, not evidence that a workflow is implemented or finalized.
+
+| Design intent | Local implementation and acceptance |
+| --- | --- |
+| Lead with the next task, not a protocol field | The fixture portal leads to a working demo application and separates governed role preparation; the local-ledger portal leads to role choice. Admin headings distinguish pending decisions from a quiet review workspace. API editing lives under Connection and source details. `ui-layout.spec.mjs` and `demo-application-handoff.spec.mjs` check this hierarchy. |
+| One Midnight visual language | Both apps use the approved logo, Outfit, black/white/blue tokens, and shared navigation/status components. |
+| A compact review list with a bounded detail | Empty lifecycle lanes are omitted from the default admin view; selected detail stays beside the list on desktop and below it on mobile. |
+| Truthful source and certainty | A visible source strip identifies fixture, API claim, or unavailable state and offers Recheck. Epoch and technical identity stay in details. No fixture record is called final. |
+| Mobile task access | The desktop sidebar becomes a native keyboard-operable Menu at narrow widths. The mobile portal omits the nonessential snapshot card so the role path appears sooner; source status and Recheck remain visible. |
+
+The canvas is a visual reference, not a complete behavior specification. Its
+illustrative active issuer is not a real on-chain grant. A full assistive-technology
+review, clean-checkout adoption trial, and deployed standalone actor E2E remain
+separate acceptance work.
+
 ## Run locally
 
 From a clean Trust Registry checkout with Node 24, pnpm 10, and the pinned
@@ -52,7 +72,7 @@ repeatable UI acceptance evidence:
 | Edit either historical evidence query, discard its stale download, and keep the new draft through a source refresh | `recognition-evidence.spec.mjs` |
 | Resolve exact current authorization and separate external recognition scopes in local-ledger mode; reject a substituted recognition tuple | `local-lookup.spec.mjs` (admin and applicant) |
 | Inspect settings/source provenance, retry after an unavailable response, retain keyboard focus, and avoid overflow at 390/768/1440 px | `ui-layout.spec.mjs` |
-| Show task navigation before the hero on mobile and align it with the hero on desktop; put admin metrics beside connection controls on wide screens and ahead of source details on mobile | `ui-layout.spec.mjs` (fresh-page geometry assertions) |
+| Show an operable Menu before the hero on mobile and align the task sidebar with the hero on desktop; place admin review counts beside the task introduction on wide screens and ahead of source details on mobile | `ui-layout.spec.mjs` (fresh-page geometry assertions) |
 | Reject an external endpoint override on packaged same-origin admin and portal paths while preserving the authenticated-host warning | `ui-layout.spec.mjs` |
 | Switch an editable development endpoint between two loopback fixture hosts without carrying reads to the old host or enabling cross-origin private actions | `ui-layout.spec.mjs` (both apps) |
 | Open a governed issuer request by keyboard with reduced motion and verify the three visible preparation phases; keep mobile task targets at least 44 px high | `ui-layout.spec.mjs` |
@@ -90,12 +110,14 @@ deployed acceptance evidence.
 In the fixture admin workspace, use **Review records** to search by label,
 role, or exact identifier and narrow by lifecycle status. Select a result to
 see its bounded detail and available actions; a filter never submits a
-mutation. **Advanced governance** names the separate epoch, signed-intent,
+mutation. Empty default status lanes do not precede populated results.
+**Advanced governance** names the separate epoch, signed-intent,
 proposal/recovery, and quorum/verifier tasks; each link opens a real task
 section and retains its existing prerequisites. The local-ledger adapter has
-no broad list, so its admin view keeps only exact-ID lookup. In the applicant
-portal, choose a role first, then complete the visible
-identify/scope/prepare phases. Sign the prepared digest
+no broad list, so its admin view keeps only exact-ID lookup. In the fixture
+applicant portal, **Try the demo** submits a label-only request for
+admin review; it never grants on-chain authority. For a governed request,
+choose a role and complete the visible identify/scope/prepare phases. Sign the prepared digest
 outside the browser and continue to one-use private evidence on the same-origin
 authenticated host. A registered application is not an approved grant.
 

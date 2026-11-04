@@ -63,7 +63,7 @@ test("a late governance receipt cannot replace another registry's board", async 
     allowedLocalOrigins.add(base);
     page.on("dialog", (dialog) => dialog.accept());
     await page.goto(`${base}/?apiBase=${encodeURIComponent(`${base}/a`)}`);
-    const registryLabel = page.locator(".metrics .metric:first-child strong");
+    const registryLabel = page.locator(".registry-context strong");
     await expect(registryLabel).toHaveText("Registry A");
 
     await page.locator(".advanced-workflows > summary").click();
@@ -76,6 +76,7 @@ test("a late governance receipt cannot replace another registry's board", async 
       new Promise((_, reject) => setTimeout(() => reject(new Error("epoch publication request did not start")), 3000)),
     ]);
 
+    await page.locator(".workspace-settings > summary").click();
     await page.locator("[data-api-base-form] [name='apiBase']").fill(`${base}/b`);
     await page.locator("[data-api-base-form] button[type='submit']").click();
     await expect(registryLabel).toHaveText("Registry B");

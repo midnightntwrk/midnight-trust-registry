@@ -690,6 +690,12 @@ export const createAdminConsoleApp = (
   };
 
   const bindEvents = () => {
+    root.querySelectorAll<HTMLAnchorElement>(".mobile-task-menu nav a").forEach((link) => {
+      link.addEventListener("click", () => {
+        const menu = link.closest<HTMLDetailsElement>(".mobile-task-menu");
+        if (menu !== null) menu.open = false;
+      });
+    });
     root.querySelector<HTMLFormElement>("[data-api-base-form]")?.addEventListener("submit", (event) => {
       event.preventDefault();
       if (sameOriginApi) return;
@@ -879,12 +885,11 @@ export const createAdminConsoleApp = (
 
   const renderMetrics = (board: ReviewBoard): string => `
     <div class="metrics">
-      <div class="metric"><span>Registry</span><strong>${escapeHtml(board.summary.registryLabel)}</strong></div>
-      <div class="metric"><span>Current epoch</span><strong>${board.summary.epochCount === undefined ? "Unavailable" : `#${board.summary.epochCount.toString()}`}</strong></div>
+      <div class="registry-context"><span>Registry</span><strong>${escapeHtml(board.summary.registryLabel)}</strong><small>${board.summary.epochCount === undefined ? "Epoch unavailable" : `Epoch #${board.summary.epochCount.toString()}`}</small></div>
       <div class="metric"><span>Proposed</span><strong>${countCards(board, "proposed").toString()}</strong></div>
       <div class="metric"><span>Authorized</span><strong>${countCards(board, "authorized").toString()}</strong></div>
       <div class="metric"><span>Active</span><strong>${countCards(board, "active").toString()}</strong></div>
-      <div class="metric"><span>Risk queue</span><strong>${(countCards(board, "suspended") + countCards(board, "revoked")).toString()}</strong></div>
+      ${countCards(board, "suspended") + countCards(board, "revoked") === 0 ? "" : `<p class="risk-summary">${(countCards(board, "suspended") + countCards(board, "revoked")).toString()} suspended or revoked record(s) need inspection.</p>`}
     </div>
   `;
 
@@ -1005,36 +1010,43 @@ export const createAdminConsoleApp = (
         ...card.detailRows.map((row) => row.value)].some((value) => value.toLocaleLowerCase().includes(normalizedQuery))));
     const groupedCards = groupReviewCards(visibleCards);
     const visibleKeys = new Set(visibleCards.map((card) => card.key));
+    const needsReview = state.board !== undefined && (
+      countCards(state.board, "proposed") + countCards(state.board, "authorized") > 0);
+    const reviewTitle = state.board === undefined ? "Connect to review records"
+      : state.board.sourceMode === "local-ledger" ? "Inspect current records"
+        : needsReview ? "Decisions that need attention" : "Registry review workspace";
+    const reviewDescription = state.board === undefined
+      ? "No current registry data is available. Recheck the connection before making a trust decision."
+      : state.board.sourceMode === "local-ledger"
+        ? "Look up an exact record from this API. Independently verify finalized registry state before relying on it."
+        : needsReview
+          ? "Review requests, inspect authority, and follow each record from proposal to active status."
+          : "No requests need a decision right now. Browse active records or prepare a governed action.";
+    const reviewAction = state.board === undefined ? { href: "#workspace-settings", label: "Check connection" }
+      : state.board.sourceMode === "local-ledger" ? { href: "#exact-lookup", label: "Look up a record" }
+        : needsReview ? { href: "#review-board", label: "Open review queue" }
+          : { href: "#review-board", label: "Browse records" };
+    const taskLinks = `
+      <a href="#review-board">Review records</a>
+      <a href="#workspace-settings">Workspace settings</a>
+      <a href="#advanced-governance">Advanced governance</a>
+    `;
     root.innerHTML = `
       <main class="shell app-shell">
         <header class="brand-bar">
           <span class="brand-name"><img class="brand-logo" src="./midnight-logo.svg" alt="Midnight" /> <span class="brand-section">Trust Registry</span></span>
           <span class="brand-section">Admin console</span>
+          <details class="mobile-task-menu"><summary>Menu</summary><nav aria-label="Admin tasks">${taskLinks}</nav></details>
         </header>
-        <nav class="task-nav" aria-label="Admin tasks">
-          <a href="#review-board">Review records</a>
-          <a href="#workspace-settings">Workspace settings</a>
-          <a href="#advanced-governance">Advanced governance</a>
-        </nav>
+        <nav class="task-nav" aria-label="Admin tasks">${taskLinks}</nav>
         <section class="hero">
           <div class="hero-copy">
             <div>
-              <p class="eyebrow">Governance workspace</p>
-              <h1>Review trust records</h1>
-              <p>Inspect proposals and active members first. Advanced signing and policy actions are available below the review board.</p>
+              <p class="eyebrow">Review operations</p>
+              <h1>${reviewTitle}</h1>
+              <p>${reviewDescription}</p>
+              <a class="button" href="${reviewAction.href}">${reviewAction.label}</a>
             </div>
-          </div>
-          <div class="toolbar">
-            <form data-api-base-form>
-              <label>
-                API base URL
-                <input class="input mono" type="url" name="apiBase" data-focus-key="api-base" value="${escapeHtml(state.apiBase)}"${sameOriginApi ? " disabled" : ""} />
-              </label>
-              <div class="actions">
-                <button class="button" type="submit" data-focus-key="connect"${sameOriginApi || state.loading || state.governedBusy ? " disabled" : ""}>Connect</button>
-                <button class="button secondary" type="button" data-refresh data-focus-key="refresh"${state.loading || state.governedBusy ? " disabled" : ""}>Refresh</button>
-              </div>
-            </form>
           </div>
           ${state.board === undefined ? "" : renderMetrics(state.board)}
           ${state.error === undefined ? "" : `<div class="alert error">${escapeHtml(state.error)}</div>`}
@@ -1045,9 +1057,18 @@ export const createAdminConsoleApp = (
               <span>${state.board?.sourceMode === "local-ledger" ? "This response is not independently verified finality or authorization evidence." : state.board === undefined ? "Connect or retry to inspect this source. No trust decision is available." : "Fixture records are for exploration, not deployed ledger evidence."}</span>
             </div>
             ${state.observedAt === undefined || state.loading ? "" : `<span class="source-time">Checked ${escapeHtml(state.observedAt)} (browser clock)</span>`}
+            <button class="source-refresh" type="button" data-refresh data-focus-key="refresh"${state.loading || state.governedBusy ? " disabled" : ""}>Recheck</button>
           </div>
           <details class="workspace-settings" id="workspace-settings"${settingsOpen ? " open" : ""}>
-            <summary>Workspace settings and source details</summary>
+            <summary>Connection and source details</summary>
+            <form class="connection-form" data-api-base-form>
+              <label>API base URL
+                <input class="input mono" type="url" name="apiBase" data-focus-key="api-base" value="${escapeHtml(state.apiBase)}"${sameOriginApi ? " disabled" : ""} />
+              </label>
+              <div class="actions">
+                <button class="button" type="submit" data-focus-key="connect"${sameOriginApi || state.loading || state.governedBusy ? " disabled" : ""}>Connect</button>
+              </div>
+            </form>
             <dl class="settings-grid">
               <div><dt>API endpoint</dt><dd class="technical-id">${escapeHtml(state.apiBase)}${sameOriginApi ? " (managed by this host)" : " (local development setting)"}</dd></div>
               <div><dt>Connection</dt><dd>${state.loading ? "Checking" : state.board === undefined ? "Unavailable" : "Responding at last check"}</dd></div>
@@ -1195,8 +1216,10 @@ export const createAdminConsoleApp = (
           </div>` : `<div class="board">
             ${visibleCards.length === 0 && (state.reviewQuery.trim() !== "" || state.reviewStatus !== "all")
               ? `<div class="empty-state"><p>No records match these filters. Try a different label or status.</p></div>`
-              : REVIEW_STATUSES.filter((status) => (state.reviewStatus === "all" && status === "proposed")
-                || groupedCards[status].length > 0).map((status) => renderColumn(status, groupedCards[status])).join("")}
+              : visibleCards.length === 0
+                ? `<div class="empty-state"><p>No records yet. New requests will appear here after submission.</p></div>`
+                : REVIEW_STATUSES.filter((status) => groupedCards[status].length > 0)
+                  .map((status) => renderColumn(status, groupedCards[status])).join("")}
           </div>`}
           ${renderDetailPanel(state.board?.sourceMode === "local-ledger" ? undefined : visibleKeys)}
         </section>

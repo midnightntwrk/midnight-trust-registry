@@ -32,7 +32,8 @@ describe("trust registry applicant portal app", () => {
     expect(root.textContent).toContain("Current list unavailable. Do not infer trust from this lane.");
     expect(root.textContent).not.toContain("No active entries in this lane yet.");
     expect(root.querySelectorAll(".metric strong")[2]?.textContent).toBe("n/a");
-    expect(root.querySelectorAll(".metric strong")[5]?.textContent).toBe("n/a");
+    expect(root.querySelectorAll(".metric strong")[3]?.textContent).toBe("n/a");
+    expect(root.querySelectorAll(".lane .empty-state")).toHaveLength(4);
     expect(root.querySelector("[data-issuer-application-form]")).not.toBeNull();
     expect(root.querySelector("[data-current-authorization]")).not.toBeNull();
     expect(root.querySelector("[data-historical-authorization]")).toBeNull();

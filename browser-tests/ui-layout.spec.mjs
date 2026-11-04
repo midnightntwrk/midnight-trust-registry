@@ -88,13 +88,13 @@ for (const app of ["admin-console", "applicant-portal"]) {
       await page.goto(`${first.base}/?apiBase=${encodeURIComponent(first.base)}`);
       await expect(page.locator(".source-badge")).toHaveText("Local fixture");
       const firstReads = first.requests.length;
+      await page.locator(".workspace-settings > summary").click();
       const form = page.locator("[data-api-base-form]");
       await expect(form.locator("[name='apiBase']")).toBeEnabled();
       await form.locator("[name='apiBase']").fill(second.base);
       await form.locator("button[type='submit']").click();
       await expect(form.locator("[name='apiBase']")).toHaveValue(second.base);
       await expect(page.locator(".source-badge")).toHaveText("Local fixture");
-      await page.locator(".workspace-settings > summary").click();
       await expect(page.locator(".workspace-settings")).toContainText(`${second.base} (local development setting)`);
       expect(second.requests).toContain("GET /health");
       expect(second.requests).toContain("GET /v1/registry/summary");
@@ -102,7 +102,7 @@ for (const app of ["admin-console", "applicant-portal"]) {
       if (app === "applicant-portal") {
         await page.locator('[data-workflow="Recover external recognition"] > summary').click();
         await expect(page.locator("[data-recognition-challenge]")).toBeDisabled();
-        await expect(page.locator(".journey-prerequisite")).toContainText("cannot submit them");
+        await expect(page.locator(".journey-prerequisite")).toContainText("cannot submit governed evidence");
       }
     } finally {
       await page.close();
@@ -189,6 +189,11 @@ for (const app of ["admin-console", "applicant-portal"]) {
       await page.locator("[data-refresh]").click();
       await expect(page.locator(".source-badge")).toHaveText("Unavailable");
       await expect(page.locator(".source-panel")).toContainText("No trust decision is available");
+      await expect(page.getByRole("heading", { name: app === "admin-console"
+        ? "Connect to review records" : "Find your place in the registry" })).toBeVisible();
+      if (app === "applicant-portal") {
+        await expect(page.locator(".hero-actions a").first()).toHaveAttribute("href", "#connection-details");
+      }
       await expect(page.locator(".source-time")).toHaveCount(0);
       server.setHealthAvailable(true);
       await page.locator("[data-refresh]").click();
@@ -201,8 +206,8 @@ for (const app of ["admin-console", "applicant-portal"]) {
 }
 
 for (const [app, title] of [
-  ["admin-console", "Review trust records"],
-  ["applicant-portal", "Join the trust registry"],
+  ["admin-console", "Registry review workspace"],
+  ["applicant-portal", "Find your place in the registry"],
 ]) {
   test(`${app} keeps long registry data within desktop and mobile viewports`, async ({ page, allowedLocalOrigins }, testInfo) => {
     const server = await serveApp(app);
@@ -218,24 +223,38 @@ for (const [app, title] of [
         await expect(page.locator(".source-panel")).toContainText("not deployed ledger evidence");
         const initialLayout = await page.evaluate(() => {
           const top = (selector) => document.querySelector(selector).getBoundingClientRect().top;
-          return { brand: top(".brand-bar"), nav: top(".task-nav"), hero: top(".hero"), scrollY: window.scrollY };
+          return { brand: top(".brand-bar"), nav: top(innerWidth <= 760 ? ".mobile-task-menu" : ".task-nav"),
+            hero: top(".hero"), scrollY: window.scrollY };
         });
         expect(initialLayout.scrollY).toBe(0);
-        expect(initialLayout.nav).toBeGreaterThan(initialLayout.brand);
         if (width <= 760) {
+          expect(initialLayout.nav).toBeGreaterThanOrEqual(initialLayout.brand);
           expect(initialLayout.nav).toBeLessThan(initialLayout.hero);
           expect(initialLayout.nav).toBeLessThan(900);
         } else {
+          expect(initialLayout.nav).toBeGreaterThan(initialLayout.brand);
           expect(Math.abs(initialLayout.nav - initialLayout.hero)).toBeLessThan(2);
         }
         if (app === "admin-console" && width === 1440) {
           const heroLayout = await page.evaluate(() => {
-            const form = document.querySelector(".hero > .toolbar").getBoundingClientRect();
+            const intro = document.querySelector(".hero > .hero-copy").getBoundingClientRect();
             const metrics = document.querySelector(".hero > .metrics").getBoundingClientRect();
-            return { formTop: form.top, metricsTop: metrics.top, formRight: form.right, metricsLeft: metrics.left };
+            const cards = [...document.querySelectorAll(".hero > .metrics .metric")];
+            return { introTop: intro.top, metricsTop: metrics.top, introRight: intro.right,
+              metricsLeft: metrics.left, cardWidths: cards.map((card) => card.getBoundingClientRect().width) };
           });
-          expect(Math.abs(heroLayout.formTop - heroLayout.metricsTop)).toBeLessThan(2);
-          expect(heroLayout.formRight).toBeLessThan(heroLayout.metricsLeft);
+          expect(Math.abs(heroLayout.introTop - heroLayout.metricsTop)).toBeLessThan(2);
+          expect(heroLayout.introRight).toBeLessThan(heroLayout.metricsLeft);
+          expect(heroLayout.cardWidths).toHaveLength(3);
+          expect(Math.min(...heroLayout.cardWidths)).toBeGreaterThan(150);
+        }
+        if (app === "applicant-portal") {
+          await expect(page.locator(".hero-actions a").first()).toHaveAttribute("href", "#demo-application");
+          const contentOrder = await page.evaluate(() => ({
+            rolesTop: document.querySelector(".journey-picker").getBoundingClientRect().top,
+            recordsTop: document.querySelector("#trust-records").getBoundingClientRect().top,
+          }));
+          expect(contentOrder.rolesTop).toBeLessThan(contentOrder.recordsTop);
         }
         if (app === "admin-console" && width === 390) {
           const mobileOrder = await page.evaluate(() => ({
@@ -256,14 +275,26 @@ for (const [app, title] of [
         await expect(page.locator(".workspace-settings")).toHaveAttribute("open", "");
         await expect(page.locator(".workspace-settings")).toContainText("Network profile, genesis, contract");
         await expect(page.locator(".workspace-settings")).toContainText("Not exposed by this API response");
-        expect(await page.locator(".task-nav a").evaluateAll((links) => links.every((link) =>
+        const links = width <= 760 ? page.locator(".mobile-task-menu nav a") : page.locator(".task-nav a");
+        expect(await page.evaluate(() => {
+          const ids = [...document.querySelectorAll("[id]")].map((element) => element.id);
+          return new Set(ids).size === ids.length;
+        })).toBe(true);
+        expect(await links.evaluateAll((elements) => elements.every((link) =>
           document.querySelector(link.getAttribute("href")) !== null))).toBe(true);
         if (width === 390) {
-          expect(await page.locator(".task-nav a").evaluateAll((links) => links.every((link) =>
+          await expect(links.first()).toBeHidden();
+          await page.locator(".mobile-task-menu > summary").focus();
+          await page.keyboard.press("Enter");
+          await expect(links.first()).toBeVisible();
+          expect(await links.evaluateAll((elements) => elements.every((link) =>
             link.getBoundingClientRect().height >= 44))).toBe(true);
+          await links.first().click();
+          await expect(page.locator(".mobile-task-menu")).not.toHaveAttribute("open", "");
         }
         if (app === "admin-console") {
           await expect(page.locator(".card")).toHaveCount(1);
+          await expect(page.locator(".column")).toHaveCount(1);
           await page.locator(".card").click();
           await expect(page.locator(".detail-panel")).toContainText(longDid);
           await page.locator(".technical-details > summary").click();

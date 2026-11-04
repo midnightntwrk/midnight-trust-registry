@@ -914,6 +914,12 @@ export const createApplicantPortalApp = (
   };
 
   const bindEvents = () => {
+    root.querySelectorAll<HTMLAnchorElement>(".mobile-task-menu nav a").forEach((link) => {
+      link.addEventListener("click", () => {
+        const menu = link.closest<HTMLDetailsElement>(".mobile-task-menu");
+        if (menu !== null) menu.open = false;
+      });
+    });
     root.querySelector<HTMLFormElement>("[data-api-base-form]")?.addEventListener("submit", (event) => {
       event.preventDefault();
       if (sameOriginApi) return;
@@ -1320,43 +1326,42 @@ export const createApplicantPortalApp = (
     const issuerLocked = preparedIssuer === undefined ? "" : " disabled";
     const verifierLocked = preparedVerifier === undefined ? "" : " disabled";
     const maintainerLocked = preparedMaintainer === undefined ? "" : " disabled";
+    const taskLinks = `
+      <a href="#trust-records">Explore active records</a>
+      ${state.inspection?.sourceMode === "local-ledger" ? "" : `<a href="#demo-application">Try a local demo application</a>`}
+      <a href="#governed-requests">Prepare governed membership</a>
+      <a href="#connection-details">Connection details</a>
+    `;
 
     root.innerHTML = `
       <main class="shell app-shell">
         <header class="brand-bar">
           <span class="brand-name"><img class="brand-logo" src="./midnight-logo.svg" alt="Midnight" /> <span class="brand-section">Trust Registry</span></span>
           <span class="brand-section">Applicant portal</span>
+          <details class="mobile-task-menu"><summary>Menu</summary><nav aria-label="Portal tasks">${taskLinks}</nav></details>
         </header>
-        <nav class="task-nav" aria-label="Portal tasks">
-          <a href="#trust-records">Explore active records</a>
-          ${state.inspection?.sourceMode === "local-ledger" ? "" : `<a href="#demo-application">Try a local demo application</a>`}
-          <a href="#governed-requests">Prepare governed membership</a>
-          <a href="#connection-details">Connection details</a>
-        </nav>
+        <nav class="task-nav" aria-label="Portal tasks">${taskLinks}</nav>
         <section class="hero">
-          <p class="eyebrow">Apply and explore</p>
-          <h1>Join the trust registry</h1>
-          <p>${state.inspection?.sourceMode === "local-ledger"
-            ? "Query exact current trust scopes and submit pending membership evidence through an authenticated same-origin host. A browser response is not independent finality proof."
-            : "Inspect active trust records and submit local demo applications. Pending membership applicants can present challenge-bound evidence through an authenticated same-origin host."}</p>
-          <div class="toolbar">
-            <form class="panel" data-api-base-form>
-              <label class="label">
-                API base URL
-                <input class="input mono" type="url" name="apiBase" data-focus-key="api-base" value="${escapeHtml(state.apiBase)}"${sameOriginApi ? " disabled" : ""} />
-              </label>
-              <div class="row">
-                <button class="button" type="submit" data-focus-key="connect"${sameOriginApi || state.loading ? " disabled" : ""}>Connect</button>
-                <button class="button secondary" type="button" data-refresh data-focus-key="refresh"${state.loading ? " disabled" : ""}>Refresh</button>
-              </div>
-            </form>
+          <div class="hero-intro">
+            <p class="eyebrow">Midnight Trust Registry</p>
+            <h1>Find your place in the registry</h1>
+            <p>${state.inspection === undefined
+              ? "Registry data is unavailable. Recheck the connection before inspecting or submitting a request."
+              : state.inspection.sourceMode === "local-ledger"
+                ? "Explore current API claims, choose a role, and prepare a signed request. Verify finalized registry state independently before relying on it."
+                : "Try a local application, browse records, or prepare a governed request. Demo records are not on-chain trust decisions."}</p>
+            <div class="hero-actions">
+              <a class="button" href="${state.inspection === undefined ? "#connection-details" : state.inspection.sourceMode === "local-ledger" ? "#governed-requests" : "#demo-application"}">${state.inspection === undefined ? "Check connection" : state.inspection.sourceMode === "local-ledger" ? "Choose a role" : "Try the demo"}</a>
+              <a class="button secondary" href="#trust-records">Explore records</a>
+            </div>
+          </div>
+          <div class="hero-overview">
+            <p class="eyebrow">Registry snapshot</p>
             <div class="panel metrics">
               <div class="metric"><span>Registry</span><strong>${escapeHtml(state.inspection?.summary.registryLabel ?? "Unavailable")}</strong></div>
               <div class="metric"><span>Current epoch</span><strong>${state.inspection?.summary.epochCount === undefined ? "Unavailable" : `#${state.inspection.summary.epochCount.toString()}`}</strong></div>
               <div class="metric"><span>Active issuers</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("issuer") ? "n/a" : state.inspection.activeIssuers.length.toString()}</strong></div>
               <div class="metric"><span>Active verifiers</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("verifier") ? "n/a" : state.inspection.activeVerifiers.length.toString()}</strong></div>
-              <div class="metric"><span>Active auditors</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("auditor") ? "n/a" : state.inspection.activeAuditors.length.toString()}</strong></div>
-              <div class="metric"><span>Recognitions</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("recognition") ? "n/a" : state.inspection.activeRecognitions.length.toString()}</strong></div>
             </div>
           </div>
           ${state.error === undefined ? "" : `<div class="alert error">${escapeHtml(state.error)}</div>`}
@@ -1368,9 +1373,18 @@ export const createApplicantPortalApp = (
               <span>${state.inspection?.sourceMode === "local-ledger" ? "This response is not independently verified finality or authorization evidence." : state.inspection === undefined ? "Connect or retry to inspect this source. No trust decision is available." : "Fixture records are for exploration, not deployed ledger evidence."}${state.inspection?.unavailableLists?.length ? ` ${state.inspection.unavailableLists.length} list(s) unavailable; counts shown as n/a.` : ""}</span>
             </div>
             ${state.observedAt === undefined || state.loading ? "" : `<span class="source-time">Checked ${escapeHtml(state.observedAt)} (browser clock)</span>`}
+            <button class="source-refresh" type="button" data-refresh data-focus-key="refresh"${state.loading ? " disabled" : ""}>Recheck</button>
           </div>
           <details class="workspace-settings" id="connection-details"${settingsOpen ? " open" : ""}>
             <summary>Connection and source details</summary>
+            <form class="connection-form" data-api-base-form>
+              <label class="label">API base URL
+                <input class="input mono" type="url" name="apiBase" data-focus-key="api-base" value="${escapeHtml(state.apiBase)}"${sameOriginApi ? " disabled" : ""} />
+              </label>
+              <div class="row">
+                <button class="button" type="submit" data-focus-key="connect"${sameOriginApi || state.loading ? " disabled" : ""}>Connect</button>
+              </div>
+            </form>
             <dl class="settings-grid">
               <div><dt>API endpoint</dt><dd class="technical-id">${escapeHtml(state.apiBase)}${sameOriginApi ? " (managed by this host)" : " (local development setting)"}</dd></div>
               <div><dt>Connection</dt><dd>${state.loading ? "Checking" : state.inspection === undefined ? "Unavailable" : "Responding at last check"}</dd></div>
@@ -1388,16 +1402,16 @@ export const createApplicantPortalApp = (
         </section>
         <section class="content">
           <section class="journey-picker" id="governed-requests" aria-labelledby="journey-heading">
-            <div class="journey-heading"><p class="eyebrow">Governed membership</p><h2 id="journey-heading">Choose your role</h2>
-              <p>Each request binds an exact DID, key and scope, then requires challenge-bound evidence and an external signature. This browser never collects a private key.</p>
+            <div class="journey-heading"><p class="eyebrow">Governed requests</p><h2 id="journey-heading">${state.inspection?.sourceMode === "local-ledger" ? "What would you like to do?" : "Applying beyond the demo?"}</h2>
+              <p>Choose a role to inspect its exact authority, evidence, and signing requirements. Nothing is submitted until you confirm.</p>
             </div>
+            <p class="journey-prerequisite">${privateHost ? "Same-origin host selected. This browser cannot verify your session; the host must authenticate private requests." : "This local connection can prepare a request, but cannot submit governed evidence. Use an authenticated same-origin host for that step."}</p>
             <div class="journey-cards">
-              <a href="#issuer-request" data-open-workflow="issuer-request"><strong>Issuer</strong><span>Register a credential family or schema.</span><em>Prepare issuer request</em></a>
-              <a href="#verifier-request" data-open-workflow="verifier-request"><strong>Verifier</strong><span>Define a precise request scope.</span><em>Prepare verifier request</em></a>
-              <a href="#auditor-request" data-open-workflow="auditor-request"><strong>Auditor</strong><span>Request governed audit scope.</span><em>Prepare auditor request</em></a>
-              <a href="#maintainer-request" data-open-workflow="maintainer-request"><strong>Maintainer</strong><span>Request committee membership.</span><em>Prepare maintainer request</em></a>
+              <a href="#issuer-request" data-open-workflow="issuer-request"><strong>Become an issuer</strong><span>Request authority to issue a credential family.</span><em>Start issuer request &rarr;</em></a>
+              <a href="#verifier-request" data-open-workflow="verifier-request"><strong>Become a verifier</strong><span>Request authority to verify a precise scope.</span><em>Start verifier request &rarr;</em></a>
+              <a href="#auditor-request" data-open-workflow="auditor-request"><strong>Become an auditor</strong><span>Request oversight of a defined audit scope.</span><em>Start auditor request &rarr;</em></a>
+              <a href="#maintainer-request" data-open-workflow="maintainer-request"><strong>Join maintenance</strong><span>Request governed committee membership.</span><em>View requirements &rarr;</em></a>
             </div>
-            <p class="journey-prerequisite">${privateHost ? "Same-origin host selected. This browser cannot verify your session; the host must authenticate private requests." : "Private evidence steps require an authenticated same-origin host; this connection can browse but cannot submit them."}</p>
           </section>
           ${state.inspection?.sourceMode === "local-ledger" ? `
           <section class="form-panel">
@@ -1488,22 +1502,22 @@ export const createApplicantPortalApp = (
             </form>
           </section>
           <form class="form-panel" id="demo-application" data-submit-form>
-            <h2>Local demo application</h2>
-            <p>This label-only route is for local fixtures, not governed production admission. Approval and activation remain in the admin console.</p>
+            <h2>Try a local application</h2>
+            <p>Choose an application type and a name reviewers will recognize. This submits a label-only fixture request; an admin can review and activate it next. It does not grant on-chain authority.</p>
             <label class="label">
-              Role
+              Application type
               <select class="select" name="target">
                 ${TARGET_OPTIONS.map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)} · ${escapeHtml(option.description)}</option>`).join("")}
               </select>
             </label>
             <label class="label">
-              Application label
-              <input class="input" name="label" type="text" placeholder="degree, age-gate, gaia-x" required />
+              Name shown to reviewers
+              <input class="input" name="label" type="text" placeholder="Example issuer" required />
             </label>
-            <button class="button" type="submit"${state.submitting ? " disabled" : ""}>Submit application</button>
+            <button class="button" type="submit"${state.submitting ? " disabled" : ""}>Send demo application</button>
           </form>
           `}
-          <section class="form-panel" id="governed-requests">
+          <section class="form-panel">
             <h2>Issuer membership request</h2>
             <p>Bind one exact credential family, schema/version, definition, status method, and governed resource type before signing with the applicant DID key.</p>
             <form data-issuer-application-form>

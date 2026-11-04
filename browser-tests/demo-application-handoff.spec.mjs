@@ -131,12 +131,15 @@ for (const target of ["issuer", "recognition"]) {
 
       await page.goto(`${base}/admin/?apiBase=${encodeURIComponent(base)}`);
       await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(page.getByRole("heading", { name: "Decisions that need attention" })).toBeVisible();
       await expect(page.locator(".card")).toContainText(label);
       await expect(page.locator(".card .status-chip")).toHaveText("Proposed");
       await page.locator('[data-action="approve"]').click();
       await expect(page.locator(".card .status-chip")).toHaveText("Authorized");
       await page.locator('[data-action="activate"]').click();
       await expect(page.locator(".card .status-chip")).toHaveText("Active");
+      await expect(page.getByRole("heading", { name: "Registry review workspace" })).toBeVisible();
+      await expect(page.locator(".column")).toHaveCount(1);
 
       await page.goto(`${base}/applicant/?apiBase=${encodeURIComponent(base)}`);
       await expect(page.locator(".source-badge")).toHaveText("Local fixture");

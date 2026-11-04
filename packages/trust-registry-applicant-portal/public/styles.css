@@ -297,7 +297,7 @@ body { background: radial-gradient(circle at 100% 0, #e8e9ff 0, transparent 26re
 .metric .mono { font-size: 0.82rem; line-height: 1.4; }
 .metric small { display: block; margin-top: 0.25rem; color: var(--midnight-muted); }
 .content, .content > *, .lanes, .lane, .card { min-width: 0; }
-.lanes { order: -2; grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+.lanes { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
 #demo-application { order: -1; }
 .workflow-disclosure { min-width: 0; align-self: start; border: 1px solid var(--midnight-border); border-radius: 14px; background: var(--midnight-white); }
 .workflow-disclosure > summary { cursor: pointer; padding: 1rem 1.2rem; color: var(--midnight-black); font-weight: 700; }
@@ -311,19 +311,18 @@ body { background: radial-gradient(circle at 100% 0, #e8e9ff 0, transparent 26re
 .lane-header h2, .form-panel h2 { font-size: 1.35rem; }
 
 .journey-picker {
-  order: -1;
+  order: -2;
   grid-column: 1 / -1;
   min-width: 0;
   padding: clamp(1rem, 2.2vw, 1.7rem);
   border: 1px solid var(--midnight-border);
   border-radius: 18px;
-  background: var(--midnight-black);
-  color: var(--midnight-white);
+  background: transparent;
+  color: var(--midnight-black);
 }
 
 .journey-heading h2 { margin: 0; font-size: clamp(1.45rem, 2.1vw, 2rem); }
-.journey-heading p:not(.eyebrow) { max-width: 70ch; color: #c8c9d8; line-height: 1.5; }
-.journey-picker .eyebrow { color: #aeb1ff; }
+.journey-heading p:not(.eyebrow) { max-width: 70ch; color: var(--midnight-muted); line-height: 1.5; }
 .journey-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.7rem; }
 .journey-cards a {
   display: flex;
@@ -332,17 +331,33 @@ body { background: radial-gradient(circle at 100% 0, #e8e9ff 0, transparent 26re
   min-width: 0;
   min-height: 8.5rem;
   padding: 1rem;
-  border: 1px solid #4d4d72;
+  border: 1px solid var(--midnight-border);
   border-radius: 10px;
-  background: #1d1d28;
-  color: var(--midnight-white);
+  background: var(--midnight-white);
+  color: var(--midnight-black);
   text-decoration: none;
 }
-.journey-cards a:hover, .journey-cards a:focus-visible { border-color: #aeb1ff; background: #262642; }
+.journey-cards a:hover, .journey-cards a:focus-visible { border-color: var(--midnight-blue); background: var(--midnight-blue-soft); }
 .journey-cards strong { font-size: 1.13rem; }
-.journey-cards span { color: #c8c9d8; font-size: 0.83rem; line-height: 1.4; }
-.journey-cards em { margin-top: auto; color: #aeb1ff; font-size: 0.78rem; font-style: normal; font-weight: 700; }
-.journey-prerequisite { margin: 0.85rem 0 0; color: #c8c9d8; font-size: 0.8rem; }
+.journey-cards span { color: var(--midnight-muted); font-size: 0.83rem; line-height: 1.4; }
+.journey-cards em { margin-top: auto; color: var(--midnight-blue); font-size: 0.78rem; font-style: normal; font-weight: 700; }
+.journey-prerequisite { margin: 0.85rem 0 0; color: var(--midnight-muted); font-size: 0.8rem; }
+.hero { grid-template-columns: minmax(0, 1.65fr) minmax(17rem, 1fr); gap: 1rem; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.hero-intro, .hero-overview { min-width: 0; border-radius: 18px; }
+.hero-intro { display: flex; flex-direction: column; align-items: flex-start; padding: clamp(1.4rem, 3vw, 2.4rem); background: var(--midnight-black); color: var(--midnight-white); }
+.hero-intro .eyebrow { color: #bfc1ff; }
+.hero-intro h1 { max-width: 16ch; margin-top: 0.75rem; }
+.hero-intro p:not(.eyebrow) { max-width: 55ch; color: #d1d1dd; }
+.hero-actions { display: flex; flex-wrap: wrap; gap: 0.65rem; margin-top: auto; padding-top: 1.35rem; }
+.hero-actions .button { min-height: 2.8rem; text-decoration: none; }
+.hero-actions .button.secondary { border: 1px solid #8b8bb1; background: transparent; color: var(--midnight-white); }
+.hero-overview { padding: 1.3rem; border: 1px solid var(--midnight-border); background: var(--midnight-white); }
+.hero-overview .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 1rem; padding: 0; border: 0; }
+.hero-overview .metric { padding: 0.65rem; border-radius: 8px; background: var(--midnight-surface); }
+.hero-overview .metric strong { font-size: 1.15rem; }
+.hero > .source-panel, .hero > .workspace-settings, .hero > .alert { grid-column: 1 / -1; }
+.connection-form { display: grid; gap: 0.75rem; min-width: 0; max-width: 34rem; margin: 0.9rem 0 1rem; }
+.connection-form .input { width: 100%; min-width: 0; max-width: 100%; }
 .role-workflow:not([open]) { display: none; }
 .role-workflow form { display: grid; gap: 0.75rem; }
 .request-step {
@@ -377,6 +392,8 @@ body { background: radial-gradient(circle at 100% 0, #e8e9ff 0, transparent 26re
 
 @media (max-width: 900px) {
   .toolbar, .content { grid-template-columns: minmax(0, 1fr); }
+  .hero { grid-template-columns: minmax(0, 1fr); }
+  .hero > .source-panel, .hero > .workspace-settings, .hero > .alert { grid-column: 1; }
 }
 
 @media (max-width: 620px) {
@@ -387,6 +404,6 @@ body { background: radial-gradient(circle at 100% 0, #e8e9ff 0, transparent 26re
 
 @media (max-width: 620px) {
   .shell { width: calc(100vw - 1rem); }
-  .hero { padding: 1rem; }
-  .metrics { grid-template-columns: repeat(auto-fit, minmax(min(8rem, 100%), 1fr)); }
+  .hero-intro { padding: 1.25rem; }
+  .hero-overview { display: none; }
 }

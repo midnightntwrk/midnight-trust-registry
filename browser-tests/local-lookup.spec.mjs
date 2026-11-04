@@ -70,6 +70,8 @@ test("admin exact lookup presents a local API claim without fixture controls", a
     allowedLocalOrigins.add(host.base);
     await page.goto(`${host.base}/?apiBase=${encodeURIComponent(host.base)}`);
     await expect(page.locator(".source-badge")).toHaveText("API claim");
+    await expect(page.getByRole("heading", { name: "Inspect current records" })).toBeVisible();
+    await expect(page.locator(".hero-copy a")).toHaveAttribute("href", "#exact-lookup");
     await page.locator(".workspace-settings > summary").click();
     await expect(page.locator(".workspace-settings")).toContainText("Node-reported checkpoint hash");
     await expect(page.locator(".workspace-settings")).toContainText(`0x${"c".repeat(64)}`);

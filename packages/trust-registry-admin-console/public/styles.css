@@ -482,25 +482,31 @@ body {
 .advanced-workflows { order: 2; }
 .hero, .detail-panel, .proposal-panel { border-radius: 20px; box-shadow: var(--shadow); }
 .hero {
-  grid-template-columns: minmax(18rem, 32rem) minmax(0, 1fr);
-  align-items: start;
+  grid-template-columns: minmax(18rem, 0.95fr) minmax(0, 1.4fr);
+  align-items: stretch;
   background: var(--midnight-white);
 }
-.hero > .hero-copy,
 .hero > .source-panel,
 .hero > .workspace-settings,
 .hero > .alert { grid-column: 1 / -1; }
-.hero > .toolbar { grid-column: 1; }
+.hero > .hero-copy { grid-column: 1; grid-row: 1; }
 .hero > .metrics {
   grid-column: 2;
-  grid-row: 2;
+  grid-row: 1;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-self: stretch;
+  align-self: start;
 }
+.registry-context { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.35rem 0.65rem; grid-column: 1 / -1; min-width: 0; }
+.registry-context span, .registry-context small { color: var(--midnight-muted); font-size: 0.78rem; }
+.registry-context strong { min-width: 0; overflow-wrap: anywhere; font-size: 1rem; }
+.registry-context small { margin-left: auto; }
+.risk-summary { grid-column: 1 / -1; margin: 0; color: var(--midnight-error); font-size: 0.83rem; font-weight: 700; }
+.hero-copy { display: flex; align-items: center; }
+.hero-copy p { max-width: 43ch; }
+.hero-copy .button { display: inline-flex; margin-top: 1rem; text-decoration: none; }
 .hero h1 { max-width: 18ch; font-size: clamp(2rem, 3.5vw, 3.2rem); line-height: 1.05; letter-spacing: -0.04em; }
-.toolbar { grid-template-columns: minmax(0, 32rem); }
-.toolbar form, .toolbar label, .toolbar .input { min-width: 0; max-width: 100%; }
-.toolbar .input { width: 100%; }
+.connection-form { display: grid; gap: 0.75rem; max-width: 34rem; margin: 0.9rem 0 1rem; }
+.connection-form .input { width: 100%; }
 .eyebrow { color: var(--midnight-blue); letter-spacing: 0.13em; }
 .button { background: var(--midnight-blue); border-radius: 10px; }
 .button.secondary { background: var(--midnight-blue-soft); color: var(--midnight-blue); }
@@ -557,7 +563,7 @@ body {
 
 @media (max-width: 1180px) {
   .hero { grid-template-columns: minmax(0, 1fr); }
-  .hero > .toolbar,
+  .hero > .hero-copy,
   .hero > .metrics { grid-column: 1; grid-row: auto; }
   .hero > .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .review-filters { grid-template-columns: minmax(0, 1fr); }
