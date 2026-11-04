@@ -138,6 +138,26 @@ network isolation, or production security. A release-qualified standalone E2E
 claim still requires the separately approved genesis/deployment, finalized
 readback, egress-denied actor journeys, and restart/restore evidence.
 
+## Clean-checkout reproducibility trial
+
+On 2026-11-04, an agent used a disposable detached worktree at signed source
+`666e5ffc8827f5003f50f1836db6f46f281c1f90`, without copying generated
+artifacts from the development checkout. With Node.js 24.14.0 and pnpm 10.34.1:
+
+```bash
+pnpm install --frozen-lockfile
+./run.sh --light
+pnpm run demo:smoke
+pnpm exec playwright test
+```
+
+The frozen install succeeded, the light gate completed 20/20 tasks (including
+198/198 adversarial cases), the CLI/API/two-UI smoke passed on ephemeral
+loopback ports, and Playwright passed 41/41 browser tests. This verifies the
+scripted local fixture path at that exact source. It is **not** a new engineer's
+independent usability trial, a deployed standalone actor run, or proof of
+authenticated finality. Keep those acceptance items open.
+
 ## Final acceptance still to cover
 
 The cross-app fixture journeys cover the remaining label-only demo and

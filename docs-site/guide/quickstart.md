@@ -82,10 +82,26 @@ The packaged API can serve read-only query data from a saved operator workspace.
 
 ```bash
 pnpm run demo:prepare
+```
+
+Start each of these long-running commands in a **separate terminal** from the
+same checkout:
+
+```bash
 pnpm run demo:serve:api
 pnpm run demo:serve:admin-console
 pnpm run demo:serve:applicant-portal
 ```
+
+Open the [admin console](http://127.0.0.1:4173) to review records and the
+[applicant portal](http://127.0.0.1:4175) to choose a governed role. Both pages
+show **Local fixture** when connected to this demo API. The applicant portal
+can explain and prepare governed requests, but this local host cannot submit
+private governed evidence: that step needs an authenticated same-origin host
+and an external signer. On loopback, add `?demo=1` to the portal URL to reveal
+the separate label-only demo application; submitting it does not grant
+on-chain authority. Use **Workspace settings** to inspect the current source
+or retry a failed connection, not to choose a ledger or genesis in the browser.
 
 `demo:serve:api` deliberately passes `--unsafe-demo-mutations`. That switch is accepted only on loopback and makes unsigned workspace replay available for UI demonstrations. **Never use it for real trust decisions.** The packaged CLI does not inject production DID resolution or Compact-backed governed-action ports; those routes return `503` unless an embedding host supplies them. See [API safety](../api/index.md).
 
