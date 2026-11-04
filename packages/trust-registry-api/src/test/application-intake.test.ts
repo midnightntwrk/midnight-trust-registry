@@ -39,19 +39,19 @@ const cases = [
   { role: "issuer", scope: ISSUER_SCOPE, resource: { type: "credentialFamily", id: issuerGovernedResourceId(ISSUER_SCOPE, "credentialFamily") } },
   { role: "verifier", scope: { ...REQUEST_SCOPE, role: "verifier" }, resource: { type: "requestProfile", id: requestGovernedResourceId({ ...REQUEST_SCOPE, role: "verifier" }) } },
   { role: "auditor", scope: { ...REQUEST_SCOPE, role: "auditor" }, resource: { type: "requestProfile", id: requestGovernedResourceId({ ...REQUEST_SCOPE, role: "auditor" }) } },
-  { role: "maintainer", scope: { version: "tr-scope-v1", role: "maintainer", registryId: "registry:kanon:trusted" }, resource: { type: "registry", id: "registry:kanon:trusted" } },
+  { role: "maintainer", scope: { version: "tr-scope-v1", role: "maintainer", registryId: "registry:midnight:trusted" }, resource: { type: "registry", id: "registry:midnight:trusted" } },
 ] as const;
 
 function bindingFor(role: typeof cases[number]["role"]): ApplicationChallengeBinding {
   const selected = cases.find((item) => item.role === role)!;
   const scope = selected.scope as AuthorizationScope;
   return {
-    registryId: "registry:kanon:trusted",
+    registryId: "registry:midnight:trusted",
     applicationId: `application:${role}:one`,
     subjectDid: `did:midnight:${role}:one`,
     evidenceVerifierDid: "did:midnight:evidence-verifier:one",
     role,
-    policyId: "policy:kanon:v1",
+    policyId: "policy:midnight:v1",
     policyVersion: "v1",
     scope,
     scopeCommitment: computeAuthorizationScopeCommitment(scope),

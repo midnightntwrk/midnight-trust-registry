@@ -457,3 +457,77 @@ textarea {
     border-radius: 22px;
   }
 }
+
+/* Midnight design layer shared with the applicant portal through brand.css. */
+:root {
+  --canvas: var(--midnight-surface);
+  --canvas-shadow: #e9ebf8;
+  --ink: var(--midnight-black);
+  --ink-soft: var(--midnight-muted);
+  --accent: var(--midnight-blue);
+  --accent-soft: var(--midnight-blue);
+  --border: var(--midnight-border);
+  --panel: var(--midnight-white);
+  --shadow: 0 14px 36px rgba(10, 10, 10, 0.06);
+  --font-sans: var(--midnight-font);
+  --font-mono: var(--midnight-mono);
+}
+
+body {
+  background: radial-gradient(circle at 100% 0, #e8e9ff 0, transparent 26rem), var(--midnight-surface);
+}
+
+.shell { display: flex; flex-direction: column; width: min(1440px, calc(100vw - 2.5rem)); padding-top: 1rem; }
+.workspace { order: 1; }
+.advanced-workflows { order: 2; }
+.hero, .detail-panel, .proposal-panel { border-radius: 20px; box-shadow: var(--shadow); }
+.hero { background: var(--midnight-white); }
+.hero h1 { max-width: 18ch; font-size: clamp(2rem, 3.5vw, 3.2rem); line-height: 1.05; letter-spacing: -0.04em; }
+.toolbar { grid-template-columns: minmax(0, 32rem); }
+.eyebrow { color: var(--midnight-blue); letter-spacing: 0.13em; }
+.button { background: var(--midnight-blue); border-radius: 10px; }
+.button.secondary { background: var(--midnight-blue-soft); color: var(--midnight-blue); }
+.button.ghost { background: #f2f2f2; color: var(--midnight-black); }
+.input { border-radius: 10px; background: var(--midnight-white); }
+.metric { min-width: 0; border-radius: 12px; background: var(--midnight-surface); }
+.metric strong { overflow-wrap: anywhere; font-size: clamp(1.15rem, 1.6vw, 1.5rem); }
+.metric .mono { font-size: 0.86rem; line-height: 1.35; }
+.metric small { display: block; margin-top: 0.25rem; color: var(--midnight-muted); }
+.workspace { grid-template-columns: minmax(0, 1fr) minmax(300px, 0.62fr); align-items: start; }
+.workspace > *, .board, .column, .card, .card-top > div, .detail-panel, .detail-panel dl, .detail-panel dd { min-width: 0; }
+.board { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.card { overflow: hidden; border-radius: 14px; box-shadow: none; }
+.card.selected { border-color: var(--midnight-blue); box-shadow: inset 3px 0 var(--midnight-blue); }
+.card h3 { overflow-wrap: anywhere; }
+.card .meta-row { min-width: 0; overflow-wrap: anywhere; }
+.card .meta-row code { display: block; max-width: 100%; overflow-wrap: anywhere; font-size: 0.72rem; }
+.card .meta-row.identifiers { margin-top: 0.4rem; }
+.status-chip { flex: none; }
+.status-chip.active, .status-chip.authorized { background: var(--midnight-blue-soft); color: var(--midnight-blue); }
+.detail-panel { position: sticky; top: 1rem; overflow: hidden; }
+.detail-panel dd, .detail-panel code { overflow-wrap: anywhere; word-break: break-word; }
+.detail-panel code { font-size: 0.78rem; line-height: 1.5; }
+.technical-details { min-width: 0; }
+.technical-details summary { cursor: pointer; color: var(--midnight-blue); font-weight: 700; }
+.technical-details dl { margin-top: 0.9rem; }
+.governed-panel { background: var(--midnight-white); }
+.proposal-panel { margin-top: 1.2rem; }
+.advanced-workflows { margin-top: 1.5rem; }
+.advanced-workflows > summary { cursor: pointer; padding: 1rem 1.25rem; border: 1px solid var(--midnight-border); border-radius: 12px; background: var(--midnight-white); font-weight: 700; }
+.advanced-workflows[open] > summary { border-color: var(--midnight-blue); }
+.advanced-workflows .proposal-panel { margin-bottom: 0; }
+.advanced-workflows .epoch-panel { display: grid; gap: 0.75rem; margin-top: 1rem; padding: 1rem; }
+.empty-state { background: var(--midnight-white); }
+
+@media (max-width: 1180px) {
+  .workspace { grid-template-columns: minmax(0, 1fr); }
+  .detail-panel { position: static; }
+}
+
+@media (max-width: 760px) {
+  .shell { width: calc(100vw - 1rem); }
+  .hero { padding: 1rem; }
+  .board { grid-template-columns: minmax(0, 1fr); }
+  .card-top { align-items: start; }
+  .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

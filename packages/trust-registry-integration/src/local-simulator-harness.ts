@@ -467,7 +467,7 @@ export class LocalTrustRegistryIntegrationHarness {
     return new Date(this.evidenceTimeMs).toISOString();
   }
 
-  constructor(label = "kanon") {
+  constructor(label = "midnight") {
     this.registryId = createScopedIdentifier("registry", label, "trusted");
     this.registryDid = createMidnightDid(`registry:${label}`);
     this.registryIdCommitment = bytes32Commitment(this.registryId);
@@ -491,11 +491,11 @@ export class LocalTrustRegistryIntegrationHarness {
     this.registryRecord = RegistryRecordSchema.parse({
       registryId: this.registryId,
       registryDid: this.registryDid,
-      name: "Kanon Trusted Registry",
+      name: "Midnight Trust Registry",
       description: "Simulator-first trust registry integration environment",
       controllerDids: [this.maintainerDid],
       maintainerDids: [this.maintainerDid],
-      policyUri: "https://registry.example/policies/kanon-v1",
+      policyUri: "https://registry.example/policies/midnight-v1",
       serviceEndpoint: "https://registry.example/query",
       logoUri: "https://registry.example/logo.svg",
       status: "active",
@@ -1050,7 +1050,7 @@ export class LocalTrustRegistryIntegrationHarness {
       policyId: this.policyId,
       registryId: this.registryId,
       version: `v${version.toString()}`,
-      policyUri: `https://registry.example/policies/kanon-v${version.toString()}`,
+      policyUri: `https://registry.example/policies/midnight-v${version.toString()}`,
       status: "active",
       effectiveFrom: timestampForSequence(effectiveFromSequence),
       recognitionAccreditorAnchors,

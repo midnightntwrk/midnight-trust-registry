@@ -20,11 +20,11 @@ const ISSUER_RESOURCE_ID = issuerGovernedResourceIdFromScopeCommitment(HASH_A, "
 const createSubmission = (): ApplicationEvidenceSubmission => {
   const envelope = {
     version: "tr-application-evidence-v1" as const,
-    registryId: "registry:midnight:kanon",
+    registryId: "registry:midnight:local",
     applicationId: "application:issuer:acme:v1",
     subjectDid: "did:midnight:issuer:acme",
     role: "issuer" as const,
-    policyId: "policy:kanon:v1",
+    policyId: "policy:midnight:v1",
     policyVersion: "v1",
     scopeCommitment: HASH_A,
     governedResource: { type: "credentialFamily" as const, id: ISSUER_RESOURCE_ID },
@@ -48,11 +48,11 @@ const createSubmission = (): ApplicationEvidenceSubmission => {
 };
 
 const expectation = {
-  registryId: "registry:midnight:kanon",
+  registryId: "registry:midnight:local",
   applicationId: "application:issuer:acme:v1",
   subjectDid: "did:midnight:issuer:acme",
   role: "issuer" as const,
-  policyId: "policy:kanon:v1",
+  policyId: "policy:midnight:v1",
   policyVersion: "v1",
   scopeCommitment: HASH_A,
   governedResource: { type: "credentialFamily" as const, id: ISSUER_RESOURCE_ID },
@@ -222,7 +222,7 @@ describe("application evidence", () => {
     ["wrong application", (submission: ApplicationEvidenceSubmission) => ({ ...submission, envelope: { ...submission.envelope, applicationId: "application:issuer:other:v1" } }), /applicationId/],
     ["wrong subject", (submission: ApplicationEvidenceSubmission) => ({ ...submission, envelope: { ...submission.envelope, subjectDid: "did:midnight:issuer:other" } }), /subjectDid/],
     ["wrong role", (submission: ApplicationEvidenceSubmission) => ({ ...submission, envelope: { ...submission.envelope, role: "verifier" as const } }), /role/],
-    ["wrong policy", (submission: ApplicationEvidenceSubmission) => ({ ...submission, envelope: { ...submission.envelope, policyId: "policy:kanon:v2" } }), /policyId/],
+    ["wrong policy", (submission: ApplicationEvidenceSubmission) => ({ ...submission, envelope: { ...submission.envelope, policyId: "policy:midnight:v2" } }), /policyId/],
     ["wrong scope", (submission: ApplicationEvidenceSubmission) => ({ ...submission, envelope: { ...submission.envelope, scopeCommitment: HASH_B } }), /Issuer resource id does not match/],
     ["wrong resource type", (submission: ApplicationEvidenceSubmission) => ({ ...submission, envelope: { ...submission.envelope, governedResource: { type: "schemaVersion" as const, id: ISSUER_RESOURCE_ID } } }), /Issuer resource id does not match/],
     ["wrong resource id", (submission: ApplicationEvidenceSubmission) => ({ ...submission, envelope: { ...submission.envelope, governedResource: { type: "credentialFamily" as const, id: `tr:issuer-resource:v1:${"b".repeat(64)}` } } }), /Issuer resource id does not match/],

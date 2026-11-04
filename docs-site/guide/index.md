@@ -26,5 +26,6 @@ The default identity profile is `did:midnight` with contract-facing JubJub Schno
 - [Read the actor matrix](./use-cases.md) before designing an integration.
 - [Inspect the domain model](../model/index.md) for exact scope and lifecycle rules.
 - [Check implementation status](./status.md) before relying on a feature.
+- [Review the portal/admin UI guide](https://github.com/midnightntwrk/midnight-trust-registry/blob/develop/docs/guide/portal-admin-ui.md) for offline brand assets and the Playwright layout audit.
 
 The normative long-form documents remain in the repository's [`docs/spec`](https://github.com/midnightntwrk/midnight-trust-registry/tree/develop/docs/spec) directory. This site is an engineer-friendly guide to that profile and to the current code.

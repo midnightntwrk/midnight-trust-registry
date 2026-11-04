@@ -1198,8 +1198,11 @@ export const createApplicantPortalApp = (
         : cards.map((card) => `
           <article class="card">
             <h3>${escapeHtml(card.label)}</h3>
-            <p>${escapeHtml(card.scope)} · ${escapeHtml(card.trustLevel)}</p>
-            <p class="mono">${escapeHtml(card.subject)}</p>
+            <p>Trust level: <strong>${escapeHtml(card.trustLevel)}</strong></p>
+            <details class="record-identifiers"><summary>Scope and DID</summary>
+              <p class="technical-id">${escapeHtml(card.scope)}</p>
+              <p class="technical-id">${escapeHtml(card.subject)}</p>
+            </details>
           </article>
         `).join("")}
     </section>
@@ -1207,6 +1210,8 @@ export const createApplicantPortalApp = (
 
   const render = () => {
     const previousSignedEnvelope = root.querySelector<HTMLTextAreaElement>("[data-signed-submit] [name='signedEnvelope']")?.value;
+    const openWorkflows = new Set([...root.querySelectorAll<HTMLDetailsElement>(".workflow-disclosure[open]")]
+      .map((details) => details.dataset.workflow));
     const previousVpForm = root.querySelector<HTMLFormElement>("[data-application-vp-form]");
     const previousVp = previousVpForm?.querySelector<HTMLTextAreaElement>("[name='presentation']")?.value;
     const previousChallengeHash = previousVpForm?.dataset.challengeHash;
@@ -1232,9 +1237,13 @@ export const createApplicantPortalApp = (
 
     root.innerHTML = `
       <main class="shell">
+        <header class="brand-bar">
+          <span class="brand-name"><img class="brand-logo" src="./midnight-logo.svg" alt="Midnight" /> <span class="brand-section">Trust Registry</span></span>
+          <span class="brand-section">Applicant portal</span>
+        </header>
         <section class="hero">
-          <p class="eyebrow">Public Trust Entry</p>
-          <h1>Trust Registry Applicant Portal</h1>
+          <p class="eyebrow">Apply and explore</p>
+          <h1>Join the trust registry</h1>
           <p>${state.inspection?.sourceMode === "local-ledger"
             ? "Query exact current trust scopes and submit pending membership evidence through an authenticated same-origin host. A browser response is not independent finality proof."
             : "Inspect active trust records and submit local demo applications. Pending membership applicants can present challenge-bound evidence through an authenticated same-origin host."}</p>
@@ -1251,7 +1260,7 @@ export const createApplicantPortalApp = (
             </form>
             <div class="panel metrics">
               <div class="metric"><span>Registry</span><strong>${escapeHtml(state.inspection?.summary.registryLabel ?? "Unavailable")}</strong></div>
-              <div class="metric"><span>Current epoch</span><strong class="mono">${escapeHtml(state.inspection?.summary.currentEpochId ?? "n/a")}</strong></div>
+              <div class="metric"><span>Current epoch</span><strong>${state.inspection?.summary.epochCount === undefined ? "Unavailable" : `#${state.inspection.summary.epochCount.toString()}`}</strong><small class="technical-id">${escapeHtml(state.inspection?.summary.currentEpochId ?? "n/a")}</small></div>
               <div class="metric"><span>Active issuers</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("issuer") ? "n/a" : state.inspection.activeIssuers.length.toString()}</strong></div>
               <div class="metric"><span>Active verifiers</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("verifier") ? "n/a" : state.inspection.activeVerifiers.length.toString()}</strong></div>
               <div class="metric"><span>Active auditors</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("auditor") ? "n/a" : state.inspection.activeAuditors.length.toString()}</strong></div>
@@ -1262,6 +1271,11 @@ export const createApplicantPortalApp = (
           ${state.inspection?.warnings?.map((warning) => `<div class="alert error">${escapeHtml(warning)}</div>`).join("") ?? ""}
           ${state.flash === undefined ? "" : `<div class="alert success">${escapeHtml(state.flash)}</div>`}
         </section>
+        <nav class="task-nav" aria-label="Portal tasks">
+          <a href="#trust-records">Explore active records</a>
+          ${state.inspection?.sourceMode === "local-ledger" ? "" : `<a href="#demo-application">Try a local demo application</a>`}
+          <a href="#governed-requests">Prepare governed membership</a>
+        </nav>
         <section class="content">
           ${state.inspection?.sourceMode === "local-ledger" ? `
           <section class="form-panel">
@@ -1349,7 +1363,7 @@ export const createApplicantPortalApp = (
               <button class="button" type="submit"${state.signedBusy || state.signedContext === undefined ? " disabled" : ""}>Submit signed intent</button>
             </form>
           </section>
-          <form class="form-panel" data-submit-form>
+          <form class="form-panel" id="demo-application" data-submit-form>
             <h2>Local demo application</h2>
             <p>This label-only route is for local fixtures, not governed production admission. Approval and activation remain in the admin console.</p>
             <label class="label">
@@ -1365,7 +1379,7 @@ export const createApplicantPortalApp = (
             <button class="button" type="submit"${state.submitting ? " disabled" : ""}>Submit application</button>
           </form>
           `}
-          <section class="form-panel">
+          <section class="form-panel" id="governed-requests">
             <h2>Issuer membership request</h2>
             <p>Bind one exact credential family, schema/version, definition, status method, and governed resource type before signing with the applicant DID key.</p>
             <form data-issuer-application-form>
@@ -1551,7 +1565,7 @@ export const createApplicantPortalApp = (
               <p data-recognition-admission>Accepted receipt: <span class="mono">${escapeHtml(state.recognitionAdmission.receiptId)}</span>. Evidence commitment: <span class="mono">${escapeHtml(state.recognitionAdmission.evidenceCommitment)}</span>.</p>
             `}
           </section>
-          <div class="lanes">
+          <div class="lanes" id="trust-records">
             ${renderInspectionLane("Active issuers", issuerCards, state.inspection === undefined || state.inspection.unavailableLists?.includes("issuer") === true)}
             ${renderInspectionLane("Active verifiers", verifierCards, state.inspection === undefined || state.inspection.unavailableLists?.includes("verifier") === true)}
             ${renderInspectionLane("Active auditors", auditorCards, state.inspection === undefined || state.inspection.unavailableLists?.includes("auditor") === true)}
@@ -1560,6 +1574,26 @@ export const createApplicantPortalApp = (
         </section>
       </main>
     `;
+    root.querySelectorAll<HTMLElement>(".content > .form-panel").forEach((panel) => {
+      if (panel.id === "demo-application") return;
+      const heading = panel.querySelector("h2");
+      if (heading === null) return;
+      const name = heading.textContent ?? "Workflow";
+      if (state.inspection?.sourceMode === "local-ledger" && name.startsWith("Current ")) return;
+      const details = document.createElement("details");
+      details.className = "workflow-disclosure";
+      details.dataset.workflow = name;
+      details.open = openWorkflows.has(name) || name === "Pending membership evidence"
+        && (pending !== undefined || state.acceptedEvidence !== undefined);
+      if (panel.id !== "") {
+        details.id = panel.id;
+        panel.removeAttribute("id");
+      }
+      const summary = document.createElement("summary");
+      summary.textContent = name;
+      panel.before(details);
+      details.append(summary, panel);
+    });
     if (previousVp !== undefined && previousChallengeHash === state.pendingApplication?.challenge?.challengeHash) {
       const currentVp = root.querySelector<HTMLTextAreaElement>("[data-application-vp-form] [name='presentation']");
       if (currentVp !== null) currentVp.value = previousVp;

@@ -342,7 +342,7 @@ describe("trust registry api", () => {
   });
 
   it("serves registry summary, scoped authorization resolution, and evidence from a workspace file", async () => {
-    let workspace = createOperatorWorkspace({ label: "kanon-api" });
+    let workspace = createOperatorWorkspace({ label: "midnight-api" });
 
     const issuerSubmit = applyOperation(workspace, {
       operation: "submit",
@@ -397,7 +397,7 @@ describe("trust registry api", () => {
       const summaryResponse = await fetch(`${server.url}/v1/registry/summary`);
       expect(summaryResponse.status).toBe(200);
       const summary = await summaryResponse.json();
-      expect(summary.registryLabel).toBe("kanon-api");
+      expect(summary.registryLabel).toBe("midnight-api");
       expect(summary.issuerCounts.active).toBe(1);
       expect(summary.verifierCounts.active).toBe(1);
 
@@ -1154,7 +1154,7 @@ describe("trust registry api", () => {
   });
 
   it("submits and governs application workflows through workspace-backed write routes", async () => {
-    const workspace = createOperatorWorkspace({ label: "kanon-write-api" });
+    const workspace = createOperatorWorkspace({ label: "midnight-write-api" });
     const workspacePath = join(tempDir, "write-workspace.json");
     await writeWorkspaceToFile(workspacePath, workspace);
 
@@ -1295,7 +1295,7 @@ describe("trust registry api", () => {
   }, 90_000);
 
   it("returns structured mutation problems and accepts epoch publish without a body", async () => {
-    const workspace = createOperatorWorkspace({ label: "kanon-write-errors" });
+    const workspace = createOperatorWorkspace({ label: "midnight-write-errors" });
     const workspacePath = join(tempDir, "write-errors-workspace.json");
     await writeWorkspaceToFile(workspacePath, workspace);
 
@@ -1368,7 +1368,7 @@ describe("trust registry api", () => {
   });
 
   it("serves recognition and TRQP routes from a snapshot file", async () => {
-    let workspace = createOperatorWorkspace({ label: "kanon-trqp" });
+    let workspace = createOperatorWorkspace({ label: "midnight-trqp" });
 
     const recognitionSubmit = applyOperation(workspace, {
       operation: "submit",
@@ -1499,7 +1499,7 @@ describe("trust registry api", () => {
   });
 
   it("reloads workspace-backed state between requests and returns structured problems", async () => {
-    let workspace = createOperatorWorkspace({ label: "kanon-reload" });
+    let workspace = createOperatorWorkspace({ label: "midnight-reload" });
     const submitResult = applyOperation(workspace, {
       operation: "submit",
       target: "issuer",
@@ -1585,7 +1585,7 @@ describe("trust registry api", () => {
   });
 
   it("serves the same routes from an in-memory source", async () => {
-    const workspace = createOperatorWorkspace({ label: "kanon-memory" });
+    const workspace = createOperatorWorkspace({ label: "midnight-memory" });
     const server = await startServer(createInMemorySource(workspace.snapshot));
     try {
       const preflightResponse = await fetch(`${server.url}/v1/applications`, {
@@ -1603,14 +1603,14 @@ describe("trust registry api", () => {
       const summaryResponse = await fetch(`${server.url}/v1/registry/summary`);
       expect(summaryResponse.status).toBe(200);
       const summary = await summaryResponse.json();
-      expect(summary.registryLabel).toBe("kanon-memory");
+      expect(summary.registryLabel).toBe("midnight-memory");
     } finally {
       await server.close();
     }
   });
 
   it("rejects workspace mutation routes for non-workspace sources", async () => {
-    const workspace = createOperatorWorkspace({ label: "kanon-readonly" });
+    const workspace = createOperatorWorkspace({ label: "midnight-readonly" });
     const snapshotPath = join(tempDir, "readonly-snapshot.json");
     await writeSnapshotToFile(snapshotPath, workspace.snapshot);
 

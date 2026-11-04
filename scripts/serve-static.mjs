@@ -25,6 +25,8 @@ function contentTypeForPath(path) {
     case ".html": return "text/html; charset=utf-8";
     case ".js": return "text/javascript; charset=utf-8";
     case ".json": return "application/json; charset=utf-8";
+    case ".svg": return "image/svg+xml";
+    case ".woff2": return "font/woff2";
     default: return "text/plain; charset=utf-8";
   }
 }

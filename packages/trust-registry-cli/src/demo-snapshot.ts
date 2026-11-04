@@ -67,7 +67,7 @@ const currentRecognitionEntry = (
 export const createDemoSnapshot = (
   input: DemoSnapshotOptions = {},
 ): TrustRegistryOperatorSnapshot => {
-  const label = input.label ?? "kanon";
+  const label = input.label ?? "midnight";
   const harness = new LocalTrustRegistryIntegrationHarness(label);
 
   const activeIssuer = createIssuerScenarioFixture(ACTIVE_ISSUER_LABEL);

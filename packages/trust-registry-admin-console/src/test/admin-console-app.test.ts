@@ -58,11 +58,11 @@ describe("admin console browser handlers", () => {
       storage: window.localStorage, fetchImpl: fetchImpl as typeof fetch, confirm: () => false,
     });
     await vi.waitFor(() => expect(root.textContent).toContain(injected));
-    expect(root.querySelector("img")).toBeNull();
+    expect(root.querySelector("img[src='x']")).toBeNull();
     failHealth = true;
     root.querySelector<HTMLButtonElement>("[data-refresh]")!.click();
     await vi.waitFor(() => expect(root.textContent).toContain(`unavailable: ${injected}`));
-    expect(root.querySelector("img")).toBeNull();
+    expect(root.querySelector("img[src='x']")).toBeNull();
   });
 
   it("removes governance controls when API health becomes unavailable", async () => {

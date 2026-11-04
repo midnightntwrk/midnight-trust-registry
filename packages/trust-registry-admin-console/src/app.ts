@@ -861,7 +861,7 @@ export const createAdminConsoleApp = (
   const renderMetrics = (board: ReviewBoard): string => `
     <div class="metrics">
       <div class="metric"><span>Registry</span><strong>${escapeHtml(board.summary.registryLabel)}</strong></div>
-      <div class="metric"><span>Current epoch</span><strong class="mono">${escapeHtml(board.summary.currentEpochId)}</strong></div>
+      <div class="metric"><span>Current epoch</span><strong>${board.summary.epochCount === undefined ? "Unavailable" : `#${board.summary.epochCount.toString()}`}</strong><small class="technical-id">${escapeHtml(board.summary.currentEpochId)}</small></div>
       <div class="metric"><span>Proposed</span><strong>${countCards(board, "proposed").toString()}</strong></div>
       <div class="metric"><span>Authorized</span><strong>${countCards(board, "authorized").toString()}</strong></div>
       <div class="metric"><span>Active</span><strong>${countCards(board, "active").toString()}</strong></div>
@@ -878,13 +878,7 @@ export const createAdminConsoleApp = (
         </div>
         <span class="status-chip ${escapeHtml(card.status)}">${escapeHtml(REVIEW_STATUS_LABELS[card.status])}</span>
       </div>
-      <div class="meta-row">
-        <span>${escapeHtml(card.scope)}</span>
-        <span>${escapeHtml(card.trustLevel)}</span>
-      </div>
-      <div class="meta-row">
-        <code>${escapeHtml(card.subject)}</code>
-      </div>
+      <div class="meta-row"><span>${escapeHtml(card.trustLevel)}</span></div>
       <div class="meta-row">
         <span>Updated ${escapeHtml(card.updatedAt)}</span>
       </div>
@@ -932,7 +926,7 @@ export const createAdminConsoleApp = (
           <h2>${escapeHtml(card.label)}</h2>
           <p>${escapeHtml(card.target)} · ${escapeHtml(REVIEW_STATUS_LABELS[card.status])}</p>
         </div>
-        <dl>
+        <details class="technical-details"><summary>Identifiers and evidence</summary><dl>
           ${card.detailRows.map((row) => `
             <div>
               <dt>${escapeHtml(row.label)}</dt>
@@ -944,7 +938,7 @@ export const createAdminConsoleApp = (
             <dt>Last update</dt>
             <dd>${escapeHtml(card.updatedAt)}</dd>
           </div>
-        </dl>
+        </dl></details>
         ${getReviewActions(card.status).length === 0 ? "" : `
           <section class="governed-panel">
             <p class="eyebrow">Compact quorum</p>
@@ -979,15 +973,20 @@ export const createAdminConsoleApp = (
 
   const render = () => {
     const previousSignedEnvelope = root.querySelector<HTMLTextAreaElement>("[data-signed-submit] [name='signedEnvelope']")?.value;
+    const advancedOpen = root.querySelector<HTMLDetailsElement>(".advanced-workflows")?.open ?? false;
     const groupedCards = groupReviewCards(state.cards);
     root.innerHTML = `
       <main class="shell">
+        <header class="brand-bar">
+          <span class="brand-name"><img class="brand-logo" src="./midnight-logo.svg" alt="Midnight" /> <span class="brand-section">Trust Registry</span></span>
+          <span class="brand-section">Admin console</span>
+        </header>
         <section class="hero">
           <div class="hero-copy">
             <div>
-              <p class="eyebrow">Governed Review Surface</p>
-              <h1>Trust Registry Admin Console</h1>
-              <p>Review issuer, verifier, auditor, and recognition proposals. Prepare Compact quorum actions for external signing; local fixture controls remain separate for the workspace demo.</p>
+              <p class="eyebrow">Governance workspace</p>
+              <h1>Review trust records</h1>
+              <p>Inspect proposals and active members first. Advanced signing and policy actions are available below the review board.</p>
             </div>
           </div>
           <div class="toolbar">
@@ -1001,18 +1000,15 @@ export const createAdminConsoleApp = (
                 <button class="button secondary" type="button" data-refresh${state.loading || state.governedBusy ? " disabled" : ""}>Refresh</button>
               </div>
             </form>
-            ${state.board !== undefined && state.board.sourceMode !== "local-ledger" ? `<form class="epoch-panel" data-epoch-form>
-              <label>
-                Publish epoch label
-                <input class="input" data-epoch-label type="text" value="${escapeHtml(state.epochLabel)}" placeholder="optional operator label" />
-              </label>
-              <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Publish epoch</button>
-            </form>` : ""}
           </div>
           ${state.error === undefined ? "" : `<div class="alert error">${escapeHtml(state.error)}</div>`}
           ${state.flash === undefined ? "" : `<div class="alert success">${escapeHtml(state.flash)}</div>`}
           ${state.board === undefined ? "" : renderMetrics(state.board)}
         </section>
+        <nav class="task-nav" aria-label="Admin tasks">
+          <a href="#review-board">Review records</a>
+          <a href="#advanced-governance">Advanced governance</a>
+        </nav>
         ${state.board?.sourceMode === "local-ledger" ? `
           <section class="proposal-panel governed-panel">
             <p class="eyebrow">Current local ledger</p>
@@ -1032,6 +1028,13 @@ export const createAdminConsoleApp = (
             </form>
           </section>
         ` : ""}
+        <details class="advanced-workflows" id="advanced-governance"${advancedOpen ? " open" : ""}><summary>Advanced governance and signing actions</summary>
+        ${state.board !== undefined && state.board.sourceMode !== "local-ledger" ? `<form class="epoch-panel governed-panel" data-epoch-form>
+          <label>Publish epoch label
+            <input class="input" data-epoch-label type="text" value="${escapeHtml(state.epochLabel)}" placeholder="optional operator label" />
+          </label>
+          <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Publish epoch</button>
+        </form>` : ""}
         ${state.board !== undefined && state.board.sourceMode !== "local-ledger" ? `<section class="proposal-panel governed-panel">
           <div>
             <p class="eyebrow">Signed workspace action</p>
@@ -1112,11 +1115,13 @@ export const createAdminConsoleApp = (
             </form>
           `}
         </section>`}
-        <section class="workspace">
+        </details>
+        <section class="workspace" id="review-board">
           ${state.board?.sourceMode === "local-ledger" ? `<div class="board" data-local-current-result>
             ${state.cards.map(renderCard).join("")}
           </div>` : `<div class="board">
-            ${REVIEW_STATUSES.map((status) => renderColumn(status, groupedCards[status])).join("")}
+            ${REVIEW_STATUSES.filter((status) => ["proposed", "authorized", "active"].includes(status)
+              || groupedCards[status].length > 0).map((status) => renderColumn(status, groupedCards[status])).join("")}
           </div>`}
           ${renderDetailPanel()}
         </section>

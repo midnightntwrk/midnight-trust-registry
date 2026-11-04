@@ -25,14 +25,14 @@ const authorizationEvidence = (): AuthorizationEntry["evidence"] =>
   ({
     bundleId: "bundle:authorization:test",
     generatedAt: "2026-05-23T04:00:00Z",
-    registryId: "registry:kanon-admin",
+    registryId: "registry:midnight-admin",
     subjectDid: "did:midnight:testnet:subject",
     policy: {
       policyId: "policy:default",
       policyHash: "policy-hash",
       policyVersion: "1.0.0",
       status: "active",
-      registryId: "registry:kanon-admin",
+      registryId: "registry:midnight-admin",
       registryDid: "did:midnight:testnet:registry",
       trustLevelScale: "default",
       eligibilityCriteriaHash: "eligibility-hash",
@@ -43,7 +43,7 @@ const authorizationEvidence = (): AuthorizationEntry["evidence"] =>
     },
     epoch: {
       epochId: "epoch:002",
-      registryId: "registry:kanon-admin",
+      registryId: "registry:midnight-admin",
       stateRoot: "state-root",
       eventRoot: "event-root",
       policyRoot: "policy-root",
@@ -69,7 +69,7 @@ const recognitionEvidence = (): RecognitionEntry["evidence"] =>
   ({
     bundleId: "bundle:recognition:test",
     generatedAt: "2026-05-23T04:00:00Z",
-    registryId: "registry:kanon-admin",
+    registryId: "registry:midnight-admin",
     subjectDid: "did:midnight:testnet:subject",
     policy: authorizationEvidence().policy,
     epoch: authorizationEvidence().epoch,
@@ -83,8 +83,8 @@ const board: ReviewBoard = {
   summary: {
     snapshotVersion: "1",
     generatedAt: "2026-05-23T04:00:00Z",
-    registryLabel: "kanon-admin",
-    registryId: "registry:kanon-admin",
+    registryLabel: "midnight-admin",
+    registryId: "registry:midnight-admin",
     registryDid: "did:midnight:testnet:registry",
     policyId: "policy:default",
     currentEpochId: "epoch:002",
@@ -131,7 +131,7 @@ const board: ReviewBoard = {
       label: "degree",
       authorization: {
         authorizationId: "auth:issuer:degree:v1",
-        registryId: "registry:kanon-admin",
+        registryId: "registry:midnight-admin",
         role: "issuer",
         subjectDid: "did:midnight:testnet:issuer",
         resourceType: "credential-family",
@@ -151,7 +151,7 @@ const board: ReviewBoard = {
       label: "age-gate",
       authorization: {
         authorizationId: "auth:verifier:age-gate:v1",
-        registryId: "registry:kanon-admin",
+        registryId: "registry:midnight-admin",
         role: "verifier",
         subjectDid: "did:midnight:testnet:verifier",
         resourceType: "request-profile",
@@ -172,7 +172,7 @@ const board: ReviewBoard = {
       label: "compliance",
       authorization: {
         authorizationId: "auth:auditor:compliance:v1",
-        registryId: "registry:kanon-admin",
+        registryId: "registry:midnight-admin",
         role: "auditor",
         subjectDid: "did:midnight:testnet:auditor",
         resourceType: "request-profile",
@@ -191,7 +191,7 @@ const board: ReviewBoard = {
       label: "retired-audit",
       authorization: {
         authorizationId: "auth:auditor:retired:v1",
-        registryId: "registry:kanon-admin",
+        registryId: "registry:midnight-admin",
         role: "auditor",
         subjectDid: "did:midnight:testnet:auditor",
         resourceType: "request-profile",
@@ -212,7 +212,7 @@ const board: ReviewBoard = {
       label: "gaia-x",
       recognition: {
         recognitionId: "recognition:gaia-x:v1",
-        registryId: "registry:kanon-admin",
+        registryId: "registry:midnight-admin",
         recognizedAuthorityDid: "did:midnight:testnet:gaiax",
         recognizedRegistryId: "registry:gaiax",
         scope: {

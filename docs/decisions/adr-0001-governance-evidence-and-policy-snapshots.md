@@ -79,11 +79,11 @@ at 2-of-3 have this canonical snapshot vector when the content digest is
 `0x` followed by 64 lowercase `a` characters:
 
 ```json
-{"contentCommitment":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effectiveFrom":"2026-10-05T00:00:00.000Z","effectiveUntil":null,"format":"tr-policy-snapshot-v1","policyId":"policy:kanon","policyVersion":"v1","registryId":"registry:midnight:kanon","thresholds":[{"family":"archival","threshold":2},{"family":"emergency","threshold":2},{"family":"maintainer","threshold":2},{"family":"member","threshold":2}]}
+{"contentCommitment":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effectiveFrom":"2026-10-05T00:00:00.000Z","effectiveUntil":null,"format":"tr-policy-snapshot-v1","policyId":"policy:midnight","policyVersion":"v1","registryId":"registry:midnight:local","thresholds":[{"family":"archival","threshold":2},{"family":"emergency","threshold":2},{"family":"maintainer","threshold":2},{"family":"member","threshold":2}]}
 ```
 
 Its SHA-256 commitment is
-`0x29485cb6d7192cdc2d70a9843fb2f3364ffadaa0e2de5a8f839db40b15b9852c`.
+`0xbfd965403e8ad70c0b47628d0971b3ab4d640dd78b2b904dca6d56814447923b`.
 The domain helper rejects a revision that reuses a policy version or overlaps
 the prior effective window. It also rejects a maintainer transition that
 would leave fewer active maintainers than any configured threshold.

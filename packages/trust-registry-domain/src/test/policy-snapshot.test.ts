@@ -14,7 +14,7 @@ import {
 
 const families = ["maintainer", "member", "emergency", "archival"] as const;
 const recognitionScope = {
-  registryId: "registry:midnight:kanon",
+  registryId: "registry:midnight:local",
   recognizedRegistryId: "registry:external:partner",
   scopeResourceType: "credentialfamily",
   scopeResourceId: "credential-family:partner:v1",
@@ -22,7 +22,7 @@ const recognitionScope = {
 const recognitionAnchor = {
   format: "tr-recognition-accreditor-anchor-v1" as const,
   targetRegistryId: recognitionScope.registryId,
-  policyId: "policy:kanon",
+  policyId: "policy:midnight",
   policyVersion: "v1",
   accreditorDid: "did:midnight:undeployed:accreditor",
   accreditorAssertionMethodId: "did:midnight:undeployed:accreditor#assertion-1",
@@ -40,8 +40,8 @@ const recognitionAnchor = {
 
 function policy(version = "v1", threshold = 2) {
   return GovernancePolicyRecordSchema.parse({
-    policyId: "policy:kanon",
-    registryId: "registry:midnight:kanon",
+    policyId: "policy:midnight",
+    registryId: "registry:midnight:local",
     version,
     policyUri: "https://registry.example/policy",
     status: "active",
@@ -75,8 +75,8 @@ describe("governance policy snapshot v1", () => {
   it("publishes a stable canonical JSON and SHA-256 vector", () => {
     const snapshot = GovernancePolicySnapshotSchema.parse({
       format: "tr-policy-snapshot-v1",
-      registryId: "registry:midnight:kanon",
-      policyId: "policy:kanon",
+      registryId: "registry:midnight:local",
+      policyId: "policy:midnight",
       policyVersion: "v1",
       effectiveFrom: "2026-10-05T08:00:00+08:00",
       effectiveUntil: null,
@@ -84,10 +84,10 @@ describe("governance policy snapshot v1", () => {
       thresholds: families.map((family) => ({ family, threshold: 2 })),
     });
     expect(canonicalizeGovernancePolicySnapshot(snapshot)).toBe(
-      '{"contentCommitment":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effectiveFrom":"2026-10-05T00:00:00.000Z","effectiveUntil":null,"format":"tr-policy-snapshot-v1","policyId":"policy:kanon","policyVersion":"v1","registryId":"registry:midnight:kanon","thresholds":[{"family":"archival","threshold":2},{"family":"emergency","threshold":2},{"family":"maintainer","threshold":2},{"family":"member","threshold":2}]}',
+      '{"contentCommitment":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effectiveFrom":"2026-10-05T00:00:00.000Z","effectiveUntil":null,"format":"tr-policy-snapshot-v1","policyId":"policy:midnight","policyVersion":"v1","registryId":"registry:midnight:local","thresholds":[{"family":"archival","threshold":2},{"family":"emergency","threshold":2},{"family":"maintainer","threshold":2},{"family":"member","threshold":2}]}',
     );
     expect(computeGovernancePolicySnapshotCommitment(snapshot)).toBe(
-      "0x29485cb6d7192cdc2d70a9843fb2f3364ffadaa0e2de5a8f839db40b15b9852c",
+      "0xbfd965403e8ad70c0b47628d0971b3ab4d640dd78b2b904dca6d56814447923b",
     );
   });
 
@@ -259,8 +259,8 @@ describe("governance policy snapshot v1", () => {
     })).toThrow();
     expect(() => deriveGovernancePolicySnapshot(policy("v1", 6))).toThrow();
     expect(() => GovernancePolicySnapshotSchema.parse({ ...snapshot, extra: "ignored" })).toThrow();
-    expect(() => GovernancePolicySnapshotSchema.parse({ ...snapshot, registryId: "Registry:Midnight:Kanon" })).toThrow();
-    expect(() => GovernancePolicySnapshotSchema.parse({ ...snapshot, policyId: "Policy:Kanon" })).toThrow();
+    expect(() => GovernancePolicySnapshotSchema.parse({ ...snapshot, registryId: "Registry:Midnight:Local" })).toThrow();
+    expect(() => GovernancePolicySnapshotSchema.parse({ ...snapshot, policyId: "Policy:Midnight" })).toThrow();
     expect(() => GovernancePolicySnapshotSchema.parse({
       ...snapshot,
       thresholds: snapshot.thresholds.map((entry) => entry.family === "member" ? { ...entry, threshold: 3 } : entry),

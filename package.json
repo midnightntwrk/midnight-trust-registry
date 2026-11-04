@@ -86,9 +86,9 @@
     "demo:governed": "bash scripts/build-prebuilt-runtime.sh && node scripts/demo-governed-registry.mjs",
     "demo:auditor": "bash scripts/build-prebuilt-runtime.sh && node scripts/demo-auditor-admission.mjs serve",
     "demo:auditor:smoke": "bash scripts/build-prebuilt-runtime.sh && node scripts/demo-auditor-admission.mjs smoke",
-    "demo:prepare": "mkdir -p ./artifacts/trust-registry && pnpm --filter @midnight-ntwrk/trust-registry-cli run build && node packages/trust-registry-cli/bin/trust-registry.mjs init-workspace --workspace ./artifacts/trust-registry/workspace.json",
-    "demo:prepare:snapshot": "mkdir -p ./artifacts/trust-registry && pnpm --filter @midnight-ntwrk/trust-registry-cli run build && node packages/trust-registry-cli/bin/trust-registry.mjs init-demo --output ./artifacts/trust-registry/demo-snapshot.json",
-    "demo:serve:api": "pnpm --filter @midnight-ntwrk/trust-registry-api run build && node packages/trust-registry-api/bin/trust-registry-api.mjs serve --workspace ./artifacts/trust-registry/workspace.json --unsafe-demo-mutations --port 4400",
+    "demo:prepare": "mkdir -p ./artifacts/trust-registry && pnpm --filter @midnight-ntwrk/trust-registry-integration run build && pnpm --filter @midnight-ntwrk/trust-registry-cli run build && node packages/trust-registry-cli/bin/trust-registry.mjs init-workspace --workspace ./artifacts/trust-registry/midnight-demo-workspace.json",
+    "demo:prepare:snapshot": "mkdir -p ./artifacts/trust-registry && pnpm --filter @midnight-ntwrk/trust-registry-integration run build && pnpm --filter @midnight-ntwrk/trust-registry-cli run build && node packages/trust-registry-cli/bin/trust-registry.mjs init-demo --output ./artifacts/trust-registry/midnight-demo-snapshot.json",
+    "demo:serve:api": "pnpm --filter @midnight-ntwrk/trust-registry-api run build && node packages/trust-registry-api/bin/trust-registry-api.mjs serve --workspace ./artifacts/trust-registry/midnight-demo-workspace.json --unsafe-demo-mutations --port 4400",
     "demo:serve:admin-console": "pnpm --filter @midnight-ntwrk/trust-registry-admin-console run serve -- --port 4173",
     "demo:serve:applicant-portal": "pnpm --filter @midnight-ntwrk/trust-registry-applicant-portal run serve -- --port 4175",
     "refresh:identity-dependencies": "node scripts/refresh-identity-dependencies.mjs"

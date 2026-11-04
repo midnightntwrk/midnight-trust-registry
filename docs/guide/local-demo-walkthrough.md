@@ -41,8 +41,11 @@ pnpm run demo:prepare
 pnpm run demo:prepare:snapshot
 ```
 
-Those commands refuse to overwrite existing output. Start these services in
-three terminals:
+Those commands refuse to overwrite existing output.
+The current demo uses `artifacts/trust-registry/midnight-demo-workspace.json`
+and `midnight-demo-snapshot.json`. Older fixture files are not renamed or
+rewritten because their IDs and evidence refer to the original workspace.
+Start these services in three terminals:
 
 ```sh
 pnpm run demo:serve:api
