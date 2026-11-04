@@ -304,6 +304,18 @@ body { background: radial-gradient(circle at 100% 0, #e8e9ff 0, transparent 26re
 #demo-application .demo-fields { display: grid; align-content: center; justify-items: start; gap: 0.8rem; min-width: 0; }
 #demo-application .demo-fields .label { width: 100%; }
 #demo-application .demo-fields .select, #demo-application .demo-fields .input { min-width: 0; max-width: 100%; }
+.demo-targets { width: 100%; min-width: 0; margin: 0; padding: 0; border: 0; }
+.demo-targets legend { margin-bottom: 0.4rem; color: var(--midnight-muted); font-size: 0.86rem; }
+.demo-target-grid { display: grid; gap: 0.45rem; }
+.demo-target-option { display: flex; align-items: center; gap: 0.7rem; min-width: 0; min-height: 3.6rem; padding: 0.65rem 0.8rem; border: 1px solid var(--midnight-border); border-radius: 10px; background: var(--midnight-white); cursor: pointer; }
+.demo-target-option:hover { border-color: var(--midnight-blue); }
+.demo-target-option:has(input:checked) { border-color: var(--midnight-blue); background: var(--midnight-blue-soft); box-shadow: inset 3px 0 var(--midnight-blue); }
+.demo-target-option input { appearance: none; width: 1.15rem; height: 1.15rem; flex: none; margin: 0; border: 2px solid #777b91; border-radius: 50%; background: var(--midnight-white); cursor: inherit; }
+.demo-target-option input:checked { border: 0.34rem solid var(--midnight-blue); }
+.demo-target-option input:focus-visible { outline: 2px solid var(--midnight-blue); outline-offset: 3px; }
+.demo-target-option span { display: grid; gap: 0.1rem; min-width: 0; }
+.demo-target-option strong { color: var(--midnight-black); font-size: 0.88rem; }
+.demo-target-option small { color: var(--midnight-muted); font-size: 0.75rem; line-height: 1.35; }
 .workflow-disclosure { min-width: 0; align-self: start; border: 1px solid var(--midnight-border); border-radius: 14px; background: var(--midnight-white); }
 .workflow-disclosure > summary { cursor: pointer; padding: 1rem 1.2rem; color: var(--midnight-black); font-weight: 700; }
 .workflow-disclosure[open] > summary { color: var(--midnight-blue); border-bottom: 1px solid var(--midnight-border); }

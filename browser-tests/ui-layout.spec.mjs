@@ -360,3 +360,29 @@ for (const [app, title] of [
     }
   });
 }
+
+test("loopback demo application choices stay usable at mobile zoom", async ({ page, allowedLocalOrigins }, testInfo) => {
+  const server = await serveApp("applicant-portal");
+  try {
+    allowedLocalOrigins.add(server.base);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`${server.base}/?demo=1&apiBase=${encodeURIComponent(server.base)}`);
+    if (process.env.TR_UI_CAPTURE === "1") {
+      await page.screenshot({ path: testInfo.outputPath("demo-choices-1440.png"), fullPage: true });
+    }
+    await page.setViewportSize({ width: 390, height: 900 });
+    const choices = page.locator("#demo-application input[name='target']");
+    await expect(choices).toHaveCount(3);
+    await expect(choices.first()).toBeChecked();
+    await choices.nth(2).check();
+    await expect(choices.nth(2)).toBeChecked();
+    if (process.env.TR_UI_CAPTURE === "1") {
+      await page.screenshot({ path: testInfo.outputPath("demo-choices-390.png"), fullPage: true });
+    }
+    await page.addStyleTag({ content: "html { font-size: 200%; }" });
+    const width = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(width).toBeLessThanOrEqual(390);
+  } finally {
+    await server.close();
+  }
+});

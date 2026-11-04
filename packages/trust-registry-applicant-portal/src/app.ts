@@ -315,6 +315,7 @@ export const createApplicantPortalApp = (
   let inspectionRequestId = 0;
   let recognitionRequestId = 0;
   let recordSearchQuery = "";
+  let demoSelection: PortalSubmissionTarget = "issuer";
 
   const filterRecordCards = () => {
     const overview = root.querySelector<HTMLElement>(".records-overview");
@@ -1107,7 +1108,7 @@ export const createApplicantPortalApp = (
       if (form === null) {
         return;
       }
-      const targetInput = form.querySelector<HTMLSelectElement>("[name='target']");
+      const targetInput = form.querySelector<HTMLInputElement>("[name='target']:checked");
       const labelInput = form.querySelector<HTMLInputElement>("[name='label']");
       if (targetInput === null || labelInput === null) {
         return;
@@ -1118,6 +1119,12 @@ export const createApplicantPortalApp = (
         return;
       }
       void submitApplication(target, labelInput.value.trim());
+    });
+    root.querySelector<HTMLFieldSetElement>(".demo-targets")?.addEventListener("change", (event) => {
+      const input = event.target;
+      if (!(input instanceof HTMLInputElement) || input.name !== "target") return;
+      const target = TARGET_OPTIONS.find((option) => option.value === input.value)?.value;
+      if (target !== undefined) demoSelection = target;
     });
 
     root.querySelector<HTMLFormElement>("[data-application-binding-form]")?.addEventListener("submit", (event) => {
@@ -1366,11 +1373,11 @@ export const createApplicantPortalApp = (
           <p>Choose an application type and a name reviewers will recognize. An admin can review and activate this label-only fixture request next. It does not grant on-chain authority.</p>
         </div>
         <div class="demo-fields">
-          <label class="label">Application type
-            <select class="select" name="target">
-              ${TARGET_OPTIONS.map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)} · ${escapeHtml(option.description)}</option>`).join("")}
-            </select>
-          </label>
+          <fieldset class="demo-targets"><legend>Application type</legend>
+            <div class="demo-target-grid">
+              ${TARGET_OPTIONS.map((option) => `<label class="demo-target-option"><input type="radio" name="target" value="${escapeHtml(option.value)}"${demoSelection === option.value ? " checked" : ""} /><span><strong>${escapeHtml(option.label)}</strong><small>${escapeHtml(option.description)}</small></span></label>`).join("")}
+            </div>
+          </fieldset>
           <label class="label">Name shown to reviewers
             <input class="input" name="label" type="text" placeholder="Example issuer" required />
           </label>

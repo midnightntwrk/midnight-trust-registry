@@ -345,7 +345,7 @@ describe("trust registry applicant portal app", () => {
     expect(root.textContent).toContain("Active auditors");
     expect(root.textContent).toContain("did:midnight:testnet:auditor");
     expect(requested).toContain("/v1/authorizations/auditor?status=active");
-    expect(root.querySelector("[data-submit-form] option[value='auditor']")).toBeNull();
+    expect(root.querySelector("[data-submit-form] input[name='target'][value='auditor']")).toBeNull();
     expect(root.querySelector<HTMLButtonElement>("[data-application-binding-form] button")?.disabled).toBe(true);
     expect(root.querySelector<HTMLButtonElement>("[data-application-registration-form] button")?.disabled).toBe(true);
     expect(root.querySelector<HTMLButtonElement>("[data-auditor-application-form] button")?.disabled).toBe(true);
@@ -359,12 +359,13 @@ describe("trust registry applicant portal app", () => {
     privateForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     await vi.waitFor(() => expect(root.textContent).toContain("authenticated same-origin"));
     expect(requested.some((path) => path.startsWith("/v1/application-evidence/"))).toBe(false);
-    const target = root.querySelector<HTMLSelectElement>("[name='target']")!;
-    const injectedOption = document.createElement("option");
+    const target = root.querySelector<HTMLFieldSetElement>(".demo-targets")!;
+    const injectedOption = document.createElement("input");
+    injectedOption.type = "radio";
+    injectedOption.name = "target";
     injectedOption.value = "auditor";
-    injectedOption.textContent = "Auditor";
-    target.add(injectedOption);
-    target.value = "auditor";
+    target.append(injectedOption);
+    injectedOption.checked = true;
     root.querySelector<HTMLInputElement>("[name='label']")!.value = "forged-auditor";
     root.querySelector<HTMLFormElement>("[data-submit-form]")!.dispatchEvent(
       new Event("submit", { bubbles: true, cancelable: true }),

@@ -49,7 +49,7 @@ export const TARGET_OPTIONS: readonly {
   {
     value: "issuer",
     label: "Issuer",
-    description: "Apply to issue credential families or schemas.",
+    description: "Apply to issue credentials in a defined scope.",
   },
   {
     value: "verifier",

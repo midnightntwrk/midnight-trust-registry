@@ -102,6 +102,7 @@ repeatable UI acceptance evidence:
 | Reject an external endpoint override on packaged same-origin admin and portal paths while preserving the authenticated-host warning | `ui-layout.spec.mjs` |
 | Switch an editable development endpoint between two loopback fixture hosts without carrying reads to the old host or enabling cross-origin private actions | `ui-layout.spec.mjs` (both apps) |
 | Open a governed issuer request by keyboard with reduced motion and verify the three visible preparation phases; keep mobile task targets at least 44 px high | `ui-layout.spec.mjs` |
+| Choose a label-only demo application type with visible radio options and keyboard navigation; retain the selection and avoid horizontal overflow at 200% mobile text size | `demo-application-handoff.spec.mjs`, `ui-layout.spec.mjs` |
 | Reflow long identifiers and controls at 200% root text size on a 390 px viewport without page-level horizontal scroll | `ui-layout.spec.mjs` |
 | Check browser-computed normal-text contrast for brand, navigation, source badge, and primary/secondary actions in both apps | `ui-layout.spec.mjs` (selected solid surfaces, at least 4.5:1) |
 | Deny unapproved browser egress and discard stale local checkpoint responses | `browser-egress-control.spec.mjs`, `admin-console.spec.mjs` |
@@ -144,7 +145,9 @@ proposal/recovery, and quorum/verifier tasks; each link opens a real task
 section and retains its existing prerequisites. The local-ledger adapter has
 no broad list, so its admin view keeps only exact-ID lookup. In the fixture
 applicant portal, **Try the demo** submits a label-only request for
-admin review; it never grants on-chain authority. For a governed request,
+admin review; it never grants on-chain authority. Its three application types
+are visible choices rather than a browser-native dropdown, so the selected
+type remains clear before submission. For a governed request,
 choose a role, check the four-step path and prerequisites, and complete the
 visible identify/scope/prepare phases. In the fixture view, active-record
 search filters only the displayed snapshot; it is not an authorization query

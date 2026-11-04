@@ -121,7 +121,14 @@ for (const target of ["issuer", "recognition"]) {
       page.on("dialog", (dialog) => dialog.accept());
       await page.goto(`${base}/applicant/?demo=1&apiBase=${encodeURIComponent(base)}`);
       await expect(page.locator(".source-badge")).toHaveText("Local fixture");
-      await page.locator("#demo-application [name='target']").selectOption(target);
+      await expect(page.locator("#demo-application .demo-target-option")).toHaveCount(3);
+      await expect(page.locator("#demo-application")).not.toContainText("credential families");
+      if (target === "issuer") {
+        await page.locator("#demo-application [name='target'][value='issuer']").focus();
+        await page.keyboard.press("ArrowDown");
+        await expect(page.locator("#demo-application [name='target'][value='verifier']")).toBeChecked();
+      }
+      await page.locator(`#demo-application [name='target'][value='${target}']`).check();
       await page.locator("#demo-application [name='label']").fill(label);
       await page.locator("#demo-application button[type='submit']").click();
       await expect(page.locator(".alert.success")).toHaveText(
