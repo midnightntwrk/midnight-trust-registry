@@ -34,6 +34,9 @@ async function serveLocalApp(app) {
     distDir: resolve(`packages/trust-registry-${app}/dist`), name: `local-lookup-${app}`,
   });
   const requests = [];
+  let sourceMode = "local-ledger";
+  let heldHealth;
+  let denyCurrentReads = false;
   const server = createServer(async (request, response) => {
     const path = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
     if (path !== "/health" && !path.startsWith("/v1/")) {
@@ -42,13 +45,27 @@ async function serveLocalApp(app) {
     }
     requests.push(`${request.method} ${path}`);
     response.setHeader("content-type", "application/json");
-    if (path === "/health") response.end(JSON.stringify({ status: "ok", sourceMode: "local-ledger",
-      registryId, localPlanSha256: "b".repeat(64), finalizedBlockHash: `0x${"c".repeat(64)}`,
-      generatedAt: "2026-10-27T00:00:00Z" }));
-    else if (path === "/v1/registry/summary") response.end(JSON.stringify(summary));
+    if (path === "/health") {
+      if (heldHealth !== undefined) {
+        const pending = heldHealth;
+        heldHealth = undefined;
+        await pending;
+      }
+      response.end(JSON.stringify({ status: "ok", sourceMode,
+        registryId, localPlanSha256: "b".repeat(64), finalizedBlockHash: `0x${"c".repeat(64)}`,
+        generatedAt: "2026-10-27T00:00:00Z" }));
+    }
+    else if (path === "/v1/registry/summary") response.end(JSON.stringify(sourceMode === "local-ledger"
+      ? summary : { ...summary, issuerCounts: emptyCounts }));
+    else if (denyCurrentReads && (path === `/v1/authorizations/issuer/${encodeURIComponent(id)}`
+      || path === "/v1/authorizations/resolve")) {
+      response.statusCode = 403;
+      response.end(JSON.stringify({ title: "Current authorization denied", detail: "The source refused this exact lookup." }));
+    }
     else if (path === `/v1/authorizations/issuer/${encodeURIComponent(id)}`
       || path === "/v1/authorizations/resolve") response.end(JSON.stringify(entry));
     else if (path === "/v1/recognitions/resolve") response.end(JSON.stringify(recognition));
+    else if (sourceMode === "workspace") response.end(JSON.stringify({ entries: [] }));
     else {
       response.statusCode = 503;
       response.end(JSON.stringify({ title: "Broad lists unavailable" }));
@@ -58,6 +75,13 @@ async function serveLocalApp(app) {
   const address = server.address();
   if (address === null || typeof address === "string") throw new Error("expected TCP address");
   return { base: `http://127.0.0.1:${address.port}`, requests,
+    setSourceMode: (mode) => { sourceMode = mode; },
+    setCurrentReadsDenied: (denied) => { denyCurrentReads = denied; },
+    holdNextHealth: () => {
+      let release;
+      heldHealth = new Promise((resolve) => { release = resolve; });
+      return () => release();
+    },
     close: async () => {
       server.closeAllConnections();
       await new Promise((done, reject) => server.close((error) => error ? reject(error) : done()));
@@ -184,3 +208,74 @@ test("applicant exact scope lookup keeps returned trust unverified", async ({ pa
     await host.close();
   }
 });
+
+for (const app of ["admin-console", "applicant-portal"]) {
+  test(`${app} discards a local API claim while its source is rechecked and changes mode`, async ({ page, allowedLocalOrigins }) => {
+    const host = await serveLocalApp(app);
+    let releaseHealth = () => {};
+    try {
+      allowedLocalOrigins.add(host.base);
+      await page.goto(`${host.base}/?apiBase=${encodeURIComponent(host.base)}`);
+      await expect(page.locator(".source-badge")).toHaveText("API claim");
+      if (app === "admin-console") {
+        await page.locator("[data-current-id]").fill(id);
+        await page.locator("[data-current-lookup] button[type='submit']").click();
+        await expect(page.locator(".card")).toContainText("Exact UI issuer");
+      } else {
+        const form = page.locator("[data-current-authorization]");
+        await form.locator("[name='subjectDid']").fill(did);
+        await form.locator("[name='resourceId']").fill(resourceId);
+        await form.locator("button[type='submit']").click();
+        await expect(page.locator("[data-current-authorization-result]"))
+          .toContainText("Unverified current API claim");
+      }
+
+      releaseHealth = host.holdNextHealth();
+      host.setSourceMode("workspace");
+      const refresh = page.locator("[data-refresh]");
+      await refresh.click();
+      await expect(page.locator(".source-panel")).toHaveAttribute("data-source-state", "loading");
+      await expect(page.locator(".source-badge")).toHaveText("Checking");
+      await expect(refresh).toBeDisabled();
+      await expect(page.getByText("Unverified current API claim", { exact: false })).toHaveCount(0);
+      releaseHealth();
+      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(refresh).toBeFocused();
+      await expect(page.locator("#exact-lookup, #current-authorization-lookup")).toHaveCount(0);
+      await expect(page.getByText("Unverified current API claim", { exact: false })).toHaveCount(0);
+
+      host.setSourceMode("local-ledger");
+      await refresh.click();
+      await expect(page.locator(".source-badge")).toHaveText("API claim");
+      await expect(page.getByText("Unverified current API claim", { exact: false })).toHaveCount(0);
+
+      if (app === "admin-console") {
+        await page.locator("[data-current-id]").fill(id);
+        const submit = page.locator("[data-current-lookup] button[type='submit']");
+        await submit.click();
+        await expect(page.locator(".card")).toContainText("Exact UI issuer");
+        host.setCurrentReadsDenied(true);
+        await submit.click();
+        await expect(page.locator("#exact-lookup").getByRole("alert")).toContainText("Current authorization denied");
+        await expect(page.locator(".card")).toHaveCount(0);
+      } else {
+        const form = page.locator("[data-current-authorization]");
+        await form.locator("[name='subjectDid']").fill(did);
+        await form.locator("[name='resourceId']").fill(resourceId);
+        const submit = form.locator("button[type='submit']");
+        await submit.click();
+        await expect(page.locator("[data-current-authorization-result]"))
+          .toContainText("Unverified current API claim");
+        host.setCurrentReadsDenied(true);
+        await submit.click();
+        await expect(page.getByRole("alert")).toContainText("Current authorization denied");
+        await expect(page.locator("[data-current-authorization-result]")).toHaveCount(0);
+      }
+      await expect(page.locator(".source-badge")).toHaveText("API claim");
+    } finally {
+      releaseHealth();
+      await page.close();
+      await host.close();
+    }
+  });
+}

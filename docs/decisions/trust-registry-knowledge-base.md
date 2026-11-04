@@ -3181,6 +3181,13 @@ time. The UI does not authenticate the checkpoint or infer finality from those
 fields; the network profile, genesis anchor, and contract identity remain
 unexposed until the API supplies them with reviewed provenance.
 
+The local-lookup browser fixture can pause a health response and switch the
+reported source mode. Both apps remove the prior exact API claim during the
+pending Recheck, hide exact lookup in fixture mode, and do not resurrect the
+claim when local-ledger mode returns. A subsequent denied exact lookup clears
+the previous success and announces the 403 at the form. This verifies browser
+state invalidation, not the authenticity of the fixture's source-mode report.
+
 The browser acceptance matrix additionally covers the full fixture issuer
 lifecycle, exact external recognition with substituted-scope rejection,
 packaged same-origin endpoint locking, and 200% text reflow on mobile. These
