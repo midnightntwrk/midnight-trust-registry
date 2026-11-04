@@ -161,9 +161,12 @@ export const createAdminConsoleApp = (
     initialUrl?: URL;
     storage?: Storage;
     confirm?: (message: string) => boolean | Promise<boolean>;
+    demoMode?: boolean;
   } = {},
 ): void => {
   const initialUrl = options.initialUrl ?? new URL(window.location.href);
+  const demoMode = (options.demoMode ?? initialUrl.searchParams.get("demo") === "1")
+    && ["localhost", "127.0.0.1", "[::1]"].includes(initialUrl.hostname);
   const storage = options.storage ?? window.localStorage;
   const fetchImpl = options.fetchImpl ?? window.fetch.bind(window);
   const confirm = options.confirm ?? window.confirm.bind(window);
@@ -373,7 +376,7 @@ export const createAdminConsoleApp = (
   const runAction = async (
     action: TrustRegistryApiApplicationAction,
   ) => {
-    if (state.loading || state.publishing || state.governedBusy
+    if (!demoMode || state.loading || state.publishing || state.governedBusy
       || state.board === undefined || state.board.sourceMode === "local-ledger") return;
     const host = currentHost();
     const card = selectedCard();
@@ -404,7 +407,7 @@ export const createAdminConsoleApp = (
   };
 
   const publishEpoch = async (label: string) => {
-    if (state.loading || state.publishing || state.governedBusy
+    if (!demoMode || state.loading || state.publishing || state.governedBusy
       || state.board === undefined || state.board.sourceMode === "local-ledger") return;
     const host = currentHost();
     setState({ publishing: true, error: undefined, flash: undefined });
@@ -981,7 +984,7 @@ export const createAdminConsoleApp = (
             `}
           </section>
         `}
-        ${state.board?.sourceMode === "local-ledger" ? "" : `
+        ${!demoMode || state.board?.sourceMode === "local-ledger" ? "" : `
           <p class="eyebrow">Local fixture controls</p>
           <div class="actions">
             ${getReviewActions(card.status).map((action) => `
@@ -1106,18 +1109,18 @@ export const createAdminConsoleApp = (
         ` : ""}
         <details class="advanced-workflows" id="advanced-governance"${advancedOpen ? " open" : ""}><summary>Advanced governance and signing actions</summary>
         ${state.board === undefined ? `<p class="settings-note">Connect to a registry source before preparing governance work.</p>` : `<nav class="governance-task-grid" aria-label="Governance tasks">
-          ${state.board.sourceMode === "local-ledger" ? "" : `<a href="#task-epoch"><strong>Publish an epoch</strong><span>Fixture workspace checkpoint, not ledger finality</span></a>
+          ${state.board.sourceMode === "local-ledger" || !demoMode ? "" : `<a href="#task-epoch"><strong>Publish an epoch</strong><span>Fixture workspace checkpoint, not ledger finality</span></a>
           <a href="#task-signed-intent"><strong>Submit a signed workspace intent</strong><span>External maintainer signature; local workspace only</span></a>`}
           <a href="#task-proposal"><strong>Prepare or recover a proposal</strong><span>Exact applicant evidence and external quorum</span></a>
           <a href="#task-policy"><strong>Revise quorum and register verifier</strong><span>Separate policy-bound steps</span></a>
         </nav>`}
-        ${state.board !== undefined && state.board.sourceMode !== "local-ledger" ? `<form class="epoch-panel governed-panel" id="task-epoch" data-epoch-form>
+        ${demoMode && state.board !== undefined && state.board.sourceMode !== "local-ledger" ? `<form class="epoch-panel governed-panel" id="task-epoch" data-epoch-form>
           <label>Publish epoch label
             <input class="input" data-epoch-label type="text" value="${escapeHtml(state.epochLabel)}" placeholder="optional operator label" />
           </label>
           <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Publish epoch</button>
         </form>` : ""}
-        ${state.board !== undefined && state.board.sourceMode !== "local-ledger" ? `<section class="proposal-panel governed-panel" id="task-signed-intent">
+        ${demoMode && state.board !== undefined && state.board.sourceMode !== "local-ledger" ? `<section class="proposal-panel governed-panel" id="task-signed-intent">
           <div>
             <p class="eyebrow">Signed workspace action</p>
             <h2>Submit an external maintainer intent</h2>

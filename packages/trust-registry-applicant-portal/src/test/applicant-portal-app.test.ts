@@ -8,6 +8,31 @@ const localHealth = { status: "ok", sourceMode: "local-ledger", registryId: "reg
   generatedAt: "2026-10-25T00:00:00Z" };
 
 describe("trust registry applicant portal app", () => {
+  it("keeps fixture shortcuts opt-in and collapses empty record categories", async () => {
+    const root = document.createElement("div");
+    document.body.replaceChildren(root);
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/health") return Response.json({ status: "ok", sourceMode: "workspace", registryId: "registry:local" });
+      if (path === "/v1/registry/summary") return Response.json({ registryLabel: "local", currentEpochId: "epoch:1" });
+      return Response.json({ entries: [] });
+    });
+    const renderAt = async (url: string) => {
+      createApplicantPortalApp(root, { initialUrl: new URL(url), storage: window.localStorage,
+        fetchImpl: fetchImpl as typeof fetch });
+      await vi.waitFor(() => expect(root.querySelector("#trust-records")).not.toBeNull());
+    };
+    await renderAt("http://127.0.0.1:4175/?apiBase=http://127.0.0.1:4400");
+    expect(root.querySelector("#demo-application")).toBeNull();
+    expect(root.textContent).not.toContain("credentialFamily");
+    expect(root.querySelectorAll("#trust-records .lane")).toHaveLength(0);
+    expect(root.textContent).toContain("No active records in this fixture yet.");
+    expect(root.querySelector(".advanced-tools")).not.toBeNull();
+    await renderAt("http://127.0.0.1:4175/?demo=1&apiBase=http://127.0.0.1:4400");
+    expect(root.querySelector("#demo-application")).not.toBeNull();
+    await renderAt("https://registry.example/?demo=1&apiBase=http://127.0.0.1:4400");
+    expect(root.querySelector("#demo-application")).toBeNull();
+  });
   it("keeps application forms but never renders unavailable local lists as empty trust", async () => {
     const root = document.createElement("div");
     document.body.replaceChildren(root);
@@ -311,6 +336,7 @@ describe("trust registry applicant portal app", () => {
     });
     createApplicantPortalApp(root, {
       initialUrl: new URL("http://127.0.0.1:4175/?apiBase=http://127.0.0.1:4400"),
+      demoMode: true,
       storage: window.localStorage,
       fetchImpl: fetchImpl as typeof fetch,
     });

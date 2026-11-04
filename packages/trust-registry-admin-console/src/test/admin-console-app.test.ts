@@ -34,6 +34,29 @@ const auditor = {
 };
 
 describe("admin console browser handlers", () => {
+  it("hides fixture shortcut actions unless local demo mode is explicit", async () => {
+    const root = document.createElement("div");
+    document.body.replaceChildren(root);
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/health") return Response.json({ status: "ok", sourceMode: "workspace", registryId: "registry:local" });
+      if (path === "/v1/registry/summary") return Response.json({ registryLabel: "local", currentEpochId: "epoch:1",
+        issuerCounts: counts(), verifierCounts: counts(), auditorCounts: { ...counts(), active: 1 }, recognitionCounts: counts() });
+      return Response.json({ entries: path === "/v1/authorizations/auditor" ? [auditor] : [] });
+    });
+    const renderAt = async (url: string) => {
+      createAdminConsoleApp(root, { initialUrl: new URL(url), storage: window.localStorage,
+        fetchImpl: fetchImpl as typeof fetch, confirm: () => true });
+      await vi.waitFor(() => expect(root.textContent).toContain("compliance"));
+    };
+    await renderAt("http://127.0.0.1:4173/?apiBase=http://127.0.0.1:4400");
+    expect(root.querySelector("[data-action]")).toBeNull();
+    expect(root.querySelector("#task-epoch")).toBeNull();
+    await renderAt("http://127.0.0.1:4173/?demo=1&apiBase=http://127.0.0.1:4400");
+    expect(root.querySelector("[data-action]")).not.toBeNull();
+    await renderAt("https://registry.example/?demo=1&apiBase=http://127.0.0.1:4400");
+    expect(root.querySelector("[data-action]")).toBeNull();
+  });
   it("renders untrusted ledger labels and API errors as text, not markup", async () => {
     const root = document.createElement("div");
     document.body.replaceChildren(root);
@@ -96,6 +119,7 @@ describe("admin console browser handlers", () => {
     });
     createAdminConsoleApp(root, {
       initialUrl: new URL("http://127.0.0.1:4173/?apiBase=http://127.0.0.1:4400"),
+      demoMode: true,
       storage: window.localStorage, fetchImpl: fetchImpl as typeof fetch, confirm: () => true,
     });
     await vi.waitFor(() => expect(root.querySelector("[data-proposal-prepare]")).not.toBeNull());
@@ -227,6 +251,7 @@ describe("admin console browser handlers", () => {
     });
     createAdminConsoleApp(root, {
       initialUrl: new URL("http://127.0.0.1:4173/?apiBase=http://127.0.0.1:4400"),
+      demoMode: true,
       storage: window.localStorage,
       fetchImpl: fetchImpl as typeof fetch,
       confirm,

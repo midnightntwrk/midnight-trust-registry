@@ -100,6 +100,7 @@ for (const app of ["admin-console", "applicant-portal"]) {
       expect(second.requests).toContain("GET /v1/registry/summary");
       expect(first.requests).toHaveLength(firstReads);
       if (app === "applicant-portal") {
+        await page.locator(".advanced-tools > summary").click();
         await page.locator('[data-workflow="Recover external recognition"] > summary').click();
         await expect(page.locator("[data-recognition-challenge]")).toBeDisabled();
         await expect(page.locator(".journey-prerequisite")).toContainText("cannot submit governed evidence");
@@ -254,17 +255,16 @@ for (const [app, title] of [
           expect(Math.min(...heroLayout.cardWidths)).toBeGreaterThan(150);
         }
         if (app === "applicant-portal") {
-          await expect(page.locator(".hero-actions a").first()).toHaveAttribute("href", "#demo-application");
+          await expect(page.locator(".hero-actions a").first()).toHaveAttribute("href", "#governed-requests");
           const contentOrder = await page.evaluate(() => ({
-            demoTop: document.querySelector("#demo-application").getBoundingClientRect().top,
             rolesTop: document.querySelector(".journey-picker").getBoundingClientRect().top,
             recordsTop: document.querySelector("#trust-records").getBoundingClientRect().top,
             firstContentId: document.querySelector(".content").firstElementChild.id,
           }));
-          expect(contentOrder.firstContentId).toBe("demo-application");
-          expect(contentOrder.demoTop).toBeLessThan(contentOrder.rolesTop);
+          expect(contentOrder.firstContentId).toBe("governed-requests");
           expect(contentOrder.rolesTop).toBeLessThan(contentOrder.recordsTop);
-          await expect(page.locator(".task-nav a").first()).toHaveAttribute("href", "#demo-application");
+          await expect(page.locator(".task-nav a").first()).toHaveAttribute("href", "#governed-requests");
+          await expect(page.locator("#trust-records .lane")).toHaveCount(1);
         }
         if (app === "admin-console" && width === 390) {
           const mobileOrder = await page.evaluate(() => ({

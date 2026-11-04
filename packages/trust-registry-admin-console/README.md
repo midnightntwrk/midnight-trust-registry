@@ -88,9 +88,10 @@ Notes:
   and prepared context. It does not persist those
   fields across reload or host changes. Simulator observation is not network
   finality
-- `--unsafe-demo-mutations` enables the old fixture controls only on loopback;
-  remove that flag when the signed mutation and Compact ports are wired for a
-  real deployment
+- fixture shortcut actions, epoch publication, and workspace-intent controls
+  are hidden by default. Add `demo=1` to a loopback console URL to show them.
+  This presentation switch grants no API permissions: the fixture API also
+  requires `--unsafe-demo-mutations` on loopback. Omit both for ordinary use
 - auditor cards show the exact composite request-resource ID, policy, epoch,
   evidence state root, and lifecycle status. The full request-scope preimage
   is not present in the operator snapshot and is not inferred from the hash;

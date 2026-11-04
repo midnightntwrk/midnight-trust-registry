@@ -107,6 +107,7 @@ test("applicant inspects and downloads bounded historical recognition and author
     await page.goto(`${base}/?apiBase=${encodeURIComponent(base)}`);
     await expect(page.locator(".source-badge")).toHaveText("Local fixture");
     await expect(page.locator(".journey-prerequisite")).toContainText("host must authenticate private requests");
+    await page.locator(".advanced-tools > summary").click();
     await page.locator('[data-workflow="Recover external recognition"] > summary').click();
     const recovery = page.locator("[data-recognition-recovery-form]");
     await recovery.locator("[name='recognitionId']").fill(recognitionId);

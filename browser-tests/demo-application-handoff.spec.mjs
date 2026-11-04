@@ -119,7 +119,7 @@ for (const target of ["issuer", "recognition"]) {
     try {
       allowedLocalOrigins.add(base);
       page.on("dialog", (dialog) => dialog.accept());
-      await page.goto(`${base}/applicant/?apiBase=${encodeURIComponent(base)}`);
+      await page.goto(`${base}/applicant/?demo=1&apiBase=${encodeURIComponent(base)}`);
       await expect(page.locator(".source-badge")).toHaveText("Local fixture");
       await page.locator("#demo-application [name='target']").selectOption(target);
       await page.locator("#demo-application [name='label']").fill(label);
@@ -129,7 +129,7 @@ for (const target of ["issuer", "recognition"]) {
       );
       await expect(page.locator("#demo-application [name='label']")).toBeEmpty();
 
-      await page.goto(`${base}/admin/?apiBase=${encodeURIComponent(base)}`);
+      await page.goto(`${base}/admin/?demo=1&apiBase=${encodeURIComponent(base)}`);
       await expect(page.locator(".source-badge")).toHaveText("Local fixture");
       await expect(page.getByRole("heading", { name: "Decisions that need attention" })).toBeVisible();
       await expect(page.locator(".card")).toContainText(label);
@@ -141,7 +141,7 @@ for (const target of ["issuer", "recognition"]) {
       await expect(page.getByRole("heading", { name: "Registry review workspace" })).toBeVisible();
       await expect(page.locator(".column")).toHaveCount(1);
 
-      await page.goto(`${base}/applicant/?apiBase=${encodeURIComponent(base)}`);
+      await page.goto(`${base}/applicant/?demo=1&apiBase=${encodeURIComponent(base)}`);
       await expect(page.locator(".source-badge")).toHaveText("Local fixture");
       await expect(page.locator("#trust-records article")).toContainText(label);
       await expect(page.locator(".source-panel")).toContainText("not deployed ledger evidence");

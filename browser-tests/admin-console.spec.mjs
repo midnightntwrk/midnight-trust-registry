@@ -62,7 +62,7 @@ test("a late governance receipt cannot replace another registry's board", async 
   try {
     allowedLocalOrigins.add(base);
     page.on("dialog", (dialog) => dialog.accept());
-    await page.goto(`${base}/?apiBase=${encodeURIComponent(`${base}/a`)}`);
+    await page.goto(`${base}/?demo=1&apiBase=${encodeURIComponent(`${base}/a`)}`);
     const registryLabel = page.locator(".registry-context strong");
     await expect(registryLabel).toHaveText("Registry A");
 
@@ -235,7 +235,7 @@ test("fixture admin review advances an issuer through approval, activation, risk
   try {
     allowedLocalOrigins.add(base);
     page.on("dialog", (dialog) => dialog.accept());
-    await page.goto(`${base}/?apiBase=${encodeURIComponent(base)}`);
+    await page.goto(`${base}/?demo=1&apiBase=${encodeURIComponent(base)}`);
     await expect(page.locator(".source-badge")).toHaveText("Local fixture");
     await expect(page.locator(".card")).toContainText("UI review issuer");
     await page.locator("[data-review-query]").fill("missing record");
@@ -334,7 +334,7 @@ test("fixture governance publishes an epoch and submits an externally signed wor
       confirmations.push(dialog.message());
       await dialog.accept();
     });
-    await page.goto(`${base}/?apiBase=${encodeURIComponent(base)}`);
+    await page.goto(`${base}/?demo=1&apiBase=${encodeURIComponent(base)}`);
     await expect(page.locator(".source-badge")).toHaveText("Local fixture");
     await page.locator(".advanced-workflows > summary").click();
     await page.locator("[data-epoch-label]").fill("reviewed fixture epoch");

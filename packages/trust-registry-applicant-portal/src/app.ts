@@ -242,9 +242,12 @@ export const createApplicantPortalApp = (
     fetchImpl?: typeof fetch;
     initialUrl?: URL;
     storage?: Storage;
+    demoMode?: boolean;
   } = {},
 ): void => {
   const initialUrl = options.initialUrl ?? new URL(window.location.href);
+  const demoMode = (options.demoMode ?? initialUrl.searchParams.get("demo") === "1")
+    && ["localhost", "127.0.0.1", "[::1]"].includes(initialUrl.hostname);
   const storage = options.storage ?? window.localStorage;
   const fetchImpl = options.fetchImpl ?? window.fetch.bind(window);
   const sameOriginApi = initialUrl.pathname.startsWith("/applicant/");
@@ -838,6 +841,7 @@ export const createApplicantPortalApp = (
     target: PortalSubmissionTarget,
     label: string,
   ) => {
+    if (!demoMode || state.inspection?.sourceMode === "local-ledger") return;
     setState({ submitting: true, error: undefined, flash: undefined });
     try {
       const result = await client().submitApplication(target, label);
@@ -1303,6 +1307,7 @@ export const createApplicantPortalApp = (
     pendingFocusKey = focusKey ?? pendingFocusKey;
     const openWorkflows = new Set([...root.querySelectorAll<HTMLDetailsElement>(".workflow-disclosure[open]")]
       .map((details) => details.dataset.workflow));
+    const advancedOpen = root.querySelector<HTMLDetailsElement>(".advanced-tools")?.open ?? false;
     const settingsOpen = root.querySelector<HTMLDetailsElement>(".workspace-settings")?.open ?? false;
     const previousVpForm = root.querySelector<HTMLFormElement>("[data-application-vp-form]");
     const previousVp = previousVpForm?.querySelector<HTMLTextAreaElement>("[name='presentation']")?.value;
@@ -1326,7 +1331,7 @@ export const createApplicantPortalApp = (
     const issuerLocked = preparedIssuer === undefined ? "" : " disabled";
     const verifierLocked = preparedVerifier === undefined ? "" : " disabled";
     const maintainerLocked = preparedMaintainer === undefined ? "" : " disabled";
-    const demoApplication = state.inspection === undefined || state.inspection.sourceMode === "local-ledger" ? "" : `
+    const demoApplication = !demoMode || state.inspection === undefined || state.inspection.sourceMode === "local-ledger" ? "" : `
       <form class="form-panel" id="demo-application" data-submit-form>
         <div class="demo-copy">
           <p class="eyebrow">Local fixture</p>
@@ -1355,7 +1360,7 @@ export const createApplicantPortalApp = (
       <a href="#governed-requests">Prepare membership</a>
       <a href="#connection-details">Connection details</a>
     ` : `
-      <a href="#demo-application">Try a local demo application</a>
+      ${demoMode ? `<a href="#demo-application">Try a local demo application</a>` : ""}
       <a href="#governed-requests">Prepare governed membership</a>
       <a href="#trust-records">Explore active records</a>
       <a href="#connection-details">Connection details</a>
@@ -1377,9 +1382,9 @@ export const createApplicantPortalApp = (
               ? "Registry data is unavailable. Recheck the connection before inspecting or submitting a request."
               : state.inspection.sourceMode === "local-ledger"
                 ? "Explore current API claims, choose a role, and prepare a signed request. Verify finalized registry state independently before relying on it."
-                : "Try a local application, browse records, or prepare a governed request. Demo records are not on-chain trust decisions."}</p>
+                : demoMode ? "Try a local application, browse records, or prepare a governed request. Demo records are not on-chain trust decisions." : "Browse this registry snapshot or prepare a governed request. Fixture records are not on-chain trust decisions."}</p>
             <div class="hero-actions">
-              <a class="button" href="${state.inspection === undefined ? "#connection-details" : state.inspection.sourceMode === "local-ledger" ? "#governed-requests" : "#demo-application"}">${state.inspection === undefined ? "Check connection" : state.inspection.sourceMode === "local-ledger" ? "Choose a role" : "Try the demo"}</a>
+              <a class="button" href="${state.inspection === undefined ? "#connection-details" : state.inspection.sourceMode === "local-ledger" || !demoMode ? "#governed-requests" : "#demo-application"}">${state.inspection === undefined ? "Check connection" : state.inspection.sourceMode === "local-ledger" || !demoMode ? "Choose a role" : "Try the demo"}</a>
               ${state.inspection === undefined ? "" : state.inspection.sourceMode === "local-ledger"
                 ? `<a class="button secondary" href="#current-authorization-lookup">Look up a record</a>`
                 : `<a class="button secondary" href="#trust-records">Explore records</a>`}
@@ -1433,12 +1438,12 @@ export const createApplicantPortalApp = (
         <section class="content">
           ${demoApplication}
           <section class="journey-picker" id="governed-requests" aria-labelledby="journey-heading">
-            <div class="journey-heading"><p class="eyebrow">Governed requests</p><h2 id="journey-heading">${state.inspection?.sourceMode === "local-ledger" ? "What would you like to do?" : "Applying beyond the demo?"}</h2>
+            <div class="journey-heading"><p class="eyebrow">Governed requests</p><h2 id="journey-heading">${demoMode && state.inspection !== undefined && state.inspection.sourceMode !== "local-ledger" ? "Applying beyond the demo?" : "What would you like to do?"}</h2>
               <p>Choose a role to inspect its exact authority, evidence, and signing requirements. Nothing is submitted until you confirm.</p>
             </div>
             <p class="journey-prerequisite">${state.inspection === undefined ? "Connect to a registry source before preparing a governed request." : privateHost ? "Same-origin host selected. This browser cannot verify your session; the host must authenticate private requests." : "This local connection can prepare a request, but cannot submit governed evidence. Use an authenticated same-origin host for that step."}</p>
             <div class="journey-cards">
-              <a href="#issuer-request" data-open-workflow="issuer-request"><strong>Become an issuer</strong><span>Request authority to issue a credential family.</span><em>Start issuer request &rarr;</em></a>
+              <a href="#issuer-request" data-open-workflow="issuer-request"><strong>Become an issuer</strong><span>Request authority to issue credentials in a defined scope.</span><em>Start issuer request &rarr;</em></a>
               <a href="#verifier-request" data-open-workflow="verifier-request"><strong>Become a verifier</strong><span>Request authority to verify a precise scope.</span><em>Start verifier request &rarr;</em></a>
               <a href="#auditor-request" data-open-workflow="auditor-request"><strong>Become an auditor</strong><span>Request oversight of a defined audit scope.</span><em>Start auditor request &rarr;</em></a>
               <a href="#maintainer-request" data-open-workflow="maintainer-request"><strong>Join maintenance</strong><span>Request governed committee membership.</span><em>View requirements &rarr;</em></a>
@@ -1535,7 +1540,7 @@ export const createApplicantPortalApp = (
           `}
           <section class="form-panel">
             <h2>Issuer membership request</h2>
-            <p>Bind one exact credential family, schema/version, definition, status method, and governed resource type before signing with the applicant DID key.</p>
+            <p>Bind one exact credential scope, schema/version, definition, status method, and governed resource type before signing with the applicant DID key.</p>
             <form data-issuer-application-form>
               <h3 class="request-step"><span>01</span> Identify the applicant</h3>
               <label class="label">Application ID<input class="input mono" name="applicationId" value="${escapeHtml(issuerDraft?.applicationId ?? "")}"${issuerLocked} required /></label>
@@ -1543,13 +1548,13 @@ export const createApplicantPortalApp = (
               <label class="label">Applicant Midnight DID<input class="input mono" name="actorDid" value="${escapeHtml(issuerDraft?.actorDid ?? "")}"${issuerLocked} required /></label>
               <label class="label">Authentication method ID<input class="input mono" name="actorKeyId" value="${escapeHtml(issuerDraft?.actorKeyId ?? "")}"${issuerLocked} required /></label>
               <h3 class="request-step"><span>02</span> Define the exact credential scope</h3>
-              <label class="label">Credential family ID<input class="input mono" name="credentialFamilyId" value="${escapeHtml(issuerDraft?.credentialFamilyId ?? "")}"${issuerLocked} required /></label>
+              <label class="label">Credential scope ID<input class="input mono" name="credentialFamilyId" value="${escapeHtml(issuerDraft?.credentialFamilyId ?? "")}"${issuerLocked} required /></label>
               <label class="label">Schema ID<input class="input mono" name="schemaId" value="${escapeHtml(issuerDraft?.schemaId ?? "")}"${issuerLocked} required /></label>
               <label class="label">Schema version<input class="input mono" name="schemaVersion" value="${escapeHtml(issuerDraft?.schemaVersion ?? "")}" pattern="[0-9]+[.][0-9]+[.][0-9]+"${issuerLocked} required /></label>
               <label class="label">Credential definition ID<input class="input mono" name="credentialDefinitionId" value="${escapeHtml(issuerDraft?.credentialDefinitionId ?? "")}"${issuerLocked} required /></label>
               <label class="label">Status method<input class="input mono" name="statusMethod" value="${escapeHtml(issuerDraft?.statusMethod ?? "")}"${issuerLocked} required /></label>
               <label class="label">Governed resource type<select class="select" name="governedResourceType"${issuerLocked}>
-                ${(["credentialFamily", "schema", "schemaVersion", "credentialDefinition", "statusMethodRequirement"] as const).map((type) => `<option value="${type}"${(issuerDraft?.governedResourceType ?? "credentialFamily") === type ? " selected" : ""}>${type}</option>`).join("")}
+                ${(["credentialFamily", "schema", "schemaVersion", "credentialDefinition", "statusMethodRequirement"] as const).map((type) => `<option value="${type}"${(issuerDraft?.governedResourceType ?? "credentialFamily") === type ? " selected" : ""}>${({ credentialFamily: "Credential scope", schema: "Schema", schemaVersion: "Schema version", credentialDefinition: "Credential definition", statusMethodRequirement: "Status method requirement" })[type]}</option>`).join("")}
               </select></label>
               <h3 class="request-step"><span>03</span> Prepare, sign externally, and register</h3>
               <p class="step-hint">Preparation fixes the exact scope and digest. A changed request needs a fresh digest and signature.</p>
@@ -1738,12 +1743,16 @@ export const createApplicantPortalApp = (
               <p data-recognition-admission>Accepted receipt: <span class="mono">${escapeHtml(state.recognitionAdmission.receiptId)}</span>. Evidence commitment: <span class="mono">${escapeHtml(state.recognitionAdmission.evidenceCommitment)}</span>.</p>
             `}
           </section>
-          ${state.inspection === undefined || state.inspection.sourceMode === "local-ledger" ? "" : `<div class="lanes" id="trust-records">
-            ${renderInspectionLane("Active issuers", issuerCards, state.inspection === undefined || state.inspection.unavailableLists?.includes("issuer") === true)}
-            ${renderInspectionLane("Active verifiers", verifierCards, state.inspection === undefined || state.inspection.unavailableLists?.includes("verifier") === true)}
-            ${renderInspectionLane("Active auditors", auditorCards, state.inspection === undefined || state.inspection.unavailableLists?.includes("auditor") === true)}
-            ${renderInspectionLane("Active recognitions", recognitionCards, state.inspection === undefined || state.inspection.unavailableLists?.includes("recognition") === true)}
-          </div>`}
+          ${state.inspection === undefined || state.inspection.sourceMode === "local-ledger" ? "" : `<section class="records-overview" id="trust-records" aria-labelledby="records-heading">
+            <div class="records-heading"><div><p class="eyebrow">Registry snapshot</p><h2 id="records-heading">Active records</h2></div><p>Only populated categories are shown. Fixture data is not a trust decision.</p></div>
+            <div class="lanes">
+              ${issuerCards.length || state.inspection.unavailableLists?.includes("issuer") ? renderInspectionLane("Active issuers", issuerCards, state.inspection.unavailableLists?.includes("issuer") === true) : ""}
+              ${verifierCards.length || state.inspection.unavailableLists?.includes("verifier") ? renderInspectionLane("Active verifiers", verifierCards, state.inspection.unavailableLists?.includes("verifier") === true) : ""}
+              ${auditorCards.length || state.inspection.unavailableLists?.includes("auditor") ? renderInspectionLane("Active auditors", auditorCards, state.inspection.unavailableLists?.includes("auditor") === true) : ""}
+              ${recognitionCards.length || state.inspection.unavailableLists?.includes("recognition") ? renderInspectionLane("Active recognitions", recognitionCards, state.inspection.unavailableLists?.includes("recognition") === true) : ""}
+            </div>
+            ${cards.length === 0 && !state.inspection.unavailableLists?.length ? `<p class="records-empty">No active records in this fixture yet.</p>` : ""}
+          </section>`}
         </section>
       </main>
     `;
@@ -1773,6 +1782,18 @@ export const createApplicantPortalApp = (
       panel.before(details);
       details.append(summary, panel);
     });
+    const content = root.querySelector<HTMLElement>(".content");
+    const advanced = [...root.querySelectorAll<HTMLDetailsElement>(".workflow-disclosure:not(.role-workflow)")]
+      .filter((details) => !details.id.startsWith("current-"));
+    if (content !== null && advanced.length > 0) {
+      const group = document.createElement("details");
+      group.className = "advanced-tools";
+      group.open = advancedOpen || advanced.some((details) => details.open);
+      const summary = document.createElement("summary");
+      summary.textContent = "Advanced evidence and recovery";
+      group.append(summary, ...advanced);
+      content.append(group);
+    }
     if (previousVp !== undefined && previousChallengeHash === state.pendingApplication?.challenge?.challengeHash) {
       const currentVp = root.querySelector<HTMLTextAreaElement>("[data-application-vp-form] [name='presentation']");
       if (currentVp !== null) currentVp.value = previousVp;

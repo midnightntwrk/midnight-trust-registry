@@ -308,12 +308,24 @@ body { background: radial-gradient(circle at 100% 0, #e8e9ff 0, transparent 26re
 .workflow-disclosure > summary { cursor: pointer; padding: 1rem 1.2rem; color: var(--midnight-black); font-weight: 700; }
 .workflow-disclosure[open] > summary { color: var(--midnight-blue); border-bottom: 1px solid var(--midnight-border); }
 .workflow-disclosure > .form-panel { border: 0; padding-top: 0.8rem; }
+.records-overview, .advanced-tools { grid-column: 1 / -1; min-width: 0; }
+.records-overview { padding: clamp(1rem, 2.2vw, 1.7rem); border: 1px solid var(--midnight-border); border-radius: 18px; background: var(--midnight-white); }
+.records-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.records-heading h2 { margin: 0; }
+.records-heading p, .records-empty { color: var(--midnight-muted); }
+.records-overview .lanes { display: grid; }
+.records-overview .lane { box-shadow: none; }
+.advanced-tools { border: 1px solid var(--midnight-border); border-radius: 18px; background: var(--midnight-white); }
+.advanced-tools > summary { cursor: pointer; padding: 1.15rem 1.35rem; font-weight: 700; }
+.advanced-tools[open] > summary { border-bottom: 1px solid var(--midnight-border); }
+.advanced-tools > .workflow-disclosure { margin: 0.75rem; }
 .card .mono, .lane code, .form-panel pre { overflow-wrap: anywhere; word-break: break-word; white-space: pre-wrap; }
 .card p, .lane p, .form-panel p { overflow-wrap: anywhere; }
 .record-identifiers { margin-top: 0.5rem; }
 .record-identifiers summary { cursor: pointer; color: var(--midnight-blue); font-size: 0.88rem; font-weight: 600; }
 .form-panel { box-shadow: none; }
 .lane-header h2, .form-panel h2 { font-size: 1.35rem; }
+@media (max-width: 700px) { .records-heading { display: block; } .records-overview .lanes { grid-template-columns: minmax(0, 1fr); } }
 
 .journey-picker {
   grid-column: 1 / -1;

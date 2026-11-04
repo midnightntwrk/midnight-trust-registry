@@ -14,16 +14,21 @@ proposals, not evidence that a workflow is implemented or finalized.
 
 | Design intent | Local implementation and acceptance |
 | --- | --- |
-| Lead with the next task, not a protocol field | The fixture portal puts its working demo application before governed role preparation in visual and keyboard order; the local-ledger portal leads to role choice. Admin headings distinguish pending decisions from a quiet review workspace. API editing lives under Connection and source details. `ui-layout.spec.mjs` and `demo-application-handoff.spec.mjs` check this hierarchy. |
+| Lead with the next task, not a protocol field | The default portal leads to governed role preparation. On loopback, `demo=1` opts into the label-only fixture application ahead of that path. Admin headings distinguish pending decisions from a quiet review workspace. API editing lives under Connection and source details. `ui-layout.spec.mjs` and `demo-application-handoff.spec.mjs` check this hierarchy. |
 | One Midnight visual language | Both apps use the approved logo, Outfit, black/white/blue tokens, and shared navigation/status components. |
 | A compact review list with a bounded detail | Empty lifecycle lanes are omitted from the default admin view; selected detail stays beside the list on desktop and below it on mobile. |
-| Truthful source and certainty | A visible source strip identifies fixture, API claim, or unavailable state and offers Recheck. Navigation follows the source: fixture demo and browse, exact lookup for local-ledger API claims, connection recovery when unavailable. Broad browse is omitted rather than shown as empty in local-ledger mode. Epoch and technical identity stay in details. No fixture record is called final. |
+| Truthful source and certainty | A visible source strip identifies fixture, API claim, or unavailable state and offers Recheck. Navigation follows the source: optional fixture demo and browse, exact lookup for local-ledger API claims, connection recovery when unavailable. Broad browse is omitted rather than shown as empty in local-ledger mode. Empty fixture record categories are summarized instead of rendered as large cards; evidence/recovery tools are grouped under Advanced. Epoch and technical identity stay in details. No fixture record is called final. |
 | Mobile task access | The desktop sidebar becomes a native keyboard-operable Menu at narrow widths. The mobile portal omits the nonessential snapshot card so the role path appears sooner; source status and Recheck remain visible. |
 
 The canvas is a visual reference, not a complete behavior specification. Its
 illustrative active issuer is not a real on-chain grant. A full assistive-technology
 review, clean-checkout adoption trial, and deployed standalone actor E2E remain
 separate acceptance work.
+
+Issuer screens say **credential scope** rather than "credential family". The
+existing `credentialFamilyId` and `credentialFamily` wire fields remain unchanged
+for compatibility with signed scope commitments and current API clients; a
+protocol rename requires a separately reviewed migration.
 
 ## Run locally
 
@@ -40,9 +45,15 @@ pnpm run demo:serve:admin-console
 pnpm run demo:serve:applicant-portal
 ```
 
-Open the admin console at `http://127.0.0.1:4173/?apiBase=http://127.0.0.1:4400`
-and the applicant portal at `http://127.0.0.1:4175/?apiBase=http://127.0.0.1:4400`.
-The default demo API is a local fixture workspace with unsafe demo mutations;
+Open the ordinary admin console at `http://127.0.0.1:4173/?apiBase=http://127.0.0.1:4400`
+and applicant portal at `http://127.0.0.1:4175/?apiBase=http://127.0.0.1:4400`.
+To exercise label-only fixture submission and local admin shortcut controls,
+add `demo=1` to each URL, for example
+`http://127.0.0.1:4175/?demo=1&apiBase=http://127.0.0.1:4400`.
+The presentation flag is accepted only on a loopback UI origin. It does not
+authorize mutations: the API must separately be started with
+`--unsafe-demo-mutations` on loopback. Do not expose a demo workspace to users.
+The demo API command starts a local fixture workspace with unsafe demo mutations;
 do not expose these ports beyond loopback or interpret its records as deployed
 ledger state. The source panel and Workspace settings disclose that distinction.
 The portal's governed private-evidence actions require an authenticated
