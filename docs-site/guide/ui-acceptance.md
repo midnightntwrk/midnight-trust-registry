@@ -40,6 +40,7 @@ repeatable UI acceptance evidence:
 | Browse fixture records and review a bounded admin detail | `ui-layout.spec.mjs` |
 | Choose issuer, verifier, auditor, or maintainer and complete challenge-bound evidence admission with an external signature | `applicant-portal.spec.mjs` (four role cases) |
 | Confirm an issuer's proposed, authorized, active, suspended, revoked, and archived transitions with refreshed board status | `admin-console.spec.mjs` (fixture review journey) |
+| Confirm fixture epoch publication, read back the exact new epoch, then submit an externally signed workspace intent against the refreshed context | `admin-console.spec.mjs` (fixture governance journey) |
 | Filter the fixture admin queue by text and lifecycle status before acting; filtered-out records cannot remain selected | `admin-console.spec.mjs`, admin unit tests |
 | Recover an accepted proposal after its HTTP response is lost, without repeating the mutation | `governed-proposal-recovery.spec.mjs` (four role cases) |
 | Resolve exact current authorization and separate external recognition scopes in local-ledger mode; reject a substituted recognition tuple | `local-lookup.spec.mjs` (admin and applicant) |
@@ -60,9 +61,8 @@ readback, egress-denied actor journeys, and restart/restore evidence.
 ## Final acceptance still to cover
 
 The browser suite is not yet a pass for *all* successful UI use cases. Before
-closing the UI acceptance issue, Playwright must also exercise a successful
-fixture epoch publication and signed workspace intent; the threshold revision
-and separate evidence-verifier registration; a successful governed proposal
+closing the UI acceptance issue, Playwright must also exercise the threshold
+revision and separate evidence-verifier registration; a successful governed proposal
 with external quorum; recognition accreditation and historical evidence
 export; and editable loopback endpoint settings. Add reviewed contrast checks.
 Each test must

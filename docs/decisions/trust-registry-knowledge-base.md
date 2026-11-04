@@ -3185,3 +3185,10 @@ The browser acceptance matrix additionally covers the full fixture issuer
 lifecycle, exact external recognition with substituted-scope rejection,
 packaged same-origin endpoint locking, and 200% text reflow on mobile. These
 remain fixture and UI guarantees, not deployed standalone E2E evidence.
+
+A further Chromium fixture journey confirms epoch publication, checks the
+exact refreshed epoch in Workspace settings, loads the new signing context,
+and submits an externally signed maintainer workspace intent. The test checks
+the confirmation and POST payload and keeps the fixture-source warning in
+view. Its fixture signature is accepted only by a controlled test host; this
+is not proof of a valid ledger signature, quorum, or finalized deployment.

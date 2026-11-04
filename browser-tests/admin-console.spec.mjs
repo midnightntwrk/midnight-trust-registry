@@ -275,3 +275,93 @@ test("fixture admin review advances an issuer through approval, activation, risk
     await new Promise((done, reject) => server.close((error) => error ? reject(error) : done()));
   }
 });
+
+test("fixture governance publishes an epoch and submits an externally signed workspace intent", async ({ page, allowedLocalOrigins }) => {
+  const staticHandler = createStaticAssetHandler({
+    distDir: resolve("packages/trust-registry-admin-console/dist"),
+    name: "admin-console-governance-journey",
+  });
+  const registryId = "registry:ui-governance";
+  const workspaceCommitment = `0x${"a".repeat(64)}`;
+  let epochId = "epoch:ui-governance:1";
+  const posted = [];
+  const server = createServer(async (request, response) => {
+    const path = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+    if (path !== "/health" && !path.startsWith("/v1/")) {
+      await staticHandler(request, response);
+      return;
+    }
+    response.setHeader("content-type", "application/json");
+    if (path === "/health") {
+      response.end(JSON.stringify({ status: "ok", sourceMode: "workspace", registryId }));
+      return;
+    }
+    if (request.method === "POST") {
+      let body = "";
+      for await (const chunk of request) body += chunk;
+      posted.push({ path, body: JSON.parse(body) });
+      if (path === "/v1/epochs/publish") {
+        epochId = "epoch:ui-governance:2";
+        response.end(JSON.stringify({ recordKind: "epoch", epoch: { epochId } }));
+      } else if (path === "/v1/mutations") {
+        response.end(JSON.stringify({ recordKind: "authorization", operation: { operation: "approve" } }));
+      } else {
+        response.statusCode = 404;
+        response.end(JSON.stringify({ title: "unexpected mutation" }));
+      }
+      return;
+    }
+    if (path === "/v1/registry/summary") {
+      response.end(JSON.stringify({ ...summary("ui-governance"), registryId, currentEpochId: epochId }));
+      return;
+    }
+    if (path === "/v1/registry/mutation-context") {
+      response.end(JSON.stringify({ registryId, expectedEpochId: epochId,
+        expectedWorkspaceCommitment: workspaceCommitment }));
+      return;
+    }
+    response.end(JSON.stringify({ entries: [] }));
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("expected TCP address");
+  const base = `http://127.0.0.1:${address.port}`;
+  try {
+    allowedLocalOrigins.add(base);
+    const confirmations = [];
+    page.on("dialog", async (dialog) => {
+      confirmations.push(dialog.message());
+      await dialog.accept();
+    });
+    await page.goto(`${base}/?apiBase=${encodeURIComponent(base)}`);
+    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    await page.locator(".advanced-workflows > summary").click();
+    await page.locator("[data-epoch-label]").fill("reviewed fixture epoch");
+    await page.locator("[data-epoch-form] button[type='submit']").click();
+    await expect(page.locator("[data-epoch-label]")).toBeEmpty();
+    await expect(page.locator(".workspace-settings")).toContainText("epoch:ui-governance:2");
+    expect(confirmations[0]).toContain("reviewed fixture epoch");
+    expect(posted[0]).toEqual({ path: "/v1/epochs/publish", body: { label: "reviewed fixture epoch" } });
+
+    await page.locator("[data-signed-context]").click();
+    await expect(page.locator("#task-signed-intent")).toContainText(workspaceCommitment);
+    const envelope = {
+      intent: { registryId, expectedEpochId: epochId,
+        expectedWorkspaceCommitment: workspaceCommitment, actorRole: "maintainer",
+        targetId: "auth:issuer:ui-governance:v1" },
+      signature: { algorithm: "external-fixture-signature" },
+      operation: { operation: "approve", target: "issuer", id: "auth:issuer:ui-governance:v1" },
+    };
+    await page.locator("[data-signed-submit] [name='signedEnvelope']").fill(JSON.stringify(envelope));
+    await page.locator("[data-signed-submit] button[type='submit']").click();
+    await expect(page.locator(".alert.success")).toContainText("Signed approve accepted");
+    expect(confirmations[1]).toContain(envelope.intent.targetId);
+    expect(posted[1]).toEqual({ path: "/v1/mutations", body: envelope });
+    await expect(page.locator(".source-panel")).toContainText("not deployed ledger evidence");
+    await expect(page.locator("[data-signed-submit] button[type='submit']")).toBeDisabled();
+  } finally {
+    await page.close();
+    server.closeAllConnections();
+    await new Promise((done, reject) => server.close((error) => error ? reject(error) : done()));
+  }
+});
