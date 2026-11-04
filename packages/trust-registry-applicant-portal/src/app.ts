@@ -1571,7 +1571,7 @@ export const createApplicantPortalApp = (
               ${state.currentAuthorizationResult === undefined && state.currentAuthorizationError === undefined ? `<div class="lookup-empty"><h3>No record loaded yet</h3><p>Enter an exact role, DID, and governed resource to inspect the API's current claim.</p></div>` : ""}
               ${state.currentAuthorizationResult === undefined ? "" : `<div class="lookup-claim" data-current-authorization-result role="status">
                 <p><strong>Unverified current API claim:</strong> ${escapeHtml(state.currentAuthorizationResult.authorization.status)}.</p>
-                <details><summary>Inspect returned authorization</summary><pre class="mono">${escapeHtml(JSON.stringify(state.currentAuthorizationResult, null, 2))}</pre></details>
+                <details><summary>Inspect returned authorization</summary><pre class="mono" tabindex="0" aria-label="Scrollable authorization JSON">${escapeHtml(JSON.stringify(state.currentAuthorizationResult, null, 2))}</pre></details>
               </div>`}
               <div class="lookup-interpretation"><strong>How to interpret a result</strong><p>A returned status is not independently authenticated finality. Do not use it as the sole basis for a trust decision.</p></div>
             </aside>
@@ -1598,7 +1598,7 @@ export const createApplicantPortalApp = (
               ${state.currentRecognitionResult === undefined && state.currentRecognitionError === undefined ? `<div class="lookup-empty"><h3>No record loaded yet</h3><p>Enter the exact authority, registry, and scope to inspect the API's current claim.</p></div>` : ""}
               ${state.currentRecognitionResult === undefined ? "" : `<div class="lookup-claim" data-current-recognition-result role="status">
                 <p><strong>Unverified current API claim:</strong> ${escapeHtml(state.currentRecognitionResult.recognition.status)}.</p>
-                <details><summary>Inspect returned recognition</summary><pre class="mono">${escapeHtml(JSON.stringify(state.currentRecognitionResult, null, 2))}</pre></details>
+                <details><summary>Inspect returned recognition</summary><pre class="mono" tabindex="0" aria-label="Scrollable recognition JSON">${escapeHtml(JSON.stringify(state.currentRecognitionResult, null, 2))}</pre></details>
               </div>`}
               <div class="lookup-interpretation"><strong>How to interpret a result</strong><p>A returned status is not independently authenticated finality or local membership. Verify the finalized registry before relying on it.</p></div>
             </aside>

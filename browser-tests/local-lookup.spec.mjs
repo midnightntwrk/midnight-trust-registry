@@ -278,6 +278,74 @@ test("applicant recognition deep link selects only the external lookup", async (
 });
 
 for (const app of ["admin-console", "applicant-portal"]) {
+  test(`${app} keeps exact lookup readable at 320px and 200% text`, async ({ page, allowedLocalOrigins }, testInfo) => {
+    const host = await serveLocalApp(app);
+    try {
+      allowedLocalOrigins.add(host.base);
+      await page.setViewportSize({ width: 320, height: 700 });
+      await page.goto(`${host.base}/?apiBase=${encodeURIComponent(host.base)}`);
+      await expect(page.locator(".source-badge")).toHaveText("API claim");
+      await page.addStyleTag({ content: "html { font-size: 200%; }" });
+      const checkWidth = async () => {
+        const layout = await page.evaluate(() => ({
+          page: document.documentElement.scrollWidth,
+          overflowing: [...document.querySelectorAll("body *")]
+            .filter((element) => !element.matches("input, textarea, select, .lookup-result pre")
+              && element.scrollWidth > element.clientWidth + 1)
+            .slice(0, 8).map((element) => `${element.tagName}.${element.className}:${element.scrollWidth}/${element.clientWidth}`),
+        }));
+        expect(layout.page, JSON.stringify(layout)).toBeLessThanOrEqual(320);
+        expect(layout.overflowing).toEqual([]);
+      };
+      await checkWidth();
+      if (app === "admin-console") {
+        await page.locator("[data-current-id]").fill(id);
+        await page.locator("[data-current-lookup] button[type='submit']").click();
+        await expect(page.locator(".card")).toContainText("Exact UI issuer");
+        await page.locator(".technical-details > summary").click();
+      } else {
+        await expect(page.locator(".lookup-picker")).toBeVisible();
+        await expect(page.locator(".current-lookup-panel:not([hidden]) .lookup-empty"))
+          .toContainText("No record loaded yet");
+        const switchWidth = await page.locator(".lookup-switch a").first()
+          .evaluate((element) => element.getBoundingClientRect().width);
+        expect(switchWidth).toBeGreaterThanOrEqual(200);
+        await page.locator(".lookup-switch a[href='#current-recognition-lookup']").click();
+        await expect(page.locator("#current-recognition-lookup")).toBeVisible();
+        const form = page.locator("[data-current-recognition]");
+        await form.locator("[name='recognizedAuthorityDid']").fill("did:web:authority.example");
+        await form.locator("[name='recognizedRegistryId']").fill("external:registry");
+        await form.locator("[name='scopeResourceType']").fill("schema");
+        await form.locator("[name='scopeResourceId']").fill("degree");
+        await form.locator("[name='scopeContext']").fill('{"purpose":"assurance"}');
+        await form.locator("button[type='submit']").click();
+        await expect(page.locator("[data-current-recognition-result]"))
+          .toContainText("Unverified current API claim");
+        await page.locator("[data-current-recognition-result] details > summary").click();
+        const rawJson = page.locator("[data-current-recognition-result] pre");
+        await expect(rawJson).toHaveAttribute("tabindex", "0");
+        await rawJson.focus();
+        await expect(rawJson).toBeFocused();
+        const technical = await rawJson.evaluate((element) => ({
+          height: element.getBoundingClientRect().height,
+          scrollable: element.scrollWidth > element.clientWidth,
+        }));
+        expect(technical.height).toBeLessThanOrEqual(750);
+        expect(technical.scrollable).toBe(true);
+        if (process.env.TR_UI_CAPTURE === "1") {
+          await page.locator("#current-recognition-lookup .lookup-result").screenshot({ path: testInfo.outputPath("applicant-portal-local-zoom-result-320.png") });
+        }
+      }
+      await checkWidth();
+      if (process.env.TR_UI_CAPTURE === "1") {
+        await page.screenshot({ path: testInfo.outputPath(`${app}-local-zoom-320.png`), fullPage: true });
+      }
+    } finally {
+      await page.close();
+      await host.close();
+    }
+  });
+
   test(`${app} discards a local API claim while its source is rechecked and changes mode`, async ({ page, allowedLocalOrigins }) => {
     const host = await serveLocalApp(app);
     let releaseHealth = () => {};

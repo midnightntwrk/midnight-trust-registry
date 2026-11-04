@@ -383,14 +383,22 @@ body { background: radial-gradient(circle at 100% 0, #e8e9ff 0, transparent 26re
 .lookup-result .lookup-empty p { max-width: 40ch; margin: 0; color: var(--midnight-muted); }
 .lookup-result .lookup-claim { align-self: start; min-width: 0; padding: 1rem; border: 1px solid var(--midnight-border); border-radius: 10px; }
 .lookup-result .lookup-claim p { margin: 0 0 0.7rem; }
-.lookup-result .lookup-claim pre { max-width: 100%; overflow-wrap: anywhere; word-break: break-word; white-space: pre-wrap; }
+.lookup-result .lookup-claim summary { overflow-wrap: anywhere; }
+.lookup-result .lookup-claim pre { max-width: 100%; max-height: 20rem; margin: 0.75rem 0 0; padding: 0.75rem; border-radius: 8px; background: var(--midnight-surface); overflow: auto; white-space: pre; overflow-wrap: normal; word-break: normal; }
+.lookup-result .lookup-claim pre:focus-visible { outline: 2px solid var(--midnight-blue); outline-offset: 2px; }
 .lookup-result .lookup-interpretation { padding: 1rem; border-radius: 10px; background: var(--midnight-surface); }
 .lookup-result .lookup-interpretation p { margin: 0.4rem 0 0; color: var(--midnight-muted); }
 @media (max-width: 980px) {
   .current-lookup-panel { grid-template-columns: minmax(0, 1fr); }
   .current-lookup-panel .lookup-result { min-height: 0; }
 }
-@media (max-width: 480px) { .lookup-switch { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 480px) {
+  .lookup-switch { grid-template-columns: minmax(0, 1fr); }
+  .lookup-switch a { font-size: 0.875rem; }
+  .current-lookup-panel .lookup-result { padding: 0.5rem; }
+  .lookup-result .lookup-claim { padding: 0; border: 0; }
+  .lookup-result .lookup-interpretation { padding: 0.75rem 0 0; border-top: 1px solid var(--midnight-border); border-radius: 0; background: transparent; }
+}
 
 .journey-picker {
   grid-column: 1 / -1;
