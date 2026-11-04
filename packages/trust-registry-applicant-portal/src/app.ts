@@ -1409,9 +1409,9 @@ export const createApplicantPortalApp = (
     const journeyPicker = `
           <section class="journey-picker" id="governed-requests" aria-labelledby="journey-heading">
             <div class="journey-heading"><p class="eyebrow">Governed requests</p><h2 id="journey-heading">${demoMode && state.inspection !== undefined && state.inspection.sourceMode !== "local-ledger" ? "Applying beyond the demo?" : "What would you like to do?"}</h2>
-              <p>Choose a role to inspect its exact authority, evidence, and signing requirements. Nothing is submitted until you confirm.</p>
+              <p>Choose a role to see its scope, evidence, and signing steps. Nothing is submitted until you confirm.</p>
             </div>
-            <p class="journey-prerequisite">${state.inspection === undefined ? "Connect to a registry source before preparing a governed request." : privateHost ? "Same-origin host selected. This browser cannot verify your session; the host must authenticate private requests." : "This local connection can prepare a request, but cannot submit governed evidence. Use an authenticated same-origin host for that step."}</p>
+            <p class="journey-prerequisite">${state.inspection === undefined ? "Connect to a registry source before preparing a governed request." : privateHost ? "Private host selected. The host must authenticate your session before submission." : "Local connection: prepare only. Submission requires an authenticated same-origin host."}</p>
             <div class="journey-cards">
               <a href="#issuer-request" data-open-workflow="issuer-request"><span class="role-mark" aria-hidden="true">I</span><strong>Become an issuer</strong><span>Issue credentials in a defined scope.</span><em>View issuer steps &rarr;</em></a>
               <a href="#verifier-request" data-open-workflow="verifier-request"><span class="role-mark" aria-hidden="true">V</span><strong>Become a verifier</strong><span>Verify a precise scope.</span><em>View verifier steps &rarr;</em></a>
@@ -1420,17 +1420,17 @@ export const createApplicantPortalApp = (
             </div>
             <div class="journey-guide">
               <div class="journey-steps">
-                <p class="eyebrow">Your path</p><h3>Four steps, one clear outcome</h3>
+                <p class="eyebrow">Your path</p><h3>Four steps to submit a request</h3>
                 <ol>
-                  <li><strong>Choose a role</strong><span>Check the authority and scope before you begin.</span></li>
-                  <li><strong>Prepare evidence</strong><span>Provide the exact governed resource and redacted evidence requested for that role.</span></li>
-                  <li><strong>Sign and submit</strong><span>Use external keys and an authenticated same-origin host; this browser never handles private keys.</span></li>
-                  <li><strong>Check the decision</strong><span>Use the returned identifiers to inspect status. Submission alone is not approval.</span></li>
+                  <li><strong>Choose a role</strong><span>Confirm the authority and scope.</span></li>
+                  <li><strong>Prepare evidence</strong><span>Provide the exact resource and redacted role evidence.</span></li>
+                  <li><strong>Sign and submit</strong><span>Sign externally; submit through an authenticated host.</span></li>
+                  <li><strong>Keep the receipt</strong><span>Save returned IDs. A receipt is not approval.</span></li>
                 </ol>
               </div>
               <aside class="journey-requirements"><p class="eyebrow">Before you start</p><h3>What you’ll need</h3>
-                <p>A subject DID, the exact scope or registry resource, and evidence appropriate to your role.</p>
-                <p>For private submission, your host must authenticate you and an external signer must sign the exact request.</p>
+                <p>Your subject DID, exact scope or registry resource, and role evidence.</p>
+                <p>Private submission needs a same-origin authenticated host and an external signature. This browser never handles private keys.</p>
               </aside>
             </div>
           </section>`;

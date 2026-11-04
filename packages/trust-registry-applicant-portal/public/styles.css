@@ -449,8 +449,28 @@ body { background: radial-gradient(circle at 100% 0, #e8e9ff 0, transparent 26re
 @media (max-width: 620px) {
   .lanes { grid-template-columns: minmax(0, 1fr); }
   .journey-cards { grid-template-columns: minmax(0, 1fr); }
-  .journey-cards a { min-height: 6rem; }
-  .journey-steps ol { grid-template-columns: minmax(0, 1fr); }
+  .journey-picker { padding: 0.9rem; }
+  .journey-heading p:not(.eyebrow) { margin: 0.5rem 0; }
+  .journey-prerequisite { margin: 0.45rem 0 0.7rem; }
+  .journey-cards { gap: 0.5rem; }
+  .journey-cards a {
+    display: grid;
+    grid-template-columns: 2rem minmax(0, 1fr) 1rem;
+    grid-template-rows: auto auto;
+    align-items: center;
+    gap: 0 0.65rem;
+    min-height: 4.7rem;
+    padding: 0.65rem 0.75rem;
+  }
+  .journey-cards .role-mark { grid-column: 1; grid-row: 1 / 3; }
+  .journey-cards strong { grid-column: 2; grid-row: 1; font-size: 1rem; }
+  .journey-cards span:not(.role-mark) { grid-column: 2; grid-row: 2; font-size: 0.76rem; }
+  .journey-cards em { display: none; }
+  .journey-cards a::after { content: "\2192"; grid-column: 3; grid-row: 1 / 3; color: var(--midnight-blue); font-size: 1.2rem; }
+  .journey-guide { margin-top: 0.7rem; gap: 0.5rem; }
+  .journey-steps, .journey-requirements { padding: 0.9rem; }
+  .journey-guide h3 { margin-bottom: 0.55rem; }
+  .journey-steps ol { grid-template-columns: minmax(0, 1fr); gap: 0.5rem; }
 }
 
 @media (max-width: 620px) {

@@ -158,7 +158,7 @@ for (const app of ["admin-console", "applicant-portal"]) {
         await page.locator(".advanced-tools > summary").click();
         await page.locator('[data-workflow="Recover external recognition"] > summary').click();
         await expect(page.locator("[data-recognition-challenge]")).toBeDisabled();
-        await expect(page.locator(".journey-prerequisite")).toContainText("cannot submit governed evidence");
+        await expect(page.locator(".journey-prerequisite")).toContainText("Submission requires an authenticated same-origin host");
       }
     } finally {
       await page.close();
@@ -400,6 +400,19 @@ for (const [app, title] of [
         }
         if (app === "applicant-portal") {
           await expect(page.locator(".hero-actions a").first()).toHaveAttribute("href", "#governed-requests");
+          if (width === 390) {
+            const journeyLayout = await page.evaluate(() => ({
+              sectionHeight: document.querySelector(".journey-picker").getBoundingClientRect().height,
+              roleHeights: [...document.querySelectorAll(".journey-cards a")]
+                .map((role) => role.getBoundingClientRect().height),
+            }));
+            expect(journeyLayout.sectionHeight).toBeLessThan(1050);
+            expect(journeyLayout.roleHeights).toHaveLength(4);
+            expect(Math.max(...journeyLayout.roleHeights)).toBeLessThan(95);
+            await expect(page.locator(".journey-steps")).toContainText("A receipt is not approval");
+            await expect(page.locator(".journey-steps")).not.toContainText("Check the decision");
+            await expect(page.locator(".journey-requirements")).toContainText("authenticated host");
+          }
           const contentOrder = await page.evaluate(() => ({
             rolesTop: document.querySelector(".journey-picker").getBoundingClientRect().top,
             recordsTop: document.querySelector("#trust-records").getBoundingClientRect().top,
