@@ -1402,8 +1402,7 @@ export const createApplicantPortalApp = (
     root.innerHTML = `
       <main class="shell app-shell" data-settings-active="${window.location.hash === "#connection-details"}">
         <header class="brand-bar">
-          <span class="brand-name"><img class="brand-logo" src="./midnight-logo.svg" alt="Midnight" /> <span class="brand-section">Trust Registry</span></span>
-          <span class="brand-section">Applicant portal</span>
+          <span class="brand-name"><img class="brand-logo" src="./midnight-logo.svg" alt="Midnight" /><span class="brand-product"><strong class="brand-product-title">Trust Registry</strong><span class="brand-product-context">Applicant portal</span></span></span>
           <details class="mobile-task-menu"><summary>Menu</summary><nav aria-label="Portal tasks">${taskLinks}</nav></details>
         </header>
         <nav class="task-nav" aria-label="Portal tasks">${taskLinks}</nav>

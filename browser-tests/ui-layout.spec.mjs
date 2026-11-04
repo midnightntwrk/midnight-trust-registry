@@ -225,11 +225,26 @@ for (const [app, title] of [
     const server = await serveApp(app);
     try {
       allowedLocalOrigins.add(server.base);
-      for (const width of [1440, 768, 390]) {
+      for (const width of [1440, 768, 390, 320]) {
         await page.setViewportSize({ width, height: 900 });
         await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
         await expect(page.getByRole("heading", { name: title })).toBeVisible();
         await expect.poll(() => page.locator(".brand-logo").evaluate((image) => image.naturalWidth)).toBeGreaterThan(0);
+        await expect(page.locator(".brand-product-title")).toHaveText("Trust Registry");
+        await expect(page.locator(".brand-product-context")).toHaveText(app === "admin-console" ? "Admin console" : "Applicant portal");
+        const brandLockup = await page.evaluate(() => {
+          const logo = document.querySelector(".brand-logo").getBoundingClientRect();
+          const title = document.querySelector(".brand-product-title");
+          const context = document.querySelector(".brand-product-context");
+          const titleBox = title.getBoundingClientRect();
+          const contextBox = context.getBoundingClientRect();
+          return { logoRight: logo.right, titleLeft: titleBox.left, contextLeft: contextBox.left,
+            titleSize: parseFloat(getComputedStyle(title).fontSize), contextSize: parseFloat(getComputedStyle(context).fontSize) };
+        });
+        expect(brandLockup.titleLeft).toBeGreaterThan(brandLockup.logoRight);
+        expect(Math.abs(brandLockup.titleLeft - brandLockup.contextLeft)).toBeLessThan(2);
+        expect(brandLockup.titleSize).toBeGreaterThan(brandLockup.contextSize);
+        expect(brandLockup.contextLeft - brandLockup.logoRight).toBeLessThan(48);
         await expect(page.locator(".metrics")).toContainText("Midnight Trust Registry");
         await expect(page.locator(".source-badge")).toHaveText("Local fixture");
         await expect(page.locator(".source-panel")).toContainText("not deployed ledger evidence");

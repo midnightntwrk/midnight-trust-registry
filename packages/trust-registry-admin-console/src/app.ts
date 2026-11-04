@@ -1063,8 +1063,7 @@ export const createAdminConsoleApp = (
     root.innerHTML = `
       <main class="shell app-shell" data-settings-active="${window.location.hash === "#workspace-settings"}">
         <header class="brand-bar">
-          <span class="brand-name"><img class="brand-logo" src="./midnight-logo.svg" alt="Midnight" /> <span class="brand-section">Trust Registry</span></span>
-          <span class="brand-section">Admin console</span>
+          <span class="brand-name"><img class="brand-logo" src="./midnight-logo.svg" alt="Midnight" /><span class="brand-product"><strong class="brand-product-title">Trust Registry</strong><span class="brand-product-context">Admin console</span></span></span>
           <details class="mobile-task-menu"><summary>Menu</summary><nav aria-label="Admin tasks">${taskLinks}</nav></details>
         </header>
         <nav class="task-nav" aria-label="Admin tasks">${taskLinks}</nav>

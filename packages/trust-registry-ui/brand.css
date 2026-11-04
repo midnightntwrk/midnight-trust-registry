@@ -29,7 +29,7 @@
   flex-wrap: wrap;
   gap: 0.75rem 1.5rem;
   margin-bottom: 0;
-  padding: 1rem 1.35rem;
+  padding: 0.9rem 1.2rem;
   border-radius: 18px;
   background: var(--midnight-black);
   color: var(--midnight-white);
@@ -38,29 +38,40 @@
 .brand-name {
   display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
   min-width: 0;
-  gap: 0.7rem;
+  gap: 1rem;
   color: var(--midnight-white);
-  font-size: 1.15rem;
-  font-weight: 700;
-  letter-spacing: -0.035em;
   text-decoration: none;
 }
 
 .brand-logo {
   display: block;
-  width: 8.7rem;
+  width: 7.7rem;
   height: auto;
-  padding: 0.65rem 0.8rem;
-  border-radius: 8px;
-  background: var(--midnight-black);
+  flex: none;
 }
 
-.brand-section {
+.brand-product {
+  display: grid;
+  min-width: 0;
+  gap: 0.08rem;
+  padding-left: 1rem;
+  border-left: 1px solid #5b5b66;
+}
+
+.brand-product-title {
+  color: var(--midnight-white);
+  font-size: 1.22rem;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+}
+
+.brand-product-context {
   color: #c8c9d8;
-  font-size: 0.86rem;
+  font-size: 0.78rem;
   font-weight: 600;
+  line-height: 1.3;
 }
 
 .mobile-task-menu { display: none; }
@@ -202,8 +213,12 @@
 .settings-footer p { margin: 0.35rem 0 0; color: #d1d1dd; font-size: 0.84rem; line-height: 1.5; }
 
 @media (max-width: 760px) {
-  .brand-logo { width: min(8.7rem, 44vw); }
-  .brand-bar > .brand-section { display: none; }
+  .brand-bar { flex-wrap: nowrap; padding: 0.8rem 0.9rem; }
+  .brand-name { gap: 0.65rem; }
+  .brand-logo { width: min(6.7rem, 28vw); }
+  .brand-product { padding-left: 0.65rem; }
+  .brand-product-title { font-size: 1.03rem; }
+  .brand-product-context { font-size: 0.69rem; }
   .mobile-task-menu { display: block; margin-left: auto; }
   .mobile-task-menu > summary {
     display: grid;
@@ -267,6 +282,16 @@
   .app-shell > .task-nav::before { display: none; }
   .app-shell > .task-nav a { flex: 1 1 auto; font-size: 0.78rem; }
   .settings-cards { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 360px) {
+  .brand-bar { padding: 0.75rem 0.7rem; }
+  .brand-name { gap: 0.45rem; }
+  .brand-logo { width: 5.1rem; }
+  .brand-product { padding-left: 0.45rem; }
+  .brand-product-title { font-size: 0.98rem; white-space: nowrap; }
+  .brand-product-context { font-size: 0.72rem; white-space: nowrap; }
+  .mobile-task-menu > summary { min-width: 4.2rem; }
 }
 
 .source-panel {
