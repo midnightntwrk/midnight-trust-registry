@@ -329,7 +329,9 @@ for (const [app, title] of [
         expect(brandLockup.titleLeft).toBeGreaterThan(brandLockup.logoRight);
         expect(Math.abs(brandLockup.titleLeft - brandLockup.contextLeft)).toBeLessThan(2);
         expect(brandLockup.titleSize).toBeGreaterThan(brandLockup.contextSize);
+        if (width > 760) expect(brandLockup.titleSize).toBeGreaterThanOrEqual(24);
         expect(brandLockup.contextLeft - brandLockup.logoRight).toBeLessThan(48);
+        if (app === "applicant-portal") await expect(page.locator(".hero-intro > .eyebrow")).toHaveText("Applicant workspace");
         await expect(page.locator(".metrics")).toContainText("Midnight Trust Registry");
         await expect(page.locator(".source-badge")).toHaveText("Local fixture");
         await expect(page.locator(".source-panel")).toContainText("not deployed ledger evidence");

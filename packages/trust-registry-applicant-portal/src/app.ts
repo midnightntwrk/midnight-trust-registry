@@ -1444,7 +1444,7 @@ export const createApplicantPortalApp = (
         <nav class="task-nav" aria-label="Portal tasks">${taskLinks}</nav>
         <section class="hero">
           <div class="hero-intro">
-            <p class="eyebrow">Midnight Trust Registry</p>
+            <p class="eyebrow">Applicant workspace</p>
             <h1>Find your place in the registry</h1>
             <p>${state.inspection === undefined
               ? "Registry data is unavailable. Recheck the connection before inspecting or submitting a request."
