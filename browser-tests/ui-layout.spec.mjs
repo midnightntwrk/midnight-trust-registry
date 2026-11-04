@@ -39,6 +39,7 @@ const issuer = {
 
 async function serveApp(app) {
   let healthAvailable = true;
+  let auditorAvailable = true;
   const requests = [];
   const packagedPath = app === "admin-console" ? "/admin/" : "/applicant/";
   const staticHandler = createStaticAssetHandler({
@@ -61,6 +62,10 @@ async function serveApp(app) {
         : { title: "Registry unavailable", detail: "Fixture host is offline" }));
     }
     else if (path === "/v1/registry/summary") response.end(JSON.stringify(summary));
+    else if (path === "/v1/authorizations/auditor" && !auditorAvailable) {
+      response.statusCode = 503;
+      response.end(JSON.stringify({ title: "Auditor list unavailable" }));
+    }
     else response.end(JSON.stringify({ entries: path === "/v1/authorizations/issuer" ? [issuer] : [] }));
   });
   await new Promise((done) => server.listen(0, "127.0.0.1", done));
@@ -71,12 +76,38 @@ async function serveApp(app) {
     packagedPath,
     requests,
     setHealthAvailable: (available) => { healthAvailable = available; },
+    setAuditorAvailable: (available) => { auditorAvailable = available; },
     close: async () => {
       server.closeAllConnections();
       await new Promise((done, reject) => server.close((error) => error ? reject(error) : done()));
     },
   };
 }
+
+test("applicant portal treats a failed list as unavailable, then recovers on recheck", async ({ page, allowedLocalOrigins }) => {
+  const server = await serveApp("applicant-portal");
+  try {
+    server.setAuditorAvailable(false);
+    allowedLocalOrigins.add(server.base);
+    await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
+    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    await expect(page.locator(".source-panel")).toContainText("1 list(s) unavailable; counts shown as n/a");
+    const auditorLane = page.locator(".lane").filter({ has: page.getByRole("heading", { name: "Active auditors" }) });
+    await expect(auditorLane).toContainText("unavailable");
+    await expect(auditorLane).toContainText("Do not infer trust from this lane");
+    await expect(auditorLane).not.toContainText("0 active");
+    await expect(page.locator("#trust-records")).toContainText("Local demo issuer");
+
+    server.setAuditorAvailable(true);
+    await page.locator("[data-refresh]").click();
+    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    await expect(page.locator(".source-panel")).not.toContainText("list(s) unavailable");
+    await expect(page.locator(".lane").filter({ has: page.getByRole("heading", { name: "Active auditors" }) })).toHaveCount(0);
+  } finally {
+    await page.close();
+    await server.close();
+  }
+});
 
 for (const app of ["admin-console", "applicant-portal"]) {
   test(`${app} switches editable development endpoints without widening private access`, async ({ page, allowedLocalOrigins }) => {
@@ -139,6 +170,8 @@ for (const app of ["admin-console", "applicant-portal"]) {
         };
         const samples = [
           ["brand", ".brand-name", ".brand-bar"],
+          ["product title", ".brand-product-title", ".brand-bar"],
+          ["product context", ".brand-product-context", ".brand-bar"],
           ["navigation", ".app-shell > .task-nav a", ".app-shell > .task-nav"],
           ["source", ".source-badge", ".source-badge"],
           ["primary action", ".button:not(.secondary):not(:disabled)", ".button:not(.secondary):not(:disabled)"],
@@ -158,6 +191,41 @@ for (const app of ["admin-console", "applicant-portal"]) {
       for (const sample of ratios) {
         expect(sample.ratio, JSON.stringify(sample)).toBeGreaterThanOrEqual(4.5);
       }
+    } finally {
+      await page.close();
+      await server.close();
+    }
+  });
+
+  test(`${app} opens named workspace settings by keyboard on mobile`, async ({ page, allowedLocalOrigins }) => {
+    const server = await serveApp(app);
+    try {
+      allowedLocalOrigins.add(server.base);
+      await page.setViewportSize({ width: 390, height: 900 });
+      await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
+      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+
+      const menu = page.locator(".mobile-task-menu > summary");
+      await page.keyboard.press("Tab");
+      await expect(menu).toBeFocused();
+      await page.keyboard.press("Enter");
+      const settingsLink = page.locator(".mobile-task-menu nav").getByRole("link", { name: "Workspace settings" });
+      await expect(settingsLink).toBeVisible();
+      await settingsLink.focus();
+      await page.keyboard.press("Enter");
+
+      await expect(page.getByRole("heading", { name: "Workspace settings" })).toBeVisible();
+      await expect(page.getByRole("textbox", { name: "API base URL" })).toBeVisible();
+      await expect(page.locator(".hero")).toBeHidden();
+      const recheck = page.getByRole("button", { name: "Recheck connection" });
+      await recheck.focus();
+      await page.keyboard.press("Enter");
+      await expect(recheck).toBeFocused();
+      await expect(page.locator(".settings-view")).toBeVisible();
+
+      await page.locator(".settings-back").click();
+      await expect(page.locator(".settings-view")).toBeHidden();
+      await expect(page.locator(".hero")).toBeVisible();
     } finally {
       await page.close();
       await server.close();

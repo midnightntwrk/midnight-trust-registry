@@ -97,14 +97,16 @@ repeatable UI acceptance evidence:
 | Complete a fixture recognition challenge, submit an external assertion, recover the accepted receipt, and download query-bound historical recognition and authorization API claims | `recognition-evidence.spec.mjs` (same-origin fixture session) |
 | Edit either historical evidence query, discard its stale download, and keep the new draft through a source refresh | `recognition-evidence.spec.mjs` |
 | Resolve exact current authorization and separate external recognition scopes in local-ledger mode; reject a substituted recognition tuple | `local-lookup.spec.mjs` (admin and applicant) |
-| Inspect settings/source provenance, retry after an unavailable response, retain keyboard focus, and avoid overflow at 390/768/1440 px | `ui-layout.spec.mjs` |
+| Inspect settings/source provenance, retry after an unavailable response, retain keyboard focus, and avoid overflow at 320/390/768/1440 px | `ui-layout.spec.mjs` |
+| Open the mobile Menu and Workspace settings by keyboard in both apps; verify the URL field and recheck action have accessible names and retain focus after refresh | `ui-layout.spec.mjs` |
+| Show an unavailable auditor list as unavailable rather than zero, keep loaded issuers visible, and recover the lane after recheck | `ui-layout.spec.mjs` (controlled partial-failure fixture) |
 | Show an operable Menu before the hero on mobile and align the task sidebar with the hero on desktop; place admin review counts beside the task introduction on wide screens and ahead of source details on mobile | `ui-layout.spec.mjs` (fresh-page geometry assertions) |
 | Reject an external endpoint override on packaged same-origin admin and portal paths while preserving the authenticated-host warning | `ui-layout.spec.mjs` |
 | Switch an editable development endpoint between two loopback fixture hosts without carrying reads to the old host or enabling cross-origin private actions | `ui-layout.spec.mjs` (both apps) |
 | Open a governed issuer request by keyboard with reduced motion and verify the three visible preparation phases; keep mobile task targets at least 44 px high | `ui-layout.spec.mjs` |
 | Choose a label-only demo application type with visible radio options and keyboard navigation; retain the selection and avoid horizontal overflow at 200% mobile text size | `demo-application-handoff.spec.mjs`, `ui-layout.spec.mjs` |
 | Reflow long identifiers and controls at 200% root text size on a 390 px viewport without page-level horizontal scroll | `ui-layout.spec.mjs` |
-| Check browser-computed normal-text contrast for brand, navigation, source badge, and primary/secondary actions in both apps | `ui-layout.spec.mjs` (selected solid surfaces, at least 4.5:1) |
+| Check browser-computed normal-text contrast for the brand lockup, navigation, source badge, and primary/secondary actions in both apps | `ui-layout.spec.mjs` (selected solid surfaces, at least 4.5:1) |
 | Deny unapproved browser egress and discard stale local checkpoint responses | `browser-egress-control.spec.mjs`, `admin-console.spec.mjs` |
 
 The role tests use a controlled local admission host, the cross-app handoff
@@ -127,7 +129,7 @@ qualification remains a separate gate.
 
 For visual review, run `TR_UI_CAPTURE=1 pnpm exec playwright test
 browser-tests/ui-layout.spec.mjs` after building both UI packages. Inspect the
-fresh-page screenshots in Playwright's `test-results/` at 390, 768, and 1440 px
+fresh-page screenshots in Playwright's `test-results/` at 320, 390, 768, and 1440 px
 for both apps; the capture occurs before scrolling so sticky navigation stays
 in its true initial position. Check keyboard focus, long IDs, empty and
 unavailable states, source language, and mobile task visibility against the
