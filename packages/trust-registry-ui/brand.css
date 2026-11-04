@@ -290,8 +290,8 @@
   .brand-name { gap: 0.45rem; }
   .brand-logo { width: min(4.8rem, 24vw); }
   .brand-product { padding-left: 0.45rem; }
-  .brand-product-title { font-size: 1.18rem; white-space: nowrap; }
-  .brand-product-context { font-size: 0.72rem; white-space: nowrap; }
+  .brand-product-title { font-size: 1.18rem; }
+  .brand-product-context { font-size: 0.72rem; }
   .mobile-task-menu > summary { min-width: 4.2rem; }
 }
 

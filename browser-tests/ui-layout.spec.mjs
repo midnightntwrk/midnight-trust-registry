@@ -515,7 +515,7 @@ for (const [app, title] of [
         }));
         expect(geometry.page, JSON.stringify(geometry)).toBeLessThanOrEqual(geometry.viewport + 1);
         expect(geometry.overflowing).toEqual([]);
-        if (width === 390) {
+        if (width === 390 || width === 320) {
           await page.addStyleTag({ content: "html { font-size: 200%; }" });
           const zoomGeometry = await page.evaluate(() => ({
             page: document.documentElement.scrollWidth,
@@ -539,7 +539,7 @@ for (const [app, title] of [
             brandInside: true,
             menuInside: true,
           });
-          expect(zoomGeometry.page, JSON.stringify(zoomGeometry)).toBeLessThanOrEqual(width);
+          if (width === 390) expect(zoomGeometry.page, JSON.stringify(zoomGeometry)).toBeLessThanOrEqual(width);
         }
       }
     } finally {
