@@ -125,6 +125,8 @@ test("admin exact lookup presents a local API claim without fixture controls", a
     await page.goto(`${host.base}/?apiBase=${encodeURIComponent(host.base)}`);
     await expect(page.locator(".source-badge")).toHaveText("API claim");
     await expect(page.getByRole("heading", { name: "Inspect current records" })).toBeVisible();
+    await expect(page.locator(".hero > .metrics .metric")).toHaveCount(0);
+    await expect(page.locator(".hero > .metrics")).toContainText("Local UI registry");
     await expect(page.locator(".hero-copy a")).toHaveAttribute("href", "#exact-lookup");
     await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
     await expect(page.locator(".settings-view")).toContainText("Node-reported checkpoint hash");
@@ -141,6 +143,7 @@ test("admin exact lookup presents a local API claim without fixture controls", a
     await expect(page.locator("#exact-lookup").getByRole("alert")).toHaveCount(0);
     await lookupButton.click();
     await expect(page.locator(".card")).toContainText("Exact UI issuer");
+    await expect(page.locator(".hero > .metrics .metric")).toHaveCount(0);
     await expect(lookupButton).toBeFocused();
     await expect(page.locator(".source-panel")).toContainText("not independently verified finality");
     await reviewLocalLayouts(page, testInfo, "admin");

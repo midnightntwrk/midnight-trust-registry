@@ -902,10 +902,11 @@ export const createAdminConsoleApp = (
   const renderMetrics = (board: ReviewBoard): string => `
     <div class="metrics">
       <div class="registry-context"><span>Registry</span><strong>${escapeHtml(board.summary.registryLabel)}</strong><small>${board.summary.epochCount === undefined ? "Epoch unavailable" : `Epoch #${board.summary.epochCount.toString()}`}</small></div>
-      <div class="metric"><span>Proposed</span><strong>${countCards(board, "proposed").toString()}</strong></div>
-      <div class="metric"><span>Authorized</span><strong>${countCards(board, "authorized").toString()}</strong></div>
-      <div class="metric"><span>Active</span><strong>${countCards(board, "active").toString()}</strong></div>
-      ${countCards(board, "suspended") + countCards(board, "revoked") === 0 ? "" : `<p class="risk-summary">${(countCards(board, "suspended") + countCards(board, "revoked")).toString()} suspended or revoked record(s) need inspection.</p>`}
+      ${board.sourceMode === "local-ledger" ? "" : `
+        <div class="metric"><span>Proposed</span><strong>${countCards(board, "proposed").toString()}</strong></div>
+        <div class="metric"><span>Authorized</span><strong>${countCards(board, "authorized").toString()}</strong></div>
+        <div class="metric"><span>Active</span><strong>${countCards(board, "active").toString()}</strong></div>
+        ${countCards(board, "suspended") + countCards(board, "revoked") === 0 ? "" : `<p class="risk-summary">${(countCards(board, "suspended") + countCards(board, "revoked")).toString()} suspended or revoked record(s) need inspection.</p>`}`}
     </div>
   `;
 
