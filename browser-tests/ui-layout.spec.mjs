@@ -39,6 +39,7 @@ const issuer = {
 
 async function serveApp(app) {
   let healthAvailable = true;
+  const requests = [];
   const packagedPath = app === "admin-console" ? "/admin/" : "/applicant/";
   const staticHandler = createStaticAssetHandler({
     distDir: resolve(`packages/trust-registry-${app}/dist`),
@@ -51,6 +52,7 @@ async function serveApp(app) {
       await staticHandler(request, response);
       return;
     }
+    requests.push(`${request.method} ${path}`);
     response.setHeader("content-type", "application/json");
     if (path === "/health") {
       if (!healthAvailable) response.statusCode = 503;
@@ -67,6 +69,7 @@ async function serveApp(app) {
   return {
     base: `http://127.0.0.1:${address.port}`,
     packagedPath,
+    requests,
     setHealthAvailable: (available) => { healthAvailable = available; },
     close: async () => {
       server.closeAllConnections();
@@ -76,6 +79,38 @@ async function serveApp(app) {
 }
 
 for (const app of ["admin-console", "applicant-portal"]) {
+  test(`${app} switches editable development endpoints without widening private access`, async ({ page, allowedLocalOrigins }) => {
+    const first = await serveApp(app);
+    const second = await serveApp(app);
+    try {
+      allowedLocalOrigins.add(first.base);
+      allowedLocalOrigins.add(second.base);
+      await page.goto(`${first.base}/?apiBase=${encodeURIComponent(first.base)}`);
+      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      const firstReads = first.requests.length;
+      const form = page.locator("[data-api-base-form]");
+      await expect(form.locator("[name='apiBase']")).toBeEnabled();
+      await form.locator("[name='apiBase']").fill(second.base);
+      await form.locator("button[type='submit']").click();
+      await expect(form.locator("[name='apiBase']")).toHaveValue(second.base);
+      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await page.locator(".workspace-settings > summary").click();
+      await expect(page.locator(".workspace-settings")).toContainText(`${second.base} (local development setting)`);
+      expect(second.requests).toContain("GET /health");
+      expect(second.requests).toContain("GET /v1/registry/summary");
+      expect(first.requests).toHaveLength(firstReads);
+      if (app === "applicant-portal") {
+        await page.locator('[data-workflow="Recover external recognition"] > summary').click();
+        await expect(page.locator("[data-recognition-challenge]")).toBeDisabled();
+        await expect(page.locator(".journey-prerequisite")).toContainText("cannot submit them");
+      }
+    } finally {
+      await page.close();
+      await first.close();
+      await second.close();
+    }
+  });
+
   test(`${app} keeps critical Midnight text pairs above normal-text contrast`, async ({ page, allowedLocalOrigins }) => {
     const server = await serveApp(app);
     try {

@@ -51,6 +51,7 @@ repeatable UI acceptance evidence:
 | Resolve exact current authorization and separate external recognition scopes in local-ledger mode; reject a substituted recognition tuple | `local-lookup.spec.mjs` (admin and applicant) |
 | Inspect settings/source provenance, retry after an unavailable response, retain keyboard focus, and avoid overflow at 390/768/1440 px | `ui-layout.spec.mjs` |
 | Reject an external endpoint override on packaged same-origin admin and portal paths while preserving the authenticated-host warning | `ui-layout.spec.mjs` |
+| Switch an editable development endpoint between two loopback fixture hosts without carrying reads to the old host or enabling cross-origin private actions | `ui-layout.spec.mjs` (both apps) |
 | Open a governed issuer request by keyboard with reduced motion and verify the three visible preparation phases; keep mobile task targets at least 44 px high | `ui-layout.spec.mjs` |
 | Reflow long identifiers and controls at 200% root text size on a 390 px viewport without page-level horizontal scroll | `ui-layout.spec.mjs` |
 | Check browser-computed normal-text contrast for brand, navigation, source badge, and primary/secondary actions in both apps | `ui-layout.spec.mjs` (selected solid surfaces, at least 4.5:1) |
@@ -66,11 +67,12 @@ readback, egress-denied actor journeys, and restart/restore evidence.
 
 ## Final acceptance still to cover
 
-The browser suite is not yet a pass for *all* successful UI use cases. Before
-closing the UI acceptance issue, Playwright must also exercise editable
-loopback endpoint settings. The selected contrast samples do not replace a
-full review of all states, overlays, and assistive technology. Each test must assert the exact
-source label, actor/action prerequisite, receipt or board
+The browser suite is not yet a pass for *all* successful UI use cases. The
+recognition governance approval/readback, authorization evidence download
+parity, and label-only demo application remain to be exercised. The selected
+contrast samples do not replace a full review of all states, overlays, and
+assistive technology. Each test must assert the exact source label,
+actor/action prerequisite, receipt or board
 readback, and absence of false finality. Deployed standalone actor E2E
 qualification remains a separate gate even after these browser cases pass.
 

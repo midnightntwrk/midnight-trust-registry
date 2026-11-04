@@ -3220,3 +3220,8 @@ stale result and download action. A browser fixture covers the one-use
 recognition challenge, accepted receipt recovery, query-bound export, and
 non-finality label. The same-origin eligibility cue no longer claims an
 authenticated session: only the host can authenticate each private request.
+
+Both apps now have Chromium checks for editable loopback development endpoint
+switching. Reads move to the selected host and stop on the old host; the portal
+continues to disable private evidence actions when the new API is cross-origin
+to the page. Packaged same-origin endpoint locking remains a separate test.
