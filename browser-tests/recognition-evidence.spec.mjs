@@ -149,6 +149,9 @@ test("applicant inspects and downloads bounded historical recognition and author
     await historical.locator("[name='scopeResourceId']").fill("another-degree");
     await expect(result).toHaveCount(0);
     await expect(page.locator("[data-download-historical-recognition]")).toHaveCount(0);
+    await page.locator("[data-refresh]").click();
+    await expect(historical.locator("[name='scopeResourceId']")).toHaveValue("another-degree");
+    await expect(result).toHaveCount(0);
     expect(requests.filter((entry) => entry.path === "/v1/recognitions/evaluate/evidence")).toHaveLength(1);
 
     await page.locator('[data-workflow="Historical authorization evidence"] > summary').click();
@@ -173,6 +176,9 @@ test("applicant inspects and downloads bounded historical recognition and author
     await authorization.locator("[name='resourceId']").fill("another-resource");
     await expect(authorizationResult).toHaveCount(0);
     await expect(page.locator("[data-download-historical-authorization]")).toHaveCount(0);
+    await page.locator("[data-refresh]").click();
+    await expect(authorization.locator("[name='resourceId']")).toHaveValue("another-resource");
+    await expect(authorizationResult).toHaveCount(0);
     expect(requests.filter((entry) => entry.path === "/v1/authorizations/evaluate/evidence")).toHaveLength(1);
   } finally {
     await page.close();

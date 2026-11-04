@@ -40,10 +40,13 @@ type AppState = {
   currentRecognitionBusy: boolean;
   currentRecognitionError: string | undefined;
   historicalQuery: TrustRegistryApiEvaluateAuthorizationRequest | undefined;
+  historicalDraft: TrustRegistryApiEvaluateAuthorizationRequest | undefined;
   historicalResult: TrustRegistryApiAuthorizationEvidenceEvaluationResponse | undefined;
   historicalBusy: boolean;
   historicalError: string | undefined;
   historicalRecognitionQuery: TrustRegistryApiEvaluateRecognitionRequest | undefined;
+  historicalRecognitionDraft: { recognizedAuthorityDid: string; recognizedRegistryId: string;
+    scopeResourceType: string; scopeResourceId: string; scopeContext: string; at: string } | undefined;
   historicalRecognitionResult: TrustRegistryApiRecognitionEvidenceEvaluationResponse | undefined;
   historicalRecognitionBusy: boolean;
   historicalRecognitionError: string | undefined;
@@ -282,10 +285,12 @@ export const createApplicantPortalApp = (
     currentRecognitionBusy: false,
     currentRecognitionError: undefined,
     historicalQuery: undefined,
+    historicalDraft: undefined,
     historicalResult: undefined,
     historicalBusy: false,
     historicalError: undefined,
     historicalRecognitionQuery: undefined,
+    historicalRecognitionDraft: undefined,
     historicalRecognitionResult: undefined,
     historicalRecognitionBusy: false,
     historicalRecognitionError: undefined,
@@ -932,7 +937,7 @@ export const createApplicantPortalApp = (
       currentAuthorizationRequestId += 1;
       currentRecognitionRequestId += 1;
       recognitionRequestId += 1;
-      setState({ apiBase, inspection: undefined, signedBusy: false, signedContext: undefined, pendingApplication: undefined, auditorStatus: undefined, auditorStatusBusy: false, auditorDraft: undefined, preparedAuditor: undefined, auditorPreparationBusy: false, memberDraft: undefined, preparedMember: undefined, memberPreparationBusy: false, currentAuthorizationBusy: false, currentAuthorizationResult: undefined, currentAuthorizationError: undefined, currentRecognitionBusy: false, currentRecognitionResult: undefined, currentRecognitionError: undefined, historicalBusy: false, historicalResult: undefined, historicalError: undefined, historicalRecognitionBusy: false, historicalRecognitionResult: undefined, historicalRecognitionError: undefined, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined,
+      setState({ apiBase, inspection: undefined, signedBusy: false, signedContext: undefined, pendingApplication: undefined, auditorStatus: undefined, auditorStatusBusy: false, auditorDraft: undefined, preparedAuditor: undefined, auditorPreparationBusy: false, memberDraft: undefined, preparedMember: undefined, memberPreparationBusy: false, currentAuthorizationBusy: false, currentAuthorizationResult: undefined, currentAuthorizationError: undefined, currentRecognitionBusy: false, currentRecognitionResult: undefined, currentRecognitionError: undefined, historicalBusy: false, historicalResult: undefined, historicalError: undefined, historicalDraft: undefined, historicalRecognitionBusy: false, historicalRecognitionResult: undefined, historicalRecognitionError: undefined, historicalRecognitionDraft: undefined, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined,
         recognitionId: "", recognitionChallenge: undefined, recognitionAdmission: undefined,
         recognitionRecoveryBusy: false, recognitionRecoveryMessage: undefined });
       void refreshInspection();
@@ -985,7 +990,13 @@ export const createApplicantPortalApp = (
       if (role !== "issuer" && role !== "verifier" && role !== "auditor") return;
       void loadHistoricalEvidence({ role, subjectDid: field("subjectDid"), resourceId: field("resourceId"), at: field("at") });
     });
-    root.querySelector<HTMLFormElement>("[data-historical-authorization]")?.addEventListener("input", () => {
+    root.querySelector<HTMLFormElement>("[data-historical-authorization]")?.addEventListener("input", (event) => {
+      const form = event.currentTarget as HTMLFormElement;
+      const field = (name: string) => form.querySelector<HTMLInputElement>(`[name='${name}']`)?.value ?? "";
+      const role = form.querySelector<HTMLSelectElement>("[name='role']")?.value;
+      if (role === "issuer" || role === "verifier" || role === "auditor") {
+        state.historicalDraft = { role, subjectDid: field("subjectDid"), resourceId: field("resourceId"), at: field("at") };
+      }
       ++historicalRequestId;
       state.historicalBusy = false;
       state.historicalResult = undefined;
@@ -1024,7 +1035,14 @@ export const createApplicantPortalApp = (
         setState({ historicalRecognitionResult: undefined, historicalRecognitionError: formatApiError(error) });
       }
     });
-    root.querySelector<HTMLFormElement>("[data-historical-recognition]")?.addEventListener("input", () => {
+    root.querySelector<HTMLFormElement>("[data-historical-recognition]")?.addEventListener("input", (event) => {
+      const form = event.currentTarget as HTMLFormElement;
+      const field = (name: string) => form.querySelector<HTMLInputElement>(`[name='${name}']`)?.value ?? "";
+      state.historicalRecognitionDraft = {
+        recognizedAuthorityDid: field("recognizedAuthorityDid"), recognizedRegistryId: field("recognizedRegistryId"),
+        scopeResourceType: field("scopeResourceType"), scopeResourceId: field("scopeResourceId"),
+        scopeContext: form.querySelector<HTMLTextAreaElement>("[name='scopeContext']")?.value ?? "", at: field("at"),
+      };
       ++historicalRecognitionRequestId;
       state.historicalRecognitionBusy = false;
       state.historicalRecognitionResult = undefined;
@@ -1422,11 +1440,11 @@ export const createApplicantPortalApp = (
             <p>Look up the exact DID, role, governed resource, and timestamp. The API response is a historical claim, not proof of current trust. Verify its bundle against independent finalized registry history before relying on it.</p>
             <form data-historical-authorization>
               <label class="label">Role<select class="select" name="role">
-                ${(["issuer", "verifier", "auditor"] as const).map((role) => `<option value="${role}"${state.historicalQuery?.role === role ? " selected" : ""}>${role}</option>`).join("")}
+                ${(["issuer", "verifier", "auditor"] as const).map((role) => `<option value="${role}"${(state.historicalDraft?.role ?? state.historicalQuery?.role ?? "issuer") === role ? " selected" : ""}>${role}</option>`).join("")}
               </select></label>
-              <label class="label">Subject DID<input class="input mono" name="subjectDid" value="${escapeHtml(state.historicalQuery?.subjectDid ?? "")}" required /></label>
-              <label class="label">Governed resource ID<input class="input mono" name="resourceId" value="${escapeHtml(state.historicalQuery?.resourceId ?? "")}" required /></label>
-              <label class="label">RFC3339 timestamp<input class="input mono" name="at" placeholder="2026-10-15T00:00:00Z" value="${escapeHtml(state.historicalQuery?.at ?? "")}" required /></label>
+              <label class="label">Subject DID<input class="input mono" name="subjectDid" value="${escapeHtml(state.historicalDraft?.subjectDid ?? state.historicalQuery?.subjectDid ?? "")}" required /></label>
+              <label class="label">Governed resource ID<input class="input mono" name="resourceId" value="${escapeHtml(state.historicalDraft?.resourceId ?? state.historicalQuery?.resourceId ?? "")}" required /></label>
+              <label class="label">RFC3339 timestamp<input class="input mono" name="at" placeholder="2026-10-15T00:00:00Z" value="${escapeHtml(state.historicalDraft?.at ?? state.historicalQuery?.at ?? "")}" required /></label>
               <button class="button secondary" type="submit"${state.historicalBusy ? " disabled" : ""}>Inspect authorization evidence</button>
             </form>
             ${state.historicalError === undefined ? "" : `<div class="alert error">${escapeHtml(state.historicalError)}</div>`}
@@ -1441,12 +1459,12 @@ export const createApplicantPortalApp = (
             <h2>Historical recognition evidence</h2>
             <p>Query an external authority's exact recognized scope at a timestamp. An omitted context matches only a recognition without context. This panel exports an unverified API claim; recognition never grants local issuer, verifier, or maintainer membership.</p>
             <form data-historical-recognition>
-              <label class="label">Recognized authority DID<input class="input mono" name="recognizedAuthorityDid" value="${escapeHtml(state.historicalRecognitionQuery?.recognizedAuthorityDid ?? "")}" required /></label>
-              <label class="label">Recognized registry ID<input class="input mono" name="recognizedRegistryId" value="${escapeHtml(state.historicalRecognitionQuery?.recognizedRegistryId ?? "")}" required /></label>
-              <label class="label">Scope resource type<input class="input mono" name="scopeResourceType" value="${escapeHtml(state.historicalRecognitionQuery?.scopeResourceType ?? "")}" required /></label>
-              <label class="label">Scope resource ID<input class="input mono" name="scopeResourceId" value="${escapeHtml(state.historicalRecognitionQuery?.scopeResourceId ?? "")}" required /></label>
-              <label class="label">Scope context JSON, if any<textarea class="input mono" name="scopeContext" rows="3" spellcheck="false">${escapeHtml(state.historicalRecognitionQuery?.scopeContext === undefined ? "" : JSON.stringify(state.historicalRecognitionQuery.scopeContext, null, 2))}</textarea></label>
-              <label class="label">RFC3339 timestamp<input class="input mono" name="at" placeholder="2026-10-15T00:00:00Z" value="${escapeHtml(state.historicalRecognitionQuery?.at ?? "")}" required /></label>
+              <label class="label">Recognized authority DID<input class="input mono" name="recognizedAuthorityDid" value="${escapeHtml(state.historicalRecognitionDraft?.recognizedAuthorityDid ?? state.historicalRecognitionQuery?.recognizedAuthorityDid ?? "")}" required /></label>
+              <label class="label">Recognized registry ID<input class="input mono" name="recognizedRegistryId" value="${escapeHtml(state.historicalRecognitionDraft?.recognizedRegistryId ?? state.historicalRecognitionQuery?.recognizedRegistryId ?? "")}" required /></label>
+              <label class="label">Scope resource type<input class="input mono" name="scopeResourceType" value="${escapeHtml(state.historicalRecognitionDraft?.scopeResourceType ?? state.historicalRecognitionQuery?.scopeResourceType ?? "")}" required /></label>
+              <label class="label">Scope resource ID<input class="input mono" name="scopeResourceId" value="${escapeHtml(state.historicalRecognitionDraft?.scopeResourceId ?? state.historicalRecognitionQuery?.scopeResourceId ?? "")}" required /></label>
+              <label class="label">Scope context JSON, if any<textarea class="input mono" name="scopeContext" rows="3" spellcheck="false">${escapeHtml(state.historicalRecognitionDraft?.scopeContext ?? (state.historicalRecognitionQuery?.scopeContext === undefined ? "" : JSON.stringify(state.historicalRecognitionQuery.scopeContext, null, 2)))}</textarea></label>
+              <label class="label">RFC3339 timestamp<input class="input mono" name="at" placeholder="2026-10-15T00:00:00Z" value="${escapeHtml(state.historicalRecognitionDraft?.at ?? state.historicalRecognitionQuery?.at ?? "")}" required /></label>
               <button class="button secondary" type="submit"${state.historicalRecognitionBusy ? " disabled" : ""}>Inspect recognition evidence</button>
             </form>
             ${state.historicalRecognitionError === undefined ? "" : `<div class="alert error">${escapeHtml(state.historicalRecognitionError)}</div>`}

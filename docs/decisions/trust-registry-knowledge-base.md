@@ -3216,7 +3216,8 @@ technology behavior.
 The portal now separates historical recognition and authorization inspection
 from real JSON downloads. Each exported object includes the exact query, returned bundle,
 format marker, and `verifiedFinality: false`; editing the query removes the
-stale result and download action. A browser fixture covers the one-use
+stale result and download action while preserving the edited fields through
+a source refresh. A browser fixture covers the one-use
 recognition challenge, accepted receipt recovery, query-bound export, and
 non-finality label. The same-origin eligibility cue no longer claims an
 authenticated session: only the host can authenticate each private request.
