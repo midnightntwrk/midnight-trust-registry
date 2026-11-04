@@ -1327,6 +1327,12 @@ export const createApplicantPortalApp = (
           <span class="brand-name"><img class="brand-logo" src="./midnight-logo.svg" alt="Midnight" /> <span class="brand-section">Trust Registry</span></span>
           <span class="brand-section">Applicant portal</span>
         </header>
+        <nav class="task-nav" aria-label="Portal tasks">
+          <a href="#trust-records">Explore active records</a>
+          ${state.inspection?.sourceMode === "local-ledger" ? "" : `<a href="#demo-application">Try a local demo application</a>`}
+          <a href="#governed-requests">Prepare governed membership</a>
+          <a href="#connection-details">Connection details</a>
+        </nav>
         <section class="hero">
           <p class="eyebrow">Apply and explore</p>
           <h1>Join the trust registry</h1>
@@ -1380,12 +1386,6 @@ export const createApplicantPortalApp = (
             <p class="settings-note">Connection details are read-only deployment context, not an account profile or proof of finality. Private actions require the authenticated same-origin host.</p>
           </details>
         </section>
-        <nav class="task-nav" aria-label="Portal tasks">
-          <a href="#trust-records">Explore active records</a>
-          ${state.inspection?.sourceMode === "local-ledger" ? "" : `<a href="#demo-application">Try a local demo application</a>`}
-          <a href="#governed-requests">Prepare governed membership</a>
-          <a href="#connection-details">Connection details</a>
-        </nav>
         <section class="content">
           <section class="journey-picker" id="governed-requests" aria-labelledby="journey-heading">
             <div class="journey-heading"><p class="eyebrow">Governed membership</p><h2 id="journey-heading">Choose your role</h2>

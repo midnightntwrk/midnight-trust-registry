@@ -216,6 +216,37 @@ for (const [app, title] of [
         await expect(page.locator(".metrics")).toContainText("Midnight Trust Registry");
         await expect(page.locator(".source-badge")).toHaveText("Local fixture");
         await expect(page.locator(".source-panel")).toContainText("not deployed ledger evidence");
+        const initialLayout = await page.evaluate(() => {
+          const top = (selector) => document.querySelector(selector).getBoundingClientRect().top;
+          return { brand: top(".brand-bar"), nav: top(".task-nav"), hero: top(".hero"), scrollY: window.scrollY };
+        });
+        expect(initialLayout.scrollY).toBe(0);
+        expect(initialLayout.nav).toBeGreaterThan(initialLayout.brand);
+        if (width <= 760) {
+          expect(initialLayout.nav).toBeLessThan(initialLayout.hero);
+          expect(initialLayout.nav).toBeLessThan(900);
+        } else {
+          expect(Math.abs(initialLayout.nav - initialLayout.hero)).toBeLessThan(2);
+        }
+        if (app === "admin-console" && width === 1440) {
+          const heroLayout = await page.evaluate(() => {
+            const form = document.querySelector(".hero > .toolbar").getBoundingClientRect();
+            const metrics = document.querySelector(".hero > .metrics").getBoundingClientRect();
+            return { formTop: form.top, metricsTop: metrics.top, formRight: form.right, metricsLeft: metrics.left };
+          });
+          expect(Math.abs(heroLayout.formTop - heroLayout.metricsTop)).toBeLessThan(2);
+          expect(heroLayout.formRight).toBeLessThan(heroLayout.metricsLeft);
+        }
+        if (app === "admin-console" && width === 390) {
+          const mobileOrder = await page.evaluate(() => ({
+            metricsBottom: document.querySelector(".hero > .metrics").getBoundingClientRect().bottom,
+            sourceTop: document.querySelector(".hero > .source-panel").getBoundingClientRect().top,
+          }));
+          expect(mobileOrder.metricsBottom).toBeLessThan(mobileOrder.sourceTop);
+        }
+        if (process.env.TR_UI_CAPTURE === "1") {
+          await page.screenshot({ path: testInfo.outputPath(`${app}-${width}.png`), fullPage: true });
+        }
         const refresh = page.locator("[data-refresh]");
         await refresh.focus();
         await refresh.click();
@@ -264,9 +295,6 @@ for (const [app, title] of [
               .slice(0, 12).map((element) => `${element.tagName}.${element.className}:${element.scrollWidth}/${element.clientWidth}`),
           }));
           expect(zoomGeometry.page, JSON.stringify(zoomGeometry)).toBeLessThanOrEqual(390);
-        }
-        if (process.env.TR_UI_CAPTURE === "1" && width !== 768) {
-          await page.screenshot({ path: testInfo.outputPath(`${app}-${width}.png`), fullPage: true });
         }
       }
     } finally {

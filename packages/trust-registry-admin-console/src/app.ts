@@ -1011,6 +1011,11 @@ export const createAdminConsoleApp = (
           <span class="brand-name"><img class="brand-logo" src="./midnight-logo.svg" alt="Midnight" /> <span class="brand-section">Trust Registry</span></span>
           <span class="brand-section">Admin console</span>
         </header>
+        <nav class="task-nav" aria-label="Admin tasks">
+          <a href="#review-board">Review records</a>
+          <a href="#workspace-settings">Workspace settings</a>
+          <a href="#advanced-governance">Advanced governance</a>
+        </nav>
         <section class="hero">
           <div class="hero-copy">
             <div>
@@ -1031,6 +1036,7 @@ export const createAdminConsoleApp = (
               </div>
             </form>
           </div>
+          ${state.board === undefined ? "" : renderMetrics(state.board)}
           ${state.error === undefined ? "" : `<div class="alert error">${escapeHtml(state.error)}</div>`}
           ${state.flash === undefined ? "" : `<div class="alert success">${escapeHtml(state.flash)}</div>`}
           <div class="source-panel" data-source-state="${state.loading ? "loading" : state.board?.sourceMode === "local-ledger" ? "local-ledger" : state.board === undefined ? "unavailable" : "fixture"}" role="status" aria-live="polite">
@@ -1057,13 +1063,7 @@ export const createAdminConsoleApp = (
             </dl>
             <p class="settings-note">Deployment identity and governance cannot be changed here. A node-reported checkpoint and browser response are not independently authenticated finality or actor authorization.</p>
           </details>
-          ${state.board === undefined ? "" : renderMetrics(state.board)}
         </section>
-        <nav class="task-nav" aria-label="Admin tasks">
-          <a href="#review-board">Review records</a>
-          <a href="#workspace-settings">Workspace settings</a>
-          <a href="#advanced-governance">Advanced governance</a>
-        </nav>
         ${state.board?.sourceMode === "local-ledger" ? `
           <section class="proposal-panel governed-panel" id="exact-lookup">
             <p class="eyebrow">Current local ledger</p>

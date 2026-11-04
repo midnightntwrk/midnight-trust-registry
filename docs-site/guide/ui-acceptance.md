@@ -40,6 +40,7 @@ repeatable UI acceptance evidence:
 | Successful user path | Playwright evidence |
 | --- | --- |
 | Browse fixture records and review a bounded admin detail | `ui-layout.spec.mjs` |
+| Submit a label-only issuer or recognition demo application in the portal, approve and activate it in admin, then read the active record back in the portal | `demo-application-handoff.spec.mjs` (two cross-app fixture journeys) |
 | Choose issuer, verifier, auditor, or maintainer and complete challenge-bound evidence admission with an external signature | `applicant-portal.spec.mjs` (four role cases) |
 | Confirm an issuer's proposed, authorized, active, suspended, revoked, and archived transitions with refreshed board status | `admin-console.spec.mjs` (fixture review journey) |
 | Confirm fixture epoch publication, read back the exact new epoch, then submit an externally signed workspace intent against the refreshed context | `admin-console.spec.mjs` (fixture governance journey) |
@@ -51,6 +52,7 @@ repeatable UI acceptance evidence:
 | Edit either historical evidence query, discard its stale download, and keep the new draft through a source refresh | `recognition-evidence.spec.mjs` |
 | Resolve exact current authorization and separate external recognition scopes in local-ledger mode; reject a substituted recognition tuple | `local-lookup.spec.mjs` (admin and applicant) |
 | Inspect settings/source provenance, retry after an unavailable response, retain keyboard focus, and avoid overflow at 390/768/1440 px | `ui-layout.spec.mjs` |
+| Show task navigation before the hero on mobile and align it with the hero on desktop; put admin metrics beside connection controls on wide screens and ahead of source details on mobile | `ui-layout.spec.mjs` (fresh-page geometry assertions) |
 | Reject an external endpoint override on packaged same-origin admin and portal paths while preserving the authenticated-host warning | `ui-layout.spec.mjs` |
 | Switch an editable development endpoint between two loopback fixture hosts without carrying reads to the old host or enabling cross-origin private actions | `ui-layout.spec.mjs` (both apps) |
 | Open a governed issuer request by keyboard with reduced motion and verify the three visible preparation phases; keep mobile task targets at least 44 px high | `ui-layout.spec.mjs` |
@@ -58,9 +60,9 @@ repeatable UI acceptance evidence:
 | Check browser-computed normal-text contrast for brand, navigation, source badge, and primary/secondary actions in both apps | `ui-layout.spec.mjs` (selected solid surfaces, at least 4.5:1) |
 | Deny unapproved browser egress and discard stale local checkpoint responses | `browser-egress-control.spec.mjs`, `admin-console.spec.mjs` |
 
-The role tests use a controlled local admission host, the review journey uses a
-fixture HTTP host, and local-ledger exact-lookup tests use a controlled
-checkpoint stub. They exercise real Chromium interactions and response
+The role tests use a controlled local admission host, the cross-app handoff
+and review journeys use fixture HTTP hosts, and local-ledger exact-lookup tests
+use a controlled checkpoint stub. They exercise real Chromium interactions and response
 handling, **not** a deployed Compact contract, authenticated finality, real
 network isolation, or production security. A release-qualified standalone E2E
 claim still requires the separately approved genesis/deployment, finalized
@@ -68,14 +70,22 @@ readback, egress-denied actor journeys, and restart/restore evidence.
 
 ## Final acceptance still to cover
 
-The browser suite is not yet a pass for *all* successful UI use cases. The
-recognition governance approval/readback and label-only demo application
-remain to be exercised. The selected
-contrast samples do not replace a full review of all states, overlays, and
-assistive technology. Each test must assert the exact source label,
-actor/action prerequisite, receipt or board
-readback, and absence of false finality. Deployed standalone actor E2E
-qualification remains a separate gate even after these browser cases pass.
+The cross-app fixture journeys cover the remaining label-only demo and
+recognition governance paths, but do not establish that *all* successful
+deployed use cases work. The selected contrast samples do not replace a full
+review of all states, overlays, and assistive technology. Each future case
+must assert the exact source label, actor/action prerequisite, receipt or
+board readback, and absence of false finality. Deployed standalone actor E2E
+qualification remains a separate gate.
+
+For visual review, run `TR_UI_CAPTURE=1 pnpm exec playwright test
+browser-tests/ui-layout.spec.mjs` after building both UI packages. Inspect the
+fresh-page screenshots in Playwright's `test-results/` at 390, 768, and 1440 px
+for both apps; the capture occurs before scrolling so sticky navigation stays
+in its true initial position. Check keyboard focus, long IDs, empty and
+unavailable states, source language, and mobile task visibility against the
+geometry assertions. Generated screenshots are local review artifacts, not
+deployed acceptance evidence.
 
 In the fixture admin workspace, use **Review records** to search by label,
 role, or exact identifier and narrow by lifecycle status. Select a result to
