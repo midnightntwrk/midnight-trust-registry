@@ -529,6 +529,10 @@ body {
 .advanced-workflows { margin-top: 1.5rem; }
 .advanced-workflows > summary { cursor: pointer; padding: 1rem 1.25rem; border: 1px solid var(--midnight-border); border-radius: 12px; background: var(--midnight-white); font-weight: 700; }
 .advanced-workflows[open] > summary { border-color: var(--midnight-blue); }
+.governance-task-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem; margin-top: 0.75rem; }
+.governance-task-grid a { display: grid; gap: 0.3rem; min-width: 0; padding: 0.9rem 1rem; border: 1px solid var(--midnight-border); border-radius: 10px; background: var(--midnight-white); color: var(--midnight-black); text-decoration: none; }
+.governance-task-grid a:hover, .governance-task-grid a:focus-visible { border-color: var(--midnight-blue); }
+.governance-task-grid span { color: var(--midnight-muted); font-size: 0.78rem; }
 .advanced-workflows .proposal-panel { margin-bottom: 0; }
 .advanced-workflows .epoch-panel { display: grid; gap: 0.75rem; margin-top: 1rem; padding: 1rem; }
 .empty-state { background: var(--midnight-white); }
@@ -542,6 +546,7 @@ body {
 @media (max-width: 760px) {
   .shell { width: calc(100vw - 1rem); }
   .hero { padding: 1rem; }
+  .governance-task-grid { grid-template-columns: minmax(0, 1fr); }
   .board { grid-template-columns: minmax(0, 1fr); }
   .card-top { align-items: start; }
   .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }

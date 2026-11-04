@@ -88,8 +88,9 @@ export class TrustRegistryAdminConsoleClient {
     }
     if (health.sourceMode === "local-ledger") {
       const planSha256 = health.localPlanSha256;
+      const checkpointHash = health.finalizedBlockHash;
       if (typeof planSha256 !== "string" || !/^[0-9a-f]{64}$/u.test(planSha256)
-        || !/^0x[0-9a-f]{64}$/u.test(health.finalizedBlockHash ?? "")) {
+        || typeof checkpointHash !== "string" || !/^0x[0-9a-f]{64}$/u.test(checkpointHash)) {
         throw new Error("Local admin API health lacks its approved plan or finalized checkpoint");
       }
       const summary = await this.request<TrustRegistryApiSummary>("/v1/registry/summary", { cache: "no-store" });
@@ -97,6 +98,8 @@ export class TrustRegistryAdminConsoleClient {
         throw new Error("Local admin summary differs from the signed-plan registry");
       }
       return { sourceMode: "local-ledger", localPlanSha256: planSha256,
+        nodeReportedCheckpointHash: checkpointHash,
+        nodeReportedAt: health.generatedAt,
         summary, issuers: [], verifiers: [], auditors: [], recognitions: [] };
     }
     const [summary, issuers, verifiers, auditors, recognitions] = await Promise.all([

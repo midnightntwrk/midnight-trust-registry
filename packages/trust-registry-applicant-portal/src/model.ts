@@ -35,6 +35,8 @@ export type PublicInspection = {
   summary: TrustRegistryApiSummary;
   sourceMode?: "snapshot" | "workspace" | "memory" | "local-ledger";
   localPlanSha256?: string;
+  nodeReportedCheckpointHash?: string;
+  nodeReportedAt?: string;
   unavailableLists?: readonly ("issuer" | "verifier" | "auditor" | "recognition")[];
   warnings?: readonly string[];
 };

@@ -63,6 +63,10 @@ test("admin exact lookup presents a local API claim without fixture controls", a
     allowedLocalOrigins.add(host.base);
     await page.goto(`${host.base}/?apiBase=${encodeURIComponent(host.base)}`);
     await expect(page.locator(".source-badge")).toHaveText("API claim");
+    await page.locator(".workspace-settings > summary").click();
+    await expect(page.locator(".workspace-settings")).toContainText("Node-reported checkpoint hash");
+    await expect(page.locator(".workspace-settings")).toContainText(`0x${"c".repeat(64)}`);
+    await expect(page.locator(".workspace-settings")).toContainText("not independently authenticated finality");
     await expect(page.locator("[data-action]")).toHaveCount(0);
     await page.locator("[data-current-id]").fill(id);
     await page.locator("[data-current-lookup] button[type='submit']").click();
@@ -82,6 +86,9 @@ test("applicant exact scope lookup keeps returned trust unverified", async ({ pa
     allowedLocalOrigins.add(host.base);
     await page.goto(`${host.base}/?apiBase=${encodeURIComponent(host.base)}`);
     await expect(page.locator(".source-badge")).toHaveText("API claim");
+    await page.locator(".workspace-settings > summary").click();
+    await expect(page.locator(".workspace-settings")).toContainText("Node-reported checkpoint time");
+    await expect(page.locator(".workspace-settings")).toContainText("2026-10-27T00:00:00Z");
     await expect(page.locator("[data-current-authorization]")).toBeVisible();
     await page.locator("[data-current-authorization] [name='subjectDid']").fill(did);
     await page.locator("[data-current-authorization] [name='resourceId']").fill(resourceId);

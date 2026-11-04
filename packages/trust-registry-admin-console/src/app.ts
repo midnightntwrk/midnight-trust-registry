@@ -1051,9 +1051,11 @@ export const createAdminConsoleApp = (
               <div><dt>Registry DID</dt><dd class="technical-id">${escapeHtml(state.board?.summary.registryDid ?? "Not reported")}</dd></div>
               <div><dt>Current epoch ID</dt><dd class="technical-id">${escapeHtml(state.board?.summary.currentEpochId ?? "Not reported")}</dd></div>
               <div><dt>Approved local plan digest</dt><dd class="technical-id">${escapeHtml(state.board?.localPlanSha256 ?? "Not exposed by this API")}</dd></div>
+              ${state.board?.sourceMode !== "local-ledger" ? "" : `<div><dt>Node-reported checkpoint hash</dt><dd class="technical-id">${escapeHtml(state.board.nodeReportedCheckpointHash ?? "Not reported")}</dd></div>
+              <div><dt>Node-reported checkpoint time</dt><dd>${escapeHtml(state.board.nodeReportedAt ?? "Not reported")}</dd></div>`}
               <div><dt>Network profile, genesis, contract</dt><dd>Not exposed by this API response</dd></div>
             </dl>
-            <p class="settings-note">Deployment identity and governance cannot be changed here. A browser response does not prove ledger finality or authorize an actor.</p>
+            <p class="settings-note">Deployment identity and governance cannot be changed here. A node-reported checkpoint and browser response are not independently authenticated finality or actor authorization.</p>
           </details>
           ${state.board === undefined ? "" : renderMetrics(state.board)}
         </section>
@@ -1082,13 +1084,19 @@ export const createAdminConsoleApp = (
           </section>
         ` : ""}
         <details class="advanced-workflows" id="advanced-governance"${advancedOpen ? " open" : ""}><summary>Advanced governance and signing actions</summary>
-        ${state.board !== undefined && state.board.sourceMode !== "local-ledger" ? `<form class="epoch-panel governed-panel" data-epoch-form>
+        ${state.board === undefined ? `<p class="settings-note">Connect to a registry source before preparing governance work.</p>` : `<nav class="governance-task-grid" aria-label="Governance tasks">
+          ${state.board.sourceMode === "local-ledger" ? "" : `<a href="#task-epoch"><strong>Publish an epoch</strong><span>Fixture workspace checkpoint, not ledger finality</span></a>
+          <a href="#task-signed-intent"><strong>Submit a signed workspace intent</strong><span>External maintainer signature; local workspace only</span></a>`}
+          <a href="#task-proposal"><strong>Prepare or recover a proposal</strong><span>Exact applicant evidence and external quorum</span></a>
+          <a href="#task-policy"><strong>Revise quorum and register verifier</strong><span>Separate policy-bound steps</span></a>
+        </nav>`}
+        ${state.board !== undefined && state.board.sourceMode !== "local-ledger" ? `<form class="epoch-panel governed-panel" id="task-epoch" data-epoch-form>
           <label>Publish epoch label
             <input class="input" data-epoch-label type="text" value="${escapeHtml(state.epochLabel)}" placeholder="optional operator label" />
           </label>
           <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Publish epoch</button>
         </form>` : ""}
-        ${state.board !== undefined && state.board.sourceMode !== "local-ledger" ? `<section class="proposal-panel governed-panel">
+        ${state.board !== undefined && state.board.sourceMode !== "local-ledger" ? `<section class="proposal-panel governed-panel" id="task-signed-intent">
           <div>
             <p class="eyebrow">Signed workspace action</p>
             <h2>Submit an external maintainer intent</h2>
@@ -1103,7 +1111,7 @@ export const createAdminConsoleApp = (
             <button class="button" type="submit"${state.signedBusy || state.signedContext === undefined ? " disabled" : ""}>Submit signed action</button>
           </form>
         </section>` : ""}
-        ${state.board === undefined ? "" : `<section class="proposal-panel governed-panel">
+        ${state.board === undefined ? "" : `<section class="proposal-panel governed-panel" id="task-proposal">
           <div>
             <p class="eyebrow">Membership application</p>
             <h2>Submit a governed proposal</h2>
@@ -1139,7 +1147,7 @@ export const createAdminConsoleApp = (
             </form>
           `}
         </section>`}
-        ${state.board === undefined ? "" : `<section class="proposal-panel governed-panel">
+        ${state.board === undefined ? "" : `<section class="proposal-panel governed-panel" id="task-policy">
           <div>
             <p class="eyebrow">Governance policy</p>
             <h2>Revise maintainer quorum</h2>

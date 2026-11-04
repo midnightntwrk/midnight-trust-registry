@@ -238,6 +238,8 @@ export class TrustRegistryApplicantPortalClient {
       }
       const unavailableLists = ["issuer", "verifier", "auditor", "recognition"] as const;
       return { summary, sourceMode: "local-ledger", localPlanSha256: localHealth.localPlanSha256,
+        nodeReportedCheckpointHash: localHealth.finalizedBlockHash,
+        nodeReportedAt: localHealth.generatedAt,
         activeAuditors: [], activeIssuers: [], activeVerifiers: [], activeRecognitions: [],
         unavailableLists, warnings: unavailableLists.map(listWarning) };
     }

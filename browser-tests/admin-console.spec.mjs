@@ -247,6 +247,10 @@ test("fixture admin review advances a proposed issuer through approval and activ
     await page.locator('[data-action="activate"]').click();
     await expect(page.locator(".card .status-chip")).toHaveText("Active");
     await expect(page.locator(".source-panel")).toContainText("not deployed ledger evidence");
+    await page.locator(".advanced-workflows > summary").click();
+    await expect(page.locator(".governance-task-grid a")).toHaveCount(4);
+    expect(await page.locator(".governance-task-grid a").evaluateAll((links) => links.every((link) =>
+      document.querySelector(link.getAttribute("href")) !== null))).toBe(true);
     expect(posted).toEqual([
       `/v1/applications/issuer/${encodeURIComponent(id)}/approve`,
       `/v1/applications/issuer/${encodeURIComponent(id)}/activate`,

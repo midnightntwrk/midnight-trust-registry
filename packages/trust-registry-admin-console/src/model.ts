@@ -32,6 +32,8 @@ export type ReviewCard = {
 export type ReviewBoard = {
   sourceMode: "snapshot" | "workspace" | "memory" | "local-ledger";
   localPlanSha256?: string;
+  nodeReportedCheckpointHash?: string;
+  nodeReportedAt?: string;
   auditors: readonly AuthorizationEntry[];
   recognitions: readonly RecognitionEntry[];
   summary: TrustRegistryApiSummary;

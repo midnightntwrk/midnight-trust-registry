@@ -1306,6 +1306,8 @@ export const createApplicantPortalApp = (
               <div><dt>Registry ID</dt><dd class="technical-id">${escapeHtml(state.inspection?.summary.registryId ?? "Not reported")}</dd></div>
               <div><dt>Registry DID</dt><dd class="technical-id">${escapeHtml(state.inspection?.summary.registryDid ?? "Not reported")}</dd></div>
               <div><dt>Current epoch ID</dt><dd class="technical-id">${escapeHtml(state.inspection?.summary.currentEpochId ?? "Not reported")}</dd></div>
+              ${state.inspection?.sourceMode !== "local-ledger" ? "" : `<div><dt>Node-reported checkpoint hash</dt><dd class="technical-id">${escapeHtml(state.inspection.nodeReportedCheckpointHash ?? "Not reported")}</dd></div>
+              <div><dt>Node-reported checkpoint time</dt><dd>${escapeHtml(state.inspection.nodeReportedAt ?? "Not reported")}</dd></div>`}
               <div><dt>Network profile, genesis, contract</dt><dd>Not exposed by this API response</dd></div>
             </dl>
             <p class="settings-note">Connection details are read-only deployment context, not an account profile or proof of finality. Private actions require the authenticated same-origin host.</p>

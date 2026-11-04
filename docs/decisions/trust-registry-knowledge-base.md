@@ -3174,3 +3174,9 @@ offers only exact-ID lookup. Applicant role forms now expose identify, scope,
 and external-signing phases with a link to the separate one-use private
 evidence task. This is presentation of the existing protocol, not browser key
 management or a new authorization path.
+
+Local-ledger Workspace settings now display the API's node-reported checkpoint
+hash and timestamp as provenance clues, distinct from the browser observation
+time. The UI does not authenticate the checkpoint or infer finality from those
+fields; the network profile, genesis anchor, and contract identity remain
+unexposed until the API supplies them with reviewed provenance.

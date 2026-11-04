@@ -58,8 +58,11 @@ readback, egress-denied actor journeys, and restart/restore evidence.
 In the fixture admin workspace, use **Review records** to search by label,
 role, or exact identifier and narrow by lifecycle status. Select a result to
 see its bounded detail and available actions; a filter never submits a
-mutation. The local-ledger adapter has no broad list, so its admin view keeps
-only exact-ID lookup. In the applicant portal, choose a role first, then
+mutation. **Advanced governance** names the separate epoch, signed-intent,
+proposal/recovery, and quorum/verifier tasks; each link opens a real task
+section and retains its existing prerequisites. The local-ledger adapter has
+no broad list, so its admin view keeps only exact-ID lookup. In the applicant
+portal, choose a role first, then
 complete the visible identify/scope/prepare phases. Sign the prepared digest
 outside the browser and continue to one-use private evidence on the same-origin
 authenticated host. A registered application is not an approved grant.
@@ -69,7 +72,10 @@ authenticated host. A registered application is not an approved grant.
 Workspace settings expose endpoint, last browser check, source mode, registry
 identity, and any approved local-plan digest reported by the API. Network
 profile, genesis anchor, and contract identity are shown as *not exposed* when
-the API does not return them. Same-origin packaged endpoints are host-managed;
+the API does not return them. In local-ledger mode, the API's reported
+checkpoint hash and timestamp are displayed separately from the browser check
+time and explicitly remain unverified node claims. Same-origin packaged
+endpoints are host-managed;
 the editable standalone development URL is not an authentication mechanism.
 No account avatar, private-key field, or browser-side deployment switch is
 provided. Change deployment identity through reviewed operator configuration,
