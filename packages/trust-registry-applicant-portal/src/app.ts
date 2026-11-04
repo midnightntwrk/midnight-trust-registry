@@ -14,6 +14,7 @@ type AppState = {
   flash: string | undefined;
   inspection: PublicInspection | undefined;
   loading: boolean;
+  observedAt: string | undefined;
   submitting: boolean;
   signedBusy: boolean;
   signedContext: TrustRegistryApiMutationContext | undefined;
@@ -231,6 +232,7 @@ export const createApplicantPortalApp = (
     flash: undefined,
     inspection: undefined,
     loading: false,
+    observedAt: undefined,
     submitting: false,
     signedBusy: false,
     signedContext: undefined,
@@ -661,6 +663,7 @@ export const createApplicantPortalApp = (
         error: undefined,
         inspection,
         loading: false,
+        observedAt: new Date().toISOString(),
       });
     } catch (error) {
       if (requestId !== inspectionRequestId || apiBase !== state.apiBase) return;
@@ -669,6 +672,7 @@ export const createApplicantPortalApp = (
         flash: undefined,
         inspection: undefined,
         loading: false,
+        observedAt: undefined,
       });
     }
   };
@@ -1179,6 +1183,16 @@ export const createApplicantPortalApp = (
       input.value = "";
       void submitApplicationPresentation(raw);
     });
+    root.querySelectorAll<HTMLAnchorElement>("[data-open-workflow]").forEach((link) => {
+      link.addEventListener("click", (event) => {
+        const target = root.querySelector<HTMLDetailsElement>(`#${link.dataset.openWorkflow ?? ""}`);
+        if (target === null) return;
+        event.preventDefault();
+        target.open = true;
+        target.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+        target.querySelector("summary")?.focus();
+      });
+    });
   };
 
   const renderInspectionLane = (
@@ -1208,10 +1222,15 @@ export const createApplicantPortalApp = (
     </section>
   `;
 
+  let pendingFocusKey: string | null = null;
   const render = () => {
     const previousSignedEnvelope = root.querySelector<HTMLTextAreaElement>("[data-signed-submit] [name='signedEnvelope']")?.value;
+    const focusKey = root.contains(document.activeElement)
+      ? document.activeElement?.getAttribute("data-focus-key") : null;
+    pendingFocusKey = focusKey ?? pendingFocusKey;
     const openWorkflows = new Set([...root.querySelectorAll<HTMLDetailsElement>(".workflow-disclosure[open]")]
       .map((details) => details.dataset.workflow));
+    const settingsOpen = root.querySelector<HTMLDetailsElement>(".workspace-settings")?.open ?? false;
     const previousVpForm = root.querySelector<HTMLFormElement>("[data-application-vp-form]");
     const previousVp = previousVpForm?.querySelector<HTMLTextAreaElement>("[name='presentation']")?.value;
     const previousChallengeHash = previousVpForm?.dataset.challengeHash;
@@ -1236,7 +1255,7 @@ export const createApplicantPortalApp = (
     const maintainerLocked = preparedMaintainer === undefined ? "" : " disabled";
 
     root.innerHTML = `
-      <main class="shell">
+      <main class="shell app-shell">
         <header class="brand-bar">
           <span class="brand-name"><img class="brand-logo" src="./midnight-logo.svg" alt="Midnight" /> <span class="brand-section">Trust Registry</span></span>
           <span class="brand-section">Applicant portal</span>
@@ -1251,16 +1270,16 @@ export const createApplicantPortalApp = (
             <form class="panel" data-api-base-form>
               <label class="label">
                 API base URL
-                <input class="input mono" type="url" name="apiBase" value="${escapeHtml(state.apiBase)}"${sameOriginApi ? " disabled" : ""} />
+                <input class="input mono" type="url" name="apiBase" data-focus-key="api-base" value="${escapeHtml(state.apiBase)}"${sameOriginApi ? " disabled" : ""} />
               </label>
               <div class="row">
-                <button class="button" type="submit"${sameOriginApi || state.loading ? " disabled" : ""}>Connect</button>
-                <button class="button secondary" type="button" data-refresh${state.loading ? " disabled" : ""}>Refresh</button>
+                <button class="button" type="submit" data-focus-key="connect"${sameOriginApi || state.loading ? " disabled" : ""}>Connect</button>
+                <button class="button secondary" type="button" data-refresh data-focus-key="refresh"${state.loading ? " disabled" : ""}>Refresh</button>
               </div>
             </form>
             <div class="panel metrics">
               <div class="metric"><span>Registry</span><strong>${escapeHtml(state.inspection?.summary.registryLabel ?? "Unavailable")}</strong></div>
-              <div class="metric"><span>Current epoch</span><strong>${state.inspection?.summary.epochCount === undefined ? "Unavailable" : `#${state.inspection.summary.epochCount.toString()}`}</strong><small class="technical-id">${escapeHtml(state.inspection?.summary.currentEpochId ?? "n/a")}</small></div>
+              <div class="metric"><span>Current epoch</span><strong>${state.inspection?.summary.epochCount === undefined ? "Unavailable" : `#${state.inspection.summary.epochCount.toString()}`}</strong></div>
               <div class="metric"><span>Active issuers</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("issuer") ? "n/a" : state.inspection.activeIssuers.length.toString()}</strong></div>
               <div class="metric"><span>Active verifiers</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("verifier") ? "n/a" : state.inspection.activeVerifiers.length.toString()}</strong></div>
               <div class="metric"><span>Active auditors</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("auditor") ? "n/a" : state.inspection.activeAuditors.length.toString()}</strong></div>
@@ -1270,13 +1289,47 @@ export const createApplicantPortalApp = (
           ${state.error === undefined ? "" : `<div class="alert error">${escapeHtml(state.error)}</div>`}
           ${state.inspection?.warnings?.map((warning) => `<div class="alert error">${escapeHtml(warning)}</div>`).join("") ?? ""}
           ${state.flash === undefined ? "" : `<div class="alert success">${escapeHtml(state.flash)}</div>`}
+          <div class="source-panel" data-source-state="${state.loading ? "loading" : state.inspection === undefined ? "unavailable" : state.inspection.sourceMode === "local-ledger" ? "local-ledger" : "fixture"}" role="status" aria-live="polite">
+            <span class="source-badge">${state.loading ? "Checking" : state.inspection === undefined ? "Unavailable" : state.inspection.sourceMode === "local-ledger" ? "API claim" : "Local fixture"}</span>
+            <div class="source-copy"><strong>${state.loading ? "Loading registry data" : state.inspection === undefined ? "No current registry data" : state.inspection.sourceMode === "local-ledger" ? "Current local-ledger API response" : "Demo workspace data"}</strong>
+              <span>${state.inspection?.sourceMode === "local-ledger" ? "This response is not independently verified finality or authorization evidence." : state.inspection === undefined ? "Connect or retry to inspect this source. No trust decision is available." : "Fixture records are for exploration, not deployed ledger evidence."}${state.inspection?.unavailableLists?.length ? ` ${state.inspection.unavailableLists.length} list(s) unavailable; counts shown as n/a.` : ""}</span>
+            </div>
+            ${state.observedAt === undefined || state.loading ? "" : `<span class="source-time">Checked ${escapeHtml(state.observedAt)} (browser clock)</span>`}
+          </div>
+          <details class="workspace-settings" id="connection-details"${settingsOpen ? " open" : ""}>
+            <summary>Connection and source details</summary>
+            <dl class="settings-grid">
+              <div><dt>API endpoint</dt><dd class="technical-id">${escapeHtml(state.apiBase)}${sameOriginApi ? " (managed by this host)" : " (local development setting)"}</dd></div>
+              <div><dt>Connection</dt><dd>${state.loading ? "Checking" : state.inspection === undefined ? "Unavailable" : "Responding at last check"}</dd></div>
+              <div><dt>Source mode</dt><dd>${escapeHtml(state.inspection?.sourceMode ?? (state.inspection === undefined ? "Unavailable" : "Fixture workspace"))}</dd></div>
+              <div><dt>Browser check time</dt><dd>${escapeHtml(state.observedAt ?? "No successful check")}</dd></div>
+              <div><dt>Registry ID</dt><dd class="technical-id">${escapeHtml(state.inspection?.summary.registryId ?? "Not reported")}</dd></div>
+              <div><dt>Registry DID</dt><dd class="technical-id">${escapeHtml(state.inspection?.summary.registryDid ?? "Not reported")}</dd></div>
+              <div><dt>Current epoch ID</dt><dd class="technical-id">${escapeHtml(state.inspection?.summary.currentEpochId ?? "Not reported")}</dd></div>
+              <div><dt>Network profile, genesis, contract</dt><dd>Not exposed by this API response</dd></div>
+            </dl>
+            <p class="settings-note">Connection details are read-only deployment context, not an account profile or proof of finality. Private actions require the authenticated same-origin host.</p>
+          </details>
         </section>
         <nav class="task-nav" aria-label="Portal tasks">
           <a href="#trust-records">Explore active records</a>
           ${state.inspection?.sourceMode === "local-ledger" ? "" : `<a href="#demo-application">Try a local demo application</a>`}
           <a href="#governed-requests">Prepare governed membership</a>
+          <a href="#connection-details">Connection details</a>
         </nav>
         <section class="content">
+          <section class="journey-picker" id="governed-requests" aria-labelledby="journey-heading">
+            <div class="journey-heading"><p class="eyebrow">Governed membership</p><h2 id="journey-heading">Choose your role</h2>
+              <p>Each request binds an exact DID, key and scope, then requires challenge-bound evidence and an external signature. This browser never collects a private key.</p>
+            </div>
+            <div class="journey-cards">
+              <a href="#issuer-request" data-open-workflow="issuer-request"><strong>Issuer</strong><span>Register a credential family or schema.</span><em>Prepare issuer request</em></a>
+              <a href="#verifier-request" data-open-workflow="verifier-request"><strong>Verifier</strong><span>Define a precise request scope.</span><em>Prepare verifier request</em></a>
+              <a href="#auditor-request" data-open-workflow="auditor-request"><strong>Auditor</strong><span>Request governed audit scope.</span><em>Prepare auditor request</em></a>
+              <a href="#maintainer-request" data-open-workflow="maintainer-request"><strong>Maintainer</strong><span>Request committee membership.</span><em>Prepare maintainer request</em></a>
+            </div>
+            <p class="journey-prerequisite">${privateHost ? "Authenticated same-origin host available for private evidence steps." : "Private evidence steps require an authenticated same-origin host; this connection can browse but cannot submit them."}</p>
+          </section>
           ${state.inspection?.sourceMode === "local-ledger" ? `
           <section class="form-panel">
             <h2>Current authorization lookup</h2>
@@ -1583,9 +1636,15 @@ export const createApplicantPortalApp = (
       const details = document.createElement("details");
       details.className = "workflow-disclosure";
       details.dataset.workflow = name;
+      const role = (["issuer", "verifier", "auditor", "maintainer"] as const)
+        .find((candidate) => panel.querySelector(`[data-${candidate}-application-form]`) !== null);
       details.open = openWorkflows.has(name) || name === "Pending membership evidence"
         && (pending !== undefined || state.acceptedEvidence !== undefined);
-      if (panel.id !== "") {
+      if (role !== undefined) {
+        details.classList.add("role-workflow");
+        details.id = `${role}-request`;
+        panel.removeAttribute("id");
+      } else if (panel.id !== "") {
         details.id = panel.id;
         panel.removeAttribute("id");
       }
@@ -1601,6 +1660,13 @@ export const createApplicantPortalApp = (
     if (previousSignedEnvelope !== undefined) {
       const currentEnvelope = root.querySelector<HTMLTextAreaElement>("[data-signed-submit] [name='signedEnvelope']");
       if (currentEnvelope !== null) currentEnvelope.value = previousSignedEnvelope;
+    }
+    if (pendingFocusKey !== null) {
+      const target = root.querySelector<HTMLElement>(`[data-focus-key="${pendingFocusKey}"]`);
+      if (target !== null && !(target instanceof HTMLButtonElement && target.disabled)) {
+        target.focus();
+        pendingFocusKey = null;
+      }
     }
     bindEvents();
   };

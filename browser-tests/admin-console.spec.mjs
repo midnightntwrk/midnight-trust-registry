@@ -172,3 +172,78 @@ test("local-ledger board discards a lookup when its finalized checkpoint changes
     await new Promise((resolveClose, reject) => server.close((error) => error ? reject(error) : resolveClose()));
   }
 });
+
+test("fixture admin review advances a proposed issuer through approval and activation", async ({ page, allowedLocalOrigins }) => {
+  const staticHandler = createStaticAssetHandler({
+    distDir: resolve("packages/trust-registry-admin-console/dist"),
+    name: "admin-console-review-journey",
+  });
+  const id = "auth:issuer:ui-review:v1";
+  let status = "proposed";
+  const posted = [];
+  const server = createServer(async (request, response) => {
+    const path = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+    if (path !== "/health" && !path.startsWith("/v1/")) {
+      await staticHandler(request, response);
+      return;
+    }
+    response.setHeader("content-type", "application/json");
+    if (path === "/health") {
+      response.end(JSON.stringify({ status: "ok", sourceMode: "workspace", registryId: "registry:ui-review" }));
+      return;
+    }
+    const entry = { label: "UI review issuer", authorization: {
+      authorizationId: id, registryId: "registry:ui-review", role: "issuer",
+      subjectDid: "did:midnight:undeployed:ui-review", resourceType: "credential-family",
+      resourceId: `tr:issuer-resource:v1:${"a".repeat(64)}`, policyId: "policy:ui-review",
+      trustLevel: "approved", status, proposedAt: "2026-05-20T00:00:00Z",
+      ...(status === "proposed" ? {} : { authorizedAt: "2026-05-20T00:01:00Z" }),
+      ...(status === "active" ? { activeFrom: "2026-05-20T00:02:00Z" } : {}),
+    }, evidence: { epoch: { epochId: "epoch:ui-review:1", stateRoot: "0xroot" } } };
+    if (request.method === "POST") {
+      const action = path.endsWith("/approve") ? "approve" : path.endsWith("/activate") ? "activate" : null;
+      if (action === null || (action === "approve" && status !== "proposed")
+        || (action === "activate" && status !== "authorized")) {
+        response.statusCode = 409;
+        response.end(JSON.stringify({ title: "invalid review transition" }));
+        return;
+      }
+      posted.push(path);
+      status = action === "approve" ? "authorized" : "active";
+      entry.authorization.status = status;
+      response.end(JSON.stringify({ recordKind: "authorization", operation: { operation: action }, entry }));
+      return;
+    }
+    if (path === "/v1/registry/summary") {
+      const current = counts();
+      current[status] = 1;
+      response.end(JSON.stringify({ ...summary("ui-review"), issuerCounts: current }));
+      return;
+    }
+    response.end(JSON.stringify({ entries: path === "/v1/authorizations/issuer" ? [entry] : [] }));
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("expected TCP address");
+  const base = `http://127.0.0.1:${address.port}`;
+  try {
+    allowedLocalOrigins.add(base);
+    page.on("dialog", (dialog) => dialog.accept());
+    await page.goto(`${base}/?apiBase=${encodeURIComponent(base)}`);
+    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    await expect(page.locator(".card")).toContainText("UI review issuer");
+    await page.locator('[data-action="approve"]').click();
+    await expect(page.locator(".card .status-chip")).toHaveText("Authorized");
+    await page.locator('[data-action="activate"]').click();
+    await expect(page.locator(".card .status-chip")).toHaveText("Active");
+    await expect(page.locator(".source-panel")).toContainText("not deployed ledger evidence");
+    expect(posted).toEqual([
+      `/v1/applications/issuer/${encodeURIComponent(id)}/approve`,
+      `/v1/applications/issuer/${encodeURIComponent(id)}/activate`,
+    ]);
+  } finally {
+    await page.close();
+    server.closeAllConnections();
+    await new Promise((done, reject) => server.close((error) => error ? reject(error) : done()));
+  }
+});
