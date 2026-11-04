@@ -3199,3 +3199,10 @@ fixture threshold revision, observes the explicit pending verifier warning,
 and submits verifier registration as a separate action. The fixture host
 accepts the signer bundle without cryptographic validation; the test verifies
 UI ordering and payloads, not Compact quorum or network finality.
+
+The governed proposal browser suite now has a direct-receipt issuer path in
+addition to four lost-response recovery paths. It signs the prepared action
+with two external maintainer fixtures and a verifier fixture, rejects a
+wrong-sequence vote, then checks that the simulator-backed API journal records
+one accepted submission and that the UI labels its receipt as non-final. This
+proves the browser-to-local-simulator flow, not a deployed ledger receipt.

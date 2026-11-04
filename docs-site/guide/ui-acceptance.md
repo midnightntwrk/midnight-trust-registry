@@ -44,6 +44,7 @@ repeatable UI acceptance evidence:
 | Revise a fixture maintainer threshold, see verifier registration remain required, and submit that registration separately | `admin-console.spec.mjs` (fixture policy journey) |
 | Filter the fixture admin queue by text and lifecycle status before acting; filtered-out records cannot remain selected | `admin-console.spec.mjs`, admin unit tests |
 | Recover an accepted proposal after its HTTP response is lost, without repeating the mutation | `governed-proposal-recovery.spec.mjs` (four role cases) |
+| Submit an issuer proposal with two external maintainer signatures and a registered verifier signature, then read the direct accepted receipt without treating it as finality | `governed-proposal-recovery.spec.mjs` (Compact simulator and local admission host) |
 | Resolve exact current authorization and separate external recognition scopes in local-ledger mode; reject a substituted recognition tuple | `local-lookup.spec.mjs` (admin and applicant) |
 | Inspect settings/source provenance, retry after an unavailable response, retain keyboard focus, and avoid overflow at 390/768/1440 px | `ui-layout.spec.mjs` |
 | Reject an external endpoint override on packaged same-origin admin and portal paths while preserving the authenticated-host warning | `ui-layout.spec.mjs` |
@@ -62,8 +63,7 @@ readback, egress-denied actor journeys, and restart/restore evidence.
 ## Final acceptance still to cover
 
 The browser suite is not yet a pass for *all* successful UI use cases. Before
-closing the UI acceptance issue, Playwright must also exercise a successful
-direct-receipt governed proposal with external quorum; recognition accreditation and historical evidence
+closing the UI acceptance issue, Playwright must also exercise recognition accreditation and historical evidence
 export; and editable loopback endpoint settings. Add reviewed contrast checks.
 Each test must
 assert the exact source label, actor/action prerequisite, receipt or board

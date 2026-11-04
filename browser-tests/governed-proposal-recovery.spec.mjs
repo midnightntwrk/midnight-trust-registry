@@ -105,7 +105,12 @@ const scenarioFor = (role, harness) => {
   };
 };
 
-for (const role of ["issuer", "verifier", "auditor", "maintainer"]) test(`admin recovers an accepted ${role} proposal after its HTTP response is lost`, async ({ page, allowedLocalOrigins }) => {
+for (const { role, responseLost } of [
+  ...["issuer", "verifier", "auditor", "maintainer"].map((role) => ({ role, responseLost: true })),
+  { role: "issuer", responseLost: false },
+]) test(responseLost
+  ? `admin recovers an accepted ${role} proposal after its HTTP response is lost`
+  : `admin receives an accepted ${role} proposal receipt from external quorum`, async ({ page, allowedLocalOrigins }) => {
   const harness = new LocalTrustRegistryIntegrationHarness(`admin-browser-${role}-proposal-recovery`);
   const second = createMaintainerScenarioFixture("admin-browser-second");
   const third = createMaintainerScenarioFixture("admin-browser-third");
@@ -133,7 +138,7 @@ for (const role of ["issuer", "verifier", "auditor", "maintainer"]) test(`admin 
     scopeCommitment: evidence.envelope.scopeCommitment,
     governedResource: evidence.envelope.governedResource,
   };
-  const directory = await mkdtemp(join(tmpdir(), `tr-admin-${role}-browser-recovery-`));
+  const directory = await mkdtemp(join(tmpdir(), `tr-admin-${role}-browser-proposal-`));
   const journal = new FileProposalSubmissionJournal(join(directory, "submissions.json"));
   let finalizedLedger = harness.simulator.getLedger();
   const beforeActionCount = finalizedLedger.governanceActionCount;
@@ -164,8 +169,9 @@ for (const role of ["issuer", "verifier", "auditor", "maintainer"]) test(`admin 
       },
       execute: async (_, submitted, signers, verifierSignature) => {
         executions += 1;
-        scenario.execute(submitted, signers, verifierSignature);
-        throw new Error("HTTP response lost after Compact acceptance");
+        const eventHash = scenario.execute(submitted, signers, verifierSignature);
+        if (responseLost) throw new Error("HTTP response lost after Compact acceptance");
+        return { eventHash: hex(eventHash) };
       },
       resolve: async (authorizationId) => resolveCompactProposalObservation(
         async () => finalizedLedger, harness.registryId, role, authorizationId,
@@ -204,16 +210,25 @@ for (const role of ["issuer", "verifier", "auditor", "maintainer"]) test(`admin 
       signPrepared(harness, second, prepared), signPrepared(harness, third, prepared),
     ]));
     await page.locator("[data-proposal-submit] button[type='submit']").click();
-    await expect(page.locator("body")).toContainText("proposal submission outcome unknown");
-    await expect(page.locator("[data-proposal-submit]")).toHaveCount(0);
-    expect(executions).toBe(1);
-    expect(harness.simulator.getLedger().governanceActionCount).toBeGreaterThan(beforeActionCount);
-    await page.locator("[data-proposal-resolve]").click();
-    await expect(page.locator("body")).toContainText("Proposal not observed");
-    finalizedLedger = harness.simulator.getLedger();
-    await page.locator("[data-proposal-resolve]").click();
-    await expect(page.locator("body")).toContainText(`Compact ${role} proposal observed`);
-    expect((await journal.read(role, scenario.id))?.state).toBe("observed");
+    if (responseLost) {
+      await expect(page.locator("body")).toContainText("proposal submission outcome unknown");
+      expect(executions).toBe(1);
+      expect(harness.simulator.getLedger().governanceActionCount).toBeGreaterThan(beforeActionCount);
+      await expect(page.locator("[data-proposal-submit]")).toHaveCount(0);
+      await page.locator("[data-proposal-resolve]").click();
+      await expect(page.locator("body")).toContainText("Proposal not observed");
+      finalizedLedger = harness.simulator.getLedger();
+      await page.locator("[data-proposal-resolve]").click();
+      await expect(page.locator("body")).toContainText(`Compact ${role} proposal observed`);
+      expect((await journal.read(role, scenario.id))?.state).toBe("observed");
+    } else {
+      await expect(page.locator(".alert.success")).toContainText(`Compact ${role} proposal accepted`);
+      await expect(page.locator(".alert.success")).toContainText("Network finality is not implied");
+      expect(executions).toBe(1);
+      expect(harness.simulator.getLedger().governanceActionCount).toBeGreaterThan(beforeActionCount);
+      await expect(page.locator("[data-proposal-submit]")).toHaveCount(0);
+      expect((await journal.read(role, scenario.id))?.state).toBe("submitted");
+    }
     expect(executions).toBe(1);
   } finally {
     await page.close();
