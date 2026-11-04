@@ -50,6 +50,7 @@ repeatable UI acceptance evidence:
 | Reject an external endpoint override on packaged same-origin admin and portal paths while preserving the authenticated-host warning | `ui-layout.spec.mjs` |
 | Open a governed issuer request by keyboard with reduced motion and verify the three visible preparation phases; keep mobile task targets at least 44 px high | `ui-layout.spec.mjs` |
 | Reflow long identifiers and controls at 200% root text size on a 390 px viewport without page-level horizontal scroll | `ui-layout.spec.mjs` |
+| Check browser-computed normal-text contrast for brand, navigation, source badge, and primary/secondary actions in both apps | `ui-layout.spec.mjs` (selected solid surfaces, at least 4.5:1) |
 | Deny unapproved browser egress and discard stale local checkpoint responses | `browser-egress-control.spec.mjs`, `admin-console.spec.mjs` |
 
 The role tests use a controlled local admission host, the review journey uses a
@@ -63,10 +64,11 @@ readback, egress-denied actor journeys, and restart/restore evidence.
 ## Final acceptance still to cover
 
 The browser suite is not yet a pass for *all* successful UI use cases. Before
-closing the UI acceptance issue, Playwright must also exercise recognition accreditation and historical evidence
-export; and editable loopback endpoint settings. Add reviewed contrast checks.
-Each test must
-assert the exact source label, actor/action prerequisite, receipt or board
+closing the UI acceptance issue, Playwright must also exercise recognition
+accreditation, historical evidence export, and editable loopback endpoint
+settings. The selected contrast samples do not replace a full review of all
+states, overlays, and assistive technology. Each test must assert the exact
+source label, actor/action prerequisite, receipt or board
 readback, and absence of false finality. Deployed standalone actor E2E
 qualification remains a separate gate even after these browser cases pass.
 

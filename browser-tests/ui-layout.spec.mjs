@@ -76,6 +76,52 @@ async function serveApp(app) {
 }
 
 for (const app of ["admin-console", "applicant-portal"]) {
+  test(`${app} keeps critical Midnight text pairs above normal-text contrast`, async ({ page, allowedLocalOrigins }) => {
+    const server = await serveApp(app);
+    try {
+      allowedLocalOrigins.add(server.base);
+      await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
+      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      const ratios = await page.evaluate(() => {
+        const rgb = (value) => {
+          const channels = value.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/u);
+          if (channels === null) throw new Error(`Expected a solid RGB color, got ${value}`);
+          return channels.slice(1).map(Number);
+        };
+        const luminance = (value) => {
+          const linear = rgb(value).map((channel) => {
+            const normalized = channel / 255;
+            return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+          });
+          return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+        };
+        const samples = [
+          ["brand", ".brand-name", ".brand-bar"],
+          ["navigation", ".app-shell > .task-nav a", ".app-shell > .task-nav"],
+          ["source", ".source-badge", ".source-badge"],
+          ["primary action", ".button:not(.secondary):not(:disabled)", ".button:not(.secondary):not(:disabled)"],
+          ["secondary action", ".button.secondary:not(:disabled)", ".button.secondary:not(:disabled)"],
+        ];
+        return samples.map(([name, textSelector, surfaceSelector]) => {
+          const text = document.querySelector(textSelector);
+          const surface = document.querySelector(surfaceSelector);
+          if (text === null || surface === null) throw new Error(`Missing ${name} contrast sample`);
+          const foreground = getComputedStyle(text).color;
+          const background = getComputedStyle(surface).backgroundColor;
+          const lighter = Math.max(luminance(foreground), luminance(background));
+          const darker = Math.min(luminance(foreground), luminance(background));
+          return { name, foreground, background, ratio: (lighter + 0.05) / (darker + 0.05) };
+        });
+      });
+      for (const sample of ratios) {
+        expect(sample.ratio, JSON.stringify(sample)).toBeGreaterThanOrEqual(4.5);
+      }
+    } finally {
+      await page.close();
+      await server.close();
+    }
+  });
+
   test(`${app} locks the packaged endpoint to its same-origin host`, async ({ page, allowedLocalOrigins }) => {
     const server = await serveApp(app);
     try {

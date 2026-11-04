@@ -3206,3 +3206,9 @@ with two external maintainer fixtures and a verifier fixture, rejects a
 wrong-sequence vote, then checks that the simulator-backed API journal records
 one accepted submission and that the UI labels its receipt as non-final. This
 proves the browser-to-local-simulator flow, not a deployed ledger receipt.
+
+Selected browser-computed contrast checks now cover the Midnight brand bar,
+task navigation, source badge, and primary/secondary actions in both apps at
+the normal-text 4.5:1 threshold. They are a regression guard for solid
+surfaces, not a complete audit of every interaction state or assistive
+technology behavior.
