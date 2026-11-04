@@ -52,6 +52,8 @@ describe("admin console browser handlers", () => {
     await renderAt("http://127.0.0.1:4173/?apiBase=http://127.0.0.1:4400");
     expect(root.querySelector("[data-action]")).toBeNull();
     expect(root.querySelector("#task-epoch")).toBeNull();
+    expect(root.textContent).toContain("1 of 1 record shown");
+    expect(root.querySelector(".column-header")?.textContent).toContain("1 item");
     await renderAt("http://127.0.0.1:4173/?demo=1&apiBase=http://127.0.0.1:4400");
     expect(root.querySelector("[data-action]")).not.toBeNull();
     await renderAt("https://registry.example/?demo=1&apiBase=http://127.0.0.1:4400");
@@ -85,6 +87,8 @@ describe("admin console browser handlers", () => {
     expect(root.querySelector("[data-source-state='local-ledger']")?.textContent)
       .toContain("not independently verified finality");
     expect(root.querySelector(".source-time")?.textContent).toContain("browser clock");
+    expect(root.querySelector(".source-time time")?.getAttribute("datetime")).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(root.querySelector(".source-time time")?.textContent).toContain("UTC");
     failHealth = true;
     root.querySelector<HTMLButtonElement>("[data-refresh]")!.focus();
     root.querySelector<HTMLButtonElement>("[data-refresh]")!.click();

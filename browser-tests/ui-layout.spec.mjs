@@ -495,9 +495,9 @@ for (const [app, title] of [
           await expect(page.locator("#trust-records .lane")).toBeHidden();
           await recordSearch.fill(longDid.slice(-20));
           await expect(page.locator("#trust-records .lane")).toBeVisible();
-          await expect(page.locator("[data-record-count]")).toHaveText("1 of 1 active records shown");
+          await expect(page.locator("[data-record-count]")).toHaveText("1 of 1 active record shown");
           await recordSearch.fill("issuer");
-          await expect(page.locator("[data-record-count]")).toHaveText("1 of 1 active records shown");
+          await expect(page.locator("[data-record-count]")).toHaveText("1 of 1 active record shown");
           if (width === 390) {
             await page.emulateMedia({ reducedMotion: "reduce" });
             await page.locator('[data-open-workflow="issuer-request"]').focus();

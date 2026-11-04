@@ -933,7 +933,7 @@ export const createAdminConsoleApp = (
     <section class="column">
       <div class="column-header">
         <h2>${escapeHtml(REVIEW_STATUS_LABELS[status])}</h2>
-        <span>${cards.length.toString()} items</span>
+        <span>${cards.length.toString()} ${cards.length === 1 ? "item" : "items"}</span>
       </div>
       ${cards.length === 0
         ? `<div class="empty-state"><p>No ${escapeHtml(REVIEW_STATUS_LABELS[status].toLowerCase())} records.</p></div>`
@@ -1090,7 +1090,7 @@ export const createAdminConsoleApp = (
             <div class="source-copy"><strong>${state.loading ? "Loading registry data" : state.board === undefined ? "No current registry data" : state.board.sourceMode === "local-ledger" ? "Current local-ledger API response" : "Demo workspace data"}</strong>
               <span>${state.board?.sourceMode === "local-ledger" ? "This response is not independently verified finality or authorization evidence." : state.board === undefined ? "Connect or retry to inspect this source. No trust decision is available." : "Fixture records are for exploration, not deployed ledger evidence."}</span>
             </div>
-            ${state.observedAt === undefined || state.loading ? "" : `<span class="source-time">Checked ${escapeHtml(state.observedAt)} (browser clock)</span>`}
+            ${state.observedAt === undefined || state.loading ? "" : `<span class="source-time">Checked <time datetime="${escapeHtml(state.observedAt)}">${escapeHtml(formatReviewTime(state.observedAt))}</time> (browser clock)</span>`}
             <button class="source-refresh" type="button" data-refresh data-focus-key="refresh"${state.loading || state.governedBusy ? " disabled" : ""}>Recheck</button>
           </div>
         </section>
@@ -1260,7 +1260,7 @@ export const createAdminConsoleApp = (
         </details>
         <section class="workspace" id="review-board">
           ${state.board === undefined || state.board.sourceMode === "local-ledger" ? "" : `<div class="review-filters">
-            <div><p class="eyebrow">Review queue</p><h2>Find a trust record</h2><p>${visibleCards.length.toString()} of ${state.cards.length.toString()} records shown</p></div>
+            <div><p class="eyebrow">Review queue</p><h2>Find a trust record</h2><p>${visibleCards.length.toString()} of ${state.cards.length.toString()} ${state.cards.length === 1 ? "record" : "records"} shown</p></div>
             <label>Search label, role, or exact identifier
               <input class="input" type="search" data-review-query data-focus-key="review-query" value="${escapeHtml(state.reviewQuery)}" autocomplete="off" />
             </label>

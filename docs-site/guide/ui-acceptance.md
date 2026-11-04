@@ -126,6 +126,17 @@ repeatable UI acceptance evidence:
 | Serve the shared Midnight browser icon from each built app without a missing-resource response | `ui-layout.spec.mjs` |
 | Deny unapproved browser egress and discard stale local checkpoint responses | `browser-egress-control.spec.mjs`, `admin-console.spec.mjs` |
 
+### Visual review record
+
+On 2026-11-04, the locally built fixture admin and applicant pages were
+visually inspected as full-page captures at 1440, 768, and 390 px. The product
+title and workspace label stay together; the 768 px sidebar and record detail
+do not overlap; mobile role choices and source labels remain legible. That pass
+found raw ISO source timestamps and singular record counts with plural labels;
+both were corrected and covered by UI tests. This is an agent-run visual pass,
+not an independent new-user or assistive-technology review. The capture does
+not establish deployed-ledger behavior.
+
 The automated axe checks are a repeatable baseline. They cannot establish that
 the flow is understandable with a screen reader, that keyboard order is useful
 for every action, or that every dynamic state has been sampled. Keep the

@@ -55,6 +55,8 @@ describe("trust registry applicant portal app", () => {
     expect(root.textContent).not.toContain("Current issuer list is unavailable");
     expect(root.textContent).not.toContain("4 list(s) unavailable");
     expect(root.querySelector(".source-time")?.textContent).toContain("browser clock");
+    expect(root.querySelector(".source-time time")?.getAttribute("datetime")).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(root.querySelector(".source-time time")?.textContent).toContain("UTC");
     expect(root.textContent).toContain("local");
     expect(root.textContent).toContain("Broad browsing is unavailable in this mode.");
     expect(root.textContent).not.toContain("No active entries in this lane yet.");

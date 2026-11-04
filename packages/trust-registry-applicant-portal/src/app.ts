@@ -184,6 +184,14 @@ export const escapeHtml = (value: string): string =>
     .replaceAll("\"", "&quot;")
     .replaceAll("'", "&#39;");
 
+const formatObservationTime = (value: string): string => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return `${new Intl.DateTimeFormat("en-GB", {
+    dateStyle: "medium", timeStyle: "short", timeZone: "UTC",
+  }).format(date)} UTC`;
+};
+
 const downloadUnverifiedEvidence = (
   root: HTMLElement,
   kind: "historical-authorization-evidence" | "historical-recognition-evidence",
@@ -337,7 +345,10 @@ export const createApplicantPortalApp = (
       visible += laneVisible;
     });
     const count = overview.querySelector<HTMLElement>("[data-record-count]");
-    if (count !== null) count.textContent = `${visible.toString()} of ${overview.querySelectorAll(".card").length.toString()} active records shown`;
+    if (count !== null) {
+      const total = overview.querySelectorAll(".card").length;
+      count.textContent = `${visible.toString()} of ${total.toString()} active ${total === 1 ? "record" : "records"} shown`;
+    }
     const noMatch = overview.querySelector<HTMLElement>("[data-record-no-match]");
     if (noMatch !== null) noMatch.hidden = query === "" || visible > 0 || overview.querySelectorAll(".card").length === 0;
   };
@@ -1476,7 +1487,7 @@ export const createApplicantPortalApp = (
             <div class="source-copy"><strong>${state.loading ? "Loading registry data" : state.inspection === undefined ? "No current registry data" : state.inspection.sourceMode === "local-ledger" ? "Current local-ledger API response" : "Demo workspace data"}</strong>
               <span>${state.inspection?.sourceMode === "local-ledger" ? "This response is not independently verified finality or authorization evidence. Broad lists are not offered in this mode; use exact lookup." : state.inspection === undefined ? "Connect or retry to inspect this source. No trust decision is available." : "Fixture records are for exploration, not deployed ledger evidence."}${state.inspection?.sourceMode !== "local-ledger" && state.inspection?.unavailableLists?.length ? ` ${state.inspection.unavailableLists.length} list(s) unavailable; counts shown as n/a.` : ""}</span>
             </div>
-            ${state.observedAt === undefined || state.loading ? "" : `<span class="source-time">Checked ${escapeHtml(state.observedAt)} (browser clock)</span>`}
+            ${state.observedAt === undefined || state.loading ? "" : `<span class="source-time">Checked <time datetime="${escapeHtml(state.observedAt)}">${escapeHtml(formatObservationTime(state.observedAt))}</time> (browser clock)</span>`}
             <button class="source-refresh" type="button" data-refresh data-focus-key="refresh"${state.loading ? " disabled" : ""}>Recheck</button>
           </div>
         </section>
