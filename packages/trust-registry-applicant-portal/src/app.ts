@@ -329,7 +329,7 @@ export const createApplicantPortalApp = (
           && !card.textContent?.toLocaleLowerCase().includes(query);
         if (!card.hidden) laneVisible += 1;
       });
-      lane.hidden = query !== "" && laneVisible === 0;
+      lane.hidden = query !== "" && laneVisible === 0 && lane.querySelector(".empty-state") === null;
       visible += laneVisible;
     });
     const count = overview.querySelector<HTMLElement>("[data-record-count]");
@@ -1796,7 +1796,7 @@ export const createApplicantPortalApp = (
               ${auditorCards.length || state.inspection.unavailableLists?.includes("auditor") ? renderInspectionLane("Active auditors", auditorCards, state.inspection.unavailableLists?.includes("auditor") === true) : ""}
               ${recognitionCards.length || state.inspection.unavailableLists?.includes("recognition") ? renderInspectionLane("Active recognitions", recognitionCards, state.inspection.unavailableLists?.includes("recognition") === true) : ""}
             </div>
-            <p class="records-empty" data-record-no-match hidden>No records match this search. Try a different name, role, scope, or DID.</p>
+            <p class="records-empty" data-record-no-match hidden>No loaded records match this search.${state.inspection.unavailableLists?.length ? " Unavailable categories were not searched." : " Try a different name, role, scope, or DID."}</p>
             ${cards.length === 0 && !state.inspection.unavailableLists?.length ? `<p class="records-empty">No active records in this fixture yet.</p>` : ""}
           </section>`}
         </section>
