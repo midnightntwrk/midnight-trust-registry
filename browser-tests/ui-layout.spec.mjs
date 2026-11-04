@@ -110,6 +110,23 @@ test("applicant portal treats a failed list as unavailable, then recovers on rec
 });
 
 for (const app of ["admin-console", "applicant-portal"]) {
+  test(`${app} serves the shared Midnight browser icon`, async ({ page, allowedLocalOrigins }) => {
+    const server = await serveApp(app);
+    try {
+      allowedLocalOrigins.add(server.base);
+      await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
+      const icon = page.locator('link[rel="icon"]');
+      await expect(icon).toHaveAttribute("type", "image/svg+xml");
+      const response = await page.request.get(new URL(await icon.getAttribute("href"), server.base).href);
+      expect(response.ok()).toBe(true);
+      expect(response.headers()["content-type"]).toContain("image/svg+xml");
+      expect(await response.text()).toContain('viewBox="0 0 32 32"');
+    } finally {
+      await page.close();
+      await server.close();
+    }
+  });
+
   test(`${app} switches editable development endpoints without widening private access`, async ({ page, allowedLocalOrigins }) => {
     const first = await serveApp(app);
     const second = await serveApp(app);

@@ -57,6 +57,17 @@ authorize mutations: the API must separately be started with
 The demo API command starts a local fixture workspace with unsafe demo mutations;
 do not expose these ports beyond loopback or interpret its records as deployed
 ledger state. The source panel and Workspace settings disclose that distinction.
+If those ports are already in use, keep the prepared workspace and start the
+three built servers on unused loopback ports instead:
+
+```bash
+node packages/trust-registry-api/bin/trust-registry-api.mjs serve --workspace ./artifacts/trust-registry/midnight-demo-workspace.json --unsafe-demo-mutations --port 4442
+PORT=4187 node packages/trust-registry-admin-console/scripts/serve.mjs
+PORT=4189 node packages/trust-registry-applicant-portal/scripts/serve.mjs
+```
+
+Use the selected API port in both `apiBase` URL parameters. Each command needs
+its own terminal. These alternate ports do not make a fixture deployment-safe.
 The portal's governed private-evidence actions require an authenticated
 same-origin host; a separate cross-origin demo API does not enable them. A
 same-origin URL check does not prove that a user session is authenticated; the
@@ -64,11 +75,11 @@ host must authenticate each private request.
 
 ### Clean-checkout smoke record
 
-On 2026-11-04, an agent used a detached clean checkout at `48d34c1b` with no
-pre-existing generated contract output. `pnpm install --frozen-lockfile`,
+On 2026-11-04, an agent repeated the trial in a detached clean checkout at
+`45d5d7f8` with no pre-existing generated contract output. `pnpm install --frozen-lockfile`,
 `pnpm run build:light` (10 uncached tasks), and `pnpm run demo:prepare` passed.
-With the existing demo still on the default ports, the clean API ran on 4441
-using its CLI `--port` option, while `PORT=4183` and `PORT=4185` selected the
+With the existing demo still on the default ports, the clean API ran on 4442
+using its CLI `--port` option, while `PORT=4187` and `PORT=4189` selected the
 admin and portal static-server ports. Chromium submitted a label-only issuer
 application, found it in admin, approved and activated it, and read the active
 record back in the portal. The source remained **Local fixture** throughout.
@@ -107,6 +118,7 @@ repeatable UI acceptance evidence:
 | Choose a label-only demo application type with visible radio options and keyboard navigation; retain the selection and avoid horizontal overflow at 200% mobile text size | `demo-application-handoff.spec.mjs`, `ui-layout.spec.mjs` |
 | Reflow long identifiers and controls at 200% root text size on a 390 px viewport without page-level horizontal scroll | `ui-layout.spec.mjs` |
 | Check browser-computed normal-text contrast for the brand lockup, navigation, source badge, and primary/secondary actions in both apps | `ui-layout.spec.mjs` (selected solid surfaces, at least 4.5:1) |
+| Serve the shared Midnight browser icon from each built app without a missing-resource response | `ui-layout.spec.mjs` |
 | Deny unapproved browser egress and discard stale local checkpoint responses | `browser-egress-control.spec.mjs`, `admin-console.spec.mjs` |
 
 The role tests use a controlled local admission host, the cross-app handoff
