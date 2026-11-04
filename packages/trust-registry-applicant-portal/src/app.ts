@@ -314,6 +314,29 @@ export const createApplicantPortalApp = (
   let currentRecognitionRequestId = 0;
   let inspectionRequestId = 0;
   let recognitionRequestId = 0;
+  let recordSearchQuery = "";
+
+  const filterRecordCards = () => {
+    const overview = root.querySelector<HTMLElement>(".records-overview");
+    if (overview === null) return;
+    const query = recordSearchQuery.trim().toLocaleLowerCase();
+    let visible = 0;
+    overview.querySelectorAll<HTMLElement>(".lane").forEach((lane) => {
+      let laneVisible = 0;
+      const role = lane.querySelector("h2")?.textContent?.toLocaleLowerCase() ?? "";
+      lane.querySelectorAll<HTMLElement>(".card").forEach((card) => {
+        card.hidden = query !== "" && !role.includes(query)
+          && !card.textContent?.toLocaleLowerCase().includes(query);
+        if (!card.hidden) laneVisible += 1;
+      });
+      lane.hidden = query !== "" && laneVisible === 0;
+      visible += laneVisible;
+    });
+    const count = overview.querySelector<HTMLElement>("[data-record-count]");
+    if (count !== null) count.textContent = `${visible.toString()} of ${overview.querySelectorAll(".card").length.toString()} active records shown`;
+    const noMatch = overview.querySelector<HTMLElement>("[data-record-no-match]");
+    if (noMatch !== null) noMatch.hidden = query === "" || visible > 0 || overview.querySelectorAll(".card").length === 0;
+  };
 
   const setState = (next: Partial<AppState>) => {
     Object.assign(state, next);
@@ -1270,6 +1293,10 @@ export const createApplicantPortalApp = (
         target.querySelector("summary")?.focus();
       });
     });
+    root.querySelector<HTMLInputElement>("[data-record-search]")?.addEventListener("input", (event) => {
+      recordSearchQuery = (event.currentTarget as HTMLInputElement).value;
+      filterRecordCards();
+    });
   };
 
   const renderInspectionLane = (
@@ -1443,10 +1470,25 @@ export const createApplicantPortalApp = (
             </div>
             <p class="journey-prerequisite">${state.inspection === undefined ? "Connect to a registry source before preparing a governed request." : privateHost ? "Same-origin host selected. This browser cannot verify your session; the host must authenticate private requests." : "This local connection can prepare a request, but cannot submit governed evidence. Use an authenticated same-origin host for that step."}</p>
             <div class="journey-cards">
-              <a href="#issuer-request" data-open-workflow="issuer-request"><strong>Become an issuer</strong><span>Request authority to issue credentials in a defined scope.</span><em>Start issuer request &rarr;</em></a>
-              <a href="#verifier-request" data-open-workflow="verifier-request"><strong>Become a verifier</strong><span>Request authority to verify a precise scope.</span><em>Start verifier request &rarr;</em></a>
-              <a href="#auditor-request" data-open-workflow="auditor-request"><strong>Become an auditor</strong><span>Request oversight of a defined audit scope.</span><em>Start auditor request &rarr;</em></a>
-              <a href="#maintainer-request" data-open-workflow="maintainer-request"><strong>Join maintenance</strong><span>Request governed committee membership.</span><em>View requirements &rarr;</em></a>
+              <a href="#issuer-request" data-open-workflow="issuer-request"><span class="role-mark" aria-hidden="true">I</span><strong>Become an issuer</strong><span>Issue credentials in a defined scope.</span><em>View issuer steps &rarr;</em></a>
+              <a href="#verifier-request" data-open-workflow="verifier-request"><span class="role-mark" aria-hidden="true">V</span><strong>Become a verifier</strong><span>Verify a precise scope.</span><em>View verifier steps &rarr;</em></a>
+              <a href="#auditor-request" data-open-workflow="auditor-request"><span class="role-mark" aria-hidden="true">A</span><strong>Become an auditor</strong><span>Oversee a defined audit scope.</span><em>View auditor steps &rarr;</em></a>
+              <a href="#maintainer-request" data-open-workflow="maintainer-request"><span class="role-mark" aria-hidden="true">M</span><strong>Join maintenance</strong><span>Request committee membership.</span><em>View maintainer steps &rarr;</em></a>
+            </div>
+            <div class="journey-guide">
+              <div class="journey-steps">
+                <p class="eyebrow">Your path</p><h3>Four steps, one clear outcome</h3>
+                <ol>
+                  <li><strong>Choose a role</strong><span>Check the authority and scope before you begin.</span></li>
+                  <li><strong>Prepare evidence</strong><span>Provide the exact governed resource and redacted evidence requested for that role.</span></li>
+                  <li><strong>Sign and submit</strong><span>Use external keys and an authenticated same-origin host; this browser never handles private keys.</span></li>
+                  <li><strong>Check the decision</strong><span>Use the returned identifiers to inspect status. Submission alone is not approval.</span></li>
+                </ol>
+              </div>
+              <aside class="journey-requirements"><p class="eyebrow">Before you start</p><h3>What you’ll need</h3>
+                <p>A subject DID, the exact scope or registry resource, and evidence appropriate to your role.</p>
+                <p>For private submission, your host must authenticate you and an external signer must sign the exact request.</p>
+              </aside>
             </div>
           </section>
           ${state.inspection?.sourceMode === "local-ledger" ? `
@@ -1744,13 +1786,17 @@ export const createApplicantPortalApp = (
             `}
           </section>
           ${state.inspection === undefined || state.inspection.sourceMode === "local-ledger" ? "" : `<section class="records-overview" id="trust-records" aria-labelledby="records-heading">
-            <div class="records-heading"><div><p class="eyebrow">Registry snapshot</p><h2 id="records-heading">Active records</h2></div><p>Only populated categories are shown. Fixture data is not a trust decision.</p></div>
+            <div class="records-heading"><div><p class="eyebrow">Explore the registry</p><h2 id="records-heading">Find an active record</h2><p>Search this fixture snapshot by name, role, scope, or DID. It is not a trust decision.</p></div>
+              <label class="record-search">Search active records<input class="input" type="search" data-record-search value="${escapeHtml(recordSearchQuery)}" autocomplete="off" placeholder="Name, role, scope, or DID" /></label>
+            </div>
+            <p class="record-count" data-record-count aria-live="polite"></p>
             <div class="lanes">
               ${issuerCards.length || state.inspection.unavailableLists?.includes("issuer") ? renderInspectionLane("Active issuers", issuerCards, state.inspection.unavailableLists?.includes("issuer") === true) : ""}
               ${verifierCards.length || state.inspection.unavailableLists?.includes("verifier") ? renderInspectionLane("Active verifiers", verifierCards, state.inspection.unavailableLists?.includes("verifier") === true) : ""}
               ${auditorCards.length || state.inspection.unavailableLists?.includes("auditor") ? renderInspectionLane("Active auditors", auditorCards, state.inspection.unavailableLists?.includes("auditor") === true) : ""}
               ${recognitionCards.length || state.inspection.unavailableLists?.includes("recognition") ? renderInspectionLane("Active recognitions", recognitionCards, state.inspection.unavailableLists?.includes("recognition") === true) : ""}
             </div>
+            <p class="records-empty" data-record-no-match hidden>No records match this search. Try a different name, role, scope, or DID.</p>
             ${cards.length === 0 && !state.inspection.unavailableLists?.length ? `<p class="records-empty">No active records in this fixture yet.</p>` : ""}
           </section>`}
         </section>
@@ -1809,6 +1855,7 @@ export const createApplicantPortalApp = (
         pendingFocusKey = null;
       }
     }
+    filterRecordCards();
     bindEvents();
   };
 

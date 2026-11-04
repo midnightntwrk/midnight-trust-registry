@@ -306,10 +306,26 @@ for (const [app, title] of [
           await expect(page.locator(".card")).toHaveCount(1);
           await expect(page.locator(".column")).toHaveCount(1);
           await page.locator(".card").click();
+          await expect(page.locator(".record-meaning")).toContainText("not deployed ledger evidence");
+          await expect(page.locator(".decision-summary time")).toContainText("20 May 2026");
+          await expect(page.locator(".decision-summary time")).toHaveAttribute("datetime", "2026-05-20T00:04:00.000Z");
+          await expect(page.locator(".governed-actions")).not.toHaveAttribute("open", "");
+          await page.locator(".governed-actions > summary").click();
+          await expect(page.locator('[data-governed-prepare="suspend"]')).toBeVisible();
           await expect(page.locator(".detail-panel")).toContainText(longDid);
           await page.locator(".technical-details > summary").click();
         } else {
+          await expect(page.locator(".journey-steps li")).toHaveCount(4);
           await page.locator(".record-identifiers > summary").click();
+          const recordSearch = page.locator("[data-record-search]");
+          await recordSearch.fill("not-a-registry-entry");
+          await expect(page.locator("[data-record-no-match]")).toBeVisible();
+          await expect(page.locator("#trust-records .lane")).toBeHidden();
+          await recordSearch.fill(longDid.slice(-20));
+          await expect(page.locator("#trust-records .lane")).toBeVisible();
+          await expect(page.locator("[data-record-count]")).toHaveText("1 of 1 active records shown");
+          await recordSearch.fill("issuer");
+          await expect(page.locator("[data-record-count]")).toHaveText("1 of 1 active records shown");
           if (width === 390) {
             await page.emulateMedia({ reducedMotion: "reduce" });
             await page.locator('[data-open-workflow="issuer-request"]').focus();

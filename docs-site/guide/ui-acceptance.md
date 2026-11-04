@@ -15,8 +15,9 @@ proposals, not evidence that a workflow is implemented or finalized.
 | Design intent | Local implementation and acceptance |
 | --- | --- |
 | Lead with the next task, not a protocol field | The default portal leads to governed role preparation. On loopback, `demo=1` opts into the label-only fixture application ahead of that path. Admin headings distinguish pending decisions from a quiet review workspace. API editing lives under Connection and source details. `ui-layout.spec.mjs` and `demo-application-handoff.spec.mjs` check this hierarchy. |
+| Explain the applicant path before exposing forms | Four compact role choices lead to a role-specific disclosure. A four-step guide explains choice, evidence, external signing, and status inspection; a prerequisite card calls out DID, exact scope, and authenticated host. Opening a role does not submit it. |
 | One Midnight visual language | Both apps use the approved logo, Outfit, black/white/blue tokens, and shared navigation/status components. |
-| A compact review list with a bounded detail | Empty lifecycle lanes are omitted from the default admin view; selected detail stays beside the list on desktop and below it on mobile. |
+| Compact discovery and a bounded review detail | The fixture portal searches visible active records by name, role, scope, or DID without changing registry state. Empty lifecycle lanes are omitted from the admin view; selected detail stays beside the list on desktop and below it on mobile. The detail explains its source and lifecycle before the decision summary. Exact IDs and external-signature preparation are separate disclosures. |
 | Truthful source and certainty | A visible source strip identifies fixture, API claim, or unavailable state and offers Recheck. Navigation follows the source: optional fixture demo and browse, exact lookup for local-ledger API claims, connection recovery when unavailable. Broad browse is omitted rather than shown as empty in local-ledger mode. Empty fixture record categories are summarized instead of rendered as large cards; evidence/recovery tools are grouped under Advanced. Epoch and technical identity stay in details. No fixture record is called final. |
 | Mobile task access | The desktop sidebar becomes a native keyboard-operable Menu at narrow widths. The mobile portal omits the nonessential snapshot card so the role path appears sooner; source status and Recheck remain visible. |
 
@@ -84,6 +85,7 @@ repeatable UI acceptance evidence:
 | Successful user path | Playwright evidence |
 | --- | --- |
 | Browse fixture records and review a bounded admin detail | `ui-layout.spec.mjs` |
+| Search the fixture portal by DID, see an explicit no-match state, and return to a visible record; keep the admin signing controls collapsed until requested | `ui-layout.spec.mjs` |
 | Submit a label-only issuer or recognition demo application in the portal, approve and activate it in admin, then read the active record back in the portal | `demo-application-handoff.spec.mjs` (two cross-app fixture journeys) |
 | Choose issuer, verifier, auditor, or maintainer and complete challenge-bound evidence admission with an external signature | `applicant-portal.spec.mjs` (four role cases) |
 | Confirm an issuer's proposed, authorized, active, suspended, revoked, and archived transitions with refreshed board status | `admin-console.spec.mjs` (fixture review journey) |
@@ -133,15 +135,20 @@ deployed acceptance evidence.
 
 In the fixture admin workspace, use **Review records** to search by label,
 role, or exact identifier and narrow by lifecycle status. Select a result to
-see its bounded detail and available actions; a filter never submits a
-mutation. Empty default status lanes do not precede populated results.
+see what its lifecycle means before opening exact identifiers or preparing an
+external-signature action. The primary date is formatted in UTC; the exact
+API timestamp remains under Identifiers and evidence. A filter never submits
+a mutation. Empty default status lanes do not precede populated results.
 **Advanced governance** names the separate epoch, signed-intent,
 proposal/recovery, and quorum/verifier tasks; each link opens a real task
 section and retains its existing prerequisites. The local-ledger adapter has
 no broad list, so its admin view keeps only exact-ID lookup. In the fixture
 applicant portal, **Try the demo** submits a label-only request for
 admin review; it never grants on-chain authority. For a governed request,
-choose a role and complete the visible identify/scope/prepare phases. Sign the prepared digest
+choose a role, check the four-step path and prerequisites, and complete the
+visible identify/scope/prepare phases. In the fixture view, active-record
+search filters only the displayed snapshot; it is not an authorization query
+or independent trust verification. Sign the prepared digest
 outside the browser and continue to one-use private evidence on the same-origin
 authenticated host. A registered application is not an approved grant.
 

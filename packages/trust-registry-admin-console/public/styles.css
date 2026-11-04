@@ -482,20 +482,32 @@ body {
 .advanced-workflows { order: 2; }
 .hero, .detail-panel, .proposal-panel { border-radius: 20px; box-shadow: var(--shadow); }
 .hero {
-  grid-template-columns: minmax(18rem, 0.95fr) minmax(0, 1.4fr);
+  grid-template-columns: minmax(18rem, 0.9fr) minmax(0, 1.4fr);
   align-items: stretch;
   background: var(--midnight-white);
 }
-.hero > .source-panel,
 .hero > .workspace-settings,
 .hero > .alert { grid-column: 1 / -1; }
-.hero > .hero-copy { grid-column: 1; grid-row: 1; }
+.hero > .hero-copy { grid-column: 1; grid-row: 1 / 3; }
 .hero > .metrics {
   grid-column: 2;
   grid-row: 1;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   align-self: start;
 }
+.hero > .source-panel {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: start;
+  border-color: var(--midnight-black);
+  background: var(--midnight-black);
+}
+.hero > .source-panel .source-copy,
+.hero > .source-panel .source-copy strong,
+.hero > .source-panel .source-time { color: var(--midnight-white); }
+.hero > .source-panel .source-copy span { color: #d1d1dd; }
+.hero > .source-panel .source-refresh { border-color: #67677d; background: transparent; color: var(--midnight-white); }
+.hero > .source-panel .source-refresh:hover { border-color: var(--midnight-white); }
 .registry-context { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.35rem 0.65rem; grid-column: 1 / -1; min-width: 0; }
 .registry-context span, .registry-context small { color: var(--midnight-muted); font-size: 0.78rem; }
 .registry-context strong { min-width: 0; overflow-wrap: anywhere; font-size: 1rem; }
@@ -504,7 +516,7 @@ body {
 .hero-copy { display: flex; align-items: center; }
 .hero-copy p { max-width: 43ch; }
 .hero-copy .button { display: inline-flex; margin-top: 1rem; text-decoration: none; }
-.hero h1 { max-width: 18ch; font-size: clamp(2rem, 3.5vw, 3.2rem); line-height: 1.05; letter-spacing: -0.04em; }
+.hero h1 { max-width: 18ch; font-size: clamp(2rem, 3.2vw, 2.8rem); line-height: 1.08; letter-spacing: -0.04em; }
 .connection-form { display: grid; gap: 0.75rem; max-width: 34rem; margin: 0.9rem 0 1rem; }
 .connection-form .input { width: 100%; }
 .eyebrow { color: var(--midnight-blue); letter-spacing: 0.13em; }
@@ -545,9 +557,21 @@ body {
 .detail-panel { position: sticky; top: 1rem; overflow: hidden; }
 .detail-panel dd, .detail-panel code { overflow-wrap: anywhere; word-break: break-word; }
 .detail-panel code { font-size: 0.78rem; line-height: 1.5; }
+.detail-panel > div:first-child > p:last-child { display: flex; align-items: center; gap: 0.45rem; margin-bottom: 0; }
+.detail-panel > div:first-child .status-chip { font-size: 0.68rem; }
+.record-meaning { padding: 0.85rem 1rem; border-left: 3px solid var(--midnight-blue); border-radius: 0 8px 8px 0; background: var(--midnight-blue-soft); }
+.record-meaning .eyebrow { margin: 0; }
+.record-meaning p:not(.eyebrow) { margin: 0.35rem 0 0; color: var(--midnight-black); font-size: 0.82rem; line-height: 1.5; }
+.decision-summary h3 { margin: 0 0 0.6rem; font-size: 0.95rem; }
+.decision-summary dl { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem; }
+.decision-summary dt { letter-spacing: 0.07em; }
+.decision-summary dd { font-size: 0.85rem; }
 .technical-details { min-width: 0; }
 .technical-details summary { cursor: pointer; color: var(--midnight-blue); font-weight: 700; }
 .technical-details dl { margin-top: 0.9rem; }
+.governed-actions { min-width: 0; border-top: 1px solid var(--midnight-border); padding-top: 0.8rem; }
+.governed-actions > summary { cursor: pointer; color: var(--midnight-blue); font-size: 0.85rem; font-weight: 700; }
+.governed-actions > .governed-panel { margin-top: 0.75rem; }
 .governed-panel { background: var(--midnight-white); }
 .proposal-panel { margin-top: 1.2rem; }
 .advanced-workflows { margin-top: 1.5rem; }
@@ -564,7 +588,8 @@ body {
 @media (max-width: 1180px) {
   .hero { grid-template-columns: minmax(0, 1fr); }
   .hero > .hero-copy,
-  .hero > .metrics { grid-column: 1; grid-row: auto; }
+  .hero > .metrics,
+  .hero > .source-panel { grid-column: 1; grid-row: auto; }
   .hero > .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .review-filters { grid-template-columns: minmax(0, 1fr); }
   .workspace { grid-template-columns: minmax(0, 1fr); }

@@ -77,6 +77,14 @@ const escapeHtml = (value: string): string =>
     .replaceAll("\"", "&quot;")
     .replaceAll("'", "&#39;");
 
+const formatReviewTime = (value: string): string => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return `${new Intl.DateTimeFormat("en-GB", {
+    dateStyle: "medium", timeStyle: "short", timeZone: "UTC",
+  }).format(date)} UTC`;
+};
+
 const formatApiError = (error: unknown): string => {
   if (error instanceof TrustRegistryAdminConsoleApiError) {
     const title = error.problem.title ?? "request failed";
@@ -907,7 +915,7 @@ export const createAdminConsoleApp = (
       </div>
       <div class="meta-row"><span>${escapeHtml(card.trustLevel)}</span></div>
       <div class="meta-row">
-        <span>Updated ${escapeHtml(card.updatedAt)}</span>
+        <span>Updated <time datetime="${escapeHtml(card.updatedAt)}">${escapeHtml(formatReviewTime(card.updatedAt))}</time></span>
       </div>
     </button>
   `;
@@ -945,14 +953,28 @@ export const createAdminConsoleApp = (
     const prepared = governedAction !== undefined
       && state.governedKey === `${card.key}:${governedAction}`
       ? state.governedPrepared : undefined;
+    const sourceDescription = state.board?.sourceMode === "local-ledger"
+      ? "This is a current API claim, not independently verified ledger finality."
+      : "This is a local fixture record, not deployed ledger evidence.";
+    const lifecycleDescription = card.status === "active"
+      ? "This record is active in the displayed registry view."
+      : card.status === "proposed" || card.status === "authorized"
+        ? "This record is not yet active; review its evidence and lifecycle before any action."
+        : "This record is not active; inspect its history before taking another action.";
 
     return `
-      <aside class="detail-panel">
+      <aside class="detail-panel" aria-label="Selected record details">
         <div>
           <p class="eyebrow">Selected Record</p>
           <h2>${escapeHtml(card.label)}</h2>
-          <p>${escapeHtml(card.target)} · ${escapeHtml(REVIEW_STATUS_LABELS[card.status])}</p>
+          <p>${escapeHtml(card.target)} · <span class="status-chip ${escapeHtml(card.status)}">${escapeHtml(REVIEW_STATUS_LABELS[card.status])}</span></p>
         </div>
+        <div class="record-meaning"><p class="eyebrow">What this means</p><p>${lifecycleDescription} ${sourceDescription}</p></div>
+        <div class="decision-summary"><h3>Decision summary</h3><dl>
+          <div><dt>Role</dt><dd>${escapeHtml(card.target)}</dd></div>
+          <div><dt>Trust level</dt><dd>${escapeHtml(card.trustLevel)}</dd></div>
+          <div><dt>Last update</dt><dd><time datetime="${escapeHtml(card.updatedAt)}">${escapeHtml(formatReviewTime(card.updatedAt))}</time></dd></div>
+        </dl></div>
         <details class="technical-details"><summary>Identifiers and evidence</summary><dl>
           ${card.detailRows.map((row) => `
             <div>
@@ -961,12 +983,11 @@ export const createAdminConsoleApp = (
             </div>
           `).join("")}
           ${card.target === "auditor" || card.target === "verifier" ? `<div><dt>Scope detail</dt><dd>Full request-scope preimage is not available in this snapshot; verify the governed resource ID against authenticated evidence.</dd></div>` : ""}
-          <div>
-            <dt>Last update</dt>
-            <dd>${escapeHtml(card.updatedAt)}</dd>
-          </div>
+          <div><dt>Exact update time</dt><dd><code>${escapeHtml(card.updatedAt)}</code></dd></div>
         </dl></details>
         ${getReviewActions(card.status).length === 0 ? "" : `
+          <details class="governed-actions" data-record-key="${escapeHtml(card.key)}"${prepared !== undefined || (governedActionsOpen && governedActionsKey === card.key) ? " open" : ""}>
+            <summary>Prepare a governed action</summary>
           <section class="governed-panel">
             <p class="eyebrow">Compact quorum</p>
             <h3>External maintainer signatures</h3>
@@ -983,6 +1004,7 @@ export const createAdminConsoleApp = (
               </form>
             `}
           </section>
+          </details>
         `}
         ${!demoMode || state.board?.sourceMode === "local-ledger" ? "" : `
           <p class="eyebrow">Local fixture controls</p>
@@ -999,6 +1021,8 @@ export const createAdminConsoleApp = (
   };
 
   let pendingFocusKey: string | null = null;
+  let governedActionsOpen = false;
+  let governedActionsKey: string | undefined;
   const render = () => {
     const previousSignedEnvelope = root.querySelector<HTMLTextAreaElement>("[data-signed-submit] [name='signedEnvelope']")?.value;
     const focusKey = root.contains(document.activeElement)
@@ -1006,6 +1030,9 @@ export const createAdminConsoleApp = (
     pendingFocusKey = focusKey ?? pendingFocusKey;
     const advancedOpen = root.querySelector<HTMLDetailsElement>(".advanced-workflows")?.open ?? false;
     const settingsOpen = root.querySelector<HTMLDetailsElement>(".workspace-settings")?.open ?? false;
+    const previousGovernedActions = root.querySelector<HTMLDetailsElement>(".governed-actions");
+    governedActionsOpen = previousGovernedActions?.open ?? false;
+    governedActionsKey = previousGovernedActions?.dataset.recordKey;
     const normalizedQuery = state.reviewQuery.trim().toLocaleLowerCase();
     const visibleCards = state.board?.sourceMode === "local-ledger" ? state.cards : state.cards.filter((card) =>
       (state.reviewStatus === "all" || card.status === state.reviewStatus)

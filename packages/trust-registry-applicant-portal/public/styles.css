@@ -310,9 +310,14 @@ body { background: radial-gradient(circle at 100% 0, #e8e9ff 0, transparent 26re
 .workflow-disclosure > .form-panel { border: 0; padding-top: 0.8rem; }
 .records-overview, .advanced-tools { grid-column: 1 / -1; min-width: 0; }
 .records-overview { padding: clamp(1rem, 2.2vw, 1.7rem); border: 1px solid var(--midnight-border); border-radius: 18px; background: var(--midnight-white); }
-.records-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.records-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: 0.5rem; }
 .records-heading h2 { margin: 0; }
 .records-heading p, .records-empty { color: var(--midnight-muted); }
+.records-heading p { max-width: 56ch; margin: 0.4rem 0 0; font-size: 0.88rem; }
+.record-search { display: grid; gap: 0.35rem; width: min(100%, 24rem); flex: none; color: var(--midnight-muted); font-size: 0.78rem; font-weight: 700; }
+.record-search .input { width: 100%; min-width: 0; }
+.record-count { margin: 0 0 0.8rem; color: var(--midnight-muted); font-size: 0.78rem; }
+.records-overview [hidden] { display: none !important; }
 .records-overview .lanes { display: grid; }
 .records-overview .lane { box-shadow: none; }
 .advanced-tools { border: 1px solid var(--midnight-border); border-radius: 18px; background: var(--midnight-white); }
@@ -325,7 +330,7 @@ body { background: radial-gradient(circle at 100% 0, #e8e9ff 0, transparent 26re
 .record-identifiers summary { cursor: pointer; color: var(--midnight-blue); font-size: 0.88rem; font-weight: 600; }
 .form-panel { box-shadow: none; }
 .lane-header h2, .form-panel h2 { font-size: 1.35rem; }
-@media (max-width: 700px) { .records-heading { display: block; } .records-overview .lanes { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 900px) { .records-heading { display: grid; } .record-search { width: 100%; } .records-overview .lanes { grid-template-columns: minmax(0, 1fr); } }
 
 .journey-picker {
   grid-column: 1 / -1;
@@ -345,7 +350,7 @@ body { background: radial-gradient(circle at 100% 0, #e8e9ff 0, transparent 26re
   flex-direction: column;
   gap: 0.35rem;
   min-width: 0;
-  min-height: 8.5rem;
+  min-height: 8rem;
   padding: 1rem;
   border: 1px solid var(--midnight-border);
   border-radius: 10px;
@@ -354,10 +359,25 @@ body { background: radial-gradient(circle at 100% 0, #e8e9ff 0, transparent 26re
   text-decoration: none;
 }
 .journey-cards a:hover, .journey-cards a:focus-visible { border-color: var(--midnight-blue); background: var(--midnight-blue-soft); }
+.journey-cards .role-mark { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: 0.5rem; background: var(--midnight-blue-soft); color: var(--midnight-blue); font-size: 0.86rem; font-weight: 800; }
 .journey-cards strong { font-size: 1.13rem; }
 .journey-cards span { color: var(--midnight-muted); font-size: 0.83rem; line-height: 1.4; }
+.journey-cards .role-mark { color: var(--midnight-blue); }
 .journey-cards em { margin-top: auto; color: var(--midnight-blue); font-size: 0.78rem; font-style: normal; font-weight: 700; }
 .journey-prerequisite { margin: 0.85rem 0 0; color: var(--midnight-muted); font-size: 0.8rem; }
+.journey-guide { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(15rem, 0.8fr); gap: 0.75rem; margin-top: 1.1rem; }
+.journey-steps, .journey-requirements { min-width: 0; padding: 1.1rem 1.2rem; border-radius: 12px; }
+.journey-steps { border: 1px solid var(--midnight-border); background: var(--midnight-white); }
+.journey-guide h3 { margin: 0.2rem 0 0.8rem; font-size: 1.14rem; }
+.journey-steps ol { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.65rem 1rem; margin: 0; padding: 0; list-style: none; counter-reset: journey; }
+.journey-steps li { position: relative; min-width: 0; padding-left: 2rem; counter-increment: journey; }
+.journey-steps li::before { content: counter(journey); position: absolute; top: 0; left: 0; display: grid; place-items: center; width: 1.45rem; height: 1.45rem; border-radius: 50%; background: var(--midnight-blue-soft); color: var(--midnight-blue); font-size: 0.73rem; font-weight: 800; }
+.journey-steps li strong, .journey-steps li span { display: block; }
+.journey-steps li strong { font-size: 0.85rem; }
+.journey-steps li span { margin-top: 0.15rem; color: var(--midnight-muted); font-size: 0.77rem; line-height: 1.4; }
+.journey-requirements { background: var(--midnight-blue); color: var(--midnight-white); }
+.journey-requirements .eyebrow { color: #ceceff; }
+.journey-requirements p:not(.eyebrow) { margin: 0.4rem 0; color: #f1f1ff; font-size: 0.81rem; line-height: 1.45; }
 .hero { grid-template-columns: minmax(0, 1.65fr) minmax(17rem, 1fr); gap: 1rem; padding: 0; border: 0; background: transparent; box-shadow: none; }
 .hero-intro, .hero-overview { min-width: 0; border-radius: 18px; }
 .hero-intro { display: flex; flex-direction: column; align-items: flex-start; padding: clamp(1.4rem, 3vw, 2.4rem); background: var(--midnight-black); color: var(--midnight-white); }
@@ -404,6 +424,7 @@ body { background: radial-gradient(circle at 100% 0, #e8e9ff 0, transparent 26re
 
 @media (max-width: 1100px) {
   .journey-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .journey-guide { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (max-width: 900px) {
@@ -417,6 +438,7 @@ body { background: radial-gradient(circle at 100% 0, #e8e9ff 0, transparent 26re
   .lanes { grid-template-columns: minmax(0, 1fr); }
   .journey-cards { grid-template-columns: minmax(0, 1fr); }
   .journey-cards a { min-height: 6rem; }
+  .journey-steps ol { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (max-width: 620px) {
