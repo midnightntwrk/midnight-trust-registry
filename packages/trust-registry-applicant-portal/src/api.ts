@@ -241,7 +241,7 @@ export class TrustRegistryApplicantPortalClient {
         nodeReportedCheckpointHash: localHealth.finalizedBlockHash,
         nodeReportedAt: localHealth.generatedAt,
         activeAuditors: [], activeIssuers: [], activeVerifiers: [], activeRecognitions: [],
-        unavailableLists, warnings: unavailableLists.map(listWarning) };
+        unavailableLists };
     }
     let localProjectionGated = false;
     const localList = async <T>(path: string): Promise<T | null> => {

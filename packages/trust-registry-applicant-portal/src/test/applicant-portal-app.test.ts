@@ -48,10 +48,12 @@ describe("trust registry applicant portal app", () => {
       storage: { getItem: () => null, setItem: () => {} } as unknown as Storage,
       fetchImpl: fetchImpl as typeof fetch,
     });
-    await vi.waitFor(() => expect(root.textContent).toContain("Current issuer list is unavailable"));
+    await vi.waitFor(() => expect(root.querySelector("[data-source-state='local-ledger']")).not.toBeNull());
     expect(root.querySelector("[data-source-state='local-ledger']")?.textContent)
       .toContain("not independently verified finality");
-    expect(root.querySelector(".source-panel")?.textContent).toContain("4 list(s) unavailable");
+    expect(root.querySelector(".source-panel")?.textContent).toContain("Broad lists are not offered in this mode");
+    expect(root.textContent).not.toContain("Current issuer list is unavailable");
+    expect(root.textContent).not.toContain("4 list(s) unavailable");
     expect(root.querySelector(".source-time")?.textContent).toContain("browser clock");
     expect(root.textContent).toContain("local");
     expect(root.textContent).toContain("Broad browsing is unavailable in this mode.");
@@ -60,6 +62,9 @@ describe("trust registry applicant portal app", () => {
     expect(root.querySelectorAll(".metric strong")[3]?.textContent).toBe("n/a");
     expect(root.querySelector("#trust-records")).toBeNull();
     expect(root.querySelector(".task-nav a")?.getAttribute("href")).toBe("#current-authorization-lookup");
+    expect(root.querySelector(".hero-actions a")?.getAttribute("href")).toBe("#current-authorization-lookup");
+    expect(root.querySelector("#current-authorization-lookup")?.compareDocumentPosition(root.querySelector("#governed-requests")!))
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(root.querySelector("[data-issuer-application-form]")).not.toBeNull();
     expect(root.querySelector("[data-current-authorization]")).not.toBeNull();
     expect(root.querySelector("[data-historical-authorization]")).toBeNull();

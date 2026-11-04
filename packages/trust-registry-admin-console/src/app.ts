@@ -47,6 +47,7 @@ type AppState = {
   loading: boolean;
   observedAt: string | undefined;
   lookupBusy: boolean;
+  lookupError: string | undefined;
   lookupId: string;
   lookupTarget: ReviewCard["target"];
   publishing: boolean;
@@ -198,6 +199,7 @@ export const createAdminConsoleApp = (
     loading: false,
     observedAt: undefined,
     lookupBusy: false,
+    lookupError: undefined,
     lookupId: "",
     lookupTarget: "issuer",
     publishing: false,
@@ -307,7 +309,7 @@ export const createAdminConsoleApp = (
     const requestId = ++boardRequestId;
     ++signedContextRequestId;
     setState({ loading: true, signedBusy: false, signedContext: undefined,
-      error: undefined, ...(flash === undefined ? {} : { flash }) });
+      error: undefined, lookupError: undefined, ...(flash === undefined ? {} : { flash }) });
     try {
       const client = getClient();
       const board = await client.loadReviewBoard();
@@ -364,12 +366,13 @@ export const createAdminConsoleApp = (
     const id = state.lookupId.trim();
     const target = state.lookupTarget;
     if (id.length === 0) {
-      setState({ error: "Enter the exact current authorization or recognition ID." });
+      setState({ lookupError: "Enter the exact current authorization or recognition ID." });
       return;
     }
     const host = currentHost();
     const requestId = ++boardRequestId;
-    setState({ lookupBusy: true, error: undefined, flash: undefined, cards: [], selectedKey: undefined });
+    setState({ lookupBusy: true, lookupError: undefined, error: undefined,
+      flash: undefined, cards: [], selectedKey: undefined });
     try {
       const card = await getClient().loadCurrentReviewCard(target, id, board);
       if (!isCurrentHost(host) || requestId !== boardRequestId) return;
@@ -377,7 +380,7 @@ export const createAdminConsoleApp = (
         governedAction: undefined, governedKey: undefined, governedPrepared: undefined });
     } catch (error) {
       if (!isCurrentHost(host) || requestId !== boardRequestId) return;
-      setState({ lookupBusy: false, error: formatApiError(error) });
+      setState({ lookupBusy: false, lookupError: formatApiError(error) });
     }
   };
 
@@ -749,16 +752,18 @@ export const createAdminConsoleApp = (
     root.querySelector<HTMLSelectElement>("[data-current-target]")?.addEventListener("change", (event) => {
       if (state.lookupBusy) ++boardRequestId;
       setState({ lookupTarget: (event.currentTarget as HTMLSelectElement).value as ReviewCard["target"],
-        lookupBusy: false, cards: [], selectedKey: undefined, governedPrepared: undefined });
+        lookupBusy: false, lookupError: undefined, cards: [], selectedKey: undefined, governedPrepared: undefined });
     });
     root.querySelector<HTMLInputElement>("[data-current-id]")?.addEventListener("input", (event) => {
       if (state.lookupBusy) ++boardRequestId;
       state.lookupId = (event.currentTarget as HTMLInputElement).value;
       state.lookupBusy = false;
+      state.lookupError = undefined;
       state.cards = [];
       state.selectedKey = undefined;
       state.governedPrepared = undefined;
       root.querySelector("[data-local-current-result]")?.replaceChildren();
+      root.querySelector("#exact-lookup [role='alert']")?.remove();
       const detail = root.querySelector(".detail-panel");
       if (detail !== null) detail.textContent = "Lookup changed; submit the exact ID again.";
       const submit = root.querySelector<HTMLButtonElement>("[data-current-lookup] button[type='submit']");
@@ -1077,7 +1082,7 @@ export const createAdminConsoleApp = (
             </div>
           </div>
           ${state.board === undefined ? "" : renderMetrics(state.board)}
-          ${state.error === undefined ? "" : `<div class="alert error">${escapeHtml(state.error)}</div>`}
+          ${state.error === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.error)}</div>`}
           ${state.flash === undefined ? "" : `<div class="alert success">${escapeHtml(state.flash)}</div>`}
           <div class="source-panel" data-source-state="${state.loading ? "loading" : state.board?.sourceMode === "local-ledger" ? "local-ledger" : state.board === undefined ? "unavailable" : "fixture"}" role="status" aria-live="polite">
             <span class="source-badge">${state.loading ? "Checking" : state.board === undefined ? "Unavailable" : state.board.sourceMode === "local-ledger" ? "API claim" : "Local fixture"}</span>
@@ -1153,8 +1158,9 @@ export const createAdminConsoleApp = (
               <label>Exact current record ID
                 <input class="input mono" data-current-id value="${escapeHtml(state.lookupId)}" autocomplete="off" maxlength="256" />
               </label>
-              <button class="button secondary" type="submit"${state.loading || state.lookupBusy || state.governedBusy ? " disabled" : ""}>Look up current record</button>
+              <button class="button secondary" type="submit" data-focus-key="current-lookup-submit"${state.loading || state.lookupBusy || state.governedBusy ? " disabled" : ""}>Look up current record</button>
             </form>
+            ${state.lookupError === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.lookupError)}</div>`}
           </section>
         ` : ""}
         <details class="advanced-workflows" id="advanced-governance"${advancedOpen ? " open" : ""}><summary>Advanced governance and signing actions</summary>

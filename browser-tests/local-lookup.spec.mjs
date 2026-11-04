@@ -17,7 +17,7 @@ const entry = { label: "Exact UI issuer", authorization: {
 const recognition = { label: "External authority", recognition: {
   registryId, recognizedAuthorityDid: "did:web:authority.example",
   recognizedRegistryId: "external:registry", status: "active",
-  scope: { resourceType: "credential-family", resourceId: "degree",
+  scope: { resourceType: "schema", resourceId: "degree",
     context: { purpose: "assurance" } },
 } };
 const counts = { proposed: 0, authorized: 0, active: 1, suspended: 0,
@@ -64,7 +64,34 @@ async function serveLocalApp(app) {
     } };
 }
 
-test("admin exact lookup presents a local API claim without fixture controls", async ({ page, allowedLocalOrigins }) => {
+async function reviewLocalLayouts(page, testInfo, app) {
+  for (const width of [1440, 768, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(page.locator(".source-badge")).toHaveText("API claim");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1);
+    if (process.env.TR_UI_CAPTURE === "1") {
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.screenshot({ path: testInfo.outputPath(`${app}-local-lookup-${width}.png`), fullPage: true });
+    }
+    if (width <= 760) {
+      await page.locator(".mobile-task-menu > summary").click();
+      await page.locator(".mobile-task-menu nav a").filter({ hasText: "Workspace settings" }).click();
+    } else {
+      await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
+    }
+    await expect(page.locator(".settings-view")).toBeVisible();
+    await expect(page.locator(".settings-view")).toContainText(app === "admin"
+      ? "not independently authenticated finality" : "do not establish finalized ledger state");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1);
+    if (process.env.TR_UI_CAPTURE === "1") {
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.screenshot({ path: testInfo.outputPath(`${app}-local-settings-${width}.png`), fullPage: true });
+    }
+    await page.locator(".settings-back").click();
+  }
+}
+
+test("admin exact lookup presents a local API claim without fixture controls", async ({ page, allowedLocalOrigins }, testInfo) => {
   const host = await serveLocalApp("admin-console");
   try {
     allowedLocalOrigins.add(host.base);
@@ -78,10 +105,18 @@ test("admin exact lookup presents a local API claim without fixture controls", a
     await expect(page.locator(".settings-view")).toContainText("not independently authenticated finality");
     await page.locator(".settings-back").click();
     await expect(page.locator("[data-action]")).toHaveCount(0);
+    const lookupButton = page.locator("[data-current-lookup] button[type='submit']");
+    await lookupButton.click();
+    await expect(page.locator("#exact-lookup").getByRole("alert"))
+      .toContainText("Enter the exact current authorization or recognition ID.");
+    await expect(lookupButton).toBeFocused();
     await page.locator("[data-current-id]").fill(id);
-    await page.locator("[data-current-lookup] button[type='submit']").click();
+    await expect(page.locator("#exact-lookup").getByRole("alert")).toHaveCount(0);
+    await lookupButton.click();
     await expect(page.locator(".card")).toContainText("Exact UI issuer");
+    await expect(lookupButton).toBeFocused();
     await expect(page.locator(".source-panel")).toContainText("not independently verified finality");
+    await reviewLocalLayouts(page, testInfo, "admin");
     expect(host.requests.some((value) => value.startsWith("POST "))).toBe(false);
     expect(host.requests.some((value) => value === "GET /v1/authorizations/issuer")).toBe(false);
   } finally {
@@ -90,14 +125,19 @@ test("admin exact lookup presents a local API claim without fixture controls", a
   }
 });
 
-test("applicant exact scope lookup keeps returned trust unverified", async ({ page, allowedLocalOrigins }) => {
+test("applicant exact scope lookup keeps returned trust unverified", async ({ page, allowedLocalOrigins }, testInfo) => {
   const host = await serveLocalApp("applicant-portal");
   try {
     allowedLocalOrigins.add(host.base);
     await page.goto(`${host.base}/?apiBase=${encodeURIComponent(host.base)}`);
     await expect(page.locator(".source-badge")).toHaveText("API claim");
     await expect(page.locator(".task-nav a").first()).toHaveAttribute("href", "#current-authorization-lookup");
-    await expect(page.locator(".hero-actions a").last()).toHaveAttribute("href", "#current-authorization-lookup");
+    await expect(page.locator(".hero-actions a").first()).toHaveAttribute("href", "#current-authorization-lookup");
+    await expect(page.locator(".source-panel")).toContainText("Broad lists are not offered in this mode");
+    await expect(page.locator(".alert.error")).toHaveCount(0);
+    expect(await page.locator("#current-authorization-lookup").evaluate((element) =>
+      element.compareDocumentPosition(document.querySelector("#governed-requests"))))
+      .toBe(4);
     await expect(page.locator("#trust-records")).toHaveCount(0);
     await expect(page.locator("#demo-application")).toHaveCount(0);
     await expect(page.locator("#current-recognition-lookup")).toBeVisible();
@@ -108,18 +148,30 @@ test("applicant exact scope lookup keeps returned trust unverified", async ({ pa
     await expect(page.locator("[data-current-authorization]")).toBeVisible();
     await page.locator("[data-current-authorization] [name='subjectDid']").fill(did);
     await page.locator("[data-current-authorization] [name='resourceId']").fill(resourceId);
-    await page.locator("[data-current-authorization] button[type='submit']").click();
+    const authorizationButton = page.locator("[data-current-authorization] button[type='submit']");
+    await authorizationButton.click();
     await expect(page.locator("[data-current-authorization-result]")).toContainText("Unverified current API claim");
     await expect(page.locator("[data-current-authorization-result]")).toContainText("active");
+    await expect(page.locator("[data-current-authorization-result]")).toHaveAttribute("role", "status");
+    await expect(authorizationButton).toBeFocused();
     const form = page.locator("[data-current-recognition]");
     await form.locator("[name='recognizedAuthorityDid']").fill("did:web:authority.example");
     await form.locator("[name='recognizedRegistryId']").fill("external:registry");
-    await form.locator("[name='scopeResourceType']").fill("credential-family");
+    await form.locator("[name='scopeResourceType']").fill("schema");
     await form.locator("[name='scopeResourceId']").fill("degree");
+    const recognitionButton = form.locator("button[type='submit']");
+    await form.locator("[name='scopeContext']").fill('{"purpose":1}');
+    await recognitionButton.click();
+    await expect(page.getByRole("alert")).toContainText("Recognition scope context must be a JSON object of string values.");
+    await expect(recognitionButton).toBeFocused();
+    expect(host.requests).not.toContain("POST /v1/recognitions/resolve");
     await form.locator("[name='scopeContext']").fill('{"purpose":"assurance"}');
-    await form.locator("button[type='submit']").click();
+    await recognitionButton.click();
     await expect(page.locator("[data-current-recognition-result]"))
       .toContainText("Unverified current API claim: active");
+    await expect(page.locator("[data-current-recognition-result]")).toHaveAttribute("role", "status");
+    await expect(recognitionButton).toBeFocused();
+    await reviewLocalLayouts(page, testInfo, "applicant");
     await form.locator("[name='scopeResourceId']").fill("substituted-degree");
     await form.locator("button[type='submit']").click();
     await expect(page.locator("[data-current-recognition-result]")).toHaveCount(0);

@@ -36,6 +36,8 @@ type AppState = {
   currentAuthorizationBusy: boolean;
   currentAuthorizationError: string | undefined;
   currentRecognitionQuery: TrustRegistryApiResolveRecognitionRequest | undefined;
+  currentRecognitionDraft: { recognizedAuthorityDid: string; recognizedRegistryId: string;
+    scopeResourceType: string; scopeResourceId: string; scopeContext: string } | undefined;
   currentRecognitionResult: TrustRegistryApiRecognitionListResponse["entries"][number] | undefined;
   currentRecognitionBusy: boolean;
   currentRecognitionError: string | undefined;
@@ -284,6 +286,7 @@ export const createApplicantPortalApp = (
     currentAuthorizationBusy: false,
     currentAuthorizationError: undefined,
     currentRecognitionQuery: undefined,
+    currentRecognitionDraft: undefined,
     currentRecognitionResult: undefined,
     currentRecognitionBusy: false,
     currentRecognitionError: undefined,
@@ -766,7 +769,7 @@ export const createApplicantPortalApp = (
     if (state.currentRecognitionBusy || state.inspection?.sourceMode !== "local-ledger") return;
     const requestId = ++currentRecognitionRequestId;
     const apiBase = state.apiBase;
-    setState({ currentRecognitionQuery: query, currentRecognitionBusy: true,
+    setState({ currentRecognitionQuery: query, currentRecognitionDraft: undefined, currentRecognitionBusy: true,
       currentRecognitionResult: undefined, currentRecognitionError: undefined });
     try {
       const result = await client().loadCurrentRecognition(query, state.inspection!);
@@ -994,25 +997,30 @@ export const createApplicantPortalApp = (
       event.preventDefault();
       const form = event.currentTarget as HTMLFormElement;
       const field = (name: string) => form.querySelector<HTMLInputElement>(`[name='${name}']`)?.value.trim() ?? "";
+      const draft = {
+        recognizedAuthorityDid: field("recognizedAuthorityDid"),
+        recognizedRegistryId: field("recognizedRegistryId"),
+        scopeResourceType: field("scopeResourceType"),
+        scopeResourceId: field("scopeResourceId"),
+        scopeContext: form.querySelector<HTMLTextAreaElement>("[name='scopeContext']")?.value ?? "",
+      };
       try {
-        const scopeContext = parseRecognitionContext(
-          form.querySelector<HTMLTextAreaElement>("[name='scopeContext']")?.value ?? "",
-        );
-        const recognizedRegistryId = field("recognizedRegistryId");
-        const scopeResourceType = field("scopeResourceType");
+        const scopeContext = parseRecognitionContext(draft.scopeContext);
+        const { recognizedRegistryId, scopeResourceType } = draft;
         if (recognizedRegistryId === "" || scopeResourceType === "") {
           throw new Error("Recognition lookup requires registry ID and scope resource type.");
         }
         const query = TrustRegistryApiResolveRecognitionRequestSchema.parse({
-          recognizedAuthorityDid: field("recognizedAuthorityDid"),
+          recognizedAuthorityDid: draft.recognizedAuthorityDid,
           recognizedRegistryId,
           scopeResourceType,
-          scopeResourceId: field("scopeResourceId"),
+          scopeResourceId: draft.scopeResourceId,
           ...(scopeContext === undefined ? {} : { scopeContext }),
         });
         void loadCurrentRecognition(query);
       } catch (error) {
-        setState({ currentRecognitionResult: undefined, currentRecognitionError: formatApiError(error) });
+        setState({ currentRecognitionDraft: draft, currentRecognitionResult: undefined,
+          currentRecognitionError: formatApiError(error) });
       }
     });
 
@@ -1398,6 +1406,34 @@ export const createApplicantPortalApp = (
       <a href="#trust-records">Explore active records</a>
       <a href="#connection-details">Workspace settings</a>
     `;
+    const journeyPicker = `
+          <section class="journey-picker" id="governed-requests" aria-labelledby="journey-heading">
+            <div class="journey-heading"><p class="eyebrow">Governed requests</p><h2 id="journey-heading">${demoMode && state.inspection !== undefined && state.inspection.sourceMode !== "local-ledger" ? "Applying beyond the demo?" : "What would you like to do?"}</h2>
+              <p>Choose a role to inspect its exact authority, evidence, and signing requirements. Nothing is submitted until you confirm.</p>
+            </div>
+            <p class="journey-prerequisite">${state.inspection === undefined ? "Connect to a registry source before preparing a governed request." : privateHost ? "Same-origin host selected. This browser cannot verify your session; the host must authenticate private requests." : "This local connection can prepare a request, but cannot submit governed evidence. Use an authenticated same-origin host for that step."}</p>
+            <div class="journey-cards">
+              <a href="#issuer-request" data-open-workflow="issuer-request"><span class="role-mark" aria-hidden="true">I</span><strong>Become an issuer</strong><span>Issue credentials in a defined scope.</span><em>View issuer steps &rarr;</em></a>
+              <a href="#verifier-request" data-open-workflow="verifier-request"><span class="role-mark" aria-hidden="true">V</span><strong>Become a verifier</strong><span>Verify a precise scope.</span><em>View verifier steps &rarr;</em></a>
+              <a href="#auditor-request" data-open-workflow="auditor-request"><span class="role-mark" aria-hidden="true">A</span><strong>Become an auditor</strong><span>Oversee a defined audit scope.</span><em>View auditor steps &rarr;</em></a>
+              <a href="#maintainer-request" data-open-workflow="maintainer-request"><span class="role-mark" aria-hidden="true">M</span><strong>Join maintenance</strong><span>Request committee membership.</span><em>View maintainer steps &rarr;</em></a>
+            </div>
+            <div class="journey-guide">
+              <div class="journey-steps">
+                <p class="eyebrow">Your path</p><h3>Four steps, one clear outcome</h3>
+                <ol>
+                  <li><strong>Choose a role</strong><span>Check the authority and scope before you begin.</span></li>
+                  <li><strong>Prepare evidence</strong><span>Provide the exact governed resource and redacted evidence requested for that role.</span></li>
+                  <li><strong>Sign and submit</strong><span>Use external keys and an authenticated same-origin host; this browser never handles private keys.</span></li>
+                  <li><strong>Check the decision</strong><span>Use the returned identifiers to inspect status. Submission alone is not approval.</span></li>
+                </ol>
+              </div>
+              <aside class="journey-requirements"><p class="eyebrow">Before you start</p><h3>What you’ll need</h3>
+                <p>A subject DID, the exact scope or registry resource, and evidence appropriate to your role.</p>
+                <p>For private submission, your host must authenticate you and an external signer must sign the exact request.</p>
+              </aside>
+            </div>
+          </section>`;
 
     root.innerHTML = `
       <main class="shell app-shell" data-settings-active="${window.location.hash === "#connection-details"}">
@@ -1413,12 +1449,12 @@ export const createApplicantPortalApp = (
             <p>${state.inspection === undefined
               ? "Registry data is unavailable. Recheck the connection before inspecting or submitting a request."
               : state.inspection.sourceMode === "local-ledger"
-                ? "Explore current API claims, choose a role, and prepare a signed request. Verify finalized registry state independently before relying on it."
+                ? "Look up an exact authorization or recognition, then prepare a governed request. Verify finalized registry state independently before relying on an API claim."
                 : demoMode ? "Try a local application, browse records, or prepare a governed request. Demo records are not on-chain trust decisions." : "Browse this registry snapshot or prepare a governed request. Fixture records are not on-chain trust decisions."}</p>
             <div class="hero-actions">
-              <a class="button" href="${state.inspection === undefined ? "#connection-details" : state.inspection.sourceMode === "local-ledger" || !demoMode ? "#governed-requests" : "#demo-application"}">${state.inspection === undefined ? "Check connection" : state.inspection.sourceMode === "local-ledger" || !demoMode ? "Choose a role" : "Try the demo"}</a>
+              <a class="button" href="${state.inspection === undefined ? "#connection-details" : state.inspection.sourceMode === "local-ledger" ? "#current-authorization-lookup" : !demoMode ? "#governed-requests" : "#demo-application"}">${state.inspection === undefined ? "Check connection" : state.inspection.sourceMode === "local-ledger" ? "Look up a record" : !demoMode ? "Choose a role" : "Try the demo"}</a>
               ${state.inspection === undefined ? "" : state.inspection.sourceMode === "local-ledger"
-                ? `<a class="button secondary" href="#current-authorization-lookup">Look up a record</a>`
+                ? `<a class="button secondary" href="#governed-requests">Choose a role</a>`
                 : `<a class="button secondary" href="#trust-records">Explore records</a>`}
             </div>
           </div>
@@ -1437,7 +1473,7 @@ export const createApplicantPortalApp = (
           <div class="source-panel" data-source-state="${state.loading ? "loading" : state.inspection === undefined ? "unavailable" : state.inspection.sourceMode === "local-ledger" ? "local-ledger" : "fixture"}" role="status" aria-live="polite">
             <span class="source-badge">${state.loading ? "Checking" : state.inspection === undefined ? "Unavailable" : state.inspection.sourceMode === "local-ledger" ? "API claim" : "Local fixture"}</span>
             <div class="source-copy"><strong>${state.loading ? "Loading registry data" : state.inspection === undefined ? "No current registry data" : state.inspection.sourceMode === "local-ledger" ? "Current local-ledger API response" : "Demo workspace data"}</strong>
-              <span>${state.inspection?.sourceMode === "local-ledger" ? "This response is not independently verified finality or authorization evidence." : state.inspection === undefined ? "Connect or retry to inspect this source. No trust decision is available." : "Fixture records are for exploration, not deployed ledger evidence."}${state.inspection?.unavailableLists?.length ? ` ${state.inspection.unavailableLists.length} list(s) unavailable; counts shown as n/a.` : ""}</span>
+              <span>${state.inspection?.sourceMode === "local-ledger" ? "This response is not independently verified finality or authorization evidence. Broad lists are not offered in this mode; use exact lookup." : state.inspection === undefined ? "Connect or retry to inspect this source. No trust decision is available." : "Fixture records are for exploration, not deployed ledger evidence."}${state.inspection?.sourceMode !== "local-ledger" && state.inspection?.unavailableLists?.length ? ` ${state.inspection.unavailableLists.length} list(s) unavailable; counts shown as n/a.` : ""}</span>
             </div>
             ${state.observedAt === undefined || state.loading ? "" : `<span class="source-time">Checked ${escapeHtml(state.observedAt)} (browser clock)</span>`}
             <button class="source-refresh" type="button" data-refresh data-focus-key="refresh"${state.loading ? " disabled" : ""}>Recheck</button>
@@ -1445,7 +1481,7 @@ export const createApplicantPortalApp = (
         </section>
         <section class="settings-view" id="connection-details" aria-labelledby="settings-heading">
           <div class="settings-heading">
-            <a class="settings-back" href="#governed-requests">&larr; Back to applicant workspace</a>
+            <a class="settings-back" href="${state.inspection?.sourceMode === "local-ledger" ? "#current-authorization-lookup" : "#governed-requests"}">&larr; Back to applicant workspace</a>
             <p class="eyebrow">Configuration</p>
             <h1 id="settings-heading">Workspace settings</h1>
             <p>Check the API source and the registry identity it reports. These are browser observations, not independently verified trust evidence.</p>
@@ -1489,33 +1525,7 @@ export const createApplicantPortalApp = (
         </section>
         <section class="content">
           ${demoApplication}
-          <section class="journey-picker" id="governed-requests" aria-labelledby="journey-heading">
-            <div class="journey-heading"><p class="eyebrow">Governed requests</p><h2 id="journey-heading">${demoMode && state.inspection !== undefined && state.inspection.sourceMode !== "local-ledger" ? "Applying beyond the demo?" : "What would you like to do?"}</h2>
-              <p>Choose a role to inspect its exact authority, evidence, and signing requirements. Nothing is submitted until you confirm.</p>
-            </div>
-            <p class="journey-prerequisite">${state.inspection === undefined ? "Connect to a registry source before preparing a governed request." : privateHost ? "Same-origin host selected. This browser cannot verify your session; the host must authenticate private requests." : "This local connection can prepare a request, but cannot submit governed evidence. Use an authenticated same-origin host for that step."}</p>
-            <div class="journey-cards">
-              <a href="#issuer-request" data-open-workflow="issuer-request"><span class="role-mark" aria-hidden="true">I</span><strong>Become an issuer</strong><span>Issue credentials in a defined scope.</span><em>View issuer steps &rarr;</em></a>
-              <a href="#verifier-request" data-open-workflow="verifier-request"><span class="role-mark" aria-hidden="true">V</span><strong>Become a verifier</strong><span>Verify a precise scope.</span><em>View verifier steps &rarr;</em></a>
-              <a href="#auditor-request" data-open-workflow="auditor-request"><span class="role-mark" aria-hidden="true">A</span><strong>Become an auditor</strong><span>Oversee a defined audit scope.</span><em>View auditor steps &rarr;</em></a>
-              <a href="#maintainer-request" data-open-workflow="maintainer-request"><span class="role-mark" aria-hidden="true">M</span><strong>Join maintenance</strong><span>Request committee membership.</span><em>View maintainer steps &rarr;</em></a>
-            </div>
-            <div class="journey-guide">
-              <div class="journey-steps">
-                <p class="eyebrow">Your path</p><h3>Four steps, one clear outcome</h3>
-                <ol>
-                  <li><strong>Choose a role</strong><span>Check the authority and scope before you begin.</span></li>
-                  <li><strong>Prepare evidence</strong><span>Provide the exact governed resource and redacted evidence requested for that role.</span></li>
-                  <li><strong>Sign and submit</strong><span>Use external keys and an authenticated same-origin host; this browser never handles private keys.</span></li>
-                  <li><strong>Check the decision</strong><span>Use the returned identifiers to inspect status. Submission alone is not approval.</span></li>
-                </ol>
-              </div>
-              <aside class="journey-requirements"><p class="eyebrow">Before you start</p><h3>What you’ll need</h3>
-                <p>A subject DID, the exact scope or registry resource, and evidence appropriate to your role.</p>
-                <p>For private submission, your host must authenticate you and an external signer must sign the exact request.</p>
-              </aside>
-            </div>
-          </section>
+          ${state.inspection?.sourceMode === "local-ledger" ? "" : journeyPicker}
           ${state.inspection?.sourceMode === "local-ledger" ? `
           <section class="form-panel" id="current-authorization-lookup">
             <h2>Current authorization lookup</h2>
@@ -1526,10 +1536,10 @@ export const createApplicantPortalApp = (
               </select></label>
               <label class="label">Subject DID<input class="input mono" name="subjectDid" value="${escapeHtml(state.currentAuthorizationQuery?.subjectDid ?? "")}" required /></label>
               <label class="label">Governed resource ID<input class="input mono" name="resourceId" value="${escapeHtml(state.currentAuthorizationQuery?.resourceId ?? "")}" required /></label>
-              <button class="button secondary" type="submit"${state.currentAuthorizationBusy ? " disabled" : ""}>Look up current authorization</button>
+              <button class="button secondary" type="submit" data-focus-key="current-authorization-submit"${state.currentAuthorizationBusy ? " disabled" : ""}>Look up current authorization</button>
             </form>
-            ${state.currentAuthorizationError === undefined ? "" : `<div class="alert error">${escapeHtml(state.currentAuthorizationError)}</div>`}
-            ${state.currentAuthorizationResult === undefined ? "" : `<div class="panel" data-current-authorization-result>
+            ${state.currentAuthorizationError === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.currentAuthorizationError)}</div>`}
+            ${state.currentAuthorizationResult === undefined ? "" : `<div class="panel" data-current-authorization-result role="status">
               <p><strong>Unverified current API claim:</strong> ${escapeHtml(state.currentAuthorizationResult.authorization.status)}.</p>
               <details><summary>Inspect returned authorization</summary><pre class="mono">${escapeHtml(JSON.stringify(state.currentAuthorizationResult, null, 2))}</pre></details>
             </div>`}
@@ -1538,19 +1548,20 @@ export const createApplicantPortalApp = (
             <h2>Current recognition lookup</h2>
             <p>Query an exact external authority and scope from the current local-ledger view. Recognition does not grant local membership. Independently verify finalized registry state before relying on this API claim.</p>
             <form data-current-recognition>
-              <label class="label">Recognized authority DID<input class="input mono" name="recognizedAuthorityDid" value="${escapeHtml(state.currentRecognitionQuery?.recognizedAuthorityDid ?? "")}" required /></label>
-              <label class="label">Recognized registry ID<input class="input mono" name="recognizedRegistryId" value="${escapeHtml(state.currentRecognitionQuery?.recognizedRegistryId ?? "")}" required /></label>
-              <label class="label">Scope resource type<input class="input mono" name="scopeResourceType" value="${escapeHtml(state.currentRecognitionQuery?.scopeResourceType ?? "")}" required /></label>
-              <label class="label">Scope resource ID<input class="input mono" name="scopeResourceId" value="${escapeHtml(state.currentRecognitionQuery?.scopeResourceId ?? "")}" required /></label>
-              <label class="label">Scope context JSON, if any<textarea class="input mono" name="scopeContext" rows="3" spellcheck="false">${escapeHtml(state.currentRecognitionQuery?.scopeContext === undefined ? "" : JSON.stringify(state.currentRecognitionQuery.scopeContext, null, 2))}</textarea></label>
-              <button class="button secondary" type="submit"${state.currentRecognitionBusy ? " disabled" : ""}>Look up current recognition</button>
+              <label class="label">Recognized authority DID<input class="input mono" name="recognizedAuthorityDid" value="${escapeHtml(state.currentRecognitionDraft?.recognizedAuthorityDid ?? state.currentRecognitionQuery?.recognizedAuthorityDid ?? "")}" required /></label>
+              <label class="label">Recognized registry ID<input class="input mono" name="recognizedRegistryId" value="${escapeHtml(state.currentRecognitionDraft?.recognizedRegistryId ?? state.currentRecognitionQuery?.recognizedRegistryId ?? "")}" required /></label>
+              <label class="label">Scope resource type<input class="input mono" name="scopeResourceType" value="${escapeHtml(state.currentRecognitionDraft?.scopeResourceType ?? state.currentRecognitionQuery?.scopeResourceType ?? "")}" required /></label>
+              <label class="label">Scope resource ID<input class="input mono" name="scopeResourceId" value="${escapeHtml(state.currentRecognitionDraft?.scopeResourceId ?? state.currentRecognitionQuery?.scopeResourceId ?? "")}" required /></label>
+              <label class="label">Scope context JSON, if any<textarea class="input mono" name="scopeContext" rows="3" spellcheck="false">${escapeHtml(state.currentRecognitionDraft?.scopeContext ?? (state.currentRecognitionQuery?.scopeContext === undefined ? "" : JSON.stringify(state.currentRecognitionQuery.scopeContext, null, 2)))}</textarea></label>
+              <button class="button secondary" type="submit" data-focus-key="current-recognition-submit"${state.currentRecognitionBusy ? " disabled" : ""}>Look up current recognition</button>
             </form>
-            ${state.currentRecognitionError === undefined ? "" : `<div class="alert error">${escapeHtml(state.currentRecognitionError)}</div>`}
-            ${state.currentRecognitionResult === undefined ? "" : `<div class="panel" data-current-recognition-result>
+            ${state.currentRecognitionError === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.currentRecognitionError)}</div>`}
+            ${state.currentRecognitionResult === undefined ? "" : `<div class="panel" data-current-recognition-result role="status">
               <p><strong>Unverified current API claim:</strong> ${escapeHtml(state.currentRecognitionResult.recognition.status)}.</p>
               <details><summary>Inspect returned recognition</summary><pre class="mono">${escapeHtml(JSON.stringify(state.currentRecognitionResult, null, 2))}</pre></details>
             </div>`}
           </section>
+          ${journeyPicker}
           ` : state.inspection === undefined ? `<div class="alert error">Registry mode is unavailable; inspection controls are disabled.</div>` : `
           <section class="form-panel">
             <h2>Historical authorization evidence</h2>

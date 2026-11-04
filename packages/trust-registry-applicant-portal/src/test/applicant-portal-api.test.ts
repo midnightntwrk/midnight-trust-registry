@@ -110,7 +110,7 @@ describe("local list projection gate", () => {
     status: 503,
   }, { status: 503 });
 
-  it("retains the summary while marking every gated list unavailable", async () => {
+  it("retains the summary without alarming on unsupported local-ledger lists", async () => {
     const paths: string[] = [];
     const client = new TrustRegistryApplicantPortalClient("https://registry.example", (async (input) => {
       const path = new URL(String(input)).pathname;
@@ -122,7 +122,7 @@ describe("local list projection gate", () => {
     expect(inspection.summary.registryLabel).toBe("local");
     expect(inspection.sourceMode).toBe("local-ledger");
     expect(inspection.unavailableLists).toEqual(["issuer", "verifier", "auditor", "recognition"]);
-    expect(inspection.warnings).toHaveLength(4);
+    expect(inspection.warnings).toBeUndefined();
     expect(inspection.activeIssuers).toEqual([]);
     expect(inspection.activeRecognitions).toEqual([]);
     expect(paths).toEqual(["/health", "/v1/registry/summary", "/health"]);

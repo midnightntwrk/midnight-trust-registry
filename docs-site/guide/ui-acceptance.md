@@ -18,7 +18,7 @@ proposals, not evidence that a workflow is implemented or finalized.
 | Explain the applicant path before exposing forms | Four compact role choices lead to a role-specific disclosure. A four-step guide explains choice, evidence, external signing, and status inspection; a prerequisite card calls out DID, exact scope, and authenticated host. Opening a role does not submit it. |
 | One Midnight visual language | Both apps use the approved logo, Outfit, black/white/blue tokens, and shared navigation/status components. The header groups the logo, Trust Registry title, and current portal/console context in one lockup instead of separating them across the bar. |
 | Compact discovery and a bounded review detail | The fixture portal searches visible active records by name, role, scope, or DID without changing registry state. Empty lifecycle lanes are omitted from the admin view; selected detail stays beside the list on desktop and below it on mobile. The detail explains its source and lifecycle before the decision summary. Exact IDs and external-signature preparation are separate disclosures. |
-| Truthful source and certainty | A visible source strip identifies fixture, API claim, or unavailable state and offers Recheck. Navigation follows the source: optional fixture demo and browse, exact lookup for local-ledger API claims, connection recovery when unavailable. Broad browse is omitted rather than shown as empty in local-ledger mode. Empty fixture record categories are summarized instead of rendered as large cards; evidence/recovery tools are grouped under Advanced. Epoch and technical identity stay in details. No fixture record is called final. |
+| Truthful source and certainty | A visible source strip identifies fixture, API claim, or unavailable state and offers Recheck. Navigation follows the source: optional fixture demo and browse, exact lookup for local-ledger API claims, connection recovery when unavailable. Local-ledger exact lookups precede membership preparation in DOM and visual order; unsupported broad lists are explained once, not shown as four failures or empty trust. Actual failed fixture lists still show unavailable warnings. Empty fixture record categories are summarized instead of rendered as large cards; evidence/recovery tools are grouped under Advanced. Epoch and technical identity stay in details. No fixture record is called final. |
 | Mobile task access | The desktop sidebar becomes a native keyboard-operable Menu at narrow widths. The mobile portal omits the nonessential snapshot card so the role path appears sooner; source status and Recheck remain visible. |
 
 The canvas is a visual reference, not a complete behavior specification. Its
@@ -107,7 +107,7 @@ repeatable UI acceptance evidence:
 | Submit an issuer proposal with two external maintainer signatures and a registered verifier signature, then read the direct accepted receipt without treating it as finality | `governed-proposal-recovery.spec.mjs` (Compact simulator and local admission host) |
 | Complete a fixture recognition challenge, submit an external assertion, recover the accepted receipt, and download query-bound historical recognition and authorization API claims | `recognition-evidence.spec.mjs` (same-origin fixture session) |
 | Edit either historical evidence query, discard its stale download, and keep the new draft through a source refresh | `recognition-evidence.spec.mjs` |
-| Resolve exact current authorization and separate external recognition scopes in local-ledger mode; reject a substituted recognition tuple | `local-lookup.spec.mjs` (admin and applicant) |
+| Resolve exact current authorization and separate external recognition scopes in local-ledger mode; reject a substituted recognition tuple, preserve a malformed-context draft and keyboard focus, and announce errors/results | `local-lookup.spec.mjs` (admin and applicant) |
 | Inspect settings/source provenance, retry after an unavailable response, retain keyboard focus, and avoid overflow at 320/390/768/1440 px | `ui-layout.spec.mjs` |
 | Open the mobile Menu and Workspace settings by keyboard in both apps; verify the URL field and recheck action have accessible names and retain focus after refresh | `ui-layout.spec.mjs` |
 | Show an unavailable auditor list as unavailable rather than zero, keep loaded issuers visible, and recover the lane after recheck | `ui-layout.spec.mjs` (controlled partial-failure fixture) |
@@ -143,7 +143,9 @@ For visual review, run `TR_UI_CAPTURE=1 pnpm exec playwright test
 browser-tests/ui-layout.spec.mjs` after building both UI packages. Inspect the
 fresh-page screenshots in Playwright's `test-results/` at 320, 390, 768, and 1440 px
 for both apps; the capture occurs before scrolling so sticky navigation stays
-in its true initial position. Check keyboard focus, long IDs, empty and
+in its true initial position. Run `TR_UI_CAPTURE=1 pnpm exec playwright test
+browser-tests/local-lookup.spec.mjs` for local-ledger result and settings captures
+at 390, 768, and 1440 px. Check keyboard focus, long IDs, empty and
 unavailable states, source language, and mobile task visibility against the
 geometry assertions. Generated screenshots are local review artifacts, not
 deployed acceptance evidence.
