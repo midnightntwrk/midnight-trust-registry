@@ -5,7 +5,8 @@ screens are concepts, not deployed UI or evidence of ledger finality.
 
 Tracking issue: [#254](https://github.com/midnightntwrk/midnight-trust-registry/issues/254).
 This document is the detailed acceptance map; GitHub issues are the execution
-queue. Its local branch has not been pushed.
+queue. The initial UI implementation and this backlog are under review in
+[draft PR #262](https://github.com/midnightntwrk/midnight-trust-registry/pull/262).
 
 ## Execution waves
 
