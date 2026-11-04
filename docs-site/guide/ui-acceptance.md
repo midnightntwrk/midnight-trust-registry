@@ -139,7 +139,9 @@ not establish deployed-ledger behavior.
 
 A separate controlled local-ledger capture was inspected at 390 px in both
 apps and at 768/1440 px in the portal. The applicant chooses authorization or
-external recognition without showing both long forms at once. Results retain
+external recognition without showing both long forms at once. The exact query
+and its result/interpretation appear side by side on desktop and stack on
+mobile; before a query, the result says that no record is loaded. Results retain
 the **unverified API claim** label and the
 independent-finality warning. The settings review at 390 px exposed another
 raw browser timestamp; settings now show the same readable UTC time as the

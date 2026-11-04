@@ -60,7 +60,10 @@ describe("trust registry applicant portal app", () => {
     expect(root.querySelector("#connection-details")?.textContent).toContain("Last checked in this browser");
     expect(root.querySelector("#connection-details time")?.textContent).toContain("UTC");
     expect(root.textContent).toContain("local");
-    expect(root.textContent).toContain("Broad browsing is unavailable in this mode.");
+    expect(root.querySelector("#current-authorization-lookup .lookup-copy")?.textContent)
+      .toContain("Broad browsing is unavailable here.");
+    expect(root.querySelector("#current-authorization-lookup .lookup-empty")?.textContent)
+      .toContain("No record loaded yet");
     expect(root.textContent).not.toContain("No active entries in this lane yet.");
     expect(root.querySelector(".hero-overview")?.textContent).toContain("API-reported epoch");
     expect(root.querySelectorAll(".hero-overview .metric")).toHaveLength(2);

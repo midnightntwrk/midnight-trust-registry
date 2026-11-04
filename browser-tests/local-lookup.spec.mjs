@@ -94,6 +94,17 @@ async function reviewLocalLayouts(page, testInfo, app) {
     await page.setViewportSize({ width, height: 900 });
     await expect(page.locator(".source-badge")).toHaveText("API claim");
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1);
+    if (app === "applicant") {
+      const layout = await page.locator(".current-lookup-panel:not([hidden])").evaluate((panel) => {
+        const input = panel.querySelector(".lookup-input").getBoundingClientRect();
+        const result = panel.querySelector(".lookup-result").getBoundingClientRect();
+        return { inputRight: input.right, inputBottom: input.bottom, resultLeft: result.left, resultTop: result.top };
+      });
+      if (width > 980) expect(layout.resultLeft).toBeGreaterThanOrEqual(layout.inputRight);
+      else expect(layout.resultTop).toBeGreaterThanOrEqual(layout.inputBottom);
+      await expect(page.locator(".current-lookup-panel:not([hidden]) .lookup-result"))
+        .toContainText("not independently authenticated finality");
+    }
     if (width === 390) await expectNoWcagViolations(page, `${app} exact lookup`);
     if (process.env.TR_UI_CAPTURE === "1") {
       await page.evaluate(() => window.scrollTo(0, 0));
@@ -185,6 +196,7 @@ test("applicant exact scope lookup keeps returned trust unverified", async ({ pa
     await expect(page.locator("#demo-application")).toHaveCount(0);
     await expect(page.locator("#current-recognition-lookup")).toBeHidden();
     await expect(page.locator(".lookup-switch a[aria-current='location']")).toHaveText("Authorization");
+    await expect(page.locator("#current-authorization-lookup .lookup-empty")).toContainText("No record loaded yet");
     await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
     await expect(page.locator(".settings-view")).toContainText("Node-reported checkpoint time");
     await expect(page.locator(".settings-view")).toContainText("2026-10-27T00:00:00Z");
@@ -211,6 +223,7 @@ test("applicant exact scope lookup keeps returned trust unverified", async ({ pa
     await form.locator("[name='scopeContext']").fill('{"purpose":1}');
     await recognitionButton.click();
     await expect(page.getByRole("alert")).toContainText("Recognition scope context must be a JSON object of string values.");
+    await expect(page.locator("#current-recognition-lookup .lookup-result")).toContainText("not independently authenticated finality");
     await expect(recognitionButton).toBeFocused();
     expect(host.requests).not.toContain("POST /v1/recognitions/resolve");
     await form.locator("[name='scopeContext']").fill('{"purpose":"assurance"}');
@@ -229,7 +242,7 @@ test("applicant exact scope lookup keeps returned trust unverified", async ({ pa
     await form.locator("[name='scopeResourceId']").fill("substituted-degree");
     await form.locator("button[type='submit']").click();
     await expect(page.locator("[data-current-recognition-result]")).toHaveCount(0);
-    await expect(page.locator("body")).toContainText("does not match the requested scope");
+    await expect(page.locator("#current-recognition-lookup .lookup-result")).toContainText("does not match the requested scope");
     expect(host.requests).toContain("POST /v1/authorizations/resolve");
     expect(host.requests).toContain("POST /v1/recognitions/resolve");
     expect(host.requests.some((value) => value === "GET /v1/authorizations/issuer")).toBe(false);
@@ -250,9 +263,11 @@ test("applicant recognition deep link selects only the external lookup", async (
     await expect(page.locator("#current-authorization-lookup")).toBeHidden();
     await expect(page.locator(".lookup-switch a[aria-current='location']")).toHaveText("External recognition");
     await expect(page.locator(".lookup-switch a")).toHaveCount(2);
+    await expect(page.locator("#current-recognition-lookup .lookup-empty")).toContainText("No record loaded yet");
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
     await page.locator(".lookup-switch a[href='#current-authorization-lookup']").click();
     await expect(page.locator("#current-authorization-lookup")).toBeVisible();
+    await expect(page.locator("#current-authorization-lookup .lookup-empty")).toContainText("No record loaded yet");
     const pickerTop = await page.locator(".lookup-picker").evaluate((element) => element.getBoundingClientRect().top);
     expect(pickerTop).toBeGreaterThanOrEqual(-1);
     expect(pickerTop).toBeLessThan(844);

@@ -1550,42 +1550,58 @@ export const createApplicantPortalApp = (
             </nav>
           </section>
           <section class="form-panel current-lookup-panel" id="current-authorization-lookup"${lookupActive === "authorization" ? "" : " hidden"}>
-            <div class="lookup-copy">
-              <h2>Current authorization lookup</h2>
-              <p>Broad browsing is unavailable in this mode. Query an exact DID, role, and governed resource instead. This is an unverified API claim; independently verify finalized registry state before relying on it.</p>
+            <div class="lookup-input">
+              <div class="lookup-copy">
+                <p class="eyebrow">Authorization lookup</p>
+                <h2>Who, for what, in which role?</h2>
+                <p>Broad browsing is unavailable here. Enter the exact subject DID, role, and governed resource to request the current record.</p>
+              </div>
+              <form data-current-authorization>
+                <label class="label">Role<select class="select" name="role">
+                  ${(["issuer", "verifier", "auditor"] as const).map((role) => `<option value="${role}"${state.currentAuthorizationQuery?.role === role ? " selected" : ""}>${role}</option>`).join("")}
+                </select></label>
+                <label class="label">Subject DID<input class="input mono" name="subjectDid" value="${escapeHtml(state.currentAuthorizationQuery?.subjectDid ?? "")}" required /></label>
+                <label class="label">Governed resource ID<input class="input mono" name="resourceId" value="${escapeHtml(state.currentAuthorizationQuery?.resourceId ?? "")}" required /></label>
+                <button class="button" type="submit" data-focus-key="current-authorization-submit"${state.currentAuthorizationBusy ? " disabled" : ""}>Look up current authorization</button>
+              </form>
             </div>
-            <form data-current-authorization>
-              <label class="label">Role<select class="select" name="role">
-                ${(["issuer", "verifier", "auditor"] as const).map((role) => `<option value="${role}"${state.currentAuthorizationQuery?.role === role ? " selected" : ""}>${role}</option>`).join("")}
-              </select></label>
-              <label class="label">Subject DID<input class="input mono" name="subjectDid" value="${escapeHtml(state.currentAuthorizationQuery?.subjectDid ?? "")}" required /></label>
-              <label class="label">Governed resource ID<input class="input mono" name="resourceId" value="${escapeHtml(state.currentAuthorizationQuery?.resourceId ?? "")}" required /></label>
-              <button class="button secondary" type="submit" data-focus-key="current-authorization-submit"${state.currentAuthorizationBusy ? " disabled" : ""}>Look up current authorization</button>
-            </form>
-            ${state.currentAuthorizationError === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.currentAuthorizationError)}</div>`}
-            ${state.currentAuthorizationResult === undefined ? "" : `<div class="panel" data-current-authorization-result role="status">
-              <p><strong>Unverified current API claim:</strong> ${escapeHtml(state.currentAuthorizationResult.authorization.status)}.</p>
-              <details><summary>Inspect returned authorization</summary><pre class="mono">${escapeHtml(JSON.stringify(state.currentAuthorizationResult, null, 2))}</pre></details>
-            </div>`}
+            <aside class="lookup-result" aria-label="Current authorization result">
+              <h3 class="eyebrow">Result</h3>
+              ${state.currentAuthorizationError === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.currentAuthorizationError)}</div>`}
+              ${state.currentAuthorizationResult === undefined && state.currentAuthorizationError === undefined ? `<div class="lookup-empty"><h3>No record loaded yet</h3><p>Enter an exact role, DID, and governed resource to inspect the API's current claim.</p></div>` : ""}
+              ${state.currentAuthorizationResult === undefined ? "" : `<div class="lookup-claim" data-current-authorization-result role="status">
+                <p><strong>Unverified current API claim:</strong> ${escapeHtml(state.currentAuthorizationResult.authorization.status)}.</p>
+                <details><summary>Inspect returned authorization</summary><pre class="mono">${escapeHtml(JSON.stringify(state.currentAuthorizationResult, null, 2))}</pre></details>
+              </div>`}
+              <div class="lookup-interpretation"><strong>How to interpret a result</strong><p>A returned status is not independently authenticated finality. Do not use it as the sole basis for a trust decision.</p></div>
+            </aside>
           </section>
           <section class="form-panel current-lookup-panel" id="current-recognition-lookup"${lookupActive === "recognition" ? "" : " hidden"}>
-            <div class="lookup-copy">
-              <h2>Current recognition lookup</h2>
-              <p>Query an exact external authority and scope from the current local-ledger view. Recognition does not grant local membership. Independently verify finalized registry state before relying on this API claim.</p>
+            <div class="lookup-input">
+              <div class="lookup-copy">
+                <p class="eyebrow">External recognition lookup</p>
+                <h2>Which authority and scope?</h2>
+                <p>Enter the external authority, registry, and exact scope. Recognition does not grant local membership.</p>
+              </div>
+              <form data-current-recognition>
+                <label class="label">Recognized authority DID<input class="input mono" name="recognizedAuthorityDid" value="${escapeHtml(state.currentRecognitionDraft?.recognizedAuthorityDid ?? state.currentRecognitionQuery?.recognizedAuthorityDid ?? "")}" required /></label>
+                <label class="label">Recognized registry ID<input class="input mono" name="recognizedRegistryId" value="${escapeHtml(state.currentRecognitionDraft?.recognizedRegistryId ?? state.currentRecognitionQuery?.recognizedRegistryId ?? "")}" required /></label>
+                <label class="label">Scope resource type<input class="input mono" name="scopeResourceType" value="${escapeHtml(state.currentRecognitionDraft?.scopeResourceType ?? state.currentRecognitionQuery?.scopeResourceType ?? "")}" required /></label>
+                <label class="label">Scope resource ID<input class="input mono" name="scopeResourceId" value="${escapeHtml(state.currentRecognitionDraft?.scopeResourceId ?? state.currentRecognitionQuery?.scopeResourceId ?? "")}" required /></label>
+                <label class="label">Scope context JSON, if any<textarea class="input mono" name="scopeContext" rows="3" spellcheck="false">${escapeHtml(state.currentRecognitionDraft?.scopeContext ?? (state.currentRecognitionQuery?.scopeContext === undefined ? "" : JSON.stringify(state.currentRecognitionQuery.scopeContext, null, 2)))}</textarea></label>
+                <button class="button" type="submit" data-focus-key="current-recognition-submit"${state.currentRecognitionBusy ? " disabled" : ""}>Look up current recognition</button>
+              </form>
             </div>
-            <form data-current-recognition>
-              <label class="label">Recognized authority DID<input class="input mono" name="recognizedAuthorityDid" value="${escapeHtml(state.currentRecognitionDraft?.recognizedAuthorityDid ?? state.currentRecognitionQuery?.recognizedAuthorityDid ?? "")}" required /></label>
-              <label class="label">Recognized registry ID<input class="input mono" name="recognizedRegistryId" value="${escapeHtml(state.currentRecognitionDraft?.recognizedRegistryId ?? state.currentRecognitionQuery?.recognizedRegistryId ?? "")}" required /></label>
-              <label class="label">Scope resource type<input class="input mono" name="scopeResourceType" value="${escapeHtml(state.currentRecognitionDraft?.scopeResourceType ?? state.currentRecognitionQuery?.scopeResourceType ?? "")}" required /></label>
-              <label class="label">Scope resource ID<input class="input mono" name="scopeResourceId" value="${escapeHtml(state.currentRecognitionDraft?.scopeResourceId ?? state.currentRecognitionQuery?.scopeResourceId ?? "")}" required /></label>
-              <label class="label">Scope context JSON, if any<textarea class="input mono" name="scopeContext" rows="3" spellcheck="false">${escapeHtml(state.currentRecognitionDraft?.scopeContext ?? (state.currentRecognitionQuery?.scopeContext === undefined ? "" : JSON.stringify(state.currentRecognitionQuery.scopeContext, null, 2)))}</textarea></label>
-              <button class="button secondary" type="submit" data-focus-key="current-recognition-submit"${state.currentRecognitionBusy ? " disabled" : ""}>Look up current recognition</button>
-            </form>
-            ${state.currentRecognitionError === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.currentRecognitionError)}</div>`}
-            ${state.currentRecognitionResult === undefined ? "" : `<div class="panel" data-current-recognition-result role="status">
-              <p><strong>Unverified current API claim:</strong> ${escapeHtml(state.currentRecognitionResult.recognition.status)}.</p>
-              <details><summary>Inspect returned recognition</summary><pre class="mono">${escapeHtml(JSON.stringify(state.currentRecognitionResult, null, 2))}</pre></details>
-            </div>`}
+            <aside class="lookup-result" aria-label="Current recognition result">
+              <h3 class="eyebrow">Result</h3>
+              ${state.currentRecognitionError === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.currentRecognitionError)}</div>`}
+              ${state.currentRecognitionResult === undefined && state.currentRecognitionError === undefined ? `<div class="lookup-empty"><h3>No record loaded yet</h3><p>Enter the exact authority, registry, and scope to inspect the API's current claim.</p></div>` : ""}
+              ${state.currentRecognitionResult === undefined ? "" : `<div class="lookup-claim" data-current-recognition-result role="status">
+                <p><strong>Unverified current API claim:</strong> ${escapeHtml(state.currentRecognitionResult.recognition.status)}.</p>
+                <details><summary>Inspect returned recognition</summary><pre class="mono">${escapeHtml(JSON.stringify(state.currentRecognitionResult, null, 2))}</pre></details>
+              </div>`}
+              <div class="lookup-interpretation"><strong>How to interpret a result</strong><p>A returned status is not independently authenticated finality or local membership. Verify the finalized registry before relying on it.</p></div>
+            </aside>
           </section>
           ${journeyPicker}
           ` : state.inspection === undefined ? `<div class="alert error">Registry mode is unavailable; inspection controls are disabled.</div>` : `
@@ -1869,7 +1885,7 @@ export const createApplicantPortalApp = (
       const heading = panel.querySelector("h2");
       if (heading === null) return;
       const name = heading.textContent ?? "Workflow";
-      if (state.inspection?.sourceMode === "local-ledger" && name.startsWith("Current ")) return;
+      if (panel.classList.contains("current-lookup-panel")) return;
       const details = document.createElement("details");
       details.className = "workflow-disclosure";
       details.dataset.workflow = name;
