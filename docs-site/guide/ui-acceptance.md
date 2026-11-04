@@ -179,6 +179,14 @@ scripted local fixture path at that exact source. It is **not** a new engineer's
 independent usability trial, a deployed standalone actor run, or proof of
 authenticated finality. Keep those acceptance items open.
 
+On 2026-11-05, the same agent repeated the frozen install, full light gate,
+and ephemeral-port `demo:smoke` in a new detached worktree at signed source
+`22eaee057538ea58beda8c8878093644e060fd3c`. The 20/20 light tasks,
+198-case adversarial parity, and both served UI surfaces passed. The 42/42
+Playwright browser suite passed at that source in the development worktree.
+This is a second reproducibility check, not an independent new-user trial or
+deployed-ledger E2E acceptance.
+
 ## Final acceptance still to cover
 
 The cross-app fixture journeys cover the remaining label-only demo and

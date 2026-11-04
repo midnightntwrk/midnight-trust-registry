@@ -1,12 +1,17 @@
 # Midnight Trust Registry UI/UX adoption backlog
 
-Status: proposed design and implementation plan, 2026-11-04. The UX Pilot
+Status: approved plan, implementation in progress, 2026-11-05. The UX Pilot
 screens are concepts, not deployed UI or evidence of ledger finality.
 
 Tracking issue: [#254](https://github.com/midnightntwrk/midnight-trust-registry/issues/254).
 This document is the detailed acceptance map; GitHub issues are the execution
-queue. The initial UI implementation and this backlog are under review in
-[draft PR #262](https://github.com/midnightntwrk/midnight-trust-registry/pull/262).
+queue. The initial UI implementation and this backlog landed in
+[PR #262](https://github.com/midnightntwrk/midnight-trust-registry/pull/262).
+The shared shell and task-flow follow-ups are under review in draft
+[PR #263](https://github.com/midnightntwrk/midnight-trust-registry/pull/263)
+and [PR #264](https://github.com/midnightntwrk/midnight-trust-registry/pull/264).
+Open issue acceptance criteria still apply until the reviewed changes land;
+fixture browser checks do not establish deployed standalone E2E.
 
 ## Execution waves
 
