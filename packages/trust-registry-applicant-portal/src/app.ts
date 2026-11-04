@@ -179,6 +179,30 @@ export const escapeHtml = (value: string): string =>
     .replaceAll("\"", "&quot;")
     .replaceAll("'", "&#39;");
 
+const downloadUnverifiedEvidence = (
+  root: HTMLElement,
+  kind: "historical-authorization-evidence" | "historical-recognition-evidence",
+  query: unknown,
+  result: unknown,
+): void => {
+  const payload = {
+    format: "midnight-trust-registry-unverified-api-claim-v1",
+    kind,
+    verifiedFinality: false,
+    query,
+    result,
+  };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2) + "\n"], { type: "application/json" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `midnight-trust-registry-${kind}.json`;
+  link.hidden = true;
+  root.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+
 const formatApiError = (error: unknown): string => {
   if (error instanceof TrustRegistryApplicantPortalApiError) {
     const title = error.problem.title ?? "request failed";
@@ -961,6 +985,18 @@ export const createApplicantPortalApp = (
       if (role !== "issuer" && role !== "verifier" && role !== "auditor") return;
       void loadHistoricalEvidence({ role, subjectDid: field("subjectDid"), resourceId: field("resourceId"), at: field("at") });
     });
+    root.querySelector<HTMLFormElement>("[data-historical-authorization]")?.addEventListener("input", () => {
+      ++historicalRequestId;
+      state.historicalBusy = false;
+      state.historicalResult = undefined;
+      root.querySelector("[data-historical-result]")?.remove();
+      const submit = root.querySelector<HTMLButtonElement>("[data-historical-authorization] button[type='submit']");
+      if (submit !== null) submit.disabled = false;
+    });
+    root.querySelector<HTMLButtonElement>("[data-download-historical-authorization]")?.addEventListener("click", () => {
+      if (state.historicalQuery === undefined || state.historicalResult === undefined) return;
+      downloadUnverifiedEvidence(root, "historical-authorization-evidence", state.historicalQuery, state.historicalResult);
+    });
 
     root.querySelector<HTMLFormElement>("[data-historical-recognition]")?.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -998,22 +1034,8 @@ export const createApplicantPortalApp = (
     });
     root.querySelector<HTMLButtonElement>("[data-download-historical-recognition]")?.addEventListener("click", () => {
       if (state.historicalRecognitionQuery === undefined || state.historicalRecognitionResult === undefined) return;
-      const payload = {
-        format: "midnight-trust-registry-unverified-api-claim-v1",
-        kind: "historical-recognition-evidence",
-        verifiedFinality: false,
-        query: state.historicalRecognitionQuery,
-        result: state.historicalRecognitionResult,
-      };
-      const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2) + "\n"], { type: "application/json" }));
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "midnight-trust-registry-recognition-evidence.json";
-      link.hidden = true;
-      root.append(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      downloadUnverifiedEvidence(root, "historical-recognition-evidence",
+        state.historicalRecognitionQuery, state.historicalRecognitionResult);
     });
 
     root.querySelector<HTMLButtonElement>("[data-signed-context]")?.addEventListener("click", () => {
@@ -1405,12 +1427,13 @@ export const createApplicantPortalApp = (
               <label class="label">Subject DID<input class="input mono" name="subjectDid" value="${escapeHtml(state.historicalQuery?.subjectDid ?? "")}" required /></label>
               <label class="label">Governed resource ID<input class="input mono" name="resourceId" value="${escapeHtml(state.historicalQuery?.resourceId ?? "")}" required /></label>
               <label class="label">RFC3339 timestamp<input class="input mono" name="at" placeholder="2026-10-15T00:00:00Z" value="${escapeHtml(state.historicalQuery?.at ?? "")}" required /></label>
-              <button class="button secondary" type="submit"${state.historicalBusy ? " disabled" : ""}>Export evidence</button>
+              <button class="button secondary" type="submit"${state.historicalBusy ? " disabled" : ""}>Inspect authorization evidence</button>
             </form>
             ${state.historicalError === undefined ? "" : `<div class="alert error">${escapeHtml(state.historicalError)}</div>`}
             ${state.historicalResult === undefined ? "" : `<div class="panel" data-historical-result>
               <p><strong>Unverified API claim:</strong> ${escapeHtml(state.historicalResult.statusAtTime ?? "not yet proposed")} at ${escapeHtml(state.historicalResult.evaluatedAt)}; trusted-at-time flag ${state.historicalResult.trustedAtTime ? "true" : "false"}.</p>
               <p>Evidence epoch <span class="mono">${escapeHtml(state.historicalResult.bundle.epoch.epochId)}</span>; policy <span class="mono">${escapeHtml(state.historicalResult.bundle.policy.policyId)}</span>.</p>
+              <button class="button secondary" type="button" data-download-historical-authorization>Download unverified evidence JSON</button>
               <details><summary>Inspect raw proof bundle</summary><pre class="mono">${escapeHtml(JSON.stringify(state.historicalResult.bundle, null, 2))}</pre></details>
             </div>`}
           </section>

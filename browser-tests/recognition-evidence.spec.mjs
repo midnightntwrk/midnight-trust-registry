@@ -12,9 +12,11 @@ const evidenceCommitment = `0x${"c".repeat(64)}`;
 const epochId = "epoch:recognition-ui:1";
 const policyId = "policy:recognition-ui:1";
 const authorityDid = "did:web:authority.example";
+const issuerDid = `did:midnight:undeployed:${"d".repeat(64)}`;
+const issuerResourceId = `tr:issuer-resource:v1:${"e".repeat(64)}`;
 const at = "2026-10-15T00:00:00Z";
 
-test("applicant inspects and downloads a bounded historical recognition claim", async ({ page, allowedLocalOrigins }) => {
+test("applicant inspects and downloads bounded historical recognition and authorization claims", async ({ page, allowedLocalOrigins }) => {
   const staticHandler = createStaticAssetHandler({
     distDir: resolve("packages/trust-registry-applicant-portal/dist"),
     name: "applicant-recognition-browser-test",
@@ -84,6 +86,16 @@ test("applicant inspects and downloads a bounded historical recognition claim", 
             scope: { resourceType: query.scopeResourceType, resourceId: query.scopeResourceId } } } }));
       return;
     }
+    if (path === "/v1/authorizations/evaluate/evidence" && request.method === "POST") {
+      let raw = "";
+      for await (const chunk of request) raw += chunk;
+      const query = JSON.parse(raw);
+      requests.push({ path, method: request.method, body: query });
+      response.end(JSON.stringify({ evaluatedAt: query.at, statusAtTime: "active", trustedAtTime: true,
+        epoch: { epochId }, bundle: { epoch: { epochId }, policy: { policyId },
+          authorization: { role: query.role, subjectDid: query.subjectDid, resourceId: query.resourceId } } }));
+      return;
+    }
     response.end(JSON.stringify({ entries: [] }));
   });
   await new Promise((done) => server.listen(0, "127.0.0.1", done));
@@ -125,7 +137,7 @@ test("applicant inspects and downloads a bounded historical recognition claim", 
     const pendingDownload = page.waitForEvent("download");
     await page.locator("[data-download-historical-recognition]").click();
     const download = await pendingDownload;
-    expect(download.suggestedFilename()).toBe("midnight-trust-registry-recognition-evidence.json");
+    expect(download.suggestedFilename()).toBe("midnight-trust-registry-historical-recognition-evidence.json");
     const exported = JSON.parse(await readFile(await download.path(), "utf8"));
     expect(exported).toMatchObject({
       format: "midnight-trust-registry-unverified-api-claim-v1",
@@ -138,6 +150,30 @@ test("applicant inspects and downloads a bounded historical recognition claim", 
     await expect(result).toHaveCount(0);
     await expect(page.locator("[data-download-historical-recognition]")).toHaveCount(0);
     expect(requests.filter((entry) => entry.path === "/v1/recognitions/evaluate/evidence")).toHaveLength(1);
+
+    await page.locator('[data-workflow="Historical authorization evidence"] > summary').click();
+    const authorization = page.locator("[data-historical-authorization]");
+    await authorization.locator("[name='subjectDid']").fill(issuerDid);
+    await authorization.locator("[name='resourceId']").fill(issuerResourceId);
+    await authorization.locator("[name='at']").fill(at);
+    await authorization.getByRole("button", { name: "Inspect authorization evidence" }).click();
+    const authorizationResult = page.locator("[data-historical-result]");
+    await expect(authorizationResult).toContainText("Unverified API claim");
+    const pendingAuthorizationDownload = page.waitForEvent("download");
+    await page.locator("[data-download-historical-authorization]").click();
+    const authorizationDownload = await pendingAuthorizationDownload;
+    expect(authorizationDownload.suggestedFilename()).toBe("midnight-trust-registry-historical-authorization-evidence.json");
+    const exportedAuthorization = JSON.parse(await readFile(await authorizationDownload.path(), "utf8"));
+    expect(exportedAuthorization).toMatchObject({
+      format: "midnight-trust-registry-unverified-api-claim-v1",
+      kind: "historical-authorization-evidence", verifiedFinality: false,
+      query: { role: "issuer", subjectDid: issuerDid, resourceId: issuerResourceId, at },
+      result: { evaluatedAt: at, bundle: { epoch: { epochId }, policy: { policyId } } },
+    });
+    await authorization.locator("[name='resourceId']").fill("another-resource");
+    await expect(authorizationResult).toHaveCount(0);
+    await expect(page.locator("[data-download-historical-authorization]")).toHaveCount(0);
+    expect(requests.filter((entry) => entry.path === "/v1/authorizations/evaluate/evidence")).toHaveLength(1);
   } finally {
     await page.close();
     server.closeAllConnections();
