@@ -197,9 +197,9 @@ it("pins every governed action kind to a Compact literal", () => {
 });
 
 const createInitializedRegistryFixture = (seedByte: number) => {
-  const registryId = labelToBytes32("registry:kanon");
+  const registryId = labelToBytes32("registry:midnight");
   const registryDidCommitment = labelToBytes32("did:midnight:registry");
-  const governancePolicyCommitment = labelToBytes32("policy:kanon:v1");
+  const governancePolicyCommitment = labelToBytes32("policy:midnight:v1");
   const bootstrapMaintainer = createMaintainerFixture("bootstrap", seedByte);
   const bootstrapPublicKey = deriveJubjubPublicKeyFromSeed(
     bootstrapMaintainer.seed,
@@ -232,7 +232,7 @@ const createIssuerAuthorizationFixture = (label: string) => ({
   subjectDidCommitment: labelToBytes32(`did:midnight:issuer:${label}`),
   resourceType: IssuerResourceType.credentialFamily,
   resourceId: labelToBytes32(`vc-type:${label}:v1`),
-  policyId: labelToBytes32("policy:kanon:v1"),
+  policyId: labelToBytes32("policy:midnight:v1"),
   statusPolicyBindingCommitment: labelToBytes32(`issuer-status-policy:${label}`),
   trustLevel: labelToBytes32("approved"),
   evidenceHash: labelToBytes32(`evidence:${label}:create`),
@@ -444,7 +444,7 @@ const createVerifierAuthorizationFixture = (label: string) => ({
   allowedAttributeSetCommitment: labelToBytes32(`attr-set:${label}:minimal`),
   allowedPredicateSetCommitment: labelToBytes32(`pred-set:${label}:adult`),
   disclosureLevelCommitment: labelToBytes32(`disclosure:${label}:selective`),
-  policyId: labelToBytes32("policy:kanon:v1"),
+  policyId: labelToBytes32("policy:midnight:v1"),
   trustLevel: labelToBytes32("approved"),
   evidenceHash: labelToBytes32(`evidence:${label}:create`),
 });
@@ -457,7 +457,7 @@ const createRecognitionFixture = (label: string) => ({
   recognizedRegistryId: labelToBytes32(`registry:external:${label}:v1`),
   scopeResourceType: labelToBytes32("recognized-scope"),
   scopeResourceId: labelToBytes32(`credential-family:${label}:v1`),
-  policyId: labelToBytes32("policy:kanon:v1"),
+  policyId: labelToBytes32("policy:midnight:v1"),
   trustLevel: labelToBytes32("peer-approved"),
   evidenceHash: labelToBytes32(`evidence:${label}:create`),
 });
@@ -580,7 +580,7 @@ const createAuditorAuthorizationFixture = (label: string) => ({
   allowedAttributeSetCommitment: labelToBytes32(`audit-attr-set:${label}:minimal`),
   allowedPredicateSetCommitment: labelToBytes32(`audit-pred-set:${label}:compliance`),
   disclosureLevelCommitment: labelToBytes32(`audit-disclosure:${label}:restricted`),
-  policyId: labelToBytes32("policy:kanon:v1"),
+  policyId: labelToBytes32("policy:midnight:v1"),
   trustLevel: labelToBytes32("audit-approved"),
   evidenceHash: labelToBytes32(`evidence:${label}:create`),
 });
@@ -675,7 +675,7 @@ const createMaintainerMembershipFixture = (label: string, seedByte: number) => {
     maintainerDidCommitment: candidate.didCommitment,
     keyId: candidate.keyId,
     publicKey: deriveJubjubPublicKeyFromSeed(candidate.seed),
-    policyId: labelToBytes32("policy:kanon:v1"),
+    policyId: labelToBytes32("policy:midnight:v1"),
     trustLevel: labelToBytes32("governance-approved"),
     evidenceHash: labelToBytes32(`evidence:${label}:propose`),
     seed: candidate.seed,
@@ -907,9 +907,9 @@ describe("trust registry contract", () => {
   });
 
   it("records a network-bound initialization event before a contract address exists", () => {
-    const registryId = labelToBytes32("registry:kanon");
+    const registryId = labelToBytes32("registry:midnight");
     const registryDidCommitment = labelToBytes32("did:midnight:registry");
-    const governancePolicyCommitment = labelToBytes32("policy:kanon:v1");
+    const governancePolicyCommitment = labelToBytes32("policy:midnight:v1");
     const bootstrapMaintainer = createMaintainerFixture("bootstrap", 7);
     const bootstrapPublicKey = deriveJubjubPublicKeyFromSeed(
       bootstrapMaintainer.seed,
@@ -970,10 +970,10 @@ describe("trust registry contract", () => {
       bootstrapMaintainer.seed,
     );
     const bootstrap = {
-      registryId: labelToBytes32("registry:kanon"),
+      registryId: labelToBytes32("registry:midnight"),
       networkIdCommitment: FIXTURE_NETWORK_ID_COMMITMENT,
       registryDidCommitment: labelToBytes32("did:midnight:registry"),
-      governancePolicyCommitment: labelToBytes32("policy:kanon:v1"),
+      governancePolicyCommitment: labelToBytes32("policy:midnight:v1"),
       maintainerId: bootstrapMaintainer.maintainerId,
       maintainerDidCommitment: bootstrapMaintainer.didCommitment,
       maintainerKeyId: bootstrapMaintainer.keyId,
@@ -1919,9 +1919,9 @@ describe("trust registry contract", () => {
   }
 
   it("records a signed generic audit event without a lifecycle transition", () => {
-    const registryId = labelToBytes32("registry:kanon");
+    const registryId = labelToBytes32("registry:midnight");
     const registryDidCommitment = labelToBytes32("did:midnight:registry");
-    const governancePolicyCommitment = labelToBytes32("policy:kanon:v1");
+    const governancePolicyCommitment = labelToBytes32("policy:midnight:v1");
     const bootstrapMaintainer = createMaintainerFixture("bootstrap", 3);
     const bootstrapPublicKey = deriveJubjubPublicKeyFromSeed(
       bootstrapMaintainer.seed,
@@ -2180,7 +2180,7 @@ describe("trust registry contract", () => {
       UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND,
       computeUpdateMaintainerThresholdPolicyPayloadHash(
         simulator.getLedger().governancePolicyCommitment,
-        labelToBytes32("policy:kanon:v2"),
+        labelToBytes32("policy:midnight:v2"),
         2n,
         4n,
         1n,
@@ -2193,7 +2193,7 @@ describe("trust registry contract", () => {
         bootstrapMaintainer.keyId,
         bootstrapPublicKey,
         invalidThresholdPolicySignature,
-        labelToBytes32("policy:kanon:v2"),
+        labelToBytes32("policy:midnight:v2"),
         2n,
         4n,
         1n,
@@ -2204,7 +2204,7 @@ describe("trust registry contract", () => {
     const thresholdPolicySequence = simulator.getLedger().governanceActionCount;
     const thresholdPolicyPayloadHash = computeUpdateMaintainerThresholdPolicyPayloadHash(
       simulator.getLedger().governancePolicyCommitment,
-      labelToBytes32("policy:kanon:v2"),
+      labelToBytes32("policy:midnight:v2"),
       2n,
       2n,
       1n,
@@ -2223,7 +2223,7 @@ describe("trust registry contract", () => {
         bootstrapMaintainer.keyId,
         bootstrapPublicKey,
         thresholdPolicySignature,
-        labelToBytes32("policy:kanon:unsigned"),
+        labelToBytes32("policy:midnight:unsigned"),
         2n,
         2n,
         1n,
@@ -2258,7 +2258,7 @@ describe("trust registry contract", () => {
       bootstrapMaintainer.keyId,
       bootstrapPublicKey,
       thresholdPolicySignature,
-      labelToBytes32("policy:kanon:v2"),
+      labelToBytes32("policy:midnight:v2"),
       2n,
       2n,
       1n,
@@ -2293,17 +2293,17 @@ describe("trust registry contract", () => {
     )).toThrow(/non-conflicted removal quorum/i);
     expect(simulator.getLedger().governanceActionCount).toBe(removalSequence);
     expect(Buffer.from(simulator.getLedger().governancePolicyCommitment)).toEqual(
-      Buffer.from(labelToBytes32("policy:kanon:v2")),
+      Buffer.from(labelToBytes32("policy:midnight:v2")),
     );
     expect(Buffer.from(simulator.getLedger().lastAuthorizedPolicyCommitment)).toEqual(
-      Buffer.from(labelToBytes32("policy:kanon:v1")),
+      Buffer.from(labelToBytes32("policy:midnight:v1")),
     );
     expect(
       Buffer.from(simulator.getLedger().governancePolicyCommitmentsByVersion.lookup(1n)),
-    ).toEqual(Buffer.from(labelToBytes32("policy:kanon:v1")));
+    ).toEqual(Buffer.from(labelToBytes32("policy:midnight:v1")));
     expect(
       Buffer.from(simulator.getLedger().governancePolicyCommitmentsByVersion.lookup(2n)),
-    ).toEqual(Buffer.from(labelToBytes32("policy:kanon:v2")));
+    ).toEqual(Buffer.from(labelToBytes32("policy:midnight:v2")));
     expect(simulator.getLedger().governancePolicyEffectiveFromByVersion.lookup(2n)).toEqual(
       thresholdPolicySequence + 1n,
     );
@@ -2421,7 +2421,7 @@ describe("trust registry contract", () => {
     const stalePolicySignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,
-      labelToBytes32("policy:kanon:v1"),
+      labelToBytes32("policy:midnight:v1"),
       PROPOSE_ISSUER_ACTION_KIND,
       proposeIssuerPayloadHash,
       proposeIssuerSequence,
@@ -2463,7 +2463,7 @@ describe("trust registry contract", () => {
       [secondIssuerProposer],
     );
     expect(Buffer.from(simulator.getLedger().lastAuthorizedPolicyCommitment)).toEqual(
-      Buffer.from(labelToBytes32("policy:kanon:v2")),
+      Buffer.from(labelToBytes32("policy:midnight:v2")),
     );
 
     const authorizeIssuerEvidenceHash = proposedEvidenceHash;
@@ -2699,7 +2699,7 @@ describe("trust registry contract", () => {
       UPDATE_MAINTAINER_THRESHOLD_POLICY_ACTION_KIND,
       computeUpdateMaintainerThresholdPolicyPayloadHash(
         simulator.getLedger().governancePolicyCommitment,
-        labelToBytes32("policy:kanon:v2"),
+        labelToBytes32("policy:midnight:v2"),
         2n,
         2n,
         1n,
@@ -2711,7 +2711,7 @@ describe("trust registry contract", () => {
       bootstrapMaintainer.keyId,
       bootstrapPublicKey,
       thresholdPolicySignature,
-      labelToBytes32("policy:kanon:v2"),
+      labelToBytes32("policy:midnight:v2"),
       2n,
       2n,
       1n,
@@ -2813,7 +2813,7 @@ describe("trust registry contract", () => {
   });
 
   it("bootstraps before any maintainer action and rejects tampered authorization", () => {
-    const registryId = labelToBytes32("registry:kanon");
+    const registryId = labelToBytes32("registry:midnight");
     const actionKind = GENERIC_AUDIT_ACTION_KIND;
     const actionPayloadHash = labelToBytes32("issuer:example:v1");
     const bootstrapMaintainer = createMaintainerFixture("bootstrap", 5);
@@ -2824,7 +2824,7 @@ describe("trust registry contract", () => {
       registryId,
       networkIdCommitment: FIXTURE_NETWORK_ID_COMMITMENT,
       registryDidCommitment: labelToBytes32("did:midnight:registry"),
-      governancePolicyCommitment: labelToBytes32("policy:kanon:v1"),
+      governancePolicyCommitment: labelToBytes32("policy:midnight:v1"),
       maintainerId: bootstrapMaintainer.maintainerId,
       maintainerDidCommitment: bootstrapMaintainer.didCommitment,
       maintainerKeyId: bootstrapMaintainer.keyId,
@@ -5309,7 +5309,7 @@ describe("trust registry contract", () => {
     ).toThrow(/already exists/i);
 
     const revisionSequence = simulator.getLedger().governanceActionCount;
-    const revisedPolicyRoot = labelToBytes32("policy:kanon:v2");
+    const revisedPolicyRoot = labelToBytes32("policy:midnight:v2");
     const revisionSignature = signFixtureDeploymentBoundActionFromSeed(simulator,
       bootstrapMaintainer.seed,
       registryId,

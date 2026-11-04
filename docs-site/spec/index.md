@@ -19,7 +19,7 @@ These sources inform the model or interoperability mapping; none is automaticall
 - [OpenID Federation 1.0](https://openid.net/specs/openid-federation-1_0.html) and [OpenID Federation for Wallet Architectures](https://openid.net/specs/openid-federation-wallet-1_0.html).
 - [Governance Framework for Issuer Identity Registries](https://digitalcredentials.mit.edu/docs/Governance-Framework-for-Issuer-Identity-Registries.pdf).
 - [zkMe Web3 zk-Credential Network whitepaper](https://www.zk.me/zkMe_The%20Web3%20zk-Credential%20Network.pdf).
-- [Kanon VDR requirements](https://github.com/midnightntwrk/midnight-trust-registry/blob/develop/docs/research/trust-registry-requirements-memo.md), summarized publicly in the repository memo without reproducing the internal PDF.
+- [Reference VDR requirements](https://github.com/midnightntwrk/midnight-trust-registry/blob/develop/docs/research/trust-registry-requirements-memo.md), summarized publicly in the repository memo without reproducing the internal PDF.
 - [Bottom-up Trust Registry in Self Sovereign Identity](https://doi.org/10.48550/arXiv.2208.04624).
 - [GI registry research paper](https://dl.gi.de/server/api/core/bitstreams/d91fcb27-0129-499f-871d-c3b8ac336b63/content) and [Fraunhofer registry research paper](https://publica-rest.fraunhofer.de/server/api/core/bitstreams/99ea77d3-e321-472d-9431-c43ead2e56da/content).
 

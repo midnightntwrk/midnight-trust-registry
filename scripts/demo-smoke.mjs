@@ -399,8 +399,8 @@ const baseUrl = `http://127.0.0.1:${port}`;
   }
 
   for (const [name, scriptPath, title] of [
-    ["admin console", "packages/trust-registry-admin-console/scripts/serve.mjs", "Trust Registry Admin Console"],
-    ["applicant portal", "packages/trust-registry-applicant-portal/scripts/serve.mjs", "Trust Registry Applicant Portal"],
+    ["admin console", "packages/trust-registry-admin-console/scripts/serve.mjs", "Midnight Trust Registry | Admin"],
+    ["applicant portal", "packages/trust-registry-applicant-portal/scripts/serve.mjs", "Midnight Trust Registry | Apply"],
   ]) {
     const uiPort = await findFreePort();
     const child = spawn("node", [scriptPath, "--port", String(uiPort)], {

@@ -20,12 +20,12 @@ const HASH_C = `0x${"3".repeat(64)}`;
 
 const authorizationRecord: AuthorizationRecord = {
   authorizationId: "auth:issuer:degree:v1",
-  registryId: "registry:kanon:trusted",
+  registryId: "registry:midnight:trusted",
   subjectDid: "did:midnight:testnet:issuer",
   role: "issuer",
   resourceType: "credential-family",
   resourceId: "credential-family:degree",
-  policyId: "policy:kanon:v1",
+  policyId: "policy:midnight:v1",
   trustLevel: "gold",
   status: "revoked",
   lifecycleEventRoot: HASH_A,
@@ -38,14 +38,14 @@ const authorizationRecord: AuthorizationRecord = {
 
 const recognitionRecord: RecognitionRecord = {
   recognitionId: "recognition:gaia-x:v1",
-  registryId: "registry:kanon:trusted",
+  registryId: "registry:midnight:trusted",
   recognizedAuthorityDid: "did:midnight:testnet:gaiax",
   recognizedRegistryId: "registry:gaia-x",
   scope: {
     resourceType: "recognized-scope",
     resourceId: "gaia-x",
   },
-  policyId: "policy:kanon:v1",
+  policyId: "policy:midnight:v1",
   trustLevel: "observer",
   status: "suspended",
   lifecycleEventRoot: HASH_A,
@@ -59,7 +59,7 @@ const recognitionRecord: RecognitionRecord = {
 const epochs: readonly EpochCommitment[] = [
   {
     epochId: "epoch:001",
-    registryId: "registry:kanon:trusted",
+    registryId: "registry:midnight:trusted",
     stateRoot: HASH_A,
     eventRoot: HASH_B,
     policyRoot: HASH_C,
@@ -75,7 +75,7 @@ const epochs: readonly EpochCommitment[] = [
   },
   {
     epochId: "epoch:002",
-    registryId: "registry:kanon:trusted",
+    registryId: "registry:midnight:trusted",
     stateRoot: HASH_B,
     eventRoot: HASH_C,
     policyRoot: HASH_A,

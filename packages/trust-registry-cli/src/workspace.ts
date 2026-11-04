@@ -635,7 +635,7 @@ const replayWorkspace = (
 export const createOperatorWorkspace = (
   input: { label?: string } = {},
 ): TrustRegistryOperatorWorkspace => {
-  const label = input.label ?? "kanon";
+  const label = input.label ?? "midnight";
   const { harness, trackedFixtures } = replayWorkspace(label, []);
   const snapshot = buildSnapshotFromTrackedFixtures(label, 0, harness, trackedFixtures);
 

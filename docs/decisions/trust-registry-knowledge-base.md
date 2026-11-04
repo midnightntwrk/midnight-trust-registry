@@ -1,7 +1,7 @@
 # Trust Registry Knowledge Base
 
 Status: working knowledge snapshot
-Updated: 2026-10-27
+Updated: 2026-11-04
 
 ## Purpose
 
@@ -11,6 +11,32 @@ This document is the repo-local execution snapshot for
 It records the current code surface, validation baseline, dependency posture,
 backlog posture, and the next implementation direction. It is intentionally
 shorter-lived and more action-oriented than the normative specification.
+
+## November 4 2026 UI/UX Adoption Checkpoint
+
+- The [single MTR UX Pilot page](https://uxpilot.ai/a/ui-design?page=djbLMyF7a2TuLoSWYUwc)
+  holds six editable concepts: shared Midnight UI, admin review, applicant
+  desktop/mobile, workspace settings, and local-ledger exact lookup. They are
+  designs only, not running UI. Use the approved Midnight SVG asset in code;
+  the canvas mark is schematic.
+- [#254](https://github.com/midnightntwrk/midnight-trust-registry/issues/254)
+  is the parent for implementation issues #255-#261. Execute shared primitives
+  and source truth (#255) first; then admin (#256) and applicant (#257), with
+  existing auditor issue #152; then settings (#258) and exact ledger lookup
+  (#259); then Playwright/accessibility/adoption (#260). Authenticated status
+  history (#261) is a separate dependency, not permission to ship dead
+  tracker/activity links. The detailed acceptance map is
+  [the UI/UX backlog](../plans/midnight-ui-ux-backlog.md).
+- The current UI already has governed signing, exact role/resource scopes,
+  historical evidence, pending evidence, recognition recovery, and mode-specific
+  restrictions. A landing-page redesign must preserve these boundaries. A
+  browser API claim is not independent finality; a fixture active record is not
+  a deployed trust decision. The local host has no authenticated account
+  profile, so the new destination is **Workspace settings**, not a fake avatar.
+- Browser tests presently include a layout/overflow suite and offline fixtures,
+  but not a reviewed visual/accessibility acceptance matrix for the new UX.
+  The November 4 docs build and OpenAPI check passed. No UX implementation PR
+  or deployed E2E evidence is claimed by this checkpoint.
 
 ## October 27 2026 Latest Local Qualification Handoff
 

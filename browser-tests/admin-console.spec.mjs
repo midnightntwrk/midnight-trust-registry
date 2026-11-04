@@ -66,6 +66,7 @@ test("a late governance receipt cannot replace another registry's board", async 
     const registryLabel = page.locator(".metrics .metric:first-child strong");
     await expect(registryLabel).toHaveText("Registry A");
 
+    await page.locator(".advanced-workflows > summary").click();
     await page.locator("[data-signed-submit] [name='signedEnvelope']").fill("signed-for-registry-a");
     const completedPublication = page.waitForResponse((response) => response.url().endsWith("/a/v1/epochs/publish"));
     await page.locator("[data-epoch-label]").fill("first-registry-epoch");

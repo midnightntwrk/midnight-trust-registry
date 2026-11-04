@@ -26,8 +26,8 @@ type EvidenceBundle = PublicInspection["activeIssuers"][number]["evidence"];
 const summary: TrustRegistryApiSummary = {
   snapshotVersion: "1",
   generatedAt: "2026-05-23T05:00:00Z",
-  registryLabel: "kanon-portal",
-  registryId: "registry:kanon-portal",
+  registryLabel: "midnight-portal",
+  registryId: "registry:midnight-portal",
   registryDid: "did:midnight:testnet:registry",
   policyId: "policy:default",
   currentEpochId: "epoch:003",
@@ -72,7 +72,7 @@ const summary: TrustRegistryApiSummary = {
 
 const policy: EvidenceBundle["policy"] = {
   policyId: "policy:default",
-  registryId: "registry:kanon-portal",
+  registryId: "registry:midnight-portal",
   version: "v1",
   policyUri: "https://example.com/policies/default",
   status: "active" as const,
@@ -107,7 +107,7 @@ const policy: EvidenceBundle["policy"] = {
 
 const epoch: EvidenceBundle["epoch"] = {
   epochId: "epoch:003",
-  registryId: "registry:kanon-portal",
+  registryId: "registry:midnight-portal",
   stateRoot: HASH_B,
   eventRoot: HASH_C,
   policyRoot: HASH_D,
@@ -141,7 +141,7 @@ const createAuthorizationMutationResponse = (
       label: target === "issuer" ? "degree" : "age-gate",
       authorization: {
         authorizationId: `auth:${target}:${target === "issuer" ? "degree" : "age-gate"}:v1`,
-        registryId: "registry:kanon-portal",
+        registryId: "registry:midnight-portal",
         subjectDid: `did:midnight:testnet:${target}`,
         role: target,
         resourceType: target === "issuer" ? "credential-family" : "request-profile",
@@ -157,7 +157,7 @@ const createAuthorizationMutationResponse = (
       evidence: {
         bundleId: `bundle:${target}:${target === "issuer" ? "degree" : "age-gate"}:v1`,
         generatedAt: "2026-05-23T05:00:00Z",
-        registryId: "registry:kanon-portal",
+        registryId: "registry:midnight-portal",
         subjectDid: `did:midnight:testnet:${target}`,
         policy,
         epoch,
@@ -170,7 +170,7 @@ const createAuthorizationMutationResponse = (
         },
         authorization: {
           authorizationId: `auth:${target}:${target === "issuer" ? "degree" : "age-gate"}:v1`,
-          registryId: "registry:kanon-portal",
+          registryId: "registry:midnight-portal",
           subjectDid: `did:midnight:testnet:${target}`,
           role: target,
           resourceType: target === "issuer" ? "credential-family" : "request-profile",
@@ -186,7 +186,7 @@ const createAuthorizationMutationResponse = (
         ...(target === "issuer" ? {
           statusPolicyBinding: {
             version: "tr-issuer-status-policy-v1",
-            trustRegistryId: "registry:kanon-portal",
+            trustRegistryId: "registry:midnight-portal",
             issuerAuthorizationId: "auth:issuer:degree:v1",
             statusRegistryId: HASH_A,
             statusAuthorityVerificationMethod: "did:midnight:testnet:issuer#status-key",
@@ -216,7 +216,7 @@ const createRecognitionMutationResponse = (): TrustRegistryApiApplicationMutatio
       label: "gaia-x",
       recognition: {
         recognitionId: "recognition:gaia-x:v1",
-        registryId: "registry:kanon-portal",
+        registryId: "registry:midnight-portal",
         recognizedAuthorityDid: "did:midnight:testnet:gaiax",
         recognizedRegistryId: "registry:gaia-x",
         scope: {
@@ -233,7 +233,7 @@ const createRecognitionMutationResponse = (): TrustRegistryApiApplicationMutatio
       evidence: {
         bundleId: "bundle:recognition:gaia-x:v1",
         generatedAt: "2026-05-23T05:00:00Z",
-        registryId: "registry:kanon-portal",
+        registryId: "registry:midnight-portal",
         subjectDid: "did:midnight:testnet:gaiax",
         policy,
         epoch,
@@ -246,7 +246,7 @@ const createRecognitionMutationResponse = (): TrustRegistryApiApplicationMutatio
         },
         recognition: {
           recognitionId: "recognition:gaia-x:v1",
-          registryId: "registry:kanon-portal",
+          registryId: "registry:midnight-portal",
           recognizedAuthorityDid: "did:midnight:testnet:gaiax",
           recognizedRegistryId: "registry:gaia-x",
           scope: {
@@ -290,7 +290,7 @@ const inspection: PublicInspection = {
       label: "degree",
       authorization: {
         authorizationId: "auth:issuer:degree:v1",
-        registryId: "registry:kanon-portal",
+        registryId: "registry:midnight-portal",
         subjectDid: "did:midnight:testnet:issuer",
         role: "issuer",
         resourceType: "credential-family",
@@ -307,7 +307,7 @@ const inspection: PublicInspection = {
       evidence: {
         bundleId: "bundle:issuer:degree:v1",
         generatedAt: "2026-05-23T05:00:00Z",
-        registryId: "registry:kanon-portal",
+        registryId: "registry:midnight-portal",
         subjectDid: "did:midnight:testnet:issuer",
         policy,
         epoch,
@@ -320,7 +320,7 @@ const inspection: PublicInspection = {
         },
         authorization: {
           authorizationId: "auth:issuer:degree:v1",
-          registryId: "registry:kanon-portal",
+          registryId: "registry:midnight-portal",
           subjectDid: "did:midnight:testnet:issuer",
           role: "issuer",
           resourceType: "credential-family",
@@ -342,7 +342,7 @@ const inspection: PublicInspection = {
       label: "age-gate",
       authorization: {
         authorizationId: "auth:verifier:age-gate:v1",
-        registryId: "registry:kanon-portal",
+        registryId: "registry:midnight-portal",
         subjectDid: "did:midnight:testnet:verifier",
         role: "verifier",
         resourceType: "request-profile",
@@ -359,7 +359,7 @@ const inspection: PublicInspection = {
       evidence: {
         bundleId: "bundle:verifier:age-gate:v1",
         generatedAt: "2026-05-23T05:00:00Z",
-        registryId: "registry:kanon-portal",
+        registryId: "registry:midnight-portal",
         subjectDid: "did:midnight:testnet:verifier",
         policy,
         epoch,
@@ -372,7 +372,7 @@ const inspection: PublicInspection = {
         },
         authorization: {
           authorizationId: "auth:verifier:age-gate:v1",
-          registryId: "registry:kanon-portal",
+          registryId: "registry:midnight-portal",
           subjectDid: "did:midnight:testnet:verifier",
           role: "verifier",
           resourceType: "request-profile",
@@ -394,7 +394,7 @@ const inspection: PublicInspection = {
       label: "gaia-x",
       recognition: {
         recognitionId: "recognition:gaia-x:v1",
-        registryId: "registry:kanon-portal",
+        registryId: "registry:midnight-portal",
         recognizedAuthorityDid: "did:midnight:testnet:gaiax",
         recognizedRegistryId: "registry:gaia-x",
         scope: {
@@ -413,7 +413,7 @@ const inspection: PublicInspection = {
       evidence: {
         bundleId: "bundle:recognition:gaia-x:v1",
         generatedAt: "2026-05-23T05:00:00Z",
-        registryId: "registry:kanon-portal",
+        registryId: "registry:midnight-portal",
         subjectDid: "did:midnight:testnet:gaiax",
         policy,
         epoch,
@@ -426,7 +426,7 @@ const inspection: PublicInspection = {
         },
         recognition: {
           recognitionId: "recognition:gaia-x:v1",
-          registryId: "registry:kanon-portal",
+          registryId: "registry:midnight-portal",
           recognizedAuthorityDid: "did:midnight:testnet:gaiax",
           recognizedRegistryId: "registry:gaia-x",
           scope: {

@@ -263,3 +263,62 @@ select {
     padding-top: 1rem;
   }
 }
+
+/* Midnight design layer shared with the admin console through brand.css. */
+:root {
+  --paper: var(--midnight-surface);
+  --mist: #e9ebf8;
+  --ink: var(--midnight-black);
+  --ink-soft: var(--midnight-muted);
+  --signal: var(--midnight-blue);
+  --signal-soft: var(--midnight-blue);
+  --border: var(--midnight-border);
+  --panel: var(--midnight-white);
+  --shadow: 0 14px 36px rgba(10, 10, 10, 0.06);
+  --font-head: var(--midnight-font);
+  --font-body: var(--midnight-font);
+  --font-mono: var(--midnight-mono);
+}
+
+body { background: radial-gradient(circle at 100% 0, #e8e9ff 0, transparent 26rem), var(--midnight-surface); }
+.shell { width: min(1360px, calc(100vw - 2.5rem)); padding-top: 1rem; }
+.hero { background: var(--midnight-white); border-radius: 20px; }
+.hero h1 { max-width: 18ch; font-size: clamp(2rem, 3.5vw, 3.2rem); line-height: 1.05; letter-spacing: -0.04em; }
+.eyebrow { color: var(--midnight-blue); letter-spacing: 0.13em; }
+.button { border-radius: 10px; }
+.button.secondary { background: var(--midnight-blue-soft); }
+.input, .select { border-radius: 10px; }
+.toolbar { grid-template-columns: minmax(280px, 0.7fr) minmax(0, 1.3fr); align-items: stretch; }
+.toolbar > *, .metrics, .metric { min-width: 0; }
+.panel, .form-panel, .lane { border-radius: 14px; }
+.metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.metric strong { overflow-wrap: anywhere; font-size: clamp(1.1rem, 1.5vw, 1.45rem); }
+.metric .mono { font-size: 0.82rem; line-height: 1.4; }
+.metric small { display: block; margin-top: 0.25rem; color: var(--midnight-muted); }
+.content, .content > *, .lanes, .lane, .card { min-width: 0; }
+.lanes { order: -2; grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+#demo-application { order: -1; }
+.workflow-disclosure { min-width: 0; align-self: start; border: 1px solid var(--midnight-border); border-radius: 14px; background: var(--midnight-white); }
+.workflow-disclosure > summary { cursor: pointer; padding: 1rem 1.2rem; color: var(--midnight-black); font-weight: 700; }
+.workflow-disclosure[open] > summary { color: var(--midnight-blue); border-bottom: 1px solid var(--midnight-border); }
+.workflow-disclosure > .form-panel { border: 0; padding-top: 0.8rem; }
+.card .mono, .lane code, .form-panel pre { overflow-wrap: anywhere; word-break: break-word; white-space: pre-wrap; }
+.card p, .lane p, .form-panel p { overflow-wrap: anywhere; }
+.record-identifiers { margin-top: 0.5rem; }
+.record-identifiers summary { cursor: pointer; color: var(--midnight-blue); font-size: 0.88rem; font-weight: 600; }
+.form-panel { box-shadow: none; }
+.lane-header h2, .form-panel h2 { font-size: 1.35rem; }
+
+@media (max-width: 900px) {
+  .toolbar, .content { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 620px) {
+  .lanes { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 620px) {
+  .shell { width: calc(100vw - 1rem); }
+  .hero { padding: 1rem; }
+  .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

@@ -22,8 +22,8 @@ integration tests, pinned-install checks, and pre-deployment local-ledger
 restart observations. It has **not** recorded a complete actor journey against
 a deployed, finalized standalone contract. A passing `./run.sh --light`,
 `pnpm run integration`, or `pnpm run test:standalone-topology` is not that
-evidence. Do not promote draft PR #198 or label 0.1.0 release-ready on those
-results.
+evidence. The milestone implementation is merged into `develop`, but that
+integration is not a 0.1.0 release-qualification result.
 
 ## Evaluate the implementation without operator approvals
 

@@ -26,12 +26,12 @@ const scope = {
 } as const;
 
 const binding: ApplicationChallengeBinding = {
-  registryId: "registry:kanon:trusted",
+  registryId: "registry:midnight:trusted",
   applicationId: "application:issuer:one",
   subjectDid: "did:midnight:issuer:one",
   evidenceVerifierDid: "did:midnight:evidence-verifier:one",
   role: "issuer",
-  policyId: "policy:kanon:v1",
+  policyId: "policy:midnight:v1",
   policyVersion: "v1",
   scope,
   scopeCommitment: computeAuthorizationScopeCommitment(scope),
@@ -704,11 +704,11 @@ describe("application challenge lifecycle", () => {
     const issued = await service.issue(maintainerBinding);
     await expect(service.issue({
       ...maintainerBinding,
-      registryId: "Registry:Kanon:Trusted",
+      registryId: "Registry:Midnight:Trusted",
     })).rejects.toThrow(/canonical lowercase/i);
     await expect(service.issue({
       ...binding,
-      registryId: "Registry:Kanon:Trusted",
+      registryId: "Registry:Midnight:Trusted",
     })).rejects.toThrow(/canonical lowercase/i);
     const wrongRegistryScope = {
       ...maintainerScope,
@@ -738,7 +738,7 @@ describe("application challenge lifecycle", () => {
     const issued = await service.issue(binding);
     for (const changed of [
       { applicationId: "Application:Issuer:One" },
-      { policyId: "Policy:Kanon:V1" },
+      { policyId: "Policy:Midnight:V1" },
     ]) {
       await expect(service.issue({ ...binding, ...changed })).rejects.toThrow(/canonical lowercase/i);
       expect(await service.consume({
