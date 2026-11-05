@@ -384,6 +384,8 @@ body { background: radial-gradient(circle at 100% 0, #e8e9ff 0, transparent 26re
 .lookup-result .lookup-claim { align-self: start; min-width: 0; padding: 1rem; border: 1px solid var(--midnight-border); border-radius: 10px; }
 .lookup-result .lookup-claim p { margin: 0 0 0.7rem; }
 .lookup-result .lookup-claim summary { overflow-wrap: anywhere; }
+.lookup-result .claim-copy { max-width: 100%; margin-top: 0.75rem; font-size: 0.875rem; white-space: normal; text-align: center; }
+.lookup-result .copy-claim-feedback { display: block; margin-top: 0.4rem; color: var(--midnight-muted); }
 .lookup-result .lookup-claim pre { max-width: 100%; max-height: 20rem; margin: 0.75rem 0 0; padding: 0.75rem; border-radius: 8px; background: var(--midnight-surface); overflow: auto; white-space: pre; overflow-wrap: normal; word-break: normal; }
 .lookup-result .lookup-claim pre:focus-visible { outline: 2px solid var(--midnight-blue); outline-offset: 2px; }
 .lookup-result .lookup-interpretation { padding: 1rem; border-radius: 10px; background: var(--midnight-surface); }

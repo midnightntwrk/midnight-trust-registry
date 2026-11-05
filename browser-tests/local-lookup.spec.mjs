@@ -210,6 +210,14 @@ test("applicant exact scope lookup keeps returned trust unverified", async ({ pa
     await expect(page.locator("[data-current-authorization-result]")).toContainText("active");
     await expect(page.locator("[data-current-authorization-result]")).toHaveAttribute("role", "status");
     await expect(authorizationButton).toBeFocused();
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: host.base });
+    await page.locator("[data-current-authorization-result] details > summary").click();
+    await page.locator("[data-current-authorization-result] [data-copy-current-claim]").click();
+    await expect(page.locator("[data-current-authorization-result] [data-copy-claim-feedback]"))
+      .toContainText("Copied current API claim. Verify before relying on it.");
+    const copiedAuthorization = await page.evaluate(() => navigator.clipboard.readText());
+    expect(JSON.parse(copiedAuthorization).authorization.subjectDid).toBe(did);
+    expect(JSON.parse(copiedAuthorization).authorization.resourceId).toBe(resourceId);
     await page.locator(".lookup-switch a[href='#current-recognition-lookup']").click();
     await expect(page.locator("#current-recognition-lookup")).toBeVisible();
     await expect(page.locator("#current-authorization-lookup")).toBeHidden();
@@ -232,6 +240,22 @@ test("applicant exact scope lookup keeps returned trust unverified", async ({ pa
       .toContainText("Unverified current API claim: active");
     await expect(page.locator("[data-current-recognition-result]")).toHaveAttribute("role", "status");
     await expect(recognitionButton).toBeFocused();
+    await page.locator("[data-current-recognition-result] details > summary").click();
+    await page.locator("[data-current-recognition-result] [data-copy-current-claim]").click();
+    await expect(page.locator("[data-current-recognition-result] [data-copy-claim-feedback]"))
+      .toContainText("Copied current API claim. Verify before relying on it.");
+    const copiedRecognition = await page.evaluate(() => navigator.clipboard.readText());
+    expect(JSON.parse(copiedRecognition).recognition.recognizedRegistryId).toBe("external:registry");
+    expect(JSON.parse(copiedRecognition).recognition.scope.resourceId).toBe("degree");
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { writeText: async () => { throw new Error("Permission denied"); } },
+      });
+    });
+    await page.locator("[data-current-recognition-result] [data-copy-current-claim]").click();
+    await expect(page.locator("[data-current-recognition-result] [data-copy-claim-feedback]"))
+      .toContainText("Copy unavailable. Select the JSON below to copy it manually.");
     const lookupRequests = host.requests.filter((value) => value.startsWith("POST /v1/")).length;
     await page.locator(".lookup-switch a[href='#current-authorization-lookup']").click();
     await expect(page.locator("[data-current-authorization-result]")).toContainText("Unverified current API claim");
