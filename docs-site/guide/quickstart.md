@@ -110,7 +110,9 @@ To try the complete **fixture-only UI handoff** after starting all three servers
 3. Return to the portal and recheck the source. The active entry should appear in the fixture records. **Local fixture** still means this is not a deployed ledger decision.
 
 The two role variants and their HTTP transitions are exercised by
-`browser-tests/demo-application-handoff.spec.mjs`. For a local-ledger API,
+`browser-tests/demo-application-handoff.spec.mjs` against a controlled HTTP
+fixture and `browser-tests/workspace-api-handoff.spec.mjs` against the packaged
+workspace API with a temporary private workspace. For a local-ledger API,
 the browser instead offers exact authorization and recognition lookups;
 `browser-tests/local-lookup.spec.mjs` checks those claims and Workspace
 settings at desktop and mobile widths. Neither browser suite authenticates
