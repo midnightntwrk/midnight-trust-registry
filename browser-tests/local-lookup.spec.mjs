@@ -276,6 +276,28 @@ test("applicant exact scope lookup keeps returned trust unverified", async ({ pa
   }
 });
 
+for (const app of ["admin-console", "applicant-portal"]) {
+  test(`${app} does not reveal fixture controls for an API claim even with demo requested`, async ({ page, allowedLocalOrigins }) => {
+    const host = await serveLocalApp(app);
+    try {
+      allowedLocalOrigins.add(host.base);
+      await page.goto(`${host.base}/?demo=1&apiBase=${encodeURIComponent(host.base)}`);
+      await expect(page.locator(".source-badge")).toHaveText("API claim");
+      if (app === "admin-console") {
+        await expect(page.locator("#exact-lookup")).toBeVisible();
+        await expect(page.locator("[data-action], #task-epoch, #task-signed-intent")).toHaveCount(0);
+      } else {
+        await expect(page.locator("#current-authorization-lookup")).toBeVisible();
+        await expect(page.locator("#demo-application, a[href='#demo-application']")).toHaveCount(0);
+      }
+      expect(host.requests.some((request) => request.startsWith("POST "))).toBe(false);
+    } finally {
+      await page.close();
+      await host.close();
+    }
+  });
+}
+
 test("applicant recognition deep link selects only the external lookup", async ({ page, allowedLocalOrigins }) => {
   const host = await serveLocalApp("applicant-portal");
   try {

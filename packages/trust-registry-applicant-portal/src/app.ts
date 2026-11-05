@@ -1457,7 +1457,7 @@ export const createApplicantPortalApp = (
             <div class="journey-heading"><p class="eyebrow">Governed requests</p><h2 id="journey-heading">${demoMode && state.inspection !== undefined && state.inspection.sourceMode !== "local-ledger" ? "Applying beyond the demo?" : "What would you like to do?"}</h2>
               <p>Choose a role to see its scope, evidence, and signing steps. Nothing is submitted until you confirm.</p>
             </div>
-            <p class="journey-prerequisite">${state.inspection === undefined ? "Connect to a registry source before preparing a governed request." : privateHost ? "Private host selected. The host must authenticate your session before submission." : "Local connection: prepare only. Submission requires an authenticated same-origin host."}</p>
+            <p class="journey-prerequisite">${state.inspection === undefined ? "Connect to a registry source before preparing a governed request." : privateHost ? "You can prepare a request here. The host must authenticate your session before submission." : "Local connection: prepare only. Submission requires an authenticated same-origin host."}</p>
             <div class="journey-cards">
               <a href="#issuer-request" data-open-workflow="issuer-request"><span class="role-mark" aria-hidden="true">I</span><strong>Become an issuer</strong><span>Issue credentials in a defined scope.</span><em>View issuer steps &rarr;</em></a>
               <a href="#verifier-request" data-open-workflow="verifier-request"><span class="role-mark" aria-hidden="true">V</span><strong>Become a verifier</strong><span>Verify a precise scope.</span><em>View verifier steps &rarr;</em></a>
