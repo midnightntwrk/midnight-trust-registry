@@ -531,6 +531,14 @@ for (const [app, title] of [
         }
         if (width === 320) expect(brandLockup.titleSize).toBeGreaterThanOrEqual(18);
         expect(brandLockup.contextLeft - brandLockup.logoRight).toBeLessThan(48);
+        if (width === 320) {
+          const headerRows = await page.evaluate(() => {
+            const brand = document.querySelector(".brand-name").getBoundingClientRect();
+            const menu = document.querySelector(".mobile-task-menu > summary").getBoundingClientRect();
+            return Math.abs(brand.top + brand.height / 2 - menu.top - menu.height / 2);
+          });
+          expect(headerRows).toBeLessThan(5);
+        }
         if (app === "applicant-portal") await expect(page.locator(".hero-intro > .eyebrow")).toHaveText("Applicant workspace");
         await expect(page.locator(".metrics")).toContainText("Midnight Trust Registry");
         await expect(page.locator(".source-badge")).toHaveText("Local fixture");

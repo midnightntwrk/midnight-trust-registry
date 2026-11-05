@@ -290,13 +290,13 @@
 }
 
 @media (max-width: 360px) {
-  .brand-bar { gap: 0.75rem; padding: min(0.75rem, 12px) min(0.7rem, 12px); }
-  .brand-name { gap: 0.45rem; }
-  .brand-logo { width: min(4.8rem, 24vw); }
-  .brand-product { padding-left: 0.45rem; }
-  .brand-product-title { font-size: 1.18rem; }
+  .brand-bar { gap: 0.4rem; padding: min(0.75rem, 12px) min(0.6rem, 10px); }
+  .brand-name { gap: 0.3rem; }
+  .brand-logo { width: min(4rem, 20vw); }
+  .brand-product { padding-left: 0.3rem; }
+  .brand-product-title { font-size: 1.125rem; }
   .brand-product-context { font-size: 0.72rem; }
-  .mobile-task-menu > summary { min-width: 4.2rem; }
+  .mobile-task-menu > summary { min-width: 4rem; }
   .settings-heading h1, .settings-card h2, .settings-back { overflow-wrap: anywhere; }
   .settings-card { padding: min(1rem, 12px); }
 }
