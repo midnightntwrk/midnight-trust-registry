@@ -286,8 +286,11 @@ workspaces retain a compact source-status cue, but the detailed connection form
 and deployment identity do not compete with record workflows. Settings expose
 endpoint, last browser check, source mode, registry
 identity, and any approved local-plan digest reported by the API. Network
-profile, genesis anchor, and contract identity are shown as *not exposed* when
-the API does not return them. In local-ledger mode, the API's reported
+profile and network ID, expected genesis hash, and contract address are shown
+only when the approved local-ledger API returns a deployment identity from its
+plan; otherwise they are shown as *not exposed*. These are API-reported plan
+values, not independent browser verification of the chain or contract. In
+local-ledger mode, the API's reported
 checkpoint hash and timestamp are displayed separately from the browser check
 time and explicitly remain unverified node claims. Same-origin packaged
 endpoints are host-managed; the editable standalone development URL is not an

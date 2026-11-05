@@ -329,6 +329,8 @@ export async function createApprovedLocalLedgerRuntimeSource(plan: LocalLedgerRu
     localDeploymentBinding: {
       contractAddress: plan.contractAddress,
       expectedGenesisHash: plan.expectedGenesisHash,
+      networkProfileId: getLocalNetworkProfile().id,
+      networkId: plan.networkId,
     },
     async loadSnapshot() {
       assertPlanCurrent();

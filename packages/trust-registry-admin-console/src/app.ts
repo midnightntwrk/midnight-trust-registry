@@ -1082,6 +1082,7 @@ export const createAdminConsoleApp = (
       <a href="#workspace-settings">Workspace settings</a>
       <a href="#advanced-governance">Advanced governance</a>
     `;
+    const deploymentIdentity = state.board?.sourceMode === "local-ledger" ? state.board.deploymentIdentity : undefined;
     root.innerHTML = `
       <main class="shell app-shell" data-settings-active="${window.location.hash === "#workspace-settings"}">
         <header class="brand-bar">
@@ -1148,9 +1149,14 @@ export const createAdminConsoleApp = (
               <div><dt>Approved local plan digest</dt><dd class="technical-id">${escapeHtml(state.board?.localPlanSha256 ?? "Not exposed by this API")}</dd></div>
               ${state.board?.sourceMode !== "local-ledger" ? "" : `<div><dt>Node-reported checkpoint hash</dt><dd class="technical-id">${escapeHtml(state.board.nodeReportedCheckpointHash ?? "Not reported")}</dd></div>
               <div><dt>Node-reported checkpoint time</dt><dd>${escapeHtml(state.board.nodeReportedAt ?? "Not reported")}</dd></div>`}
-              <div><dt>Network profile, genesis, contract</dt><dd>Not exposed by this API response</dd></div>
+              ${deploymentIdentity === undefined
+                ? "<div><dt>Network profile, genesis, contract</dt><dd>Not exposed by this API response</dd></div>"
+                : `<div><dt>Network profile (API report)</dt><dd>${escapeHtml(deploymentIdentity.networkProfileId)}</dd></div>
+                  <div><dt>Network ID (API report)</dt><dd>${escapeHtml(deploymentIdentity.networkId)}</dd></div>
+                  <div><dt>Expected genesis hash (API plan)</dt><dd class="technical-id">${escapeHtml(deploymentIdentity.expectedGenesisHash)}</dd></div>
+                  <div><dt>Contract address (API plan)</dt><dd class="technical-id">${escapeHtml(deploymentIdentity.contractAddress)}</dd></div>`}
             </dl>
-            <p class="settings-callout">A node-reported checkpoint and browser response are not independently authenticated finality or actor authorization.</p>
+            <p class="settings-callout">This API reports its local deployment plan. A node-reported checkpoint and browser response are not independently authenticated finality or actor authorization.</p>
             </section>
             <section class="settings-card" aria-labelledby="admin-signing-heading">
               <p class="eyebrow">Security</p>

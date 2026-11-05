@@ -9,6 +9,8 @@ const id = "auth:issuer:exact-ui:v1";
 const did = "did:midnight:undeployed:exact-ui";
 const resourceId = `tr:issuer-resource:v1:${"a".repeat(64)}`;
 const registryId = "registry:local-ui";
+const deploymentIdentity = { networkProfileId: "standalone", networkId: "undeployed",
+  expectedGenesisHash: `0x${"e".repeat(64)}`, contractAddress: `0x${"f".repeat(64)}` };
 const entry = { label: "Exact UI issuer", authorization: {
   authorizationId: id, registryId, role: "issuer", subjectDid: did,
   resourceType: "credential-family", resourceId, policyId: "policy:local-ui",
@@ -54,6 +56,7 @@ async function serveLocalApp(app) {
       }
       response.end(JSON.stringify({ status: "ok", sourceMode,
         registryId, localPlanSha256: "b".repeat(64), finalizedBlockHash: `0x${"c".repeat(64)}`,
+        ...(sourceMode === "local-ledger" ? { deploymentIdentity } : {}),
         generatedAt: "2026-10-27T00:00:00Z" }));
     }
     else if (path === "/v1/registry/summary") response.end(JSON.stringify(sourceMode === "local-ledger"
@@ -124,6 +127,9 @@ async function reviewLocalLayouts(page, testInfo, app) {
     await expect(page.locator(".settings-view")).toBeVisible();
     await expect(page.locator(".settings-view")).toContainText(app === "admin"
       ? "not independently authenticated finality" : "do not establish finalized ledger state");
+    await expect(page.locator(".settings-view")).toContainText("Network profile (API report)");
+    await expect(page.locator(".settings-view")).toContainText(deploymentIdentity.expectedGenesisHash);
+    await expect(page.locator(".settings-view")).toContainText(deploymentIdentity.contractAddress);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1);
     if (width === 390) await expectNoWcagViolations(page, `${app} local settings`);
     if (process.env.TR_UI_CAPTURE === "1") {
@@ -425,6 +431,11 @@ for (const app of ["admin-console", "applicant-portal"]) {
       await expect(refresh).toBeFocused();
       await expect(page.locator("#exact-lookup, #current-authorization-lookup")).toHaveCount(0);
       await expect(page.getByText("Unverified current API claim", { exact: false })).toHaveCount(0);
+      await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
+      await expect(page.locator(".settings-view")).toContainText("Not exposed by this API response");
+      await expect(page.locator(".settings-view")).not.toContainText(deploymentIdentity.expectedGenesisHash);
+      await expect(page.locator(".settings-view")).not.toContainText(deploymentIdentity.contractAddress);
+      await page.locator(".settings-back").click();
 
       host.setSourceMode("local-ledger");
       await refresh.click();

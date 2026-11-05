@@ -118,7 +118,32 @@ type LocalHealth = TrustRegistryApiHealthResponse & {
   generatedAt: string;
 };
 
+type DeploymentIdentity = NonNullable<TrustRegistryApiHealthResponse["deploymentIdentity"]>;
+const deploymentIdentity = (value: unknown): DeploymentIdentity | undefined => {
+  if (value === undefined) return undefined;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Local applicant API deployment identity is malformed.");
+  }
+  const identity = value as Record<string, unknown>;
+  if (Object.keys(identity).length !== 4
+    || !["networkProfileId", "networkId", "expectedGenesisHash", "contractAddress"]
+      .every((key) => Object.hasOwn(identity, key))
+    || typeof identity.networkProfileId !== "string" || !/^[a-z][a-z0-9-]*$/u.test(identity.networkProfileId)
+    || typeof identity.networkId !== "string" || !/^[a-z][a-z0-9-]*$/u.test(identity.networkId)
+    || typeof identity.expectedGenesisHash !== "string" || !/^0x[0-9a-f]{64}$/u.test(identity.expectedGenesisHash)
+    || typeof identity.contractAddress !== "string" || !/^0x[0-9a-f]{64}$/u.test(identity.contractAddress)) {
+    throw new Error("Local applicant API deployment identity is malformed.");
+  }
+  return identity as DeploymentIdentity;
+};
+
+const sameDeploymentIdentity = (left: DeploymentIdentity | undefined, right: DeploymentIdentity | undefined): boolean =>
+  left === undefined || right === undefined ? left === right
+    : left.networkProfileId === right.networkProfileId && left.networkId === right.networkId
+      && left.expectedGenesisHash === right.expectedGenesisHash && left.contractAddress === right.contractAddress;
+
 const requireLocalHealth = (health: TrustRegistryApiHealthResponse, expected?: PublicInspection): LocalHealth => {
+  const identity = deploymentIdentity(health.deploymentIdentity);
   if (health.status !== "ok" || health.sourceMode !== "local-ledger"
     || typeof health.registryId !== "string" || health.registryId.length === 0
     || !/^[0-9a-f]{64}$/u.test(health.localPlanSha256 ?? "")
@@ -126,7 +151,8 @@ const requireLocalHealth = (health: TrustRegistryApiHealthResponse, expected?: P
     || typeof health.generatedAt !== "string"
     || (expected !== undefined && (expected.sourceMode !== "local-ledger"
       || expected.summary.registryId !== health.registryId
-      || expected.localPlanSha256 !== health.localPlanSha256))) {
+      || expected.localPlanSha256 !== health.localPlanSha256
+      || !sameDeploymentIdentity(identity, expected.deploymentIdentity)))) {
     throw new Error("Local API health lacks a stable approved plan or finalized checkpoint.");
   }
   return health as LocalHealth;
@@ -137,7 +163,8 @@ const sameLocalCheckpoint = (before: TrustRegistryApiHealthResponse, after: Trus
   && after.registryId === before.registryId
   && after.localPlanSha256 === before.localPlanSha256
   && after.finalizedBlockHash === before.finalizedBlockHash
-  && after.generatedAt === before.generatedAt;
+  && after.generatedAt === before.generatedAt
+  && sameDeploymentIdentity(deploymentIdentity(before.deploymentIdentity), deploymentIdentity(after.deploymentIdentity));
 
 export const normalizeApiBaseUrl = (
   value: string,
@@ -238,6 +265,7 @@ export class TrustRegistryApplicantPortalClient {
       }
       const unavailableLists = ["issuer", "verifier", "auditor", "recognition"] as const;
       return { summary, sourceMode: "local-ledger", localPlanSha256: localHealth.localPlanSha256,
+        ...(localHealth.deploymentIdentity === undefined ? {} : { deploymentIdentity: deploymentIdentity(localHealth.deploymentIdentity) }),
         nodeReportedCheckpointHash: localHealth.finalizedBlockHash,
         nodeReportedAt: localHealth.generatedAt,
         activeAuditors: [], activeIssuers: [], activeVerifiers: [], activeRecognitions: [],

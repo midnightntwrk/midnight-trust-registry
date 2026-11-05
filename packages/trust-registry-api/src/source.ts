@@ -59,6 +59,8 @@ export type TrustRegistryApiStateSource = {
   readonly localDeploymentBinding?: {
     readonly contractAddress: string;
     readonly expectedGenesisHash: string;
+    readonly networkProfileId?: string;
+    readonly networkId?: string;
   };
   /** Address validated by a local finalized reader, including read-only sources. */
   readonly localProposalContractAddress?: string;

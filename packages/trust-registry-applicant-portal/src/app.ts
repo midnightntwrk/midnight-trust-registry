@@ -1492,6 +1492,8 @@ export const createApplicantPortalApp = (
       && state.inspection?.unavailableLists?.length
       ? ` ${state.inspection.unavailableLists.length} list(s) unavailable; counts shown as n/a.` : "";
 
+    const deploymentIdentity = state.inspection?.sourceMode === "local-ledger"
+      ? state.inspection.deploymentIdentity : undefined;
     root.innerHTML = `
       <main class="shell app-shell" data-settings-active="${window.location.hash === "#connection-details"}">
         <header class="brand-bar">
@@ -1572,11 +1574,17 @@ export const createApplicantPortalApp = (
               <div><dt>Registry ID</dt><dd class="technical-id">${escapeHtml(state.inspection?.summary.registryId ?? "Not reported")}</dd></div>
               <div><dt>Registry DID</dt><dd class="technical-id">${escapeHtml(state.inspection?.summary.registryDid ?? "Not reported")}</dd></div>
               <div><dt>Current epoch ID</dt><dd class="technical-id">${escapeHtml(state.inspection?.summary.currentEpochId ?? "Not reported")}</dd></div>
+              ${state.inspection?.sourceMode !== "local-ledger" ? "" : `<div><dt>Approved local plan digest</dt><dd class="technical-id">${escapeHtml(state.inspection.localPlanSha256 ?? "Not reported")}</dd></div>`}
               ${state.inspection?.sourceMode !== "local-ledger" ? "" : `<div><dt>Node-reported checkpoint hash</dt><dd class="technical-id">${escapeHtml(state.inspection.nodeReportedCheckpointHash ?? "Not reported")}</dd></div>
               <div><dt>Node-reported checkpoint time</dt><dd>${escapeHtml(state.inspection.nodeReportedAt ?? "Not reported")}</dd></div>`}
-              <div><dt>Network profile, genesis, contract</dt><dd>Not exposed by this API response</dd></div>
+              ${deploymentIdentity === undefined
+                ? "<div><dt>Network profile, genesis, contract</dt><dd>Not exposed by this API response</dd></div>"
+                : `<div><dt>Network profile (API report)</dt><dd>${escapeHtml(deploymentIdentity.networkProfileId)}</dd></div>
+                  <div><dt>Network ID (API report)</dt><dd>${escapeHtml(deploymentIdentity.networkId)}</dd></div>
+                  <div><dt>Expected genesis hash (API plan)</dt><dd class="technical-id">${escapeHtml(deploymentIdentity.expectedGenesisHash)}</dd></div>
+                  <div><dt>Contract address (API plan)</dt><dd class="technical-id">${escapeHtml(deploymentIdentity.contractAddress)}</dd></div>`}
             </dl>
-            <p class="settings-callout">Node-reported data and a browser response do not establish finalized ledger state or actor authorization.</p>
+            <p class="settings-callout">This API reports its local deployment plan. Node-reported data and a browser response do not establish finalized ledger state or actor authorization.</p>
             </section>
           </div>
           <div class="settings-footer"><strong>No account profile in this browser</strong><p>Private actions require the authenticated same-origin host and external signing. Connection details are not proof of finality.</p></div>

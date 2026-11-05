@@ -296,7 +296,7 @@ paths:
     get:
       tags: [Query]
       summary: Read local source health and registry ID
-      description: Local-ledger mode includes the finalized checkpoint hash read by the API process and its startup-verified plan digest. configuredGovernedProposalRoles lists installed HTTP proposal ports; an empty list means the API is read-only. Port presence does not prove deployment, finality, actor success, or release qualification.
+      description: Local-ledger mode includes the checkpoint hash read by the API process and its startup-verified plan digest. When bound to an approved local deployment, deploymentIdentity reports the network profile ID, network ID, expected genesis hash, and contract address from that plan; it is omitted for workspace mode or when unavailable. These are API-reported plan values, not independent browser verification of chain identity or finality. configuredGovernedProposalRoles lists installed HTTP proposal ports; an empty list means the API is read-only. Port presence does not prove deployment, finality, actor success, or release qualification.
       responses: *queryResponses
   /v1/registry:
     get:

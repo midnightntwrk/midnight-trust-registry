@@ -211,6 +211,10 @@ describe("approved local-ledger API runtime", () => {
     });
     const approved = validateLocalLedgerRuntimePlan(plan("/tmp/tr-api-runtime-test"));
     const source = await createApprovedLocalLedgerRuntimeSource(approved);
+    expect(source.localDeploymentBinding).toMatchObject({
+      networkProfileId: "standalone", networkId: approved.networkId,
+      expectedGenesisHash: approved.expectedGenesisHash, contractAddress: approved.contractAddress,
+    });
     const stale = { cause: { message: expect.stringMatching(/do not cover the finalized governance count/u) } };
     await expect(source.loadSnapshot()).rejects.toMatchObject(stale);
     await expect(source.readFinalizedProposalLedger()).rejects.toMatchObject({

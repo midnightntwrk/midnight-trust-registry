@@ -61,6 +61,12 @@ export const TrustRegistryApiHealthResponseSchema = z.object({
   registryId: NonEmptyStringSchema,
   localPlanSha256: z.string().regex(/^[0-9a-f]{64}$/u).optional(),
   finalizedBlockHash: z.string().regex(/^0x[0-9a-f]{64}$/u).optional(),
+  deploymentIdentity: z.object({
+    networkProfileId: z.string().regex(/^[a-z][a-z0-9-]*$/u),
+    networkId: z.string().regex(/^[a-z][a-z0-9-]*$/u),
+    expectedGenesisHash: z.string().regex(/^0x[0-9a-f]{64}$/u),
+    contractAddress: z.string().regex(/^0x[0-9a-f]{64}$/u),
+  }).optional(),
 });
 
 export const TrustRegistryApiSummarySchema = z.object({

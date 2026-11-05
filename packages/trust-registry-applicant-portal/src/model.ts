@@ -2,6 +2,7 @@ import type {
   TrustRegistryApiApplicationMutationResponse,
   TrustRegistryApiApplicationTarget,
   TrustRegistryApiAuthorizationListResponse,
+  TrustRegistryApiHealthResponse,
   TrustRegistryApiRecognitionListResponse,
   TrustRegistryApiSummary,
 } from "@midnight-ntwrk/trust-registry-api";
@@ -35,6 +36,7 @@ export type PublicInspection = {
   summary: TrustRegistryApiSummary;
   sourceMode?: "snapshot" | "workspace" | "memory" | "local-ledger";
   localPlanSha256?: string;
+  deploymentIdentity?: TrustRegistryApiHealthResponse["deploymentIdentity"];
   nodeReportedCheckpointHash?: string;
   nodeReportedAt?: string;
   unavailableLists?: readonly ("issuer" | "verifier" | "auditor" | "recognition")[];

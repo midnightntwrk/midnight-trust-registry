@@ -2,6 +2,7 @@ import type {
   TrustRegistryApiApplicationAction,
   TrustRegistryApiApplicationTarget,
   TrustRegistryApiApplicationMutationResponse,
+  TrustRegistryApiHealthResponse,
   TrustRegistryApiAuthorizationListResponse,
   TrustRegistryApiRecognitionListResponse,
   TrustRegistryApiSummary,
@@ -32,6 +33,7 @@ export type ReviewCard = {
 export type ReviewBoard = {
   sourceMode: "snapshot" | "workspace" | "memory" | "local-ledger";
   localPlanSha256?: string;
+  deploymentIdentity?: TrustRegistryApiHealthResponse["deploymentIdentity"];
   nodeReportedCheckpointHash?: string;
   nodeReportedAt?: string;
   auditors: readonly AuthorizationEntry[];
