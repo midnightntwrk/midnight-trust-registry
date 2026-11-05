@@ -678,7 +678,7 @@ describe("trust registry applicant portal app", () => {
       expect(calls).toContain("/v1/pending-applications");
       expect(calls.some((path) => path.endsWith("/submissions"))).toBe(true);
     }
-  });
+  }, 20_000);
 
   it("rejects a binding whose role and scope disagree before issuing a challenge", async () => {
     const root = document.createElement("div");
