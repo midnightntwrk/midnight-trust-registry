@@ -142,6 +142,17 @@ async function reviewLocalLayouts(page, testInfo, app) {
       await expect(page.locator("#current-authorization-lookup")).toBeHidden();
     }
   }
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
+  await page.locator(".mobile-task-menu > summary").click();
+  await page.locator(".mobile-task-menu nav a").filter({ hasText: "Workspace settings" }).click();
+  await expect(page.locator(".settings-view")).toContainText(deploymentIdentity.expectedGenesisHash);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321);
+  if (process.env.TR_UI_CAPTURE === "1") {
+    await page.screenshot({ path: testInfo.outputPath(`${app}-local-settings-320-zoom.png`), fullPage: true });
+  }
+  await page.locator(".settings-back").click();
+  await page.evaluate(() => { document.documentElement.style.fontSize = ""; });
 }
 
 test("admin exact lookup presents a local API claim without fixture controls", async ({ page, allowedLocalOrigins }, testInfo) => {
