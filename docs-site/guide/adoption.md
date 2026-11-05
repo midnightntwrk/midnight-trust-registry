@@ -39,6 +39,36 @@ for the broader prebuilt simulator integration lane; neither command is a
 standalone deployment test. See the [demo details](quickstart.md) and
 [test boundaries](end-to-end-testing.md).
 
+### First-time UI trial
+
+Ask an engineer who did not build these screens to follow the
+[local UI setup](ui-acceptance.md#run-locally) without live guidance. Have them
+record the first action they expect at each step, what they actually did, and
+any label or state they could not explain:
+
+1. Open the ordinary applicant portal and admin console without `demo=1`.
+   Identify the source badge, find Workspace settings, and explain why a
+   fixture record is not a finalized trust decision.
+2. In the portal, choose issuer, verifier, auditor, and maintainer in turn.
+   Find the next preparation step for each role. Choosing a role must not
+   submit a request; private submission needs an authenticated same-origin
+   host and an external signature.
+3. On the loopback demo URLs only, add `demo=1`, submit a label-only issuer
+   application, find it in admin, approve and activate it, then read the active
+   fixture record back in the portal. Confirm the source remains **Local
+   fixture** throughout. This is not an on-chain authorization.
+4. Repeat the main navigation and one role choice by keyboard at 390 px and
+   1440 px. Record any hidden action, lost focus, horizontal overflow, or
+   unclear error. Do not infer screen-reader usability from an axe pass.
+
+Report each step as passed, failed, or not run, with the browser, viewport,
+source label, observed action/result, and a screenshot or concise reproduction
+for each failure. Run the [Playwright browser suite](ui-acceptance.md#browser-acceptance)
+separately; automated success is not a substitute for this independent trial.
+Local-ledger exact lookup and application tracking require their own source:
+the fixture demo cannot prove finalized readback or authenticated status
+history. Keep those paths **not run** rather than inventing a result.
+
 ## Qualify a self-hosted installation
 
 Installation may use the network. After installation, the dedicated local
@@ -68,7 +98,7 @@ or saved receipts.
    approved committee, and sign a deployment-bound current API plan. Do not
    retry an ambiguous submission without reconciliation.
 4. Only then run the [real actor acceptance procedure](end-to-end-testing.md#run-and-record-the-real-use-case)
-   and the [operator acceptance record](https://github.com/midnightntwrk/midnight-trust-registry/blob/milestone-0.1.0/docs/guide/standalone-local-journey.md#operator-acceptance-record).
+   and the [operator acceptance record](https://github.com/midnightntwrk/midnight-trust-registry/blob/develop/docs/guide/standalone-local-journey.md#operator-acceptance-record).
 
 Before any actor run, check the selected candidate. Replace the paths with
 private absolute paths; the source SHA must be the full commit used to build
@@ -94,8 +124,9 @@ are still needed for deployed issuer/verifier/auditor/maintainer journeys.
 The [actor-host handoff](standalone-actor-host.md) identifies those contracts;
 injected test providers and simulator receipts are not acceptable evidence.
 Restart/restore, full actor egress denial, and independent human security
-review remain separate acceptance gates. Keep the 0.1.0 promotion draft
-unmerged until the local-only scope and all release gates are explicitly met.
+review remain separate acceptance gates. Promotion PR #198 merged the milestone
+code into `develop`; it did not qualify a local release candidate or close
+these gates.
 
 ## What to share with another adopter
 
