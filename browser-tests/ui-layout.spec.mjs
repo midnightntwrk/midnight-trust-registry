@@ -41,6 +41,7 @@ const issuer = {
 async function serveApp(app, { secondIssuer = false } = {}) {
   let healthAvailable = true;
   let auditorAvailable = true;
+  let healthGate;
   const requests = [];
   const servedSummary = secondIssuer ? { ...summary, issuerCounts: { ...counts, active: 2 } } : summary;
   const servedIssuers = secondIssuer ? [issuer, { ...issuer, label: "Second demo issuer", authorization: {
@@ -60,6 +61,7 @@ async function serveApp(app, { secondIssuer = false } = {}) {
     requests.push(`${request.method} ${path}`);
     response.setHeader("content-type", "application/json");
     if (path === "/health") {
+      if (healthGate !== undefined) await healthGate;
       if (!healthAvailable) response.statusCode = 503;
       response.end(JSON.stringify(healthAvailable
         ? { status: "ok", sourceMode: "workspace" }
@@ -81,6 +83,11 @@ async function serveApp(app, { secondIssuer = false } = {}) {
     requests,
     setHealthAvailable: (available) => { healthAvailable = available; },
     setAuditorAvailable: (available) => { auditorAvailable = available; },
+    pauseHealth: () => {
+      let release;
+      healthGate = new Promise((resolveGate) => { release = resolveGate; });
+      return () => { healthGate = undefined; release(); };
+    },
     close: async () => {
       server.closeAllConnections();
       await new Promise((done, reject) => server.close((error) => error ? reject(error) : done()));
@@ -174,6 +181,26 @@ test("applicant role cards focus one governed request without submitting it", as
     }));
     expect(requestGeometry.page, JSON.stringify(requestGeometry)).toBeLessThanOrEqual(requestGeometry.viewport + 1);
     expect(requestGeometry.overflowing).toEqual([]);
+    expect(server.requests.some((request) => request.startsWith("POST "))).toBe(false);
+  } finally {
+    await page.close();
+    await server.close();
+  }
+});
+
+test("applicant evidence link opens its advanced parent and remains usable after reload", async ({ page, allowedLocalOrigins }) => {
+  const server = await serveApp("applicant-portal");
+  try {
+    allowedLocalOrigins.add(server.base);
+    await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}#issuer-request`);
+    await expect(page.locator("#issuer-request [data-issuer-application-form]")).toBeVisible();
+    await page.locator('#issuer-request [data-open-workflow="pending-evidence"]').click();
+    await expect(page).toHaveURL(/#pending-evidence$/u);
+    await expect(page.locator(".advanced-tools")).toHaveAttribute("open", "");
+    await expect(page.locator("#pending-evidence [data-application-registration-form]")).toBeVisible();
+    await page.reload();
+    await expect(page.locator(".advanced-tools")).toHaveAttribute("open", "");
+    await expect(page.locator("#pending-evidence [data-application-registration-form]")).toBeVisible();
     expect(server.requests.some((request) => request.startsWith("POST "))).toBe(false);
   } finally {
     await page.close();
@@ -499,6 +526,67 @@ for (const app of ["admin-console", "applicant-portal"]) {
     }
   });
 }
+
+for (const app of ["admin-console", "applicant-portal"]) {
+  test(`${app} clears the previous endpoint check time before the new host responds`, async ({ page, allowedLocalOrigins }) => {
+    const first = await serveApp(app);
+    const second = await serveApp(app);
+    let releaseSecondHealth;
+    try {
+      allowedLocalOrigins.add(first.base);
+      allowedLocalOrigins.add(second.base);
+      await page.goto(`${first.base}/?apiBase=${encodeURIComponent(first.base)}`);
+      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
+      const settings = page.locator(".settings-view");
+      await expect(settings).toBeVisible();
+      releaseSecondHealth = second.pauseHealth();
+      const form = page.locator("[data-api-base-form]");
+      await form.locator("[name='apiBase']").fill(second.base);
+      await form.locator("button[type='submit']").click();
+      await expect(settings).toContainText("No successful check");
+      releaseSecondHealth();
+      releaseSecondHealth = undefined;
+      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    } finally {
+      releaseSecondHealth?.();
+      await page.close();
+      await first.close();
+      await second.close();
+    }
+  });
+}
+
+test("applicant role links survive direct navigation and reload", async ({ page, allowedLocalOrigins }) => {
+  const server = await serveApp("applicant-portal");
+  try {
+    allowedLocalOrigins.add(server.base);
+    await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}#issuer-request`);
+    await expect(page.locator("#issuer-request")).toHaveAttribute("open", "");
+    await expect(page.locator("#issuer-request [data-issuer-application-form]")).toBeVisible();
+    await page.locator('[data-open-workflow="verifier-request"]').click();
+    await expect(page).toHaveURL(/#verifier-request$/u);
+    await page.reload();
+    await expect(page.locator("#verifier-request [data-verifier-application-form]")).toBeVisible();
+  } finally {
+    await page.close();
+    await server.close();
+  }
+});
+
+test("admin review board precedes advanced governance in keyboard order", async ({ page, allowedLocalOrigins }) => {
+  const server = await serveApp("admin-console");
+  try {
+    allowedLocalOrigins.add(server.base);
+    await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
+    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    expect(await page.evaluate(() => Boolean(document.querySelector("#review-board")
+      ?.compareDocumentPosition(document.querySelector("#advanced-governance")) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+  } finally {
+    await page.close();
+    await server.close();
+  }
+});
 
 for (const [app, title] of [
   ["admin-console", "Registry review workspace"],

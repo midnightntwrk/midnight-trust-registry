@@ -267,7 +267,7 @@ export class TrustRegistryApplicantPortalClient {
       return { summary, sourceMode: "local-ledger", localPlanSha256: localHealth.localPlanSha256,
         ...(localHealth.deploymentIdentity === undefined ? {} : { deploymentIdentity: deploymentIdentity(localHealth.deploymentIdentity) }),
         nodeReportedCheckpointHash: localHealth.finalizedBlockHash,
-        nodeReportedAt: localHealth.generatedAt,
+        snapshotGeneratedAt: localHealth.generatedAt,
         activeAuditors: [], activeIssuers: [], activeVerifiers: [], activeRecognitions: [],
         unavailableLists };
     }

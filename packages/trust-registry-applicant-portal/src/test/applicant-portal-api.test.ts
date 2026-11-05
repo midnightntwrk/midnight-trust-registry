@@ -124,6 +124,7 @@ describe("local list projection gate", () => {
     expect(inspection.summary.registryLabel).toBe("local");
     expect(inspection.sourceMode).toBe("local-ledger");
     expect(inspection.deploymentIdentity).toEqual(localHealth.deploymentIdentity);
+    expect(inspection.snapshotGeneratedAt).toBe(localHealth.generatedAt);
     expect(inspection.unavailableLists).toEqual(["issuer", "verifier", "auditor", "recognition"]);
     expect(inspection.warnings).toBeUndefined();
     expect(inspection.activeIssuers).toEqual([]);

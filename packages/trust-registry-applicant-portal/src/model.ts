@@ -38,7 +38,7 @@ export type PublicInspection = {
   localPlanSha256?: string;
   deploymentIdentity?: TrustRegistryApiHealthResponse["deploymentIdentity"];
   nodeReportedCheckpointHash?: string;
-  nodeReportedAt?: string;
+  snapshotGeneratedAt?: string;
   unavailableLists?: readonly ("issuer" | "verifier" | "auditor" | "recognition")[];
   warnings?: readonly string[];
 };

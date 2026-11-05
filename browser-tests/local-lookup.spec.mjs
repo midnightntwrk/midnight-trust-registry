@@ -232,7 +232,7 @@ test("applicant exact scope lookup keeps returned trust unverified", async ({ pa
     await expect(page.locator(".lookup-switch a[aria-current='location']")).toHaveText("Authorization");
     await expect(page.locator("#current-authorization-lookup .lookup-empty")).toContainText("No record loaded yet");
     await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
-    await expect(page.locator(".settings-view")).toContainText("Node-reported checkpoint time");
+    await expect(page.locator(".settings-view")).toContainText("API snapshot reference time (epoch valid-until)");
     await expect(page.locator(".settings-view")).toContainText("2026-10-27T00:00:00Z");
     await page.locator(".settings-back").click();
     await expect(page.locator("[data-current-authorization]")).toBeVisible();

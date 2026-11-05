@@ -732,7 +732,7 @@ export const createAdminConsoleApp = (
       signedContextRequestId += 1;
       const pastedEnvelope = root.querySelector<HTMLTextAreaElement>("[data-signed-submit] [name='signedEnvelope']");
       if (pastedEnvelope !== null) pastedEnvelope.value = "";
-      setState({ apiBase, board: undefined, cards: [], selectedKey: undefined,
+      setState({ apiBase, board: undefined, cards: [], selectedKey: undefined, observedAt: undefined,
         loading: false, lookupBusy: false, lookupId: "", lookupTarget: "issuer",
         publishing: false, signedBusy: false, signedContext: undefined,
         epochLabel: "", proposalAuthorizationId: "", proposalEvidenceJson: "",
@@ -1165,7 +1165,7 @@ export const createAdminConsoleApp = (
                   <div><dt>Current epoch ID</dt><dd class="technical-id">${escapeHtml(state.board?.summary.currentEpochId ?? "Not reported")}</dd></div>
                   <div><dt>Approved local plan digest</dt><dd class="technical-id">${escapeHtml(state.board?.localPlanSha256 ?? "Not exposed by this API")}</dd></div>
                   ${state.board?.sourceMode !== "local-ledger" ? "" : `<div><dt>Node-reported checkpoint hash</dt><dd class="technical-id">${escapeHtml(state.board.nodeReportedCheckpointHash ?? "Not reported")}</dd></div>
-                  <div><dt>Node-reported checkpoint time</dt><dd>${escapeHtml(state.board.nodeReportedAt ?? "Not reported")}</dd></div>`}
+                  <div><dt>API snapshot reference time (epoch valid-until)</dt><dd>${escapeHtml(state.board.snapshotGeneratedAt ?? "Not reported")}</dd></div>`}
                   ${deploymentIdentity === undefined
                     ? "<div><dt>Network ID</dt><dd>Not exposed by this API response</dd></div>"
                     : `<div><dt>Network ID (API report)</dt><dd>${escapeHtml(deploymentIdentity.networkId)}</dd></div>
@@ -1324,6 +1324,9 @@ export const createAdminConsoleApp = (
         </section>
       </main>
     `;
+    const workspace = root.querySelector("#review-board");
+    const advanced = root.querySelector("#advanced-governance");
+    if (workspace !== null && advanced !== null) workspace.after(advanced);
     if (previousSignedEnvelope !== undefined) {
       const currentEnvelope = root.querySelector<HTMLTextAreaElement>("[data-signed-submit] [name='signedEnvelope']");
       if (currentEnvelope !== null) currentEnvelope.value = previousSignedEnvelope;

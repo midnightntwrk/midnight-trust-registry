@@ -282,6 +282,7 @@ describe("trust registry admin console model", () => {
     const loaded = await client.loadReviewBoard();
     expect(loaded.sourceMode).toBe("local-ledger");
     expect(loaded.deploymentIdentity).toEqual(health.deploymentIdentity);
+    expect(loaded.snapshotGeneratedAt).toBe(health.generatedAt);
     expect(loaded.issuers).toEqual([]);
     const card = await client.loadCurrentReviewCard("issuer", entry.authorization.authorizationId, loaded);
     expect(card.id).toBe(entry.authorization.authorizationId);

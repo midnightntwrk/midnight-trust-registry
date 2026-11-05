@@ -987,6 +987,7 @@ export const createApplicantPortalApp = (
       currentAuthorizationRequestId += 1;
       currentRecognitionRequestId += 1;
       recognitionRequestId += 1;
+      state.observedAt = undefined;
       setState({ apiBase, inspection: undefined, signedBusy: false, signedContext: undefined, pendingApplication: undefined, auditorStatus: undefined, auditorStatusBusy: false, auditorDraft: undefined, preparedAuditor: undefined, auditorPreparationBusy: false, memberDraft: undefined, preparedMember: undefined, memberPreparationBusy: false, currentAuthorizationBusy: false, currentAuthorizationResult: undefined, currentAuthorizationError: undefined, currentRecognitionBusy: false, currentRecognitionResult: undefined, currentRecognitionError: undefined, historicalBusy: false, historicalResult: undefined, historicalError: undefined, historicalDraft: undefined, historicalRecognitionBusy: false, historicalRecognitionResult: undefined, historicalRecognitionError: undefined, historicalRecognitionDraft: undefined, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined,
         recognitionId: "", recognitionChallenge: undefined, recognitionAdmission: undefined,
         recognitionRecoveryBusy: false, recognitionRecoveryMessage: undefined });
@@ -1344,12 +1345,15 @@ export const createApplicantPortalApp = (
         const target = root.querySelector<HTMLDetailsElement>(`#${link.dataset.openWorkflow ?? ""}`);
         if (target === null) return;
         event.preventDefault();
+        const parent = target.closest<HTMLDetailsElement>(".advanced-tools");
+        if (parent !== null) parent.open = true;
         if (roleLinks.includes(link)) {
           root.querySelectorAll<HTMLDetailsElement>(".role-workflow").forEach((details) => {
             details.open = details === target;
           });
           syncRoleLinks();
         } else target.open = true;
+        if (window.location.hash !== `#${target.id}`) window.history.pushState(null, "", `#${target.id}`);
         target.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
         target.querySelector("summary")?.focus();
       });
@@ -1593,7 +1597,7 @@ export const createApplicantPortalApp = (
                   <div><dt>Current epoch ID</dt><dd class="technical-id">${escapeHtml(state.inspection?.summary.currentEpochId ?? "Not reported")}</dd></div>
                   ${state.inspection?.sourceMode !== "local-ledger" ? "" : `<div><dt>Approved local plan digest</dt><dd class="technical-id">${escapeHtml(state.inspection.localPlanSha256 ?? "Not reported")}</dd></div>`}
                   ${state.inspection?.sourceMode !== "local-ledger" ? "" : `<div><dt>Node-reported checkpoint hash</dt><dd class="technical-id">${escapeHtml(state.inspection.nodeReportedCheckpointHash ?? "Not reported")}</dd></div>
-                  <div><dt>Node-reported checkpoint time</dt><dd>${escapeHtml(state.inspection.nodeReportedAt ?? "Not reported")}</dd></div>`}
+                  <div><dt>API snapshot reference time (epoch valid-until)</dt><dd>${escapeHtml(state.inspection.snapshotGeneratedAt ?? "Not reported")}</dd></div>`}
                   ${deploymentIdentity === undefined
                     ? "<div><dt>Network ID</dt><dd>Not exposed by this API response</dd></div>"
                     : `<div><dt>Network ID (API report)</dt><dd>${escapeHtml(deploymentIdentity.networkId)}</dd></div>
@@ -2015,10 +2019,28 @@ export const createApplicantPortalApp = (
     bindEvents();
   };
 
+  const revealHashWorkflow = () => {
+    const id = window.location.hash.slice(1);
+    if (id === "") return;
+    const target = [...root.querySelectorAll<HTMLDetailsElement>(".workflow-disclosure")]
+      .find((details) => details.id === id);
+    if (target === undefined) return;
+    const parent = target.closest<HTMLDetailsElement>(".advanced-tools");
+    if (parent !== null) parent.open = true;
+    if (target.classList.contains("role-workflow")) {
+      root.querySelectorAll<HTMLDetailsElement>(".role-workflow").forEach((details) => {
+        details.open = details === target;
+      });
+    } else target.open = true;
+    target.scrollIntoView({ block: "start", behavior: "auto" });
+  };
+
   render();
+  revealHashWorkflow();
   window.addEventListener("hashchange", () => {
     const shell = root.querySelector<HTMLElement>(".app-shell");
     if (shell !== null) shell.dataset.settingsActive = String(window.location.hash === "#connection-details");
+    revealHashWorkflow();
     const next = window.location.hash === "#current-recognition-lookup" ? "recognition"
       : window.location.hash === "#current-authorization-lookup" ? "authorization" : undefined;
     if (next === undefined || next === lookupActive) return;

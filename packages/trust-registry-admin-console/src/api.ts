@@ -125,7 +125,7 @@ export class TrustRegistryAdminConsoleClient {
       return { sourceMode: "local-ledger", localPlanSha256: planSha256,
         ...(identity === undefined ? {} : { deploymentIdentity: identity }),
         nodeReportedCheckpointHash: checkpointHash,
-        nodeReportedAt: health.generatedAt,
+        snapshotGeneratedAt: health.generatedAt,
         summary, issuers: [], verifiers: [], auditors: [], recognitions: [] };
     }
     const [summary, issuers, verifiers, auditors, recognitions] = await Promise.all([

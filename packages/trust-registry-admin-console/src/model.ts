@@ -35,7 +35,7 @@ export type ReviewBoard = {
   localPlanSha256?: string;
   deploymentIdentity?: TrustRegistryApiHealthResponse["deploymentIdentity"];
   nodeReportedCheckpointHash?: string;
-  nodeReportedAt?: string;
+  snapshotGeneratedAt?: string;
   auditors: readonly AuthorizationEntry[];
   recognitions: readonly RecognitionEntry[];
   summary: TrustRegistryApiSummary;
