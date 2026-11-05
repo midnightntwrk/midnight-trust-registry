@@ -24,6 +24,10 @@ describe("trust registry applicant portal app", () => {
       fetchImpl: fetchImpl as typeof fetch,
     });
     await vi.waitFor(() => expect(root.textContent).toContain("Current issuer list is unavailable"));
+    expect(root.querySelector("[data-source-state='local-ledger']")?.textContent)
+      .toContain("not independently verified finality");
+    expect(root.querySelector(".source-panel")?.textContent).toContain("4 list(s) unavailable");
+    expect(root.querySelector(".source-time")?.textContent).toContain("browser clock");
     expect(root.textContent).toContain("local");
     expect(root.textContent).toContain("Current list unavailable. Do not infer trust from this lane.");
     expect(root.textContent).not.toContain("No active entries in this lane yet.");
@@ -83,6 +87,8 @@ describe("trust registry applicant portal app", () => {
     submitAuthorization();
     await vi.waitFor(() => expect(root.textContent).toContain("does not match the requested scope"));
     expect(root.querySelector("[data-current-authorization-result]")).toBeNull();
+    expect(root.querySelector("[data-source-state='local-ledger']")?.textContent)
+      .toContain("Current local-ledger API response");
 
     const recognition = root.querySelector<HTMLFormElement>("[data-current-recognition]")!;
     recognition.querySelector<HTMLInputElement>("[name='recognizedAuthorityDid']")!.value = recognizedAuthorityDid;

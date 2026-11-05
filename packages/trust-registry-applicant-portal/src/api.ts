@@ -287,6 +287,7 @@ export class TrustRegistryApplicantPortalClient {
     }
     return {
       summary,
+      sourceMode: health.sourceMode,
       activeAuditors: auditorEntries?.filter((entry) =>
         entry?.authorization?.role === "auditor"
           && isCurrentlyActive(entry.authorization, entry.authorization.activeFrom, nowMs)) ?? [],

@@ -45,7 +45,9 @@ for (const applicant of cases) {
       allowedLocalOrigins.add(host.base);
       await page.goto(`${host.base}/?apiBase=${encodeURIComponent(host.base)}`);
       const form = page.locator(`[data-${applicant.role}-application-form]`);
-      await page.locator(".workflow-disclosure").filter({ has: form }).locator(":scope > summary").click();
+      await page.locator(`[data-open-workflow="${applicant.role}-request"]`).click();
+      await expect(page.locator(`#${applicant.role}-request`)).toHaveAttribute("open", "");
+      await expect(form).toBeVisible();
       const applicationId = `application:${applicant.role}:browser:v1`;
       const draft = {
         applicationId,

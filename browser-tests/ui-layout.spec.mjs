@@ -38,6 +38,9 @@ const issuer = {
 };
 
 async function serveApp(app) {
+  let healthAvailable = true;
+  let sourceMode = "workspace";
+  let healthGate;
   const staticHandler = createStaticAssetHandler({
     distDir: resolve(`packages/trust-registry-${app}/dist`),
     name: `ui-layout-${app}`,
@@ -49,7 +52,13 @@ async function serveApp(app) {
       return;
     }
     response.setHeader("content-type", "application/json");
-    if (path === "/health") response.end(JSON.stringify({ status: "ok", sourceMode: "workspace" }));
+    if (path === "/health") {
+      if (healthGate !== undefined) await healthGate;
+      if (!healthAvailable) response.statusCode = 503;
+      response.end(JSON.stringify(healthAvailable
+        ? { status: "ok", sourceMode }
+        : { title: "Registry unavailable", detail: "Fixture host is offline" }));
+    }
     else if (path === "/v1/registry/summary") response.end(JSON.stringify(summary));
     else response.end(JSON.stringify({ entries: path === "/v1/authorizations/issuer" ? [issuer] : [] }));
   });
@@ -58,12 +67,140 @@ async function serveApp(app) {
   if (address === null || typeof address === "string") throw new Error("expected TCP address");
   return {
     base: `http://127.0.0.1:${address.port}`,
+    setHealthAvailable: (available) => { healthAvailable = available; },
+    setSourceMode: (mode) => { sourceMode = mode; },
+    pauseHealth: () => {
+      let release;
+      healthGate = new Promise((resolveGate) => { release = resolveGate; });
+      return () => { healthGate = undefined; release(); };
+    },
     close: async () => {
       server.closeAllConnections();
       await new Promise((done, reject) => server.close((error) => error ? reject(error) : done()));
     },
   };
 }
+
+for (const app of ["admin-console", "applicant-portal"]) {
+  test(`${app} labels a read-only snapshot separately from demo data`, async ({ page, allowedLocalOrigins }) => {
+    const server = await serveApp(app);
+    try {
+      server.setSourceMode("snapshot");
+      allowedLocalOrigins.add(server.base);
+      await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
+      await expect(page.locator(".source-badge")).toHaveText("Snapshot");
+      await expect(page.locator(".source-copy")).toContainText("Read-only registry snapshot");
+    } finally {
+      await page.close();
+      await server.close();
+    }
+  });
+}
+
+for (const app of ["admin-console", "applicant-portal"]) {
+  test(`${app} distinguishes unavailable data from a live fixture`, async ({ page, allowedLocalOrigins }) => {
+    const server = await serveApp(app);
+    try {
+      allowedLocalOrigins.add(server.base);
+      await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
+      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      server.setHealthAvailable(false);
+      await page.locator("[data-refresh]").click();
+      await expect(page.locator(".source-badge")).toHaveText("Unavailable");
+      await expect(page.locator(".source-panel")).toContainText("No trust decision is available");
+      await expect(page.locator(".source-time")).toHaveCount(0);
+      server.setHealthAvailable(true);
+      await page.locator("[data-refresh]").click();
+      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    } finally {
+      await page.close();
+      await server.close();
+    }
+  });
+}
+
+for (const app of ["admin-console", "applicant-portal"]) {
+  test(`${app} clears the previous endpoint check time before the new host responds`, async ({ page, allowedLocalOrigins }) => {
+    const first = await serveApp(app);
+    const second = await serveApp(app);
+    let releaseSecondHealth;
+    try {
+      allowedLocalOrigins.add(first.base);
+      allowedLocalOrigins.add(second.base);
+      await page.goto(`${first.base}/?apiBase=${encodeURIComponent(first.base)}`);
+      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      releaseSecondHealth = second.pauseHealth();
+      const form = page.locator("[data-api-base-form]");
+      await form.locator("[name='apiBase']").fill(second.base);
+      await form.locator("button[type='submit']").click();
+      const settings = page.locator(app === "admin-console" ? "#workspace-settings" : "#connection-details");
+      await settings.locator("summary").click();
+      await expect(settings).toContainText("No successful check");
+      releaseSecondHealth();
+      releaseSecondHealth = undefined;
+      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    } finally {
+      releaseSecondHealth?.();
+      await page.close();
+      await first.close();
+      await second.close();
+    }
+  });
+}
+
+for (const app of ["admin-console", "applicant-portal"]) {
+  test(`${app} does not return focus to Refresh after the user moves on`, async ({ page, allowedLocalOrigins }) => {
+    const server = await serveApp(app);
+    let releaseHealth;
+    try {
+      allowedLocalOrigins.add(server.base);
+      await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
+      releaseHealth = server.pauseHealth();
+      const refresh = page.locator("[data-refresh]");
+      await refresh.click();
+      await page.locator(".workspace-settings > summary").focus();
+      releaseHealth();
+      releaseHealth = undefined;
+      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(refresh).not.toBeFocused();
+    } finally {
+      releaseHealth?.();
+      await page.close();
+      await server.close();
+    }
+  });
+}
+
+test("applicant role links survive direct navigation and reload", async ({ page, allowedLocalOrigins }) => {
+  const server = await serveApp("applicant-portal");
+  try {
+    allowedLocalOrigins.add(server.base);
+    await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}#issuer-request`);
+    await expect(page.locator("#issuer-request")).toHaveAttribute("open", "");
+    await expect(page.locator("#issuer-request [data-issuer-application-form]")).toBeVisible();
+    await page.locator('[data-open-workflow="verifier-request"]').click();
+    await expect(page).toHaveURL(/#verifier-request$/u);
+    await page.reload();
+    await expect(page.locator("#verifier-request [data-verifier-application-form]")).toBeVisible();
+  } finally {
+    await page.close();
+    await server.close();
+  }
+});
+
+test("admin review board precedes advanced governance in keyboard order", async ({ page, allowedLocalOrigins }) => {
+  const server = await serveApp("admin-console");
+  try {
+    allowedLocalOrigins.add(server.base);
+    await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
+    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    expect(await page.evaluate(() => Boolean(document.querySelector("#review-board")
+      ?.compareDocumentPosition(document.querySelector("#advanced-governance")) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+  } finally {
+    await page.close();
+    await server.close();
+  }
+});
 
 for (const [app, title] of [
   ["admin-console", "Review trust records"],
@@ -79,6 +216,19 @@ for (const [app, title] of [
         await expect(page.getByRole("heading", { name: title })).toBeVisible();
         await expect.poll(() => page.locator(".brand-logo").evaluate((image) => image.naturalWidth)).toBeGreaterThan(0);
         await expect(page.locator(".metrics")).toContainText("Midnight Trust Registry");
+        await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+        await expect(page.locator(".source-panel")).toContainText("not deployed ledger evidence");
+        const refresh = page.locator("[data-refresh]");
+        await refresh.focus();
+        await refresh.click();
+        await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+        await expect(refresh).toBeFocused();
+        await page.locator(".workspace-settings > summary").click();
+        await expect(page.locator(".workspace-settings")).toHaveAttribute("open", "");
+        await expect(page.locator(".workspace-settings")).toContainText("Network profile, genesis, contract");
+        await expect(page.locator(".workspace-settings")).toContainText("Not exposed by this API response");
+        expect(await page.locator(".task-nav a").evaluateAll((links) => links.every((link) =>
+          document.querySelector(link.getAttribute("href")) !== null))).toBe(true);
         if (app === "admin-console") {
           await expect(page.locator(".card")).toHaveCount(1);
           await page.locator(".card").click();
@@ -92,7 +242,7 @@ for (const [app, title] of [
           page: document.documentElement.scrollWidth,
           overflowing: [...document.querySelectorAll("body *")]
             .filter((element) => element.scrollWidth > element.clientWidth + 1)
-            .slice(0, 12).map((element) => `${element.tagName}.${element.className}:${element.scrollWidth}/${element.clientWidth}`),
+            .slice(0, 12).map((element) => `${element.tagName}.${element.className}:${element.scrollWidth}/${element.clientWidth} ${element.outerHTML.slice(0, 140)}`),
         }));
         expect(geometry.page, JSON.stringify(geometry)).toBeLessThanOrEqual(geometry.viewport + 1);
         expect(geometry.overflowing).toEqual([]);

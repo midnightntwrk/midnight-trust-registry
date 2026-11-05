@@ -59,10 +59,17 @@ describe("admin console browser handlers", () => {
     });
     await vi.waitFor(() => expect(root.textContent).toContain(injected));
     expect(root.querySelector("img[src='x']")).toBeNull();
+    expect(root.querySelector("[data-source-state='local-ledger']")?.textContent)
+      .toContain("not independently verified finality");
+    expect(root.querySelector(".source-time")?.textContent).toContain("browser clock");
     failHealth = true;
+    root.querySelector<HTMLButtonElement>("[data-refresh]")!.focus();
     root.querySelector<HTMLButtonElement>("[data-refresh]")!.click();
     await vi.waitFor(() => expect(root.textContent).toContain(`unavailable: ${injected}`));
     expect(root.querySelector("img[src='x']")).toBeNull();
+    expect(root.querySelector("[data-source-state='unavailable']")?.textContent)
+      .toContain("No current registry data");
+    expect(document.activeElement).toBe(root.querySelector("[data-refresh]"));
   });
 
   it("removes governance controls when API health becomes unavailable", async () => {
@@ -138,6 +145,12 @@ describe("admin console browser handlers", () => {
       storage: window.localStorage, fetchImpl: fetchImpl as typeof fetch, confirm: () => false,
     });
     await vi.waitFor(() => expect(root.querySelector("[data-current-lookup]")).not.toBeNull());
+    root.querySelector<HTMLFormElement>("[data-current-lookup]")!.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    );
+    expect(root.textContent).toContain("Enter the exact current authorization or recognition ID");
+    expect(root.querySelector("[data-source-state='local-ledger']")?.textContent)
+      .toContain("Current local-ledger API response");
     expect(root.querySelector("[data-action]")).toBeNull();
     expect(root.querySelector("[data-epoch-form]")).toBeNull();
     expect(root.querySelector("[data-signed-context]")).toBeNull();

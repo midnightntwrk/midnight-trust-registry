@@ -3149,3 +3149,21 @@ fields before the wizard constructs Compact inputs. The wizard still owns
 signature, provider, journal, and finalized-readback sequencing; the new
 parser does not authenticate a checkpoint or approve a transition. Issue #229
 remains open for the non-strict wizard state machine and independent review.
+
+## Local UI adoption and browser acceptance
+
+The applicant and admin surfaces now share a Midnight black/white/blue shell,
+source panel, and Workspace settings disclosure. The source panel distinguishes
+fixture workspace, local-ledger API claim, loading, and unavailable data; its
+timestamp is the browser's last successful check, not a finalized block time.
+Network/genesis/contract identity is not fabricated when the HTTP API does not
+expose it. The four applicant role cards open existing canonical forms and
+keep external signing and challenge-bound evidence requirements intact.
+
+`docs-site/guide/ui-acceptance.md` is the public acceptance matrix. Playwright
+now includes role-card admission for four roles, a positive fixture admin
+approve/activate journey, exact local-ledger lookup in both apps, source and
+settings checks, unavailable/retry, focus, and 390/768/1440 px layout. These
+are browser acceptance tests against controlled local hosts. They do not
+replace the real signed-genesis, authenticated finality, actor-egress, or
+restart/restore release qualification.
