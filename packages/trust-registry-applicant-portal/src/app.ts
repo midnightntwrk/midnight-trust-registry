@@ -1418,6 +1418,8 @@ export const createApplicantPortalApp = (
     const issuerLocked = preparedIssuer === undefined ? "" : " disabled";
     const verifierLocked = preparedVerifier === undefined ? "" : " disabled";
     const maintainerLocked = preparedMaintainer === undefined ? "" : " disabled";
+    const applicantIdGuide = `<p class="step-hint">Application ID tracks this submission; authorization ID names the grant you are requesting. Choose distinct lowercase IDs, then enter a Midnight DID you control and its full key ID from that DID. Never enter a private key.</p>`;
+    const privateHostGuide = privateHost ? "" : `<p class="step-hint" data-private-host-guide>Signing preparation is unavailable on this connection. Open the portal through the same authenticated host as its API.</p>`;
     const demoApplication = !demoMode || state.inspection === undefined || state.inspection.sourceMode === "local-ledger" ? "" : `
       <form class="form-panel" id="demo-application" data-submit-form>
         <div class="demo-copy">
@@ -1730,6 +1732,7 @@ export const createApplicantPortalApp = (
             <p>Bind one exact credential scope, schema/version, definition, status method, and governed resource type before signing with the applicant DID key.</p>
             <form data-issuer-application-form>
               <h3 class="request-step"><span>01</span> Identify the applicant</h3>
+              ${applicantIdGuide}
               <label class="label">Application ID<input class="input mono" name="applicationId" value="${escapeHtml(issuerDraft?.applicationId ?? "")}"${issuerLocked} required /></label>
               <label class="label">Authorization ID<input class="input mono" name="authorizationId" value="${escapeHtml(issuerDraft?.authorizationId ?? "")}"${issuerLocked} required /></label>
               <label class="label">Applicant Midnight DID<input class="input mono" name="actorDid" value="${escapeHtml(issuerDraft?.actorDid ?? "")}"${issuerLocked} required /></label>
@@ -1745,6 +1748,7 @@ export const createApplicantPortalApp = (
               </select></label>
               <h3 class="request-step"><span>03</span> Prepare, sign externally, and register</h3>
               <p class="step-hint">Preparation fixes the exact scope and digest. A changed request needs a fresh digest and signature.</p>
+              ${privateHostGuide}
               <button class="button secondary" type="button" data-prepare-issuer${!privateHost || state.evidenceBusy || state.memberPreparationBusy || preparedIssuer !== undefined ? " disabled" : ""}>Prepare signing digest</button>
               ${preparedIssuer === undefined ? "" : `
                 <p data-issuer-resource class="mono">Governed resource: ${escapeHtml(preparedIssuer.payload.governedResource.id)}</p>
@@ -1762,6 +1766,7 @@ export const createApplicantPortalApp = (
             <p>Bind the full presentation-request purpose, credential scope, allowed claims and predicates, and disclosure level before signing.</p>
             <form data-verifier-application-form>
               <h3 class="request-step"><span>01</span> Identify the applicant</h3>
+              ${applicantIdGuide}
               <label class="label">Application ID<input class="input mono" name="applicationId" value="${escapeHtml(verifierDraft?.applicationId ?? "")}"${verifierLocked} required /></label>
               <label class="label">Authorization ID<input class="input mono" name="authorizationId" value="${escapeHtml(verifierDraft?.authorizationId ?? "")}"${verifierLocked} required /></label>
               <label class="label">Applicant Midnight DID<input class="input mono" name="actorDid" value="${escapeHtml(verifierDraft?.actorDid ?? "")}"${verifierLocked} required /></label>
@@ -1775,6 +1780,7 @@ export const createApplicantPortalApp = (
               <label class="label">Disclosure level<input class="input" name="disclosureLevel" value="${escapeHtml(verifierDraft?.disclosureLevel ?? "")}"${verifierLocked} required /></label>
               <h3 class="request-step"><span>03</span> Prepare, sign externally, and register</h3>
               <p class="step-hint">Preparation fixes the exact scope and digest. A changed request needs a fresh digest and signature.</p>
+              ${privateHostGuide}
               <button class="button secondary" type="button" data-prepare-verifier${!privateHost || state.evidenceBusy || state.memberPreparationBusy || preparedVerifier !== undefined ? " disabled" : ""}>Prepare signing digest</button>
               ${preparedVerifier === undefined ? "" : `
                 <p data-verifier-resource class="mono">Governed resource: ${escapeHtml(preparedVerifier.payload.governedResource.id)}</p>
@@ -1792,12 +1798,14 @@ export const createApplicantPortalApp = (
             <p>The current API registry defines the exact maintainer scope. Sign the prepared digest with the applicant DID authentication key; approval by existing maintainers is still required.</p>
             <form data-maintainer-application-form>
               <h3 class="request-step"><span>01</span> Identify the applicant and exact membership</h3>
+              ${applicantIdGuide}
               <label class="label">Application ID<input class="input mono" name="applicationId" value="${escapeHtml(maintainerDraft?.applicationId ?? "")}"${maintainerLocked} required /></label>
               <label class="label">Authorization ID<input class="input mono" name="authorizationId" value="${escapeHtml(maintainerDraft?.authorizationId ?? "")}"${maintainerLocked} required /></label>
               <label class="label">Applicant Midnight DID<input class="input mono" name="actorDid" value="${escapeHtml(maintainerDraft?.actorDid ?? "")}"${maintainerLocked} required /></label>
               <label class="label">Authentication method ID<input class="input mono" name="actorKeyId" value="${escapeHtml(maintainerDraft?.actorKeyId ?? "")}"${maintainerLocked} required /></label>
               <h3 class="request-step"><span>02</span> Prepare, sign externally, and register</h3>
               <p class="step-hint">The server supplies the governed registry scope. A changed context needs a fresh digest and signature.</p>
+              ${privateHostGuide}
               <button class="button secondary" type="button" data-prepare-maintainer${!privateHost || state.evidenceBusy || state.memberPreparationBusy || preparedMaintainer !== undefined ? " disabled" : ""}>Prepare signing digest</button>
               ${preparedMaintainer === undefined ? "" : `
                 <p data-maintainer-resource class="mono">Governed registry: ${escapeHtml(preparedMaintainer.payload.governedResource.id)}</p>
@@ -1815,6 +1823,7 @@ export const createApplicantPortalApp = (
             <p>Describe the complete audit scope and applicant DID. Prepare its canonical resource and signing digest, sign that digest outside this browser, then submit only the signature. A request-profile ID alone is not an auditor scope.</p>
             <form data-auditor-application-form>
               <h3 class="request-step"><span>01</span> Identify the applicant</h3>
+              ${applicantIdGuide}
               <label class="label">Application ID<input class="input mono" name="applicationId" value="${escapeHtml(auditorDraft?.applicationId ?? "")}"${auditorLocked} /></label>
               <label class="label">Authorization ID<input class="input mono" name="authorizationId" value="${escapeHtml(auditorDraft?.authorizationId ?? "")}"${auditorLocked} /></label>
               <label class="label">Applicant Midnight DID<input class="input mono" name="actorDid" value="${escapeHtml(auditorDraft?.actorDid ?? "")}"${auditorLocked} /></label>
@@ -1828,6 +1837,7 @@ export const createApplicantPortalApp = (
               <label class="label">Disclosure level<input class="input" name="disclosureLevel" value="${escapeHtml(auditorDraft?.disclosureLevel ?? "")}"${auditorLocked} required /></label>
               <h3 class="request-step"><span>03</span> Prepare, sign externally, and register</h3>
               <p class="step-hint">Preparation fixes the complete scope. A changed request needs a fresh digest and signature.</p>
+              ${privateHostGuide}
               <button class="button secondary" type="button" data-prepare-auditor${!privateHost || state.evidenceBusy || state.auditorPreparationBusy || preparedAuditor !== undefined ? " disabled" : ""}>${state.auditorPreparationBusy ? "Preparing…" : "Prepare signing digest"}</button>
               ${preparedAuditor === undefined ? "" : `
                 <p data-auditor-resource class="mono">Governed resource: ${escapeHtml(preparedAuditor.payload.governedResource.id)}</p>

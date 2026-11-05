@@ -113,7 +113,7 @@ test("applicant portal treats a failed list as unavailable, then recovers on rec
   }
 });
 
-test("applicant role cards focus one governed request without submitting it", async ({ page, allowedLocalOrigins }) => {
+test("applicant role cards focus one governed request without submitting it", async ({ page, allowedLocalOrigins }, testInfo) => {
   const server = await serveApp("applicant-portal");
   try {
     allowedLocalOrigins.add(server.base);
@@ -132,6 +132,10 @@ test("applicant role cards focus one governed request without submitting it", as
       await expect(page.locator(`#${role}-request`)).toHaveAttribute("open", "");
       await expect(page.locator(`#${role}-request > summary`)).toBeFocused();
       await expect(link).toHaveAttribute("aria-expanded", "true");
+      await expect(page.locator(`#${role}-request .step-hint`).first())
+        .toContainText("Application ID tracks this submission; authorization ID names the grant");
+      await expect(page.locator(`#${role}-request [data-private-host-guide]`)).toHaveCount(0);
+      await expect(page.locator(`#${role}-request [data-prepare-${role}]`)).toBeEnabled();
       for (const other of roles.filter((candidate) => candidate !== role)) {
         await expect(page.locator(`.journey-cards [data-open-workflow="${other}-request"]`))
           .toHaveAttribute("aria-expanded", "false");
@@ -146,6 +150,10 @@ test("applicant role cards focus one governed request without submitting it", as
     await expect(page.locator(".role-workflow[open]")).toHaveCount(1);
     await expect(page.locator("#verifier-request")).toHaveAttribute("open", "");
     await page.locator("#verifier-request > summary").focus();
+    if (process.env.TR_UI_CAPTURE === "1") {
+      await page.locator("#verifier-request > summary").evaluate((element) => element.scrollIntoView({ block: "start" }));
+      await page.screenshot({ path: testInfo.outputPath("applicant-verifier-request-390.png") });
+    }
     const refreshedSummary = page.waitForResponse((response) => response.url() === `${server.base}/v1/registry/summary`);
     await page.evaluate(() => document.querySelector("[data-refresh]").click());
     await refreshedSummary;
@@ -154,10 +162,40 @@ test("applicant role cards focus one governed request without submitting it", as
     await expect(page.locator("#verifier-request")).toHaveAttribute("open", "");
     await expect(page.locator('.journey-cards [data-open-workflow="verifier-request"]'))
       .toHaveAttribute("aria-expanded", "true");
+    await page.setViewportSize({ width: 320, height: 900 });
+    await page.addStyleTag({ content: "html { font-size: 200%; }" });
+    const requestGeometry = await page.evaluate(() => ({
+      viewport: window.innerWidth,
+      page: document.documentElement.scrollWidth,
+      overflowing: [...document.querySelectorAll("#verifier-request *")]
+        .filter((element) => !element.matches("input, textarea, select")
+          && element.scrollWidth > element.clientWidth + 1)
+        .slice(0, 12).map((element) => `${element.tagName}.${element.className}:${element.scrollWidth}/${element.clientWidth}`),
+    }));
+    expect(requestGeometry.page, JSON.stringify(requestGeometry)).toBeLessThanOrEqual(requestGeometry.viewport + 1);
+    expect(requestGeometry.overflowing).toEqual([]);
     expect(server.requests.some((request) => request.startsWith("POST "))).toBe(false);
   } finally {
     await page.close();
     await server.close();
+  }
+});
+
+test("applicant explains why private signing is unavailable across origins", async ({ page, allowedLocalOrigins }) => {
+  const staticHost = await serveApp("applicant-portal");
+  const apiHost = await serveApp("applicant-portal");
+  try {
+    allowedLocalOrigins.add(staticHost.base);
+    allowedLocalOrigins.add(apiHost.base);
+    await page.goto(`${staticHost.base}/?apiBase=${encodeURIComponent(apiHost.base)}`);
+    await page.locator('[data-open-workflow="issuer-request"]').click();
+    await expect(page.locator("#issuer-request [data-private-host-guide]"))
+      .toContainText("Open the portal through the same authenticated host as its API");
+    await expect(page.locator("#issuer-request [data-prepare-issuer]")).toBeDisabled();
+  } finally {
+    await page.close();
+    await staticHost.close();
+    await apiHost.close();
   }
 });
 
