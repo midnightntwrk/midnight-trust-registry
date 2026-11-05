@@ -162,6 +162,16 @@ network isolation, or production security. A release-qualified standalone E2E
 claim still requires the separately approved genesis/deployment, finalized
 readback, egress-denied actor journeys, and restart/restore evidence.
 
+On 2026-11-05, fresh full-page fixture captures at 1440 and 390 px were
+reviewed in both apps at signed source `f1497d74`. The shared brand lockup,
+source warning, and primary task remain visible; the mobile admin detail follows
+the selected record instead of covering it, and Workspace settings separates
+connection identity from the main applicant journey. The applicant's exact
+local-ledger result was also inspected at 320 px with 200% root text: its
+interpretation text reflows and the raw JSON stays in a bounded keyboard-
+focusable scroll region. These agent-reviewed captures do not substitute for
+an independent new-user or assistive-technology trial.
+
 ## Clean-checkout reproducibility trial
 
 On 2026-11-04, an agent used a disposable detached worktree at signed source
@@ -189,6 +199,15 @@ and ephemeral-port `demo:smoke` in a new detached worktree at signed source
 Playwright browser suite passed at that source in the development worktree.
 This is a second reproducibility check, not an independent new-user trial or
 deployed-ledger E2E acceptance.
+
+At signed source `f1497d74ed7bcd07052297942ef45a5229ce37b8`, a fresh
+detached checkout with frozen dependencies passed `./run.sh --light` (20/20
+tasks and 198/198 adversarial parity), packed-consumer smoke, and
+`pnpm run demo:smoke` on ephemeral loopback ports. The development worktree's
+44/44 Playwright tests passed at the same source. The disposable checkout and
+its reproducible light outputs were removed after inspection. This confirms
+the scripted fixture setup at that source, not independent adoption or a
+deployed-ledger journey.
 
 ## Final acceptance still to cover
 
