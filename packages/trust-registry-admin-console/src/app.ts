@@ -1083,6 +1083,13 @@ export const createAdminConsoleApp = (
       <a href="#advanced-governance">Advanced governance</a>
     `;
     const deploymentIdentity = state.board?.sourceMode === "local-ledger" ? state.board.deploymentIdentity : undefined;
+    const deploymentNotice = state.board === undefined
+      ? "No current registry source is available. Deployment identity and ledger state cannot be inferred from this browser view."
+      : state.board.sourceMode !== "local-ledger"
+        ? "This is a local fixture workspace. It does not report a deployment plan or prove ledger finality or actor authorization."
+        : deploymentIdentity === undefined
+          ? "This local-ledger API did not expose a deployment identity. A node-reported checkpoint and browser response are not independently authenticated finality or actor authorization."
+          : "This API reports its local deployment plan. A node-reported checkpoint and browser response are not independently authenticated finality or actor authorization.";
     root.innerHTML = `
       <main class="shell app-shell" data-settings-active="${window.location.hash === "#workspace-settings"}">
         <header class="brand-bar">
@@ -1164,7 +1171,7 @@ export const createAdminConsoleApp = (
                       <div><dt>Contract address (API plan)</dt><dd class="technical-id">${escapeHtml(deploymentIdentity.contractAddress)}</dd></div>`}
                 </dl>
               </details>
-            <p class="settings-callout">This API reports its local deployment plan. A node-reported checkpoint and browser response are not independently authenticated finality or actor authorization.</p>
+            <p class="settings-callout">${deploymentNotice}</p>
             </section>
             <section class="settings-card" aria-labelledby="admin-signing-heading">
               <p class="eyebrow">Security</p>

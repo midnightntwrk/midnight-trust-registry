@@ -399,6 +399,13 @@ for (const app of ["admin-console", "applicant-portal"]) {
       }
       await expectNoWcagViolations(page, `${app} unavailable source`);
       await expect(page.locator(".source-time")).toHaveCount(0);
+      if (app === "applicant-portal") await page.locator(".hero-actions a").first().click();
+      else await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
+      await expect(page.locator(".settings-callout"))
+        .toContainText("No current registry source is available");
+      await expect(page.locator(".settings-callout"))
+        .not.toContainText("reports its local deployment plan");
+      await page.locator(".settings-back").click();
       server.setHealthAvailable(true);
       await page.locator("[data-refresh]").click();
       await expect(page.locator(".source-badge")).toHaveText("Local fixture");
@@ -613,6 +620,8 @@ for (const [app, title] of [
         await expect(page.locator(".settings-view")).toContainText("Network profile (API report)");
         await expect(page.locator(".settings-view .settings-technical > summary")).toHaveText("Technical identifiers and plan");
         await expect(page.locator(".settings-view")).toContainText("Not exposed by this API response");
+        await expect(page.locator(".settings-callout")).toContainText("local fixture workspace");
+        await expect(page.locator(".settings-callout")).not.toContainText("reports its local deployment plan");
         await expect(page.locator(".settings-view")).not.toHaveCSS("overflow-x", "scroll");
         if (process.env.TR_UI_CAPTURE === "1") {
           await page.screenshot({ path: testInfo.outputPath(`${app}-settings-${width}.png`), fullPage: true });

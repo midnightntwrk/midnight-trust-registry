@@ -1494,6 +1494,13 @@ export const createApplicantPortalApp = (
 
     const deploymentIdentity = state.inspection?.sourceMode === "local-ledger"
       ? state.inspection.deploymentIdentity : undefined;
+    const deploymentNotice = state.inspection === undefined
+      ? "No current registry source is available. Deployment identity and ledger state cannot be inferred from this browser view."
+      : state.inspection.sourceMode !== "local-ledger"
+        ? "This is a local fixture workspace. It does not report a deployment plan or establish finalized ledger state or actor authorization."
+        : deploymentIdentity === undefined
+          ? "This local-ledger API did not expose a deployment identity. Node-reported data and a browser response do not establish finalized ledger state or actor authorization."
+          : "This API reports its local deployment plan. Node-reported data and a browser response do not establish finalized ledger state or actor authorization.";
     root.innerHTML = `
       <main class="shell app-shell" data-settings-active="${window.location.hash === "#connection-details"}">
         <header class="brand-bar">
@@ -1592,7 +1599,7 @@ export const createApplicantPortalApp = (
                       <div><dt>Contract address (API plan)</dt><dd class="technical-id">${escapeHtml(deploymentIdentity.contractAddress)}</dd></div>`}
                 </dl>
               </details>
-            <p class="settings-callout">This API reports its local deployment plan. Node-reported data and a browser response do not establish finalized ledger state or actor authorization.</p>
+            <p class="settings-callout">${deploymentNotice}</p>
             </section>
           </div>
           <div class="settings-footer"><strong>No account profile in this browser</strong><p>Private actions require the authenticated same-origin host and external signing. Connection details are not proof of finality.</p></div>

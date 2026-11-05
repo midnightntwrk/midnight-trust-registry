@@ -124,7 +124,7 @@ repeatable UI acceptance evidence:
 | Keep registry-wide lifecycle counters off the local-ledger admin hero before and after an exact lookup; a fetched record is not a complete registry count | `local-lookup.spec.mjs` |
 | Show only registry identity and an API-reported epoch in the local-ledger applicant overview, not unavailable issuer/verifier list totals | `local-lookup.spec.mjs` |
 | Discard a previously visible API claim while Recheck is pending, remove exact lookup when the source becomes a fixture, and never reuse the old result when local-ledger mode returns; a denied follow-up lookup clears the prior success and announces the denial | `local-lookup.spec.mjs` (admin and applicant, controlled source switch and 403) |
-| Show approved local-plan network and deployment identity only as API-reported values in Workspace settings; remove them when the source becomes a fixture. Keep long genesis and contract hashes behind an accessible technical disclosure and both settings views within 320 px at 200% root text size, including when expanded | `local-lookup.spec.mjs` (both apps); API and client unit tests reject malformed or unapproved identity |
+| Show approved local-plan network and deployment identity only as API-reported values in Workspace settings; remove them when the source becomes a fixture or the API omits identity. Keep long genesis and contract hashes behind an accessible technical disclosure and both settings views within 320 px at 200% root text size, including when expanded | `local-lookup.spec.mjs` (both apps); API and client unit tests reject malformed or unapproved identity |
 | Inspect settings/source provenance, expose an offline error as an alert, retry after an unavailable response, retain keyboard focus, and avoid overflow at 320/390/768/1440 px | `ui-layout.spec.mjs` |
 | Open the mobile Menu and Workspace settings by keyboard in both apps; verify the URL field and recheck action have accessible names and retain focus after refresh | `ui-layout.spec.mjs` |
 | Show an unavailable auditor list as unavailable rather than zero, keep loaded issuers visible, and recover the lane after recheck | `ui-layout.spec.mjs` (controlled partial-failure fixture) |
@@ -294,6 +294,9 @@ dominating the initial view. Network profile and identity values are shown
 only when the approved local-ledger API returns a deployment identity from its
 plan; otherwise they are shown as *not exposed*. These are API-reported plan
 values, not independent browser verification of the chain or contract. In
+fixture mode, settings explicitly say there is no deployment plan; when the
+source is unavailable, they do not infer any deployment identity. The local
+plan notice appears only when the local-ledger API exposes one. In
 local-ledger mode, the API's reported
 checkpoint hash and timestamp are displayed separately from the browser check
 time and explicitly remain unverified node claims. Same-origin packaged

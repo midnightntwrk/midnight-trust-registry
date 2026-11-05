@@ -38,6 +38,7 @@ async function serveLocalApp(app) {
   });
   const requests = [];
   let sourceMode = "local-ledger";
+  let exposeDeploymentIdentity = true;
   let heldHealth;
   let denyCurrentReads = false;
   const server = createServer(async (request, response) => {
@@ -56,7 +57,7 @@ async function serveLocalApp(app) {
       }
       response.end(JSON.stringify({ status: "ok", sourceMode,
         registryId, localPlanSha256: "b".repeat(64), finalizedBlockHash: `0x${"c".repeat(64)}`,
-        ...(sourceMode === "local-ledger" ? { deploymentIdentity } : {}),
+        ...(sourceMode === "local-ledger" && exposeDeploymentIdentity ? { deploymentIdentity } : {}),
         generatedAt: "2026-10-27T00:00:00Z" }));
     }
     else if (path === "/v1/registry/summary") response.end(JSON.stringify(sourceMode === "local-ledger"
@@ -80,6 +81,7 @@ async function serveLocalApp(app) {
   if (address === null || typeof address === "string") throw new Error("expected TCP address");
   return { base: `http://127.0.0.1:${address.port}`, requests,
     setSourceMode: (mode) => { sourceMode = mode; },
+    setDeploymentIdentity: (expose) => { exposeDeploymentIdentity = expose; },
     setCurrentReadsDenied: (denied) => { denyCurrentReads = denied; },
     holdNextHealth: () => {
       let release;
@@ -128,6 +130,7 @@ async function reviewLocalLayouts(page, testInfo, app) {
     await expect(page.locator(".settings-view")).toContainText(app === "admin"
       ? "not independently authenticated finality" : "do not establish finalized ledger state");
     await expect(page.locator(".settings-view")).toContainText("Network profile (API report)");
+    await expect(page.locator(".settings-callout")).toContainText("This API reports its local deployment plan");
     const technical = page.locator(".settings-view .settings-technical");
     await expect(technical).not.toHaveAttribute("open", "");
     await expect(technical.getByText(deploymentIdentity.expectedGenesisHash)).toBeHidden();
@@ -308,6 +311,24 @@ test("applicant exact scope lookup keeps returned trust unverified", async ({ pa
 });
 
 for (const app of ["admin-console", "applicant-portal"]) {
+  test(`${app} does not invent a deployment plan when the local API omits identity`, async ({ page, allowedLocalOrigins }) => {
+    const host = await serveLocalApp(app);
+    try {
+      host.setDeploymentIdentity(false);
+      allowedLocalOrigins.add(host.base);
+      await page.goto(`${host.base}/?apiBase=${encodeURIComponent(host.base)}`);
+      await expect(page.locator(".source-badge")).toHaveText("API claim");
+      await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
+      await expect(page.locator(".settings-callout")).toContainText("did not expose a deployment identity");
+      await expect(page.locator(".settings-callout")).not.toContainText("reports its local deployment plan");
+      await expect(page.locator(".settings-view")).not.toContainText(deploymentIdentity.expectedGenesisHash);
+      await expect(page.locator(".settings-view")).not.toContainText(deploymentIdentity.contractAddress);
+    } finally {
+      await page.close();
+      await host.close();
+    }
+  });
+
   test(`${app} does not reveal fixture controls for an API claim even with demo requested`, async ({ page, allowedLocalOrigins }) => {
     const host = await serveLocalApp(app);
     try {
