@@ -38,10 +38,13 @@ const issuer = {
   evidence: { epoch: { epochId: summary.currentEpochId, stateRoot: "0xroot" } },
 };
 
-async function serveApp(app) {
+async function serveApp(app, { secondIssuer = false } = {}) {
   let healthAvailable = true;
   let auditorAvailable = true;
   const requests = [];
+  const servedSummary = secondIssuer ? { ...summary, issuerCounts: { ...counts, active: 2 } } : summary;
+  const servedIssuers = secondIssuer ? [issuer, { ...issuer, label: "Second demo issuer", authorization: {
+    ...issuer.authorization, authorizationId: "auth:issuer:second-demo-issuer:v1" } }] : [issuer];
   const packagedPath = app === "admin-console" ? "/admin/" : "/applicant/";
   const staticHandler = createStaticAssetHandler({
     distDir: resolve(`packages/trust-registry-${app}/dist`),
@@ -62,12 +65,12 @@ async function serveApp(app) {
         ? { status: "ok", sourceMode: "workspace" }
         : { title: "Registry unavailable", detail: "Fixture host is offline" }));
     }
-    else if (path === "/v1/registry/summary") response.end(JSON.stringify(summary));
+    else if (path === "/v1/registry/summary") response.end(JSON.stringify(servedSummary));
     else if (path === "/v1/authorizations/auditor" && !auditorAvailable) {
       response.statusCode = 503;
       response.end(JSON.stringify({ title: "Auditor list unavailable" }));
     }
-    else response.end(JSON.stringify({ entries: path === "/v1/authorizations/issuer" ? [issuer] : [] }));
+    else response.end(JSON.stringify({ entries: path === "/v1/authorizations/issuer" ? servedIssuers : [] }));
   });
   await new Promise((done) => server.listen(0, "127.0.0.1", done));
   const address = server.address();
@@ -151,6 +154,29 @@ test("applicant role cards focus one governed request without submitting it", as
     await expect(page.locator("#verifier-request")).toHaveAttribute("open", "");
     await expect(page.locator('.journey-cards [data-open-workflow="verifier-request"]'))
       .toHaveAttribute("aria-expanded", "true");
+    expect(server.requests.some((request) => request.startsWith("POST "))).toBe(false);
+  } finally {
+    await page.close();
+    await server.close();
+  }
+});
+
+test("admin keyboard selection keeps the current record and detail in sync", async ({ page, allowedLocalOrigins }) => {
+  const server = await serveApp("admin-console", { secondIssuer: true });
+  try {
+    allowedLocalOrigins.add(server.base);
+    await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
+    const cards = page.locator(".card");
+    await expect(cards).toHaveCount(2);
+    await expect(cards.first()).toHaveAttribute("aria-current", "true");
+
+    await cards.nth(1).focus();
+    await page.keyboard.press("Enter");
+    await expect(cards.nth(1)).toBeFocused();
+    await expect(cards.nth(1)).toHaveAttribute("aria-current", "true");
+    await expect(cards.nth(1)).toHaveAttribute("aria-controls", "selected-record-detail");
+    await expect(cards.first()).not.toHaveAttribute("aria-current");
+    await expect(page.locator("#selected-record-detail h2")).toHaveText("Second demo issuer");
     expect(server.requests.some((request) => request.startsWith("POST "))).toBe(false);
   } finally {
     await page.close();
@@ -539,7 +565,13 @@ for (const [app, title] of [
         if (app === "admin-console") {
           await expect(page.locator(".card")).toHaveCount(1);
           await expect(page.locator(".column")).toHaveCount(1);
-          await page.locator(".card").click();
+          const card = page.locator(".card");
+          await card.focus();
+          await page.keyboard.press("Enter");
+          await expect(card).toBeFocused();
+          await expect(card).toHaveAttribute("aria-current", "true");
+          await expect(card).toHaveAttribute("aria-controls", "selected-record-detail");
+          await expect(page.locator("#selected-record-detail")).toBeVisible();
           await expect(page.locator(".record-meaning")).toContainText("not deployed ledger evidence");
           await expect(page.locator(".decision-summary time")).toContainText("20 May 2026");
           await expect(page.locator(".decision-summary time")).toHaveAttribute("datetime", "2026-05-20T00:04:00.000Z");

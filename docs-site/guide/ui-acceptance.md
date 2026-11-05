@@ -95,7 +95,7 @@ repeatable UI acceptance evidence:
 
 | Successful user path | Playwright evidence |
 | --- | --- |
-| Browse fixture records and review a bounded admin detail | `ui-layout.spec.mjs` |
+| Browse fixture records and review a bounded admin detail; keyboard selection retains focus and identifies the current card and detail pane | `ui-layout.spec.mjs` |
 | Search the fixture portal by DID, see an explicit no-match state, and return to a visible record; keep the admin signing controls collapsed until requested | `ui-layout.spec.mjs` |
 | Submit a label-only issuer or recognition demo application in the portal, approve and activate it in admin, then read the active record back in the portal | `demo-application-handoff.spec.mjs` (two cross-app fixture journeys) |
 | Choose issuer, verifier, auditor, or maintainer and complete challenge-bound evidence admission with an external signature | `applicant-portal.spec.mjs` (four role cases) |

@@ -911,7 +911,7 @@ export const createAdminConsoleApp = (
   `;
 
   const renderCard = (card: ReviewCard): string => `
-    <button type="button" class="card${card.key === state.selectedKey ? " selected" : ""}" data-select-key="${escapeHtml(card.key)}">
+    <button type="button" class="card${card.key === state.selectedKey ? " selected" : ""}" data-select-key="${escapeHtml(card.key)}" aria-controls="selected-record-detail"${card.key === state.selectedKey ? ' aria-current="true"' : ""}>
       <div class="card-top">
         <div>
           <h3>${escapeHtml(card.label)}</h3>
@@ -945,7 +945,7 @@ export const createAdminConsoleApp = (
     const card = selectedCard();
     if (card === undefined || (visibleKeys !== undefined && !visibleKeys.has(card.key))) {
       return `
-        <aside class="detail-panel">
+        <aside class="detail-panel" id="selected-record-detail">
           <div class="empty-state">
             <p>Select a record to review its detail and available maintainer actions.</p>
           </div>
@@ -969,7 +969,7 @@ export const createAdminConsoleApp = (
         : "This record is not active; inspect its history before taking another action.";
 
     return `
-      <aside class="detail-panel" aria-label="Selected record details">
+      <aside class="detail-panel" id="selected-record-detail" aria-label="Selected record details">
         <div>
           <p class="eyebrow">Selected Record</p>
           <h2>${escapeHtml(card.label)}</h2>
@@ -1031,6 +1031,8 @@ export const createAdminConsoleApp = (
   let governedActionsKey: string | undefined;
   const render = () => {
     const previousSignedEnvelope = root.querySelector<HTMLTextAreaElement>("[data-signed-submit] [name='signedEnvelope']")?.value;
+    const focusedCardKey = document.activeElement instanceof HTMLElement && root.contains(document.activeElement)
+      ? document.activeElement.dataset.selectKey : undefined;
     const focusKey = root.contains(document.activeElement)
       ? document.activeElement?.getAttribute("data-focus-key") : null;
     pendingFocusKey = focusKey ?? pendingFocusKey;
@@ -1295,6 +1297,10 @@ export const createAdminConsoleApp = (
         target.focus();
         pendingFocusKey = null;
       }
+    }
+    if (focusedCardKey !== undefined) {
+      [...root.querySelectorAll<HTMLButtonElement>("[data-select-key]")]
+        .find((card) => card.dataset.selectKey === focusedCardKey)?.focus();
     }
     bindEvents();
   };
