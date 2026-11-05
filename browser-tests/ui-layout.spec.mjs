@@ -41,6 +41,7 @@ const issuer = {
 async function serveApp(app, { secondIssuer = false } = {}) {
   let healthAvailable = true;
   let auditorAvailable = true;
+  let sourceMode = "workspace";
   let healthGate;
   const requests = [];
   const servedSummary = secondIssuer ? { ...summary, issuerCounts: { ...counts, active: 2 } } : summary;
@@ -64,7 +65,7 @@ async function serveApp(app, { secondIssuer = false } = {}) {
       if (healthGate !== undefined) await healthGate;
       if (!healthAvailable) response.statusCode = 503;
       response.end(JSON.stringify(healthAvailable
-        ? { status: "ok", sourceMode: "workspace" }
+        ? { status: "ok", sourceMode }
         : { title: "Registry unavailable", detail: "Fixture host is offline" }));
     }
     else if (path === "/v1/registry/summary") response.end(JSON.stringify(servedSummary));
@@ -83,6 +84,7 @@ async function serveApp(app, { secondIssuer = false } = {}) {
     requests,
     setHealthAvailable: (available) => { healthAvailable = available; },
     setAuditorAvailable: (available) => { auditorAvailable = available; },
+    setSourceMode: (mode) => { sourceMode = mode; },
     pauseHealth: () => {
       let release;
       healthGate = new Promise((resolveGate) => { release = resolveGate; });
@@ -441,6 +443,23 @@ for (const app of ["admin-console", "applicant-portal"]) {
     }
   });
 
+  test(`${app} labels a read-only snapshot separately from demo data`, async ({ page, allowedLocalOrigins }) => {
+    const server = await serveApp(app);
+    try {
+      server.setSourceMode("snapshot");
+      allowedLocalOrigins.add(server.base);
+      await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
+      await expect(page.locator(".source-badge")).toHaveText("Snapshot");
+      await expect(page.locator(".source-copy")).toContainText("Read-only registry snapshot");
+      await page.locator(app === "admin-console"
+        ? '.task-nav a[href="#workspace-settings"]'
+        : '.task-nav a[href="#connection-details"]').click();
+      await expect(page.locator(".settings-callout")).not.toContainText("fixture");
+    } finally {
+      await page.close();
+      await server.close();
+    }
+  });
   test(`${app} distinguishes unavailable data from a live fixture`, async ({ page, allowedLocalOrigins }) => {
     const server = await serveApp(app);
     try {
@@ -553,6 +572,31 @@ for (const app of ["admin-console", "applicant-portal"]) {
       await page.close();
       await first.close();
       await second.close();
+    }
+  });
+}
+
+for (const app of ["admin-console", "applicant-portal"]) {
+  test(`${app} does not return focus to Refresh after the user moves on`, async ({ page, allowedLocalOrigins }) => {
+    const server = await serveApp(app);
+    let releaseHealth;
+    try {
+      allowedLocalOrigins.add(server.base);
+      await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
+      releaseHealth = server.pauseHealth();
+      const refresh = page.locator("[data-refresh]");
+      await refresh.click();
+      await page.locator(app === "admin-console"
+        ? '.task-nav a[href="#workspace-settings"]'
+        : '.task-nav a[href="#connection-details"]').focus();
+      releaseHealth();
+      releaseHealth = undefined;
+      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(refresh).not.toBeFocused();
+    } finally {
+      releaseHealth?.();
+      await page.close();
+      await server.close();
     }
   });
 }
@@ -758,7 +802,7 @@ for (const [app, title] of [
         await expect(page.locator(".settings-view")).toContainText("Network profile (API report)");
         await expect(page.locator(".settings-view .settings-technical > summary")).toHaveText("Technical identifiers and plan");
         await expect(page.locator(".settings-view")).toContainText("Not exposed by this API response");
-        await expect(page.locator(".settings-callout")).toContainText("local fixture workspace");
+        await expect(page.locator(".settings-callout")).toContainText("does not report a deployment plan");
         await expect(page.locator(".settings-callout")).not.toContainText("reports its local deployment plan");
         await expect(page.locator(".settings-view")).not.toHaveCSS("overflow-x", "scroll");
         if (process.env.TR_UI_CAPTURE === "1") {

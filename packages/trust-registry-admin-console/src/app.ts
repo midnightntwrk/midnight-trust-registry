@@ -1040,7 +1040,7 @@ export const createAdminConsoleApp = (
       ? document.activeElement.dataset.selectKey : undefined;
     const focusKey = root.contains(document.activeElement)
       ? document.activeElement?.getAttribute("data-focus-key") : null;
-    pendingFocusKey = focusKey ?? pendingFocusKey;
+    pendingFocusKey = focusKey ?? (root.contains(document.activeElement) ? null : pendingFocusKey);
     const advancedOpen = root.querySelector<HTMLDetailsElement>(".advanced-workflows")?.open ?? false;
     const previousGovernedActions = root.querySelector<HTMLDetailsElement>(".governed-actions");
     governedActionsOpen = previousGovernedActions?.open ?? false;
@@ -1076,6 +1076,8 @@ export const createAdminConsoleApp = (
         ? "This response is not independently verified finality or authorization evidence."
         : state.board === undefined
           ? "Connect or retry to inspect this source. No trust decision is available."
+          : state.board.sourceMode === "snapshot"
+            ? "This read-only snapshot is not authenticated ledger finality or authorization evidence."
           : "Fixture records are for exploration, not deployed ledger evidence.";
     const taskLinks = `
       <a href="#review-board">Review records</a>
@@ -1088,7 +1090,7 @@ export const createAdminConsoleApp = (
       : state.board === undefined
         ? "No current registry source is available. Deployment identity and ledger state cannot be inferred from this browser view."
         : state.board.sourceMode !== "local-ledger"
-          ? "This is a local fixture workspace. It does not report a deployment plan or prove ledger finality or actor authorization."
+          ? "This source does not report a deployment plan or prove ledger finality or actor authorization."
           : deploymentIdentity === undefined
             ? "This local-ledger API did not expose a deployment identity. A node-reported checkpoint and browser response are not independently authenticated finality or actor authorization."
             : "This API reports its local deployment plan. A node-reported checkpoint and browser response are not independently authenticated finality or actor authorization.";
@@ -1111,9 +1113,9 @@ export const createAdminConsoleApp = (
           ${state.board === undefined ? "" : renderMetrics(state.board)}
           ${state.error === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.error)}</div>`}
           ${state.flash === undefined ? "" : `<div class="alert success" role="status">${escapeHtml(state.flash)}</div>`}
-          <div class="source-panel" data-source-state="${state.loading ? "loading" : state.board?.sourceMode === "local-ledger" ? "local-ledger" : state.board === undefined ? "unavailable" : "fixture"}" role="status" aria-live="polite">
-            <span class="source-badge">${state.loading ? "Checking" : state.board === undefined ? "Unavailable" : state.board.sourceMode === "local-ledger" ? "API claim" : "Local fixture"}</span>
-            <div class="source-copy"><strong>${state.loading ? "Loading registry data" : state.board === undefined ? "No current registry data" : state.board.sourceMode === "local-ledger" ? "Current local-ledger API response" : "Demo workspace data"}</strong>
+          <div class="source-panel" data-source-state="${state.loading ? "loading" : state.board?.sourceMode === "local-ledger" ? "local-ledger" : state.board === undefined ? "unavailable" : state.board.sourceMode === "snapshot" ? "snapshot" : "fixture"}" role="status" aria-live="polite">
+            <span class="source-badge">${state.loading ? "Checking" : state.board === undefined ? "Unavailable" : state.board.sourceMode === "local-ledger" ? "API claim" : state.board.sourceMode === "snapshot" ? "Snapshot" : "Local fixture"}</span>
+            <div class="source-copy"><strong>${state.loading ? "Loading registry data" : state.board === undefined ? "No current registry data" : state.board.sourceMode === "local-ledger" ? "Current local-ledger API response" : state.board.sourceMode === "snapshot" ? "Read-only registry snapshot" : "Demo workspace data"}</strong>
               <span>${sourceMessage}</span>
             </div>
             ${state.observedAt === undefined || state.loading ? "" : `<span class="source-time">Checked <time datetime="${escapeHtml(state.observedAt)}">${escapeHtml(formatReviewTime(state.observedAt))}</time> (browser clock)</span>`}

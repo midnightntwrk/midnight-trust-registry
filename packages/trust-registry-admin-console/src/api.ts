@@ -55,6 +55,7 @@ const deploymentIdentity = (value: unknown): DeploymentIdentity | undefined => {
     throw new Error("Local admin API deployment identity is malformed");
   }
   const identity = value as Record<string, unknown>;
+  // A changed deployment identity schema must fail closed until both clients validate it.
   if (Object.keys(identity).length !== 4
     || !["networkProfileId", "networkId", "expectedGenesisHash", "contractAddress"]
       .every((key) => Object.hasOwn(identity, key))
