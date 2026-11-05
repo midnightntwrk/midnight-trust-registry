@@ -1083,13 +1083,15 @@ export const createAdminConsoleApp = (
       <a href="#advanced-governance">Advanced governance</a>
     `;
     const deploymentIdentity = state.board?.sourceMode === "local-ledger" ? state.board.deploymentIdentity : undefined;
-    const deploymentNotice = state.board === undefined
-      ? "No current registry source is available. Deployment identity and ledger state cannot be inferred from this browser view."
-      : state.board.sourceMode !== "local-ledger"
-        ? "This is a local fixture workspace. It does not report a deployment plan or prove ledger finality or actor authorization."
-        : deploymentIdentity === undefined
-          ? "This local-ledger API did not expose a deployment identity. A node-reported checkpoint and browser response are not independently authenticated finality or actor authorization."
-          : "This API reports its local deployment plan. A node-reported checkpoint and browser response are not independently authenticated finality or actor authorization.";
+    const deploymentNotice = state.loading && state.board !== undefined
+      ? "Rechecking this source. The identity below is from the last completed browser check and may be stale; do not rely on it until the check finishes."
+      : state.board === undefined
+        ? "No current registry source is available. Deployment identity and ledger state cannot be inferred from this browser view."
+        : state.board.sourceMode !== "local-ledger"
+          ? "This is a local fixture workspace. It does not report a deployment plan or prove ledger finality or actor authorization."
+          : deploymentIdentity === undefined
+            ? "This local-ledger API did not expose a deployment identity. A node-reported checkpoint and browser response are not independently authenticated finality or actor authorization."
+            : "This API reports its local deployment plan. A node-reported checkpoint and browser response are not independently authenticated finality or actor authorization.";
     root.innerHTML = `
       <main class="shell app-shell" data-settings-active="${window.location.hash === "#workspace-settings"}">
         <header class="brand-bar">

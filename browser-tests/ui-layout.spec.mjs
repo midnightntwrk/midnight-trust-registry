@@ -435,6 +435,10 @@ for (const app of ["admin-console", "applicant-portal"]) {
         await expect(page.locator(".source-panel")).toContainText("Showing last checked data while rechecking");
         await expect(page.locator(".card")).toHaveCount(1);
         await expect(page.locator("[data-governed-prepare]").first()).toBeDisabled();
+        await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
+        await expect(page.locator(".settings-callout")).toContainText("may be stale");
+        await expect(page.locator(".settings-callout")).not.toContainText("reports its local deployment plan");
+        await page.locator(".settings-back").click();
       } else {
         await expect(page.locator(".source-panel")).toContainText("Records and results are hidden until the check completes");
         await expect(page.locator("#trust-records")).toHaveCount(0);

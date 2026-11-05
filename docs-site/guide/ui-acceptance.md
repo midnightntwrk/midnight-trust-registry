@@ -296,8 +296,9 @@ plan; otherwise they are shown as *not exposed*. These are API-reported plan
 values, not independent browser verification of the chain or contract. In
 fixture mode, settings explicitly say there is no deployment plan; when the
 source is unavailable, they do not infer any deployment identity. The local
-plan notice appears only when the local-ledger API exposes one. In
-local-ledger mode, the API's reported
+plan notice appears only when the local-ledger API exposes one. Admin settings
+label a retained identity as last-checked and potentially stale during Recheck.
+In local-ledger mode, the API's reported
 checkpoint hash and timestamp are displayed separately from the browser check
 time and explicitly remain unverified node claims. Same-origin packaged
 endpoints are host-managed; the editable standalone development URL is not an
