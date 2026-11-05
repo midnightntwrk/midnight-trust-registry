@@ -1016,8 +1016,8 @@ export const createAdminConsoleApp = (
           <p class="eyebrow">Local fixture controls</p>
           <div class="actions">
             ${getReviewActions(card.status).map((action) => `
-              <button class="button${action === "archive" ? " ghost" : ""}" data-action="${escapeHtml(action)}"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>
-                ${escapeHtml(action)}
+              <button class="button${action === "archive" ? " ghost" : ""}" type="button" data-action="${escapeHtml(action)}"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>
+                ${escapeHtml(action.charAt(0).toUpperCase() + action.slice(1))} in demo
               </button>
             `).join("") || "<p>No maintainer actions available for this lifecycle state.</p>"}
           </div>

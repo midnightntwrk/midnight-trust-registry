@@ -118,7 +118,11 @@ for (const target of ["issuer", "recognition"]) {
     const base = `http://127.0.0.1:${address.port}`;
     try {
       allowedLocalOrigins.add(base);
-      page.on("dialog", (dialog) => dialog.accept());
+      const confirmations = [];
+      page.on("dialog", (dialog) => {
+        confirmations.push(dialog.message());
+        return dialog.accept();
+      });
       await page.goto(`${base}/applicant/?demo=1&apiBase=${encodeURIComponent(base)}`);
       await expect(page.locator(".source-badge")).toHaveText("Local fixture");
       await expect(page.locator("#demo-application .demo-target-option")).toHaveCount(3);
@@ -141,10 +145,18 @@ for (const target of ["issuer", "recognition"]) {
       await expect(page.getByRole("heading", { name: "Decisions that need attention" })).toBeVisible();
       await expect(page.locator(".card")).toContainText(label);
       await expect(page.locator(".card .status-chip")).toHaveText("Proposed");
+      await expect(page.locator('[data-action="approve"]')).toHaveText("Approve in demo");
       await page.locator('[data-action="approve"]').click();
       await expect(page.locator(".card .status-chip")).toHaveText("Authorized");
+      await expect(page.locator('[data-action="activate"]')).toHaveText("Activate in demo");
       await page.locator('[data-action="activate"]').click();
       await expect(page.locator(".card .status-chip")).toHaveText("Active");
+      expect(confirmations).toHaveLength(2);
+      for (const message of confirmations) {
+        expect(message).toContain("in this local fixture?");
+        expect(message).toContain("Exact record:");
+        expect(message).toContain("This does not change the deployed ledger.");
+      }
       await expect(page.getByRole("heading", { name: "Registry review workspace" })).toBeVisible();
       await expect(page.locator(".column")).toHaveCount(1);
 

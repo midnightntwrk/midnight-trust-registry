@@ -120,7 +120,7 @@ export const describeActionConfirmation = (
   card: ReviewCard,
   action: ReviewAction,
 ): string =>
-  `Confirm ${action} for ${card.target} record ${card.id} (${card.status})? This governed action cannot be undone from the console.`;
+  `${action.charAt(0).toUpperCase()}${action.slice(1)} "${card.label}" (${card.target}, ${card.status}) in this local fixture?\nExact record: ${card.id}\nThis does not change the deployed ledger. This action cannot be undone from the console.`;
 
 export const executeReviewAction = async (
   card: ReviewCard,

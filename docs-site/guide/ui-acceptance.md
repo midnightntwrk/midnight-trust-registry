@@ -86,6 +86,16 @@ record back in the portal. The source remained **Local fixture** throughout.
 This was an agent-run setup check, not an independent new-engineer trial or a
 deployed-ledger end-to-end result.
 
+On 2026-11-05, the same clean-checkout setup was repeated at signed source
+`c7c599ca` on isolated ports 4442/4187/4189. Frozen install, all 10 uncached
+light-build tasks, and `demo:prepare` passed. In Chromium, an issuer fixture
+application submitted in the portal appeared as Proposed in admin, moved to
+Authorized and Active through confirmed local-fixture actions, and appeared in
+the portal's active issuer list after a reload. The confirmation copy needed a
+follow-up: fixture actions now say "in demo" and explicitly distinguish their
+effect from a deployed-ledger action. This remains an agent-run fixture trial,
+not a new-engineer or deployed standalone acceptance result.
+
 ## Browser acceptance
 
 Run `pnpm run test:browser` in a clean checkout. It builds the prebuilt runtime
@@ -98,6 +108,7 @@ repeatable UI acceptance evidence:
 | Browse fixture records and review a bounded admin detail; keyboard selection retains focus and identifies the current card and detail pane | `ui-layout.spec.mjs` |
 | Search the fixture portal by DID, see an explicit no-match state, and return to a visible record; keep the admin signing controls collapsed until requested | `ui-layout.spec.mjs` |
 | Submit a label-only issuer or recognition demo application in the portal, approve and activate it in admin, then read the active record back in the portal | `demo-application-handoff.spec.mjs` (two cross-app fixture journeys) |
+| Identify fixture-only admin actions before clicking, and confirm the exact record without implying an on-chain grant | `demo-application-handoff.spec.mjs`, admin model and app tests |
 | Choose issuer, verifier, auditor, or maintainer and complete challenge-bound evidence admission with an external signature | `applicant-portal.spec.mjs` (four role cases) |
 | Expose applicant source and historical/evidence failures as alert regions, and accepted application, evidence, recognition-recovery, and admin-action receipts as polite status regions | `ui-layout.spec.mjs`, `applicant-portal.spec.mjs`, `recognition-evidence.spec.mjs`, `admin-console.spec.mjs`, applicant unit tests |
 | Choose each applicant role card by keyboard, keep only its governed form open, expose expanded state to assistive technology, retain the selected role after recheck, and make no submission merely by choosing | `ui-layout.spec.mjs` |

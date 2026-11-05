@@ -285,7 +285,7 @@ describe("admin console browser handlers", () => {
     allStatus.dispatchEvent(new Event("change", { bubbles: true }));
     root.querySelector<HTMLButtonElement>("[data-action='suspend']")!.click();
     await vi.waitFor(() => expect(confirm).toHaveBeenCalledWith(
-      expect.stringContaining("auditor record auth:auditor:compliance"),
+      expect.stringContaining("Exact record: auth:auditor:compliance"),
     ));
     await vi.waitFor(() => expect(root.querySelector("[data-action='suspend']")?.hasAttribute("disabled")).toBe(false));
     expect(postedPaths).toEqual([]);

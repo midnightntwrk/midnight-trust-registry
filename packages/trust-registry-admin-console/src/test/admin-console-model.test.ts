@@ -363,7 +363,8 @@ describe("trust registry admin console model", () => {
     if (card === undefined) throw new Error("expected active auditor card");
     expect(card.detailRows).toContainEqual({ label: "Governed resource ID", value: board.auditors[0]?.authorization.resourceId });
     expect(card.detailRows).toContainEqual({ label: "Evidence epoch", value: "epoch:002" });
-    expect(describeActionConfirmation(card, "suspend")).toContain("auditor record auth:auditor:compliance:v1 (active)");
+    expect(describeActionConfirmation(card, "suspend")).toContain(`Suspend "${card.label}" (auditor, active) in this local fixture?`);
+    expect(describeActionConfirmation(card, "suspend")).toContain("This does not change the deployed ledger.");
     const mutate = vi.fn(async () => ({ recordKind: "authorization" }) as ReviewBoardMutation);
     expect(await executeReviewAction(card, "suspend", () => false, mutate)).toBeNull();
     expect(mutate).not.toHaveBeenCalled();
