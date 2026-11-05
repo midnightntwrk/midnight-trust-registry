@@ -122,6 +122,8 @@ test("applicant inspects and downloads bounded historical recognition and author
     await page.locator("[data-recognition-accepted]").click();
     await expect(page.locator("[data-recognition-recovery-result]"))
       .toContainText("Accepted accreditation receipt recovered");
+    await expect(page.locator('[data-recognition-recovery-result][role="status"]'))
+      .toContainText("Accepted accreditation receipt recovered");
     expect(requests.find((entry) => entry.path.endsWith("/submissions"))?.body.nonce).toBe(nonce);
 
     await page.locator('[data-workflow="Historical recognition evidence"] > summary').click();

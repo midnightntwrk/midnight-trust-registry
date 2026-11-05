@@ -389,6 +389,7 @@ for (const app of ["admin-console", "applicant-portal"]) {
       await expect(page.getByRole("heading", { name: app === "admin-console"
         ? "Connect to review records" : "Find your place in the registry" })).toBeVisible();
       if (app === "applicant-portal") {
+        await expect(page.getByRole("alert")).toContainText("Fixture host is offline");
         await expect(page.locator(".hero-actions a").first()).toHaveAttribute("href", "#connection-details");
         await expect(page.locator('a[href="#demo-application"]')).toHaveCount(0);
         await expect(page.locator("#demo-application")).toHaveCount(0);
@@ -396,6 +397,7 @@ for (const app of ["admin-console", "applicant-portal"]) {
         await expect(page.locator(".hero-actions a")).toHaveCount(1);
         await expect(page.locator(".journey-prerequisite")).toContainText("Connect to a registry source");
       }
+      await expectNoWcagViolations(page, `${app} unavailable source`);
       await expect(page.locator(".source-time")).toHaveCount(0);
       server.setHealthAvailable(true);
       await page.locator("[data-refresh]").click();

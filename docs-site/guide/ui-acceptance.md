@@ -99,6 +99,7 @@ repeatable UI acceptance evidence:
 | Search the fixture portal by DID, see an explicit no-match state, and return to a visible record; keep the admin signing controls collapsed until requested | `ui-layout.spec.mjs` |
 | Submit a label-only issuer or recognition demo application in the portal, approve and activate it in admin, then read the active record back in the portal | `demo-application-handoff.spec.mjs` (two cross-app fixture journeys) |
 | Choose issuer, verifier, auditor, or maintainer and complete challenge-bound evidence admission with an external signature | `applicant-portal.spec.mjs` (four role cases) |
+| Expose applicant source and historical/evidence failures as alert regions, and accepted application, evidence, recognition-recovery, and admin-action receipts as polite status regions | `ui-layout.spec.mjs`, `applicant-portal.spec.mjs`, `recognition-evidence.spec.mjs`, `admin-console.spec.mjs`, applicant unit tests |
 | Choose each applicant role card by keyboard, keep only its governed form open, expose expanded state to assistive technology, retain the selected role after recheck, and make no submission merely by choosing | `ui-layout.spec.mjs` |
 | Confirm an issuer's proposed, authorized, active, suspended, revoked, and archived transitions with refreshed board status | `admin-console.spec.mjs` (fixture review journey) |
 | Confirm fixture epoch publication, read back the exact new epoch, then submit an externally signed workspace intent against the refreshed context | `admin-console.spec.mjs` (fixture governance journey) |
@@ -112,7 +113,7 @@ repeatable UI acceptance evidence:
 | Keep registry-wide lifecycle counters off the local-ledger admin hero before and after an exact lookup; a fetched record is not a complete registry count | `local-lookup.spec.mjs` |
 | Show only registry identity and an API-reported epoch in the local-ledger applicant overview, not unavailable issuer/verifier list totals | `local-lookup.spec.mjs` |
 | Discard a previously visible API claim while Recheck is pending, remove exact lookup when the source becomes a fixture, and never reuse the old result when local-ledger mode returns; a denied follow-up lookup clears the prior success and announces the denial | `local-lookup.spec.mjs` (admin and applicant, controlled source switch and 403) |
-| Inspect settings/source provenance, retry after an unavailable response, retain keyboard focus, and avoid overflow at 320/390/768/1440 px | `ui-layout.spec.mjs` |
+| Inspect settings/source provenance, expose an offline error as an alert, retry after an unavailable response, retain keyboard focus, and avoid overflow at 320/390/768/1440 px | `ui-layout.spec.mjs` |
 | Open the mobile Menu and Workspace settings by keyboard in both apps; verify the URL field and recheck action have accessible names and retain focus after refresh | `ui-layout.spec.mjs` |
 | Show an unavailable auditor list as unavailable rather than zero, keep loaded issuers visible, and recover the lane after recheck | `ui-layout.spec.mjs` (controlled partial-failure fixture) |
 | During Recheck, label the admin's last-loaded records as potentially stale with actions paused, hide portal records until the response arrives, then show an offline error without stale trust data and recover on a later successful check | `ui-layout.spec.mjs` (held health response, both apps) |
@@ -126,7 +127,7 @@ repeatable UI acceptance evidence:
 | Reflow at 200% root text size on 320/390 px viewports without page-level horizontal scroll or non-control internal overlap; check workspace, advanced, and settings views at 320 px. Long text inside native inputs may scroll within the control. | `ui-layout.spec.mjs` |
 | Reflow local-ledger exact lookup at 320 px and 200% root text size in both apps, including returned records and expanded technical details; keep API-claim labels and avoid page-level overflow. Raw JSON scrolls inside a bounded, keyboard-focusable region rather than becoming a wall of broken words | `local-lookup.spec.mjs` |
 | Check browser-computed normal-text contrast for the brand lockup, navigation, source badge, and primary/secondary actions in both apps | `ui-layout.spec.mjs` (selected solid surfaces, at least 4.5:1) |
-| Audit rendered workspace, expanded workflow, and settings views at 390/1440 px, plus 390 px local-ledger results and settings, for automated WCAG 2.0/2.1/2.2 A/AA violations | `ui-layout.spec.mjs`, `local-lookup.spec.mjs` (`@axe-core/playwright`, no external browser requests) |
+| Audit rendered workspace, expanded workflow, settings, and unavailable-source views, plus 390 px local-ledger results and settings, for automated WCAG 2.0/2.1/2.2 A/AA violations | `ui-layout.spec.mjs`, `local-lookup.spec.mjs` (`@axe-core/playwright`, no external browser requests) |
 | Serve the shared Midnight browser icon from each built app without a missing-resource response | `ui-layout.spec.mjs` |
 | Deny unapproved browser egress and discard stale local checkpoint responses | `browser-egress-control.spec.mjs`, `admin-console.spec.mjs` |
 

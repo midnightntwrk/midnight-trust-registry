@@ -1095,7 +1095,7 @@ export const createAdminConsoleApp = (
           </div>
           ${state.board === undefined ? "" : renderMetrics(state.board)}
           ${state.error === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.error)}</div>`}
-          ${state.flash === undefined ? "" : `<div class="alert success">${escapeHtml(state.flash)}</div>`}
+          ${state.flash === undefined ? "" : `<div class="alert success" role="status">${escapeHtml(state.flash)}</div>`}
           <div class="source-panel" data-source-state="${state.loading ? "loading" : state.board?.sourceMode === "local-ledger" ? "local-ledger" : state.board === undefined ? "unavailable" : "fixture"}" role="status" aria-live="polite">
             <span class="source-badge">${state.loading ? "Checking" : state.board === undefined ? "Unavailable" : state.board.sourceMode === "local-ledger" ? "API claim" : "Local fixture"}</span>
             <div class="source-copy"><strong>${state.loading ? "Loading registry data" : state.board === undefined ? "No current registry data" : state.board.sourceMode === "local-ledger" ? "Current local-ledger API response" : "Demo workspace data"}</strong>

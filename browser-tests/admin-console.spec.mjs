@@ -358,6 +358,7 @@ test("fixture governance publishes an epoch and submits an externally signed wor
     await page.locator("[data-signed-submit] [name='signedEnvelope']").fill(JSON.stringify(envelope));
     await page.locator("[data-signed-submit] button[type='submit']").click();
     await expect(page.locator(".alert.success")).toContainText("Signed approve accepted");
+    await expect(page.locator('.alert.success[role="status"]')).toContainText("Signed approve accepted");
     expect(confirmations[1]).toContain(envelope.intent.targetId);
     expect(posted[1]).toEqual({ path: "/v1/mutations", body: envelope });
     await expect(page.locator(".source-panel")).toContainText("not deployed ledger evidence");

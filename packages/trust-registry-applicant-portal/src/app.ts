@@ -1525,9 +1525,9 @@ export const createApplicantPortalApp = (
                 <div class="metric"><span>Active verifiers</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("verifier") ? "n/a" : state.inspection.activeVerifiers.length.toString()}</strong></div>`}
             </div>
           </div>
-          ${state.error === undefined ? "" : `<div class="alert error">${escapeHtml(state.error)}</div>`}
+          ${state.error === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.error)}</div>`}
           ${state.inspection?.warnings?.map((warning) => `<div class="alert error">${escapeHtml(warning)}</div>`).join("") ?? ""}
-          ${state.flash === undefined ? "" : `<div class="alert success">${escapeHtml(state.flash)}</div>`}
+          ${state.flash === undefined ? "" : `<div class="alert success" role="status">${escapeHtml(state.flash)}</div>`}
           <div class="source-panel" data-source-state="${state.loading ? "loading" : state.inspection === undefined ? "unavailable" : state.inspection.sourceMode === "local-ledger" ? "local-ledger" : "fixture"}" role="status" aria-live="polite">
             <span class="source-badge">${state.loading ? "Checking" : state.inspection === undefined ? "Unavailable" : state.inspection.sourceMode === "local-ledger" ? "API claim" : "Local fixture"}</span>
             <div class="source-copy"><strong>${state.loading ? "Loading registry data" : state.inspection === undefined ? "No current registry data" : state.inspection.sourceMode === "local-ledger" ? "Current local-ledger API response" : "Demo workspace data"}</strong>
@@ -1661,7 +1661,7 @@ export const createApplicantPortalApp = (
               <label class="label">RFC3339 timestamp<input class="input mono" name="at" placeholder="2026-10-15T00:00:00Z" value="${escapeHtml(state.historicalDraft?.at ?? state.historicalQuery?.at ?? "")}" required /></label>
               <button class="button secondary" type="submit"${state.historicalBusy ? " disabled" : ""}>Inspect authorization evidence</button>
             </form>
-            ${state.historicalError === undefined ? "" : `<div class="alert error">${escapeHtml(state.historicalError)}</div>`}
+            ${state.historicalError === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.historicalError)}</div>`}
             ${state.historicalResult === undefined ? "" : `<div class="panel" data-historical-result>
               <p><strong>Unverified API claim:</strong> ${escapeHtml(state.historicalResult.statusAtTime ?? "not yet proposed")} at ${escapeHtml(state.historicalResult.evaluatedAt)}; trusted-at-time flag ${state.historicalResult.trustedAtTime ? "true" : "false"}.</p>
               <p>Evidence epoch <span class="mono">${escapeHtml(state.historicalResult.bundle.epoch.epochId)}</span>; policy <span class="mono">${escapeHtml(state.historicalResult.bundle.policy.policyId)}</span>.</p>
@@ -1681,7 +1681,7 @@ export const createApplicantPortalApp = (
               <label class="label">RFC3339 timestamp<input class="input mono" name="at" placeholder="2026-10-15T00:00:00Z" value="${escapeHtml(state.historicalRecognitionDraft?.at ?? state.historicalRecognitionQuery?.at ?? "")}" required /></label>
               <button class="button secondary" type="submit"${state.historicalRecognitionBusy ? " disabled" : ""}>Inspect recognition evidence</button>
             </form>
-            ${state.historicalRecognitionError === undefined ? "" : `<div class="alert error">${escapeHtml(state.historicalRecognitionError)}</div>`}
+            ${state.historicalRecognitionError === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.historicalRecognitionError)}</div>`}
             ${state.historicalRecognitionResult === undefined ? "" : `<div class="panel" data-historical-recognition-result>
               <p><strong>Unverified API claim:</strong> ${escapeHtml(state.historicalRecognitionResult.statusAtTime ?? "not yet proposed")} at ${escapeHtml(state.historicalRecognitionResult.evaluatedAt)}; recognized-at-time flag ${state.historicalRecognitionResult.trustedAtTime ? "true" : "false"}.</p>
               <p>Evidence epoch <span class="mono">${escapeHtml(state.historicalRecognitionResult.bundle.epoch.epochId)}</span>; policy <span class="mono">${escapeHtml(state.historicalRecognitionResult.bundle.policy.policyId)}</span>.</p>
@@ -1830,8 +1830,8 @@ export const createApplicantPortalApp = (
           <section class="form-panel" id="pending-evidence">
             <h2>Pending membership evidence</h2>
             <p>Paste an externally DID-signed issuer, verifier, auditor, or maintainer application to register it, or load an existing pending ID. The server derives policy and resource from trusted state. Registration does not create or approve a ledger grant.</p>
-            ${state.evidenceError === undefined ? "" : `<div class="alert error">${escapeHtml(state.evidenceError)}</div>`}
-            ${state.evidenceFlash === undefined ? "" : `<div class="alert success">${escapeHtml(state.evidenceFlash)}</div>`}
+            ${state.evidenceError === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.evidenceError)}</div>`}
+            ${state.evidenceFlash === undefined ? "" : `<div class="alert success" role="status">${escapeHtml(state.evidenceFlash)}</div>`}
             ${privateHost ? "" : `<p class="alert error">Private evidence is disabled: serve the portal and authenticated API from the same HTTPS or localhost origin.</p>`}
             <form data-application-registration-form>
               <label class="label">DID-signed application JSON
@@ -1881,7 +1881,7 @@ export const createApplicantPortalApp = (
           <section class="form-panel">
             <h2>Recover external recognition</h2>
             <p>Accredited authorities can request a one-use challenge, sign the authority assertion outside this browser, submit the signed assertion with the accreditation VP, recover the accepted receipt, and check the finalized Compact proposal. Only an authenticated same-origin session can access these private steps. A missing observation never triggers a retry.</p>
-            ${state.recognitionRecoveryMessage === undefined ? "" : `<p class="alert" data-recognition-recovery-result>${escapeHtml(state.recognitionRecoveryMessage)}</p>`}
+            ${state.recognitionRecoveryMessage === undefined ? "" : `<p class="alert" role="status" data-recognition-recovery-result>${escapeHtml(state.recognitionRecoveryMessage)}</p>`}
             <form data-recognition-recovery-form autocomplete="off">
               <label class="label">Recognition ID <input class="input mono" name="recognitionId" value="${escapeHtml(state.recognitionId)}" required autocomplete="off" /></label>
               <button class="button secondary" type="button" data-recognition-challenge${!privateHost || state.recognitionRecoveryBusy ? " disabled" : ""}>Issue authority challenge</button>

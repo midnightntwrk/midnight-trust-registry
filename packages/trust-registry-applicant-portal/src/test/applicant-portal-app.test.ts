@@ -212,6 +212,7 @@ describe("trust registry applicant portal app", () => {
     substituteSubject = true;
     submit();
     await vi.waitFor(() => expect(root.textContent).toContain("does not match the requested record and epoch"));
+    expect(root.querySelector('[role="alert"]')?.textContent).toContain("does not match the requested record and epoch");
     expect(root.querySelector("[data-historical-result]")).toBeNull();
   });
 
@@ -279,6 +280,7 @@ describe("trust registry applicant portal app", () => {
     substituteContext = true;
     submit();
     await vi.waitFor(() => expect(root.textContent).toContain("does not match the requested scope and epoch"));
+    expect(root.querySelector('[role="alert"]')?.textContent).toContain("does not match the requested scope and epoch");
     expect(root.querySelector("[data-historical-recognition-result]")).toBeNull();
     omitContext = true;
     const contextForm = root.querySelector<HTMLFormElement>("[data-historical-recognition]")!;
