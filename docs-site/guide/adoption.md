@@ -39,7 +39,7 @@ for the broader prebuilt simulator integration lane; neither command is a
 standalone deployment test. See the [demo details](quickstart.md) and
 [test boundaries](end-to-end-testing.md).
 
-### First-time UI trial
+### Desktop UI acceptance trial
 
 Ask an engineer who did not build these screens to follow the
 [local UI setup](ui-acceptance.md#run-locally) without live guidance. Have them
@@ -53,21 +53,30 @@ any label or state they could not explain:
    Find the next preparation step for each role. Choosing a role must not
    submit a request; private submission needs an authenticated same-origin
    host and an external signature.
-3. On the loopback demo URLs only, add `demo=1`, submit a label-only issuer
-   application, find it in admin, approve and activate it, then read the active
-   fixture record back in the portal. Confirm the source remains **Local
-   fixture** throughout. This is not an on-chain authorization.
-4. Repeat the main navigation and one role choice by keyboard at 390 px and
-   1440 px. Record any hidden action, lost focus, horizontal overflow, or
-   unclear error. Do not infer screen-reader usability from an axe pass.
+3. In admin, find an active record, inspect its source and lifecycle meaning,
+   filter the review list, and locate (but do not submit) a governed action.
+   Confirm the selected detail never implies an on-chain grant for a fixture.
+4. Repeat the main navigation, one role choice, record selection, and Workspace
+   settings at a desktop width by keyboard and screen reader. Check the spoken
+   names, expanded state, focus order, error/status announcements, and 200%
+   text zoom. Do not infer screen-reader usability from an axe pass.
 
 Report each step as passed, failed, or not run, with the browser, viewport,
-source label, observed action/result, and a screenshot or concise reproduction
-for each failure. Run the [Playwright browser suite](ui-acceptance.md#browser-acceptance)
-separately; automated success is not a substitute for this independent trial.
+assistive technology and version, source label, observed action/result, and a
+screenshot or concise reproduction for each failure. Use the
+[desktop review record](ui-acceptance.md#independent-desktop-review-record) so
+another engineer can verify the result. Run the
+[Playwright browser suite](ui-acceptance.md#browser-acceptance) separately;
+automated success is not a substitute for this independent trial.
 Local-ledger exact lookup and application tracking require their own source:
 the fixture demo cannot prove finalized readback or authenticated status
 history. Keep those paths **not run** rather than inventing a result.
+
+A mobile-device target and another task-based demo are deferred to
+[issue #265](https://github.com/midnightntwrk/midnight-trust-registry/issues/265).
+The existing responsive Playwright checks remain regressions, not mobile
+acceptance. The scripted demo above remains an optional fixture reference path,
+not a gate for this desktop UI closeout.
 
 ## Qualify a self-hosted installation
 

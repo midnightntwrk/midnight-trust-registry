@@ -110,7 +110,7 @@ repeatable UI acceptance evidence:
 | Submit a label-only issuer or recognition demo application in the portal, approve and activate it in admin, then read the active record back in the portal | `demo-application-handoff.spec.mjs` (two cross-app fixture journeys) |
 | Identify fixture-only admin actions before clicking, and confirm the exact record without implying an on-chain grant | `demo-application-handoff.spec.mjs`, admin model and app tests |
 | Choose issuer, verifier, auditor, or maintainer and complete challenge-bound evidence admission with an external signature | `applicant-portal.spec.mjs` (four role cases) |
-| Expose applicant source and historical/evidence failures as alert regions, and accepted application, evidence, recognition-recovery, and admin-action receipts as polite status regions | `ui-layout.spec.mjs`, `applicant-portal.spec.mjs`, `recognition-evidence.spec.mjs`, `admin-console.spec.mjs`, applicant unit tests |
+| Expose applicant source and historical/evidence failures as alert regions, and accepted application, evidence, recognition-recovery, and admin-action receipts as polite status regions; audit the partial-list failure at desktop width without inventing a zero count | `ui-layout.spec.mjs`, `applicant-portal.spec.mjs`, `recognition-evidence.spec.mjs`, `admin-console.spec.mjs`, applicant unit tests |
 | Choose each applicant role card by keyboard, keep only its governed form open, expose expanded state to assistive technology, retain the selected role after recheck, and make no submission merely by choosing | `ui-layout.spec.mjs` |
 | Explain application versus authorization IDs and the DID key in each opened role form; show why signing preparation is disabled on a cross-origin connection. Keep an expanded verifier form within 320 px at 200% root text size and capture its 390 px appearance for visual review | `ui-layout.spec.mjs` |
 | Confirm an issuer's proposed, authorized, active, suspended, revoked, and archived transitions with refreshed board status | `admin-console.spec.mjs` (fixture review journey) |
@@ -249,6 +249,37 @@ review of all states, overlays, and assistive technology. Each future case
 must assert the exact source label, actor/action prerequisite, receipt or
 board readback, and absence of false finality. Deployed standalone actor E2E
 qualification remains a separate gate.
+
+For the current desktop closeout in [#260](https://github.com/midnightntwrk/midnight-trust-registry/issues/260),
+review the 1440 px admin/applicant workspace, settings, and exact-lookup
+captures. The 320/390 px checks remain responsive regressions; an independent
+mobile-device target and another task-based demo are deferred to
+[#265](https://github.com/midnightntwrk/midnight-trust-registry/issues/265).
+Neither the fixture journey nor an automated axe result closes the independent
+desktop assistive-technology review.
+
+### Independent desktop review record
+
+Use the ordinary UI without `demo=1` at a desktop width. A reviewer who did
+not implement the UI should record the operating system, browser, screen
+reader and versions, viewport, source mode, and source commit. Mark each task
+**pass**, **fail**, or **not run**; include the first expected action, observed
+action/result, and a concise reproduction for a failure. A fixture source is
+acceptable for UI review but not for finalized-ledger or authenticated-status
+claims.
+
+| Task | What the reviewer must be able to determine |
+| --- | --- |
+| Orient in both apps | Name the portal or console, current source, primary task, and route to Workspace settings without relying on visual position. |
+| Choose a governed applicant role | Reach each of issuer, verifier, auditor, and maintainer by keyboard; hear the selected/expanded state; identify prerequisites and the next step without accidentally submitting. |
+| Understand a review decision | Find an admin record, filter it, open its detail, and explain the lifecycle and evidence/source warning before finding a governed action. |
+| Inspect and recover source | Read the fixture/unavailable/API-claim distinction, move to settings, recheck, and confirm focus and status/error announcements remain understandable. |
+| Reflow and motion | Repeat one portal and one admin task at 200% text zoom with reduced motion; no action or explanation should be lost. |
+
+Record the reviewer's findings and required fixes on #260. Keep exact lookup
+**not run** unless a suitable local-ledger API claim source is available, and
+never interpret that claim as independently verified finality. Do not close
+#260 on the strength of an agent-run Playwright or screenshot pass alone.
 
 For visual review, run `TR_UI_CAPTURE=1 pnpm exec playwright test
 browser-tests/ui-layout.spec.mjs` after building both UI packages. Inspect the

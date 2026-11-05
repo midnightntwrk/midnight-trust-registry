@@ -97,11 +97,12 @@ async function serveApp(app, { secondIssuer = false } = {}) {
   };
 }
 
-test("applicant portal treats a failed list as unavailable, then recovers on recheck", async ({ page, allowedLocalOrigins }) => {
+test("applicant portal treats a failed list as unavailable, then recovers on recheck", async ({ page, allowedLocalOrigins }, testInfo) => {
   const server = await serveApp("applicant-portal");
   try {
     server.setAuditorAvailable(false);
     allowedLocalOrigins.add(server.base);
+    await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
     await expect(page.locator(".source-badge")).toHaveText("Local fixture");
     await expect(page.locator(".source-panel")).toContainText("1 list(s) unavailable; counts shown as n/a");
@@ -110,6 +111,10 @@ test("applicant portal treats a failed list as unavailable, then recovers on rec
     await expect(auditorLane).toContainText("Do not infer trust from this lane");
     await expect(auditorLane).not.toContainText("0 active");
     await expect(page.locator("#trust-records")).toContainText("Local demo issuer");
+    await expectNoWcagViolations(page, "applicant partial list failure at 1440px");
+    if (process.env.TR_UI_CAPTURE === "1") {
+      await page.screenshot({ path: testInfo.outputPath("applicant-partial-list-1440.png"), fullPage: true });
+    }
 
     server.setAuditorAvailable(true);
     await page.locator("[data-refresh]").click();
