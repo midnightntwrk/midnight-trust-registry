@@ -1481,6 +1481,17 @@ export const createApplicantPortalApp = (
             </div>
           </section>`;
 
+    const sourceMessage = state.loading
+      ? "Checking this source. Records and results are hidden until the check completes."
+      : state.inspection?.sourceMode === "local-ledger"
+        ? "This response is not independently verified finality or authorization evidence. Broad lists are not offered in this mode; use exact lookup."
+        : state.inspection === undefined
+          ? "Connect or retry to inspect this source. No trust decision is available."
+          : "Fixture records are for exploration, not deployed ledger evidence.";
+    const partialFailureMessage = !state.loading && state.inspection?.sourceMode !== "local-ledger"
+      && state.inspection?.unavailableLists?.length
+      ? ` ${state.inspection.unavailableLists.length} list(s) unavailable; counts shown as n/a.` : "";
+
     root.innerHTML = `
       <main class="shell app-shell" data-settings-active="${window.location.hash === "#connection-details"}">
         <header class="brand-bar">
@@ -1520,7 +1531,7 @@ export const createApplicantPortalApp = (
           <div class="source-panel" data-source-state="${state.loading ? "loading" : state.inspection === undefined ? "unavailable" : state.inspection.sourceMode === "local-ledger" ? "local-ledger" : "fixture"}" role="status" aria-live="polite">
             <span class="source-badge">${state.loading ? "Checking" : state.inspection === undefined ? "Unavailable" : state.inspection.sourceMode === "local-ledger" ? "API claim" : "Local fixture"}</span>
             <div class="source-copy"><strong>${state.loading ? "Loading registry data" : state.inspection === undefined ? "No current registry data" : state.inspection.sourceMode === "local-ledger" ? "Current local-ledger API response" : "Demo workspace data"}</strong>
-              <span>${state.inspection?.sourceMode === "local-ledger" ? "This response is not independently verified finality or authorization evidence. Broad lists are not offered in this mode; use exact lookup." : state.inspection === undefined ? "Connect or retry to inspect this source. No trust decision is available." : "Fixture records are for exploration, not deployed ledger evidence."}${state.inspection?.sourceMode !== "local-ledger" && state.inspection?.unavailableLists?.length ? ` ${state.inspection.unavailableLists.length} list(s) unavailable; counts shown as n/a.` : ""}</span>
+              <span>${sourceMessage}${partialFailureMessage}</span>
             </div>
             ${state.observedAt === undefined || state.loading ? "" : `<span class="source-time">Checked <time datetime="${escapeHtml(state.observedAt)}">${escapeHtml(formatObservationTime(state.observedAt))}</time> (browser clock)</span>`}
             <button class="source-refresh" type="button" data-refresh data-focus-key="refresh"${state.loading ? " disabled" : ""}>Recheck</button>

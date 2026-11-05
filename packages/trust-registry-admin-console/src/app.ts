@@ -1063,6 +1063,15 @@ export const createAdminConsoleApp = (
       : state.board.sourceMode === "local-ledger" ? { href: "#exact-lookup", label: "Look up a record" }
         : needsReview ? { href: "#review-board", label: "Open review queue" }
           : { href: "#review-board", label: "Browse records" };
+    const sourceMessage = state.loading
+      ? state.board === undefined
+        ? "Checking this source. No current records are available yet."
+        : "Showing last checked data while rechecking. Actions are paused; do not treat these records as current until the check completes."
+      : state.board?.sourceMode === "local-ledger"
+        ? "This response is not independently verified finality or authorization evidence."
+        : state.board === undefined
+          ? "Connect or retry to inspect this source. No trust decision is available."
+          : "Fixture records are for exploration, not deployed ledger evidence.";
     const taskLinks = `
       <a href="#review-board">Review records</a>
       <a href="#workspace-settings">Workspace settings</a>
@@ -1090,7 +1099,7 @@ export const createAdminConsoleApp = (
           <div class="source-panel" data-source-state="${state.loading ? "loading" : state.board?.sourceMode === "local-ledger" ? "local-ledger" : state.board === undefined ? "unavailable" : "fixture"}" role="status" aria-live="polite">
             <span class="source-badge">${state.loading ? "Checking" : state.board === undefined ? "Unavailable" : state.board.sourceMode === "local-ledger" ? "API claim" : "Local fixture"}</span>
             <div class="source-copy"><strong>${state.loading ? "Loading registry data" : state.board === undefined ? "No current registry data" : state.board.sourceMode === "local-ledger" ? "Current local-ledger API response" : "Demo workspace data"}</strong>
-              <span>${state.board?.sourceMode === "local-ledger" ? "This response is not independently verified finality or authorization evidence." : state.board === undefined ? "Connect or retry to inspect this source. No trust decision is available." : "Fixture records are for exploration, not deployed ledger evidence."}</span>
+              <span>${sourceMessage}</span>
             </div>
             ${state.observedAt === undefined || state.loading ? "" : `<span class="source-time">Checked <time datetime="${escapeHtml(state.observedAt)}">${escapeHtml(formatReviewTime(state.observedAt))}</time> (browser clock)</span>`}
             <button class="source-refresh" type="button" data-refresh data-focus-key="refresh"${state.loading || state.governedBusy ? " disabled" : ""}>Recheck</button>

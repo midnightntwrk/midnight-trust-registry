@@ -405,6 +405,48 @@ for (const app of ["admin-console", "applicant-portal"]) {
       await server.close();
     }
   });
+
+  test(`${app} explains a pending source check and recovers after an offline result`, async ({ page, allowedLocalOrigins }) => {
+    const server = await serveApp(app);
+    let releaseHealth = () => {};
+    try {
+      allowedLocalOrigins.add(server.base);
+      await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
+      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+
+      const heldHealth = new Promise((resolve) => { releaseHealth = resolve; });
+      await page.route(`${server.base}/health`, async (route) => {
+        await heldHealth;
+        await route.continue();
+      }, { times: 1 });
+      await page.locator("[data-refresh]").click();
+      await expect(page.locator(".source-badge")).toHaveText("Checking");
+      await expect(page.locator("[data-refresh]")).toBeDisabled();
+      if (app === "admin-console") {
+        await expect(page.locator(".source-panel")).toContainText("Showing last checked data while rechecking");
+        await expect(page.locator(".card")).toHaveCount(1);
+        await expect(page.locator("[data-governed-prepare]").first()).toBeDisabled();
+      } else {
+        await expect(page.locator(".source-panel")).toContainText("Records and results are hidden until the check completes");
+        await expect(page.locator("#trust-records")).toHaveCount(0);
+      }
+
+      server.setHealthAvailable(false);
+      releaseHealth();
+      await expect(page.locator(".source-badge")).toHaveText("Unavailable");
+      await expect(page.locator(".source-panel")).toContainText("No trust decision is available");
+      await expect(page.locator(".card, #trust-records")).toHaveCount(0);
+
+      server.setHealthAvailable(true);
+      await page.locator("[data-refresh]").click();
+      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      expect(server.requests.some((request) => request.startsWith("POST "))).toBe(false);
+    } finally {
+      releaseHealth();
+      await page.close();
+      await server.close();
+    }
+  });
 }
 
 for (const [app, title] of [
