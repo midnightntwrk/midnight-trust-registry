@@ -980,7 +980,7 @@ export const createAdminConsoleApp = (
     const previousSignedEnvelope = root.querySelector<HTMLTextAreaElement>("[data-signed-submit] [name='signedEnvelope']")?.value;
     const focusKey = root.contains(document.activeElement)
       ? document.activeElement?.getAttribute("data-focus-key") : null;
-    pendingFocusKey = focusKey ?? pendingFocusKey;
+    pendingFocusKey = focusKey ?? (root.contains(document.activeElement) ? null : pendingFocusKey);
     const advancedOpen = root.querySelector<HTMLDetailsElement>(".advanced-workflows")?.open ?? false;
     const settingsOpen = root.querySelector<HTMLDetailsElement>(".workspace-settings")?.open ?? false;
     const groupedCards = groupReviewCards(state.cards);
@@ -1013,8 +1013,8 @@ export const createAdminConsoleApp = (
           ${state.error === undefined ? "" : `<div class="alert error">${escapeHtml(state.error)}</div>`}
           ${state.flash === undefined ? "" : `<div class="alert success">${escapeHtml(state.flash)}</div>`}
           <div class="source-panel" data-source-state="${state.loading ? "loading" : state.board?.sourceMode === "local-ledger" ? "local-ledger" : state.board === undefined ? "unavailable" : "fixture"}" role="status" aria-live="polite">
-            <span class="source-badge">${state.loading ? "Checking" : state.board === undefined ? "Unavailable" : state.board.sourceMode === "local-ledger" ? "API claim" : "Local fixture"}</span>
-            <div class="source-copy"><strong>${state.loading ? "Loading registry data" : state.board === undefined ? "No current registry data" : state.board.sourceMode === "local-ledger" ? "Current local-ledger API response" : "Demo workspace data"}</strong>
+            <span class="source-badge">${state.loading ? "Checking" : state.board === undefined ? "Unavailable" : state.board.sourceMode === "local-ledger" ? "API claim" : state.board.sourceMode === "snapshot" ? "Snapshot" : "Local fixture"}</span>
+            <div class="source-copy"><strong>${state.loading ? "Loading registry data" : state.board === undefined ? "No current registry data" : state.board.sourceMode === "local-ledger" ? "Current local-ledger API response" : state.board.sourceMode === "snapshot" ? "Read-only registry snapshot" : "Demo workspace data"}</strong>
               <span>${state.board?.sourceMode === "local-ledger" ? "This response is not independently verified finality or authorization evidence." : state.board === undefined ? "Connect or retry to inspect this source. No trust decision is available." : "Fixture records are for exploration, not deployed ledger evidence."}</span>
             </div>
             ${state.observedAt === undefined || state.loading ? "" : `<span class="source-time">Checked ${escapeHtml(state.observedAt)} (browser clock)</span>`}

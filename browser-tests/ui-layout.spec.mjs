@@ -39,6 +39,7 @@ const issuer = {
 
 async function serveApp(app) {
   let healthAvailable = true;
+  let sourceMode = "workspace";
   let healthGate;
   const staticHandler = createStaticAssetHandler({
     distDir: resolve(`packages/trust-registry-${app}/dist`),
@@ -55,7 +56,7 @@ async function serveApp(app) {
       if (healthGate !== undefined) await healthGate;
       if (!healthAvailable) response.statusCode = 503;
       response.end(JSON.stringify(healthAvailable
-        ? { status: "ok", sourceMode: "workspace" }
+        ? { status: "ok", sourceMode }
         : { title: "Registry unavailable", detail: "Fixture host is offline" }));
     }
     else if (path === "/v1/registry/summary") response.end(JSON.stringify(summary));
@@ -67,6 +68,7 @@ async function serveApp(app) {
   return {
     base: `http://127.0.0.1:${address.port}`,
     setHealthAvailable: (available) => { healthAvailable = available; },
+    setSourceMode: (mode) => { sourceMode = mode; },
     pauseHealth: () => {
       let release;
       healthGate = new Promise((resolveGate) => { release = resolveGate; });
@@ -77,6 +79,22 @@ async function serveApp(app) {
       await new Promise((done, reject) => server.close((error) => error ? reject(error) : done()));
     },
   };
+}
+
+for (const app of ["admin-console", "applicant-portal"]) {
+  test(`${app} labels a read-only snapshot separately from demo data`, async ({ page, allowedLocalOrigins }) => {
+    const server = await serveApp(app);
+    try {
+      server.setSourceMode("snapshot");
+      allowedLocalOrigins.add(server.base);
+      await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
+      await expect(page.locator(".source-badge")).toHaveText("Snapshot");
+      await expect(page.locator(".source-copy")).toContainText("Read-only registry snapshot");
+    } finally {
+      await page.close();
+      await server.close();
+    }
+  });
 }
 
 for (const app of ["admin-console", "applicant-portal"]) {
@@ -126,6 +144,29 @@ for (const app of ["admin-console", "applicant-portal"]) {
       await page.close();
       await first.close();
       await second.close();
+    }
+  });
+}
+
+for (const app of ["admin-console", "applicant-portal"]) {
+  test(`${app} does not return focus to Refresh after the user moves on`, async ({ page, allowedLocalOrigins }) => {
+    const server = await serveApp(app);
+    let releaseHealth;
+    try {
+      allowedLocalOrigins.add(server.base);
+      await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
+      releaseHealth = server.pauseHealth();
+      const refresh = page.locator("[data-refresh]");
+      await refresh.click();
+      await page.locator(".workspace-settings > summary").focus();
+      releaseHealth();
+      releaseHealth = undefined;
+      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(refresh).not.toBeFocused();
+    } finally {
+      releaseHealth?.();
+      await page.close();
+      await server.close();
     }
   });
 }
