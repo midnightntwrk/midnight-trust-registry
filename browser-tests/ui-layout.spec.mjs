@@ -610,7 +610,8 @@ for (const [app, title] of [
         await settingsLink.click();
         await expect(page.locator(".settings-view")).toBeVisible();
         await expect(page.locator(".hero")).toBeHidden();
-        await expect(page.locator(".settings-view")).toContainText("Network profile, genesis, contract");
+        await expect(page.locator(".settings-view")).toContainText("Network profile (API report)");
+        await expect(page.locator(".settings-view .settings-technical > summary")).toHaveText("Technical identifiers and plan");
         await expect(page.locator(".settings-view")).toContainText("Not exposed by this API response");
         await expect(page.locator(".settings-view")).not.toHaveCSS("overflow-x", "scroll");
         if (process.env.TR_UI_CAPTURE === "1") {

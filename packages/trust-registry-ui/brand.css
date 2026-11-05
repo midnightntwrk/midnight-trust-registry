@@ -207,6 +207,10 @@
 .settings-card .settings-grid { grid-template-columns: minmax(0, 1fr); margin: 0; padding: 0; }
 .settings-card .settings-grid > div { min-width: 0; }
 .settings-card .technical-id { overflow-wrap: anywhere; }
+.settings-technical { margin-top: 1rem; padding-top: 0.65rem; border-top: 1px solid var(--midnight-border); }
+.settings-technical summary { display: list-item; min-height: 2.75rem; padding: 0.65rem 0.2rem; color: var(--midnight-blue); font-size: 0.88rem; font-weight: 700; cursor: pointer; }
+.settings-technical summary:hover { text-decoration: underline; }
+.settings-technical .settings-grid { margin-top: 0.5rem; }
 .settings-card .connection-form { margin-top: 1rem; }
 .settings-card .source-refresh { margin: 0.8rem 0 0; }
 .settings-callout { padding: 0.85rem 1rem; border: 1px solid #bcbcff; border-radius: 10px; background: var(--midnight-blue-soft); color: var(--midnight-black); font-size: 0.84rem; }

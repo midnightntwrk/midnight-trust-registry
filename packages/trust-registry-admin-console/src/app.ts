@@ -1143,19 +1143,27 @@ export const createAdminConsoleApp = (
               <p class="eyebrow">Read-only</p>
               <h2 id="admin-identity-heading">Deployment identity</h2>
               <dl class="settings-grid">
-              <div><dt>Registry ID</dt><dd class="technical-id">${escapeHtml(state.board?.summary.registryId ?? "Not reported")}</dd></div>
-              <div><dt>Registry DID</dt><dd class="technical-id">${escapeHtml(state.board?.summary.registryDid ?? "Not reported")}</dd></div>
-              <div><dt>Current epoch ID</dt><dd class="technical-id">${escapeHtml(state.board?.summary.currentEpochId ?? "Not reported")}</dd></div>
-              <div><dt>Approved local plan digest</dt><dd class="technical-id">${escapeHtml(state.board?.localPlanSha256 ?? "Not exposed by this API")}</dd></div>
-              ${state.board?.sourceMode !== "local-ledger" ? "" : `<div><dt>Node-reported checkpoint hash</dt><dd class="technical-id">${escapeHtml(state.board.nodeReportedCheckpointHash ?? "Not reported")}</dd></div>
-              <div><dt>Node-reported checkpoint time</dt><dd>${escapeHtml(state.board.nodeReportedAt ?? "Not reported")}</dd></div>`}
-              ${deploymentIdentity === undefined
-                ? "<div><dt>Network profile, genesis, contract</dt><dd>Not exposed by this API response</dd></div>"
-                : `<div><dt>Network profile (API report)</dt><dd>${escapeHtml(deploymentIdentity.networkProfileId)}</dd></div>
-                  <div><dt>Network ID (API report)</dt><dd>${escapeHtml(deploymentIdentity.networkId)}</dd></div>
-                  <div><dt>Expected genesis hash (API plan)</dt><dd class="technical-id">${escapeHtml(deploymentIdentity.expectedGenesisHash)}</dd></div>
-                  <div><dt>Contract address (API plan)</dt><dd class="technical-id">${escapeHtml(deploymentIdentity.contractAddress)}</dd></div>`}
-            </dl>
+                <div><dt>Registry</dt><dd>${escapeHtml(state.board?.summary.registryLabel ?? "Not reported")}</dd></div>
+                <div><dt>Network profile (API report)</dt><dd>${escapeHtml(deploymentIdentity?.networkProfileId ?? "Not exposed by this API response")}</dd></div>
+                <div><dt>Genesis anchor</dt><dd>${deploymentIdentity === undefined ? "Not exposed by this API response" : "Expected hash in API plan"}</dd></div>
+                <div><dt>Contract</dt><dd>${deploymentIdentity === undefined ? "Not exposed by this API response" : "Address in API plan"}</dd></div>
+              </dl>
+              <details class="settings-technical">
+                <summary>Technical identifiers and plan</summary>
+                <dl class="settings-grid">
+                  <div><dt>Registry ID</dt><dd class="technical-id">${escapeHtml(state.board?.summary.registryId ?? "Not reported")}</dd></div>
+                  <div><dt>Registry DID</dt><dd class="technical-id">${escapeHtml(state.board?.summary.registryDid ?? "Not reported")}</dd></div>
+                  <div><dt>Current epoch ID</dt><dd class="technical-id">${escapeHtml(state.board?.summary.currentEpochId ?? "Not reported")}</dd></div>
+                  <div><dt>Approved local plan digest</dt><dd class="technical-id">${escapeHtml(state.board?.localPlanSha256 ?? "Not exposed by this API")}</dd></div>
+                  ${state.board?.sourceMode !== "local-ledger" ? "" : `<div><dt>Node-reported checkpoint hash</dt><dd class="technical-id">${escapeHtml(state.board.nodeReportedCheckpointHash ?? "Not reported")}</dd></div>
+                  <div><dt>Node-reported checkpoint time</dt><dd>${escapeHtml(state.board.nodeReportedAt ?? "Not reported")}</dd></div>`}
+                  ${deploymentIdentity === undefined
+                    ? "<div><dt>Network ID</dt><dd>Not exposed by this API response</dd></div>"
+                    : `<div><dt>Network ID (API report)</dt><dd>${escapeHtml(deploymentIdentity.networkId)}</dd></div>
+                      <div><dt>Expected genesis hash (API plan)</dt><dd class="technical-id">${escapeHtml(deploymentIdentity.expectedGenesisHash)}</dd></div>
+                      <div><dt>Contract address (API plan)</dt><dd class="technical-id">${escapeHtml(deploymentIdentity.contractAddress)}</dd></div>`}
+                </dl>
+              </details>
             <p class="settings-callout">This API reports its local deployment plan. A node-reported checkpoint and browser response are not independently authenticated finality or actor authorization.</p>
             </section>
             <section class="settings-card" aria-labelledby="admin-signing-heading">

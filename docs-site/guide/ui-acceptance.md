@@ -124,7 +124,7 @@ repeatable UI acceptance evidence:
 | Keep registry-wide lifecycle counters off the local-ledger admin hero before and after an exact lookup; a fetched record is not a complete registry count | `local-lookup.spec.mjs` |
 | Show only registry identity and an API-reported epoch in the local-ledger applicant overview, not unavailable issuer/verifier list totals | `local-lookup.spec.mjs` |
 | Discard a previously visible API claim while Recheck is pending, remove exact lookup when the source becomes a fixture, and never reuse the old result when local-ledger mode returns; a denied follow-up lookup clears the prior success and announces the denial | `local-lookup.spec.mjs` (admin and applicant, controlled source switch and 403) |
-| Show approved local-plan network and deployment identity only as API-reported values in Workspace settings; remove them when the source becomes a fixture. Keep both settings views within 320 px at 200% root text size, including long genesis and contract hashes | `local-lookup.spec.mjs` (both apps); API and client unit tests reject malformed or unapproved identity |
+| Show approved local-plan network and deployment identity only as API-reported values in Workspace settings; remove them when the source becomes a fixture. Keep long genesis and contract hashes behind an accessible technical disclosure and both settings views within 320 px at 200% root text size, including when expanded | `local-lookup.spec.mjs` (both apps); API and client unit tests reject malformed or unapproved identity |
 | Inspect settings/source provenance, expose an offline error as an alert, retry after an unavailable response, retain keyboard focus, and avoid overflow at 320/390/768/1440 px | `ui-layout.spec.mjs` |
 | Open the mobile Menu and Workspace settings by keyboard in both apps; verify the URL field and recheck action have accessible names and retain focus after refresh | `ui-layout.spec.mjs` |
 | Show an unavailable auditor list as unavailable rather than zero, keep loaded issuers visible, and recover the lane after recheck | `ui-layout.spec.mjs` (controlled partial-failure fixture) |
@@ -286,9 +286,11 @@ authenticated host. A registered application is not an approved grant.
 The sidebar or mobile Menu opens a dedicated Workspace settings view. The main
 workspaces retain a compact source-status cue, but the detailed connection form
 and deployment identity do not compete with record workflows. Settings expose
-endpoint, last browser check, source mode, registry
-identity, and any approved local-plan digest reported by the API. Network
-profile and network ID, expected genesis hash, and contract address are shown
+endpoint, last browser check, source mode, registry label, and a short
+deployment summary. Exact registry IDs, DID, epoch, plan digest, checkpoint,
+network ID, expected genesis hash, and contract address are available in a
+keyboard-accessible **Technical identifiers and plan** disclosure rather than
+dominating the initial view. Network profile and identity values are shown
 only when the approved local-ledger API returns a deployment identity from its
 plan; otherwise they are shown as *not exposed*. These are API-reported plan
 values, not independent browser verification of the chain or contract. In

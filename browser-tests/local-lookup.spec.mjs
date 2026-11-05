@@ -128,14 +128,26 @@ async function reviewLocalLayouts(page, testInfo, app) {
     await expect(page.locator(".settings-view")).toContainText(app === "admin"
       ? "not independently authenticated finality" : "do not establish finalized ledger state");
     await expect(page.locator(".settings-view")).toContainText("Network profile (API report)");
-    await expect(page.locator(".settings-view")).toContainText(deploymentIdentity.expectedGenesisHash);
-    await expect(page.locator(".settings-view")).toContainText(deploymentIdentity.contractAddress);
+    const technical = page.locator(".settings-view .settings-technical");
+    await expect(technical).not.toHaveAttribute("open", "");
+    await expect(technical.getByText(deploymentIdentity.expectedGenesisHash)).toBeHidden();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1);
     if (width === 390) await expectNoWcagViolations(page, `${app} local settings`);
     if (process.env.TR_UI_CAPTURE === "1") {
       await page.evaluate(() => window.scrollTo(0, 0));
       await page.screenshot({ path: testInfo.outputPath(`${app}-local-settings-${width}.png`), fullPage: true });
     }
+    if (width === 390) {
+      await technical.locator("summary").focus();
+      await page.keyboard.press("Enter");
+    } else {
+      await technical.locator("summary").click();
+    }
+    await expect(technical.getByText(deploymentIdentity.expectedGenesisHash)).toBeVisible();
+    await expect(technical.getByText(deploymentIdentity.contractAddress)).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1);
+    await technical.locator("summary").click();
+    await expect(technical.getByText(deploymentIdentity.expectedGenesisHash)).toBeHidden();
     await page.locator(".settings-back").click();
     if (app === "applicant") {
       await expect(page.locator("#current-recognition-lookup")).toBeVisible();
@@ -146,7 +158,9 @@ async function reviewLocalLayouts(page, testInfo, app) {
   await page.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
   await page.locator(".mobile-task-menu > summary").click();
   await page.locator(".mobile-task-menu nav a").filter({ hasText: "Workspace settings" }).click();
-  await expect(page.locator(".settings-view")).toContainText(deploymentIdentity.expectedGenesisHash);
+  const technical = page.locator(".settings-view .settings-technical");
+  await technical.locator("summary").click();
+  await expect(technical.getByText(deploymentIdentity.expectedGenesisHash)).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321);
   if (process.env.TR_UI_CAPTURE === "1") {
     await page.screenshot({ path: testInfo.outputPath(`${app}-local-settings-320-zoom.png`), fullPage: true });
