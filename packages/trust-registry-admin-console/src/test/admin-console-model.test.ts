@@ -265,7 +265,10 @@ describe("trust registry admin console model", () => {
     const paths: string[] = [];
     const health = { status: "ok", sourceMode: "local-ledger", registryId: board.summary.registryId,
       localPlanSha256: "a".repeat(64), finalizedBlockHash: `0x${"b".repeat(64)}`,
-      generatedAt: "2026-10-25T00:00:00Z" };
+      generatedAt: "2026-10-25T00:00:00Z", deploymentIdentity: {
+        networkProfileId: "standalone", networkId: "undeployed",
+        expectedGenesisHash: `0x${"c".repeat(64)}`, contractAddress: `0x${"d".repeat(64)}`,
+      } };
     const entry = board.issuers[0]!;
     const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
       const path = new URL(String(input)).pathname;
@@ -278,11 +281,22 @@ describe("trust registry admin console model", () => {
     const client = new TrustRegistryAdminConsoleClient("http://127.0.0.1:4400", fetchImpl as typeof fetch);
     const loaded = await client.loadReviewBoard();
     expect(loaded.sourceMode).toBe("local-ledger");
+    expect(loaded.deploymentIdentity).toEqual(health.deploymentIdentity);
+    expect(loaded.snapshotGeneratedAt).toBe(health.generatedAt);
     expect(loaded.issuers).toEqual([]);
     const card = await client.loadCurrentReviewCard("issuer", entry.authorization.authorizationId, loaded);
     expect(card.id).toBe(entry.authorization.authorizationId);
     expect(paths).toEqual(["/health", "/v1/registry/summary", "/health",
       "/v1/authorizations/issuer/auth%3Aissuer%3Adegree%3Av1", "/health"]);
+  });
+  it("rejects malformed local deployment identity before showing a board", async () => {
+    const client = new TrustRegistryAdminConsoleClient("http://127.0.0.1:4400", async () => Response.json({
+      status: "ok", sourceMode: "local-ledger", registryId: board.summary.registryId,
+      localPlanSha256: "a".repeat(64), finalizedBlockHash: `0x${"b".repeat(64)}`,
+      deploymentIdentity: { networkProfileId: "standalone", networkId: "undeployed",
+        expectedGenesisHash: "not-a-hash", contractAddress: `0x${"d".repeat(64)}` },
+    }));
+    await expect(client.loadReviewBoard()).rejects.toThrow(/deployment identity is malformed/u);
   });
   it("rejects a changed local checkpoint or mismatched exact-ID response", async () => {
     let checkpoint = `0x${"b".repeat(64)}`;
@@ -363,7 +377,8 @@ describe("trust registry admin console model", () => {
     if (card === undefined) throw new Error("expected active auditor card");
     expect(card.detailRows).toContainEqual({ label: "Governed resource ID", value: board.auditors[0]?.authorization.resourceId });
     expect(card.detailRows).toContainEqual({ label: "Evidence epoch", value: "epoch:002" });
-    expect(describeActionConfirmation(card, "suspend")).toContain("auditor record auth:auditor:compliance:v1 (active)");
+    expect(describeActionConfirmation(card, "suspend")).toContain(`Suspend "${card.label}" (auditor, active) in this local fixture?`);
+    expect(describeActionConfirmation(card, "suspend")).toContain("This does not change the deployed ledger.");
     const mutate = vi.fn(async () => ({ recordKind: "authorization" }) as ReviewBoardMutation);
     expect(await executeReviewAction(card, "suspend", () => false, mutate)).toBeNull();
     expect(mutate).not.toHaveBeenCalled();

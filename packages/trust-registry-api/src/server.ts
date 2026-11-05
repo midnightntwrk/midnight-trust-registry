@@ -1182,6 +1182,16 @@ export const createTrustRegistryApiServer = (
             registryId: summary.registryId,
             ...(options.localPlanSha256 === undefined ? {} : { localPlanSha256: options.localPlanSha256 }),
             ...(selection === undefined ? {} : { finalizedBlockHash: selection.finalizedBlockHash }),
+            ...(options.source.mode !== "local-ledger" || options.localPlanSha256 === undefined
+              || options.source.localDeploymentBinding?.networkProfileId === undefined
+              || options.source.localDeploymentBinding.networkId === undefined ? {} : {
+                deploymentIdentity: {
+                  networkProfileId: options.source.localDeploymentBinding.networkProfileId,
+                  networkId: options.source.localDeploymentBinding.networkId,
+                  expectedGenesisHash: options.source.localDeploymentBinding.expectedGenesisHash,
+                  contractAddress: options.source.localDeploymentBinding.contractAddress,
+                },
+              }),
           }),
         );
         return;

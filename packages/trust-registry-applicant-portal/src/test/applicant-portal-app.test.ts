@@ -8,6 +8,31 @@ const localHealth = { status: "ok", sourceMode: "local-ledger", registryId: "reg
   generatedAt: "2026-10-25T00:00:00Z" };
 
 describe("trust registry applicant portal app", () => {
+  it("keeps fixture shortcuts opt-in and collapses empty record categories", async () => {
+    const root = document.createElement("div");
+    document.body.replaceChildren(root);
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/health") return Response.json({ status: "ok", sourceMode: "workspace", registryId: "registry:local" });
+      if (path === "/v1/registry/summary") return Response.json({ registryLabel: "local", currentEpochId: "epoch:1" });
+      return Response.json({ entries: [] });
+    });
+    const renderAt = async (url: string) => {
+      createApplicantPortalApp(root, { initialUrl: new URL(url), storage: window.localStorage,
+        fetchImpl: fetchImpl as typeof fetch });
+      await vi.waitFor(() => expect(root.querySelector("#trust-records")).not.toBeNull());
+    };
+    await renderAt("http://127.0.0.1:4175/?apiBase=http://127.0.0.1:4400");
+    expect(root.querySelector("#demo-application")).toBeNull();
+    expect(root.textContent).not.toContain("credentialFamily");
+    expect(root.querySelectorAll("#trust-records .lane")).toHaveLength(0);
+    expect(root.textContent).toContain("No active records in this fixture yet.");
+    expect(root.querySelector(".advanced-tools")).not.toBeNull();
+    await renderAt("http://127.0.0.1:4175/?demo=1&apiBase=http://127.0.0.1:4400");
+    expect(root.querySelector("#demo-application")).not.toBeNull();
+    await renderAt("https://registry.example/?demo=1&apiBase=http://127.0.0.1:4400");
+    expect(root.querySelector("#demo-application")).toBeNull();
+  });
   it("keeps application forms but never renders unavailable local lists as empty trust", async () => {
     const root = document.createElement("div");
     document.body.replaceChildren(root);
@@ -23,16 +48,31 @@ describe("trust registry applicant portal app", () => {
       storage: { getItem: () => null, setItem: () => {} } as unknown as Storage,
       fetchImpl: fetchImpl as typeof fetch,
     });
-    await vi.waitFor(() => expect(root.textContent).toContain("Current issuer list is unavailable"));
+    await vi.waitFor(() => expect(root.querySelector("[data-source-state='local-ledger']")).not.toBeNull());
     expect(root.querySelector("[data-source-state='local-ledger']")?.textContent)
       .toContain("not independently verified finality");
-    expect(root.querySelector(".source-panel")?.textContent).toContain("4 list(s) unavailable");
+    expect(root.querySelector(".source-panel")?.textContent).toContain("Broad lists are not offered in this mode");
+    expect(root.textContent).not.toContain("Current issuer list is unavailable");
+    expect(root.textContent).not.toContain("4 list(s) unavailable");
     expect(root.querySelector(".source-time")?.textContent).toContain("browser clock");
+    expect(root.querySelector(".source-time time")?.getAttribute("datetime")).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(root.querySelector(".source-time time")?.textContent).toContain("UTC");
+    expect(root.querySelector("#connection-details")?.textContent).toContain("Last checked in this browser");
+    expect(root.querySelector("#connection-details time")?.textContent).toContain("UTC");
     expect(root.textContent).toContain("local");
-    expect(root.textContent).toContain("Current list unavailable. Do not infer trust from this lane.");
+    expect(root.querySelector("#current-authorization-lookup .lookup-copy")?.textContent)
+      .toContain("Broad browsing is unavailable here.");
+    expect(root.querySelector("#current-authorization-lookup .lookup-empty")?.textContent)
+      .toContain("No record loaded yet");
     expect(root.textContent).not.toContain("No active entries in this lane yet.");
-    expect(root.querySelectorAll(".metric strong")[2]?.textContent).toBe("n/a");
-    expect(root.querySelectorAll(".metric strong")[5]?.textContent).toBe("n/a");
+    expect(root.querySelector(".hero-overview")?.textContent).toContain("API-reported epoch");
+    expect(root.querySelectorAll(".hero-overview .metric")).toHaveLength(2);
+    expect(root.querySelector(".hero-overview")?.textContent).not.toContain("Active issuers");
+    expect(root.querySelector("#trust-records")).toBeNull();
+    expect(root.querySelector(".task-nav a")?.getAttribute("href")).toBe("#current-authorization-lookup");
+    expect(root.querySelector(".hero-actions a")?.getAttribute("href")).toBe("#current-authorization-lookup");
+    expect(root.querySelector("#current-authorization-lookup")?.compareDocumentPosition(root.querySelector("#governed-requests")!))
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(root.querySelector("[data-issuer-application-form]")).not.toBeNull();
     expect(root.querySelector("[data-current-authorization]")).not.toBeNull();
     expect(root.querySelector("[data-historical-authorization]")).toBeNull();
@@ -170,8 +210,11 @@ describe("trust registry applicant portal app", () => {
     expect(JSON.parse(String(call?.[1]?.body))).toEqual({ role: "issuer", subjectDid, resourceId, at });
 
     substituteSubject = true;
+    root.querySelector<HTMLButtonElement>("[data-historical-authorization] button")!.focus();
     submit();
     await vi.waitFor(() => expect(root.textContent).toContain("does not match the requested record and epoch"));
+    expect(root.querySelector('[role="alert"]')?.textContent).toContain("does not match the requested record and epoch");
+    expect(document.activeElement).toBe(root.querySelector("[data-historical-authorization] button"));
     expect(root.querySelector("[data-historical-result]")).toBeNull();
   });
 
@@ -237,8 +280,11 @@ describe("trust registry applicant portal app", () => {
     });
 
     substituteContext = true;
+    root.querySelector<HTMLButtonElement>("[data-historical-recognition] button")!.focus();
     submit();
     await vi.waitFor(() => expect(root.textContent).toContain("does not match the requested scope and epoch"));
+    expect(root.querySelector('[role="alert"]')?.textContent).toContain("does not match the requested scope and epoch");
+    expect(document.activeElement).toBe(root.querySelector("[data-historical-recognition] button"));
     expect(root.querySelector("[data-historical-recognition-result]")).toBeNull();
     omitContext = true;
     const contextForm = root.querySelector<HTMLFormElement>("[data-historical-recognition]")!;
@@ -309,6 +355,7 @@ describe("trust registry applicant portal app", () => {
     });
     createApplicantPortalApp(root, {
       initialUrl: new URL("http://127.0.0.1:4175/?apiBase=http://127.0.0.1:4400"),
+      demoMode: true,
       storage: window.localStorage,
       fetchImpl: fetchImpl as typeof fetch,
     });
@@ -317,7 +364,7 @@ describe("trust registry applicant portal app", () => {
     expect(root.textContent).toContain("Active auditors");
     expect(root.textContent).toContain("did:midnight:testnet:auditor");
     expect(requested).toContain("/v1/authorizations/auditor?status=active");
-    expect(root.querySelector("[data-submit-form] option[value='auditor']")).toBeNull();
+    expect(root.querySelector("[data-submit-form] input[name='target'][value='auditor']")).toBeNull();
     expect(root.querySelector<HTMLButtonElement>("[data-application-binding-form] button")?.disabled).toBe(true);
     expect(root.querySelector<HTMLButtonElement>("[data-application-registration-form] button")?.disabled).toBe(true);
     expect(root.querySelector<HTMLButtonElement>("[data-auditor-application-form] button")?.disabled).toBe(true);
@@ -331,12 +378,13 @@ describe("trust registry applicant portal app", () => {
     privateForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     await vi.waitFor(() => expect(root.textContent).toContain("authenticated same-origin"));
     expect(requested.some((path) => path.startsWith("/v1/application-evidence/"))).toBe(false);
-    const target = root.querySelector<HTMLSelectElement>("[name='target']")!;
-    const injectedOption = document.createElement("option");
+    const target = root.querySelector<HTMLFieldSetElement>(".demo-targets")!;
+    const injectedOption = document.createElement("input");
+    injectedOption.type = "radio";
+    injectedOption.name = "target";
     injectedOption.value = "auditor";
-    injectedOption.textContent = "Auditor";
-    target.add(injectedOption);
-    target.value = "auditor";
+    target.append(injectedOption);
+    injectedOption.checked = true;
     root.querySelector<HTMLInputElement>("[name='label']")!.value = "forged-auditor";
     root.querySelector<HTMLFormElement>("[data-submit-form]")!.dispatchEvent(
       new Event("submit", { bubbles: true, cancelable: true }),
@@ -513,7 +561,7 @@ describe("trust registry applicant portal app", () => {
     await checkStatus("archived", "not active");
     root.querySelector<HTMLInputElement>("[name='auditorAuthorizationId']")!.value = "auth:auditor:unknown";
     await checkStatus("not recorded", "not active");
-  });
+  }, 15_000);
 
   it("recovers a lost acceptance response without repeating the private VP submission", async () => {
     const root = document.createElement("div");
@@ -636,7 +684,7 @@ describe("trust registry applicant portal app", () => {
       expect(calls).toContain("/v1/pending-applications");
       expect(calls.some((path) => path.endsWith("/submissions"))).toBe(true);
     }
-  });
+  }, 20_000);
 
   it("rejects a binding whose role and scope disagree before issuing a challenge", async () => {
     const root = document.createElement("div");

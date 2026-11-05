@@ -48,6 +48,31 @@ export const normalizeApiBaseUrl = (
   value: string,
 ): string => value.trim().replace(/\/+$/, "");
 
+type DeploymentIdentity = NonNullable<TrustRegistryApiHealthResponse["deploymentIdentity"]>;
+const deploymentIdentity = (value: unknown): DeploymentIdentity | undefined => {
+  if (value === undefined) return undefined;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Local admin API deployment identity is malformed");
+  }
+  const identity = value as Record<string, unknown>;
+  // A changed deployment identity schema must fail closed until both clients validate it.
+  if (Object.keys(identity).length !== 4
+    || !["networkProfileId", "networkId", "expectedGenesisHash", "contractAddress"]
+      .every((key) => Object.hasOwn(identity, key))
+    || typeof identity.networkProfileId !== "string" || !/^[a-z][a-z0-9-]*$/u.test(identity.networkProfileId)
+    || typeof identity.networkId !== "string" || !/^[a-z][a-z0-9-]*$/u.test(identity.networkId)
+    || typeof identity.expectedGenesisHash !== "string" || !/^0x[0-9a-f]{64}$/u.test(identity.expectedGenesisHash)
+    || typeof identity.contractAddress !== "string" || !/^0x[0-9a-f]{64}$/u.test(identity.contractAddress)) {
+    throw new Error("Local admin API deployment identity is malformed");
+  }
+  return identity as DeploymentIdentity;
+};
+
+const sameDeploymentIdentity = (left: DeploymentIdentity | undefined, right: DeploymentIdentity | undefined): boolean =>
+  left === undefined || right === undefined ? left === right
+    : left.networkProfileId === right.networkProfileId && left.networkId === right.networkId
+      && left.expectedGenesisHash === right.expectedGenesisHash && left.contractAddress === right.contractAddress;
+
 const parseJson = async <T>(
   response: Response,
 ): Promise<T> => {
@@ -88,8 +113,10 @@ export class TrustRegistryAdminConsoleClient {
     }
     if (health.sourceMode === "local-ledger") {
       const planSha256 = health.localPlanSha256;
+      const checkpointHash = health.finalizedBlockHash;
+      const identity = deploymentIdentity(health.deploymentIdentity);
       if (typeof planSha256 !== "string" || !/^[0-9a-f]{64}$/u.test(planSha256)
-        || !/^0x[0-9a-f]{64}$/u.test(health.finalizedBlockHash ?? "")) {
+        || typeof checkpointHash !== "string" || !/^0x[0-9a-f]{64}$/u.test(checkpointHash)) {
         throw new Error("Local admin API health lacks its approved plan or finalized checkpoint");
       }
       const summary = await this.request<TrustRegistryApiSummary>("/v1/registry/summary", { cache: "no-store" });
@@ -97,6 +124,9 @@ export class TrustRegistryAdminConsoleClient {
         throw new Error("Local admin summary differs from the signed-plan registry");
       }
       return { sourceMode: "local-ledger", localPlanSha256: planSha256,
+        ...(identity === undefined ? {} : { deploymentIdentity: identity }),
+        nodeReportedCheckpointHash: checkpointHash,
+        snapshotGeneratedAt: health.generatedAt,
         summary, issuers: [], verifiers: [], auditors: [], recognitions: [] };
     }
     const [summary, issuers, verifiers, auditors, recognitions] = await Promise.all([
@@ -122,9 +152,11 @@ export class TrustRegistryAdminConsoleClient {
       throw new Error("Exact-ID admin lookup requires the current local-ledger board");
     }
     const health = await this.request<TrustRegistryApiHealthResponse>("/health", { cache: "no-store" });
+    const identity = deploymentIdentity(health.deploymentIdentity);
     if (health.status !== "ok" || health.sourceMode !== "local-ledger"
       || health.registryId !== board.summary.registryId
       || health.localPlanSha256 !== board.localPlanSha256
+      || !sameDeploymentIdentity(identity, board.deploymentIdentity)
       || !/^0x[0-9a-f]{64}$/u.test(health.finalizedBlockHash ?? "")) {
       throw new Error("Local admin API plan or registry changed before the exact-ID lookup");
     }
@@ -138,6 +170,7 @@ export class TrustRegistryAdminConsoleClient {
     if (after.status !== "ok" || after.sourceMode !== "local-ledger"
       || after.registryId !== health.registryId
       || after.localPlanSha256 !== health.localPlanSha256
+      || !sameDeploymentIdentity(deploymentIdentity(after.deploymentIdentity), identity)
       || after.finalizedBlockHash !== health.finalizedBlockHash
       || after.generatedAt !== health.generatedAt) {
       throw new Error("Local admin API checkpoint changed during the exact-ID lookup");

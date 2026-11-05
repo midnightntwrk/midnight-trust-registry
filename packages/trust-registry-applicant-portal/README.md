@@ -121,7 +121,7 @@ demo form intentionally does not offer auditor submission. The reference
 host's evaluation time, not the browser clock or Midnight epoch counter.
 
 The issuer, verifier, and maintainer forms follow the same external-signature flow. An
-issuer must name the exact credential family, schema and semantic version,
+issuer must name the exact credential scope, schema and semantic version,
 credential definition, status method, and the resource type it seeks to
 govern. A verifier must name the complete request profile, purpose,
 credential-scope commitment, allowed attributes and predicates, and disclosure

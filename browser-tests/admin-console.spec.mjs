@@ -62,8 +62,8 @@ test("a late governance receipt cannot replace another registry's board", async 
   try {
     allowedLocalOrigins.add(base);
     page.on("dialog", (dialog) => dialog.accept());
-    await page.goto(`${base}/?apiBase=${encodeURIComponent(`${base}/a`)}`);
-    const registryLabel = page.locator(".metrics .metric:first-child strong");
+    await page.goto(`${base}/?demo=1&apiBase=${encodeURIComponent(`${base}/a`)}`);
+    const registryLabel = page.locator(".registry-context strong");
     await expect(registryLabel).toHaveText("Registry A");
 
     await page.locator(".advanced-workflows > summary").click();
@@ -76,6 +76,7 @@ test("a late governance receipt cannot replace another registry's board", async 
       new Promise((_, reject) => setTimeout(() => reject(new Error("epoch publication request did not start")), 3000)),
     ]);
 
+    await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
     await page.locator("[data-api-base-form] [name='apiBase']").fill(`${base}/b`);
     await page.locator("[data-api-base-form] button[type='submit']").click();
     await expect(registryLabel).toHaveText("Registry B");
@@ -173,7 +174,7 @@ test("local-ledger board discards a lookup when its finalized checkpoint changes
   }
 });
 
-test("fixture admin review advances a proposed issuer through approval and activation", async ({ page, allowedLocalOrigins }) => {
+test("fixture admin review advances an issuer through approval, activation, risk, and archive", async ({ page, allowedLocalOrigins }) => {
   const staticHandler = createStaticAssetHandler({
     distDir: resolve("packages/trust-registry-admin-console/dist"),
     name: "admin-console-review-journey",
@@ -201,15 +202,20 @@ test("fixture admin review advances a proposed issuer through approval and activ
       ...(status === "active" ? { activeFrom: "2026-05-20T00:02:00Z" } : {}),
     }, evidence: { epoch: { epochId: "epoch:ui-review:1", stateRoot: "0xroot" } } };
     if (request.method === "POST") {
-      const action = path.endsWith("/approve") ? "approve" : path.endsWith("/activate") ? "activate" : null;
+      const action = ["approve", "activate", "suspend", "revoke", "archive"]
+        .find((candidate) => path.endsWith(`/${candidate}`)) ?? null;
       if (action === null || (action === "approve" && status !== "proposed")
-        || (action === "activate" && status !== "authorized")) {
+        || (action === "activate" && status !== "authorized")
+        || (action === "suspend" && status !== "active")
+        || (action === "revoke" && status !== "suspended")
+        || (action === "archive" && status !== "revoked")) {
         response.statusCode = 409;
         response.end(JSON.stringify({ title: "invalid review transition" }));
         return;
       }
       posted.push(path);
-      status = action === "approve" ? "authorized" : "active";
+      status = { approve: "authorized", activate: "active", suspend: "suspended",
+        revoke: "revoked", archive: "archived" }[action];
       entry.authorization.status = status;
       response.end(JSON.stringify({ recordKind: "authorization", operation: { operation: action }, entry }));
       return;
@@ -229,18 +235,220 @@ test("fixture admin review advances a proposed issuer through approval and activ
   try {
     allowedLocalOrigins.add(base);
     page.on("dialog", (dialog) => dialog.accept());
-    await page.goto(`${base}/?apiBase=${encodeURIComponent(base)}`);
+    await page.goto(`${base}/?demo=1&apiBase=${encodeURIComponent(base)}`);
     await expect(page.locator(".source-badge")).toHaveText("Local fixture");
     await expect(page.locator(".card")).toContainText("UI review issuer");
+    await page.locator("[data-review-query]").fill("missing record");
+    await expect(page.getByText("No records match these filters.")).toBeVisible();
+    await expect(page.locator(".card")).toHaveCount(0);
+    await page.locator("[data-review-query]").fill("UI review issuer");
+    await expect(page.locator(".card")).toHaveCount(1);
+    await page.locator("[data-review-status]").selectOption("active");
+    await expect(page.locator(".card")).toHaveCount(0);
+    await page.locator("[data-review-status]").selectOption("all");
+    await expect(page.locator(".card")).toHaveCount(1);
+    expect(posted).toEqual([]);
     await page.locator('[data-action="approve"]').click();
     await expect(page.locator(".card .status-chip")).toHaveText("Authorized");
     await page.locator('[data-action="activate"]').click();
     await expect(page.locator(".card .status-chip")).toHaveText("Active");
+    await page.locator('[data-action="suspend"]').click();
+    await expect(page.locator(".card .status-chip")).toHaveText("Suspended");
+    await page.locator('[data-action="revoke"]').click();
+    await expect(page.locator(".card .status-chip")).toHaveText("Revoked");
+    await page.locator('[data-action="archive"]').click();
+    await expect(page.locator(".card .status-chip")).toHaveText("Archived");
     await expect(page.locator(".source-panel")).toContainText("not deployed ledger evidence");
+    await page.locator(".advanced-workflows > summary").click();
+    await expect(page.locator(".governance-task-grid a")).toHaveCount(4);
+    expect(await page.locator(".governance-task-grid a").evaluateAll((links) => links.every((link) =>
+      document.querySelector(link.getAttribute("href")) !== null))).toBe(true);
     expect(posted).toEqual([
       `/v1/applications/issuer/${encodeURIComponent(id)}/approve`,
       `/v1/applications/issuer/${encodeURIComponent(id)}/activate`,
+      `/v1/applications/issuer/${encodeURIComponent(id)}/suspend`,
+      `/v1/applications/issuer/${encodeURIComponent(id)}/revoke`,
+      `/v1/applications/issuer/${encodeURIComponent(id)}/archive`,
     ]);
+  } finally {
+    await page.close();
+    server.closeAllConnections();
+    await new Promise((done, reject) => server.close((error) => error ? reject(error) : done()));
+  }
+});
+
+test("fixture governance publishes an epoch and submits an externally signed workspace intent", async ({ page, allowedLocalOrigins }) => {
+  const staticHandler = createStaticAssetHandler({
+    distDir: resolve("packages/trust-registry-admin-console/dist"),
+    name: "admin-console-governance-journey",
+  });
+  const registryId = "registry:ui-governance";
+  const workspaceCommitment = `0x${"a".repeat(64)}`;
+  let epochId = "epoch:ui-governance:1";
+  const posted = [];
+  const server = createServer(async (request, response) => {
+    const path = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+    if (path !== "/health" && !path.startsWith("/v1/")) {
+      await staticHandler(request, response);
+      return;
+    }
+    response.setHeader("content-type", "application/json");
+    if (path === "/health") {
+      response.end(JSON.stringify({ status: "ok", sourceMode: "workspace", registryId }));
+      return;
+    }
+    if (request.method === "POST") {
+      let body = "";
+      for await (const chunk of request) body += chunk;
+      posted.push({ path, body: JSON.parse(body) });
+      if (path === "/v1/epochs/publish") {
+        epochId = "epoch:ui-governance:2";
+        response.end(JSON.stringify({ recordKind: "epoch", epoch: { epochId } }));
+      } else if (path === "/v1/mutations") {
+        response.end(JSON.stringify({ recordKind: "authorization", operation: { operation: "approve" } }));
+      } else {
+        response.statusCode = 404;
+        response.end(JSON.stringify({ title: "unexpected mutation" }));
+      }
+      return;
+    }
+    if (path === "/v1/registry/summary") {
+      response.end(JSON.stringify({ ...summary("ui-governance"), registryId, currentEpochId: epochId }));
+      return;
+    }
+    if (path === "/v1/registry/mutation-context") {
+      response.end(JSON.stringify({ registryId, expectedEpochId: epochId,
+        expectedWorkspaceCommitment: workspaceCommitment }));
+      return;
+    }
+    response.end(JSON.stringify({ entries: [] }));
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("expected TCP address");
+  const base = `http://127.0.0.1:${address.port}`;
+  try {
+    allowedLocalOrigins.add(base);
+    const confirmations = [];
+    page.on("dialog", async (dialog) => {
+      confirmations.push(dialog.message());
+      await dialog.accept();
+    });
+    await page.goto(`${base}/?demo=1&apiBase=${encodeURIComponent(base)}`);
+    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    await page.locator(".advanced-workflows > summary").click();
+    await page.locator("[data-epoch-label]").fill("reviewed fixture epoch");
+    await page.locator("[data-epoch-form] button[type='submit']").click();
+    await expect(page.locator("[data-epoch-label]")).toBeEmpty();
+    await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
+    await expect(page.locator(".settings-view")).toContainText("epoch:ui-governance:2");
+    await page.locator(".settings-back").click();
+    expect(confirmations[0]).toContain("reviewed fixture epoch");
+    expect(posted[0]).toEqual({ path: "/v1/epochs/publish", body: { label: "reviewed fixture epoch" } });
+
+    await page.locator("[data-signed-context]").click();
+    await expect(page.locator("#task-signed-intent")).toContainText(workspaceCommitment);
+    const envelope = {
+      intent: { registryId, expectedEpochId: epochId,
+        expectedWorkspaceCommitment: workspaceCommitment, actorRole: "maintainer",
+        targetId: "auth:issuer:ui-governance:v1" },
+      signature: { algorithm: "external-fixture-signature" },
+      operation: { operation: "approve", target: "issuer", id: "auth:issuer:ui-governance:v1" },
+    };
+    await page.locator("[data-signed-submit] [name='signedEnvelope']").fill(JSON.stringify(envelope));
+    await page.locator("[data-signed-submit] button[type='submit']").click();
+    await expect(page.locator(".alert.success")).toContainText("Signed approve accepted");
+    await expect(page.locator('.alert.success[role="status"]')).toContainText("Signed approve accepted");
+    expect(confirmations[1]).toContain(envelope.intent.targetId);
+    expect(posted[1]).toEqual({ path: "/v1/mutations", body: envelope });
+    await expect(page.locator(".source-panel")).toContainText("not deployed ledger evidence");
+    await expect(page.locator("[data-signed-submit] button[type='submit']")).toBeDisabled();
+  } finally {
+    await page.close();
+    server.closeAllConnections();
+    await new Promise((done, reject) => server.close((error) => error ? reject(error) : done()));
+  }
+});
+
+test("fixture policy revision requires a separate evidence-verifier registration", async ({ page, allowedLocalOrigins }) => {
+  const staticHandler = createStaticAssetHandler({
+    distDir: resolve("packages/trust-registry-admin-console/dist"),
+    name: "admin-console-policy-journey",
+  });
+  const hash = `0x${"a".repeat(64)}`;
+  const signer = { keyId: hash, publicKey: { x: "1", y: "2" }, signature: "0x0102" };
+  const posts = [];
+  const server = createServer(async (request, response) => {
+    const path = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+    if (path !== "/health" && !path.startsWith("/v1/")) {
+      await staticHandler(request, response);
+      return;
+    }
+    response.setHeader("content-type", "application/json");
+    if (path === "/health") {
+      response.end(JSON.stringify({ status: "ok", sourceMode: "workspace", registryId: "registry:policy-fixture" }));
+      return;
+    }
+    if (path === "/v1/registry/summary") {
+      response.end(JSON.stringify(summary("policy-fixture")));
+      return;
+    }
+    if (request.method === "POST") {
+      let body = "";
+      for await (const chunk of request) body += chunk;
+      posts.push({ path, body: JSON.parse(body) });
+      if (path.endsWith("/prepare")) {
+        response.end(JSON.stringify({ registryId: hash, policyCommitment: hash,
+          actionKind: hash, actionPayloadHash: hash,
+          actionSequence: path.includes("thresholds") ? "3" : "4" }));
+      } else if (path.endsWith("/submit")) {
+        response.statusCode = 202;
+        response.end(JSON.stringify({ eventHash: hash }));
+      } else {
+        response.statusCode = 404;
+        response.end(JSON.stringify({ title: "unexpected mutation" }));
+      }
+      return;
+    }
+    response.end(JSON.stringify({ entries: [] }));
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("expected TCP address");
+  const base = `http://127.0.0.1:${address.port}`;
+  try {
+    allowedLocalOrigins.add(base);
+    const confirmations = [];
+    page.on("dialog", async (dialog) => {
+      confirmations.push(dialog.message());
+      await dialog.accept();
+    });
+    await page.goto(`${base}/?apiBase=${encodeURIComponent(base)}`);
+    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    await page.locator(".advanced-workflows > summary").click();
+    await page.locator("[data-policy-prepare-thresholds]").click();
+    await expect(page.locator("[data-policy-context]")).toBeVisible();
+    await page.locator("[data-policy-threshold='default']").fill("3");
+    await expect(page.locator("[data-policy-context]")).toHaveCount(0);
+    await expect(page.locator("[data-policy-submit]")).toHaveCount(0);
+    await page.locator("[data-policy-prepare-thresholds]").click();
+    await expect(page.locator("[data-policy-context]")).toBeVisible();
+    await page.locator("[data-policy-signers]").fill(JSON.stringify([signer]));
+    await page.locator("[data-policy-submit] button[type='submit']").click();
+    await expect(page.locator("#task-policy")).toContainText("registration is still required");
+    expect(posts.find((post) => post.path.endsWith("thresholds/submit"))?.body).toMatchObject({
+      thresholds: { default: "3", emergency: "2", archival: "2" }, signers: [signer],
+    });
+    await page.locator("[data-policy-prepare-verifier]").click();
+    await expect(page.locator("[data-policy-context]")).toBeVisible();
+    await page.locator("[data-policy-signers]").fill(JSON.stringify([signer]));
+    await page.locator("[data-policy-submit] button[type='submit']").click();
+    await expect(page.locator(".alert.success")).toContainText("Evidence-verifier registration accepted");
+    await expect(page.locator("#task-policy")).not.toContainText("registration is still required");
+    expect(posts.find((post) => post.path.endsWith("evidence-verifier/submit"))?.body)
+      .toMatchObject({ signers: [signer] });
+    expect(confirmations).toHaveLength(2);
+    await expect(page.locator(".source-panel")).toContainText("not deployed ledger evidence");
   } finally {
     await page.close();
     server.closeAllConnections();

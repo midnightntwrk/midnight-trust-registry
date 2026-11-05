@@ -2,6 +2,7 @@ import type {
   TrustRegistryApiApplicationAction,
   TrustRegistryApiApplicationTarget,
   TrustRegistryApiApplicationMutationResponse,
+  TrustRegistryApiHealthResponse,
   TrustRegistryApiAuthorizationListResponse,
   TrustRegistryApiRecognitionListResponse,
   TrustRegistryApiSummary,
@@ -32,6 +33,9 @@ export type ReviewCard = {
 export type ReviewBoard = {
   sourceMode: "snapshot" | "workspace" | "memory" | "local-ledger";
   localPlanSha256?: string;
+  deploymentIdentity?: TrustRegistryApiHealthResponse["deploymentIdentity"];
+  nodeReportedCheckpointHash?: string;
+  snapshotGeneratedAt?: string;
   auditors: readonly AuthorizationEntry[];
   recognitions: readonly RecognitionEntry[];
   summary: TrustRegistryApiSummary;
@@ -118,7 +122,7 @@ export const describeActionConfirmation = (
   card: ReviewCard,
   action: ReviewAction,
 ): string =>
-  `Confirm ${action} for ${card.target} record ${card.id} (${card.status})? This governed action cannot be undone from the console.`;
+  `${action.charAt(0).toUpperCase()}${action.slice(1)} "${card.label}" (${card.target}, ${card.status}) in this local fixture?\nExact record: ${card.id}\nThis does not change the deployed ledger. This action cannot be undone from the console.`;
 
 export const executeReviewAction = async (
   card: ReviewCard,

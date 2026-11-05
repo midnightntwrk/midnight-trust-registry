@@ -47,6 +47,7 @@ describe("admin signed browser journey", () => {
     });
     createAdminConsoleApp(root, {
       initialUrl: new URL("http://127.0.0.1:4173/?apiBase=http://127.0.0.1:4400"),
+      demoMode: true,
       storage: { getItem: () => null, setItem: vi.fn() } as unknown as Storage,
       fetchImpl: fetchImpl as typeof fetch, confirm: () => true,
     });
@@ -76,6 +77,7 @@ describe("admin signed browser journey", () => {
     const confirm = vi.fn(() => true);
     createAdminConsoleApp(root, {
       initialUrl: new URL("http://127.0.0.1:4173/?apiBase=http://127.0.0.1:4400"),
+      demoMode: true,
       storage: { getItem: () => null, setItem: vi.fn() } as unknown as Storage,
       fetchImpl: fetchImpl as typeof fetch, confirm,
     });
@@ -108,6 +110,7 @@ describe("admin signed browser journey", () => {
     });
     createAdminConsoleApp(root, {
       initialUrl: new URL("http://127.0.0.1:4173/?apiBase=http://127.0.0.1:4400"),
+      demoMode: true,
       storage: { getItem: () => null, setItem: vi.fn() } as unknown as Storage,
       fetchImpl: fetchImpl as typeof fetch, confirm: () => true,
     });

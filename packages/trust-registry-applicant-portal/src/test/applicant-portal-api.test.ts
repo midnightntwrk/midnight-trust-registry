@@ -4,6 +4,8 @@ import { TrustRegistryApplicantPortalClient } from "../api.js";
 
 const localHealth = { status: "ok", sourceMode: "local-ledger", registryId: "registry:local",
   localPlanSha256: "a".repeat(64), finalizedBlockHash: `0x${"b".repeat(64)}`,
+  deploymentIdentity: { networkProfileId: "standalone", networkId: "undeployed",
+    expectedGenesisHash: `0x${"c".repeat(64)}`, contractAddress: `0x${"d".repeat(64)}` },
   generatedAt: "2026-10-25T00:00:00Z" };
 
 const auditorEntry = (effectiveUntil: string | undefined, authorizationId = "auth:auditor:inspection:v1") => ({
@@ -110,7 +112,7 @@ describe("local list projection gate", () => {
     status: 503,
   }, { status: 503 });
 
-  it("retains the summary while marking every gated list unavailable", async () => {
+  it("retains the summary without alarming on unsupported local-ledger lists", async () => {
     const paths: string[] = [];
     const client = new TrustRegistryApplicantPortalClient("https://registry.example", (async (input) => {
       const path = new URL(String(input)).pathname;
@@ -121,11 +123,23 @@ describe("local list projection gate", () => {
     const inspection = await client.loadPublicInspection();
     expect(inspection.summary.registryLabel).toBe("local");
     expect(inspection.sourceMode).toBe("local-ledger");
+    expect(inspection.deploymentIdentity).toEqual(localHealth.deploymentIdentity);
+    expect(inspection.snapshotGeneratedAt).toBe(localHealth.generatedAt);
     expect(inspection.unavailableLists).toEqual(["issuer", "verifier", "auditor", "recognition"]);
-    expect(inspection.warnings).toHaveLength(4);
+    expect(inspection.warnings).toBeUndefined();
     expect(inspection.activeIssuers).toEqual([]);
     expect(inspection.activeRecognitions).toEqual([]);
     expect(paths).toEqual(["/health", "/v1/registry/summary", "/health"]);
+  });
+
+  it("rejects malformed local deployment identity before showing inspection", async () => {
+    const client = new TrustRegistryApplicantPortalClient("https://registry.example", (async (input) => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/health") return Response.json({ ...localHealth,
+        deploymentIdentity: { ...localHealth.deploymentIdentity, contractAddress: "invalid" } });
+      return Response.json({ registryLabel: "local", registryId: "registry:local" });
+    }) as typeof fetch);
+    await expect(client.loadPublicInspection()).rejects.toThrow(/deployment identity is malformed/u);
   });
 
   it("rejects a local projection gate without confirmed local mode", async () => {

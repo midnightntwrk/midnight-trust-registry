@@ -3167,3 +3167,76 @@ settings checks, unavailable/retry, focus, and 390/768/1440 px layout. These
 are browser acceptance tests against controlled local hosts. They do not
 replace the real signed-genesis, authenticated finality, actor-egress, or
 restart/restore release qualification.
+
+The next workflow slice gives the fixture admin board text/status filters and
+keeps filtered-out selections out of the detail pane. Local-ledger mode still
+offers only exact-ID lookup. Applicant role forms now expose identify, scope,
+and external-signing phases with a link to the separate one-use private
+evidence task. This is presentation of the existing protocol, not browser key
+management or a new authorization path.
+
+Local-ledger Workspace settings now display the API's node-reported checkpoint
+hash and timestamp as provenance clues, distinct from the browser observation
+time. The UI does not authenticate the checkpoint or infer finality from those
+fields; the network profile, genesis anchor, and contract identity remain
+unexposed until the API supplies them with reviewed provenance.
+
+The local-lookup browser fixture can pause a health response and switch the
+reported source mode. Both apps remove the prior exact API claim during the
+pending Recheck, hide exact lookup in fixture mode, and do not resurrect the
+claim when local-ledger mode returns. A subsequent denied exact lookup clears
+the previous success and announces the 403 at the form. This verifies browser
+state invalidation, not the authenticity of the fixture's source-mode report.
+
+The offline Chromium suite now runs pinned axe-core checks over both fixture
+workspaces, opened workflows, and settings at 390/1440 px, plus mobile
+local-ledger lookup results and settings. The checks cover tagged WCAG
+2.0/2.1/2.2 A/AA rules without allowing external browser requests. Zero
+reported violations is not a screen-reader usability review or deployed E2E
+evidence; the independent accessibility acceptance remains open.
+
+The browser acceptance matrix additionally covers the full fixture issuer
+lifecycle, exact external recognition with substituted-scope rejection,
+packaged same-origin endpoint locking, and 200% text reflow on mobile. These
+remain fixture and UI guarantees, not deployed standalone E2E evidence.
+
+A further Chromium fixture journey confirms epoch publication, checks the
+exact refreshed epoch in Workspace settings, loads the new signing context,
+and submits an externally signed maintainer workspace intent. The test checks
+the confirmation and POST payload and keeps the fixture-source warning in
+view. Its fixture signature is accepted only by a controlled test host; this
+is not proof of a valid ledger signature, quorum, or finalized deployment.
+
+The policy browser journey also changes a threshold after preparation and
+requires a fresh context. It then submits an external signer bundle for a
+fixture threshold revision, observes the explicit pending verifier warning,
+and submits verifier registration as a separate action. The fixture host
+accepts the signer bundle without cryptographic validation; the test verifies
+UI ordering and payloads, not Compact quorum or network finality.
+
+The governed proposal browser suite now has a direct-receipt issuer path in
+addition to four lost-response recovery paths. It signs the prepared action
+with two external maintainer fixtures and a verifier fixture, rejects a
+wrong-sequence vote, then checks that the simulator-backed API journal records
+one accepted submission and that the UI labels its receipt as non-final. This
+proves the browser-to-local-simulator flow, not a deployed ledger receipt.
+
+Selected browser-computed contrast checks now cover the Midnight brand bar,
+task navigation, source badge, and primary/secondary actions in both apps at
+the normal-text 4.5:1 threshold. They are a regression guard for solid
+surfaces, not a complete audit of every interaction state or assistive
+technology behavior.
+
+The portal now separates historical recognition and authorization inspection
+from real JSON downloads. Each exported object includes the exact query, returned bundle,
+format marker, and `verifiedFinality: false`; editing the query removes the
+stale result and download action while preserving the edited fields through
+a source refresh. A browser fixture covers the one-use
+recognition challenge, accepted receipt recovery, query-bound export, and
+non-finality label. The same-origin eligibility cue no longer claims an
+authenticated session: only the host can authenticate each private request.
+
+Both apps now have Chromium checks for editable loopback development endpoint
+switching. Reads move to the selected host and stop on the old host; the portal
+continues to disable private evidence actions when the new API is cross-origin
+to the page. Packaged same-origin endpoint locking remains a separate test.

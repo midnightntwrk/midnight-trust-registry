@@ -34,6 +34,31 @@ const auditor = {
 };
 
 describe("admin console browser handlers", () => {
+  it("hides fixture shortcut actions unless local demo mode is explicit", async () => {
+    const root = document.createElement("div");
+    document.body.replaceChildren(root);
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/health") return Response.json({ status: "ok", sourceMode: "workspace", registryId: "registry:local" });
+      if (path === "/v1/registry/summary") return Response.json({ registryLabel: "local", currentEpochId: "epoch:1",
+        issuerCounts: counts(), verifierCounts: counts(), auditorCounts: { ...counts(), active: 1 }, recognitionCounts: counts() });
+      return Response.json({ entries: path === "/v1/authorizations/auditor" ? [auditor] : [] });
+    });
+    const renderAt = async (url: string) => {
+      createAdminConsoleApp(root, { initialUrl: new URL(url), storage: window.localStorage,
+        fetchImpl: fetchImpl as typeof fetch, confirm: () => true });
+      await vi.waitFor(() => expect(root.textContent).toContain("compliance"));
+    };
+    await renderAt("http://127.0.0.1:4173/?apiBase=http://127.0.0.1:4400");
+    expect(root.querySelector("[data-action]")).toBeNull();
+    expect(root.querySelector("#task-epoch")).toBeNull();
+    expect(root.textContent).toContain("1 of 1 record shown");
+    expect(root.querySelector(".column-header")?.textContent).toContain("1 item");
+    await renderAt("http://127.0.0.1:4173/?demo=1&apiBase=http://127.0.0.1:4400");
+    expect(root.querySelector("[data-action]")).not.toBeNull();
+    await renderAt("https://registry.example/?demo=1&apiBase=http://127.0.0.1:4400");
+    expect(root.querySelector("[data-action]")).toBeNull();
+  });
   it("renders untrusted ledger labels and API errors as text, not markup", async () => {
     const root = document.createElement("div");
     document.body.replaceChildren(root);
@@ -62,6 +87,10 @@ describe("admin console browser handlers", () => {
     expect(root.querySelector("[data-source-state='local-ledger']")?.textContent)
       .toContain("not independently verified finality");
     expect(root.querySelector(".source-time")?.textContent).toContain("browser clock");
+    expect(root.querySelector(".source-time time")?.getAttribute("datetime")).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(root.querySelector(".source-time time")?.textContent).toContain("UTC");
+    expect(root.querySelector("#workspace-settings")?.textContent).toContain("Last checked in this browser");
+    expect(root.querySelector("#workspace-settings time")?.textContent).toContain("UTC");
     failHealth = true;
     root.querySelector<HTMLButtonElement>("[data-refresh]")!.focus();
     root.querySelector<HTMLButtonElement>("[data-refresh]")!.click();
@@ -96,6 +125,7 @@ describe("admin console browser handlers", () => {
     });
     createAdminConsoleApp(root, {
       initialUrl: new URL("http://127.0.0.1:4173/?apiBase=http://127.0.0.1:4400"),
+      demoMode: true,
       storage: window.localStorage, fetchImpl: fetchImpl as typeof fetch, confirm: () => true,
     });
     await vi.waitFor(() => expect(root.querySelector("[data-proposal-prepare]")).not.toBeNull());
@@ -227,15 +257,35 @@ describe("admin console browser handlers", () => {
     });
     createAdminConsoleApp(root, {
       initialUrl: new URL("http://127.0.0.1:4173/?apiBase=http://127.0.0.1:4400"),
+      demoMode: true,
       storage: window.localStorage,
       fetchImpl: fetchImpl as typeof fetch,
       confirm,
     });
 
     await vi.waitFor(() => expect(root.textContent).toContain(auditor.authorization.resourceId));
+    const query = root.querySelector<HTMLInputElement>("[data-review-query]")!;
+    query.focus();
+    query.value = "not-a-record";
+    query.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(root.textContent).toContain("No records match these filters");
+    expect(root.querySelector("[data-select-key]")).toBeNull();
+    expect(root.querySelector(".detail-panel")?.textContent).toContain("Select a record");
+    const matchingQuery = root.querySelector<HTMLInputElement>("[data-review-query]")!;
+    matchingQuery.value = "compliance";
+    matchingQuery.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(root.querySelector("[data-select-key]")).not.toBeNull();
+    expect(document.activeElement).toBe(root.querySelector("[data-review-query]"));
+    const status = root.querySelector<HTMLSelectElement>("[data-review-status]")!;
+    status.value = "proposed";
+    status.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(root.textContent).toContain("No records match these filters");
+    const allStatus = root.querySelector<HTMLSelectElement>("[data-review-status]")!;
+    allStatus.value = "all";
+    allStatus.dispatchEvent(new Event("change", { bubbles: true }));
     root.querySelector<HTMLButtonElement>("[data-action='suspend']")!.click();
     await vi.waitFor(() => expect(confirm).toHaveBeenCalledWith(
-      expect.stringContaining("auditor record auth:auditor:compliance"),
+      expect.stringContaining("Exact record: auth:auditor:compliance"),
     ));
     await vi.waitFor(() => expect(root.querySelector("[data-action='suspend']")?.hasAttribute("disabled")).toBe(false));
     expect(postedPaths).toEqual([]);

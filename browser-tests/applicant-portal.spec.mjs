@@ -48,6 +48,8 @@ for (const applicant of cases) {
       await page.locator(`[data-open-workflow="${applicant.role}-request"]`).click();
       await expect(page.locator(`#${applicant.role}-request`)).toHaveAttribute("open", "");
       await expect(form).toBeVisible();
+      await form.locator('[data-open-workflow="pending-evidence"]').click();
+      await expect(page.locator("#pending-evidence")).toHaveAttribute("open", "");
       const applicationId = `application:${applicant.role}:browser:v1`;
       const draft = {
         applicationId,
@@ -81,6 +83,8 @@ for (const applicant of cases) {
       expect((await acceptedResponse).status()).toBe(201);
       await expect(page.locator("[data-application-challenge]")).toBeVisible();
       await expect(page.locator("body")).toContainText(`Pending ${applicant.role} application ${applicationId} registered`);
+      await expect(page.locator('.alert.success[role="status"]'))
+        .toContainText(`Pending ${applicant.role} application ${applicationId} registered`);
 
       const challengeResponse = page.waitForResponse((response) =>
         decodeURIComponent(new URL(response.url()).pathname) === `/v1/application-evidence/${applicationId}/challenges`);
@@ -92,6 +96,7 @@ for (const applicant of cases) {
       await page.locator("[data-application-vp-form] button[type='submit']").click();
       await expect(page.locator("[data-accepted-evidence]")).toBeVisible();
       await expect(page.locator("body")).toContainText(`${applicant.role} evidence accepted`);
+      await expect(page.locator('.alert.success[role="status"]')).toContainText(`${applicant.role} evidence accepted`);
       expect(host.receipts.size).toBe(1);
       expect(await page.locator("body").innerText()).not.toContain("private-presentation-payload");
       await expect(page.locator("[data-application-vp-form]")).toHaveCount(0);

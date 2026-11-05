@@ -26,6 +26,33 @@ const source: TrustRegistryApiStateSource = {
 };
 
 describe("local API current-read observation (route-level only)", () => {
+  it("reports a bound local deployment identity only with a plan digest", async () => {
+    const boundSource: TrustRegistryApiStateSource = { ...source, localDeploymentBinding: {
+      networkProfileId: "standalone", networkId: "undeployed",
+      expectedGenesisHash: `0x${"b".repeat(64)}`, contractAddress: `0x${"c".repeat(64)}`,
+    } };
+    const server = createTrustRegistryApiServer({ source: boundSource, localPlanSha256: "d".repeat(64) });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    try {
+      const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      expect(await (await fetch(`${origin}/health`)).json()).toMatchObject({
+        deploymentIdentity: boundSource.localDeploymentBinding,
+      });
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+    const unapprovedServer = createTrustRegistryApiServer({ source: boundSource });
+    unapprovedServer.listen(0, "127.0.0.1");
+    await once(unapprovedServer, "listening");
+    try {
+      const origin = `http://127.0.0.1:${(unapprovedServer.address() as AddressInfo).port}`;
+      expect(await (await fetch(`${origin}/health`)).json()).not.toHaveProperty("deploymentIdentity");
+    } finally {
+      await new Promise<void>((resolve) => unapprovedServer.close(() => resolve()));
+    }
+  });
+
   it("compares current HTTP routes with the source and marks the result unqualified", async () => {
     const server = createTrustRegistryApiServer({ source });
     server.listen(0, "127.0.0.1");

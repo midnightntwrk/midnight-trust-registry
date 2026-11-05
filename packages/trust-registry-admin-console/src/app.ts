@@ -47,6 +47,7 @@ type AppState = {
   loading: boolean;
   observedAt: string | undefined;
   lookupBusy: boolean;
+  lookupError: string | undefined;
   lookupId: string;
   lookupTarget: ReviewCard["target"];
   publishing: boolean;
@@ -58,6 +59,8 @@ type AppState = {
   proposalPrepared: PreparedGovernedProposal | undefined;
   proposalSignersJson: string;
   proposalVerifierSignature: string;
+  reviewQuery: string;
+  reviewStatus: ReviewStatus | "all";
   policyThresholds: GovernedThresholds;
   policyPhase: "thresholds" | "evidence-verifier" | undefined;
   policyPrepared: PreparedGovernedPolicyAction | undefined;
@@ -74,6 +77,14 @@ const escapeHtml = (value: string): string =>
     .replaceAll(">", "&gt;")
     .replaceAll("\"", "&quot;")
     .replaceAll("'", "&#39;");
+
+const formatReviewTime = (value: string): string => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return `${new Intl.DateTimeFormat("en-GB", {
+    dateStyle: "medium", timeStyle: "short", timeZone: "UTC",
+  }).format(date)} UTC`;
+};
 
 const formatApiError = (error: unknown): string => {
   if (error instanceof TrustRegistryAdminConsoleApiError) {
@@ -159,9 +170,12 @@ export const createAdminConsoleApp = (
     initialUrl?: URL;
     storage?: Storage;
     confirm?: (message: string) => boolean | Promise<boolean>;
+    demoMode?: boolean;
   } = {},
 ): void => {
   const initialUrl = options.initialUrl ?? new URL(window.location.href);
+  const demoMode = (options.demoMode ?? initialUrl.searchParams.get("demo") === "1")
+    && ["localhost", "127.0.0.1", "[::1]"].includes(initialUrl.hostname);
   const storage = options.storage ?? window.localStorage;
   const fetchImpl = options.fetchImpl ?? window.fetch.bind(window);
   const confirm = options.confirm ?? window.confirm.bind(window);
@@ -185,6 +199,7 @@ export const createAdminConsoleApp = (
     loading: false,
     observedAt: undefined,
     lookupBusy: false,
+    lookupError: undefined,
     lookupId: "",
     lookupTarget: "issuer",
     publishing: false,
@@ -196,6 +211,8 @@ export const createAdminConsoleApp = (
     proposalPrepared: undefined,
     proposalSignersJson: "",
     proposalVerifierSignature: "",
+    reviewQuery: "",
+    reviewStatus: "all",
     policyThresholds: { default: "2", emergency: "2", archival: "2" },
     policyPhase: undefined,
     policyPrepared: undefined,
@@ -292,7 +309,7 @@ export const createAdminConsoleApp = (
     const requestId = ++boardRequestId;
     ++signedContextRequestId;
     setState({ loading: true, signedBusy: false, signedContext: undefined,
-      error: undefined, ...(flash === undefined ? {} : { flash }) });
+      error: undefined, lookupError: undefined, ...(flash === undefined ? {} : { flash }) });
     try {
       const client = getClient();
       const board = await client.loadReviewBoard();
@@ -349,12 +366,13 @@ export const createAdminConsoleApp = (
     const id = state.lookupId.trim();
     const target = state.lookupTarget;
     if (id.length === 0) {
-      setState({ error: "Enter the exact current authorization or recognition ID." });
+      setState({ lookupError: "Enter the exact current authorization or recognition ID." });
       return;
     }
     const host = currentHost();
     const requestId = ++boardRequestId;
-    setState({ lookupBusy: true, error: undefined, flash: undefined, cards: [], selectedKey: undefined });
+    setState({ lookupBusy: true, lookupError: undefined, error: undefined,
+      flash: undefined, cards: [], selectedKey: undefined });
     try {
       const card = await getClient().loadCurrentReviewCard(target, id, board);
       if (!isCurrentHost(host) || requestId !== boardRequestId) return;
@@ -362,14 +380,14 @@ export const createAdminConsoleApp = (
         governedAction: undefined, governedKey: undefined, governedPrepared: undefined });
     } catch (error) {
       if (!isCurrentHost(host) || requestId !== boardRequestId) return;
-      setState({ lookupBusy: false, error: formatApiError(error) });
+      setState({ lookupBusy: false, lookupError: formatApiError(error) });
     }
   };
 
   const runAction = async (
     action: TrustRegistryApiApplicationAction,
   ) => {
-    if (state.loading || state.publishing || state.governedBusy
+    if (!demoMode || state.loading || state.publishing || state.governedBusy
       || state.board === undefined || state.board.sourceMode === "local-ledger") return;
     const host = currentHost();
     const card = selectedCard();
@@ -400,7 +418,7 @@ export const createAdminConsoleApp = (
   };
 
   const publishEpoch = async (label: string) => {
-    if (state.loading || state.publishing || state.governedBusy
+    if (!demoMode || state.loading || state.publishing || state.governedBusy
       || state.board === undefined || state.board.sourceMode === "local-ledger") return;
     const host = currentHost();
     setState({ publishing: true, error: undefined, flash: undefined });
@@ -686,6 +704,12 @@ export const createAdminConsoleApp = (
   };
 
   const bindEvents = () => {
+    root.querySelectorAll<HTMLAnchorElement>(".mobile-task-menu nav a").forEach((link) => {
+      link.addEventListener("click", () => {
+        const menu = link.closest<HTMLDetailsElement>(".mobile-task-menu");
+        if (menu !== null) menu.open = false;
+      });
+    });
     root.querySelector<HTMLFormElement>("[data-api-base-form]")?.addEventListener("submit", (event) => {
       event.preventDefault();
       if (sameOriginApi) return;
@@ -721,23 +745,25 @@ export const createAdminConsoleApp = (
       void refreshBoard();
     });
 
-    root.querySelector<HTMLButtonElement>("[data-refresh]")?.addEventListener("click", () => {
+    root.querySelectorAll<HTMLButtonElement>("[data-refresh], [data-settings-refresh]").forEach((button) => button.addEventListener("click", () => {
       if (state.governedBusy) return;
       void refreshBoard();
-    });
+    }));
     root.querySelector<HTMLSelectElement>("[data-current-target]")?.addEventListener("change", (event) => {
       if (state.lookupBusy) ++boardRequestId;
       setState({ lookupTarget: (event.currentTarget as HTMLSelectElement).value as ReviewCard["target"],
-        lookupBusy: false, cards: [], selectedKey: undefined, governedPrepared: undefined });
+        lookupBusy: false, lookupError: undefined, cards: [], selectedKey: undefined, governedPrepared: undefined });
     });
     root.querySelector<HTMLInputElement>("[data-current-id]")?.addEventListener("input", (event) => {
       if (state.lookupBusy) ++boardRequestId;
       state.lookupId = (event.currentTarget as HTMLInputElement).value;
       state.lookupBusy = false;
+      state.lookupError = undefined;
       state.cards = [];
       state.selectedKey = undefined;
       state.governedPrepared = undefined;
       root.querySelector("[data-local-current-result]")?.replaceChildren();
+      root.querySelector("#exact-lookup [role='alert']")?.remove();
       const detail = root.querySelector(".detail-panel");
       if (detail !== null) detail.textContent = "Lookup changed; submit the exact ID again.";
       const submit = root.querySelector<HTMLButtonElement>("[data-current-lookup] button[type='submit']");
@@ -860,21 +886,37 @@ export const createAdminConsoleApp = (
         }
       });
     });
+    root.querySelector<HTMLInputElement>("[data-review-query]")?.addEventListener("input", (event) => {
+      const input = event.currentTarget as HTMLInputElement;
+      const start = input.selectionStart;
+      const end = input.selectionEnd;
+      setState({ reviewQuery: input.value });
+      const nextInput = root.querySelector<HTMLInputElement>("[data-review-query]");
+      if (nextInput !== null && start !== null && end !== null) nextInput.setSelectionRange(start, end);
+    });
+    root.querySelector<HTMLSelectElement>("[data-review-status]")?.addEventListener("change", (event) => {
+      setState({ reviewStatus: (event.currentTarget as HTMLSelectElement).value as ReviewStatus | "all" });
+    });
   };
 
   const renderMetrics = (board: ReviewBoard): string => `
     <div class="metrics">
-      <div class="metric"><span>Registry</span><strong>${escapeHtml(board.summary.registryLabel)}</strong></div>
-      <div class="metric"><span>Current epoch</span><strong>${board.summary.epochCount === undefined ? "Unavailable" : `#${board.summary.epochCount.toString()}`}</strong></div>
-      <div class="metric"><span>Proposed</span><strong>${countCards(board, "proposed").toString()}</strong></div>
-      <div class="metric"><span>Authorized</span><strong>${countCards(board, "authorized").toString()}</strong></div>
-      <div class="metric"><span>Active</span><strong>${countCards(board, "active").toString()}</strong></div>
-      <div class="metric"><span>Risk queue</span><strong>${(countCards(board, "suspended") + countCards(board, "revoked")).toString()}</strong></div>
+      <div class="registry-context"><span>Registry</span><strong>${escapeHtml(board.summary.registryLabel)}</strong><small>${board.summary.epochCount === undefined ? "Epoch unavailable" : `Epoch #${board.summary.epochCount.toString()}`}</small></div>
+      ${board.sourceMode === "local-ledger" ? "" : `
+        <div class="metric"><span>Proposed</span><strong>${countCards(board, "proposed").toString()}</strong></div>
+        <div class="metric"><span>Authorized</span><strong>${countCards(board, "authorized").toString()}</strong></div>
+        <div class="metric"><span>Active</span><strong>${countCards(board, "active").toString()}</strong></div>
+        ${countCards(board, "suspended") + countCards(board, "revoked") === 0 ? "" : `<p class="risk-summary">${(countCards(board, "suspended") + countCards(board, "revoked")).toString()} suspended or revoked record(s) need inspection.</p>`}`}
     </div>
   `;
 
+  const trustLevelLabel = (status: ReviewStatus): string =>
+    status === "proposed" ? "Requested trust level"
+      : status === "authorized" ? "Authorized trust level"
+        : status === "active" ? "Trust level" : "Recorded trust level";
+
   const renderCard = (card: ReviewCard): string => `
-    <button type="button" class="card${card.key === state.selectedKey ? " selected" : ""}" data-select-key="${escapeHtml(card.key)}">
+    <button type="button" class="card${card.key === state.selectedKey ? " selected" : ""}" data-select-key="${escapeHtml(card.key)}" aria-controls="selected-record-detail"${card.key === state.selectedKey ? ' aria-current="true"' : ""}>
       <div class="card-top">
         <div>
           <h3>${escapeHtml(card.label)}</h3>
@@ -882,9 +924,9 @@ export const createAdminConsoleApp = (
         </div>
         <span class="status-chip ${escapeHtml(card.status)}">${escapeHtml(REVIEW_STATUS_LABELS[card.status])}</span>
       </div>
-      <div class="meta-row"><span>${escapeHtml(card.trustLevel)}</span></div>
+      <div class="meta-row"><span>${trustLevelLabel(card.status)}: ${escapeHtml(card.trustLevel)}</span></div>
       <div class="meta-row">
-        <span>Updated ${escapeHtml(card.updatedAt)}</span>
+        <span>Updated <time datetime="${escapeHtml(card.updatedAt)}">${escapeHtml(formatReviewTime(card.updatedAt))}</time></span>
       </div>
     </button>
   `;
@@ -896,7 +938,7 @@ export const createAdminConsoleApp = (
     <section class="column">
       <div class="column-header">
         <h2>${escapeHtml(REVIEW_STATUS_LABELS[status])}</h2>
-        <span>${cards.length.toString()} items</span>
+        <span>${cards.length.toString()} ${cards.length === 1 ? "item" : "items"}</span>
       </div>
       ${cards.length === 0
         ? `<div class="empty-state"><p>No ${escapeHtml(REVIEW_STATUS_LABELS[status].toLowerCase())} records.</p></div>`
@@ -904,11 +946,11 @@ export const createAdminConsoleApp = (
     </section>
   `;
 
-  const renderDetailPanel = (): string => {
+  const renderDetailPanel = (visibleKeys?: ReadonlySet<string>): string => {
     const card = selectedCard();
-    if (card === undefined) {
+    if (card === undefined || (visibleKeys !== undefined && !visibleKeys.has(card.key))) {
       return `
-        <aside class="detail-panel">
+        <aside class="detail-panel" id="selected-record-detail">
           <div class="empty-state">
             <p>Select a record to review its detail and available maintainer actions.</p>
           </div>
@@ -922,14 +964,28 @@ export const createAdminConsoleApp = (
     const prepared = governedAction !== undefined
       && state.governedKey === `${card.key}:${governedAction}`
       ? state.governedPrepared : undefined;
+    const sourceDescription = state.board?.sourceMode === "local-ledger"
+      ? "This is a current API claim, not independently verified ledger finality."
+      : "This is a local fixture record, not deployed ledger evidence.";
+    const lifecycleDescription = card.status === "active"
+      ? "This record is active in the displayed registry view."
+      : card.status === "proposed" || card.status === "authorized"
+        ? "This record is not yet active; review its evidence and lifecycle before any action."
+        : "This record is not active; inspect its history before taking another action.";
 
     return `
-      <aside class="detail-panel">
+      <aside class="detail-panel" id="selected-record-detail" aria-label="Selected record details">
         <div>
           <p class="eyebrow">Selected Record</p>
           <h2>${escapeHtml(card.label)}</h2>
-          <p>${escapeHtml(card.target)} · ${escapeHtml(REVIEW_STATUS_LABELS[card.status])}</p>
+          <p>${escapeHtml(card.target)} · <span class="status-chip ${escapeHtml(card.status)}">${escapeHtml(REVIEW_STATUS_LABELS[card.status])}</span></p>
         </div>
+        <div class="record-meaning"><p class="eyebrow">What this means</p><p>${lifecycleDescription} ${sourceDescription}</p></div>
+        <div class="decision-summary"><h3>Decision summary</h3><dl>
+          <div><dt>Role</dt><dd>${escapeHtml(card.target)}</dd></div>
+          <div><dt>${trustLevelLabel(card.status)}</dt><dd>${escapeHtml(card.trustLevel)}</dd></div>
+          <div><dt>Last update</dt><dd><time datetime="${escapeHtml(card.updatedAt)}">${escapeHtml(formatReviewTime(card.updatedAt))}</time></dd></div>
+        </dl></div>
         <details class="technical-details"><summary>Identifiers and evidence</summary><dl>
           ${card.detailRows.map((row) => `
             <div>
@@ -938,12 +994,11 @@ export const createAdminConsoleApp = (
             </div>
           `).join("")}
           ${card.target === "auditor" || card.target === "verifier" ? `<div><dt>Scope detail</dt><dd>Full request-scope preimage is not available in this snapshot; verify the governed resource ID against authenticated evidence.</dd></div>` : ""}
-          <div>
-            <dt>Last update</dt>
-            <dd>${escapeHtml(card.updatedAt)}</dd>
-          </div>
+          <div><dt>Exact update time</dt><dd><code>${escapeHtml(card.updatedAt)}</code></dd></div>
         </dl></details>
         ${getReviewActions(card.status).length === 0 ? "" : `
+          <details class="governed-actions" data-record-key="${escapeHtml(card.key)}"${prepared !== undefined || (governedActionsOpen && governedActionsKey === card.key) ? " open" : ""}>
+            <summary>Prepare a governed action</summary>
           <section class="governed-panel">
             <p class="eyebrow">Compact quorum</p>
             <h3>External maintainer signatures</h3>
@@ -960,13 +1015,14 @@ export const createAdminConsoleApp = (
               </form>
             `}
           </section>
+          </details>
         `}
-        ${state.board?.sourceMode === "local-ledger" ? "" : `
+        ${!demoMode || state.board?.sourceMode === "local-ledger" ? "" : `
           <p class="eyebrow">Local fixture controls</p>
           <div class="actions">
             ${getReviewActions(card.status).map((action) => `
-              <button class="button${action === "archive" ? " ghost" : ""}" data-action="${escapeHtml(action)}"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>
-                ${escapeHtml(action)}
+              <button class="button${action === "archive" ? " ghost" : ""}" type="button" data-action="${escapeHtml(action)}"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>
+                ${escapeHtml(action.charAt(0).toUpperCase() + action.slice(1))} in demo
               </button>
             `).join("") || "<p>No maintainer actions available for this lifecycle state.</p>"}
           </div>
@@ -976,71 +1032,159 @@ export const createAdminConsoleApp = (
   };
 
   let pendingFocusKey: string | null = null;
+  let governedActionsOpen = false;
+  let governedActionsKey: string | undefined;
   const render = () => {
     const previousSignedEnvelope = root.querySelector<HTMLTextAreaElement>("[data-signed-submit] [name='signedEnvelope']")?.value;
+    const focusedCardKey = document.activeElement instanceof HTMLElement && root.contains(document.activeElement)
+      ? document.activeElement.dataset.selectKey : undefined;
     const focusKey = root.contains(document.activeElement)
       ? document.activeElement?.getAttribute("data-focus-key") : null;
     pendingFocusKey = focusKey ?? (root.contains(document.activeElement) ? null : pendingFocusKey);
     const advancedOpen = root.querySelector<HTMLDetailsElement>(".advanced-workflows")?.open ?? false;
-    const settingsOpen = root.querySelector<HTMLDetailsElement>(".workspace-settings")?.open ?? false;
-    const groupedCards = groupReviewCards(state.cards);
+    const previousGovernedActions = root.querySelector<HTMLDetailsElement>(".governed-actions");
+    governedActionsOpen = previousGovernedActions?.open ?? false;
+    governedActionsKey = previousGovernedActions?.dataset.recordKey;
+    const normalizedQuery = state.reviewQuery.trim().toLocaleLowerCase();
+    const visibleCards = state.board?.sourceMode === "local-ledger" ? state.cards : state.cards.filter((card) =>
+      (state.reviewStatus === "all" || card.status === state.reviewStatus)
+      && (normalizedQuery.length === 0 || [card.label, card.target, card.status, card.trustLevel,
+        ...card.detailRows.map((row) => row.value)].some((value) => value.toLocaleLowerCase().includes(normalizedQuery))));
+    const groupedCards = groupReviewCards(visibleCards);
+    const visibleKeys = new Set(visibleCards.map((card) => card.key));
+    const needsReview = state.board !== undefined && (
+      countCards(state.board, "proposed") + countCards(state.board, "authorized") > 0);
+    const reviewTitle = state.board === undefined ? "Connect to review records"
+      : state.board.sourceMode === "local-ledger" ? "Inspect current records"
+        : needsReview ? "Decisions that need attention" : "Registry review workspace";
+    const reviewDescription = state.board === undefined
+      ? "No current registry data is available. Recheck the connection before making a trust decision."
+      : state.board.sourceMode === "local-ledger"
+        ? "Look up an exact record from this API. Independently verify finalized registry state before relying on it."
+        : needsReview
+          ? "Review requests, inspect authority, and follow each record from proposal to active status."
+          : "No requests need a decision right now. Browse active records or prepare a governed action.";
+    const reviewAction = state.board === undefined ? { href: "#workspace-settings", label: "Check connection" }
+      : state.board.sourceMode === "local-ledger" ? { href: "#exact-lookup", label: "Look up a record" }
+        : needsReview ? { href: "#review-board", label: "Open review queue" }
+          : { href: "#review-board", label: "Browse records" };
+    const sourceMessage = state.loading
+      ? state.board === undefined
+        ? "Checking this source. No current records are available yet."
+        : "Showing last checked data while rechecking. Actions are paused; do not treat these records as current until the check completes."
+      : state.board?.sourceMode === "local-ledger"
+        ? "This response is not independently verified finality or authorization evidence."
+        : state.board === undefined
+          ? "Connect or retry to inspect this source. No trust decision is available."
+          : state.board.sourceMode === "snapshot"
+            ? "This read-only snapshot is not authenticated ledger finality or authorization evidence."
+          : "Fixture records are for exploration, not deployed ledger evidence.";
+    const taskLinks = `
+      <a href="#review-board">Review records</a>
+      <a href="#workspace-settings">Workspace settings</a>
+      <a href="#advanced-governance">Advanced governance</a>
+    `;
+    const deploymentIdentity = state.board?.sourceMode === "local-ledger" ? state.board.deploymentIdentity : undefined;
+    const deploymentNotice = state.loading && state.board !== undefined
+      ? "Rechecking this source. The identity below is from the last completed browser check and may be stale; do not rely on it until the check finishes."
+      : state.board === undefined
+        ? "No current registry source is available. Deployment identity and ledger state cannot be inferred from this browser view."
+        : state.board.sourceMode !== "local-ledger"
+          ? "This source does not report a deployment plan or prove ledger finality or actor authorization."
+          : deploymentIdentity === undefined
+            ? "This local-ledger API did not expose a deployment identity. A node-reported checkpoint and browser response are not independently authenticated finality or actor authorization."
+            : "This API reports its local deployment plan. A node-reported checkpoint and browser response are not independently authenticated finality or actor authorization.";
     root.innerHTML = `
-      <main class="shell app-shell">
+      <main class="shell app-shell" data-settings-active="${window.location.hash === "#workspace-settings"}">
         <header class="brand-bar">
-          <span class="brand-name"><img class="brand-logo" src="./midnight-logo.svg" alt="Midnight" /> <span class="brand-section">Trust Registry</span></span>
-          <span class="brand-section">Admin console</span>
+          <span class="brand-name"><img class="brand-logo" src="./midnight-logo.svg" alt="Midnight" /><span class="brand-product"><strong class="brand-product-title">Trust Registry</strong><span class="brand-product-context">Admin console</span></span></span>
+          <details class="mobile-task-menu"><summary>Menu</summary><nav aria-label="Admin tasks">${taskLinks}</nav></details>
         </header>
+        <nav class="task-nav" aria-label="Admin tasks">${taskLinks}</nav>
         <section class="hero">
           <div class="hero-copy">
             <div>
-              <p class="eyebrow">Governance workspace</p>
-              <h1>Review trust records</h1>
-              <p>Inspect proposals and active members first. Advanced signing and policy actions are available below the review board.</p>
+              <p class="eyebrow">Review operations</p>
+              <h1>${reviewTitle}</h1>
+              <p>${reviewDescription}</p>
+              <a class="button" href="${reviewAction.href}">${reviewAction.label}</a>
             </div>
           </div>
-          <div class="toolbar">
-            <form data-api-base-form>
-              <label>
-                API base URL
+          ${state.board === undefined ? "" : renderMetrics(state.board)}
+          ${state.error === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.error)}</div>`}
+          ${state.flash === undefined ? "" : `<div class="alert success" role="status">${escapeHtml(state.flash)}</div>`}
+          <div class="source-panel" data-source-state="${state.loading ? "loading" : state.board?.sourceMode === "local-ledger" ? "local-ledger" : state.board === undefined ? "unavailable" : state.board.sourceMode === "snapshot" ? "snapshot" : "fixture"}" role="status" aria-live="polite">
+            <span class="source-badge">${state.loading ? "Checking" : state.board === undefined ? "Unavailable" : state.board.sourceMode === "local-ledger" ? "API claim" : state.board.sourceMode === "snapshot" ? "Snapshot" : "Local fixture"}</span>
+            <div class="source-copy"><strong>${state.loading ? "Loading registry data" : state.board === undefined ? "No current registry data" : state.board.sourceMode === "local-ledger" ? "Current local-ledger API response" : state.board.sourceMode === "snapshot" ? "Read-only registry snapshot" : "Demo workspace data"}</strong>
+              <span>${sourceMessage}</span>
+            </div>
+            ${state.observedAt === undefined || state.loading ? "" : `<span class="source-time">Checked <time datetime="${escapeHtml(state.observedAt)}">${escapeHtml(formatReviewTime(state.observedAt))}</time> (browser clock)</span>`}
+            <button class="source-refresh" type="button" data-refresh data-focus-key="refresh"${state.loading || state.governedBusy ? " disabled" : ""}>Recheck</button>
+          </div>
+        </section>
+        <section class="settings-view" id="workspace-settings" aria-labelledby="settings-heading">
+          <div class="settings-heading">
+            <a class="settings-back" href="#review-board">&larr; Back to review workspace</a>
+            <p class="eyebrow">Configuration</p>
+            <h1 id="settings-heading">Workspace settings</h1>
+            <p>Check the source this browser is using and the deployment identity reported by the API. These details do not change registry governance.</p>
+          </div>
+          <div class="settings-cards">
+            <section class="settings-card" aria-labelledby="admin-connection-heading">
+              <p class="eyebrow">Connection</p>
+              <h2 id="admin-connection-heading">API and source</h2>
+              <p>Choose a local API for development, or inspect the same-origin endpoint managed by this host.</p>
+            <form class="connection-form" data-api-base-form>
+              <label>API base URL
                 <input class="input mono" type="url" name="apiBase" data-focus-key="api-base" value="${escapeHtml(state.apiBase)}"${sameOriginApi ? " disabled" : ""} />
               </label>
               <div class="actions">
                 <button class="button" type="submit" data-focus-key="connect"${sameOriginApi || state.loading || state.governedBusy ? " disabled" : ""}>Connect</button>
-                <button class="button secondary" type="button" data-refresh data-focus-key="refresh"${state.loading || state.governedBusy ? " disabled" : ""}>Refresh</button>
               </div>
             </form>
-          </div>
-          ${state.error === undefined ? "" : `<div class="alert error">${escapeHtml(state.error)}</div>`}
-          ${state.flash === undefined ? "" : `<div class="alert success">${escapeHtml(state.flash)}</div>`}
-          <div class="source-panel" data-source-state="${state.loading ? "loading" : state.board?.sourceMode === "local-ledger" ? "local-ledger" : state.board === undefined ? "unavailable" : "fixture"}" role="status" aria-live="polite">
-            <span class="source-badge">${state.loading ? "Checking" : state.board === undefined ? "Unavailable" : state.board.sourceMode === "local-ledger" ? "API claim" : state.board.sourceMode === "snapshot" ? "Snapshot" : "Local fixture"}</span>
-            <div class="source-copy"><strong>${state.loading ? "Loading registry data" : state.board === undefined ? "No current registry data" : state.board.sourceMode === "local-ledger" ? "Current local-ledger API response" : state.board.sourceMode === "snapshot" ? "Read-only registry snapshot" : "Demo workspace data"}</strong>
-              <span>${state.board?.sourceMode === "local-ledger" ? "This response is not independently verified finality or authorization evidence." : state.board === undefined ? "Connect or retry to inspect this source. No trust decision is available." : "Fixture records are for exploration, not deployed ledger evidence."}</span>
-            </div>
-            ${state.observedAt === undefined || state.loading ? "" : `<span class="source-time">Checked ${escapeHtml(state.observedAt)} (browser clock)</span>`}
-          </div>
-          <details class="workspace-settings" id="workspace-settings"${settingsOpen ? " open" : ""}>
-            <summary>Workspace settings and source details</summary>
             <dl class="settings-grid">
               <div><dt>API endpoint</dt><dd class="technical-id">${escapeHtml(state.apiBase)}${sameOriginApi ? " (managed by this host)" : " (local development setting)"}</dd></div>
               <div><dt>Connection</dt><dd>${state.loading ? "Checking" : state.board === undefined ? "Unavailable" : "Responding at last check"}</dd></div>
               <div><dt>Source mode</dt><dd>${escapeHtml(state.board?.sourceMode ?? "Unavailable")}</dd></div>
-              <div><dt>Browser check time</dt><dd>${escapeHtml(state.observedAt ?? "No successful check")}</dd></div>
-              <div><dt>Registry ID</dt><dd class="technical-id">${escapeHtml(state.board?.summary.registryId ?? "Not reported")}</dd></div>
-              <div><dt>Registry DID</dt><dd class="technical-id">${escapeHtml(state.board?.summary.registryDid ?? "Not reported")}</dd></div>
-              <div><dt>Current epoch ID</dt><dd class="technical-id">${escapeHtml(state.board?.summary.currentEpochId ?? "Not reported")}</dd></div>
-              <div><dt>Approved local plan digest</dt><dd class="technical-id">${escapeHtml(state.board?.localPlanSha256 ?? "Not exposed by this API")}</dd></div>
-              <div><dt>Network profile, genesis, contract</dt><dd>Not exposed by this API response</dd></div>
+              <div><dt>Last checked in this browser</dt><dd>${state.observedAt === undefined ? "No successful check" : `<time datetime="${escapeHtml(state.observedAt)}">${escapeHtml(formatReviewTime(state.observedAt))}</time>`}</dd></div>
             </dl>
-            <p class="settings-note">Deployment identity and governance cannot be changed here. A browser response does not prove ledger finality or authorize an actor.</p>
-          </details>
-          ${state.board === undefined ? "" : renderMetrics(state.board)}
+            <button class="source-refresh" type="button" data-settings-refresh data-focus-key="settings-refresh"${state.loading || state.governedBusy ? " disabled" : ""}>Recheck connection</button>
+            </section>
+            <section class="settings-card" aria-labelledby="admin-identity-heading">
+              <p class="eyebrow">Read-only</p>
+              <h2 id="admin-identity-heading">Deployment identity</h2>
+              <dl class="settings-grid">
+                <div><dt>Registry</dt><dd>${escapeHtml(state.board?.summary.registryLabel ?? "Not reported")}</dd></div>
+                <div><dt>Network profile (API report)</dt><dd>${escapeHtml(deploymentIdentity?.networkProfileId ?? "Not exposed by this API response")}</dd></div>
+                <div><dt>Genesis anchor</dt><dd>${deploymentIdentity === undefined ? "Not exposed by this API response" : "Expected hash in API plan"}</dd></div>
+                <div><dt>Contract</dt><dd>${deploymentIdentity === undefined ? "Not exposed by this API response" : "Address in API plan"}</dd></div>
+              </dl>
+              <details class="settings-technical">
+                <summary>Technical identifiers and plan</summary>
+                <dl class="settings-grid">
+                  <div><dt>Registry ID</dt><dd class="technical-id">${escapeHtml(state.board?.summary.registryId ?? "Not reported")}</dd></div>
+                  <div><dt>Registry DID</dt><dd class="technical-id">${escapeHtml(state.board?.summary.registryDid ?? "Not reported")}</dd></div>
+                  <div><dt>Current epoch ID</dt><dd class="technical-id">${escapeHtml(state.board?.summary.currentEpochId ?? "Not reported")}</dd></div>
+                  <div><dt>Approved local plan digest</dt><dd class="technical-id">${escapeHtml(state.board?.localPlanSha256 ?? "Not exposed by this API")}</dd></div>
+                  ${state.board?.sourceMode !== "local-ledger" ? "" : `<div><dt>Node-reported checkpoint hash</dt><dd class="technical-id">${escapeHtml(state.board.nodeReportedCheckpointHash ?? "Not reported")}</dd></div>
+                  <div><dt>API snapshot reference time (epoch valid-until)</dt><dd>${escapeHtml(state.board.snapshotGeneratedAt ?? "Not reported")}</dd></div>`}
+                  ${deploymentIdentity === undefined
+                    ? "<div><dt>Network ID</dt><dd>Not exposed by this API response</dd></div>"
+                    : `<div><dt>Network ID (API report)</dt><dd>${escapeHtml(deploymentIdentity.networkId)}</dd></div>
+                      <div><dt>Expected genesis hash (API plan)</dt><dd class="technical-id">${escapeHtml(deploymentIdentity.expectedGenesisHash)}</dd></div>
+                      <div><dt>Contract address (API plan)</dt><dd class="technical-id">${escapeHtml(deploymentIdentity.contractAddress)}</dd></div>`}
+                </dl>
+              </details>
+            <p class="settings-callout">${deploymentNotice}</p>
+            </section>
+            <section class="settings-card" aria-labelledby="admin-signing-heading">
+              <p class="eyebrow">Security</p>
+              <h2 id="admin-signing-heading">External signing</h2>
+              <p>Governed actions require an external signer. This browser prepares exact context but does not hold private keys or establish actor authority.</p>
+            </section>
+          </div>
+          <div class="settings-footer"><strong>No account profile in this browser</strong><p>The authenticated host and external signer establish who may act. Deployment identity and governance cannot be changed here.</p></div>
         </section>
-        <nav class="task-nav" aria-label="Admin tasks">
-          <a href="#review-board">Review records</a>
-          <a href="#workspace-settings">Workspace settings</a>
-          <a href="#advanced-governance">Advanced governance</a>
-        </nav>
         ${state.board?.sourceMode === "local-ledger" ? `
           <section class="proposal-panel governed-panel" id="exact-lookup">
             <p class="eyebrow">Current local ledger</p>
@@ -1056,18 +1200,25 @@ export const createAdminConsoleApp = (
               <label>Exact current record ID
                 <input class="input mono" data-current-id value="${escapeHtml(state.lookupId)}" autocomplete="off" maxlength="256" />
               </label>
-              <button class="button secondary" type="submit"${state.loading || state.lookupBusy || state.governedBusy ? " disabled" : ""}>Look up current record</button>
+              <button class="button secondary" type="submit" data-focus-key="current-lookup-submit"${state.loading || state.lookupBusy || state.governedBusy ? " disabled" : ""}>Look up current record</button>
             </form>
+            ${state.lookupError === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.lookupError)}</div>`}
           </section>
         ` : ""}
         <details class="advanced-workflows" id="advanced-governance"${advancedOpen ? " open" : ""}><summary>Advanced governance and signing actions</summary>
-        ${state.board !== undefined && state.board.sourceMode !== "local-ledger" ? `<form class="epoch-panel governed-panel" data-epoch-form>
+        ${state.board === undefined ? `<p class="settings-note">Connect to a registry source before preparing governance work.</p>` : `<nav class="governance-task-grid" aria-label="Governance tasks">
+          ${state.board.sourceMode === "local-ledger" || !demoMode ? "" : `<a href="#task-epoch"><strong>Publish an epoch</strong><span>Fixture workspace checkpoint, not ledger finality</span></a>
+          <a href="#task-signed-intent"><strong>Submit a signed workspace intent</strong><span>External maintainer signature; local workspace only</span></a>`}
+          <a href="#task-proposal"><strong>Prepare or recover a proposal</strong><span>Exact applicant evidence and external quorum</span></a>
+          <a href="#task-policy"><strong>Revise quorum and register verifier</strong><span>Separate policy-bound steps</span></a>
+        </nav>`}
+        ${demoMode && state.board !== undefined && state.board.sourceMode !== "local-ledger" ? `<form class="epoch-panel governed-panel" id="task-epoch" data-epoch-form>
           <label>Publish epoch label
             <input class="input" data-epoch-label type="text" value="${escapeHtml(state.epochLabel)}" placeholder="optional operator label" />
           </label>
           <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Publish epoch</button>
         </form>` : ""}
-        ${state.board !== undefined && state.board.sourceMode !== "local-ledger" ? `<section class="proposal-panel governed-panel">
+        ${demoMode && state.board !== undefined && state.board.sourceMode !== "local-ledger" ? `<section class="proposal-panel governed-panel" id="task-signed-intent">
           <div>
             <p class="eyebrow">Signed workspace action</p>
             <h2>Submit an external maintainer intent</h2>
@@ -1082,7 +1233,7 @@ export const createAdminConsoleApp = (
             <button class="button" type="submit"${state.signedBusy || state.signedContext === undefined ? " disabled" : ""}>Submit signed action</button>
           </form>
         </section>` : ""}
-        ${state.board === undefined ? "" : `<section class="proposal-panel governed-panel">
+        ${state.board === undefined ? "" : `<section class="proposal-panel governed-panel" id="task-proposal">
           <div>
             <p class="eyebrow">Membership application</p>
             <h2>Submit a governed proposal</h2>
@@ -1118,7 +1269,7 @@ export const createAdminConsoleApp = (
             </form>
           `}
         </section>`}
-        ${state.board === undefined ? "" : `<section class="proposal-panel governed-panel">
+        ${state.board === undefined ? "" : `<section class="proposal-panel governed-panel" id="task-policy">
           <div>
             <p class="eyebrow">Governance policy</p>
             <h2>Revise maintainer quorum</h2>
@@ -1149,13 +1300,29 @@ export const createAdminConsoleApp = (
         </section>`}
         </details>
         <section class="workspace" id="review-board">
+          ${state.board === undefined || state.board.sourceMode === "local-ledger" ? "" : `<div class="review-filters">
+            <div><p class="eyebrow">Review queue</p><h2>Find a trust record</h2><p>${visibleCards.length.toString()} of ${state.cards.length.toString()} ${state.cards.length === 1 ? "record" : "records"} shown</p></div>
+            <label>Search label, role, or exact identifier
+              <input class="input" type="search" data-review-query data-focus-key="review-query" value="${escapeHtml(state.reviewQuery)}" autocomplete="off" />
+            </label>
+            <label>Lifecycle status
+              <select class="input" data-review-status data-focus-key="review-status">
+                <option value="all"${state.reviewStatus === "all" ? " selected" : ""}>All statuses</option>
+                ${REVIEW_STATUSES.map((status) => `<option value="${status}"${state.reviewStatus === status ? " selected" : ""}>${escapeHtml(REVIEW_STATUS_LABELS[status])}</option>`).join("")}
+              </select>
+            </label>
+          </div>`}
           ${state.board?.sourceMode === "local-ledger" ? `<div class="board" data-local-current-result>
             ${state.cards.map(renderCard).join("")}
           </div>` : `<div class="board">
-            ${REVIEW_STATUSES.filter((status) => status === "proposed"
-              || groupedCards[status].length > 0).map((status) => renderColumn(status, groupedCards[status])).join("")}
+            ${visibleCards.length === 0 && (state.reviewQuery.trim() !== "" || state.reviewStatus !== "all")
+              ? `<div class="empty-state"><p>No records match these filters. Try a different label or status.</p></div>`
+              : visibleCards.length === 0
+                ? `<div class="empty-state"><p>No records yet. New requests will appear here after submission.</p></div>`
+                : REVIEW_STATUSES.filter((status) => groupedCards[status].length > 0)
+                  .map((status) => renderColumn(status, groupedCards[status])).join("")}
           </div>`}
-          ${renderDetailPanel()}
+          ${renderDetailPanel(state.board?.sourceMode === "local-ledger" ? undefined : visibleKeys)}
         </section>
       </main>
     `;
@@ -1173,9 +1340,17 @@ export const createAdminConsoleApp = (
         pendingFocusKey = null;
       }
     }
+    if (focusedCardKey !== undefined) {
+      [...root.querySelectorAll<HTMLButtonElement>("[data-select-key]")]
+        .find((card) => card.dataset.selectKey === focusedCardKey)?.focus();
+    }
     bindEvents();
   };
 
   render();
+  window.addEventListener("hashchange", () => {
+    const shell = root.querySelector<HTMLElement>(".app-shell");
+    if (shell !== null) shell.dataset.settingsActive = String(window.location.hash === "#workspace-settings");
+  });
   void refreshBoard();
 };

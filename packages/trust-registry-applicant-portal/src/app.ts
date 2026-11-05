@@ -36,14 +36,19 @@ type AppState = {
   currentAuthorizationBusy: boolean;
   currentAuthorizationError: string | undefined;
   currentRecognitionQuery: TrustRegistryApiResolveRecognitionRequest | undefined;
+  currentRecognitionDraft: { recognizedAuthorityDid: string; recognizedRegistryId: string;
+    scopeResourceType: string; scopeResourceId: string; scopeContext: string } | undefined;
   currentRecognitionResult: TrustRegistryApiRecognitionListResponse["entries"][number] | undefined;
   currentRecognitionBusy: boolean;
   currentRecognitionError: string | undefined;
   historicalQuery: TrustRegistryApiEvaluateAuthorizationRequest | undefined;
+  historicalDraft: TrustRegistryApiEvaluateAuthorizationRequest | undefined;
   historicalResult: TrustRegistryApiAuthorizationEvidenceEvaluationResponse | undefined;
   historicalBusy: boolean;
   historicalError: string | undefined;
   historicalRecognitionQuery: TrustRegistryApiEvaluateRecognitionRequest | undefined;
+  historicalRecognitionDraft: { recognizedAuthorityDid: string; recognizedRegistryId: string;
+    scopeResourceType: string; scopeResourceId: string; scopeContext: string; at: string } | undefined;
   historicalRecognitionResult: TrustRegistryApiRecognitionEvidenceEvaluationResponse | undefined;
   historicalRecognitionBusy: boolean;
   historicalRecognitionError: string | undefined;
@@ -179,6 +184,38 @@ export const escapeHtml = (value: string): string =>
     .replaceAll("\"", "&quot;")
     .replaceAll("'", "&#39;");
 
+const formatObservationTime = (value: string): string => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return `${new Intl.DateTimeFormat("en-GB", {
+    dateStyle: "medium", timeStyle: "short", timeZone: "UTC",
+  }).format(date)} UTC`;
+};
+
+const downloadUnverifiedEvidence = (
+  root: HTMLElement,
+  kind: "historical-authorization-evidence" | "historical-recognition-evidence",
+  query: unknown,
+  result: unknown,
+): void => {
+  const payload = {
+    format: "midnight-trust-registry-unverified-api-claim-v1",
+    kind,
+    verifiedFinality: false,
+    query,
+    result,
+  };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2) + "\n"], { type: "application/json" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `midnight-trust-registry-${kind}.json`;
+  link.hidden = true;
+  root.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+
 const formatApiError = (error: unknown): string => {
   if (error instanceof TrustRegistryApplicantPortalApiError) {
     const title = error.problem.title ?? "request failed";
@@ -215,15 +252,20 @@ export const createApplicantPortalApp = (
     fetchImpl?: typeof fetch;
     initialUrl?: URL;
     storage?: Storage;
+    demoMode?: boolean;
   } = {},
 ): void => {
   const initialUrl = options.initialUrl ?? new URL(window.location.href);
+  const demoMode = (options.demoMode ?? initialUrl.searchParams.get("demo") === "1")
+    && ["localhost", "127.0.0.1", "[::1]"].includes(initialUrl.hostname);
   const storage = options.storage ?? window.localStorage;
   const fetchImpl = options.fetchImpl ?? window.fetch.bind(window);
   const sameOriginApi = initialUrl.pathname.startsWith("/applicant/");
   // An explicit query parameter is a one-off override for local testing and
   // should not silently replace the persisted default.
   const queryBase = initialUrl.searchParams.get("apiBase");
+  let lookupActive: "authorization" | "recognition" = initialUrl.hash === "#current-recognition-lookup"
+    ? "recognition" : "authorization";
 
   const state: AppState = {
     apiBase: sameOriginApi ? initialUrl.origin
@@ -254,14 +296,17 @@ export const createApplicantPortalApp = (
     currentAuthorizationBusy: false,
     currentAuthorizationError: undefined,
     currentRecognitionQuery: undefined,
+    currentRecognitionDraft: undefined,
     currentRecognitionResult: undefined,
     currentRecognitionBusy: false,
     currentRecognitionError: undefined,
     historicalQuery: undefined,
+    historicalDraft: undefined,
     historicalResult: undefined,
     historicalBusy: false,
     historicalError: undefined,
     historicalRecognitionQuery: undefined,
+    historicalRecognitionDraft: undefined,
     historicalRecognitionResult: undefined,
     historicalRecognitionBusy: false,
     historicalRecognitionError: undefined,
@@ -282,6 +327,33 @@ export const createApplicantPortalApp = (
   let currentRecognitionRequestId = 0;
   let inspectionRequestId = 0;
   let recognitionRequestId = 0;
+  let recordSearchQuery = "";
+  let demoSelection: PortalSubmissionTarget = "issuer";
+
+  const filterRecordCards = () => {
+    const overview = root.querySelector<HTMLElement>(".records-overview");
+    if (overview === null) return;
+    const query = recordSearchQuery.trim().toLocaleLowerCase();
+    let visible = 0;
+    overview.querySelectorAll<HTMLElement>(".lane").forEach((lane) => {
+      let laneVisible = 0;
+      const role = lane.querySelector("h2")?.textContent?.toLocaleLowerCase() ?? "";
+      lane.querySelectorAll<HTMLElement>(".card").forEach((card) => {
+        card.hidden = query !== "" && !role.includes(query)
+          && !card.textContent?.toLocaleLowerCase().includes(query);
+        if (!card.hidden) laneVisible += 1;
+      });
+      lane.hidden = query !== "" && laneVisible === 0 && lane.querySelector(".empty-state") === null;
+      visible += laneVisible;
+    });
+    const count = overview.querySelector<HTMLElement>("[data-record-count]");
+    if (count !== null) {
+      const total = overview.querySelectorAll(".card").length;
+      count.textContent = `${visible.toString()} of ${total.toString()} active ${total === 1 ? "record" : "records"} shown`;
+    }
+    const noMatch = overview.querySelector<HTMLElement>("[data-record-no-match]");
+    if (noMatch !== null) noMatch.hidden = query === "" || visible > 0 || overview.querySelectorAll(".card").length === 0;
+  };
 
   const setState = (next: Partial<AppState>) => {
     Object.assign(state, next);
@@ -710,7 +782,7 @@ export const createApplicantPortalApp = (
     if (state.currentRecognitionBusy || state.inspection?.sourceMode !== "local-ledger") return;
     const requestId = ++currentRecognitionRequestId;
     const apiBase = state.apiBase;
-    setState({ currentRecognitionQuery: query, currentRecognitionBusy: true,
+    setState({ currentRecognitionQuery: query, currentRecognitionDraft: undefined, currentRecognitionBusy: true,
       currentRecognitionResult: undefined, currentRecognitionError: undefined });
     try {
       const result = await client().loadCurrentRecognition(query, state.inspection!);
@@ -809,6 +881,7 @@ export const createApplicantPortalApp = (
     target: PortalSubmissionTarget,
     label: string,
   ) => {
+    if (!demoMode || state.inspection?.sourceMode === "local-ledger") return;
     setState({ submitting: true, error: undefined, flash: undefined });
     try {
       const result = await client().submitApplication(target, label);
@@ -885,6 +958,12 @@ export const createApplicantPortalApp = (
   };
 
   const bindEvents = () => {
+    root.querySelectorAll<HTMLAnchorElement>(".mobile-task-menu nav a").forEach((link) => {
+      link.addEventListener("click", () => {
+        const menu = link.closest<HTMLDetailsElement>(".mobile-task-menu");
+        if (menu !== null) menu.open = false;
+      });
+    });
     root.querySelector<HTMLFormElement>("[data-api-base-form]")?.addEventListener("submit", (event) => {
       event.preventDefault();
       if (sameOriginApi) return;
@@ -909,15 +988,15 @@ export const createApplicantPortalApp = (
       currentRecognitionRequestId += 1;
       recognitionRequestId += 1;
       state.observedAt = undefined;
-      setState({ apiBase, inspection: undefined, signedBusy: false, signedContext: undefined, pendingApplication: undefined, auditorStatus: undefined, auditorStatusBusy: false, auditorDraft: undefined, preparedAuditor: undefined, auditorPreparationBusy: false, memberDraft: undefined, preparedMember: undefined, memberPreparationBusy: false, currentAuthorizationBusy: false, currentAuthorizationResult: undefined, currentAuthorizationError: undefined, currentRecognitionBusy: false, currentRecognitionResult: undefined, currentRecognitionError: undefined, historicalBusy: false, historicalResult: undefined, historicalError: undefined, historicalRecognitionBusy: false, historicalRecognitionResult: undefined, historicalRecognitionError: undefined, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined,
+      setState({ apiBase, inspection: undefined, signedBusy: false, signedContext: undefined, pendingApplication: undefined, auditorStatus: undefined, auditorStatusBusy: false, auditorDraft: undefined, preparedAuditor: undefined, auditorPreparationBusy: false, memberDraft: undefined, preparedMember: undefined, memberPreparationBusy: false, currentAuthorizationBusy: false, currentAuthorizationResult: undefined, currentAuthorizationError: undefined, currentRecognitionBusy: false, currentRecognitionResult: undefined, currentRecognitionError: undefined, historicalBusy: false, historicalResult: undefined, historicalError: undefined, historicalDraft: undefined, historicalRecognitionBusy: false, historicalRecognitionResult: undefined, historicalRecognitionError: undefined, historicalRecognitionDraft: undefined, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined,
         recognitionId: "", recognitionChallenge: undefined, recognitionAdmission: undefined,
         recognitionRecoveryBusy: false, recognitionRecoveryMessage: undefined });
       void refreshInspection();
     });
 
-    root.querySelector<HTMLButtonElement>("[data-refresh]")?.addEventListener("click", () => {
+    root.querySelectorAll<HTMLButtonElement>("[data-refresh], [data-settings-refresh]").forEach((button) => button.addEventListener("click", () => {
       void refreshInspection();
-    });
+    }));
 
     root.querySelector<HTMLFormElement>("[data-current-authorization]")?.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -932,26 +1011,47 @@ export const createApplicantPortalApp = (
       event.preventDefault();
       const form = event.currentTarget as HTMLFormElement;
       const field = (name: string) => form.querySelector<HTMLInputElement>(`[name='${name}']`)?.value.trim() ?? "";
+      const draft = {
+        recognizedAuthorityDid: field("recognizedAuthorityDid"),
+        recognizedRegistryId: field("recognizedRegistryId"),
+        scopeResourceType: field("scopeResourceType"),
+        scopeResourceId: field("scopeResourceId"),
+        scopeContext: form.querySelector<HTMLTextAreaElement>("[name='scopeContext']")?.value ?? "",
+      };
       try {
-        const scopeContext = parseRecognitionContext(
-          form.querySelector<HTMLTextAreaElement>("[name='scopeContext']")?.value ?? "",
-        );
-        const recognizedRegistryId = field("recognizedRegistryId");
-        const scopeResourceType = field("scopeResourceType");
+        const scopeContext = parseRecognitionContext(draft.scopeContext);
+        const { recognizedRegistryId, scopeResourceType } = draft;
         if (recognizedRegistryId === "" || scopeResourceType === "") {
           throw new Error("Recognition lookup requires registry ID and scope resource type.");
         }
         const query = TrustRegistryApiResolveRecognitionRequestSchema.parse({
-          recognizedAuthorityDid: field("recognizedAuthorityDid"),
+          recognizedAuthorityDid: draft.recognizedAuthorityDid,
           recognizedRegistryId,
           scopeResourceType,
-          scopeResourceId: field("scopeResourceId"),
+          scopeResourceId: draft.scopeResourceId,
           ...(scopeContext === undefined ? {} : { scopeContext }),
         });
         void loadCurrentRecognition(query);
       } catch (error) {
-        setState({ currentRecognitionResult: undefined, currentRecognitionError: formatApiError(error) });
+        setState({ currentRecognitionDraft: draft, currentRecognitionResult: undefined,
+          currentRecognitionError: formatApiError(error) });
       }
+    });
+
+    root.querySelectorAll<HTMLButtonElement>("[data-copy-current-claim]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const details = button.closest("details");
+        const claim = details?.querySelector("pre")?.textContent;
+        const feedback = details?.querySelector<HTMLElement>("[data-copy-claim-feedback]");
+        if (claim === undefined || claim === null || feedback === null || feedback === undefined) return;
+        try {
+          if (navigator.clipboard?.writeText === undefined) throw new Error("Clipboard unavailable");
+          await navigator.clipboard.writeText(claim);
+          feedback.textContent = "Copied current API claim. Verify before relying on it.";
+        } catch {
+          feedback.textContent = "Copy unavailable. Select the JSON below to copy it manually.";
+        }
+      });
     });
 
     root.querySelector<HTMLFormElement>("[data-historical-authorization]")?.addEventListener("submit", (event) => {
@@ -961,6 +1061,24 @@ export const createApplicantPortalApp = (
       const role = form.querySelector<HTMLSelectElement>("[name='role']")?.value;
       if (role !== "issuer" && role !== "verifier" && role !== "auditor") return;
       void loadHistoricalEvidence({ role, subjectDid: field("subjectDid"), resourceId: field("resourceId"), at: field("at") });
+    });
+    root.querySelector<HTMLFormElement>("[data-historical-authorization]")?.addEventListener("input", (event) => {
+      const form = event.currentTarget as HTMLFormElement;
+      const field = (name: string) => form.querySelector<HTMLInputElement>(`[name='${name}']`)?.value ?? "";
+      const role = form.querySelector<HTMLSelectElement>("[name='role']")?.value;
+      if (role === "issuer" || role === "verifier" || role === "auditor") {
+        state.historicalDraft = { role, subjectDid: field("subjectDid"), resourceId: field("resourceId"), at: field("at") };
+      }
+      ++historicalRequestId;
+      state.historicalBusy = false;
+      state.historicalResult = undefined;
+      root.querySelector("[data-historical-result]")?.remove();
+      const submit = root.querySelector<HTMLButtonElement>("[data-historical-authorization] button[type='submit']");
+      if (submit !== null) submit.disabled = false;
+    });
+    root.querySelector<HTMLButtonElement>("[data-download-historical-authorization]")?.addEventListener("click", () => {
+      if (state.historicalQuery === undefined || state.historicalResult === undefined) return;
+      downloadUnverifiedEvidence(root, "historical-authorization-evidence", state.historicalQuery, state.historicalResult);
     });
 
     root.querySelector<HTMLFormElement>("[data-historical-recognition]")?.addEventListener("submit", (event) => {
@@ -989,6 +1107,26 @@ export const createApplicantPortalApp = (
         setState({ historicalRecognitionResult: undefined, historicalRecognitionError: formatApiError(error) });
       }
     });
+    root.querySelector<HTMLFormElement>("[data-historical-recognition]")?.addEventListener("input", (event) => {
+      const form = event.currentTarget as HTMLFormElement;
+      const field = (name: string) => form.querySelector<HTMLInputElement>(`[name='${name}']`)?.value ?? "";
+      state.historicalRecognitionDraft = {
+        recognizedAuthorityDid: field("recognizedAuthorityDid"), recognizedRegistryId: field("recognizedRegistryId"),
+        scopeResourceType: field("scopeResourceType"), scopeResourceId: field("scopeResourceId"),
+        scopeContext: form.querySelector<HTMLTextAreaElement>("[name='scopeContext']")?.value ?? "", at: field("at"),
+      };
+      ++historicalRecognitionRequestId;
+      state.historicalRecognitionBusy = false;
+      state.historicalRecognitionResult = undefined;
+      root.querySelector("[data-historical-recognition-result]")?.remove();
+      const submit = root.querySelector<HTMLButtonElement>("[data-historical-recognition] button[type='submit']");
+      if (submit !== null) submit.disabled = false;
+    });
+    root.querySelector<HTMLButtonElement>("[data-download-historical-recognition]")?.addEventListener("click", () => {
+      if (state.historicalRecognitionQuery === undefined || state.historicalRecognitionResult === undefined) return;
+      downloadUnverifiedEvidence(root, "historical-recognition-evidence",
+        state.historicalRecognitionQuery, state.historicalRecognitionResult);
+    });
 
     root.querySelector<HTMLButtonElement>("[data-signed-context]")?.addEventListener("click", () => {
       void loadSignedContext();
@@ -1008,7 +1146,7 @@ export const createApplicantPortalApp = (
       if (form === null) {
         return;
       }
-      const targetInput = form.querySelector<HTMLSelectElement>("[name='target']");
+      const targetInput = form.querySelector<HTMLInputElement>("[name='target']:checked");
       const labelInput = form.querySelector<HTMLInputElement>("[name='label']");
       if (targetInput === null || labelInput === null) {
         return;
@@ -1019,6 +1157,12 @@ export const createApplicantPortalApp = (
         return;
       }
       void submitApplication(target, labelInput.value.trim());
+    });
+    root.querySelector<HTMLFieldSetElement>(".demo-targets")?.addEventListener("change", (event) => {
+      const input = event.target;
+      if (!(input instanceof HTMLInputElement) || input.name !== "target") return;
+      const target = TARGET_OPTIONS.find((option) => option.value === input.value)?.value;
+      if (target !== undefined) demoSelection = target;
     });
 
     root.querySelector<HTMLFormElement>("[data-application-binding-form]")?.addEventListener("submit", (event) => {
@@ -1184,16 +1328,39 @@ export const createApplicantPortalApp = (
       input.value = "";
       void submitApplicationPresentation(raw);
     });
+    const roleLinks = [...root.querySelectorAll<HTMLAnchorElement>(".journey-cards [data-open-workflow]")];
+    const syncRoleLinks = () => {
+      for (const link of roleLinks) {
+        const id = link.dataset.openWorkflow ?? "";
+        link.setAttribute("aria-controls", id);
+        link.setAttribute("aria-expanded", String(root.querySelector<HTMLDetailsElement>(`#${id}`)?.open === true));
+      }
+    };
+    root.querySelectorAll<HTMLDetailsElement>(".role-workflow").forEach((details) => {
+      details.addEventListener("toggle", syncRoleLinks);
+    });
+    syncRoleLinks();
     root.querySelectorAll<HTMLAnchorElement>("[data-open-workflow]").forEach((link) => {
       link.addEventListener("click", (event) => {
         const target = root.querySelector<HTMLDetailsElement>(`#${link.dataset.openWorkflow ?? ""}`);
         if (target === null) return;
         event.preventDefault();
-        target.open = true;
+        const parent = target.closest<HTMLDetailsElement>(".advanced-tools");
+        if (parent !== null) parent.open = true;
+        if (roleLinks.includes(link)) {
+          root.querySelectorAll<HTMLDetailsElement>(".role-workflow").forEach((details) => {
+            details.open = details === target;
+          });
+          syncRoleLinks();
+        } else target.open = true;
         if (window.location.hash !== `#${target.id}`) window.history.pushState(null, "", `#${target.id}`);
         target.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
         target.querySelector("summary")?.focus();
       });
+    });
+    root.querySelector<HTMLInputElement>("[data-record-search]")?.addEventListener("input", (event) => {
+      recordSearchQuery = (event.currentTarget as HTMLInputElement).value;
+      filterRecordCards();
     });
   };
 
@@ -1232,7 +1399,7 @@ export const createApplicantPortalApp = (
     pendingFocusKey = focusKey ?? (root.contains(document.activeElement) ? null : pendingFocusKey);
     const openWorkflows = new Set([...root.querySelectorAll<HTMLDetailsElement>(".workflow-disclosure[open]")]
       .map((details) => details.dataset.workflow));
-    const settingsOpen = root.querySelector<HTMLDetailsElement>(".workspace-settings")?.open ?? false;
+    const advancedOpen = root.querySelector<HTMLDetailsElement>(".advanced-tools")?.open ?? false;
     const previousVpForm = root.querySelector<HTMLFormElement>("[data-application-vp-form]");
     const previousVp = previousVpForm?.querySelector<HTMLTextAreaElement>("[name='presentation']")?.value;
     const previousChallengeHash = previousVpForm?.dataset.challengeHash;
@@ -1255,135 +1422,281 @@ export const createApplicantPortalApp = (
     const issuerLocked = preparedIssuer === undefined ? "" : " disabled";
     const verifierLocked = preparedVerifier === undefined ? "" : " disabled";
     const maintainerLocked = preparedMaintainer === undefined ? "" : " disabled";
+    const applicantIdGuide = `<p class="step-hint">Application ID tracks this submission; authorization ID names the grant you are requesting. Choose distinct lowercase IDs, then enter a Midnight DID you control and its full key ID from that DID. Never enter a private key.</p>`;
+    const privateHostGuide = privateHost ? "" : `<p class="step-hint" data-private-host-guide>Signing preparation is unavailable on this connection. Open the portal through the same authenticated host as its API.</p>`;
+    const demoApplication = !demoMode || state.inspection === undefined || state.inspection.sourceMode === "local-ledger" ? "" : `
+      <form class="form-panel" id="demo-application" data-submit-form>
+        <div class="demo-copy">
+          <p class="eyebrow">Local fixture</p>
+          <h2>Try a local application</h2>
+          <p>Choose an application type and a name reviewers will recognize. An admin can review and activate this label-only fixture request next. It does not grant on-chain authority.</p>
+        </div>
+        <div class="demo-fields">
+          <fieldset class="demo-targets"><legend>Application type</legend>
+            <div class="demo-target-grid">
+              ${TARGET_OPTIONS.map((option) => `<label class="demo-target-option"><input type="radio" name="target" value="${escapeHtml(option.value)}"${demoSelection === option.value ? " checked" : ""} /><span><strong>${escapeHtml(option.label)}</strong><small>${escapeHtml(option.description)}</small></span></label>`).join("")}
+            </div>
+          </fieldset>
+          <label class="label">Name shown to reviewers
+            <input class="input" name="label" type="text" placeholder="Example issuer" required />
+          </label>
+          <button class="button" type="submit"${state.submitting ? " disabled" : ""}>Send demo application</button>
+        </div>
+      </form>
+    `;
+    const taskLinks = state.inspection === undefined ? `
+      <a href="#connection-details">Check connection</a>
+      <a href="#governed-requests">View role requirements</a>
+    ` : state.inspection.sourceMode === "local-ledger" ? `
+      <a href="#current-authorization-lookup">Look up authorization</a>
+      <a href="#current-recognition-lookup">Look up recognition</a>
+      <a href="#governed-requests">Prepare membership</a>
+      <a href="#connection-details">Workspace settings</a>
+    ` : `
+      ${demoMode ? `<a href="#demo-application">Try a local demo application</a>` : ""}
+      <a href="#governed-requests">Prepare governed membership</a>
+      <a href="#trust-records">Explore active records</a>
+      <a href="#connection-details">Workspace settings</a>
+    `;
+    const journeyPicker = `
+          <section class="journey-picker" id="governed-requests" aria-labelledby="journey-heading">
+            <div class="journey-heading"><p class="eyebrow">Governed requests</p><h2 id="journey-heading">${demoMode && state.inspection !== undefined && state.inspection.sourceMode !== "local-ledger" ? "Applying beyond the demo?" : "What would you like to do?"}</h2>
+              <p>Choose a role to see its scope, evidence, and signing steps. Nothing is submitted until you confirm.</p>
+            </div>
+            <p class="journey-prerequisite">${state.inspection === undefined ? "Connect to a registry source before preparing a governed request." : privateHost ? "You can prepare a request here. The host must authenticate your session before submission." : "Local connection: prepare only. Submission requires an authenticated same-origin host."}</p>
+            <div class="journey-cards">
+              <a href="#issuer-request" data-open-workflow="issuer-request"><span class="role-mark" aria-hidden="true">I</span><strong>Become an issuer</strong><span>Issue credentials in a defined scope.</span><em>View issuer steps &rarr;</em></a>
+              <a href="#verifier-request" data-open-workflow="verifier-request"><span class="role-mark" aria-hidden="true">V</span><strong>Become a verifier</strong><span>Verify a precise scope.</span><em>View verifier steps &rarr;</em></a>
+              <a href="#auditor-request" data-open-workflow="auditor-request"><span class="role-mark" aria-hidden="true">A</span><strong>Become an auditor</strong><span>Oversee a defined audit scope.</span><em>View auditor steps &rarr;</em></a>
+              <a href="#maintainer-request" data-open-workflow="maintainer-request"><span class="role-mark" aria-hidden="true">M</span><strong>Join maintenance</strong><span>Request committee membership.</span><em>View maintainer steps &rarr;</em></a>
+            </div>
+            <div class="journey-guide">
+              <div class="journey-steps">
+                <p class="eyebrow">Your path</p><h3>Four steps to submit a request</h3>
+                <ol>
+                  <li><strong>Choose a role</strong><span>Confirm the authority and scope.</span></li>
+                  <li><strong>Prepare evidence</strong><span>Provide the exact resource and redacted role evidence.</span></li>
+                  <li><strong>Sign and submit</strong><span>Sign externally; submit through an authenticated host.</span></li>
+                  <li><strong>Keep the receipt</strong><span>Save returned IDs. A receipt is not approval.</span></li>
+                </ol>
+              </div>
+              <aside class="journey-requirements"><p class="eyebrow">Before you start</p><h3>What you’ll need</h3>
+                <p>Your subject DID, exact scope or registry resource, and role evidence.</p>
+                <p>Private submission needs a same-origin authenticated host and an external signature. This browser never handles private keys.</p>
+              </aside>
+            </div>
+          </section>`;
 
+    const sourceMessage = state.loading
+      ? "Checking this source. Records and results are hidden until the check completes."
+      : state.inspection?.sourceMode === "local-ledger"
+        ? "This response is not independently verified finality or authorization evidence. Broad lists are not offered in this mode; use exact lookup."
+        : state.inspection === undefined
+          ? "Connect or retry to inspect this source. No trust decision is available."
+          : state.inspection.sourceMode === "snapshot"
+            ? "This read-only snapshot is not authenticated ledger finality or authorization evidence."
+          : "Fixture records are for exploration, not deployed ledger evidence.";
+    const partialFailureMessage = !state.loading && state.inspection?.sourceMode !== "local-ledger"
+      && state.inspection?.unavailableLists?.length
+      ? ` ${state.inspection.unavailableLists.length} list(s) unavailable; counts shown as n/a.` : "";
+
+    const deploymentIdentity = state.inspection?.sourceMode === "local-ledger"
+      ? state.inspection.deploymentIdentity : undefined;
+    const deploymentNotice = state.inspection === undefined
+      ? "No current registry source is available. Deployment identity and ledger state cannot be inferred from this browser view."
+      : state.inspection.sourceMode !== "local-ledger"
+        ? "This source does not report a deployment plan or establish finalized ledger state or actor authorization."
+        : deploymentIdentity === undefined
+          ? "This local-ledger API did not expose a deployment identity. Node-reported data and a browser response do not establish finalized ledger state or actor authorization."
+          : "This API reports its local deployment plan. Node-reported data and a browser response do not establish finalized ledger state or actor authorization.";
     root.innerHTML = `
-      <main class="shell app-shell">
+      <main class="shell app-shell" data-settings-active="${window.location.hash === "#connection-details"}">
         <header class="brand-bar">
-          <span class="brand-name"><img class="brand-logo" src="./midnight-logo.svg" alt="Midnight" /> <span class="brand-section">Trust Registry</span></span>
-          <span class="brand-section">Applicant portal</span>
+          <span class="brand-name"><img class="brand-logo" src="./midnight-logo.svg" alt="Midnight" /><span class="brand-product"><strong class="brand-product-title">Trust Registry</strong><span class="brand-product-context">Applicant portal</span></span></span>
+          <details class="mobile-task-menu"><summary>Menu</summary><nav aria-label="Portal tasks">${taskLinks}</nav></details>
         </header>
+        <nav class="task-nav" aria-label="Portal tasks">${taskLinks}</nav>
         <section class="hero">
-          <p class="eyebrow">Apply and explore</p>
-          <h1>Join the trust registry</h1>
-          <p>${state.inspection?.sourceMode === "local-ledger"
-            ? "Query exact current trust scopes and submit pending membership evidence through an authenticated same-origin host. A browser response is not independent finality proof."
-            : "Inspect active trust records and submit local demo applications. Pending membership applicants can present challenge-bound evidence through an authenticated same-origin host."}</p>
-          <div class="toolbar">
-            <form class="panel" data-api-base-form>
-              <label class="label">
-                API base URL
+          <div class="hero-intro">
+            <p class="eyebrow">Applicant workspace</p>
+            <h1>Find your place in the registry</h1>
+            <p>${state.inspection === undefined
+              ? "Registry data is unavailable. Recheck the connection before inspecting or submitting a request."
+              : state.inspection.sourceMode === "local-ledger"
+                ? "Look up an exact authorization or recognition, then prepare a governed request. Verify finalized registry state independently before relying on an API claim."
+                : demoMode ? "Try a local application, browse records, or prepare a governed request. Demo records are not on-chain trust decisions." : "Browse this registry snapshot or prepare a governed request. Fixture records are not on-chain trust decisions."}</p>
+            <div class="hero-actions">
+              <a class="button" href="${state.inspection === undefined ? "#connection-details" : state.inspection.sourceMode === "local-ledger" ? "#current-authorization-lookup" : !demoMode ? "#governed-requests" : "#demo-application"}">${state.inspection === undefined ? "Check connection" : state.inspection.sourceMode === "local-ledger" ? "Look up a record" : !demoMode ? "Choose a role" : "Try the demo"}</a>
+              ${state.inspection === undefined ? "" : state.inspection.sourceMode === "local-ledger"
+                ? `<a class="button secondary" href="#governed-requests">Choose a role</a>`
+                : `<a class="button secondary" href="#trust-records">Explore records</a>`}
+            </div>
+          </div>
+          <div class="hero-overview">
+            <p class="eyebrow">${state.inspection?.sourceMode === "local-ledger" ? "Registry context" : "Registry snapshot"}</p>
+            <div class="panel metrics">
+              <div class="metric"><span>Registry</span><strong>${escapeHtml(state.inspection?.summary.registryLabel ?? "Unavailable")}</strong></div>
+              <div class="metric"><span>${state.inspection?.sourceMode === "local-ledger" ? "API-reported epoch" : "Current epoch"}</span><strong>${state.inspection?.summary.epochCount === undefined ? "Unavailable" : `#${state.inspection.summary.epochCount.toString()}`}</strong></div>
+              ${state.inspection?.sourceMode === "local-ledger" ? "" : `
+                <div class="metric"><span>Active issuers</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("issuer") ? "n/a" : state.inspection.activeIssuers.length.toString()}</strong></div>
+                <div class="metric"><span>Active verifiers</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("verifier") ? "n/a" : state.inspection.activeVerifiers.length.toString()}</strong></div>`}
+            </div>
+          </div>
+          ${state.error === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.error)}</div>`}
+          ${state.inspection?.warnings?.map((warning) => `<div class="alert error">${escapeHtml(warning)}</div>`).join("") ?? ""}
+          ${state.flash === undefined ? "" : `<div class="alert success" role="status">${escapeHtml(state.flash)}</div>`}
+          <div class="source-panel" data-source-state="${state.loading ? "loading" : state.inspection === undefined ? "unavailable" : state.inspection.sourceMode === "local-ledger" ? "local-ledger" : state.inspection.sourceMode === "snapshot" ? "snapshot" : "fixture"}" role="status" aria-live="polite">
+            <span class="source-badge">${state.loading ? "Checking" : state.inspection === undefined ? "Unavailable" : state.inspection.sourceMode === "local-ledger" ? "API claim" : state.inspection.sourceMode === "snapshot" ? "Snapshot" : "Local fixture"}</span>
+            <div class="source-copy"><strong>${state.loading ? "Loading registry data" : state.inspection === undefined ? "No current registry data" : state.inspection.sourceMode === "local-ledger" ? "Current local-ledger API response" : state.inspection.sourceMode === "snapshot" ? "Read-only registry snapshot" : "Demo workspace data"}</strong>
+              <span>${sourceMessage}${partialFailureMessage}</span>
+            </div>
+            ${state.observedAt === undefined || state.loading ? "" : `<span class="source-time">Checked <time datetime="${escapeHtml(state.observedAt)}">${escapeHtml(formatObservationTime(state.observedAt))}</time> (browser clock)</span>`}
+            <button class="source-refresh" type="button" data-refresh data-focus-key="refresh"${state.loading ? " disabled" : ""}>Recheck</button>
+          </div>
+        </section>
+        <section class="settings-view" id="connection-details" aria-labelledby="settings-heading">
+          <div class="settings-heading">
+            <a class="settings-back" href="${state.inspection?.sourceMode === "local-ledger" ? `#current-${lookupActive}-lookup` : "#governed-requests"}">&larr; Back to applicant workspace</a>
+            <p class="eyebrow">Configuration</p>
+            <h1 id="settings-heading">Workspace settings</h1>
+            <p>Check the API source and the registry identity it reports. These are browser observations, not independently verified trust evidence.</p>
+          </div>
+          <div class="settings-cards">
+            <section class="settings-card" aria-labelledby="portal-connection-heading">
+              <p class="eyebrow">Connection</p>
+              <h2 id="portal-connection-heading">API and source</h2>
+              <p>Choose a local API for development, or inspect the same-origin endpoint managed by this host.</p>
+            <form class="connection-form" data-api-base-form>
+              <label class="label">API base URL
                 <input class="input mono" type="url" name="apiBase" data-focus-key="api-base" value="${escapeHtml(state.apiBase)}"${sameOriginApi ? " disabled" : ""} />
               </label>
               <div class="row">
                 <button class="button" type="submit" data-focus-key="connect"${sameOriginApi || state.loading ? " disabled" : ""}>Connect</button>
-                <button class="button secondary" type="button" data-refresh data-focus-key="refresh"${state.loading ? " disabled" : ""}>Refresh</button>
               </div>
             </form>
-            <div class="panel metrics">
-              <div class="metric"><span>Registry</span><strong>${escapeHtml(state.inspection?.summary.registryLabel ?? "Unavailable")}</strong></div>
-              <div class="metric"><span>Current epoch</span><strong>${state.inspection?.summary.epochCount === undefined ? "Unavailable" : `#${state.inspection.summary.epochCount.toString()}`}</strong></div>
-              <div class="metric"><span>Active issuers</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("issuer") ? "n/a" : state.inspection.activeIssuers.length.toString()}</strong></div>
-              <div class="metric"><span>Active verifiers</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("verifier") ? "n/a" : state.inspection.activeVerifiers.length.toString()}</strong></div>
-              <div class="metric"><span>Active auditors</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("auditor") ? "n/a" : state.inspection.activeAuditors.length.toString()}</strong></div>
-              <div class="metric"><span>Recognitions</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("recognition") ? "n/a" : state.inspection.activeRecognitions.length.toString()}</strong></div>
-            </div>
-          </div>
-          ${state.error === undefined ? "" : `<div class="alert error">${escapeHtml(state.error)}</div>`}
-          ${state.inspection?.warnings?.map((warning) => `<div class="alert error">${escapeHtml(warning)}</div>`).join("") ?? ""}
-          ${state.flash === undefined ? "" : `<div class="alert success">${escapeHtml(state.flash)}</div>`}
-          <div class="source-panel" data-source-state="${state.loading ? "loading" : state.inspection === undefined ? "unavailable" : state.inspection.sourceMode === "local-ledger" ? "local-ledger" : "fixture"}" role="status" aria-live="polite">
-            <span class="source-badge">${state.loading ? "Checking" : state.inspection === undefined ? "Unavailable" : state.inspection.sourceMode === "local-ledger" ? "API claim" : state.inspection.sourceMode === "snapshot" ? "Snapshot" : "Local fixture"}</span>
-            <div class="source-copy"><strong>${state.loading ? "Loading registry data" : state.inspection === undefined ? "No current registry data" : state.inspection.sourceMode === "local-ledger" ? "Current local-ledger API response" : state.inspection.sourceMode === "snapshot" ? "Read-only registry snapshot" : "Demo workspace data"}</strong>
-              <span>${state.inspection?.sourceMode === "local-ledger" ? "This response is not independently verified finality or authorization evidence." : state.inspection === undefined ? "Connect or retry to inspect this source. No trust decision is available." : "Fixture records are for exploration, not deployed ledger evidence."}${state.inspection?.unavailableLists?.length ? ` ${state.inspection.unavailableLists.length} list(s) unavailable; counts shown as n/a.` : ""}</span>
-            </div>
-            ${state.observedAt === undefined || state.loading ? "" : `<span class="source-time">Checked ${escapeHtml(state.observedAt)} (browser clock)</span>`}
-          </div>
-          <details class="workspace-settings" id="connection-details"${settingsOpen ? " open" : ""}>
-            <summary>Connection and source details</summary>
             <dl class="settings-grid">
               <div><dt>API endpoint</dt><dd class="technical-id">${escapeHtml(state.apiBase)}${sameOriginApi ? " (managed by this host)" : " (local development setting)"}</dd></div>
               <div><dt>Connection</dt><dd>${state.loading ? "Checking" : state.inspection === undefined ? "Unavailable" : "Responding at last check"}</dd></div>
               <div><dt>Source mode</dt><dd>${escapeHtml(state.inspection?.sourceMode ?? (state.inspection === undefined ? "Unavailable" : "Fixture workspace"))}</dd></div>
-              <div><dt>Browser check time</dt><dd>${escapeHtml(state.observedAt ?? "No successful check")}</dd></div>
-              <div><dt>Registry ID</dt><dd class="technical-id">${escapeHtml(state.inspection?.summary.registryId ?? "Not reported")}</dd></div>
-              <div><dt>Registry DID</dt><dd class="technical-id">${escapeHtml(state.inspection?.summary.registryDid ?? "Not reported")}</dd></div>
-              <div><dt>Current epoch ID</dt><dd class="technical-id">${escapeHtml(state.inspection?.summary.currentEpochId ?? "Not reported")}</dd></div>
-              <div><dt>Network profile, genesis, contract</dt><dd>Not exposed by this API response</dd></div>
+              <div><dt>Last checked in this browser</dt><dd>${state.observedAt === undefined ? "No successful check" : `<time datetime="${escapeHtml(state.observedAt)}">${escapeHtml(formatObservationTime(state.observedAt))}</time>`}</dd></div>
             </dl>
-            <p class="settings-note">Connection details are read-only deployment context, not an account profile or proof of finality. Private actions require the authenticated same-origin host.</p>
-          </details>
+            <button class="source-refresh" type="button" data-settings-refresh data-focus-key="settings-refresh"${state.loading ? " disabled" : ""}>Recheck connection</button>
+            </section>
+            <section class="settings-card" aria-labelledby="portal-identity-heading">
+              <p class="eyebrow">Read-only</p>
+              <h2 id="portal-identity-heading">Deployment identity</h2>
+              <dl class="settings-grid">
+                <div><dt>Registry</dt><dd>${escapeHtml(state.inspection?.summary.registryLabel ?? "Not reported")}</dd></div>
+                <div><dt>Network profile (API report)</dt><dd>${escapeHtml(deploymentIdentity?.networkProfileId ?? "Not exposed by this API response")}</dd></div>
+                <div><dt>Genesis anchor</dt><dd>${deploymentIdentity === undefined ? "Not exposed by this API response" : "Expected hash in API plan"}</dd></div>
+                <div><dt>Contract</dt><dd>${deploymentIdentity === undefined ? "Not exposed by this API response" : "Address in API plan"}</dd></div>
+              </dl>
+              <details class="settings-technical">
+                <summary>Technical identifiers and plan</summary>
+                <dl class="settings-grid">
+                  <div><dt>Registry ID</dt><dd class="technical-id">${escapeHtml(state.inspection?.summary.registryId ?? "Not reported")}</dd></div>
+                  <div><dt>Registry DID</dt><dd class="technical-id">${escapeHtml(state.inspection?.summary.registryDid ?? "Not reported")}</dd></div>
+                  <div><dt>Current epoch ID</dt><dd class="technical-id">${escapeHtml(state.inspection?.summary.currentEpochId ?? "Not reported")}</dd></div>
+                  ${state.inspection?.sourceMode !== "local-ledger" ? "" : `<div><dt>Approved local plan digest</dt><dd class="technical-id">${escapeHtml(state.inspection.localPlanSha256 ?? "Not reported")}</dd></div>`}
+                  ${state.inspection?.sourceMode !== "local-ledger" ? "" : `<div><dt>Node-reported checkpoint hash</dt><dd class="technical-id">${escapeHtml(state.inspection.nodeReportedCheckpointHash ?? "Not reported")}</dd></div>
+                  <div><dt>API snapshot reference time (epoch valid-until)</dt><dd>${escapeHtml(state.inspection.snapshotGeneratedAt ?? "Not reported")}</dd></div>`}
+                  ${deploymentIdentity === undefined
+                    ? "<div><dt>Network ID</dt><dd>Not exposed by this API response</dd></div>"
+                    : `<div><dt>Network ID (API report)</dt><dd>${escapeHtml(deploymentIdentity.networkId)}</dd></div>
+                      <div><dt>Expected genesis hash (API plan)</dt><dd class="technical-id">${escapeHtml(deploymentIdentity.expectedGenesisHash)}</dd></div>
+                      <div><dt>Contract address (API plan)</dt><dd class="technical-id">${escapeHtml(deploymentIdentity.contractAddress)}</dd></div>`}
+                </dl>
+              </details>
+            <p class="settings-callout">${deploymentNotice}</p>
+            </section>
+          </div>
+          <div class="settings-footer"><strong>No account profile in this browser</strong><p>Private actions require the authenticated same-origin host and external signing. Connection details are not proof of finality.</p></div>
         </section>
-        <nav class="task-nav" aria-label="Portal tasks">
-          <a href="#trust-records">Explore active records</a>
-          ${state.inspection?.sourceMode === "local-ledger" ? "" : `<a href="#demo-application">Try a local demo application</a>`}
-          <a href="#governed-requests">Prepare governed membership</a>
-          <a href="#connection-details">Connection details</a>
-        </nav>
         <section class="content">
-          <section class="journey-picker" id="governed-requests" aria-labelledby="journey-heading">
-            <div class="journey-heading"><p class="eyebrow">Governed membership</p><h2 id="journey-heading">Choose your role</h2>
-              <p>Each request binds an exact DID, key and scope, then requires challenge-bound evidence and an external signature. This browser never collects a private key.</p>
-            </div>
-            <div class="journey-cards">
-              <a href="#issuer-request" data-open-workflow="issuer-request"><strong>Issuer</strong><span>Register a credential family or schema.</span><em>Prepare issuer request</em></a>
-              <a href="#verifier-request" data-open-workflow="verifier-request"><strong>Verifier</strong><span>Define a precise request scope.</span><em>Prepare verifier request</em></a>
-              <a href="#auditor-request" data-open-workflow="auditor-request"><strong>Auditor</strong><span>Request governed audit scope.</span><em>Prepare auditor request</em></a>
-              <a href="#maintainer-request" data-open-workflow="maintainer-request"><strong>Maintainer</strong><span>Request committee membership.</span><em>Prepare maintainer request</em></a>
-            </div>
-            <p class="journey-prerequisite">${privateHost ? "Authenticated same-origin host available for private evidence steps." : "Private evidence steps require an authenticated same-origin host; this connection can browse but cannot submit them."}</p>
-          </section>
+          ${demoApplication}
+          ${state.inspection?.sourceMode === "local-ledger" ? "" : journeyPicker}
           ${state.inspection?.sourceMode === "local-ledger" ? `
-          <section class="form-panel">
-            <h2>Current authorization lookup</h2>
-            <p>Query an exact DID, role, and governed resource from the current local-ledger view. This is an unverified API claim; independently verify finalized registry state before relying on it.</p>
-            <form data-current-authorization>
-              <label class="label">Role<select class="select" name="role">
-                ${(["issuer", "verifier", "auditor"] as const).map((role) => `<option value="${role}"${state.currentAuthorizationQuery?.role === role ? " selected" : ""}>${role}</option>`).join("")}
-              </select></label>
-              <label class="label">Subject DID<input class="input mono" name="subjectDid" value="${escapeHtml(state.currentAuthorizationQuery?.subjectDid ?? "")}" required /></label>
-              <label class="label">Governed resource ID<input class="input mono" name="resourceId" value="${escapeHtml(state.currentAuthorizationQuery?.resourceId ?? "")}" required /></label>
-              <button class="button secondary" type="submit"${state.currentAuthorizationBusy ? " disabled" : ""}>Look up current authorization</button>
-            </form>
-            ${state.currentAuthorizationError === undefined ? "" : `<div class="alert error">${escapeHtml(state.currentAuthorizationError)}</div>`}
-            ${state.currentAuthorizationResult === undefined ? "" : `<div class="panel" data-current-authorization-result>
-              <p><strong>Unverified current API claim:</strong> ${escapeHtml(state.currentAuthorizationResult.authorization.status)}.</p>
-              <details><summary>Inspect returned authorization</summary><pre class="mono">${escapeHtml(JSON.stringify(state.currentAuthorizationResult, null, 2))}</pre></details>
-            </div>`}
+          <section class="lookup-picker" aria-labelledby="lookup-picker-heading">
+            <p class="eyebrow">Current local ledger</p>
+            <h2 id="lookup-picker-heading">What are you checking?</h2>
+            <nav class="lookup-switch" aria-label="Current lookup type">
+              <a href="#current-authorization-lookup" aria-controls="current-authorization-lookup"${lookupActive === "authorization" ? ' aria-current="location"' : ""}>Authorization</a>
+              <a href="#current-recognition-lookup" aria-controls="current-recognition-lookup"${lookupActive === "recognition" ? ' aria-current="location"' : ""}>External recognition</a>
+            </nav>
           </section>
-          <section class="form-panel">
-            <h2>Current recognition lookup</h2>
-            <p>Query an exact external authority and scope from the current local-ledger view. Recognition does not grant local membership. Independently verify finalized registry state before relying on this API claim.</p>
-            <form data-current-recognition>
-              <label class="label">Recognized authority DID<input class="input mono" name="recognizedAuthorityDid" value="${escapeHtml(state.currentRecognitionQuery?.recognizedAuthorityDid ?? "")}" required /></label>
-              <label class="label">Recognized registry ID<input class="input mono" name="recognizedRegistryId" value="${escapeHtml(state.currentRecognitionQuery?.recognizedRegistryId ?? "")}" required /></label>
-              <label class="label">Scope resource type<input class="input mono" name="scopeResourceType" value="${escapeHtml(state.currentRecognitionQuery?.scopeResourceType ?? "")}" required /></label>
-              <label class="label">Scope resource ID<input class="input mono" name="scopeResourceId" value="${escapeHtml(state.currentRecognitionQuery?.scopeResourceId ?? "")}" required /></label>
-              <label class="label">Scope context JSON, if any<textarea class="input mono" name="scopeContext" rows="3" spellcheck="false">${escapeHtml(state.currentRecognitionQuery?.scopeContext === undefined ? "" : JSON.stringify(state.currentRecognitionQuery.scopeContext, null, 2))}</textarea></label>
-              <button class="button secondary" type="submit"${state.currentRecognitionBusy ? " disabled" : ""}>Look up current recognition</button>
-            </form>
-            ${state.currentRecognitionError === undefined ? "" : `<div class="alert error">${escapeHtml(state.currentRecognitionError)}</div>`}
-            ${state.currentRecognitionResult === undefined ? "" : `<div class="panel" data-current-recognition-result>
-              <p><strong>Unverified current API claim:</strong> ${escapeHtml(state.currentRecognitionResult.recognition.status)}.</p>
-              <details><summary>Inspect returned recognition</summary><pre class="mono">${escapeHtml(JSON.stringify(state.currentRecognitionResult, null, 2))}</pre></details>
-            </div>`}
+          <section class="form-panel current-lookup-panel" id="current-authorization-lookup"${lookupActive === "authorization" ? "" : " hidden"}>
+            <div class="lookup-input">
+              <div class="lookup-copy">
+                <p class="eyebrow">Authorization lookup</p>
+                <h2>Who, for what, in which role?</h2>
+                <p>Broad browsing is unavailable here. Enter the exact subject DID, role, and governed resource to request the current record.</p>
+              </div>
+              <form data-current-authorization>
+                <label class="label">Role<select class="select" name="role">
+                  ${(["issuer", "verifier", "auditor"] as const).map((role) => `<option value="${role}"${state.currentAuthorizationQuery?.role === role ? " selected" : ""}>${role}</option>`).join("")}
+                </select></label>
+                <label class="label">Subject DID<input class="input mono" name="subjectDid" value="${escapeHtml(state.currentAuthorizationQuery?.subjectDid ?? "")}" required /></label>
+                <label class="label">Governed resource ID<input class="input mono" name="resourceId" value="${escapeHtml(state.currentAuthorizationQuery?.resourceId ?? "")}" required /></label>
+                <button class="button" type="submit" data-focus-key="current-authorization-submit"${state.currentAuthorizationBusy ? " disabled" : ""}>Look up current authorization</button>
+              </form>
+            </div>
+            <aside class="lookup-result" aria-label="Current authorization result">
+              <h3 class="eyebrow">Result</h3>
+              ${state.currentAuthorizationError === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.currentAuthorizationError)}</div>`}
+              ${state.currentAuthorizationResult === undefined && state.currentAuthorizationError === undefined ? `<div class="lookup-empty"><h3>No record loaded yet</h3><p>Enter an exact role, DID, and governed resource to inspect the API's current claim.</p></div>` : ""}
+              ${state.currentAuthorizationResult === undefined ? "" : `<div class="lookup-claim" data-current-authorization-result role="status">
+                <p><strong>Unverified current API claim:</strong> ${escapeHtml(state.currentAuthorizationResult.authorization.status)}.</p>
+                <details><summary>Inspect returned authorization</summary><button class="button secondary claim-copy" type="button" data-copy-current-claim>Copy current API claim</button><span class="copy-claim-feedback" data-copy-claim-feedback role="status" aria-live="polite"></span><pre class="mono" tabindex="0" aria-label="Scrollable authorization JSON">${escapeHtml(JSON.stringify(state.currentAuthorizationResult, null, 2))}</pre></details>
+              </div>`}
+              <div class="lookup-interpretation"><strong>How to interpret a result</strong><p>A returned status is not independently authenticated finality. Do not use it as the sole basis for a trust decision.</p></div>
+            </aside>
           </section>
+          <section class="form-panel current-lookup-panel" id="current-recognition-lookup"${lookupActive === "recognition" ? "" : " hidden"}>
+            <div class="lookup-input">
+              <div class="lookup-copy">
+                <p class="eyebrow">External recognition lookup</p>
+                <h2>Which authority and scope?</h2>
+                <p>Enter the external authority, registry, and exact scope. Recognition does not grant local membership.</p>
+              </div>
+              <form data-current-recognition>
+                <label class="label">Recognized authority DID<input class="input mono" name="recognizedAuthorityDid" value="${escapeHtml(state.currentRecognitionDraft?.recognizedAuthorityDid ?? state.currentRecognitionQuery?.recognizedAuthorityDid ?? "")}" required /></label>
+                <label class="label">Recognized registry ID<input class="input mono" name="recognizedRegistryId" value="${escapeHtml(state.currentRecognitionDraft?.recognizedRegistryId ?? state.currentRecognitionQuery?.recognizedRegistryId ?? "")}" required /></label>
+                <label class="label">Scope resource type<input class="input mono" name="scopeResourceType" value="${escapeHtml(state.currentRecognitionDraft?.scopeResourceType ?? state.currentRecognitionQuery?.scopeResourceType ?? "")}" required /></label>
+                <label class="label">Scope resource ID<input class="input mono" name="scopeResourceId" value="${escapeHtml(state.currentRecognitionDraft?.scopeResourceId ?? state.currentRecognitionQuery?.scopeResourceId ?? "")}" required /></label>
+                <label class="label">Scope context JSON, if any<textarea class="input mono" name="scopeContext" rows="3" spellcheck="false">${escapeHtml(state.currentRecognitionDraft?.scopeContext ?? (state.currentRecognitionQuery?.scopeContext === undefined ? "" : JSON.stringify(state.currentRecognitionQuery.scopeContext, null, 2)))}</textarea></label>
+                <button class="button" type="submit" data-focus-key="current-recognition-submit"${state.currentRecognitionBusy ? " disabled" : ""}>Look up current recognition</button>
+              </form>
+            </div>
+            <aside class="lookup-result" aria-label="Current recognition result">
+              <h3 class="eyebrow">Result</h3>
+              ${state.currentRecognitionError === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.currentRecognitionError)}</div>`}
+              ${state.currentRecognitionResult === undefined && state.currentRecognitionError === undefined ? `<div class="lookup-empty"><h3>No record loaded yet</h3><p>Enter the exact authority, registry, and scope to inspect the API's current claim.</p></div>` : ""}
+              ${state.currentRecognitionResult === undefined ? "" : `<div class="lookup-claim" data-current-recognition-result role="status">
+                <p><strong>Unverified current API claim:</strong> ${escapeHtml(state.currentRecognitionResult.recognition.status)}.</p>
+                <details><summary>Inspect returned recognition</summary><button class="button secondary claim-copy" type="button" data-copy-current-claim>Copy current API claim</button><span class="copy-claim-feedback" data-copy-claim-feedback role="status" aria-live="polite"></span><pre class="mono" tabindex="0" aria-label="Scrollable recognition JSON">${escapeHtml(JSON.stringify(state.currentRecognitionResult, null, 2))}</pre></details>
+              </div>`}
+              <div class="lookup-interpretation"><strong>How to interpret a result</strong><p>A returned status is not independently authenticated finality or local membership. Verify the finalized registry before relying on it.</p></div>
+            </aside>
+          </section>
+          ${journeyPicker}
           ` : state.inspection === undefined ? `<div class="alert error">Registry mode is unavailable; inspection controls are disabled.</div>` : `
           <section class="form-panel">
             <h2>Historical authorization evidence</h2>
             <p>Look up the exact DID, role, governed resource, and timestamp. The API response is a historical claim, not proof of current trust. Verify its bundle against independent finalized registry history before relying on it.</p>
             <form data-historical-authorization>
               <label class="label">Role<select class="select" name="role">
-                ${(["issuer", "verifier", "auditor"] as const).map((role) => `<option value="${role}"${state.historicalQuery?.role === role ? " selected" : ""}>${role}</option>`).join("")}
+                ${(["issuer", "verifier", "auditor"] as const).map((role) => `<option value="${role}"${(state.historicalDraft?.role ?? state.historicalQuery?.role ?? "issuer") === role ? " selected" : ""}>${role}</option>`).join("")}
               </select></label>
-              <label class="label">Subject DID<input class="input mono" name="subjectDid" value="${escapeHtml(state.historicalQuery?.subjectDid ?? "")}" required /></label>
-              <label class="label">Governed resource ID<input class="input mono" name="resourceId" value="${escapeHtml(state.historicalQuery?.resourceId ?? "")}" required /></label>
-              <label class="label">RFC3339 timestamp<input class="input mono" name="at" placeholder="2026-10-15T00:00:00Z" value="${escapeHtml(state.historicalQuery?.at ?? "")}" required /></label>
-              <button class="button secondary" type="submit"${state.historicalBusy ? " disabled" : ""}>Export evidence</button>
+              <label class="label">Subject DID<input class="input mono" name="subjectDid" value="${escapeHtml(state.historicalDraft?.subjectDid ?? state.historicalQuery?.subjectDid ?? "")}" required /></label>
+              <label class="label">Governed resource ID<input class="input mono" name="resourceId" value="${escapeHtml(state.historicalDraft?.resourceId ?? state.historicalQuery?.resourceId ?? "")}" required /></label>
+              <label class="label">RFC3339 timestamp<input class="input mono" name="at" placeholder="2026-10-15T00:00:00Z" value="${escapeHtml(state.historicalDraft?.at ?? state.historicalQuery?.at ?? "")}" required /></label>
+              <button class="button secondary" type="submit" data-focus-key="historical-authorization-submit"${state.historicalBusy ? " disabled" : ""}>Inspect authorization evidence</button>
             </form>
-            ${state.historicalError === undefined ? "" : `<div class="alert error">${escapeHtml(state.historicalError)}</div>`}
+            ${state.historicalError === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.historicalError)}</div>`}
             ${state.historicalResult === undefined ? "" : `<div class="panel" data-historical-result>
               <p><strong>Unverified API claim:</strong> ${escapeHtml(state.historicalResult.statusAtTime ?? "not yet proposed")} at ${escapeHtml(state.historicalResult.evaluatedAt)}; trusted-at-time flag ${state.historicalResult.trustedAtTime ? "true" : "false"}.</p>
               <p>Evidence epoch <span class="mono">${escapeHtml(state.historicalResult.bundle.epoch.epochId)}</span>; policy <span class="mono">${escapeHtml(state.historicalResult.bundle.policy.policyId)}</span>.</p>
+              <button class="button secondary" type="button" data-download-historical-authorization>Download unverified evidence JSON</button>
               <details><summary>Inspect raw proof bundle</summary><pre class="mono">${escapeHtml(JSON.stringify(state.historicalResult.bundle, null, 2))}</pre></details>
             </div>`}
           </section>
@@ -1391,18 +1704,19 @@ export const createApplicantPortalApp = (
             <h2>Historical recognition evidence</h2>
             <p>Query an external authority's exact recognized scope at a timestamp. An omitted context matches only a recognition without context. This panel exports an unverified API claim; recognition never grants local issuer, verifier, or maintainer membership.</p>
             <form data-historical-recognition>
-              <label class="label">Recognized authority DID<input class="input mono" name="recognizedAuthorityDid" value="${escapeHtml(state.historicalRecognitionQuery?.recognizedAuthorityDid ?? "")}" required /></label>
-              <label class="label">Recognized registry ID<input class="input mono" name="recognizedRegistryId" value="${escapeHtml(state.historicalRecognitionQuery?.recognizedRegistryId ?? "")}" required /></label>
-              <label class="label">Scope resource type<input class="input mono" name="scopeResourceType" value="${escapeHtml(state.historicalRecognitionQuery?.scopeResourceType ?? "")}" required /></label>
-              <label class="label">Scope resource ID<input class="input mono" name="scopeResourceId" value="${escapeHtml(state.historicalRecognitionQuery?.scopeResourceId ?? "")}" required /></label>
-              <label class="label">Scope context JSON, if any<textarea class="input mono" name="scopeContext" rows="3" spellcheck="false">${escapeHtml(state.historicalRecognitionQuery?.scopeContext === undefined ? "" : JSON.stringify(state.historicalRecognitionQuery.scopeContext, null, 2))}</textarea></label>
-              <label class="label">RFC3339 timestamp<input class="input mono" name="at" placeholder="2026-10-15T00:00:00Z" value="${escapeHtml(state.historicalRecognitionQuery?.at ?? "")}" required /></label>
-              <button class="button secondary" type="submit"${state.historicalRecognitionBusy ? " disabled" : ""}>Export recognition evidence</button>
+              <label class="label">Recognized authority DID<input class="input mono" name="recognizedAuthorityDid" value="${escapeHtml(state.historicalRecognitionDraft?.recognizedAuthorityDid ?? state.historicalRecognitionQuery?.recognizedAuthorityDid ?? "")}" required /></label>
+              <label class="label">Recognized registry ID<input class="input mono" name="recognizedRegistryId" value="${escapeHtml(state.historicalRecognitionDraft?.recognizedRegistryId ?? state.historicalRecognitionQuery?.recognizedRegistryId ?? "")}" required /></label>
+              <label class="label">Scope resource type<input class="input mono" name="scopeResourceType" value="${escapeHtml(state.historicalRecognitionDraft?.scopeResourceType ?? state.historicalRecognitionQuery?.scopeResourceType ?? "")}" required /></label>
+              <label class="label">Scope resource ID<input class="input mono" name="scopeResourceId" value="${escapeHtml(state.historicalRecognitionDraft?.scopeResourceId ?? state.historicalRecognitionQuery?.scopeResourceId ?? "")}" required /></label>
+              <label class="label">Scope context JSON, if any<textarea class="input mono" name="scopeContext" rows="3" spellcheck="false">${escapeHtml(state.historicalRecognitionDraft?.scopeContext ?? (state.historicalRecognitionQuery?.scopeContext === undefined ? "" : JSON.stringify(state.historicalRecognitionQuery.scopeContext, null, 2)))}</textarea></label>
+              <label class="label">RFC3339 timestamp<input class="input mono" name="at" placeholder="2026-10-15T00:00:00Z" value="${escapeHtml(state.historicalRecognitionDraft?.at ?? state.historicalRecognitionQuery?.at ?? "")}" required /></label>
+              <button class="button secondary" type="submit" data-focus-key="historical-recognition-submit"${state.historicalRecognitionBusy ? " disabled" : ""}>Inspect recognition evidence</button>
             </form>
-            ${state.historicalRecognitionError === undefined ? "" : `<div class="alert error">${escapeHtml(state.historicalRecognitionError)}</div>`}
+            ${state.historicalRecognitionError === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.historicalRecognitionError)}</div>`}
             ${state.historicalRecognitionResult === undefined ? "" : `<div class="panel" data-historical-recognition-result>
               <p><strong>Unverified API claim:</strong> ${escapeHtml(state.historicalRecognitionResult.statusAtTime ?? "not yet proposed")} at ${escapeHtml(state.historicalRecognitionResult.evaluatedAt)}; recognized-at-time flag ${state.historicalRecognitionResult.trustedAtTime ? "true" : "false"}.</p>
               <p>Evidence epoch <span class="mono">${escapeHtml(state.historicalRecognitionResult.bundle.epoch.epochId)}</span>; policy <span class="mono">${escapeHtml(state.historicalRecognitionResult.bundle.policy.policyId)}</span>.</p>
+              <button class="button secondary" type="button" data-download-historical-recognition>Download unverified evidence JSON</button>
               <details><summary>Inspect raw recognition proof bundle</summary><pre class="mono">${escapeHtml(JSON.stringify(state.historicalRecognitionResult.bundle, null, 2))}</pre></details>
             </div>`}
           </section>
@@ -1418,38 +1732,29 @@ export const createApplicantPortalApp = (
               <button class="button" type="submit"${state.signedBusy || state.signedContext === undefined ? " disabled" : ""}>Submit signed intent</button>
             </form>
           </section>
-          <form class="form-panel" id="demo-application" data-submit-form>
-            <h2>Local demo application</h2>
-            <p>This label-only route is for local fixtures, not governed production admission. Approval and activation remain in the admin console.</p>
-            <label class="label">
-              Role
-              <select class="select" name="target">
-                ${TARGET_OPTIONS.map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)} · ${escapeHtml(option.description)}</option>`).join("")}
-              </select>
-            </label>
-            <label class="label">
-              Application label
-              <input class="input" name="label" type="text" placeholder="degree, age-gate, gaia-x" required />
-            </label>
-            <button class="button" type="submit"${state.submitting ? " disabled" : ""}>Submit application</button>
-          </form>
           `}
-          <section class="form-panel" id="governed-requests">
+          <section class="form-panel">
             <h2>Issuer membership request</h2>
-            <p>Bind one exact credential family, schema/version, definition, status method, and governed resource type before signing with the applicant DID key.</p>
+            <p>Bind one exact credential scope, schema/version, definition, status method, and governed resource type before signing with the applicant DID key.</p>
             <form data-issuer-application-form>
+              <h3 class="request-step"><span>01</span> Identify the applicant</h3>
+              ${applicantIdGuide}
               <label class="label">Application ID<input class="input mono" name="applicationId" value="${escapeHtml(issuerDraft?.applicationId ?? "")}"${issuerLocked} required /></label>
               <label class="label">Authorization ID<input class="input mono" name="authorizationId" value="${escapeHtml(issuerDraft?.authorizationId ?? "")}"${issuerLocked} required /></label>
               <label class="label">Applicant Midnight DID<input class="input mono" name="actorDid" value="${escapeHtml(issuerDraft?.actorDid ?? "")}"${issuerLocked} required /></label>
               <label class="label">Authentication method ID<input class="input mono" name="actorKeyId" value="${escapeHtml(issuerDraft?.actorKeyId ?? "")}"${issuerLocked} required /></label>
-              <label class="label">Credential family ID<input class="input mono" name="credentialFamilyId" value="${escapeHtml(issuerDraft?.credentialFamilyId ?? "")}"${issuerLocked} required /></label>
+              <h3 class="request-step"><span>02</span> Define the exact credential scope</h3>
+              <label class="label">Credential scope ID<input class="input mono" name="credentialFamilyId" value="${escapeHtml(issuerDraft?.credentialFamilyId ?? "")}"${issuerLocked} required /></label>
               <label class="label">Schema ID<input class="input mono" name="schemaId" value="${escapeHtml(issuerDraft?.schemaId ?? "")}"${issuerLocked} required /></label>
               <label class="label">Schema version<input class="input mono" name="schemaVersion" value="${escapeHtml(issuerDraft?.schemaVersion ?? "")}" pattern="[0-9]+[.][0-9]+[.][0-9]+"${issuerLocked} required /></label>
               <label class="label">Credential definition ID<input class="input mono" name="credentialDefinitionId" value="${escapeHtml(issuerDraft?.credentialDefinitionId ?? "")}"${issuerLocked} required /></label>
               <label class="label">Status method<input class="input mono" name="statusMethod" value="${escapeHtml(issuerDraft?.statusMethod ?? "")}"${issuerLocked} required /></label>
               <label class="label">Governed resource type<select class="select" name="governedResourceType"${issuerLocked}>
-                ${(["credentialFamily", "schema", "schemaVersion", "credentialDefinition", "statusMethodRequirement"] as const).map((type) => `<option value="${type}"${(issuerDraft?.governedResourceType ?? "credentialFamily") === type ? " selected" : ""}>${type}</option>`).join("")}
+                ${(["credentialFamily", "schema", "schemaVersion", "credentialDefinition", "statusMethodRequirement"] as const).map((type) => `<option value="${type}"${(issuerDraft?.governedResourceType ?? "credentialFamily") === type ? " selected" : ""}>${({ credentialFamily: "Credential scope", schema: "Schema", schemaVersion: "Schema version", credentialDefinition: "Credential definition", statusMethodRequirement: "Status method requirement" })[type]}</option>`).join("")}
               </select></label>
+              <h3 class="request-step"><span>03</span> Prepare, sign externally, and register</h3>
+              <p class="step-hint">Preparation fixes the exact scope and digest. A changed request needs a fresh digest and signature.</p>
+              ${privateHostGuide}
               <button class="button secondary" type="button" data-prepare-issuer${!privateHost || state.evidenceBusy || state.memberPreparationBusy || preparedIssuer !== undefined ? " disabled" : ""}>Prepare signing digest</button>
               ${preparedIssuer === undefined ? "" : `
                 <p data-issuer-resource class="mono">Governed resource: ${escapeHtml(preparedIssuer.payload.governedResource.id)}</p>
@@ -1459,22 +1764,29 @@ export const createApplicantPortalApp = (
                 <button class="button secondary" type="button" data-reset-member>Change request or refresh context</button>
               `}
               <button class="button" type="submit"${!privateHost || state.evidenceBusy || state.memberPreparationBusy || preparedIssuer === undefined ? " disabled" : ""}>Register issuer application</button>
+              <p class="step-hint">After registration, continue to <a href="#pending-evidence" data-open-workflow="pending-evidence">one-use private evidence</a>. Registration alone is not approval.</p>
             </form>
           </section>
           <section class="form-panel">
             <h2>Verifier membership request</h2>
             <p>Bind the full presentation-request purpose, credential scope, allowed claims and predicates, and disclosure level before signing.</p>
             <form data-verifier-application-form>
+              <h3 class="request-step"><span>01</span> Identify the applicant</h3>
+              ${applicantIdGuide}
               <label class="label">Application ID<input class="input mono" name="applicationId" value="${escapeHtml(verifierDraft?.applicationId ?? "")}"${verifierLocked} required /></label>
               <label class="label">Authorization ID<input class="input mono" name="authorizationId" value="${escapeHtml(verifierDraft?.authorizationId ?? "")}"${verifierLocked} required /></label>
               <label class="label">Applicant Midnight DID<input class="input mono" name="actorDid" value="${escapeHtml(verifierDraft?.actorDid ?? "")}"${verifierLocked} required /></label>
               <label class="label">Authentication method ID<input class="input mono" name="actorKeyId" value="${escapeHtml(verifierDraft?.actorKeyId ?? "")}"${verifierLocked} required /></label>
+              <h3 class="request-step"><span>02</span> Define the exact request scope</h3>
               <label class="label">Request profile ID<input class="input mono" name="requestProfileId" value="${escapeHtml(verifierDraft?.requestProfileId ?? "")}"${verifierLocked} required /></label>
               <label class="label">Purpose<input class="input" name="purpose" value="${escapeHtml(verifierDraft?.purpose ?? "")}"${verifierLocked} required /></label>
               <label class="label">Credential-scope commitment<input class="input mono" name="credentialScopeCommitment" value="${escapeHtml(verifierDraft?.credentialScopeCommitment ?? "")}" pattern="0x[0-9a-f]{64}"${verifierLocked} required /></label>
               <label class="label">Allowed attributes, one per line<textarea class="input mono" name="allowedAttributes" rows="3"${verifierLocked}>${escapeHtml(verifierDraft?.allowedAttributes.join("\n") ?? "")}</textarea></label>
               <label class="label">Allowed predicates, one per line<textarea class="input mono" name="allowedPredicates" rows="3"${verifierLocked}>${escapeHtml(verifierDraft?.allowedPredicates.join("\n") ?? "")}</textarea></label>
               <label class="label">Disclosure level<input class="input" name="disclosureLevel" value="${escapeHtml(verifierDraft?.disclosureLevel ?? "")}"${verifierLocked} required /></label>
+              <h3 class="request-step"><span>03</span> Prepare, sign externally, and register</h3>
+              <p class="step-hint">Preparation fixes the exact scope and digest. A changed request needs a fresh digest and signature.</p>
+              ${privateHostGuide}
               <button class="button secondary" type="button" data-prepare-verifier${!privateHost || state.evidenceBusy || state.memberPreparationBusy || preparedVerifier !== undefined ? " disabled" : ""}>Prepare signing digest</button>
               ${preparedVerifier === undefined ? "" : `
                 <p data-verifier-resource class="mono">Governed resource: ${escapeHtml(preparedVerifier.payload.governedResource.id)}</p>
@@ -1484,16 +1796,22 @@ export const createApplicantPortalApp = (
                 <button class="button secondary" type="button" data-reset-member>Change request or refresh context</button>
               `}
               <button class="button" type="submit"${!privateHost || state.evidenceBusy || state.memberPreparationBusy || preparedVerifier === undefined ? " disabled" : ""}>Register verifier application</button>
+              <p class="step-hint">After registration, continue to <a href="#pending-evidence" data-open-workflow="pending-evidence">one-use private evidence</a>. Registration alone is not approval.</p>
             </form>
           </section>
           <section class="form-panel">
             <h2>Maintainer membership request</h2>
             <p>The current API registry defines the exact maintainer scope. Sign the prepared digest with the applicant DID authentication key; approval by existing maintainers is still required.</p>
             <form data-maintainer-application-form>
+              <h3 class="request-step"><span>01</span> Identify the applicant and exact membership</h3>
+              ${applicantIdGuide}
               <label class="label">Application ID<input class="input mono" name="applicationId" value="${escapeHtml(maintainerDraft?.applicationId ?? "")}"${maintainerLocked} required /></label>
               <label class="label">Authorization ID<input class="input mono" name="authorizationId" value="${escapeHtml(maintainerDraft?.authorizationId ?? "")}"${maintainerLocked} required /></label>
               <label class="label">Applicant Midnight DID<input class="input mono" name="actorDid" value="${escapeHtml(maintainerDraft?.actorDid ?? "")}"${maintainerLocked} required /></label>
               <label class="label">Authentication method ID<input class="input mono" name="actorKeyId" value="${escapeHtml(maintainerDraft?.actorKeyId ?? "")}"${maintainerLocked} required /></label>
+              <h3 class="request-step"><span>02</span> Prepare, sign externally, and register</h3>
+              <p class="step-hint">The server supplies the governed registry scope. A changed context needs a fresh digest and signature.</p>
+              ${privateHostGuide}
               <button class="button secondary" type="button" data-prepare-maintainer${!privateHost || state.evidenceBusy || state.memberPreparationBusy || preparedMaintainer !== undefined ? " disabled" : ""}>Prepare signing digest</button>
               ${preparedMaintainer === undefined ? "" : `
                 <p data-maintainer-resource class="mono">Governed registry: ${escapeHtml(preparedMaintainer.payload.governedResource.id)}</p>
@@ -1503,22 +1821,29 @@ export const createApplicantPortalApp = (
                 <button class="button secondary" type="button" data-reset-member>Change request or refresh context</button>
               `}
               <button class="button" type="submit"${!privateHost || state.evidenceBusy || state.memberPreparationBusy || preparedMaintainer === undefined ? " disabled" : ""}>Register maintainer application</button>
+              <p class="step-hint">After registration, continue to <a href="#pending-evidence" data-open-workflow="pending-evidence">one-use private evidence</a>. Existing maintainers still decide membership.</p>
             </form>
           </section>
           <section class="form-panel">
             <h2>Auditor request</h2>
             <p>Describe the complete audit scope and applicant DID. Prepare its canonical resource and signing digest, sign that digest outside this browser, then submit only the signature. A request-profile ID alone is not an auditor scope.</p>
             <form data-auditor-application-form>
+              <h3 class="request-step"><span>01</span> Identify the applicant</h3>
+              ${applicantIdGuide}
               <label class="label">Application ID<input class="input mono" name="applicationId" value="${escapeHtml(auditorDraft?.applicationId ?? "")}"${auditorLocked} /></label>
               <label class="label">Authorization ID<input class="input mono" name="authorizationId" value="${escapeHtml(auditorDraft?.authorizationId ?? "")}"${auditorLocked} /></label>
               <label class="label">Applicant Midnight DID<input class="input mono" name="actorDid" value="${escapeHtml(auditorDraft?.actorDid ?? "")}"${auditorLocked} /></label>
               <label class="label">Authentication method ID<input class="input mono" name="actorKeyId" value="${escapeHtml(auditorDraft?.actorKeyId ?? "")}"${auditorLocked} /></label>
+              <h3 class="request-step"><span>02</span> Define the complete audit scope</h3>
               <label class="label">Request profile ID<input class="input mono" name="requestProfileId" value="${escapeHtml(auditorDraft?.requestProfileId ?? "")}"${auditorLocked} required /></label>
               <label class="label">Purpose<input class="input" name="purpose" value="${escapeHtml(auditorDraft?.purpose ?? "")}"${auditorLocked} required /></label>
               <label class="label">Credential-scope commitment<input class="input mono" name="credentialScopeCommitment" value="${escapeHtml(auditorDraft?.credentialScopeCommitment ?? "")}" pattern="0x[0-9a-f]{64}"${auditorLocked} required /></label>
               <label class="label">Allowed attributes, one per line<textarea class="input mono" name="allowedAttributes" rows="3"${auditorLocked}>${escapeHtml(auditorDraft?.allowedAttributes.join("\n") ?? "")}</textarea></label>
               <label class="label">Allowed predicates, one per line<textarea class="input mono" name="allowedPredicates" rows="3"${auditorLocked}>${escapeHtml(auditorDraft?.allowedPredicates.join("\n") ?? "")}</textarea></label>
               <label class="label">Disclosure level<input class="input" name="disclosureLevel" value="${escapeHtml(auditorDraft?.disclosureLevel ?? "")}"${auditorLocked} required /></label>
+              <h3 class="request-step"><span>03</span> Prepare, sign externally, and register</h3>
+              <p class="step-hint">Preparation fixes the complete scope. A changed request needs a fresh digest and signature.</p>
+              ${privateHostGuide}
               <button class="button secondary" type="button" data-prepare-auditor${!privateHost || state.evidenceBusy || state.auditorPreparationBusy || preparedAuditor !== undefined ? " disabled" : ""}>${state.auditorPreparationBusy ? "Preparing…" : "Prepare signing digest"}</button>
               ${preparedAuditor === undefined ? "" : `
                 <p data-auditor-resource class="mono">Governed resource: ${escapeHtml(preparedAuditor.payload.governedResource.id)}</p>
@@ -1531,6 +1856,7 @@ export const createApplicantPortalApp = (
                 ? `<label class="label">Advanced: externally DID-signed auditor application JSON<textarea class="input mono" name="auditorSignedApplication" rows="7" required></textarea></label>`
                 : `<textarea name="auditorSignedApplication" hidden></textarea>`}
               <button class="button" type="submit"${!privateHost || state.evidenceBusy || state.auditorPreparationBusy ? " disabled" : ""}>Register auditor application</button>
+              <p class="step-hint">After registration, continue to <a href="#pending-evidence" data-open-workflow="pending-evidence">one-use private evidence</a>. An audit request is not an active authorization.</p>
             </form>
             <form data-auditor-status-form>
               <label class="label">Auditor authorization ID
@@ -1540,11 +1866,11 @@ export const createApplicantPortalApp = (
             </form>
             ${state.auditorStatus === undefined ? "" : `<p data-auditor-status>Application: ${escapeHtml(state.auditorStatus.status)}. Current trust: ${state.auditorStatus.currentTrust ? "active" : "not active"}.</p>`}
           </section>
-          <section class="form-panel">
+          <section class="form-panel" id="pending-evidence">
             <h2>Pending membership evidence</h2>
             <p>Paste an externally DID-signed issuer, verifier, auditor, or maintainer application to register it, or load an existing pending ID. The server derives policy and resource from trusted state. Registration does not create or approve a ledger grant.</p>
-            ${state.evidenceError === undefined ? "" : `<div class="alert error">${escapeHtml(state.evidenceError)}</div>`}
-            ${state.evidenceFlash === undefined ? "" : `<div class="alert success">${escapeHtml(state.evidenceFlash)}</div>`}
+            ${state.evidenceError === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.evidenceError)}</div>`}
+            ${state.evidenceFlash === undefined ? "" : `<div class="alert success" role="status">${escapeHtml(state.evidenceFlash)}</div>`}
             ${privateHost ? "" : `<p class="alert error">Private evidence is disabled: serve the portal and authenticated API from the same HTTPS or localhost origin.</p>`}
             <form data-application-registration-form>
               <label class="label">DID-signed application JSON
@@ -1594,7 +1920,7 @@ export const createApplicantPortalApp = (
           <section class="form-panel">
             <h2>Recover external recognition</h2>
             <p>Accredited authorities can request a one-use challenge, sign the authority assertion outside this browser, submit the signed assertion with the accreditation VP, recover the accepted receipt, and check the finalized Compact proposal. Only an authenticated same-origin session can access these private steps. A missing observation never triggers a retry.</p>
-            ${state.recognitionRecoveryMessage === undefined ? "" : `<p class="alert" data-recognition-recovery-result>${escapeHtml(state.recognitionRecoveryMessage)}</p>`}
+            ${state.recognitionRecoveryMessage === undefined ? "" : `<p class="alert" role="status" data-recognition-recovery-result>${escapeHtml(state.recognitionRecoveryMessage)}</p>`}
             <form data-recognition-recovery-form autocomplete="off">
               <label class="label">Recognition ID <input class="input mono" name="recognitionId" value="${escapeHtml(state.recognitionId)}" required autocomplete="off" /></label>
               <button class="button secondary" type="button" data-recognition-challenge${!privateHost || state.recognitionRecoveryBusy ? " disabled" : ""}>Issue authority challenge</button>
@@ -1620,12 +1946,20 @@ export const createApplicantPortalApp = (
               <p data-recognition-admission>Accepted receipt: <span class="mono">${escapeHtml(state.recognitionAdmission.receiptId)}</span>. Evidence commitment: <span class="mono">${escapeHtml(state.recognitionAdmission.evidenceCommitment)}</span>.</p>
             `}
           </section>
-          <div class="lanes" id="trust-records">
-            ${renderInspectionLane("Active issuers", issuerCards, state.inspection === undefined || state.inspection.unavailableLists?.includes("issuer") === true)}
-            ${renderInspectionLane("Active verifiers", verifierCards, state.inspection === undefined || state.inspection.unavailableLists?.includes("verifier") === true)}
-            ${renderInspectionLane("Active auditors", auditorCards, state.inspection === undefined || state.inspection.unavailableLists?.includes("auditor") === true)}
-            ${renderInspectionLane("Active recognitions", recognitionCards, state.inspection === undefined || state.inspection.unavailableLists?.includes("recognition") === true)}
-          </div>
+          ${state.inspection === undefined || state.inspection.sourceMode === "local-ledger" ? "" : `<section class="records-overview" id="trust-records" aria-labelledby="records-heading">
+            <div class="records-heading"><div><p class="eyebrow">Explore the registry</p><h2 id="records-heading">Find an active record</h2><p>Search this fixture snapshot by name, role, scope, or DID. It is not a trust decision.</p></div>
+              <label class="record-search">Search active records<input class="input" type="search" data-record-search value="${escapeHtml(recordSearchQuery)}" autocomplete="off" placeholder="Name, role, scope, or DID" /></label>
+            </div>
+            <p class="record-count" data-record-count aria-live="polite"></p>
+            <div class="lanes">
+              ${issuerCards.length || state.inspection.unavailableLists?.includes("issuer") ? renderInspectionLane("Active issuers", issuerCards, state.inspection.unavailableLists?.includes("issuer") === true) : ""}
+              ${verifierCards.length || state.inspection.unavailableLists?.includes("verifier") ? renderInspectionLane("Active verifiers", verifierCards, state.inspection.unavailableLists?.includes("verifier") === true) : ""}
+              ${auditorCards.length || state.inspection.unavailableLists?.includes("auditor") ? renderInspectionLane("Active auditors", auditorCards, state.inspection.unavailableLists?.includes("auditor") === true) : ""}
+              ${recognitionCards.length || state.inspection.unavailableLists?.includes("recognition") ? renderInspectionLane("Active recognitions", recognitionCards, state.inspection.unavailableLists?.includes("recognition") === true) : ""}
+            </div>
+            <p class="records-empty" data-record-no-match hidden>No loaded records match this search.${state.inspection.unavailableLists?.length ? " Unavailable categories were not searched." : " Try a different name, role, scope, or DID."}</p>
+            ${cards.length === 0 && !state.inspection.unavailableLists?.length ? `<p class="records-empty">No active records in this fixture yet.</p>` : ""}
+          </section>`}
         </section>
       </main>
     `;
@@ -1634,7 +1968,7 @@ export const createApplicantPortalApp = (
       const heading = panel.querySelector("h2");
       if (heading === null) return;
       const name = heading.textContent ?? "Workflow";
-      if (state.inspection?.sourceMode === "local-ledger" && name.startsWith("Current ")) return;
+      if (panel.classList.contains("current-lookup-panel")) return;
       const details = document.createElement("details");
       details.className = "workflow-disclosure";
       details.dataset.workflow = name;
@@ -1652,9 +1986,22 @@ export const createApplicantPortalApp = (
       }
       const summary = document.createElement("summary");
       summary.textContent = name;
+      if (role !== undefined) summary.dataset.focusKey = `${role}-request-summary`;
       panel.before(details);
       details.append(summary, panel);
     });
+    const content = root.querySelector<HTMLElement>(".content");
+    const advanced = [...root.querySelectorAll<HTMLDetailsElement>(".workflow-disclosure:not(.role-workflow)")]
+      .filter((details) => !details.id.startsWith("current-"));
+    if (content !== null && advanced.length > 0) {
+      const group = document.createElement("details");
+      group.className = "advanced-tools";
+      group.open = advancedOpen || advanced.some((details) => details.open);
+      const summary = document.createElement("summary");
+      summary.textContent = "Advanced evidence and recovery";
+      group.append(summary, ...advanced);
+      content.append(group);
+    }
     if (previousVp !== undefined && previousChallengeHash === state.pendingApplication?.challenge?.challengeHash) {
       const currentVp = root.querySelector<HTMLTextAreaElement>("[data-application-vp-form] [name='presentation']");
       if (currentVp !== null) currentVp.value = previousVp;
@@ -1670,6 +2017,7 @@ export const createApplicantPortalApp = (
         pendingFocusKey = null;
       }
     }
+    filterRecordCards();
     bindEvents();
   };
 
@@ -1679,12 +2027,34 @@ export const createApplicantPortalApp = (
     const target = [...root.querySelectorAll<HTMLDetailsElement>(".workflow-disclosure")]
       .find((details) => details.id === id);
     if (target === undefined) return;
-    target.open = true;
+    const parent = target.closest<HTMLDetailsElement>(".advanced-tools");
+    if (parent !== null) parent.open = true;
+    if (target.classList.contains("role-workflow")) {
+      root.querySelectorAll<HTMLDetailsElement>(".role-workflow").forEach((details) => {
+        details.open = details === target;
+      });
+    } else target.open = true;
     target.scrollIntoView({ block: "start", behavior: "auto" });
   };
 
   render();
   revealHashWorkflow();
-  window.addEventListener("hashchange", revealHashWorkflow);
+  window.addEventListener("hashchange", () => {
+    const shell = root.querySelector<HTMLElement>(".app-shell");
+    if (shell !== null) shell.dataset.settingsActive = String(window.location.hash === "#connection-details");
+    revealHashWorkflow();
+    const next = window.location.hash === "#current-recognition-lookup" ? "recognition"
+      : window.location.hash === "#current-authorization-lookup" ? "authorization" : undefined;
+    if (next === undefined || next === lookupActive) return;
+    lookupActive = next;
+    for (const target of ["authorization", "recognition"] as const) {
+      const section = root.querySelector<HTMLElement>(`#current-${target}-lookup`);
+      if (section !== null) section.hidden = target !== lookupActive;
+      const link = root.querySelector<HTMLAnchorElement>(`.lookup-switch a[href="#current-${target}-lookup"]`);
+      if (target === lookupActive) link?.setAttribute("aria-current", "location");
+      else link?.removeAttribute("aria-current");
+    }
+    root.querySelector<HTMLElement>(".lookup-picker")?.scrollIntoView({ block: "start" });
+  });
   void refreshInspection();
 };

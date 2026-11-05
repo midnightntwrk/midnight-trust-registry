@@ -2,6 +2,7 @@ import type {
   TrustRegistryApiApplicationMutationResponse,
   TrustRegistryApiApplicationTarget,
   TrustRegistryApiAuthorizationListResponse,
+  TrustRegistryApiHealthResponse,
   TrustRegistryApiRecognitionListResponse,
   TrustRegistryApiSummary,
 } from "@midnight-ntwrk/trust-registry-api";
@@ -35,6 +36,9 @@ export type PublicInspection = {
   summary: TrustRegistryApiSummary;
   sourceMode?: "snapshot" | "workspace" | "memory" | "local-ledger";
   localPlanSha256?: string;
+  deploymentIdentity?: TrustRegistryApiHealthResponse["deploymentIdentity"];
+  nodeReportedCheckpointHash?: string;
+  snapshotGeneratedAt?: string;
   unavailableLists?: readonly ("issuer" | "verifier" | "auditor" | "recognition")[];
   warnings?: readonly string[];
 };
@@ -47,7 +51,7 @@ export const TARGET_OPTIONS: readonly {
   {
     value: "issuer",
     label: "Issuer",
-    description: "Apply to issue credential families or schemas.",
+    description: "Apply to issue credentials in a defined scope.",
   },
   {
     value: "verifier",
@@ -110,7 +114,8 @@ export const describeSubmission = (
   }
 
   if (result.recordKind === "authorization") {
-    return `Submitted ${result.entry.label} as a ${result.operation.target} application (${result.entry.authorization.status}).`;
+    const article = result.operation.target === "issuer" ? "an" : "a";
+    return `Submitted ${result.entry.label} as ${article} ${result.operation.target} application (${result.entry.authorization.status}).`;
   }
 
   if (result.recordKind === "recognition") {
