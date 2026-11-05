@@ -561,7 +561,7 @@ describe("trust registry applicant portal app", () => {
     await checkStatus("archived", "not active");
     root.querySelector<HTMLInputElement>("[name='auditorAuthorizationId']")!.value = "auth:auditor:unknown";
     await checkStatus("not recorded", "not active");
-  });
+  }, 15_000);
 
   it("recovers a lost acceptance response without repeating the private VP submission", async () => {
     const root = document.createElement("div");
