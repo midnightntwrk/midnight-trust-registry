@@ -185,6 +185,36 @@ test("admin keyboard selection keeps the current record and detail in sync", asy
 });
 
 for (const app of ["admin-console", "applicant-portal"]) {
+  test(`${app} keeps fixture shortcuts behind the loopback demo presentation flag`, async ({ page, allowedLocalOrigins }) => {
+    const server = await serveApp(app);
+    try {
+      allowedLocalOrigins.add(server.base);
+      await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
+      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      if (app === "admin-console") {
+        await expect(page.locator("[data-action], #task-epoch, #task-signed-intent")).toHaveCount(0);
+        await expect(page.locator("#advanced-governance")).toBeVisible();
+      } else {
+        await expect(page.locator("#demo-application")).toHaveCount(0);
+        await expect(page.locator(".journey-cards")).toBeVisible();
+      }
+
+      await page.goto(`${server.base}/?demo=1&apiBase=${encodeURIComponent(server.base)}`);
+      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      if (app === "admin-console") {
+        await expect(page.locator("[data-action]").first()).toBeAttached();
+        await expect(page.locator("#task-epoch")).toBeAttached();
+        await expect(page.locator("#task-signed-intent")).toBeAttached();
+      } else {
+        await expect(page.locator("#demo-application")).toBeAttached();
+      }
+      expect(server.requests.some((request) => request.startsWith("POST "))).toBe(false);
+    } finally {
+      await page.close();
+      await server.close();
+    }
+  });
+
   test(`${app} serves the shared Midnight browser icon`, async ({ page, allowedLocalOrigins }) => {
     const server = await serveApp(app);
     try {

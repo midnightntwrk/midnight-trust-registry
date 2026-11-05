@@ -121,6 +121,7 @@ repeatable UI acceptance evidence:
 | Open a governed issuer request by keyboard with reduced motion and verify the three visible preparation phases; keep mobile task targets at least 44 px high | `ui-layout.spec.mjs` |
 | Keep the 390 px applicant introduction compact without hiding role requirements or implying that submission is approval | `ui-layout.spec.mjs` (role-row and section-height assertions, visible prerequisite text) |
 | Choose a label-only demo application type with visible radio options and keyboard navigation; retain the selection and avoid horizontal overflow at 200% mobile text size | `demo-application-handoff.spec.mjs`, `ui-layout.spec.mjs` |
+| Keep label-only application, fixture lifecycle mutations, epoch publication, and signed workspace intent out of the ordinary UI; show them only with the loopback `demo=1` presentation flag, while leaving governed role preparation visible. Merely switching views must not submit a mutation | `ui-layout.spec.mjs` (both apps, ordinary and demo modes) |
 | Reflow at 200% root text size on 320/390 px viewports without page-level horizontal scroll or non-control internal overlap; check workspace, advanced, and settings views at 320 px. Long text inside native inputs may scroll within the control. | `ui-layout.spec.mjs` |
 | Reflow local-ledger exact lookup at 320 px and 200% root text size in both apps, including returned records and expanded technical details; keep API-claim labels and avoid page-level overflow. Raw JSON scrolls inside a bounded, keyboard-focusable region rather than becoming a wall of broken words | `local-lookup.spec.mjs` |
 | Check browser-computed normal-text contrast for the brand lockup, navigation, source badge, and primary/secondary actions in both apps | `ui-layout.spec.mjs` (selected solid surfaces, at least 4.5:1) |
@@ -171,6 +172,10 @@ handling, **not** a deployed Compact contract, authenticated finality, real
 network isolation, or production security. A release-qualified standalone E2E
 claim still requires the separately approved genesis/deployment, finalized
 readback, egress-denied actor journeys, and restart/restore evidence.
+
+The `demo=1` browser case checks presentation only. It does not prove that a
+non-demo API rejects fixture mutations; server-side authorization and the
+loopback-only unsafe-mutation option are separate controls.
 
 On 2026-11-05, fresh full-page fixture captures at 1440 and 390 px were
 reviewed in both apps at signed source `f1497d74`. The shared brand lockup,
