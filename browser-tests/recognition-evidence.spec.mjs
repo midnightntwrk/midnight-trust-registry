@@ -136,6 +136,7 @@ test("applicant inspects and downloads bounded historical recognition and author
     await historical.getByRole("button", { name: "Inspect recognition evidence" }).click();
     const result = page.locator("[data-historical-recognition-result]");
     await expect(result).toContainText("Unverified API claim");
+    await expect(historical.getByRole("button", { name: "Inspect recognition evidence" })).toBeFocused();
     await expect(result).toContainText(epochId);
     const pendingDownload = page.waitForEvent("download");
     await page.locator("[data-download-historical-recognition]").click();
@@ -165,6 +166,7 @@ test("applicant inspects and downloads bounded historical recognition and author
     await authorization.getByRole("button", { name: "Inspect authorization evidence" }).click();
     const authorizationResult = page.locator("[data-historical-result]");
     await expect(authorizationResult).toContainText("Unverified API claim");
+    await expect(authorization.getByRole("button", { name: "Inspect authorization evidence" })).toBeFocused();
     const pendingAuthorizationDownload = page.waitForEvent("download");
     await page.locator("[data-download-historical-authorization]").click();
     const authorizationDownload = await pendingAuthorizationDownload;

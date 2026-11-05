@@ -210,9 +210,11 @@ describe("trust registry applicant portal app", () => {
     expect(JSON.parse(String(call?.[1]?.body))).toEqual({ role: "issuer", subjectDid, resourceId, at });
 
     substituteSubject = true;
+    root.querySelector<HTMLButtonElement>("[data-historical-authorization] button")!.focus();
     submit();
     await vi.waitFor(() => expect(root.textContent).toContain("does not match the requested record and epoch"));
     expect(root.querySelector('[role="alert"]')?.textContent).toContain("does not match the requested record and epoch");
+    expect(document.activeElement).toBe(root.querySelector("[data-historical-authorization] button"));
     expect(root.querySelector("[data-historical-result]")).toBeNull();
   });
 
@@ -278,9 +280,11 @@ describe("trust registry applicant portal app", () => {
     });
 
     substituteContext = true;
+    root.querySelector<HTMLButtonElement>("[data-historical-recognition] button")!.focus();
     submit();
     await vi.waitFor(() => expect(root.textContent).toContain("does not match the requested scope and epoch"));
     expect(root.querySelector('[role="alert"]')?.textContent).toContain("does not match the requested scope and epoch");
+    expect(document.activeElement).toBe(root.querySelector("[data-historical-recognition] button"));
     expect(root.querySelector("[data-historical-recognition-result]")).toBeNull();
     omitContext = true;
     const contextForm = root.querySelector<HTMLFormElement>("[data-historical-recognition]")!;

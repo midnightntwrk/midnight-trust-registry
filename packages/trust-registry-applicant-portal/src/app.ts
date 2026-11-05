@@ -1659,7 +1659,7 @@ export const createApplicantPortalApp = (
               <label class="label">Subject DID<input class="input mono" name="subjectDid" value="${escapeHtml(state.historicalDraft?.subjectDid ?? state.historicalQuery?.subjectDid ?? "")}" required /></label>
               <label class="label">Governed resource ID<input class="input mono" name="resourceId" value="${escapeHtml(state.historicalDraft?.resourceId ?? state.historicalQuery?.resourceId ?? "")}" required /></label>
               <label class="label">RFC3339 timestamp<input class="input mono" name="at" placeholder="2026-10-15T00:00:00Z" value="${escapeHtml(state.historicalDraft?.at ?? state.historicalQuery?.at ?? "")}" required /></label>
-              <button class="button secondary" type="submit"${state.historicalBusy ? " disabled" : ""}>Inspect authorization evidence</button>
+              <button class="button secondary" type="submit" data-focus-key="historical-authorization-submit"${state.historicalBusy ? " disabled" : ""}>Inspect authorization evidence</button>
             </form>
             ${state.historicalError === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.historicalError)}</div>`}
             ${state.historicalResult === undefined ? "" : `<div class="panel" data-historical-result>
@@ -1679,7 +1679,7 @@ export const createApplicantPortalApp = (
               <label class="label">Scope resource ID<input class="input mono" name="scopeResourceId" value="${escapeHtml(state.historicalRecognitionDraft?.scopeResourceId ?? state.historicalRecognitionQuery?.scopeResourceId ?? "")}" required /></label>
               <label class="label">Scope context JSON, if any<textarea class="input mono" name="scopeContext" rows="3" spellcheck="false">${escapeHtml(state.historicalRecognitionDraft?.scopeContext ?? (state.historicalRecognitionQuery?.scopeContext === undefined ? "" : JSON.stringify(state.historicalRecognitionQuery.scopeContext, null, 2)))}</textarea></label>
               <label class="label">RFC3339 timestamp<input class="input mono" name="at" placeholder="2026-10-15T00:00:00Z" value="${escapeHtml(state.historicalRecognitionDraft?.at ?? state.historicalRecognitionQuery?.at ?? "")}" required /></label>
-              <button class="button secondary" type="submit"${state.historicalRecognitionBusy ? " disabled" : ""}>Inspect recognition evidence</button>
+              <button class="button secondary" type="submit" data-focus-key="historical-recognition-submit"${state.historicalRecognitionBusy ? " disabled" : ""}>Inspect recognition evidence</button>
             </form>
             ${state.historicalRecognitionError === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.historicalRecognitionError)}</div>`}
             ${state.historicalRecognitionResult === undefined ? "" : `<div class="panel" data-historical-recognition-result>
