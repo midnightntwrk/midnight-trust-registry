@@ -429,6 +429,7 @@ body { background: radial-gradient(circle at 100% 0, #e8e9ff 0, transparent 26re
   text-decoration: none;
 }
 .journey-cards a:hover, .journey-cards a:focus-visible { border-color: var(--midnight-blue); background: var(--midnight-blue-soft); }
+.journey-cards a[aria-expanded="true"] { border-color: var(--midnight-blue); box-shadow: inset 3px 0 var(--midnight-blue); }
 .journey-cards .role-mark { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: 0.5rem; background: var(--midnight-blue-soft); color: var(--midnight-blue); font-size: 0.86rem; font-weight: 800; }
 .journey-cards strong { font-size: 1.13rem; }
 .journey-cards span { color: var(--midnight-muted); font-size: 0.83rem; line-height: 1.4; }

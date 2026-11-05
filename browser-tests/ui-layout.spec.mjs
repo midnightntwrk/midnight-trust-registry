@@ -110,6 +110,54 @@ test("applicant portal treats a failed list as unavailable, then recovers on rec
   }
 });
 
+test("applicant role cards focus one governed request without submitting it", async ({ page, allowedLocalOrigins }) => {
+  const server = await serveApp("applicant-portal");
+  try {
+    allowedLocalOrigins.add(server.base);
+    await page.setViewportSize({ width: 390, height: 900 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
+    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+
+    const roles = ["issuer", "verifier", "auditor", "maintainer"];
+    for (const role of roles) {
+      const link = page.locator(`.journey-cards [data-open-workflow="${role}-request"]`);
+      await expect(link).toHaveAttribute("aria-controls", `${role}-request`);
+      await link.focus();
+      await page.keyboard.press("Enter");
+      await expect(page.locator(".role-workflow[open]")).toHaveCount(1);
+      await expect(page.locator(`#${role}-request`)).toHaveAttribute("open", "");
+      await expect(page.locator(`#${role}-request > summary`)).toBeFocused();
+      await expect(link).toHaveAttribute("aria-expanded", "true");
+      for (const other of roles.filter((candidate) => candidate !== role)) {
+        await expect(page.locator(`.journey-cards [data-open-workflow="${other}-request"]`))
+          .toHaveAttribute("aria-expanded", "false");
+      }
+    }
+
+    await page.locator("#maintainer-request > summary").click();
+    await expect(page.locator(".role-workflow[open]")).toHaveCount(0);
+    await expect(page.locator('.journey-cards [data-open-workflow="maintainer-request"]'))
+      .toHaveAttribute("aria-expanded", "false");
+    await page.locator('.journey-cards [data-open-workflow="verifier-request"]').click();
+    await expect(page.locator(".role-workflow[open]")).toHaveCount(1);
+    await expect(page.locator("#verifier-request")).toHaveAttribute("open", "");
+    await page.locator("#verifier-request > summary").focus();
+    const refreshedSummary = page.waitForResponse((response) => response.url() === `${server.base}/v1/registry/summary`);
+    await page.evaluate(() => document.querySelector("[data-refresh]").click());
+    await refreshedSummary;
+    await expect(page.locator("[data-refresh]")).toBeEnabled();
+    await expect(page.locator("#verifier-request > summary")).toBeFocused();
+    await expect(page.locator("#verifier-request")).toHaveAttribute("open", "");
+    await expect(page.locator('.journey-cards [data-open-workflow="verifier-request"]'))
+      .toHaveAttribute("aria-expanded", "true");
+    expect(server.requests.some((request) => request.startsWith("POST "))).toBe(false);
+  } finally {
+    await page.close();
+    await server.close();
+  }
+});
+
 for (const app of ["admin-console", "applicant-portal"]) {
   test(`${app} serves the shared Midnight browser icon`, async ({ page, allowedLocalOrigins }) => {
     const server = await serveApp(app);

@@ -1327,12 +1327,29 @@ export const createApplicantPortalApp = (
       input.value = "";
       void submitApplicationPresentation(raw);
     });
+    const roleLinks = [...root.querySelectorAll<HTMLAnchorElement>(".journey-cards [data-open-workflow]")];
+    const syncRoleLinks = () => {
+      for (const link of roleLinks) {
+        const id = link.dataset.openWorkflow ?? "";
+        link.setAttribute("aria-controls", id);
+        link.setAttribute("aria-expanded", String(root.querySelector<HTMLDetailsElement>(`#${id}`)?.open === true));
+      }
+    };
+    root.querySelectorAll<HTMLDetailsElement>(".role-workflow").forEach((details) => {
+      details.addEventListener("toggle", syncRoleLinks);
+    });
+    syncRoleLinks();
     root.querySelectorAll<HTMLAnchorElement>("[data-open-workflow]").forEach((link) => {
       link.addEventListener("click", (event) => {
         const target = root.querySelector<HTMLDetailsElement>(`#${link.dataset.openWorkflow ?? ""}`);
         if (target === null) return;
         event.preventDefault();
-        target.open = true;
+        if (roleLinks.includes(link)) {
+          root.querySelectorAll<HTMLDetailsElement>(".role-workflow").forEach((details) => {
+            details.open = details === target;
+          });
+          syncRoleLinks();
+        } else target.open = true;
         target.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
         target.querySelector("summary")?.focus();
       });
@@ -1919,6 +1936,7 @@ export const createApplicantPortalApp = (
       }
       const summary = document.createElement("summary");
       summary.textContent = name;
+      if (role !== undefined) summary.dataset.focusKey = `${role}-request-summary`;
       panel.before(details);
       details.append(summary, panel);
     });
