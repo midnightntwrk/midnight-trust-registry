@@ -145,12 +145,15 @@ for (const target of ["issuer", "recognition"]) {
       await expect(page.getByRole("heading", { name: "Decisions that need attention" })).toBeVisible();
       await expect(page.locator(".card")).toContainText(label);
       await expect(page.locator(".card .status-chip")).toHaveText("Proposed");
+      await expect(page.locator(".card .meta-row").first()).toHaveText("Requested trust level: approved");
       await expect(page.locator('[data-action="approve"]')).toHaveText("Approve in demo");
       await page.locator('[data-action="approve"]').click();
       await expect(page.locator(".card .status-chip")).toHaveText("Authorized");
+      await expect(page.locator(".card .meta-row").first()).toHaveText("Authorized trust level: approved");
       await expect(page.locator('[data-action="activate"]')).toHaveText("Activate in demo");
       await page.locator('[data-action="activate"]').click();
       await expect(page.locator(".card .status-chip")).toHaveText("Active");
+      await expect(page.locator(".card .meta-row").first()).toHaveText("Trust level: approved");
       expect(confirmations).toHaveLength(2);
       for (const message of confirmations) {
         expect(message).toContain("in this local fixture?");

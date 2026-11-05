@@ -910,6 +910,11 @@ export const createAdminConsoleApp = (
     </div>
   `;
 
+  const trustLevelLabel = (status: ReviewStatus): string =>
+    status === "proposed" ? "Requested trust level"
+      : status === "authorized" ? "Authorized trust level"
+        : status === "active" ? "Trust level" : "Recorded trust level";
+
   const renderCard = (card: ReviewCard): string => `
     <button type="button" class="card${card.key === state.selectedKey ? " selected" : ""}" data-select-key="${escapeHtml(card.key)}" aria-controls="selected-record-detail"${card.key === state.selectedKey ? ' aria-current="true"' : ""}>
       <div class="card-top">
@@ -919,7 +924,7 @@ export const createAdminConsoleApp = (
         </div>
         <span class="status-chip ${escapeHtml(card.status)}">${escapeHtml(REVIEW_STATUS_LABELS[card.status])}</span>
       </div>
-      <div class="meta-row"><span>${escapeHtml(card.trustLevel)}</span></div>
+      <div class="meta-row"><span>${trustLevelLabel(card.status)}: ${escapeHtml(card.trustLevel)}</span></div>
       <div class="meta-row">
         <span>Updated <time datetime="${escapeHtml(card.updatedAt)}">${escapeHtml(formatReviewTime(card.updatedAt))}</time></span>
       </div>
@@ -978,7 +983,7 @@ export const createAdminConsoleApp = (
         <div class="record-meaning"><p class="eyebrow">What this means</p><p>${lifecycleDescription} ${sourceDescription}</p></div>
         <div class="decision-summary"><h3>Decision summary</h3><dl>
           <div><dt>Role</dt><dd>${escapeHtml(card.target)}</dd></div>
-          <div><dt>Trust level</dt><dd>${escapeHtml(card.trustLevel)}</dd></div>
+          <div><dt>${trustLevelLabel(card.status)}</dt><dd>${escapeHtml(card.trustLevel)}</dd></div>
           <div><dt>Last update</dt><dd><time datetime="${escapeHtml(card.updatedAt)}">${escapeHtml(formatReviewTime(card.updatedAt))}</time></dd></div>
         </dl></div>
         <details class="technical-details"><summary>Identifiers and evidence</summary><dl>
