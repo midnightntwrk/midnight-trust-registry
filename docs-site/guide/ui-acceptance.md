@@ -19,7 +19,7 @@ proposals, not evidence that a workflow is implemented or finalized.
 | One Midnight visual language | Both apps use the approved logo, Outfit, black/white/blue tokens, and shared navigation/status components. The header groups the logo, Trust Registry title, and current portal/console context in one lockup instead of separating them across the bar. |
 | Compact discovery and a bounded review detail | The fixture portal searches visible active records by name, role, scope, or DID without changing registry state. Empty lifecycle lanes are omitted from the admin view; selected detail stays beside the list on desktop and below it on mobile. The detail explains its source and lifecycle before the decision summary. Exact IDs and external-signature preparation are separate disclosures. |
 | Truthful source and certainty | A visible source strip identifies fixture, API claim, or unavailable state and offers Recheck. Navigation follows the source: optional fixture demo and browse, exact lookup for local-ledger API claims, connection recovery when unavailable. Local-ledger exact lookups precede membership preparation in DOM and visual order; unsupported broad lists are explained once, not shown as four failures or empty trust. The admin hero does not present counts of fetched exact results as registry-wide lifecycle totals; the applicant hero omits unavailable list totals and labels its epoch as API-reported. Actual failed fixture lists still show unavailable warnings. Empty fixture record categories are summarized instead of rendered as large cards; evidence/recovery tools are grouped under Advanced. Epoch and technical identity stay in details. No fixture record is called final. |
-| Mobile task access | The desktop sidebar becomes a native keyboard-operable Menu at narrow widths. The mobile portal omits the nonessential snapshot card so the role path appears sooner; source status and Recheck remain visible. |
+| Mobile and tablet task access | The desktop sidebar becomes a native keyboard-operable Menu at narrow widths. At 768 px, the portal keeps the full registry name on a separate line above compact metrics so governed requests begin in the first viewport; on small phones it omits the nonessential snapshot card so the role path appears sooner. Source status and Recheck remain visible. |
 
 The canvas is a visual reference, not a complete behavior specification. Its
 illustrative active issuer is not a real on-chain grant. A full assistive-technology
@@ -129,6 +129,15 @@ repeatable UI acceptance evidence:
 | Deny unapproved browser egress and discard stale local checkpoint responses | `browser-egress-control.spec.mjs`, `admin-console.spec.mjs` |
 
 ### Visual review record
+
+On 2026-11-05, the applicant portal's 768 px capture was re-reviewed with the
+long `Midnight Trust Registry` fixture label. Four equal tiles made that name a
+three-line card beside three tall empty-looking metric cards. The tablet
+snapshot now puts the full registry name on its own line and balances epoch,
+issuer, and verifier metrics below it; the governed-request heading remains in
+the first viewport. The 390 px portal and admin, 768 px admin, and 1440 px
+desktop views were also inspected. This is visual fixture evidence, not a
+deployed-ledger walkthrough or independent user trial.
 
 On 2026-11-04, the locally built fixture admin and applicant pages were
 visually inspected as full-page captures at 1440, 768, and 390 px. The product

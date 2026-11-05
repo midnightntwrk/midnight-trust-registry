@@ -397,6 +397,7 @@ for (const [app, title] of [
       for (const width of [1440, 768, 390, 320]) {
         await page.setViewportSize({ width, height: 900 });
         await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
+        await page.evaluate(() => document.fonts.ready.then(() => true));
         await expect(page.getByRole("heading", { name: title })).toBeVisible();
         await expect.poll(() => page.locator(".brand-logo").evaluate((image) => image.naturalWidth)).toBeGreaterThan(0);
         await expect(page.locator(".brand-product-title")).toHaveText("Trust Registry");
@@ -452,6 +453,19 @@ for (const [app, title] of [
         }
         if (app === "applicant-portal") {
           await expect(page.locator(".hero-actions a").first()).toHaveAttribute("href", "#governed-requests");
+          if (width === 768) {
+            const tabletLayout = await page.evaluate(() => ({
+              overviewHeight: document.querySelector(".hero-overview").getBoundingClientRect().height,
+              rolesTop: document.querySelector("#governed-requests").getBoundingClientRect().top,
+              metricRows: [...document.querySelectorAll(".hero-overview .metric")]
+                .map((metric) => Math.round(metric.getBoundingClientRect().top)),
+            }));
+            expect(tabletLayout.overviewHeight, JSON.stringify(tabletLayout)).toBeLessThan(180);
+            expect(tabletLayout.rolesTop, JSON.stringify(tabletLayout)).toBeLessThan(830);
+            expect(tabletLayout.metricRows).toHaveLength(4);
+            expect(new Set(tabletLayout.metricRows).size).toBe(2);
+            expect(new Set(tabletLayout.metricRows.slice(1)).size).toBe(1);
+          }
           if (width === 390) {
             const journeyLayout = await page.evaluate(() => ({
               sectionHeight: document.querySelector(".journey-picker").getBoundingClientRect().height,
