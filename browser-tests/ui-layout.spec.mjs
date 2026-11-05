@@ -39,6 +39,7 @@ const issuer = {
 
 async function serveApp(app) {
   let healthAvailable = true;
+  let healthGate;
   const staticHandler = createStaticAssetHandler({
     distDir: resolve(`packages/trust-registry-${app}/dist`),
     name: `ui-layout-${app}`,
@@ -51,6 +52,7 @@ async function serveApp(app) {
     }
     response.setHeader("content-type", "application/json");
     if (path === "/health") {
+      if (healthGate !== undefined) await healthGate;
       if (!healthAvailable) response.statusCode = 503;
       response.end(JSON.stringify(healthAvailable
         ? { status: "ok", sourceMode: "workspace" }
@@ -65,6 +67,11 @@ async function serveApp(app) {
   return {
     base: `http://127.0.0.1:${address.port}`,
     setHealthAvailable: (available) => { healthAvailable = available; },
+    pauseHealth: () => {
+      let release;
+      healthGate = new Promise((resolveGate) => { release = resolveGate; });
+      return () => { healthGate = undefined; release(); };
+    },
     close: async () => {
       server.closeAllConnections();
       await new Promise((done, reject) => server.close((error) => error ? reject(error) : done()));
@@ -93,6 +100,66 @@ for (const app of ["admin-console", "applicant-portal"]) {
     }
   });
 }
+
+for (const app of ["admin-console", "applicant-portal"]) {
+  test(`${app} clears the previous endpoint check time before the new host responds`, async ({ page, allowedLocalOrigins }) => {
+    const first = await serveApp(app);
+    const second = await serveApp(app);
+    let releaseSecondHealth;
+    try {
+      allowedLocalOrigins.add(first.base);
+      allowedLocalOrigins.add(second.base);
+      await page.goto(`${first.base}/?apiBase=${encodeURIComponent(first.base)}`);
+      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      releaseSecondHealth = second.pauseHealth();
+      const form = page.locator("[data-api-base-form]");
+      await form.locator("[name='apiBase']").fill(second.base);
+      await form.locator("button[type='submit']").click();
+      const settings = page.locator(app === "admin-console" ? "#workspace-settings" : "#connection-details");
+      await settings.locator("summary").click();
+      await expect(settings).toContainText("No successful check");
+      releaseSecondHealth();
+      releaseSecondHealth = undefined;
+      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    } finally {
+      releaseSecondHealth?.();
+      await page.close();
+      await first.close();
+      await second.close();
+    }
+  });
+}
+
+test("applicant role links survive direct navigation and reload", async ({ page, allowedLocalOrigins }) => {
+  const server = await serveApp("applicant-portal");
+  try {
+    allowedLocalOrigins.add(server.base);
+    await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}#issuer-request`);
+    await expect(page.locator("#issuer-request")).toHaveAttribute("open", "");
+    await expect(page.locator("#issuer-request [data-issuer-application-form]")).toBeVisible();
+    await page.locator('[data-open-workflow="verifier-request"]').click();
+    await expect(page).toHaveURL(/#verifier-request$/u);
+    await page.reload();
+    await expect(page.locator("#verifier-request [data-verifier-application-form]")).toBeVisible();
+  } finally {
+    await page.close();
+    await server.close();
+  }
+});
+
+test("admin review board precedes advanced governance in keyboard order", async ({ page, allowedLocalOrigins }) => {
+  const server = await serveApp("admin-console");
+  try {
+    allowedLocalOrigins.add(server.base);
+    await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
+    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    expect(await page.evaluate(() => Boolean(document.querySelector("#review-board")
+      ?.compareDocumentPosition(document.querySelector("#advanced-governance")) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+  } finally {
+    await page.close();
+    await server.close();
+  }
+});
 
 for (const [app, title] of [
   ["admin-console", "Review trust records"],

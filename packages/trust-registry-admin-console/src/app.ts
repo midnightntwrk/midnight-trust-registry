@@ -708,7 +708,7 @@ export const createAdminConsoleApp = (
       signedContextRequestId += 1;
       const pastedEnvelope = root.querySelector<HTMLTextAreaElement>("[data-signed-submit] [name='signedEnvelope']");
       if (pastedEnvelope !== null) pastedEnvelope.value = "";
-      setState({ apiBase, board: undefined, cards: [], selectedKey: undefined,
+      setState({ apiBase, board: undefined, cards: [], selectedKey: undefined, observedAt: undefined,
         loading: false, lookupBusy: false, lookupId: "", lookupTarget: "issuer",
         publishing: false, signedBusy: false, signedContext: undefined,
         epochLabel: "", proposalAuthorizationId: "", proposalEvidenceJson: "",
@@ -1159,6 +1159,9 @@ export const createAdminConsoleApp = (
         </section>
       </main>
     `;
+    const workspace = root.querySelector("#review-board");
+    const advanced = root.querySelector("#advanced-governance");
+    if (workspace !== null && advanced !== null) workspace.after(advanced);
     if (previousSignedEnvelope !== undefined) {
       const currentEnvelope = root.querySelector<HTMLTextAreaElement>("[data-signed-submit] [name='signedEnvelope']");
       if (currentEnvelope !== null) currentEnvelope.value = previousSignedEnvelope;

@@ -908,6 +908,7 @@ export const createApplicantPortalApp = (
       currentAuthorizationRequestId += 1;
       currentRecognitionRequestId += 1;
       recognitionRequestId += 1;
+      state.observedAt = undefined;
       setState({ apiBase, inspection: undefined, signedBusy: false, signedContext: undefined, pendingApplication: undefined, auditorStatus: undefined, auditorStatusBusy: false, auditorDraft: undefined, preparedAuditor: undefined, auditorPreparationBusy: false, memberDraft: undefined, preparedMember: undefined, memberPreparationBusy: false, currentAuthorizationBusy: false, currentAuthorizationResult: undefined, currentAuthorizationError: undefined, currentRecognitionBusy: false, currentRecognitionResult: undefined, currentRecognitionError: undefined, historicalBusy: false, historicalResult: undefined, historicalError: undefined, historicalRecognitionBusy: false, historicalRecognitionResult: undefined, historicalRecognitionError: undefined, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined,
         recognitionId: "", recognitionChallenge: undefined, recognitionAdmission: undefined,
         recognitionRecoveryBusy: false, recognitionRecoveryMessage: undefined });
@@ -1189,6 +1190,7 @@ export const createApplicantPortalApp = (
         if (target === null) return;
         event.preventDefault();
         target.open = true;
+        if (window.location.hash !== `#${target.id}`) window.history.pushState(null, "", `#${target.id}`);
         target.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
         target.querySelector("summary")?.focus();
       });
@@ -1671,6 +1673,18 @@ export const createApplicantPortalApp = (
     bindEvents();
   };
 
+  const revealHashWorkflow = () => {
+    const id = window.location.hash.slice(1);
+    if (id === "") return;
+    const target = [...root.querySelectorAll<HTMLDetailsElement>(".workflow-disclosure")]
+      .find((details) => details.id === id);
+    if (target === undefined) return;
+    target.open = true;
+    target.scrollIntoView({ block: "start", behavior: "auto" });
+  };
+
   render();
+  revealHashWorkflow();
+  window.addEventListener("hashchange", revealHashWorkflow);
   void refreshInspection();
 };
