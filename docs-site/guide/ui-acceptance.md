@@ -260,6 +260,13 @@ unavailable states, source language, and mobile task visibility against the
 geometry assertions. Generated screenshots are local review artifacts, not
 deployed acceptance evidence.
 
+For PRs, the CI browser job captures the same fixture screens and uploads a
+`fixture-ui-captures-<run ID>` artifact for seven days. Review the 320, 390,
+768, and 1440 px admin and applicant views plus their settings captures;
+compare source labels, navigation, selected detail, and long-ID boundaries.
+The artifact contains fixture screenshots only. It is not a deployed-ledger
+walkthrough, a screen-reader trial, or an independent new-engineer result.
+
 In the fixture admin workspace, use **Review records** to search by label,
 role, or exact identifier and narrow by lifecycle status. Select a result to
 see what its lifecycle means before opening exact identifiers or preparing an

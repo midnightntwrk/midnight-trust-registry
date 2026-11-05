@@ -143,3 +143,14 @@ jobs:
 
       - name: Run fixture-backed browser journeys (not standalone qualification)
         run: pnpm run test:e2e:demo:browser
+        env:
+          TR_UI_CAPTURE: ${{ github.event_name == 'pull_request' && '1' || '0' }}
+
+      - name: Upload fixture UI review captures
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # ratchet:actions/upload-artifact@v4
+        with:
+          name: fixture-ui-captures-${{ github.run_id }}
+          path: test-results/**/*.png
+          if-no-files-found: ignore
+          retention-days: 7
