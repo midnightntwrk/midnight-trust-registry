@@ -148,6 +148,14 @@ repeatable UI acceptance evidence:
 
 ### Visual review record
 
+On 2026-11-06, an agent inspected the 1440 px admin capture after an auditor
+list failed while an issuer record had previously been visible. The board
+initially said "No records yet," which incorrectly described an unavailable
+source as an empty registry. It now labels review records unavailable, clears
+the old card and action, and directs the user to Recheck. Playwright verifies
+focus, error announcement, automated A/AA checks, and recovery. This is a
+controlled fixture review, not an independent assistive-technology trial.
+
 On 2026-11-05, the applicant portal's 768 px capture was re-reviewed with the
 long `Midnight Trust Registry` fixture label. Four equal tiles made that name a
 three-line card beside three tall empty-looking metric cards. The tablet

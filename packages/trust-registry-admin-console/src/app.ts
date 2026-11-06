@@ -1317,7 +1317,11 @@ export const createAdminConsoleApp = (
           ${state.board?.sourceMode === "local-ledger" ? `<div class="board" data-local-current-result>
             ${state.cards.map(renderCard).join("")}
           </div>` : `<div class="board">
-            ${visibleCards.length === 0 && (state.reviewQuery.trim() !== "" || state.reviewStatus !== "all")
+            ${state.board === undefined
+              ? `<div class="empty-state"><p>${state.loading
+                ? "Checking the registry source before showing review records."
+                : "Review records are unavailable until the connection succeeds."}</p></div>`
+              : visibleCards.length === 0 && (state.reviewQuery.trim() !== "" || state.reviewStatus !== "all")
               ? `<div class="empty-state"><p>No records match these filters. Try a different label or status.</p></div>`
               : visibleCards.length === 0
                 ? `<div class="empty-state"><p>No records yet. New requests will appear here after submission.</p></div>`

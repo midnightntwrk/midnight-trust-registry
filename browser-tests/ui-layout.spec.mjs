@@ -127,7 +127,7 @@ test("applicant portal treats a failed list as unavailable, then recovers on rec
   }
 });
 
-test("admin clears stale review records when one list fails, then recovers", async ({ page, allowedLocalOrigins }) => {
+test("admin clears stale review records when one list fails, then recovers", async ({ page, allowedLocalOrigins }, testInfo) => {
   const server = await serveApp("admin-console");
   try {
     allowedLocalOrigins.add(server.base);
@@ -139,13 +139,20 @@ test("admin clears stale review records when one list fails, then recovers", asy
     server.setAuditorAvailable(false);
     await page.locator("[data-refresh]").click();
     await expect(page.locator(".source-badge")).toHaveText("Unavailable");
+    await expect(page.locator("[data-refresh]")).toBeFocused();
     await expect(page.locator(".source-panel")).toContainText("No trust decision is available");
     await expect(page.getByRole("alert")).toContainText("Auditor list unavailable");
     await expect(page.locator(".card, [data-governed-prepare]")).toHaveCount(0);
+    await expect(page.locator("#review-board .board"))
+      .toContainText("Review records are unavailable until the connection succeeds");
+    await expect(page.locator("#review-board .board")).not.toContainText("No records yet");
     await expect(page.locator("#selected-record-detail"))
       .toContainText("Recheck the connection before reviewing a record");
     await expect(page.locator("#selected-record-detail")).not.toContainText("Local demo issuer");
     await expectNoWcagViolations(page, "admin partial list failure at 1440px");
+    if (process.env.TR_UI_CAPTURE === "1") {
+      await page.screenshot({ path: testInfo.outputPath("admin-partial-list-1440.png"), fullPage: true });
+    }
 
     server.setAuditorAvailable(true);
     await page.locator("[data-refresh]").click();
