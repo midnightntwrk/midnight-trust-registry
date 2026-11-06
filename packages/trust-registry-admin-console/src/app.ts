@@ -952,7 +952,9 @@ export const createAdminConsoleApp = (
       return `
         <aside class="detail-panel" id="selected-record-detail">
           <div class="empty-state">
-            <p>Select a record to review its detail and available maintainer actions.</p>
+            <p>${state.board === undefined
+              ? "No current registry source is available. Recheck the connection before reviewing a record."
+              : "Select a record to review its detail and available maintainer actions."}</p>
           </div>
         </aside>
       `;

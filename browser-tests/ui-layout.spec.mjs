@@ -127,6 +127,38 @@ test("applicant portal treats a failed list as unavailable, then recovers on rec
   }
 });
 
+test("admin clears stale review records when one list fails, then recovers", async ({ page, allowedLocalOrigins }) => {
+  const server = await serveApp("admin-console");
+  try {
+    allowedLocalOrigins.add(server.base);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
+    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    await expect(page.locator(".card")).toHaveCount(1);
+
+    server.setAuditorAvailable(false);
+    await page.locator("[data-refresh]").click();
+    await expect(page.locator(".source-badge")).toHaveText("Unavailable");
+    await expect(page.locator(".source-panel")).toContainText("No trust decision is available");
+    await expect(page.getByRole("alert")).toContainText("Auditor list unavailable");
+    await expect(page.locator(".card, [data-governed-prepare]")).toHaveCount(0);
+    await expect(page.locator("#selected-record-detail"))
+      .toContainText("Recheck the connection before reviewing a record");
+    await expect(page.locator("#selected-record-detail")).not.toContainText("Local demo issuer");
+    await expectNoWcagViolations(page, "admin partial list failure at 1440px");
+
+    server.setAuditorAvailable(true);
+    await page.locator("[data-refresh]").click();
+    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    await expect(page.locator(".card")).toHaveCount(1);
+    await expect(page.locator(".card")).toContainText("Local demo issuer");
+    expect(server.requests.some((request) => request.startsWith("POST "))).toBe(false);
+  } finally {
+    await page.close();
+    await server.close();
+  }
+});
+
 test("applicant role cards focus one governed request without submitting it", async ({ page, allowedLocalOrigins }, testInfo) => {
   const server = await serveApp("applicant-portal");
   try {
