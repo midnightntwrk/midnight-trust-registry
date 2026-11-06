@@ -38,14 +38,15 @@ const issuer = {
   evidence: { epoch: { epochId: summary.currentEpochId, stateRoot: "0xroot" } },
 };
 
-async function serveApp(app, { secondIssuer = false } = {}) {
+async function serveApp(app, { secondIssuer = false, noIssuers = false } = {}) {
   let healthAvailable = true;
   let auditorAvailable = true;
   let sourceMode = "workspace";
   let healthGate;
   const requests = [];
-  const servedSummary = secondIssuer ? { ...summary, issuerCounts: { ...counts, active: 2 } } : summary;
-  const servedIssuers = secondIssuer ? [issuer, { ...issuer, label: "Second demo issuer", authorization: {
+  const servedSummary = noIssuers ? { ...summary, issuerCounts: emptyCounts }
+    : secondIssuer ? { ...summary, issuerCounts: { ...counts, active: 2 } } : summary;
+  const servedIssuers = noIssuers ? [] : secondIssuer ? [issuer, { ...issuer, label: "Second demo issuer", authorization: {
     ...issuer.authorization, authorizationId: "auth:issuer:second-demo-issuer:v1" } }] : [issuer];
   const packagedPath = app === "admin-console" ? "/admin/" : "/applicant/";
   const staticHandler = createStaticAssetHandler({
@@ -160,6 +161,23 @@ test("admin clears stale review records when one list fails, then recovers", asy
     await expect(page.locator(".card")).toHaveCount(1);
     await expect(page.locator(".card")).toContainText("Local demo issuer");
     expect(server.requests.some((request) => request.startsWith("POST "))).toBe(false);
+  } finally {
+    await page.close();
+    await server.close();
+  }
+});
+
+test("admin describes a healthy empty fixture as empty rather than unavailable", async ({ page, allowedLocalOrigins }) => {
+  const server = await serveApp("admin-console", { noIssuers: true });
+  try {
+    allowedLocalOrigins.add(server.base);
+    await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
+    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    await expect(page.locator("#review-board .board")).toContainText("No records yet");
+    await expect(page.locator("#review-board .board")).not.toContainText("unavailable");
+    await expect(page.locator("#selected-record-detail"))
+      .toContainText("Select a record to review its detail");
+    await expectNoWcagViolations(page, "admin healthy empty fixture");
   } finally {
     await page.close();
     await server.close();
