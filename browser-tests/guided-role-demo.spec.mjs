@@ -1,0 +1,208 @@
+import { createServer } from "node:http";
+import { resolve } from "node:path";
+
+import AxeBuilder from "@axe-core/playwright";
+import { expect, test } from "./offline-browser-fixture.mjs";
+import { createStaticAssetHandler } from "../scripts/serve-static.mjs";
+
+const registryId = "registry:guided-demo";
+const emptyCounts = () => ({
+  proposed: 0, authorized: 0, active: 0, suspended: 0,
+  revoked: 0, superseded: 0, archived: 0,
+});
+
+for (const target of ["issuer", "verifier", "auditor"]) {
+for (const decision of ["approve", "reject"]) {
+test(`${target} request needs three distinct demo votes to ${decision}`, async ({ page, allowedLocalOrigins }) => {
+  const staticAssets = createStaticAssetHandler({
+    distDir: resolve("packages/trust-registry-admin-console/dist"), name: "guided-demo",
+  });
+  const label = `Guided ${target}`;
+  const id = `${target}:guided-demo:v1`;
+  let status;
+  const transitions = [];
+  const entry = {
+    label,
+    authorization: {
+      authorizationId: id, registryId, role: target,
+      subjectDid: "did:midnight:undeployed:issuer",
+      resourceType: target === "issuer" ? "schema" : "request-profile",
+      resourceId: `tr:${target === "issuer" ? "issuer" : "request"}-resource:v1:${"a".repeat(64)}`,
+      policyId: "policy:guided", trustLevel: "approved", proposedAt: "2026-05-20T00:00:00Z",
+    },
+    evidence: { epoch: { epochId: "epoch:guided:1", stateRoot: "0xroot" } },
+  };
+  const server = createServer(async (request, response) => {
+    const path = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+    if (path === "/demo.html" || path.endsWith(".js") || path === "/demo.css"
+      || path === "/brand.css" || path === "/midnight-logo.svg"
+      || path.startsWith("/fonts/")) {
+      await staticAssets(request, response);
+      return;
+    }
+    response.setHeader("content-type", "application/json");
+    if (path === "/health") {
+      response.end(JSON.stringify({ status: "ok", sourceMode: "workspace", registryId }));
+      return;
+    }
+    if (path === "/v1/registry/summary") {
+      const issuerCounts = emptyCounts();
+      if (target === "issuer" && status !== undefined) issuerCounts[status] = 1;
+      const verifierCounts = emptyCounts();
+      if (target === "verifier" && status !== undefined) verifierCounts[status] = 1;
+      const auditorCounts = emptyCounts();
+      if (target === "auditor" && status !== undefined) auditorCounts[status] = 1;
+      response.end(JSON.stringify({
+        registryId, registryLabel: "Midnight Trust Registry",
+        registryDid: "did:midnight:undeployed:registry", policyId: "policy:guided",
+        currentEpochId: "epoch:guided:1", epochCount: 1,
+        issuerCounts, verifierCounts, auditorCounts,
+        recognitionCounts: emptyCounts(),
+      }));
+      return;
+    }
+    if (path === "/v1/applications" && request.method === "POST") {
+      const chunks = [];
+      for await (const chunk of request) chunks.push(chunk);
+      const submitted = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      if (submitted.target !== target || submitted.label !== label || status !== undefined) {
+        response.statusCode = 409;
+        response.end(JSON.stringify({ title: "unexpected application" }));
+        return;
+      }
+      status = "proposed";
+      entry.authorization.status = status;
+      response.statusCode = 201;
+      response.end(JSON.stringify({ recordKind: "authorization",
+        operation: { operation: "submit", target }, entry }));
+      return;
+    }
+    if (path.startsWith(`/v1/applications/${target}/`) && request.method === "POST") {
+      const action = path.slice(path.lastIndexOf("/") + 1);
+      transitions.push(action);
+      if (!path.includes(encodeURIComponent(id))
+        || !((action === "approve" && status === "proposed")
+          || (action === "archive" && status === "proposed")
+          || (action === "activate" && status === "authorized"))) {
+        response.statusCode = 409;
+        response.end(JSON.stringify({ title: "unexpected transition" }));
+        return;
+      }
+      status = action === "approve" ? "authorized" : action === "archive" ? "archived" : "active";
+      entry.authorization.status = status;
+      response.end(JSON.stringify({ recordKind: "authorization",
+        operation: { operation: action, target }, entry }));
+      return;
+    }
+    if (path === `/v1/authorizations/${target}`) {
+      response.end(JSON.stringify({ entries: status === undefined ? [] : [entry] }));
+      return;
+    }
+    if (path === "/v1/authorizations/issuer" || path === "/v1/authorizations/verifier" || path === "/v1/authorizations/auditor"
+      || path === "/v1/recognitions") {
+      response.end(JSON.stringify({ entries: [] }));
+      return;
+    }
+    response.statusCode = 404;
+    response.end(JSON.stringify({ title: "not found" }));
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("expected TCP address");
+  const base = `http://127.0.0.1:${address.port}`;
+  allowedLocalOrigins.add(base);
+  page.on("dialog", (dialog) => dialog.accept());
+  try {
+    await page.goto(`${base}/demo.html?apiBase=${encodeURIComponent(base)}`);
+    await expect(page.getByRole("heading", { name: "Explore every role, one step at a time." })).toBeVisible();
+    await expect(page.getByText("Local fixture connected")).toBeVisible();
+    if (decision === "approve" && target === "issuer") {
+      const accessibility = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
+      expect(accessibility.violations).toEqual([]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    }
+    await page.getByRole("navigation", { name: "Demo roles" }).getByRole("link", { name: `${target[0].toUpperCase()}${target.slice(1)} #1`, exact: true }).click();
+    await page.getByLabel("Display name").fill(label);
+    await page.getByRole("button", { name: "Send demo request" }).click();
+    await expect(page.getByText("Waiting for committee demo votes.")).toBeVisible();
+    for (const stage of decision === "approve" ? ["authorization", "activation"] : ["archive"]) {
+      for (let number = 1; number <= 3; number++) {
+        if (number === 1 && stage === (decision === "approve" ? "authorization" : "archive")) {
+          await page.getByRole("link", { name: "Switch to Maintainer #1" }).click();
+        } else if (number === 1) {
+          await page.getByRole("navigation", { name: "Demo roles" }).locator('[data-role="maintainer-1"]').click();
+        } else {
+          await page.getByRole("link", { name: `Continue as Maintainer #${number}` }).click();
+        }
+        await expect(page.getByRole("heading", { name: "Your review inbox" })).toBeVisible();
+        await page.getByRole("button", { name: `${decision === "approve" ? "Approve" : "Reject"} in demo` }).click();
+        await expect(page.getByText(`Maintainer #${number} recorded ${decision === "approve" ? "an" : "a"} ${decision} demo vote.`, { exact: false })).toBeVisible();
+        if (number === 2) {
+          await expect(page.getByRole("button", { name: `Apply ${stage} to demo` })).toHaveCount(0);
+          expect(transitions).toHaveLength(stage === "activation" ? 1 : 0);
+        }
+      }
+      await page.getByRole("button", { name: `Apply ${stage} to demo` }).click();
+      if (stage === "authorization") {
+        await expect(page.getByText("A new activation vote is now required.", { exact: false })).toBeVisible();
+      }
+    }
+    await page.getByRole("link", { name: "View applicant result" }).click();
+    await expect(page.getByText(decision === "approve" ? "Active in fixture only, not on chain." : "This record is no longer active.")).toBeVisible();
+    expect(transitions).toEqual(decision === "approve" ? ["approve", "activate"] : ["archive"]);
+  } finally {
+    await page.close();
+    server.closeAllConnections();
+    await new Promise((done, reject) => server.close((error) => error ? reject(error) : done()));
+  }
+});
+}
+}
+
+test("non-fixture source cannot submit guided demo applications", async ({ page, allowedLocalOrigins }) => {
+  const staticAssets = createStaticAssetHandler({
+    distDir: resolve("packages/trust-registry-admin-console/dist"), name: "guided-demo",
+  });
+  let mutations = 0;
+  const server = createServer(async (request, response) => {
+    const path = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+    if (path === "/demo.html" || path.endsWith(".js") || path === "/demo.css"
+      || path === "/brand.css" || path === "/midnight-logo.svg" || path.startsWith("/fonts/")) {
+      await staticAssets(request, response);
+      return;
+    }
+    response.setHeader("content-type", "application/json");
+    if (request.method === "POST") mutations++;
+    if (path === "/health") {
+      response.end(JSON.stringify({ status: "ok", sourceMode: "snapshot", registryId }));
+    } else if (path === "/v1/registry/summary") {
+      response.end(JSON.stringify({
+        registryId, registryLabel: "Midnight Trust Registry", registryDid: "did:midnight:undeployed:registry",
+        policyId: "policy:guided", currentEpochId: "epoch:guided:1", epochCount: 1,
+        issuerCounts: emptyCounts(), verifierCounts: emptyCounts(), auditorCounts: emptyCounts(),
+        recognitionCounts: emptyCounts(),
+      }));
+    } else if (path.startsWith("/v1/authorizations/") || path === "/v1/recognitions") {
+      response.end(JSON.stringify({ entries: [] }));
+    } else {
+      response.statusCode = 404;
+      response.end(JSON.stringify({ title: "not found" }));
+    }
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("expected TCP address");
+  const base = `http://127.0.0.1:${address.port}`;
+  allowedLocalOrigins.add(base);
+  try {
+    await page.goto(`${base}/demo.html?apiBase=${encodeURIComponent(base)}`);
+    await page.getByRole("navigation", { name: "Demo roles" }).getByRole("link", { name: "Issuer #1" }).click();
+    await expect(page.getByText("This API is not a mutable fixture source.", { exact: false })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Send demo request" })).toBeDisabled();
+    expect(mutations).toBe(0);
+  } finally {
+    await page.close();
+    server.closeAllConnections();
+    await new Promise((done, reject) => server.close((error) => error ? reject(error) : done()));
+  }
+});

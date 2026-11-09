@@ -91,6 +91,7 @@
     "demo:serve:api": "pnpm --filter @midnight-ntwrk/trust-registry-api run build && node packages/trust-registry-api/bin/trust-registry-api.mjs serve --workspace ./artifacts/trust-registry/midnight-demo-workspace.json --unsafe-demo-mutations --port 4400",
     "demo:serve:admin-console": "pnpm --filter @midnight-ntwrk/trust-registry-admin-console run serve -- --port 4173",
     "demo:serve:applicant-portal": "pnpm --filter @midnight-ntwrk/trust-registry-applicant-portal run serve -- --port 4175",
+    "demo:guided": "node scripts/prepare-guided-demo.mjs && node scripts/serve-guided-demo.mjs",
     "refresh:identity-dependencies": "node scripts/refresh-identity-dependencies.mjs"
   },
   "dependencies": {

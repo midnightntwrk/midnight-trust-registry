@@ -205,6 +205,17 @@ export class TrustRegistryAdminConsoleClient {
     );
   }
 
+  async submitDemoApplication(
+    target: Extract<TrustRegistryApiApplicationTarget, "issuer" | "verifier" | "auditor">,
+    label: string,
+  ): Promise<TrustRegistryApiApplicationMutationResponse> {
+    return this.request<TrustRegistryApiApplicationMutationResponse>("/v1/applications", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ target, label }),
+    });
+  }
+
   async loadMutationContext(): Promise<TrustRegistryApiMutationContext> {
     return this.request<TrustRegistryApiMutationContext>("/v1/registry/mutation-context", {
       cache: "no-store",

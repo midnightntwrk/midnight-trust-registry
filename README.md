@@ -164,7 +164,14 @@ consumer without seeding vendored dependency tarballs.
 
 ## Quick Demo Workflow
 
-Prepare a mutable local operator workspace from the repo root:
+For a single-command, role-guided local fixture walkthrough, run
+`pnpm demo:guided` and open the URL it prints. Start as an issuer, verifier
+or auditor, then switch among five maintainer personas to exercise a 3-of-5
+browser-local decision. This is not signed or finalized governance. See the
+[guided role demo](docs/guides/guided-role-demo.md).
+
+For the separate technical API and console surfaces, prepare a mutable local
+operator workspace from the repo root:
 
 ```bash
 pnpm run demo:prepare
