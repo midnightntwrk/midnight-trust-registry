@@ -1,5 +1,5 @@
 import { TrustRegistryAdminConsoleClient, normalizeApiBaseUrl } from "./api.js";
-import { buildReviewCards, type ReviewBoard, type ReviewCard } from "./model.js";
+import { buildReviewCards, REVIEW_STATUSES, type ReviewBoard, type ReviewCard } from "./model.js";
 import { countVotes, DEMO_MAINTAINERS, DEMO_QUORUM, parseDemoVotes, voteOutcome, type DemoVote } from "./demo-state.js";
 
 type ApplicantRole = "issuer" | "verifier" | "auditor";
@@ -14,6 +14,16 @@ type DemoState = {
   role: DemoRole;
   selectedKey: string | undefined;
 };
+
+const GUIDED_DEMO_REGISTRY_ID = "registry:guided-role-demo:trusted";
+const GUIDED_DEMO_REGISTRY_LABEL = "guided-role-demo";
+const isGuidedWorkspace = (board: ReviewBoard): boolean =>
+  board.sourceMode === "workspace"
+    && board.summary.registryId === GUIDED_DEMO_REGISTRY_ID
+    && board.summary.registryLabel === GUIDED_DEMO_REGISTRY_LABEL;
+const isGuidedCard = (card: ReviewCard): boolean =>
+  card.target === "issuer" || card.target === "verifier" || card.target === "auditor";
+const hasKnownStatus = (card: ReviewCard): boolean => REVIEW_STATUSES.includes(card.status);
 
 const escapeHtml = (value: string): string => value
   .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
@@ -69,7 +79,7 @@ export const createGuidedDemoApp = (
   };
 
   const isFixture = (): boolean => isLoopback && apiIsLoopback && state.board !== undefined
-    && ["workspace", "memory"].includes(state.board.sourceMode);
+    && isGuidedWorkspace(state.board);
   const voteKey = (card: ReviewCard): string =>
     `trust-registry.demo-votes.v1:${state.board?.summary.registryId ?? "unknown"}:${card.key}:${card.status}:${card.updatedAt}`;
   const votesFor = (card: ReviewCard) => parseDemoVotes(storage.getItem(voteKey(card)));
@@ -129,7 +139,7 @@ export const createGuidedDemoApp = (
         </form>
       </section><section class="demo-card"><p class="demo-eyebrow">Step 2 · Track</p><h2>Your ${role} records</h2>
         ${cards.length === 0 ? '<p class="demo-empty">No requests in this fixture yet. Send one to start the journey.</p>'
-          : `<ul class="demo-record-list">${cards.map((card) => `<li><strong>${escapeHtml(card.label)}</strong><span class="demo-chip ${card.status}">${escapeHtml(card.status)}</span><p>${card.status === "proposed" ? "Waiting for committee demo votes." : card.status === "authorized" ? "Approved in fixture; activation is next." : card.status === "active" ? "Active in fixture only, not on chain." : "This record is no longer active."}</p></li>`).join("")}</ul>`}
+          : `<ul class="demo-record-list">${cards.map((card) => `<li><strong>${escapeHtml(card.label)}</strong><span class="demo-chip ${escapeHtml(card.status)}">${escapeHtml(card.status)}</span><p>${card.status === "proposed" ? "Waiting for committee demo votes." : card.status === "authorized" ? "Approved in fixture; activation is next." : card.status === "active" ? "Active in fixture only, not on chain." : "This record is no longer active."}</p></li>`).join("")}</ul>`}
         <a href="#maintainer-1" data-role="maintainer-1" class="demo-text-link">Switch to Maintainer #1 →</a>
       </section></div>`;
   };
@@ -144,7 +154,7 @@ export const createGuidedDemoApp = (
     return `<section class="demo-intro"><p class="demo-eyebrow">Committee · Maintainer #${number}</p><h1>Your review inbox</h1><p>Review this practice request and choose one vote. Three of five maintainers must agree before the demo record changes.</p></section>
       <div class="demo-content-grid"><section class="demo-card"><div class="demo-card-header"><div><p class="demo-eyebrow">Requests needing decisions</p><h2>Inbox</h2></div><span class="demo-chip">${pendingCards().length} open</span></div>
         ${pendingCards().length === 0 ? `<p class="demo-empty">The inbox is clear. ${card?.status === "active" || card?.status === "archived" ? "The latest demo request has a result." : "Start with an applicant role to create a request."}</p><a href="#${card?.target === "verifier" || card?.target === "auditor" ? card.target : "issuer"}" data-role="${card?.target === "verifier" || card?.target === "auditor" ? card.target : "issuer"}" class="demo-text-link">${card?.status === "active" || card?.status === "archived" ? "View applicant result" : "Start as Issuer #1"} →</a>`
-          : `<ul class="demo-inbox">${pendingCards().map((item) => `<li><button type="button" data-select-card="${escapeHtml(item.key)}" class="${item.key === card?.key ? "selected" : ""}"><span class="demo-inbox-top"><strong>${escapeHtml(item.label)}</strong><span class="demo-chip ${item.status}">${item.status}</span></span><small>${escapeHtml(item.target)} · ${item.status === "proposed" ? "authorization" : "activation"} decision</small></button></li>`).join("")}</ul>`}
+          : `<ul class="demo-inbox">${pendingCards().map((item) => `<li><button type="button" data-select-card="${escapeHtml(item.key)}" class="${item.key === card?.key ? "selected" : ""}"><span class="demo-inbox-top"><strong>${escapeHtml(item.label)}</strong><span class="demo-chip ${escapeHtml(item.status)}">${escapeHtml(item.status)}</span></span><small>${escapeHtml(item.target)} · ${item.status === "proposed" ? "authorization" : "activation"} decision</small></button></li>`).join("")}</ul>`}
       </section><section class="demo-card demo-decision"><p class="demo-eyebrow">Selected request</p>${card === undefined || !pendingCards().some((item) => item.key === card.key)
         ? '<h2>No decision selected</h2><p>Applications appear here after submission.</p>'
         : `<h2>${escapeHtml(card.label)}</h2><p>${escapeHtml(card.target)} · ${card.status === "proposed" ? "authorize" : "activate"} fixture record</p>
@@ -166,8 +176,9 @@ export const createGuidedDemoApp = (
       ${state.error === undefined ? "" : `<div class="demo-alert error" role="alert">${escapeHtml(state.error)}</div>`}
       ${state.message === undefined ? "" : `<div class="demo-alert success" role="status">${escapeHtml(state.message)}</div>`}
       ${!isLoopback || !apiIsLoopback ? '<div class="demo-alert error" role="alert">The guided demo and its API must run over HTTP on loopback only.</div>'
-        : state.board === undefined ? '<div class="demo-alert error" role="alert">Connect the local fixture API before using this workspace. Run pnpm demo:guided, then reload.</div>'
-          : !isFixture() ? '<div class="demo-alert error" role="alert">This API is not a mutable fixture source. Demo voting and application controls are disabled.</div>' : ""}
+        : state.board === undefined ? state.error === undefined
+          ? '<div class="demo-alert error" role="alert">Connect the local fixture API before using this workspace. Run pnpm demo:guided, then reload.</div>' : ""
+          : !isFixture() ? '<div class="demo-alert error" role="alert">This API is not the dedicated guided demo workspace. Demo voting and application controls are disabled.</div>' : ""}
       ${state.role === "overview" ? renderOverview() : isApplicantRole(state.role) ? renderApplicant(state.role) : renderMaintainer(maintainerNumber(state.role)!)}
       <footer class="demo-page-footer"><span>Midnight Trust Registry · guided local fixture</span><button type="button" data-refresh>Refresh records</button><button type="button" data-reset-votes>Clear browser demo votes</button></footer>
     </main></div></div>`;
@@ -177,8 +188,11 @@ export const createGuidedDemoApp = (
   const reload = async (): Promise<void> => {
     try {
       const board = await client.loadReviewBoard();
+      if (!isGuidedWorkspace(board)) throw new Error("This API is not the dedicated guided demo workspace.");
       state.board = board;
-      state.cards = buildReviewCards(board);
+      const cards = buildReviewCards(board);
+      if (!cards.every(hasKnownStatus)) throw new Error("The guided demo API returned an unknown record status.");
+      state.cards = cards.filter(isGuidedCard);
       if (!state.cards.some((card) => card.key === state.selectedKey)) state.selectedKey = undefined;
       state.error = undefined;
     } catch (error) {
@@ -210,7 +224,7 @@ export const createGuidedDemoApp = (
       window.history.pushState(null, "", `#${role}`);
       state.role = role;
       state.message = undefined;
-      state.error = undefined;
+      if (isFixture()) state.error = undefined;
       render();
     }));
     root.querySelector<HTMLFormElement>("#demo-application-form")?.addEventListener("submit", (event) => {
@@ -257,9 +271,10 @@ export const createGuidedDemoApp = (
       if (expected === undefined) return;
       void runBusy(async () => {
         const fresh = await client.loadReviewBoard();
-        const current = buildReviewCards(fresh).find((item) => item.key === card.key);
-        if (!["workspace", "memory"].includes(fresh.sourceMode)
-          || fresh.summary.registryId !== state.board?.summary.registryId
+        const current = buildReviewCards(fresh).filter(isGuidedCard).find((item) => item.key === card.key);
+        if (!isGuidedWorkspace(fresh)
+          || !isGuidedCard(card)
+          || (current !== undefined && !hasKnownStatus(current))
           || current?.status !== card.status) {
           throw new Error("The fixture changed. Refresh records and review this request again.");
         }

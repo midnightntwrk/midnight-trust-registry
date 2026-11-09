@@ -178,6 +178,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- added a loopback-only guided role demo with issuer, verifier, auditor, and
+  maintainer personas; its dedicated labeled workspace and role-limited inbox
+  prevent accidental actions against other local operator workspaces, while
+  unknown API statuses fail closed before rendering. Browser votes remain
+  unauthenticated fixture controls, not governed approvals
 - defined a canonical V1 issuer status-policy binding preimage and fixed digest
   vector; ledger anchoring and supported status verification remain pending
 - added a five-minute, one-use off-ledger application challenge service with

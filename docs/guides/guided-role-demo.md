@@ -14,8 +14,9 @@ pnpm demo:guided
 Open the URL printed by the command, normally
 `http://127.0.0.1:4273/demo.html?apiBase=http%3A%2F%2F127.0.0.1%3A4500`.
 Both services bind to loopback. The dedicated fixture file is
-`artifacts/trust-registry/guided-role-demo-workspace.json`; restarting the
-command keeps it. Stop both services with Ctrl+C.
+`artifacts/trust-registry/guided-role-demo-v2-workspace.json`; restarting the
+command keeps it. An older `guided-role-demo-workspace.json` is left intact,
+but is not used by this route. Stop both services with Ctrl+C.
 
 ## How the demo is built
 
@@ -46,8 +47,14 @@ Active. Rejection archives a Proposed record. The API does not verify or
 enforce the browser vote tally.
 
 The demo page enables submissions and votes only when both origins are HTTP
-loopback and the API reports a mutable `workspace` or `memory` source.
-Snapshot and `local-ledger` sources are read-only here. The launcher passes
+loopback and the API reports the dedicated `workspace` with registry label
+`guided-role-demo` and ID `registry:guided-role-demo:trusted`. Other mutable
+workspaces, memory, snapshot and `local-ledger` sources are read-only here.
+Only issuer, verifier, and auditor records enter the guided inbox; recognition
+records remain in the technical admin console. Unknown API record statuses
+disable the guided page rather than rendering as HTML. This identity check
+prevents accidental cross-workspace actions, but is not authentication of a
+malicious loopback service. The launcher passes
 `--unsafe-demo-mutations` to the workspace API, which itself requires a
 loopback host. No genesis approval, deployed contract, signed committee
 action, authenticated finality, or VC proof is involved in this journey.
