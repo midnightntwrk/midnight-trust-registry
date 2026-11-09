@@ -38,14 +38,15 @@ const issuer = {
   evidence: { epoch: { epochId: summary.currentEpochId, stateRoot: "0xroot" } },
 };
 
-async function serveApp(app, { secondIssuer = false } = {}) {
+async function serveApp(app, { secondIssuer = false, noIssuers = false } = {}) {
   let healthAvailable = true;
   let auditorAvailable = true;
   let sourceMode = "workspace";
   let healthGate;
   const requests = [];
-  const servedSummary = secondIssuer ? { ...summary, issuerCounts: { ...counts, active: 2 } } : summary;
-  const servedIssuers = secondIssuer ? [issuer, { ...issuer, label: "Second demo issuer", authorization: {
+  const servedSummary = noIssuers ? { ...summary, issuerCounts: emptyCounts }
+    : secondIssuer ? { ...summary, issuerCounts: { ...counts, active: 2 } } : summary;
+  const servedIssuers = noIssuers ? [] : secondIssuer ? [issuer, { ...issuer, label: "Second demo issuer", authorization: {
     ...issuer.authorization, authorizationId: "auth:issuer:second-demo-issuer:v1" } }] : [issuer];
   const packagedPath = app === "admin-console" ? "/admin/" : "/applicant/";
   const staticHandler = createStaticAssetHandler({
@@ -97,11 +98,12 @@ async function serveApp(app, { secondIssuer = false } = {}) {
   };
 }
 
-test("applicant portal treats a failed list as unavailable, then recovers on recheck", async ({ page, allowedLocalOrigins }) => {
+test("applicant portal treats a failed list as unavailable, then recovers on recheck", async ({ page, allowedLocalOrigins }, testInfo) => {
   const server = await serveApp("applicant-portal");
   try {
     server.setAuditorAvailable(false);
     allowedLocalOrigins.add(server.base);
+    await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
     await expect(page.locator(".source-badge")).toHaveText("Local fixture");
     await expect(page.locator(".source-panel")).toContainText("1 list(s) unavailable; counts shown as n/a");
@@ -110,12 +112,72 @@ test("applicant portal treats a failed list as unavailable, then recovers on rec
     await expect(auditorLane).toContainText("Do not infer trust from this lane");
     await expect(auditorLane).not.toContainText("0 active");
     await expect(page.locator("#trust-records")).toContainText("Local demo issuer");
+    await expectNoWcagViolations(page, "applicant partial list failure at 1440px");
+    if (process.env.TR_UI_CAPTURE === "1") {
+      await page.screenshot({ path: testInfo.outputPath("applicant-partial-list-1440.png"), fullPage: true });
+    }
 
     server.setAuditorAvailable(true);
     await page.locator("[data-refresh]").click();
     await expect(page.locator(".source-badge")).toHaveText("Local fixture");
     await expect(page.locator(".source-panel")).not.toContainText("list(s) unavailable");
     await expect(page.locator(".lane").filter({ has: page.getByRole("heading", { name: "Active auditors" }) })).toHaveCount(0);
+  } finally {
+    await page.close();
+    await server.close();
+  }
+});
+
+test("admin clears stale review records when one list fails, then recovers", async ({ page, allowedLocalOrigins }, testInfo) => {
+  const server = await serveApp("admin-console");
+  try {
+    allowedLocalOrigins.add(server.base);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
+    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    await expect(page.locator(".card")).toHaveCount(1);
+
+    server.setAuditorAvailable(false);
+    await page.locator("[data-refresh]").click();
+    await expect(page.locator(".source-badge")).toHaveText("Unavailable");
+    await expect(page.locator("[data-refresh]")).toBeFocused();
+    await expect(page.locator(".source-panel")).toContainText("No trust decision is available");
+    await expect(page.getByRole("alert")).toContainText("Auditor list unavailable");
+    await expect(page.locator(".card, [data-governed-prepare]")).toHaveCount(0);
+    await expect(page.locator("#review-board .board"))
+      .toContainText("Review records are unavailable until the connection succeeds");
+    await expect(page.locator("#review-board .board")).not.toContainText("No records yet");
+    await expect(page.locator("#selected-record-detail"))
+      .toContainText("Recheck the connection before reviewing a record");
+    await expect(page.locator("#selected-record-detail")).not.toContainText("Local demo issuer");
+    await expectNoWcagViolations(page, "admin partial list failure at 1440px");
+    if (process.env.TR_UI_CAPTURE === "1") {
+      await page.screenshot({ path: testInfo.outputPath("admin-partial-list-1440.png"), fullPage: true });
+    }
+
+    server.setAuditorAvailable(true);
+    await page.locator("[data-refresh]").click();
+    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    await expect(page.locator(".card")).toHaveCount(1);
+    await expect(page.locator(".card")).toContainText("Local demo issuer");
+    expect(server.requests.some((request) => request.startsWith("POST "))).toBe(false);
+  } finally {
+    await page.close();
+    await server.close();
+  }
+});
+
+test("admin describes a healthy empty fixture as empty rather than unavailable", async ({ page, allowedLocalOrigins }) => {
+  const server = await serveApp("admin-console", { noIssuers: true });
+  try {
+    allowedLocalOrigins.add(server.base);
+    await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
+    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    await expect(page.locator("#review-board .board")).toContainText("No records yet");
+    await expect(page.locator("#review-board .board")).not.toContainText("unavailable");
+    await expect(page.locator("#selected-record-detail"))
+      .toContainText("Select a record to review its detail");
+    await expectNoWcagViolations(page, "admin healthy empty fixture");
   } finally {
     await page.close();
     await server.close();
