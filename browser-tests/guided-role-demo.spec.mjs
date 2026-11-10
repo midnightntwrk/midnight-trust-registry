@@ -54,6 +54,7 @@ test(`${target} request needs three distinct demo votes to ${decision}`, async (
       return;
     }
     response.setHeader("content-type", "application/json");
+    response.setHeader("cache-control", "no-store");
     if (path === "/health") {
       response.end(JSON.stringify({ status: "ok", sourceMode: "workspace", registryId, workspaceInstanceId: instanceA }));
       return;
@@ -169,6 +170,24 @@ test(`${target} request needs three distinct demo votes to ${decision}`, async (
     await page.getByRole("link", { name: "View applicant result" }).click();
     await expect(page.getByText(decision === "approve" ? "Active in fixture only, not on chain." : "This record is no longer active.")).toBeVisible();
     expect(transitions).toEqual(decision === "approve" ? ["approve", "activate"] : ["archive"]);
+    if (decision === "approve" && target === "issuer") {
+      const otherInstanceKey = `trust-registry.demo-votes.v2:${registryId}:${instanceB}:other:proposed:2026-05-20T00:00:00Z`;
+      await page.evaluate((key) => window.localStorage.setItem(key, '{"1":"approve"}'), otherInstanceKey);
+      await page.getByRole("button", { name: "Clear browser demo votes" }).click();
+      await expect(page.getByText("Browser demo votes cleared.", { exact: false })).toBeVisible();
+      for (const restoredStatus of ["proposed", "authorized"]) {
+        status = restoredStatus;
+        entry.authorization.status = status;
+        const issuerResponse = page.waitForResponse((response) => response.url().endsWith("/v1/authorizations/issuer"));
+        await page.goto(`${base}/demo.html?apiBase=${encodeURIComponent(base)}#maintainer-1`);
+        await page.getByRole("button", { name: "Refresh records" }).click();
+        expect((await (await issuerResponse).json()).entries[0].authorization.status).toBe(restoredStatus);
+        await expect(page.getByText("Local fixture connected")).toBeVisible();
+        await expect(page.getByText("0 approvals")).toBeVisible();
+        await expect(page.getByRole("button", { name: `Apply ${restoredStatus === "proposed" ? "authorization" : "activation"} to demo` })).toHaveCount(0);
+      }
+      expect(await page.evaluate((key) => window.localStorage.getItem(key), otherInstanceKey)).toBe('{"1":"approve"}');
+    }
   } finally {
     await page.close();
     server.closeAllConnections();

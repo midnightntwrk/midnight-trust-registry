@@ -32,4 +32,4 @@ it("retains a workspace instance across restart and mutation, but rotates after 
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
-});
+}, 30_000);

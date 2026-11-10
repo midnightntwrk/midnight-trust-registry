@@ -101,8 +101,10 @@ export const createGuidedDemoApp = (
 
   const isFixture = (): boolean => isLoopback && apiIsLoopback && state.board !== undefined
     && isGuidedWorkspace(state.board);
+  const voteKeyPrefix = (): string =>
+    `trust-registry.demo-votes.v2:${state.board?.summary.registryId ?? "unknown"}:${state.board?.workspaceInstanceId ?? "unavailable"}:`;
   const voteKey = (card: ReviewCard): string =>
-    `trust-registry.demo-votes.v2:${state.board?.summary.registryId ?? "unknown"}:${state.board?.workspaceInstanceId ?? "unavailable"}:${card.key}:${card.status}:${card.updatedAt}`;
+    `${voteKeyPrefix()}${card.key}:${card.status}:${card.updatedAt}`;
   const votesFor = (card: ReviewCard) => parseDemoVotes(storage.getItem(voteKey(card)));
   const selectedCard = (): ReviewCard | undefined => {
     const explicit = state.cards.find((card) => card.key === state.selectedKey);
@@ -312,9 +314,13 @@ export const createGuidedDemoApp = (
     root.querySelector<HTMLButtonElement>("[data-refresh]")?.addEventListener("click", () => { void reload(); });
     root.querySelector<HTMLButtonElement>("[data-reset-votes]")?.addEventListener("click", () => {
       if (!isFixture()) return;
+      const prefix = voteKeyPrefix();
       void Promise.resolve(confirm("Clear this browser's demo votes? Registry fixture records will remain unchanged.")).then((approved) => {
         if (!approved) return;
-        for (const card of state.cards) storage.removeItem(voteKey(card));
+        const keys = Array.from({ length: storage.length }, (_, index) => storage.key(index));
+        for (const key of keys) {
+          if (key?.startsWith(prefix)) storage.removeItem(key);
+        }
         state.message = "Browser demo votes cleared. Fixture records were not changed.";
         render();
       });
