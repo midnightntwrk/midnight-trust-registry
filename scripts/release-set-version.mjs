@@ -39,8 +39,9 @@ const parseArgs = () => {
             "Usage: node scripts/release-set-version.mjs --version <semver> [--check]",
             "",
             "Updates the root package.json plus every workspace package.json to",
-            "the same release version and rewrites internal workspace dependency",
-            "specifiers to match. --check verifies without writing files.",
+            "the same release version and pins package-to-package dependencies.",
+            "Root script dependencies remain workspace:*. --check verifies",
+            "without writing files.",
           ].join("\n"),
         );
         process.exit(0);
@@ -81,6 +82,7 @@ const internalPackageNames = new Set(
 
 for (const relativePath of packageJsonPaths) {
   const packageJson = readJson(relativePath);
+  const rootScriptDependencies = relativePath === "package.json";
   if (check) {
     if (packageJson.version !== version) {
       throw new Error(`${relativePath}: committed version differs from requested release ${version}`);
@@ -89,7 +91,9 @@ for (const relativePath of packageJsonPaths) {
       for (const [packageName, specifier] of Object.entries(packageJson[section] ?? {})) {
         if (internalPackageNames.has(packageName) && typeof specifier === "string"
           && specifier.startsWith("workspace:")
-          && !["workspace:*", `workspace:${version}`].includes(specifier)) {
+          && (rootScriptDependencies && section === "devDependencies"
+            ? specifier !== "workspace:*"
+            : !["workspace:*", `workspace:${version}`].includes(specifier))) {
           throw new Error(`${relativePath}: internal workspace dependency ${packageName} is not release-pinned`);
         }
       }
@@ -109,7 +113,8 @@ for (const relativePath of packageJsonPaths) {
         && typeof specifier === "string"
         && specifier.startsWith("workspace:")
       ) {
-        dependencies[packageName] = `workspace:${version}`;
+        dependencies[packageName] = rootScriptDependencies && section === "devDependencies"
+          ? "workspace:*" : `workspace:${version}`;
       }
     }
   }
