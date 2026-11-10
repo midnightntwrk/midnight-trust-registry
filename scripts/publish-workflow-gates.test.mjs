@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
+import { workspaceCatalog } from "./trust-registry-workspace-catalog.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const workflow = readFileSync(join(root, ".github/workflows/publish.yml"), "utf8");
@@ -26,6 +27,45 @@ test("release version gate validates committed metadata without rewriting it", (
   const mismatched = run("release-set-version.mjs", ["--version", "999.0.0", "--check"]);
   assert.notEqual(mismatched.status, 0);
   assert.match(mismatched.stderr, /committed version differs/u);
+});
+
+test("release version update keeps root script links while pinning package dependencies", () => {
+  const directory = mkdtempSync(join(tmpdir(), "tr-release-version-"));
+  const releaseVersion = "0.1.0-rc1";
+  try {
+    mkdirSync(join(directory, "scripts"));
+    for (const script of ["release-set-version.mjs", "trust-registry-workspace-catalog.mjs"]) {
+      copyFileSync(join(root, "scripts", script), join(directory, "scripts", script));
+    }
+    const scriptDependencies = Object.fromEntries(workspaceCatalog.filter(({ artifactPackage }) => artifactPackage)
+      .map(({ manifest }) =>
+      [manifest.name, "workspace:*"]));
+    writeFileSync(join(directory, "package.json"), JSON.stringify({
+      version: "0.1.0", devDependencies: scriptDependencies,
+    }));
+    for (const { workspace, manifest } of workspaceCatalog) {
+      const packagePath = join(directory, workspace, "package.json");
+      mkdirSync(dirname(packagePath), { recursive: true });
+      writeFileSync(packagePath, JSON.stringify({ name: manifest?.name ?? "@midnight-ntwrk/trust-registry-docs", version: "0.1.0",
+        dependencies: workspace === "packages/trust-registry-client"
+          ? { "@midnight-ntwrk/trust-registry-domain": "workspace:*" } : {},
+      }));
+    }
+    const update = spawnSync(process.execPath,
+      [join(directory, "scripts/release-set-version.mjs"), "--version", releaseVersion],
+      { cwd: directory, encoding: "utf8" });
+    assert.equal(update.status, 0, update.stderr);
+    const updatedRoot = JSON.parse(readFileSync(join(directory, "package.json"), "utf8"));
+    assert.equal(updatedRoot.devDependencies["@midnight-ntwrk/trust-registry-domain"], "workspace:*");
+    const client = JSON.parse(readFileSync(join(directory, "packages/trust-registry-client/package.json"), "utf8"));
+    assert.equal(client.dependencies["@midnight-ntwrk/trust-registry-domain"], `workspace:${releaseVersion}`);
+    const check = spawnSync(process.execPath,
+      [join(directory, "scripts/release-set-version.mjs"), "--version", releaseVersion, "--check"],
+      { cwd: directory, encoding: "utf8" });
+    assert.equal(check.status, 0, check.stderr);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("local clean-consumer smoke refuses tarballs without a manifest", () => {

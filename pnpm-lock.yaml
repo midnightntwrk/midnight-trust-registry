@@ -5,6 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  '@effect/platform': 0.97.1
   '@midnight-ntwrk/credential-compact': 0.2.0
   '@midnight-ntwrk/credential-did-midnight': 0.2.0
   '@midnight-ntwrk/midnight-did': 0.7.0
@@ -152,10 +153,10 @@ importers:
   adapters/openid-federation:
     dependencies:
       '@midnight-ntwrk/trust-registry-client':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.1.0-rc1
         version: link:../../packages/trust-registry-client
       '@midnight-ntwrk/trust-registry-domain':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.1.0-rc1
         version: link:../../packages/trust-registry-domain
       jose:
         specifier: ^6.1.0
@@ -165,23 +166,23 @@ importers:
         version: 4.6.6
     devDependencies:
       '@midnight-ntwrk/trust-registry-integration':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.1.0-rc1
         version: link:../../packages/trust-registry-integration
 
   adapters/trqp:
     dependencies:
       '@midnight-ntwrk/trust-registry-client':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.1.0-rc1
         version: link:../../packages/trust-registry-client
       '@midnight-ntwrk/trust-registry-domain':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.1.0-rc1
         version: link:../../packages/trust-registry-domain
       zod:
         specifier: ^4.6.6
         version: 4.6.6
     devDependencies:
       '@midnight-ntwrk/trust-registry-integration':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.1.0-rc1
         version: link:../../packages/trust-registry-integration
 
   contracts/trust-registry:
@@ -208,7 +209,7 @@ importers:
   packages/trust-registry-admin-console:
     dependencies:
       '@midnight-ntwrk/trust-registry-api':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.1.0-rc1
         version: link:../trust-registry-api
     devDependencies:
       happy-dom:
@@ -230,22 +231,22 @@ importers:
         specifier: 0.7.0
         version: 0.7.0
       '@midnight-ntwrk/trust-registry-cli':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.1.0-rc1
         version: link:../trust-registry-cli
       '@midnight-ntwrk/trust-registry-client':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.1.0-rc1
         version: link:../trust-registry-client
       '@midnight-ntwrk/trust-registry-contract':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.1.0-rc1
         version: link:../../contracts/trust-registry
       '@midnight-ntwrk/trust-registry-domain':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.1.0-rc1
         version: link:../trust-registry-domain
       '@midnight-ntwrk/trust-registry-integration':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.1.0-rc1
         version: link:../trust-registry-integration
       '@midnight-ntwrk/trust-registry-trqp-adapter':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.1.0-rc1
         version: link:../../adapters/trqp
       zod:
         specifier: ^4.6.6
@@ -261,10 +262,10 @@ importers:
   packages/trust-registry-applicant-portal:
     dependencies:
       '@midnight-ntwrk/trust-registry-api':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.1.0-rc1
         version: link:../trust-registry-api
       '@midnight-ntwrk/trust-registry-domain':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.1.0-rc1
         version: link:../trust-registry-domain
     devDependencies:
       happy-dom:
@@ -274,13 +275,13 @@ importers:
   packages/trust-registry-cli:
     dependencies:
       '@midnight-ntwrk/trust-registry-client':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.1.0-rc1
         version: link:../trust-registry-client
       '@midnight-ntwrk/trust-registry-domain':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.1.0-rc1
         version: link:../trust-registry-domain
       '@midnight-ntwrk/trust-registry-integration':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.1.0-rc1
         version: link:../trust-registry-integration
       zod:
         specifier: ^4.6.6
@@ -295,10 +296,10 @@ importers:
         specifier: 0.7.0
         version: 0.7.0
       '@midnight-ntwrk/trust-registry-contract':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.1.0-rc1
         version: link:../../contracts/trust-registry
       '@midnight-ntwrk/trust-registry-domain':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.1.0-rc1
         version: link:../trust-registry-domain
 
   packages/trust-registry-domain:
@@ -352,13 +353,13 @@ importers:
         specifier: 4.1.1
         version: 4.1.1
       '@midnight-ntwrk/trust-registry-client':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.1.0-rc1
         version: link:../trust-registry-client
       '@midnight-ntwrk/trust-registry-contract':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.1.0-rc1
         version: link:../../contracts/trust-registry
       '@midnight-ntwrk/trust-registry-domain':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.1.0-rc1
         version: link:../trust-registry-domain
       '@polkadot/api':
         specifier: 16.5.6
@@ -525,15 +526,10 @@ packages:
       search-insights:
         optional: true
 
-  '@effect/platform@0.95.0':
-    resolution: {integrity: sha512-WDlRiWRSWlmhCPq09bvAofK0qr5vM4yNklXjoJdZHmugKRRTpN/Okn3ODnjgM/Kb/4hjMrRyrsUeH/Brieq7KA==}
+  '@effect/platform@0.97.1':
+    resolution: {integrity: sha512-IevWxwmrxCdeXxbXDx/hiOstHtERRigd1nhZSuHgiFEl7NkBmS/5GVWsRacq4NfJN2uCXqggETKNwij15VEpew==}
     peerDependencies:
-      effect: ^3.20.0
-
-  '@effect/platform@0.96.3':
-    resolution: {integrity: sha512-LzvIj4HYE++TcTv/cVTCI/GRvQTV0ymwRmgjZMzNB5dU4OS05pTN36RKN0npiOm5orLJgw4yjIv1dNZoYGh/vg==}
-    peerDependencies:
-      effect: ^3.21.5
+      effect: ^3.22.1
 
   '@esbuild/aix-ppc64@0.25.12':
     resolution: {integrity: sha512-Hhmwd6CInZ3dwpuGTF8fJG6yoWmsToE+vYgD4nytZVxcu1ulHpUQRAB1UJ8+N1Am3Mz4+xOByoQoSZf4D+CpkA==}
@@ -3935,14 +3931,7 @@ snapshots:
     transitivePeerDependencies:
       - '@algolia/client-search'
 
-  '@effect/platform@0.95.0(effect@3.22.3)':
-    dependencies:
-      effect: 3.22.3
-      find-my-way-ts: 0.1.6
-      msgpackr: 1.12.1
-      multipasta: 0.2.8
-
-  '@effect/platform@0.96.3(effect@3.22.3)':
+  '@effect/platform@0.97.1(effect@3.22.3)':
     dependencies:
       effect: 3.22.3
       find-my-way-ts: 0.1.6
@@ -4220,7 +4209,7 @@ snapshots:
 
   '@midnight-ntwrk/compact-js@2.5.1':
     dependencies:
-      '@effect/platform': 0.95.0(effect@3.22.3)
+      '@effect/platform': 0.97.1(effect@3.22.3)
       '@midnight-ntwrk/compact-runtime': 0.16.0
       '@midnight-ntwrk/ledger-v8': 8.1.0
       '@midnight-ntwrk/platform-js': 2.2.4
@@ -4365,7 +4354,7 @@ snapshots:
 
   '@midnight-ntwrk/platform-js@2.2.4':
     dependencies:
-      '@effect/platform': 0.95.0(effect@3.22.3)
+      '@effect/platform': 0.97.1(effect@3.22.3)
       effect: 3.22.3
       tslib: 2.8.1
 
@@ -4511,7 +4500,7 @@ snapshots:
 
   '@midnight-ntwrk/wallet-sdk-prover-client@1.2.2':
     dependencies:
-      '@effect/platform': 0.96.3(effect@3.22.3)
+      '@effect/platform': 0.97.1(effect@3.22.3)
       '@midnight-ntwrk/ledger-v8': 8.1.0
       '@midnight-ntwrk/wallet-sdk-utilities': 1.2.1
       '@midnight-ntwrk/zkir-v2': 2.1.0

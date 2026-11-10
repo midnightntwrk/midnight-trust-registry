@@ -40,6 +40,8 @@ describe("same-origin local portals", () => {
         await writeFile(join(root, role, "index.html"), `<html>${role}</html>`);
         await writeFile(join(root, role, "index.js"), "export const ready = true;");
         await writeFile(join(root, role, "index.js.map"), "private source map");
+        await writeFile(join(root, role, "mark.svg"), "<svg></svg>");
+        await writeFile(join(root, role, "outfit.woff2"), "font bytes");
       }
       await writeFile(join(root, "secret.html"), "private material");
       await symlink(join(root, "secret.html"), join(root, "admin", "secret.html"));
@@ -56,9 +58,12 @@ describe("same-origin local portals", () => {
       expect(admin.status).toBe(200);
       expect(admin.headers.get("content-type")).toBe("text/html; charset=utf-8");
       expect(admin.headers.get("content-security-policy")).toContain("connect-src 'self'");
+      expect(admin.headers.get("content-security-policy")).toContain("font-src 'self'");
       expect(admin.headers.get("x-content-type-options")).toBe("nosniff");
       expect(await admin.text()).toBe("<html>admin</html>");
       expect(await (await fetch(`${base}/applicant/index.js`)).text()).toBe("export const ready = true;");
+      expect((await fetch(`${base}/admin/mark.svg`)).headers.get("content-type")).toBe("image/svg+xml");
+      expect((await fetch(`${base}/admin/outfit.woff2`)).headers.get("content-type")).toBe("font/woff2");
       for (const path of ["/admin/secret.html", "/admin/index.js.map", "/admin/%2e%2e/secret.html",
         "/admin/%2fsecret.html", "/applicant/missing.js"]) {
         const response = await fetch(`${base}${path}`);
