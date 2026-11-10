@@ -1,6 +1,6 @@
 {
   "name": "@midnight-ntwrk/trust-registry-trqp-adapter",
-  "version": "0.1.0-rc.1",
+  "version": "0.1.0-rc1",
   "license": "Apache-2.0",
   "private": false,
   "type": "module",
@@ -39,11 +39,11 @@
     "test:light": "pnpm run test"
   },
   "dependencies": {
-    "@midnight-ntwrk/trust-registry-client": "workspace:0.1.0-rc.1",
-    "@midnight-ntwrk/trust-registry-domain": "workspace:0.1.0-rc.1",
+    "@midnight-ntwrk/trust-registry-client": "workspace:0.1.0-rc1",
+    "@midnight-ntwrk/trust-registry-domain": "workspace:0.1.0-rc1",
     "zod": "^4.6.6"
   },
   "devDependencies": {
-    "@midnight-ntwrk/trust-registry-integration": "workspace:0.1.0-rc.1"
+    "@midnight-ntwrk/trust-registry-integration": "workspace:0.1.0-rc1"
   }
 }

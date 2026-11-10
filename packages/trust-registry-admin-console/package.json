@@ -1,6 +1,6 @@
 {
   "name": "@midnight-ntwrk/trust-registry-admin-console",
-  "version": "0.1.0-rc.1",
+  "version": "0.1.0-rc1",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
@@ -40,7 +40,7 @@
     "test:light": "pnpm run test"
   },
   "dependencies": {
-    "@midnight-ntwrk/trust-registry-api": "workspace:0.1.0-rc.1"
+    "@midnight-ntwrk/trust-registry-api": "workspace:0.1.0-rc1"
   },
   "devDependencies": {
     "happy-dom": "21.0.4"

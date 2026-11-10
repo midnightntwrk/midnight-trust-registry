@@ -31,7 +31,7 @@ test("release version gate validates committed metadata without rewriting it", (
 
 test("release version update keeps root script links while pinning package dependencies", () => {
   const directory = mkdtempSync(join(tmpdir(), "tr-release-version-"));
-  const releaseVersion = "0.1.0-rc.1";
+  const releaseVersion = "0.1.0-rc1";
   try {
     mkdirSync(join(directory, "scripts"));
     for (const script of ["release-set-version.mjs", "trust-registry-workspace-catalog.mjs"]) {
