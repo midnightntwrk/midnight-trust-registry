@@ -30,6 +30,28 @@ test("rejects malformed static image manifest inputs before asset digest checks"
   }
 });
 
+test("static image manifests accept branded fonts and SVGs but reject other assets", () => {
+  const assets = [
+    { path: "index.html", size: 1, sha256: "a".repeat(64) },
+    { path: "brand/mark.svg", size: 1, sha256: "b".repeat(64) },
+    { path: "fonts/outfit-latin.woff2", size: 1, sha256: "c".repeat(64) },
+  ];
+  const manifest = {
+    format: "tr-static-runtime-image-v1", role: "admin", sourceRevision: revision,
+    approvedSignerFingerprint: "A".repeat(40), platform: "linux/arm64",
+    baseImage: `example.test/base@sha256:${"b".repeat(64)}`,
+    assetsSha256: createHash("sha256").update(JSON.stringify(assets)).digest("hex"),
+    imageId, archiveName: "admin.image.tar", archiveSha256, assets,
+  };
+  assert.doesNotThrow(() => validateStaticImageManifest(manifest, "admin", revision, archiveSha256));
+  const unsupported = assets.map((asset) => ({ ...asset }));
+  unsupported[2].path = "fonts/unexpected.txt";
+  manifest.assets = unsupported;
+  manifest.assetsSha256 = createHash("sha256").update(JSON.stringify(unsupported)).digest("hex");
+  assert.throws(() => validateStaticImageManifest(manifest, "admin", revision, archiveSha256),
+    /static image manifest is invalid/u);
+});
+
 test("runtime healthcheck rejects inherited role names", () => {
   assert.throws(() => approvedRuntimeHealthcheck("toString"), /Unknown runtime healthcheck role/u);
 });

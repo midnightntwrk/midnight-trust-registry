@@ -179,7 +179,7 @@ export function validateStaticImageManifest(manifest, role, revision, archiveSha
     || assets.some((asset) => {
       const item = record(asset);
       return typeof item?.path !== "string"
-        || !/^[a-zA-Z0-9][a-zA-Z0-9._/-]*\.(?:html|js|css)$/u.test(item.path)
+        || !/^[a-zA-Z0-9][a-zA-Z0-9._/-]*\.(?:html|js|css|svg|woff2)$/u.test(item.path)
         || item.path.split("/").some((part) => part === ".." || part === "." || part === "")
         || !Number.isSafeInteger(item.size) || /** @type {number} */ (item.size) < 1
         || /** @type {number} */ (item.size) > 32 * 1024 * 1024
