@@ -1,0 +1,265 @@
+import { z } from "zod";
+
+import { canonicalizeJson } from "./canonical-json.js";
+import { DidSchema, HashHexSchema, ScopedIdentifierSchema, sha256Hex } from "./ids.js";
+import { compareRfc3339Instants, isRfc3339DurationWithinSeconds } from "./instant.js";
+import {
+  IssuerGovernedResourceIdSchema,
+  IssuerGovernedResourceTypeSchema,
+  RequestGovernedResourceIdSchema,
+  issuerGovernedResourceIdFromScopeCommitment,
+  requestGovernedResourceIdFromScopeCommitment,
+} from "./scope.js";
+import { AuthorizationRoleSchema } from "./types.js";
+
+const TimestampSchema = z.string().datetime({ offset: true });
+export const ApplicationEvidenceEvaluationTimeSchema = TimestampSchema;
+export const MAX_APPLICATION_EVIDENCE_LIFETIME_MS = 24 * 60 * 60 * 1000;
+const NonEmptyStringSchema = z.string().trim().min(1);
+const KeyReferenceSchema = z
+  .string()
+  .regex(/^did:[^#]+#[A-Za-z0-9:._-]+$/, "Key references must be DID fragments");
+
+export const ApplicationEvidenceRoleSchema = AuthorizationRoleSchema.exclude([
+  "authority",
+]);
+
+export const GovernedResourceSchema = z.strictObject({
+  type: z.enum([
+    "credentialFamily",
+    "schema",
+    "schemaVersion",
+    "credentialDefinition",
+    "statusMethodRequirement",
+    "requestProfile",
+    "registry",
+  ]),
+  id: z.string().min(1),
+}).superRefine((resource, ctx) => {
+  if (
+    IssuerGovernedResourceTypeSchema.safeParse(resource.type).success
+    && !IssuerGovernedResourceIdSchema.safeParse(resource.id).success
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["id"],
+      message: "Issuer resource id must be a canonical composite issuer resource id",
+    });
+  }
+  if (resource.type === "requestProfile" && !RequestGovernedResourceIdSchema.safeParse(resource.id).success) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["id"],
+      message: "Request resource id must be a canonical composite request resource id",
+    });
+  }
+});
+
+export const ApplicationEvidenceEnvelopeSchema = z
+  .strictObject({
+    version: z.literal("tr-application-evidence-v1"),
+    registryId: ScopedIdentifierSchema,
+    applicationId: ScopedIdentifierSchema,
+    subjectDid: DidSchema.startsWith("did:midnight:"),
+    role: ApplicationEvidenceRoleSchema,
+    policyId: ScopedIdentifierSchema,
+    policyVersion: NonEmptyStringSchema,
+    scopeCommitment: HashHexSchema,
+    governedResource: GovernedResourceSchema,
+    evidenceVerifierDid: DidSchema,
+    verifiedAt: TimestampSchema,
+    expiresAt: TimestampSchema,
+    challengeHash: HashHexSchema,
+    presentationHash: HashHexSchema,
+    claimsCommitment: HashHexSchema,
+    statusDecisionCommitment: HashHexSchema,
+  })
+  .superRefine((envelope, ctx) => {
+    const issuerType = IssuerGovernedResourceTypeSchema.safeParse(envelope.governedResource.type);
+    const resourceMatchesRole = envelope.role === "issuer"
+      ? issuerType.success
+      : envelope.role === "maintainer"
+        ? envelope.governedResource.type === "registry"
+        : envelope.governedResource.type === "requestProfile";
+    if (!resourceMatchesRole) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["governedResource", "type"],
+        message: "Governed resource type does not match application role",
+      });
+    }
+    const validScopeCommitment = HashHexSchema.safeParse(envelope.scopeCommitment).success;
+    if (envelope.role === "issuer" && issuerType.success && validScopeCommitment) {
+      const expectedId = issuerGovernedResourceIdFromScopeCommitment(
+        envelope.scopeCommitment.toLowerCase(),
+        issuerType.data,
+      );
+      if (envelope.governedResource.id !== expectedId) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["governedResource", "id"],
+          message: "Issuer resource id does not match the signed scope commitment and resource type",
+        });
+      }
+    }
+    if (validScopeCommitment && (envelope.role === "verifier" || envelope.role === "auditor")
+      && envelope.governedResource.type === "requestProfile") {
+      const expectedId = requestGovernedResourceIdFromScopeCommitment(envelope.scopeCommitment.toLowerCase());
+      if (envelope.governedResource.id !== expectedId) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["governedResource", "id"],
+          message: "Request resource id does not match the signed scope commitment",
+        });
+      }
+    }
+    if (!TimestampSchema.safeParse(envelope.verifiedAt).success
+      || !TimestampSchema.safeParse(envelope.expiresAt).success) return;
+    let order: number;
+    try {
+      order = compareRfc3339Instants(envelope.expiresAt, envelope.verifiedAt);
+    } catch {
+      ctx.addIssue({
+        code: "custom",
+        path: ["verifiedAt"],
+        message: "Evidence timestamps must be valid RFC3339 instants",
+      });
+      return;
+    }
+    if (order <= 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["expiresAt"],
+        message: "expiresAt must be later than verifiedAt",
+      });
+    }
+  });
+
+export const ApplicationEvidenceSignatureSchema = z.strictObject({
+  keyId: KeyReferenceSchema,
+  algorithm: z.enum(["jubjub-schnorr", "secp256k1", "secp256r1", "ed25519"]),
+  value: NonEmptyStringSchema,
+});
+
+export const ApplicationEvidenceSubmissionSchema = z.strictObject({
+  envelope: ApplicationEvidenceEnvelopeSchema,
+  commitment: HashHexSchema,
+  signature: ApplicationEvidenceSignatureSchema,
+});
+
+export const AuthorizedEvidenceVerifierSchema = z.object({
+  did: DidSchema,
+  keyIds: z.array(KeyReferenceSchema).min(1),
+  algorithms: z.array(ApplicationEvidenceSignatureSchema.shape.algorithm).min(1),
+});
+
+export type ApplicationEvidenceEnvelope = z.infer<typeof ApplicationEvidenceEnvelopeSchema>;
+export type ApplicationEvidenceRole = z.infer<typeof ApplicationEvidenceRoleSchema>;
+export type ApplicationEvidenceSignature = z.infer<typeof ApplicationEvidenceSignatureSchema>;
+export type ApplicationEvidenceSubmission = z.infer<typeof ApplicationEvidenceSubmissionSchema>;
+export type GovernedResource = z.infer<typeof GovernedResourceSchema>;
+export type AuthorizedEvidenceVerifier = z.infer<typeof AuthorizedEvidenceVerifierSchema>;
+
+export type ApplicationEvidenceExpectation = {
+  registryId: string;
+  applicationId: string;
+  subjectDid: string;
+  role: ApplicationEvidenceEnvelope["role"];
+  policyId: string;
+  policyVersion: string;
+  scopeCommitment: string;
+  governedResource: GovernedResource;
+  challengeHash: string;
+  evaluatedAt: string;
+};
+
+export type ApplicationEvidenceSignatureVerifier = (
+  commitment: string,
+  signature: ApplicationEvidenceSignature,
+  verifier: AuthorizedEvidenceVerifier,
+) => boolean;
+
+/** Canonicalizes the envelope before it is committed with SHA-256. */
+export function canonicalizeApplicationEvidence(
+  envelope: ApplicationEvidenceEnvelope,
+): string {
+  return canonicalizeJson(ApplicationEvidenceEnvelopeSchema.parse(envelope));
+}
+
+export function computeApplicationEvidenceCommitment(
+  envelope: ApplicationEvidenceEnvelope,
+): string {
+  return sha256Hex(canonicalizeApplicationEvidence(envelope));
+}
+
+export function assertValidApplicationEvidence(
+  submission: ApplicationEvidenceSubmission,
+  expectation: ApplicationEvidenceExpectation,
+  authorizedVerifiers: readonly AuthorizedEvidenceVerifier[],
+  verifySignature: ApplicationEvidenceSignatureVerifier,
+): ApplicationEvidenceSubmission {
+  const parsed = ApplicationEvidenceSubmissionSchema.parse(submission);
+  const expectedCommitment = computeApplicationEvidenceCommitment(parsed.envelope);
+  if (parsed.commitment !== expectedCommitment) {
+    throw new Error("Application evidence commitment does not match its envelope");
+  }
+  if (!isRfc3339DurationWithinSeconds(parsed.envelope.verifiedAt, parsed.envelope.expiresAt,
+    MAX_APPLICATION_EVIDENCE_LIFETIME_MS / 1000)) {
+    throw new Error("Application evidence exceeds the maximum 24-hour lifetime");
+  }
+
+  assertEqual("registryId", parsed.envelope.registryId, expectation.registryId);
+  assertEqual("applicationId", parsed.envelope.applicationId, expectation.applicationId);
+  assertEqual("subjectDid", parsed.envelope.subjectDid, expectation.subjectDid);
+  assertEqual("role", parsed.envelope.role, expectation.role);
+  assertEqual("policyId", parsed.envelope.policyId, expectation.policyId);
+  assertEqual("policyVersion", parsed.envelope.policyVersion, expectation.policyVersion);
+  assertEqual("governedResource.type", parsed.envelope.governedResource.type, expectation.governedResource.type);
+  assertEqual("governedResource.id", parsed.envelope.governedResource.id, expectation.governedResource.id);
+  if (!HashHexSchema.safeParse(expectation.scopeCommitment).success) {
+    throw new Error("Application evidence expected scopeCommitment is invalid");
+  }
+  if (!HashHexSchema.safeParse(expectation.challengeHash).success) {
+    throw new Error("Application evidence expected challengeHash is invalid");
+  }
+  assertEqual("scopeCommitment", parsed.envelope.scopeCommitment.toLowerCase(), expectation.scopeCommitment.toLowerCase());
+  assertEqual(
+    "challengeHash",
+    parsed.envelope.challengeHash.toLowerCase(),
+    expectation.challengeHash.toLowerCase(),
+  );
+
+  if (!TimestampSchema.safeParse(expectation.evaluatedAt).success) {
+    throw new Error("Application evidence evaluation time is invalid");
+  }
+  if (compareRfc3339Instants(expectation.evaluatedAt, parsed.envelope.verifiedAt) < 0) {
+    throw new Error("Application evidence is not yet valid at the governed transition");
+  }
+  if (compareRfc3339Instants(expectation.evaluatedAt, parsed.envelope.expiresAt) >= 0) {
+    throw new Error("Application evidence is expired at the governed transition");
+  }
+
+  const verifier = authorizedVerifiers.find(
+    (candidate) => candidate.did === parsed.envelope.evidenceVerifierDid,
+  );
+  if (verifier === undefined) {
+    throw new Error("Application evidence verifier is not authorized by policy");
+  }
+  if (!verifier.keyIds.includes(parsed.signature.keyId)) {
+    throw new Error("Application evidence signature key is not authorized by policy");
+  }
+  if (!verifier.algorithms.includes(parsed.signature.algorithm)) {
+    throw new Error("Application evidence signature algorithm is not authorized by policy");
+  }
+  if (!verifySignature(parsed.commitment, parsed.signature, verifier)) {
+    throw new Error("Application evidence signature is invalid");
+  }
+
+  return parsed;
+}
+
+function assertEqual(field: string, actual: string, expected: string): void {
+  if (actual !== expected) {
+    throw new Error(`Application evidence ${field} does not match the governed authorization`);
+  }
+}

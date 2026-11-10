@@ -1,0 +1,2 @@
+*.tgz binary
+/.compact-version text eol=lf

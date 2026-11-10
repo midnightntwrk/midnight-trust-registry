@@ -1,0 +1,306 @@
+import { z } from "zod";
+
+import {
+  TrustRegistryApiResolveRecognitionRequestSchema,
+  TrustRegistryApiEvaluateRecognitionRequestSchema,
+} from "./browser-schemas.js";
+export { TrustRegistryApiResolveRecognitionRequestSchema, TrustRegistryApiEvaluateRecognitionRequestSchema };
+
+import {
+  MutableSnapshotTargetSchema,
+  TrustRegistryOperatorWorkspaceOperationSchema,
+  TrustRegistryAuthorizationSnapshotEntrySchema,
+  TrustRegistryRecognitionSnapshotEntrySchema,
+} from "@midnight-ntwrk/trust-registry-cli";
+import {
+  AuthorizationRecordSchema,
+  EpochCommitmentSchema,
+  HashHexSchema,
+  IssuerGovernedResourceIdSchema,
+  MutationIntentSchema,
+  MutationIntentSignatureSchema,
+  RequestGovernedResourceIdSchema,
+  RecognitionRecordSchema,
+  RegistryRecordSchema,
+  TrustRegistryEvidenceBundleSchema,
+} from "@midnight-ntwrk/trust-registry-domain";
+
+const NonEmptyStringSchema = z.string().trim().min(1);
+export const TimestampSchema = z.string().datetime({ offset: true });
+
+export const TrustRegistryApiAuthorizationRoleSchema = z.enum([
+  "issuer",
+  "verifier",
+  "auditor",
+]);
+
+export const TrustRegistryApiApplicationTargetSchema =
+  MutableSnapshotTargetSchema;
+
+export const TrustRegistryApiApplicationActionSchema = z.enum([
+  "approve",
+  "activate",
+  "suspend",
+  "revoke",
+  "archive",
+]);
+
+export const TrustRegistryApiProblemDetailsSchema = z.object({
+  type: z.string().url(),
+  title: NonEmptyStringSchema,
+  status: z.number().int().positive(),
+  detail: NonEmptyStringSchema.optional(),
+  instance: NonEmptyStringSchema.optional(),
+}).catchall(z.unknown());
+
+export const TrustRegistryApiHealthResponseSchema = z.object({
+  status: z.literal("ok"),
+  sourceMode: z.enum(["snapshot", "workspace", "memory", "local-ledger"]),
+  configuredGovernedProposalRoles: z.array(z.enum(["issuer", "verifier", "auditor", "maintainer", "recognition"])),
+  generatedAt: TimestampSchema,
+  registryId: NonEmptyStringSchema,
+  workspaceInstanceId: z.uuid().optional(),
+  localPlanSha256: z.string().regex(/^[0-9a-f]{64}$/u).optional(),
+  finalizedBlockHash: z.string().regex(/^0x[0-9a-f]{64}$/u).optional(),
+  deploymentIdentity: z.object({
+    networkProfileId: z.string().regex(/^[a-z][a-z0-9-]*$/u),
+    networkId: z.string().regex(/^[a-z][a-z0-9-]*$/u),
+    expectedGenesisHash: z.string().regex(/^0x[0-9a-f]{64}$/u),
+    contractAddress: z.string().regex(/^0x[0-9a-f]{64}$/u),
+  }).optional(),
+});
+
+export const TrustRegistryApiSummarySchema = z.object({
+  snapshotVersion: z.literal("1"),
+  generatedAt: TimestampSchema,
+  registryLabel: NonEmptyStringSchema,
+  registryId: NonEmptyStringSchema,
+  registryDid: NonEmptyStringSchema,
+  policyId: NonEmptyStringSchema,
+  currentEpochId: NonEmptyStringSchema,
+  epochCount: z.number().int().min(1),
+  issuerCounts: z.record(
+    AuthorizationRecordSchema.shape.status,
+    z.number().int().nonnegative(),
+  ),
+  verifierCounts: z.record(
+    AuthorizationRecordSchema.shape.status,
+    z.number().int().nonnegative(),
+  ),
+  auditorCounts: z.record(
+    AuthorizationRecordSchema.shape.status,
+    z.number().int().nonnegative(),
+  ),
+  recognitionCounts: z.record(
+    RecognitionRecordSchema.shape.status,
+    z.number().int().nonnegative(),
+  ),
+});
+
+export const TrustRegistryApiAuthorizationListQuerySchema = z.object({
+  status: AuthorizationRecordSchema.shape.status.optional(),
+});
+
+export const TrustRegistryApiAuthorizationListResponseSchema = z.object({
+  role: TrustRegistryApiAuthorizationRoleSchema,
+  total: z.number().int().nonnegative(),
+  entries: z.array(TrustRegistryAuthorizationSnapshotEntrySchema),
+});
+
+const AuthorizationLookupRequestBaseSchema = z.object({
+  role: TrustRegistryApiAuthorizationRoleSchema,
+  subjectDid: NonEmptyStringSchema,
+  resourceId: NonEmptyStringSchema,
+  resourceType: AuthorizationRecordSchema.shape.resourceType.optional(),
+  trustLevel: NonEmptyStringSchema.optional(),
+});
+
+const refineAuthorizationLookup = (
+  request: z.infer<typeof AuthorizationLookupRequestBaseSchema>,
+  ctx: z.RefinementCtx,
+): void => {
+  if (request.role === "issuer" && !IssuerGovernedResourceIdSchema.safeParse(request.resourceId).success) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["resourceId"],
+      message: "Issuer lookup requires a canonical composite issuer resource id",
+    });
+  }
+  if ((request.role === "verifier" || request.role === "auditor")
+    && !RequestGovernedResourceIdSchema.safeParse(request.resourceId).success) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["resourceId"],
+      message: "Request lookup requires a canonical composite request resource id",
+    });
+  }
+};
+
+export const TrustRegistryApiResolveAuthorizationRequestSchema =
+  AuthorizationLookupRequestBaseSchema.superRefine(refineAuthorizationLookup);
+
+export const TrustRegistryApiEvaluateAuthorizationRequestSchema =
+  AuthorizationLookupRequestBaseSchema.extend({
+    at: TimestampSchema,
+  }).superRefine(refineAuthorizationLookup);
+
+export const TrustRegistryApiRecognitionListQuerySchema = z.object({
+  status: RecognitionRecordSchema.shape.status.optional(),
+});
+
+export const TrustRegistryApiRecognitionListResponseSchema = z.object({
+  total: z.number().int().nonnegative(),
+  entries: z.array(TrustRegistryRecognitionSnapshotEntrySchema),
+});
+
+const TrustRegistryApiTemporalEvaluationBaseSchema = z.object({
+  evaluatedAt: TimestampSchema,
+  trustedAtTime: z.boolean(),
+  epoch: EpochCommitmentSchema.nullable(),
+});
+
+export const TrustRegistryApiAuthorizationEvaluationResponseSchema =
+  TrustRegistryApiTemporalEvaluationBaseSchema.extend({
+    statusAtTime: AuthorizationRecordSchema.shape.status.nullable(),
+    entry: TrustRegistryAuthorizationSnapshotEntrySchema,
+  });
+
+export const TrustRegistryApiRecognitionEvaluationResponseSchema =
+  TrustRegistryApiTemporalEvaluationBaseSchema.extend({
+    statusAtTime: RecognitionRecordSchema.shape.status.nullable(),
+    entry: TrustRegistryRecognitionSnapshotEntrySchema,
+  });
+
+export const TrustRegistryApiAuthorizationEvidenceEvaluationResponseSchema =
+  TrustRegistryApiAuthorizationEvaluationResponseSchema.extend({
+    bundle: TrustRegistryEvidenceBundleSchema,
+  });
+
+export const TrustRegistryApiRecognitionEvidenceEvaluationResponseSchema =
+  TrustRegistryApiRecognitionEvaluationResponseSchema.extend({
+    bundle: TrustRegistryEvidenceBundleSchema,
+  });
+
+export const TrustRegistryApiRegistryResponseSchema = RegistryRecordSchema;
+export const TrustRegistryApiEpochResponseSchema = EpochCommitmentSchema;
+export const TrustRegistryApiMutationContextSchema = z.strictObject({
+  registryId: RegistryRecordSchema.shape.registryId,
+  expectedEpochId: EpochCommitmentSchema.shape.epochId,
+  expectedWorkspaceCommitment: HashHexSchema,
+  evaluatedAt: z.string().datetime({ offset: true }),
+});
+export const TrustRegistryApiSignedMutationRequestSchema = z.strictObject({
+  intent: MutationIntentSchema,
+  signature: MutationIntentSignatureSchema,
+  operation: TrustRegistryOperatorWorkspaceOperationSchema,
+});
+export const TrustRegistryApiAuthorizationResponseSchema =
+  TrustRegistryAuthorizationSnapshotEntrySchema;
+export const TrustRegistryApiRecognitionResponseSchema =
+  TrustRegistryRecognitionSnapshotEntrySchema;
+export const TrustRegistryApiEvidenceResponseSchema =
+  TrustRegistryEvidenceBundleSchema;
+
+export const TrustRegistryApiApplicationSubmitRequestSchema = z.object({
+  target: TrustRegistryApiApplicationTargetSchema,
+  label: NonEmptyStringSchema,
+});
+
+export const TrustRegistryApiEpochPublishRequestSchema = z.object({
+  label: NonEmptyStringSchema.optional(),
+});
+
+const TrustRegistryApiMutationResponseBaseSchema = z.object({
+  sourceMode: z.literal("workspace"),
+  workspaceVersion: z.literal("3"),
+  workspaceUpdatedAt: TimestampSchema,
+  snapshotGeneratedAt: TimestampSchema,
+  currentEpochId: NonEmptyStringSchema,
+  operation: TrustRegistryOperatorWorkspaceOperationSchema,
+});
+
+export const TrustRegistryApiApplicationMutationResponseSchema =
+  z.discriminatedUnion("recordKind", [
+    TrustRegistryApiMutationResponseBaseSchema.extend({
+      recordKind: z.literal("authorization"),
+      entry: TrustRegistryAuthorizationSnapshotEntrySchema,
+    }),
+    TrustRegistryApiMutationResponseBaseSchema.extend({
+      recordKind: z.literal("recognition"),
+      entry: TrustRegistryRecognitionSnapshotEntrySchema,
+    }),
+    TrustRegistryApiMutationResponseBaseSchema.extend({
+      recordKind: z.literal("epoch"),
+      epoch: EpochCommitmentSchema,
+    }),
+  ]);
+
+export type TrustRegistryApiAuthorizationRole = z.infer<
+  typeof TrustRegistryApiAuthorizationRoleSchema
+>;
+export type TrustRegistryApiApplicationTarget = z.infer<
+  typeof TrustRegistryApiApplicationTargetSchema
+>;
+export type TrustRegistryApiApplicationAction = z.infer<
+  typeof TrustRegistryApiApplicationActionSchema
+>;
+export type TrustRegistryApiProblemDetails = z.infer<
+  typeof TrustRegistryApiProblemDetailsSchema
+>;
+export type TrustRegistryApiHealthResponse = z.infer<
+  typeof TrustRegistryApiHealthResponseSchema
+>;
+export type TrustRegistryApiSummary = z.infer<
+  typeof TrustRegistryApiSummarySchema
+>;
+export type TrustRegistryApiAuthorizationListQuery = z.infer<
+  typeof TrustRegistryApiAuthorizationListQuerySchema
+>;
+export type TrustRegistryApiAuthorizationListResponse = z.infer<
+  typeof TrustRegistryApiAuthorizationListResponseSchema
+>;
+export type TrustRegistryApiResolveAuthorizationRequest = z.infer<
+  typeof TrustRegistryApiResolveAuthorizationRequestSchema
+>;
+export type TrustRegistryApiEvaluateAuthorizationRequest = z.infer<
+  typeof TrustRegistryApiEvaluateAuthorizationRequestSchema
+>;
+export type TrustRegistryApiRecognitionListQuery = z.infer<
+  typeof TrustRegistryApiRecognitionListQuerySchema
+>;
+export type TrustRegistryApiRecognitionListResponse = z.infer<
+  typeof TrustRegistryApiRecognitionListResponseSchema
+>;
+export type TrustRegistryApiResolveRecognitionRequest = z.infer<
+  typeof TrustRegistryApiResolveRecognitionRequestSchema
+>;
+export type TrustRegistryApiEvaluateRecognitionRequest = z.infer<
+  typeof TrustRegistryApiEvaluateRecognitionRequestSchema
+>;
+export type TrustRegistryApiApplicationSubmitRequest = z.infer<
+  typeof TrustRegistryApiApplicationSubmitRequestSchema
+>;
+export type TrustRegistryApiEpochPublishRequest = z.infer<
+  typeof TrustRegistryApiEpochPublishRequestSchema
+>;
+export type TrustRegistryApiApplicationMutationResponse = z.infer<
+  typeof TrustRegistryApiApplicationMutationResponseSchema
+>;
+export type TrustRegistryApiMutationContext = z.infer<
+  typeof TrustRegistryApiMutationContextSchema
+>;
+export type TrustRegistryApiSignedMutationRequest = z.infer<
+  typeof TrustRegistryApiSignedMutationRequestSchema
+>;
+export type TrustRegistryApiAuthorizationEvaluationResponse = z.infer<
+  typeof TrustRegistryApiAuthorizationEvaluationResponseSchema
+>;
+export type TrustRegistryApiRecognitionEvaluationResponse = z.infer<
+  typeof TrustRegistryApiRecognitionEvaluationResponseSchema
+>;
+export type TrustRegistryApiAuthorizationEvidenceEvaluationResponse = z.infer<
+  typeof TrustRegistryApiAuthorizationEvidenceEvaluationResponseSchema
+>;
+export type TrustRegistryApiRecognitionEvidenceEvaluationResponse = z.infer<
+  typeof TrustRegistryApiRecognitionEvidenceEvaluationResponseSchema
+>;

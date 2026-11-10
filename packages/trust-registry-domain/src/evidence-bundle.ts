@@ -1,0 +1,574 @@
+import { z } from "zod";
+
+import {
+  DidSchema,
+  HashHexSchema,
+  ScopedIdentifierSchema,
+  UriSchema,
+  sha256Hex,
+} from "./ids.js";
+import {
+  AuthorizationRecordSchema,
+  EpochCommitmentSchema,
+  GovernancePolicyRecordSchema,
+  RecognitionRecordSchema,
+} from "./types.js";
+import { IssuerStatusPolicyBindingSchema } from "./status-policy.js";
+
+const TimestampSchema = z.string().datetime({ offset: true });
+
+const normalizeOptional = <T>(value: T | undefined): T | null => value ?? null;
+
+const sortStringRecord = (
+  value: Record<string, string> | undefined,
+): Record<string, string> | null => (
+  value === undefined
+    ? null
+    : Object.fromEntries(
+        Object.entries(value).sort(([left], [right]) => left.localeCompare(right)),
+      )
+);
+
+export const computeAuthorizationStatementLeafHash = (
+  authorization: z.infer<typeof AuthorizationRecordSchema>,
+): string => {
+  AuthorizationRecordSchema.parse(authorization);
+  return sha256Hex(
+    JSON.stringify({
+      recordType: "authorization",
+      authorizationId: authorization.authorizationId,
+      registryId: authorization.registryId,
+      subjectDid: authorization.subjectDid,
+      role: authorization.role,
+      resourceType: authorization.resourceType,
+      resourceId: authorization.resourceId,
+      policyId: authorization.policyId,
+      trustLevel: authorization.trustLevel,
+      ...(authorization.role === "issuer"
+        ? { statusPolicyBindingCommitment: authorization.statusPolicyBindingCommitment }
+        : {}),
+      status: authorization.status,
+      lifecycleEventRoot: authorization.lifecycleEventRoot,
+      proposedAt: authorization.proposedAt,
+      authorizedAt: normalizeOptional(authorization.authorizedAt),
+      activeFrom: normalizeOptional(authorization.activeFrom),
+      issuedAt: normalizeOptional(authorization.issuedAt),
+      effectiveUntil: normalizeOptional(authorization.effectiveUntil),
+      suspendedAt: normalizeOptional(authorization.suspendedAt),
+      revokedAt: normalizeOptional(authorization.revokedAt),
+      supersededAt: normalizeOptional(authorization.supersededAt),
+      archivedAt: normalizeOptional(authorization.archivedAt),
+      evidenceHash: authorization.evidenceHash,
+    }),
+  );
+};
+
+export const computeRecognitionStatementLeafHash = (
+  recognition: z.infer<typeof RecognitionRecordSchema>,
+): string =>
+  sha256Hex(
+    JSON.stringify({
+      recordType: "recognition",
+      recognitionId: recognition.recognitionId,
+      registryId: recognition.registryId,
+      recognizedAuthorityDid: recognition.recognizedAuthorityDid,
+      recognizedRegistryId: recognition.recognizedRegistryId,
+      scope: {
+        resourceType: recognition.scope.resourceType,
+        resourceId: recognition.scope.resourceId,
+        context: sortStringRecord(recognition.scope.context),
+      },
+      policyId: recognition.policyId,
+      trustLevel: recognition.trustLevel,
+      status: recognition.status,
+      lifecycleEventRoot: recognition.lifecycleEventRoot,
+      proposedAt: recognition.proposedAt,
+      authorizedAt: normalizeOptional(recognition.authorizedAt),
+      effectiveFrom: normalizeOptional(recognition.effectiveFrom),
+      effectiveUntil: normalizeOptional(recognition.effectiveUntil),
+      suspendedAt: normalizeOptional(recognition.suspendedAt),
+      revokedAt: normalizeOptional(recognition.revokedAt),
+      supersededAt: normalizeOptional(recognition.supersededAt),
+      archivedAt: normalizeOptional(recognition.archivedAt),
+      evidenceHash: recognition.evidenceHash,
+    }),
+  );
+
+export const computeRegistryStatementLeafHash = (input: {
+  registryId: string;
+  statementId: string;
+  statementStatus: string;
+  lifecycleEventRoot: string;
+}): string =>
+  sha256Hex(
+    JSON.stringify({
+      recordType: "registry-statement",
+      registryId: input.registryId,
+      statementId: input.statementId,
+      statementStatus: input.statementStatus,
+      lifecycleEventRoot: input.lifecycleEventRoot,
+    }),
+  );
+
+export const computeMerkleNodeHash = (
+  left: string,
+  right: string,
+): string =>
+  sha256Hex(
+    JSON.stringify({
+      left,
+      right,
+    }),
+  );
+
+export const computeMerkleRootFromProof = (
+  leafHash: string,
+  path: readonly string[],
+  leafIndex: number | bigint,
+): string => {
+  if (typeof leafIndex === "number" && (!Number.isSafeInteger(leafIndex) || leafIndex < 0)) {
+    throw new Error("leafIndex must be a nonnegative safe integer or bigint");
+  }
+  const index = BigInt(leafIndex);
+  if (index < 0n || index >= (1n << BigInt(path.length))) {
+    throw new Error(
+      `leafIndex ${leafIndex.toString()} is out of range for proof path length ${path.length.toString()}`,
+    );
+  }
+
+  let computed = leafHash;
+  let currentIndex = index;
+
+  for (const siblingHash of path) {
+    computed =
+      currentIndex % 2n === 0n
+        ? computeMerkleNodeHash(computed, siblingHash)
+        : computeMerkleNodeHash(siblingHash, computed);
+    currentIndex /= 2n;
+  }
+
+  return computed;
+};
+
+export const computeSingleStatementStateRoot = (
+  leafHash: string,
+  eventRoot: string,
+): string =>
+  computeMerkleRootFromProof(leafHash, [eventRoot], 0);
+
+export const InclusionProofSchema = z.object({
+  proofType: z.literal("merkle-inclusion"),
+  root: HashHexSchema,
+  leafHash: HashHexSchema,
+  path: z.array(HashHexSchema).min(1),
+  leafIndex: z.number().int().nonnegative(),
+});
+
+export const TrustRegistryEvidenceBundleSchema = z
+  .object({
+    bundleId: ScopedIdentifierSchema,
+    generatedAt: TimestampSchema,
+    registryId: ScopedIdentifierSchema,
+    subjectDid: DidSchema,
+    policy: GovernancePolicyRecordSchema,
+    epoch: EpochCommitmentSchema,
+    inclusionProof: InclusionProofSchema,
+    authorization: AuthorizationRecordSchema.optional(),
+    statusPolicyBinding: IssuerStatusPolicyBindingSchema.optional(),
+    recognition: RecognitionRecordSchema.optional(),
+    referencedStatusRegistryId: ScopedIdentifierSchema.optional(),
+    referencedStatusPolicyUri: UriSchema.optional(),
+  })
+  .superRefine((bundle, ctx) => {
+    if (bundle.authorization === undefined && bundle.recognition === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Evidence bundles must include either an authorization or a recognition record",
+      });
+    }
+
+    if (bundle.authorization?.role === "issuer" && bundle.statusPolicyBinding === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Issuer status policy binding preimage is missing",
+        path: ["statusPolicyBinding"],
+      });
+    }
+    if (bundle.authorization?.role !== "issuer" && bundle.statusPolicyBinding !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Status policy binding is only valid for issuer authorization",
+        path: ["statusPolicyBinding"],
+      });
+    }
+
+    if (bundle.authorization !== undefined && bundle.authorization.subjectDid !== bundle.subjectDid) {
+      ctx.addIssue({
+        code: "custom",
+        message: "authorization.subjectDid must match subjectDid",
+        path: ["authorization", "subjectDid"],
+      });
+    }
+
+    if (
+      bundle.recognition !== undefined &&
+      bundle.recognition.recognizedAuthorityDid !== bundle.subjectDid
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "recognition.recognizedAuthorityDid must match subjectDid",
+        path: ["recognition", "recognizedAuthorityDid"],
+      });
+    }
+  });
+
+export const TrustRegistryEvidenceBundleJsonSchema = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $id: "https://midnight.network/schemas/trust-registry/evidence-bundle-v1.json",
+  title: "TrustRegistryEvidenceBundle",
+  type: "object",
+  required: [
+    "bundleId",
+    "generatedAt",
+    "registryId",
+    "subjectDid",
+    "policy",
+    "epoch",
+    "inclusionProof",
+  ],
+  properties: {
+    bundleId: {
+      type: "string",
+    },
+    generatedAt: {
+      type: "string",
+      format: "date-time",
+    },
+    registryId: {
+      type: "string",
+    },
+    subjectDid: {
+      type: "string",
+    },
+    policy: {
+      type: "object",
+      description: "Policy snapshot used to interpret trust level and decision rules.",
+      required: [
+        "policyId",
+        "registryId",
+        "version",
+        "policyUri",
+        "status",
+        "effectiveFrom",
+        "policyTemplates",
+        "decisionBindings",
+        "recognitionAccreditorAnchors",
+      ],
+      properties: {
+        policyId: { type: "string" },
+        registryId: { type: "string" },
+        version: { type: "string" },
+        policyUri: { type: "string", format: "uri" },
+        status: { type: "string" },
+        effectiveFrom: { type: "string", format: "date-time" },
+        effectiveUntil: { type: "string", format: "date-time" },
+        policyTemplates: {
+          type: "array",
+          minItems: 1,
+          items: {
+            type: "object",
+            required: [
+              "templateId",
+              "family",
+              "name",
+              "description",
+              "requiredMaintainerThreshold",
+              "applicableRoles",
+              "applicableActionKinds",
+              "evidenceRules",
+            ],
+            properties: {
+              templateId: { type: "string" },
+              family: {
+                enum: ["maintainer", "member", "emergency", "archival", "auditor"],
+              },
+              name: { type: "string" },
+              description: { type: "string" },
+              requiredMaintainerThreshold: { type: "integer", minimum: 1 },
+              applicableRoles: {
+                type: "array",
+                minItems: 1,
+                items: {
+                  enum: ["issuer", "verifier", "maintainer", "authority", "auditor"],
+                },
+              },
+              applicableActionKinds: {
+                type: "array",
+                minItems: 1,
+                items: { type: "string" },
+              },
+              evidenceRules: {
+                type: "array",
+                minItems: 1,
+                items: { type: "string" },
+              },
+            },
+          },
+        },
+        decisionBindings: {
+          type: "array",
+          minItems: 1,
+          items: {
+            type: "object",
+            required: ["bindingId", "family", "templateId", "actionScopes"],
+            properties: {
+              bindingId: { type: "string" },
+              family: {
+                enum: ["maintainer", "member", "emergency", "archival", "auditor"],
+              },
+              templateId: { type: "string" },
+              actionScopes: {
+                type: "array",
+                minItems: 1,
+                items: { type: "string" },
+              },
+            },
+          },
+        },
+        recognitionAccreditorAnchors: {
+          type: "array",
+          items: {
+            type: "object",
+            required: [
+              "format", "targetRegistryId", "policyId", "policyVersion",
+              "accreditorDid", "accreditorAssertionMethodId", "credentialFamilyId",
+              "schemaId", "statusRegistryId", "statusAuthorityDid",
+              "statusAuthorityMethodId", "recognizedRegistryId", "scopeResourceType",
+              "scopeResourceId", "effectiveFrom", "effectiveUntil",
+            ],
+            properties: {
+              format: { const: "tr-recognition-accreditor-anchor-v1" },
+              targetRegistryId: { type: "string" },
+              policyId: { type: "string" },
+              policyVersion: { type: "string" },
+              accreditorDid: { type: "string" },
+              accreditorAssertionMethodId: { type: "string" },
+              credentialFamilyId: { type: "string" },
+              schemaId: { type: "string" },
+              statusRegistryId: { type: "string" },
+              statusAuthorityDid: { type: "string" },
+              statusAuthorityMethodId: { type: "string" },
+              recognizedRegistryId: { type: "string" },
+              scopeResourceType: { type: "string" },
+              scopeResourceId: { type: "string" },
+              effectiveFrom: { type: "string", format: "date-time" },
+              effectiveUntil: { type: "string", format: "date-time" },
+            },
+          },
+        },
+      },
+    },
+    epoch: {
+      type: "object",
+      description: "Epoch commitment anchoring the state view used by the verifier.",
+      required: [
+        "epochId",
+        "registryId",
+        "stateRoot",
+        "eventRoot",
+        "policyRoot",
+        "validFrom",
+        "validUntil",
+        "maintainerSignatures",
+      ],
+      properties: {
+        epochId: { type: "string" },
+        registryId: { type: "string" },
+        stateRoot: { type: "string" },
+        eventRoot: { type: "string" },
+        policyRoot: { type: "string" },
+        validFrom: { type: "string", format: "date-time" },
+        validUntil: { type: "string", format: "date-time" },
+        maintainerSignatures: {
+          type: "array",
+          minItems: 1,
+          maxItems: 1,
+          items: {
+            type: "object",
+            required: ["keyId", "algorithm", "signature"],
+            properties: {
+              keyId: { type: "string" },
+              algorithm: {
+                enum: ["jubjub-schnorr", "secp256k1", "secp256r1", "ed25519"],
+              },
+              signature: { type: "string" },
+            },
+          },
+        },
+      },
+    },
+    inclusionProof: {
+      type: "object",
+      description: "Inclusion proof or signed statement proving membership in the published epoch state.",
+      required: ["proofType", "root", "leafHash", "path", "leafIndex"],
+      properties: {
+        proofType: {
+          enum: ["merkle-inclusion"],
+        },
+        root: { type: "string" },
+        leafHash: { type: "string" },
+        path: {
+          type: "array",
+          minItems: 1,
+          items: { type: "string" },
+        },
+        leafIndex: {
+          type: "integer",
+          minimum: 0,
+        },
+      },
+    },
+    authorization: {
+      type: "object",
+      description:
+        "Issuer or verifier authorization evidence, including scoped resource permission and trust level.",
+      required: [
+        "authorizationId",
+        "registryId",
+        "subjectDid",
+        "role",
+        "resourceType",
+        "resourceId",
+        "policyId",
+        "trustLevel",
+        "status",
+        "proposedAt",
+        "evidenceHash",
+      ],
+      properties: {
+        authorizationId: { type: "string" },
+        registryId: { type: "string" },
+        subjectDid: { type: "string" },
+        role: { enum: ["issuer", "verifier", "maintainer", "authority", "auditor"] },
+        resourceType: { type: "string" },
+        resourceId: { type: "string" },
+        policyId: { type: "string" },
+        statusPolicyBindingCommitment: { type: "string", pattern: "^0x[0-9a-f]{64}$" },
+        trustLevel: { type: "string" },
+        status: { type: "string" },
+        proposedAt: { type: "string", format: "date-time" },
+        authorizedAt: { type: "string", format: "date-time" },
+        activeFrom: { type: "string", format: "date-time" },
+        effectiveUntil: { type: "string", format: "date-time" },
+        evidenceHash: { type: "string" },
+      },
+      allOf: [{
+        if: { properties: { role: { const: "issuer" } }, required: ["role"] },
+        then: { required: ["statusPolicyBindingCommitment"] },
+      }],
+    },
+    recognition: {
+      type: "object",
+      description:
+        "Recognition evidence showing that an external authority or registry is accepted for a scoped domain.",
+      required: [
+        "recognitionId",
+        "registryId",
+        "recognizedAuthorityDid",
+        "recognizedRegistryId",
+        "scope",
+        "policyId",
+        "trustLevel",
+        "effectiveFrom",
+        "evidenceHash",
+        "status",
+        "proposedAt",
+      ],
+      properties: {
+        recognitionId: { type: "string" },
+        registryId: { type: "string" },
+        recognizedAuthorityDid: { type: "string" },
+        recognizedRegistryId: { type: "string" },
+        scope: {
+          type: "object",
+          required: ["resourceType", "resourceId"],
+          properties: {
+            resourceType: { type: "string" },
+            resourceId: { type: "string" },
+          },
+        },
+        policyId: { type: "string" },
+        trustLevel: { type: "string" },
+        effectiveFrom: { type: "string", format: "date-time" },
+        effectiveUntil: { type: "string", format: "date-time" },
+        evidenceHash: { type: "string" },
+        status: { type: "string" },
+        proposedAt: { type: "string", format: "date-time" },
+      },
+    },
+    statusPolicyBinding: {
+      type: "object",
+      description: "Canonical preimage of the governed issuer status-policy binding commitment.",
+      additionalProperties: false,
+      required: [
+        "version",
+        "trustRegistryId",
+        "issuerAuthorizationId",
+        "statusRegistryId",
+        "statusAuthorityVerificationMethod",
+        "statusPolicyId",
+        "statusPolicyVersion",
+        "statusPolicyContentCommitment",
+      ],
+      properties: {
+        version: { const: "tr-issuer-status-policy-v1" },
+        trustRegistryId: { type: "string" },
+        issuerAuthorizationId: { type: "string" },
+        statusRegistryId: { type: "string", pattern: "^0x[0-9a-f]{64}$" },
+        statusAuthorityVerificationMethod: { type: "string" },
+        statusPolicyId: { type: "string" },
+        statusPolicyVersion: { type: "string", pattern: "^v[1-9][0-9]*$" },
+        statusPolicyContentCommitment: { type: "string", pattern: "^0x[0-9a-f]{64}$" },
+      },
+    },
+    referencedStatusRegistryId: {
+      type: "string",
+      description:
+        "Optional VC status-registry reference when the trust decision is paired with credential-status evidence.",
+    },
+    referencedStatusPolicyUri: {
+      type: "string",
+      format: "uri",
+    },
+  },
+  anyOf: [{ required: ["authorization"] }, { required: ["recognition"] }],
+  allOf: [
+    {
+      if: {
+        properties: {
+          authorization: {
+            properties: { role: { const: "issuer" } },
+            required: ["role"],
+          },
+        },
+        required: ["authorization"],
+      },
+      then: { required: ["statusPolicyBinding"] },
+    },
+    {
+      if: { required: ["statusPolicyBinding"] },
+      then: {
+        required: ["authorization"],
+        properties: {
+          authorization: {
+            properties: { role: { const: "issuer" } },
+            required: ["role"],
+          },
+        },
+      },
+    },
+  ],
+} as const;
+
+export type TrustRegistryEvidenceBundle = z.infer<typeof TrustRegistryEvidenceBundleSchema>;
+export type InclusionProof = z.infer<typeof InclusionProofSchema>;

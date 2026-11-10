@@ -1,0 +1,1362 @@
+import type {
+  TrustRegistryApiMutationContext,
+  TrustRegistryApiSignedMutationRequest,
+  GovernedMembershipAction,
+  GovernedMembershipSignatureRequest,
+  GovernedThresholds,
+  PreparedGovernedMembershipAction,
+  PreparedGovernedPolicyAction,
+  TrustRegistryApiApplicationAction,
+} from "@midnight-ntwrk/trust-registry-api";
+
+import {
+  TrustRegistryAdminConsoleApiError,
+  TrustRegistryAdminConsoleClient,
+  normalizeApiBaseUrl,
+  type GovernedProposalRole,
+  type PreparedGovernedProposal,
+} from "./api.js";
+import {
+  REVIEW_STATUSES,
+  REVIEW_STATUS_LABELS,
+  buildReviewCards,
+  describeMutation,
+  executeEpochPublication,
+  executeReviewAction,
+  getReviewActions,
+  groupReviewCards,
+  type ReviewBoard,
+  type ReviewCard,
+  type ReviewStatus,
+} from "./model.js";
+
+const STORAGE_KEY = "trust-registry.admin.api-base";
+
+type AppState = {
+  apiBase: string;
+  board: ReviewBoard | undefined;
+  cards: readonly ReviewCard[];
+  epochLabel: string;
+  error: string | undefined;
+  flash: string | undefined;
+  governedBusy: boolean;
+  governedAction: GovernedMembershipAction | undefined;
+  governedKey: string | undefined;
+  governedPrepared: PreparedGovernedMembershipAction | undefined;
+  governedSignersJson: string;
+  loading: boolean;
+  observedAt: string | undefined;
+  lookupBusy: boolean;
+  lookupError: string | undefined;
+  lookupId: string;
+  lookupTarget: ReviewCard["target"];
+  publishing: boolean;
+  signedBusy: boolean;
+  signedContext: TrustRegistryApiMutationContext | undefined;
+  proposalRole: GovernedProposalRole;
+  proposalAuthorizationId: string;
+  proposalEvidenceJson: string;
+  proposalPrepared: PreparedGovernedProposal | undefined;
+  proposalSignersJson: string;
+  proposalVerifierSignature: string;
+  reviewQuery: string;
+  reviewStatus: ReviewStatus | "all";
+  policyThresholds: GovernedThresholds;
+  policyPhase: "thresholds" | "evidence-verifier" | undefined;
+  policyPrepared: PreparedGovernedPolicyAction | undefined;
+  policyPreparedThresholds: GovernedThresholds | undefined;
+  policySignersJson: string;
+  policyRegistrationPending: boolean;
+  selectedKey: string | undefined;
+};
+
+const escapeHtml = (value: string): string =>
+  value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("'", "&#39;");
+
+const formatReviewTime = (value: string): string => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return `${new Intl.DateTimeFormat("en-GB", {
+    dateStyle: "medium", timeStyle: "short", timeZone: "UTC",
+  }).format(date)} UTC`;
+};
+
+const formatApiError = (error: unknown): string => {
+  if (error instanceof TrustRegistryAdminConsoleApiError) {
+    const title = error.problem.title ?? "request failed";
+    const detail = error.problem.detail;
+    return detail === undefined ? title : `${title}: ${detail}`;
+  }
+  return error instanceof Error ? error.message : String(error);
+};
+
+const countCards = (
+  board: ReviewBoard,
+  status: ReviewStatus,
+): number =>
+  board.summary.issuerCounts[status]
+  + board.summary.verifierCounts[status]
+  + board.summary.auditorCounts[status]
+  + board.summary.recognitionCounts[status];
+
+const assertExactFields = (value: unknown, fields: readonly string[], label: string): void => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)
+    || Object.keys(value).length !== fields.length
+    || fields.some((field) => !Object.hasOwn(value, field))) {
+    throw new Error(`${label} must contain only the redacted ${fields.join(", ")} fields.`);
+  }
+};
+
+const assertRedactedEvidence = (value: unknown): void => {
+  assertExactFields(value, ["envelope", "commitment", "signature"], "Application evidence");
+  const submission = value as Record<string, unknown>;
+  if (typeof submission.commitment !== "string") {
+    throw new Error("Application evidence commitment must be a string.");
+  }
+  assertExactFields(submission.envelope, [
+    "version", "registryId", "applicationId", "subjectDid", "role", "policyId", "policyVersion",
+    "scopeCommitment", "governedResource", "evidenceVerifierDid", "verifiedAt", "expiresAt",
+    "challengeHash", "presentationHash", "claimsCommitment", "statusDecisionCommitment",
+  ], "Application evidence envelope");
+  const envelope = submission.envelope as Record<string, unknown>;
+  for (const [key, field] of Object.entries(envelope)) {
+    if (key !== "governedResource" && typeof field !== "string") {
+      throw new Error(`Application evidence ${key} must be a string.`);
+    }
+  }
+  assertExactFields(envelope.governedResource,
+    ["type", "id"], "Governed resource");
+  const resource = envelope.governedResource as Record<string, unknown>;
+  if (typeof resource.type !== "string" || typeof resource.id !== "string") {
+    throw new Error("Governed resource values must be strings.");
+  }
+  assertExactFields(submission.signature, ["keyId", "algorithm", "value"], "Evidence signature");
+  const signature = submission.signature as Record<string, unknown>;
+  if (Object.values(signature).some((field) => typeof field !== "string")) {
+    throw new Error("Evidence signature values must be strings.");
+  }
+};
+
+const parseSignerInput = (value: string): GovernedMembershipSignatureRequest["signers"] => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error("Signer input must be a JSON array of externally produced signatures.");
+  }
+  if (!Array.isArray(parsed) || parsed.length < 1 || parsed.length > 16) {
+    throw new Error("Provide between one and sixteen external signer entries.");
+  }
+  for (const signer of parsed) {
+    assertExactFields(signer, ["keyId", "publicKey", "signature"], "External signer");
+    assertExactFields(signer.publicKey, ["x", "y"], "External signer public key");
+    if (typeof signer.keyId !== "string" || typeof signer.signature !== "string"
+      || typeof signer.publicKey.x !== "string" || typeof signer.publicKey.y !== "string") {
+      throw new Error("External signer identifiers, public coordinates, and signature must be strings.");
+    }
+  }
+  return parsed as GovernedMembershipSignatureRequest["signers"];
+};
+
+export const createAdminConsoleApp = (
+  root: HTMLElement,
+  options: {
+    fetchImpl?: typeof fetch;
+    initialUrl?: URL;
+    storage?: Storage;
+    confirm?: (message: string) => boolean | Promise<boolean>;
+    demoMode?: boolean;
+  } = {},
+): void => {
+  const initialUrl = options.initialUrl ?? new URL(window.location.href);
+  const demoMode = (options.demoMode ?? initialUrl.searchParams.get("demo") === "1")
+    && ["localhost", "127.0.0.1", "[::1]"].includes(initialUrl.hostname);
+  const storage = options.storage ?? window.localStorage;
+  const fetchImpl = options.fetchImpl ?? window.fetch.bind(window);
+  const confirm = options.confirm ?? window.confirm.bind(window);
+  const sameOriginApi = initialUrl.pathname.startsWith("/admin/");
+  const queryBase = initialUrl.searchParams.get("apiBase");
+  const rememberedBase = storage.getItem(STORAGE_KEY);
+
+  const state: AppState = {
+    apiBase: sameOriginApi ? initialUrl.origin
+      : normalizeApiBaseUrl(queryBase ?? rememberedBase ?? "http://127.0.0.1:4400"),
+    board: undefined,
+    cards: [],
+    epochLabel: "",
+    error: undefined,
+    flash: undefined,
+    governedBusy: false,
+    governedAction: undefined,
+    governedKey: undefined,
+    governedPrepared: undefined,
+    governedSignersJson: "",
+    loading: false,
+    observedAt: undefined,
+    lookupBusy: false,
+    lookupError: undefined,
+    lookupId: "",
+    lookupTarget: "issuer",
+    publishing: false,
+    signedBusy: false,
+    signedContext: undefined,
+    proposalRole: "issuer",
+    proposalAuthorizationId: "",
+    proposalEvidenceJson: "",
+    proposalPrepared: undefined,
+    proposalSignersJson: "",
+    proposalVerifierSignature: "",
+    reviewQuery: "",
+    reviewStatus: "all",
+    policyThresholds: { default: "2", emergency: "2", archival: "2" },
+    policyPhase: undefined,
+    policyPrepared: undefined,
+    policyPreparedThresholds: undefined,
+    policySignersJson: "",
+    policyRegistrationPending: false,
+    selectedKey: undefined,
+  };
+  let signedContextRequestId = 0;
+  let hostRevision = 0;
+  let boardRequestId = 0;
+
+  const currentHost = () => ({ apiBase: state.apiBase, revision: hostRevision });
+  const isCurrentHost = (host: ReturnType<typeof currentHost>) =>
+    host.revision === hostRevision && host.apiBase === state.apiBase;
+
+  const setState = (next: Partial<AppState>) => {
+    Object.assign(state, next);
+    render();
+  };
+
+  const getClient = (): TrustRegistryAdminConsoleClient =>
+    new TrustRegistryAdminConsoleClient(state.apiBase, fetchImpl);
+
+  const loadSignedContext = async () => {
+    if (state.signedBusy || state.board === undefined || state.board.sourceMode === "local-ledger") return;
+    const requestId = ++signedContextRequestId;
+    setState({ signedBusy: true, signedContext: undefined, error: undefined, flash: undefined });
+    try {
+      const signedContext = await getClient().loadMutationContext();
+      if (requestId === signedContextRequestId) setState({ signedContext });
+    } catch (error) {
+      if (requestId === signedContextRequestId) setState({ error: formatApiError(error) });
+    } finally {
+      if (requestId === signedContextRequestId) setState({ signedBusy: false });
+    }
+  };
+
+  const submitSignedAction = async (raw: string) => {
+    if (state.signedBusy || state.signedContext === undefined
+      || state.board === undefined || state.board.sourceMode === "local-ledger") return;
+    const host = currentHost();
+    let candidate: unknown;
+    try {
+      candidate = JSON.parse(raw);
+    } catch {
+      setState({ error: "Signed mutation envelope must be valid JSON." });
+      return;
+    }
+    if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate)) {
+      setState({ error: "Paste an externally signed maintainer action envelope." });
+      return;
+    }
+    const parsed = candidate as Partial<TrustRegistryApiSignedMutationRequest>;
+    if (parsed.intent === null || typeof parsed.intent !== "object"
+      || parsed.intent?.actorRole !== "maintainer"
+      || parsed.signature === null || typeof parsed.signature !== "object"
+      || parsed.operation === null || typeof parsed.operation !== "object"
+      || parsed.operation?.operation === "submit") {
+      setState({ error: "Paste an externally signed maintainer action envelope." });
+      return;
+    }
+    const { intent } = parsed;
+    const context = state.signedContext;
+    if (intent.registryId !== context.registryId || intent.expectedEpochId !== context.expectedEpochId
+      || intent.expectedWorkspaceCommitment !== context.expectedWorkspaceCommitment) {
+      setState({ signedContext: undefined, error: "Signing context changed. Load a fresh context and sign again." });
+      return;
+    }
+    if (!await confirm(`Submit signed ${parsed.operation.operation} for ${intent.targetId}?`)) return;
+    if (!isCurrentHost(host) || state.signedContext !== context) {
+      if (!isCurrentHost(host)) return;
+      setState({ error: "Signing context changed. Load a fresh context and sign again." });
+      return;
+    }
+    setState({ signedBusy: true, error: undefined, flash: undefined });
+    try {
+      const result = await getClient().submitSignedMutation(parsed as TrustRegistryApiSignedMutationRequest);
+      if (!isCurrentHost(host)) return;
+      state.signedContext = undefined;
+      await refreshBoard(`Signed ${result.operation.operation} accepted. Load a new context for the next action.`);
+    } catch (error) {
+      if (isCurrentHost(host)) setState({ signedContext: undefined, error: formatApiError(error) });
+    } finally {
+      if (isCurrentHost(host)) setState({ signedBusy: false });
+    }
+  };
+
+  const selectedCard = (): ReviewCard | undefined =>
+    state.cards.find((card) => card.key === state.selectedKey);
+
+  const refreshBoard = async (flash?: string) => {
+    const host = currentHost();
+    const requestId = ++boardRequestId;
+    ++signedContextRequestId;
+    setState({ loading: true, signedBusy: false, signedContext: undefined,
+      error: undefined, lookupError: undefined, ...(flash === undefined ? {} : { flash }) });
+    try {
+      const client = getClient();
+      const board = await client.loadReviewBoard();
+      if (!isCurrentHost(host) || requestId !== boardRequestId) return;
+      const cards = board.sourceMode === "local-ledger" && state.lookupId.trim().length > 0
+        ? [await client.loadCurrentReviewCard(state.lookupTarget, state.lookupId.trim(), board)]
+        : buildReviewCards(board);
+      if (!isCurrentHost(host) || requestId !== boardRequestId) return;
+      const nextSelectedKey = state.selectedKey !== undefined
+        && cards.some((card) => card.key === state.selectedKey)
+        ? state.selectedKey
+        : cards[0]?.key;
+      setState({
+        board,
+        cards,
+        governedKey: undefined,
+        governedAction: undefined,
+        governedPrepared: undefined,
+        governedSignersJson: "",
+        proposalPrepared: undefined,
+        policyPhase: undefined,
+        policyPrepared: undefined,
+        policyPreparedThresholds: undefined,
+        policySignersJson: "",
+        loading: false,
+        observedAt: new Date().toISOString(),
+        selectedKey: nextSelectedKey,
+      });
+    } catch (error) {
+      if (!isCurrentHost(host) || requestId !== boardRequestId) return;
+      setState({
+        board: undefined,
+        cards: [],
+        error: formatApiError(error),
+        flash: undefined,
+        governedKey: undefined,
+        governedAction: undefined,
+        governedPrepared: undefined,
+        proposalPrepared: undefined,
+        policyPhase: undefined,
+        policyPrepared: undefined,
+        policyPreparedThresholds: undefined,
+        policySignersJson: "",
+        loading: false,
+        observedAt: undefined,
+        selectedKey: undefined,
+      });
+    }
+  };
+
+  const lookupCurrentRecord = async () => {
+    const board = state.board;
+    if (board?.sourceMode !== "local-ledger" || state.loading || state.lookupBusy || state.governedBusy) return;
+    const id = state.lookupId.trim();
+    const target = state.lookupTarget;
+    if (id.length === 0) {
+      setState({ lookupError: "Enter the exact current authorization or recognition ID." });
+      return;
+    }
+    const host = currentHost();
+    const requestId = ++boardRequestId;
+    setState({ lookupBusy: true, lookupError: undefined, error: undefined,
+      flash: undefined, cards: [], selectedKey: undefined });
+    try {
+      const card = await getClient().loadCurrentReviewCard(target, id, board);
+      if (!isCurrentHost(host) || requestId !== boardRequestId) return;
+      setState({ lookupBusy: false, cards: [card], selectedKey: card.key,
+        governedAction: undefined, governedKey: undefined, governedPrepared: undefined });
+    } catch (error) {
+      if (!isCurrentHost(host) || requestId !== boardRequestId) return;
+      setState({ lookupBusy: false, lookupError: formatApiError(error) });
+    }
+  };
+
+  const runAction = async (
+    action: TrustRegistryApiApplicationAction,
+  ) => {
+    if (!demoMode || state.loading || state.publishing || state.governedBusy
+      || state.board === undefined || state.board.sourceMode === "local-ledger") return;
+    const host = currentHost();
+    const card = selectedCard();
+    if (card === undefined) {
+      return;
+    }
+
+    setState({ loading: true, error: undefined, flash: undefined });
+    try {
+      const result = await executeReviewAction(card, action, confirm, (target, id, confirmedAction) => {
+        if (!isCurrentHost(host)) throw new Error("API host changed. Review the new registry before acting.");
+        return getClient().mutate(target, id, confirmedAction);
+      });
+      if (!isCurrentHost(host)) return;
+      if (result === null) {
+        setState({ loading: false });
+        return;
+      }
+      await refreshBoard(describeMutation(result));
+    } catch (error) {
+      if (!isCurrentHost(host)) return;
+      setState({
+        error: formatApiError(error),
+        flash: undefined,
+        loading: false,
+      });
+    }
+  };
+
+  const publishEpoch = async (label: string) => {
+    if (!demoMode || state.loading || state.publishing || state.governedBusy
+      || state.board === undefined || state.board.sourceMode === "local-ledger") return;
+    const host = currentHost();
+    setState({ publishing: true, error: undefined, flash: undefined });
+    try {
+      const result = await executeEpochPublication(label, confirm, (confirmedLabel) => {
+        if (!isCurrentHost(host)) throw new Error("API host changed. Review the new registry before publishing.");
+        return getClient().publishEpoch(confirmedLabel);
+      });
+      if (!isCurrentHost(host)) return;
+      if (result === null) {
+        setState({ publishing: false });
+        return;
+      }
+      await refreshBoard(describeMutation(result));
+      if (!isCurrentHost(host)) return;
+    } catch (error) {
+      if (!isCurrentHost(host)) return;
+      setState({
+        error: formatApiError(error),
+        flash: undefined,
+        publishing: false,
+      });
+      return;
+    }
+    setState({ publishing: false, epochLabel: "" });
+  };
+
+  const prepareGoverned = async (action: GovernedMembershipAction) => {
+    if (state.loading || state.publishing || state.governedBusy || state.board === undefined) return;
+    const host = currentHost();
+    const card = selectedCard();
+    if (card === undefined || !getReviewActions(card.status).includes(action)) return;
+    setState({ governedBusy: true, governedAction: undefined, governedKey: undefined, governedPrepared: undefined,
+      governedSignersJson: "", error: undefined, flash: undefined });
+    try {
+      const prepared = await getClient().prepareGovernedAction(card.target, card.id, action);
+      if (!isCurrentHost(host)) return;
+      setState({ governedBusy: false, governedAction: action, governedKey: `${card.key}:${action}`, governedPrepared: prepared });
+    } catch (error) {
+      if (!isCurrentHost(host)) return;
+      setState({ governedBusy: false, error: formatApiError(error) });
+    }
+  };
+
+  const submitGoverned = async () => {
+    if (state.loading || state.publishing || state.governedBusy || state.board === undefined) return;
+    const host = currentHost();
+    const card = selectedCard();
+    if (card === undefined) return;
+    const action = state.governedAction;
+    if (action === undefined || !getReviewActions(card.status).includes(action)
+      || state.governedKey !== `${card.key}:${action}`
+      || state.governedPrepared === undefined) return;
+    const prepared = state.governedPrepared;
+    let signers: GovernedMembershipSignatureRequest["signers"];
+    try {
+      signers = parseSignerInput(state.governedSignersJson);
+    } catch (error) {
+      setState({ error: formatApiError(error) });
+      return;
+    }
+    if (!(await confirm(`Submit ${signers.length} external signatures to ${action} ${card.target} ${card.id}?`))) return;
+    if (!isCurrentHost(host)) return;
+    if (state.selectedKey !== card.key || state.governedKey !== `${card.key}:${action}`) return;
+    setState({ governedBusy: true, error: undefined, flash: undefined });
+    try {
+      const receipt = await getClient().submitGovernedAction(card.target, card.id, action, {
+        prepared,
+        signers,
+      });
+      if (!isCurrentHost(host)) return;
+      await refreshBoard(`Compact ${action} accepted: ${receipt.eventHash}. Network finality is not implied.`);
+      if (!isCurrentHost(host)) return;
+      setState({ governedBusy: false });
+    } catch (error) {
+      if (!isCurrentHost(host)) return;
+      setState({
+        governedBusy: false,
+        error: formatApiError(error),
+        ...(error instanceof TrustRegistryAdminConsoleApiError && error.problem.status === 409
+          ? { governedAction: undefined, governedKey: undefined, governedPrepared: undefined, governedSignersJson: "" }
+          : {}),
+      });
+    }
+  };
+
+  const preparePolicyAction = async (phase: "thresholds" | "evidence-verifier") => {
+    if (state.loading || state.publishing || state.governedBusy || state.board === undefined) return;
+    const host = currentHost();
+    const thresholds = { ...state.policyThresholds };
+    if (phase === "thresholds" && Object.values(thresholds).some((value) =>
+      !/^(0|[1-9][0-9]*)$/u.test(value))) {
+      setState({ error: "Thresholds must be canonical nonnegative integers." });
+      return;
+    }
+    setState({ governedBusy: true, policyPhase: undefined, policyPrepared: undefined,
+      policyPreparedThresholds: undefined, policySignersJson: "", error: undefined, flash: undefined });
+    try {
+      const prepared = phase === "thresholds"
+        ? await getClient().prepareThresholdRevision(thresholds)
+        : await getClient().prepareEvidenceVerifierRegistration();
+      if (!isCurrentHost(host)) return;
+      setState({ governedBusy: false, policyPhase: phase, policyPrepared: prepared,
+        policyPreparedThresholds: phase === "thresholds" ? thresholds : undefined });
+    } catch (error) {
+      if (!isCurrentHost(host)) return;
+      setState({ governedBusy: false, error: formatApiError(error) });
+    }
+  };
+
+  const submitPolicyAction = async () => {
+    if (state.loading || state.publishing || state.governedBusy
+      || state.board === undefined || state.policyPrepared === undefined || state.policyPhase === undefined) return;
+    const host = currentHost();
+    const prepared = state.policyPrepared;
+    const phase = state.policyPhase;
+    const thresholds = state.policyPreparedThresholds;
+    let signers: GovernedMembershipSignatureRequest["signers"];
+    try {
+      signers = parseSignerInput(state.policySignersJson);
+      if (phase === "thresholds" && (thresholds === undefined
+        || Object.keys(thresholds).some((key) =>
+          thresholds[key as keyof GovernedThresholds] !== state.policyThresholds[key as keyof GovernedThresholds]))) {
+        throw new Error("Threshold values changed. Prepare a fresh action before signing.");
+      }
+    } catch (error) {
+      setState({ error: formatApiError(error) });
+      return;
+    }
+    if (!(await confirm(`Submit ${signers.length} external signatures for ${phase}?`))) return;
+    if (!isCurrentHost(host)) return;
+    if (state.policyPrepared !== prepared || state.policyPhase !== phase) return;
+    setState({ governedBusy: true, error: undefined, flash: undefined });
+    try {
+      const receipt = phase === "thresholds"
+        ? await getClient().submitThresholdRevision({ thresholds: thresholds!, prepared, signers })
+        : await getClient().submitEvidenceVerifierRegistration({ prepared, signers });
+      if (!isCurrentHost(host)) return;
+      const pending = phase === "thresholds";
+      setState({ policyPhase: undefined, policyPrepared: undefined, policyPreparedThresholds: undefined,
+        policySignersJson: "", policyRegistrationPending: pending });
+      await refreshBoard(pending
+        ? `Policy revision accepted: ${receipt.eventHash}. Register the evidence-verifier key under the new policy before accepting new applications.`
+        : `Evidence-verifier registration accepted: ${receipt.eventHash}. Network finality is not implied.`);
+      if (!isCurrentHost(host)) return;
+      setState({ governedBusy: false });
+    } catch (error) {
+      if (!isCurrentHost(host)) return;
+      setState({ governedBusy: false, error: formatApiError(error),
+        ...(error instanceof TrustRegistryAdminConsoleApiError && error.problem.status === 409
+          ? { policyPhase: undefined, policyPrepared: undefined, policyPreparedThresholds: undefined,
+            policySignersJson: "" }
+          : {}) });
+    }
+  };
+
+  const prepareProposal = async () => {
+    if (state.loading || state.publishing || state.governedBusy || state.board === undefined) return;
+    const host = currentHost();
+    const role = state.proposalRole;
+    const id = state.proposalAuthorizationId.trim();
+    if (id.length === 0) {
+      setState({ error: `Enter the exact ${role} ${role === "maintainer" ? "membership" : "authorization"} ID.` });
+      return;
+    }
+    const evidenceJson = state.proposalEvidenceJson;
+    let evidence: unknown;
+    try {
+      evidence = JSON.parse(evidenceJson);
+      assertRedactedEvidence(evidence);
+    } catch {
+      setState({ error: "Application evidence must be a redacted envelope, commitment, and signature JSON object without raw VC/VP fields." });
+      return;
+    }
+    if ((evidence as { envelope: { role: string } }).envelope.role !== role) {
+      setState({ error: "Application evidence role must match the selected proposal role." });
+      return;
+    }
+    setState({ governedBusy: true, proposalPrepared: undefined, proposalSignersJson: "",
+      proposalVerifierSignature: "", error: undefined, flash: undefined });
+    try {
+      const prepared = await getClient().prepareProposal(role, id, evidence);
+      if (!isCurrentHost(host)) return;
+      setState({ governedBusy: false, proposalPrepared:
+        state.proposalRole === role && state.proposalAuthorizationId.trim() === id
+          && state.proposalEvidenceJson === evidenceJson
+          ? prepared : undefined });
+    } catch (error) {
+      if (!isCurrentHost(host)) return;
+      setState({ governedBusy: false, error: formatApiError(error) });
+    }
+  };
+
+  const submitProposal = async () => {
+    if (state.loading || state.publishing || state.governedBusy || state.board === undefined
+      || state.proposalPrepared === undefined) return;
+    const host = currentHost();
+    const role = state.proposalRole;
+    const id = state.proposalAuthorizationId.trim();
+    const evidenceJson = state.proposalEvidenceJson;
+    const verifierSignature = state.proposalVerifierSignature;
+    let evidence: unknown;
+    let signers: GovernedMembershipSignatureRequest["signers"];
+    try {
+      evidence = JSON.parse(evidenceJson);
+      assertRedactedEvidence(evidence);
+      if ((evidence as { envelope: { role: string } }).envelope.role !== role) {
+        throw new Error("Application evidence role must match the selected proposal role.");
+      }
+      signers = parseSignerInput(state.proposalSignersJson);
+      if (!/^0x[0-9a-f]+$/u.test(verifierSignature)) {
+        throw new Error("Provide the registered evidence-verifier JubJub signature as hex.");
+      }
+    } catch (error) {
+      setState({ error: formatApiError(error) });
+      return;
+    }
+    const prepared = state.proposalPrepared;
+    if (prepared === undefined) return;
+    if (!(await confirm(`Submit ${signers.length} maintainer signatures and evidence-verifier signature for ${role} ${id}?`))) return;
+    if (!isCurrentHost(host)) return;
+    if (state.proposalPrepared !== prepared || state.proposalRole !== role || state.proposalAuthorizationId.trim() !== id
+      || state.proposalEvidenceJson !== evidenceJson || state.proposalVerifierSignature !== verifierSignature) return;
+    setState({ governedBusy: true, error: undefined, flash: undefined });
+    try {
+      const receipt = await getClient().submitProposal(role, id, {
+        evidence,
+        prepared,
+        signers,
+        evidenceVerifierSignature: verifierSignature,
+      });
+      if (!isCurrentHost(host)) return;
+      await refreshBoard(`Compact ${role} proposal accepted: ${receipt.eventHash}. Network finality is not implied.`);
+      if (!isCurrentHost(host)) return;
+      setState({ governedBusy: false, proposalPrepared: undefined,
+        proposalSignersJson: "", proposalVerifierSignature: "" });
+    } catch (error) {
+      if (!isCurrentHost(host)) return;
+      const outcomeUnknown = !(error instanceof TrustRegistryAdminConsoleApiError)
+        || error.problem.status === 409 || (error.problem.status ?? 0) >= 500;
+      const detail = formatApiError(error);
+      setState({ governedBusy: false,
+        error: error instanceof TrustRegistryAdminConsoleApiError
+          ? detail : `${detail} Submission outcome is unknown. Recover the proposal receipt; do not resubmit automatically.`,
+        ...(outcomeUnknown
+          ? { proposalPrepared: undefined, proposalSignersJson: "", proposalVerifierSignature: "" }
+          : {}) });
+    }
+  };
+
+  const resolveProposal = async () => {
+    if (state.loading || state.publishing || state.governedBusy || state.board === undefined) return;
+    const host = currentHost();
+    const role = state.proposalRole;
+    const id = state.proposalAuthorizationId.trim();
+    if (id.length === 0) {
+      setState({ error: `Enter the exact ${role} ${role === "maintainer" ? "membership" : "authorization"} ID.` });
+      return;
+    }
+    let evidence: unknown;
+    try {
+      evidence = JSON.parse(state.proposalEvidenceJson);
+      assertRedactedEvidence(evidence);
+    } catch {
+      setState({ error: "Application evidence must be a redacted envelope, commitment, and signature JSON object without raw VC/VP fields." });
+      return;
+    }
+    if ((evidence as { envelope: { role: string } }).envelope.role !== role) {
+      setState({ error: "Application evidence role must match the selected proposal role." });
+      return;
+    }
+    setState({ governedBusy: true, error: undefined, flash: undefined });
+    try {
+      const result = await getClient().resolveProposal(role, id, evidence);
+      if (!isCurrentHost(host)) return;
+      setState({ governedBusy: false, flash: result.state === "observed"
+        ? `Compact ${role} proposal observed: ${result.eventHash}. Network finality is not implied.`
+        : "Proposal not observed. This does not prove failure; do not resubmit automatically." });
+    } catch (error) {
+      if (!isCurrentHost(host)) return;
+      setState({ governedBusy: false, error: formatApiError(error) });
+    }
+  };
+
+  const bindEvents = () => {
+    root.querySelectorAll<HTMLAnchorElement>(".mobile-task-menu nav a").forEach((link) => {
+      link.addEventListener("click", () => {
+        const menu = link.closest<HTMLDetailsElement>(".mobile-task-menu");
+        if (menu !== null) menu.open = false;
+      });
+    });
+    root.querySelector<HTMLFormElement>("[data-api-base-form]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (sameOriginApi) return;
+      const form = event.currentTarget as HTMLFormElement | null;
+      if (form === null) {
+        return;
+      }
+      const input = form.querySelector<HTMLInputElement>("[name='apiBase']");
+      if (input === null) {
+        return;
+      }
+      const apiBase = normalizeApiBaseUrl(input.value);
+      if (apiBase === state.apiBase) {
+        void refreshBoard();
+        return;
+      }
+      storage.setItem(STORAGE_KEY, apiBase);
+      hostRevision += 1;
+      boardRequestId += 1;
+      signedContextRequestId += 1;
+      const pastedEnvelope = root.querySelector<HTMLTextAreaElement>("[data-signed-submit] [name='signedEnvelope']");
+      if (pastedEnvelope !== null) pastedEnvelope.value = "";
+      setState({ apiBase, board: undefined, cards: [], selectedKey: undefined, observedAt: undefined,
+        loading: false, lookupBusy: false, lookupId: "", lookupTarget: "issuer",
+        publishing: false, signedBusy: false, signedContext: undefined,
+        epochLabel: "", proposalAuthorizationId: "", proposalEvidenceJson: "",
+        governedBusy: false, governedAction: undefined, governedKey: undefined,
+        governedPrepared: undefined, governedSignersJson: "",
+        proposalPrepared: undefined, proposalSignersJson: "", proposalVerifierSignature: "",
+        policyPhase: undefined, policyPrepared: undefined, policyPreparedThresholds: undefined,
+        policySignersJson: "", policyThresholds: { default: "2", emergency: "2", archival: "2" },
+        policyRegistrationPending: false, error: undefined, flash: undefined });
+      void refreshBoard();
+    });
+
+    root.querySelectorAll<HTMLButtonElement>("[data-refresh], [data-settings-refresh]").forEach((button) => button.addEventListener("click", () => {
+      if (state.governedBusy) return;
+      void refreshBoard();
+    }));
+    root.querySelector<HTMLSelectElement>("[data-current-target]")?.addEventListener("change", (event) => {
+      if (state.lookupBusy) ++boardRequestId;
+      setState({ lookupTarget: (event.currentTarget as HTMLSelectElement).value as ReviewCard["target"],
+        lookupBusy: false, lookupError: undefined, cards: [], selectedKey: undefined, governedPrepared: undefined });
+    });
+    root.querySelector<HTMLInputElement>("[data-current-id]")?.addEventListener("input", (event) => {
+      if (state.lookupBusy) ++boardRequestId;
+      state.lookupId = (event.currentTarget as HTMLInputElement).value;
+      state.lookupBusy = false;
+      state.lookupError = undefined;
+      state.cards = [];
+      state.selectedKey = undefined;
+      state.governedPrepared = undefined;
+      root.querySelector("[data-local-current-result]")?.replaceChildren();
+      root.querySelector("#exact-lookup [role='alert']")?.remove();
+      const detail = root.querySelector(".detail-panel");
+      if (detail !== null) detail.textContent = "Lookup changed; submit the exact ID again.";
+      const submit = root.querySelector<HTMLButtonElement>("[data-current-lookup] button[type='submit']");
+      if (submit !== null) submit.disabled = state.loading || state.governedBusy;
+    });
+    root.querySelector<HTMLFormElement>("[data-current-lookup]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      void lookupCurrentRecord();
+    });
+
+    root.querySelector<HTMLButtonElement>("[data-signed-context]")?.addEventListener("click", () => {
+      void loadSignedContext();
+    });
+    root.querySelector<HTMLFormElement>("[data-signed-submit]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const input = (event.currentTarget as HTMLFormElement).querySelector<HTMLTextAreaElement>("[name='signedEnvelope']");
+      if (input === null) return;
+      const raw = input.value;
+      input.value = "";
+      void submitSignedAction(raw);
+    });
+
+    root.querySelector<HTMLInputElement>("[data-epoch-label]")?.addEventListener("input", (event) => {
+      state.epochLabel = (event.currentTarget as HTMLInputElement).value;
+    });
+    root.querySelector<HTMLFormElement>("[data-epoch-form]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      void publishEpoch(state.epochLabel);
+    });
+
+    root.querySelectorAll<HTMLElement>("[data-select-key]").forEach((element) => {
+      element.addEventListener("click", () => {
+        setState({
+          selectedKey: element.dataset.selectKey,
+          governedAction: undefined,
+          governedKey: undefined,
+          governedPrepared: undefined,
+          governedSignersJson: "",
+          flash: undefined,
+        });
+      });
+    });
+
+    root.querySelectorAll<HTMLButtonElement>("[data-governed-prepare]").forEach((button) => button.addEventListener("click", () => {
+      const action = button.dataset.governedPrepare as GovernedMembershipAction;
+      void prepareGoverned(action);
+    }));
+    root.querySelector<HTMLTextAreaElement>("[data-governed-signers]")?.addEventListener("input", (event) => {
+      state.governedSignersJson = (event.currentTarget as HTMLTextAreaElement).value;
+    });
+    root.querySelector<HTMLFormElement>("[data-governed-submit]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      void submitGoverned();
+    });
+
+    root.querySelectorAll<HTMLInputElement>("[data-policy-threshold]").forEach((input) => {
+      input.addEventListener("input", () => {
+        const field = input.dataset.policyThreshold as keyof GovernedThresholds;
+        state.policyThresholds[field] = input.value;
+        state.policyPhase = undefined;
+        state.policyPrepared = undefined;
+        state.policyPreparedThresholds = undefined;
+        root.querySelector("[data-policy-context]")?.remove();
+        root.querySelector("[data-policy-submit]")?.remove();
+      });
+    });
+    root.querySelector<HTMLButtonElement>("[data-policy-prepare-thresholds]")?.addEventListener("click", () => {
+      void preparePolicyAction("thresholds");
+    });
+    root.querySelector<HTMLButtonElement>("[data-policy-prepare-verifier]")?.addEventListener("click", () => {
+      void preparePolicyAction("evidence-verifier");
+    });
+    root.querySelector<HTMLTextAreaElement>("[data-policy-signers]")?.addEventListener("input", (event) => {
+      state.policySignersJson = (event.currentTarget as HTMLTextAreaElement).value;
+    });
+    root.querySelector<HTMLFormElement>("[data-policy-submit]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      void submitPolicyAction();
+    });
+
+    root.querySelector<HTMLInputElement>("[data-proposal-id]")?.addEventListener("input", (event) => {
+      state.proposalAuthorizationId = (event.currentTarget as HTMLInputElement).value;
+      state.proposalPrepared = undefined;
+      root.querySelector("[data-proposal-submit]")?.remove();
+      root.querySelector("[data-proposal-context]")?.remove();
+    });
+    root.querySelector<HTMLSelectElement>("[data-proposal-role]")?.addEventListener("change", (event) => {
+      setState({ proposalRole: (event.currentTarget as HTMLSelectElement).value as GovernedProposalRole,
+        proposalPrepared: undefined, proposalSignersJson: "", proposalVerifierSignature: "" });
+    });
+    root.querySelector<HTMLTextAreaElement>("[data-proposal-evidence]")?.addEventListener("input", (event) => {
+      state.proposalEvidenceJson = (event.currentTarget as HTMLTextAreaElement).value;
+      state.proposalPrepared = undefined;
+      root.querySelector("[data-proposal-submit]")?.remove();
+      root.querySelector("[data-proposal-context]")?.remove();
+    });
+    root.querySelector<HTMLFormElement>("[data-proposal-prepare]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      void prepareProposal();
+    });
+    root.querySelector<HTMLButtonElement>("[data-proposal-resolve]")?.addEventListener("click", () => {
+      void resolveProposal();
+    });
+    root.querySelector<HTMLTextAreaElement>("[data-proposal-signers]")?.addEventListener("input", (event) => {
+      state.proposalSignersJson = (event.currentTarget as HTMLTextAreaElement).value;
+    });
+    root.querySelector<HTMLInputElement>("[data-proposal-verifier-signature]")?.addEventListener("input", (event) => {
+      state.proposalVerifierSignature = (event.currentTarget as HTMLInputElement).value;
+    });
+    root.querySelector<HTMLFormElement>("[data-proposal-submit]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      void submitProposal();
+    });
+
+    root.querySelectorAll<HTMLButtonElement>("[data-action]").forEach((element) => {
+      element.addEventListener("click", () => {
+        const action = element.dataset.action as TrustRegistryApiApplicationAction | undefined;
+        if (action !== undefined) {
+          void runAction(action);
+        }
+      });
+    });
+    root.querySelector<HTMLInputElement>("[data-review-query]")?.addEventListener("input", (event) => {
+      const input = event.currentTarget as HTMLInputElement;
+      const start = input.selectionStart;
+      const end = input.selectionEnd;
+      setState({ reviewQuery: input.value });
+      const nextInput = root.querySelector<HTMLInputElement>("[data-review-query]");
+      if (nextInput !== null && start !== null && end !== null) nextInput.setSelectionRange(start, end);
+    });
+    root.querySelector<HTMLSelectElement>("[data-review-status]")?.addEventListener("change", (event) => {
+      setState({ reviewStatus: (event.currentTarget as HTMLSelectElement).value as ReviewStatus | "all" });
+    });
+  };
+
+  const renderMetrics = (board: ReviewBoard): string => `
+    <div class="metrics">
+      <div class="registry-context"><span>Registry</span><strong>${escapeHtml(board.summary.registryLabel)}</strong><small>${board.summary.epochCount === undefined ? "Epoch unavailable" : `Epoch #${board.summary.epochCount.toString()}`}</small></div>
+      ${board.sourceMode === "local-ledger" ? "" : `
+        <div class="metric"><span>Proposed</span><strong>${countCards(board, "proposed").toString()}</strong></div>
+        <div class="metric"><span>Authorized</span><strong>${countCards(board, "authorized").toString()}</strong></div>
+        <div class="metric"><span>Active</span><strong>${countCards(board, "active").toString()}</strong></div>
+        ${countCards(board, "suspended") + countCards(board, "revoked") === 0 ? "" : `<p class="risk-summary">${(countCards(board, "suspended") + countCards(board, "revoked")).toString()} suspended or revoked record(s) need inspection.</p>`}`}
+    </div>
+  `;
+
+  const trustLevelLabel = (status: ReviewStatus): string =>
+    status === "proposed" ? "Requested trust level"
+      : status === "authorized" ? "Authorized trust level"
+        : status === "active" ? "Trust level" : "Recorded trust level";
+
+  const renderCard = (card: ReviewCard): string => `
+    <button type="button" class="card${card.key === state.selectedKey ? " selected" : ""}" data-select-key="${escapeHtml(card.key)}" aria-controls="selected-record-detail"${card.key === state.selectedKey ? ' aria-current="true"' : ""}>
+      <div class="card-top">
+        <div>
+          <h3>${escapeHtml(card.label)}</h3>
+          <p>${escapeHtml(card.target)} review</p>
+        </div>
+        <span class="status-chip ${escapeHtml(card.status)}">${escapeHtml(REVIEW_STATUS_LABELS[card.status])}</span>
+      </div>
+      <div class="meta-row"><span>${trustLevelLabel(card.status)}: ${escapeHtml(card.trustLevel)}</span></div>
+      <div class="meta-row">
+        <span>Updated <time datetime="${escapeHtml(card.updatedAt)}">${escapeHtml(formatReviewTime(card.updatedAt))}</time></span>
+      </div>
+    </button>
+  `;
+
+  const renderColumn = (
+    status: ReviewStatus,
+    cards: readonly ReviewCard[],
+  ): string => `
+    <section class="column">
+      <div class="column-header">
+        <h2>${escapeHtml(REVIEW_STATUS_LABELS[status])}</h2>
+        <span>${cards.length.toString()} ${cards.length === 1 ? "item" : "items"}</span>
+      </div>
+      ${cards.length === 0
+        ? `<div class="empty-state"><p>No ${escapeHtml(REVIEW_STATUS_LABELS[status].toLowerCase())} records.</p></div>`
+        : cards.map(renderCard).join("")}
+    </section>
+  `;
+
+  const renderDetailPanel = (visibleKeys?: ReadonlySet<string>): string => {
+    const card = selectedCard();
+    if (card === undefined || (visibleKeys !== undefined && !visibleKeys.has(card.key))) {
+      return `
+        <aside class="detail-panel" id="selected-record-detail">
+          <div class="empty-state">
+            <p>${state.board === undefined
+              ? "No current registry source is available. Recheck the connection before reviewing a record."
+              : "Select a record to review its detail and available maintainer actions."}</p>
+          </div>
+        </aside>
+      `;
+    }
+
+    const governedAction = state.governedAction !== undefined
+      && getReviewActions(card.status).includes(state.governedAction)
+      ? state.governedAction : undefined;
+    const prepared = governedAction !== undefined
+      && state.governedKey === `${card.key}:${governedAction}`
+      ? state.governedPrepared : undefined;
+    const sourceDescription = state.board?.sourceMode === "local-ledger"
+      ? "This is a current API claim, not independently verified ledger finality."
+      : "This is a local fixture record, not deployed ledger evidence.";
+    const lifecycleDescription = card.status === "active"
+      ? "This record is active in the displayed registry view."
+      : card.status === "proposed" || card.status === "authorized"
+        ? "This record is not yet active; review its evidence and lifecycle before any action."
+        : "This record is not active; inspect its history before taking another action.";
+
+    return `
+      <aside class="detail-panel" id="selected-record-detail" aria-label="Selected record details">
+        <div>
+          <p class="eyebrow">Selected Record</p>
+          <h2>${escapeHtml(card.label)}</h2>
+          <p>${escapeHtml(card.target)} · <span class="status-chip ${escapeHtml(card.status)}">${escapeHtml(REVIEW_STATUS_LABELS[card.status])}</span></p>
+        </div>
+        <div class="record-meaning"><p class="eyebrow">What this means</p><p>${lifecycleDescription} ${sourceDescription}</p></div>
+        <div class="decision-summary"><h3>Decision summary</h3><dl>
+          <div><dt>Role</dt><dd>${escapeHtml(card.target)}</dd></div>
+          <div><dt>${trustLevelLabel(card.status)}</dt><dd>${escapeHtml(card.trustLevel)}</dd></div>
+          <div><dt>Last update</dt><dd><time datetime="${escapeHtml(card.updatedAt)}">${escapeHtml(formatReviewTime(card.updatedAt))}</time></dd></div>
+        </dl></div>
+        <details class="technical-details"><summary>Identifiers and evidence</summary><dl>
+          ${card.detailRows.map((row) => `
+            <div>
+              <dt>${escapeHtml(row.label)}</dt>
+              <dd><code>${escapeHtml(row.value)}</code></dd>
+            </div>
+          `).join("")}
+          ${card.target === "auditor" || card.target === "verifier" ? `<div><dt>Scope detail</dt><dd>Full request-scope preimage is not available in this snapshot; verify the governed resource ID against authenticated evidence.</dd></div>` : ""}
+          <div><dt>Exact update time</dt><dd><code>${escapeHtml(card.updatedAt)}</code></dd></div>
+        </dl></details>
+        ${getReviewActions(card.status).length === 0 ? "" : `
+          <details class="governed-actions" data-record-key="${escapeHtml(card.key)}"${prepared !== undefined || (governedActionsOpen && governedActionsKey === card.key) ? " open" : ""}>
+            <summary>Prepare a governed action</summary>
+          <section class="governed-panel">
+            <p class="eyebrow">Compact quorum</p>
+            <h3>External maintainer signatures</h3>
+            <p>Prepare the current ledger-bound action, have existing maintainers sign its policy-bound digest outside this browser, then submit their public keys and signatures. This console never handles private keys.</p>
+            ${getReviewActions(card.status).map((action) => `<button class="button secondary" type="button" data-governed-prepare="${escapeHtml(action)}"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Prepare ${escapeHtml(action)}</button>`).join("")}
+            ${prepared === undefined ? "" : `
+              <p>Sign this exact context. A changed sequence or policy requires a fresh preparation.</p>
+              <pre class="governed-context mono">${escapeHtml(JSON.stringify(prepared, null, 2))}</pre>
+              <form data-governed-submit>
+                <label>External signer entries as JSON array
+                  <textarea class="input mono governed-signers" data-governed-signers spellcheck="false" placeholder='[{"keyId":"0x...","publicKey":{"x":"...","y":"..."},"signature":"0x..."}]'>${escapeHtml(state.governedSignersJson)}</textarea>
+                </label>
+                <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Submit signed ${escapeHtml(governedAction ?? "action")}</button>
+              </form>
+            `}
+          </section>
+          </details>
+        `}
+        ${!demoMode || state.board?.sourceMode === "local-ledger" ? "" : `
+          <p class="eyebrow">Local fixture controls</p>
+          <div class="actions">
+            ${getReviewActions(card.status).map((action) => `
+              <button class="button${action === "archive" ? " ghost" : ""}" type="button" data-action="${escapeHtml(action)}"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>
+                ${escapeHtml(action.charAt(0).toUpperCase() + action.slice(1))} in demo
+              </button>
+            `).join("") || "<p>No maintainer actions available for this lifecycle state.</p>"}
+          </div>
+        `}
+      </aside>
+    `;
+  };
+
+  let pendingFocusKey: string | null = null;
+  let governedActionsOpen = false;
+  let governedActionsKey: string | undefined;
+  const render = () => {
+    const previousSignedEnvelope = root.querySelector<HTMLTextAreaElement>("[data-signed-submit] [name='signedEnvelope']")?.value;
+    const focusedCardKey = document.activeElement instanceof HTMLElement && root.contains(document.activeElement)
+      ? document.activeElement.dataset.selectKey : undefined;
+    const focusKey = root.contains(document.activeElement)
+      ? document.activeElement?.getAttribute("data-focus-key") : null;
+    pendingFocusKey = focusKey ?? (root.contains(document.activeElement) ? null : pendingFocusKey);
+    const advancedOpen = root.querySelector<HTMLDetailsElement>(".advanced-workflows")?.open ?? false;
+    const previousGovernedActions = root.querySelector<HTMLDetailsElement>(".governed-actions");
+    governedActionsOpen = previousGovernedActions?.open ?? false;
+    governedActionsKey = previousGovernedActions?.dataset.recordKey;
+    const normalizedQuery = state.reviewQuery.trim().toLocaleLowerCase();
+    const visibleCards = state.board?.sourceMode === "local-ledger" ? state.cards : state.cards.filter((card) =>
+      (state.reviewStatus === "all" || card.status === state.reviewStatus)
+      && (normalizedQuery.length === 0 || [card.label, card.target, card.status, card.trustLevel,
+        ...card.detailRows.map((row) => row.value)].some((value) => value.toLocaleLowerCase().includes(normalizedQuery))));
+    const groupedCards = groupReviewCards(visibleCards);
+    const visibleKeys = new Set(visibleCards.map((card) => card.key));
+    const needsReview = state.board !== undefined && (
+      countCards(state.board, "proposed") + countCards(state.board, "authorized") > 0);
+    const reviewTitle = state.board === undefined ? "Connect to review records"
+      : state.board.sourceMode === "local-ledger" ? "Inspect current records"
+        : needsReview ? "Decisions that need attention" : "Registry review workspace";
+    const reviewDescription = state.board === undefined
+      ? "No current registry data is available. Recheck the connection before making a trust decision."
+      : state.board.sourceMode === "local-ledger"
+        ? "Look up an exact record from this API. Independently verify finalized registry state before relying on it."
+        : needsReview
+          ? "Review requests, inspect authority, and follow each record from proposal to active status."
+          : "No requests need a decision right now. Browse active records or prepare a governed action.";
+    const reviewAction = state.board === undefined ? { href: "#workspace-settings", label: "Check connection" }
+      : state.board.sourceMode === "local-ledger" ? { href: "#exact-lookup", label: "Look up a record" }
+        : needsReview ? { href: "#review-board", label: "Open review queue" }
+          : { href: "#review-board", label: "Browse records" };
+    const sourceMessage = state.loading
+      ? state.board === undefined
+        ? "Checking this source. No current records are available yet."
+        : "Showing last checked data while rechecking. Actions are paused; do not treat these records as current until the check completes."
+      : state.board?.sourceMode === "local-ledger"
+        ? "This response is not independently verified finality or authorization evidence."
+        : state.board === undefined
+          ? "Connect or retry to inspect this source. No trust decision is available."
+          : state.board.sourceMode === "snapshot"
+            ? "This read-only snapshot is not authenticated ledger finality or authorization evidence."
+          : "Fixture records are for exploration, not deployed ledger evidence.";
+    const taskLinks = `
+      <a href="#review-board">Review records</a>
+      <a href="#workspace-settings">Workspace settings</a>
+      <a href="#advanced-governance">Advanced governance</a>
+    `;
+    const deploymentIdentity = state.board?.sourceMode === "local-ledger" ? state.board.deploymentIdentity : undefined;
+    const deploymentNotice = state.loading && state.board !== undefined
+      ? "Rechecking this source. The identity below is from the last completed browser check and may be stale; do not rely on it until the check finishes."
+      : state.board === undefined
+        ? "No current registry source is available. Deployment identity and ledger state cannot be inferred from this browser view."
+        : state.board.sourceMode !== "local-ledger"
+          ? "This source does not report a deployment plan or prove ledger finality or actor authorization."
+          : deploymentIdentity === undefined
+            ? "This local-ledger API did not expose a deployment identity. A node-reported checkpoint and browser response are not independently authenticated finality or actor authorization."
+            : "This API reports its local deployment plan. A node-reported checkpoint and browser response are not independently authenticated finality or actor authorization.";
+    root.innerHTML = `
+      <main class="shell app-shell" data-settings-active="${window.location.hash === "#workspace-settings"}">
+        <header class="brand-bar">
+          <span class="brand-name"><img class="brand-logo" src="./midnight-logo.svg" alt="Midnight" /><span class="brand-product"><strong class="brand-product-title">Trust Registry</strong><span class="brand-product-context">Admin console</span></span></span>
+          <details class="mobile-task-menu"><summary>Menu</summary><nav aria-label="Admin tasks">${taskLinks}</nav></details>
+        </header>
+        <nav class="task-nav" aria-label="Admin tasks">${taskLinks}</nav>
+        <section class="hero">
+          <div class="hero-copy">
+            <div>
+              <p class="eyebrow">Review operations</p>
+              <h1>${reviewTitle}</h1>
+              <p>${reviewDescription}</p>
+              <a class="button" href="${reviewAction.href}">${reviewAction.label}</a>
+            </div>
+          </div>
+          ${state.board === undefined ? "" : renderMetrics(state.board)}
+          ${state.error === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.error)}</div>`}
+          ${state.flash === undefined ? "" : `<div class="alert success" role="status">${escapeHtml(state.flash)}</div>`}
+          <div class="source-panel" data-source-state="${state.loading ? "loading" : state.board?.sourceMode === "local-ledger" ? "local-ledger" : state.board === undefined ? "unavailable" : state.board.sourceMode === "snapshot" ? "snapshot" : "fixture"}" role="status" aria-live="polite">
+            <span class="source-badge">${state.loading ? "Checking" : state.board === undefined ? "Unavailable" : state.board.sourceMode === "local-ledger" ? "API claim" : state.board.sourceMode === "snapshot" ? "Snapshot" : "Local fixture"}</span>
+            <div class="source-copy"><strong>${state.loading ? "Loading registry data" : state.board === undefined ? "No current registry data" : state.board.sourceMode === "local-ledger" ? "Current local-ledger API response" : state.board.sourceMode === "snapshot" ? "Read-only registry snapshot" : "Demo workspace data"}</strong>
+              <span>${sourceMessage}</span>
+            </div>
+            ${state.observedAt === undefined || state.loading ? "" : `<span class="source-time">Checked <time datetime="${escapeHtml(state.observedAt)}">${escapeHtml(formatReviewTime(state.observedAt))}</time> (browser clock)</span>`}
+            <button class="source-refresh" type="button" data-refresh data-focus-key="refresh"${state.loading || state.governedBusy ? " disabled" : ""}>Recheck</button>
+          </div>
+        </section>
+        <section class="settings-view" id="workspace-settings" aria-labelledby="settings-heading">
+          <div class="settings-heading">
+            <a class="settings-back" href="#review-board">&larr; Back to review workspace</a>
+            <p class="eyebrow">Configuration</p>
+            <h1 id="settings-heading">Workspace settings</h1>
+            <p>Check the source this browser is using and the deployment identity reported by the API. These details do not change registry governance.</p>
+          </div>
+          <div class="settings-cards">
+            <section class="settings-card" aria-labelledby="admin-connection-heading">
+              <p class="eyebrow">Connection</p>
+              <h2 id="admin-connection-heading">API and source</h2>
+              <p>Choose a local API for development, or inspect the same-origin endpoint managed by this host.</p>
+            <form class="connection-form" data-api-base-form>
+              <label>API base URL
+                <input class="input mono" type="url" name="apiBase" data-focus-key="api-base" value="${escapeHtml(state.apiBase)}"${sameOriginApi ? " disabled" : ""} />
+              </label>
+              <div class="actions">
+                <button class="button" type="submit" data-focus-key="connect"${sameOriginApi || state.loading || state.governedBusy ? " disabled" : ""}>Connect</button>
+              </div>
+            </form>
+            <dl class="settings-grid">
+              <div><dt>API endpoint</dt><dd class="technical-id">${escapeHtml(state.apiBase)}${sameOriginApi ? " (managed by this host)" : " (local development setting)"}</dd></div>
+              <div><dt>Connection</dt><dd>${state.loading ? "Checking" : state.board === undefined ? "Unavailable" : "Responding at last check"}</dd></div>
+              <div><dt>Source mode</dt><dd>${escapeHtml(state.board?.sourceMode ?? "Unavailable")}</dd></div>
+              <div><dt>Last checked in this browser</dt><dd>${state.observedAt === undefined ? "No successful check" : `<time datetime="${escapeHtml(state.observedAt)}">${escapeHtml(formatReviewTime(state.observedAt))}</time>`}</dd></div>
+            </dl>
+            <button class="source-refresh" type="button" data-settings-refresh data-focus-key="settings-refresh"${state.loading || state.governedBusy ? " disabled" : ""}>Recheck connection</button>
+            </section>
+            <section class="settings-card" aria-labelledby="admin-identity-heading">
+              <p class="eyebrow">Read-only</p>
+              <h2 id="admin-identity-heading">Deployment identity</h2>
+              <dl class="settings-grid">
+                <div><dt>Registry</dt><dd>${escapeHtml(state.board?.summary.registryLabel ?? "Not reported")}</dd></div>
+                <div><dt>Network profile (API report)</dt><dd>${escapeHtml(deploymentIdentity?.networkProfileId ?? "Not exposed by this API response")}</dd></div>
+                <div><dt>Genesis anchor</dt><dd>${deploymentIdentity === undefined ? "Not exposed by this API response" : "Expected hash in API plan"}</dd></div>
+                <div><dt>Contract</dt><dd>${deploymentIdentity === undefined ? "Not exposed by this API response" : "Address in API plan"}</dd></div>
+              </dl>
+              <details class="settings-technical">
+                <summary>Technical identifiers and plan</summary>
+                <dl class="settings-grid">
+                  <div><dt>Registry ID</dt><dd class="technical-id">${escapeHtml(state.board?.summary.registryId ?? "Not reported")}</dd></div>
+                  <div><dt>Registry DID</dt><dd class="technical-id">${escapeHtml(state.board?.summary.registryDid ?? "Not reported")}</dd></div>
+                  <div><dt>Current epoch ID</dt><dd class="technical-id">${escapeHtml(state.board?.summary.currentEpochId ?? "Not reported")}</dd></div>
+                  <div><dt>Approved local plan digest</dt><dd class="technical-id">${escapeHtml(state.board?.localPlanSha256 ?? "Not exposed by this API")}</dd></div>
+                  ${state.board?.sourceMode !== "local-ledger" ? "" : `<div><dt>Node-reported checkpoint hash</dt><dd class="technical-id">${escapeHtml(state.board.nodeReportedCheckpointHash ?? "Not reported")}</dd></div>
+                  <div><dt>API snapshot reference time (epoch valid-until)</dt><dd>${escapeHtml(state.board.snapshotGeneratedAt ?? "Not reported")}</dd></div>`}
+                  ${deploymentIdentity === undefined
+                    ? "<div><dt>Network ID</dt><dd>Not exposed by this API response</dd></div>"
+                    : `<div><dt>Network ID (API report)</dt><dd>${escapeHtml(deploymentIdentity.networkId)}</dd></div>
+                      <div><dt>Expected genesis hash (API plan)</dt><dd class="technical-id">${escapeHtml(deploymentIdentity.expectedGenesisHash)}</dd></div>
+                      <div><dt>Contract address (API plan)</dt><dd class="technical-id">${escapeHtml(deploymentIdentity.contractAddress)}</dd></div>`}
+                </dl>
+              </details>
+            <p class="settings-callout">${deploymentNotice}</p>
+            </section>
+            <section class="settings-card" aria-labelledby="admin-signing-heading">
+              <p class="eyebrow">Security</p>
+              <h2 id="admin-signing-heading">External signing</h2>
+              <p>Governed actions require an external signer. This browser prepares exact context but does not hold private keys or establish actor authority.</p>
+            </section>
+          </div>
+          <div class="settings-footer"><strong>No account profile in this browser</strong><p>The authenticated host and external signer establish who may act. Deployment identity and governance cannot be changed here.</p></div>
+        </section>
+        ${state.board?.sourceMode === "local-ledger" ? `
+          <section class="proposal-panel governed-panel" id="exact-lookup">
+            <p class="eyebrow">Current local ledger</p>
+            <h2>Look up one exact record</h2>
+            <p>Lists and historical routes are unavailable. An API response is not independent proof of ledger finality; verify the finalized contract state before relying on it.</p>
+            <form data-current-lookup>
+              <label>Record type
+                <select class="input" data-current-target>
+                  ${(["issuer", "verifier", "auditor", "recognition"] as const).map((target) =>
+                    `<option value="${target}"${state.lookupTarget === target ? " selected" : ""}>${target}</option>`).join("")}
+                </select>
+              </label>
+              <label>Exact current record ID
+                <input class="input mono" data-current-id value="${escapeHtml(state.lookupId)}" autocomplete="off" maxlength="256" />
+              </label>
+              <button class="button secondary" type="submit" data-focus-key="current-lookup-submit"${state.loading || state.lookupBusy || state.governedBusy ? " disabled" : ""}>Look up current record</button>
+            </form>
+            ${state.lookupError === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.lookupError)}</div>`}
+          </section>
+        ` : ""}
+        <details class="advanced-workflows" id="advanced-governance"${advancedOpen ? " open" : ""}><summary>Advanced governance and signing actions</summary>
+        ${state.board === undefined ? `<p class="settings-note">Connect to a registry source before preparing governance work.</p>` : `<nav class="governance-task-grid" aria-label="Governance tasks">
+          ${state.board.sourceMode === "local-ledger" || !demoMode ? "" : `<a href="#task-epoch"><strong>Publish an epoch</strong><span>Fixture workspace checkpoint, not ledger finality</span></a>
+          <a href="#task-signed-intent"><strong>Submit a signed workspace intent</strong><span>External maintainer signature; local workspace only</span></a>`}
+          <a href="#task-proposal"><strong>Prepare or recover a proposal</strong><span>Exact applicant evidence and external quorum</span></a>
+          <a href="#task-policy"><strong>Revise quorum and register verifier</strong><span>Separate policy-bound steps</span></a>
+        </nav>`}
+        ${demoMode && state.board !== undefined && state.board.sourceMode !== "local-ledger" ? `<form class="epoch-panel governed-panel" id="task-epoch" data-epoch-form>
+          <label>Publish epoch label
+            <input class="input" data-epoch-label type="text" value="${escapeHtml(state.epochLabel)}" placeholder="optional operator label" />
+          </label>
+          <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Publish epoch</button>
+        </form>` : ""}
+        ${demoMode && state.board !== undefined && state.board.sourceMode !== "local-ledger" ? `<section class="proposal-panel governed-panel" id="task-signed-intent">
+          <div>
+            <p class="eyebrow">Signed workspace action</p>
+            <h2>Submit an external maintainer intent</h2>
+            <p>Load the current workspace context, sign a maintainer action outside this browser, and paste only the signed envelope. This local workspace path is separate from Compact quorum governance and never handles private keys.</p>
+          </div>
+          <button class="button secondary" type="button" data-signed-context${state.signedBusy ? " disabled" : ""}>Load signing context</button>
+          ${state.signedContext === undefined ? "" : `<pre class="governed-context mono">${escapeHtml(JSON.stringify(state.signedContext, null, 2))}</pre>`}
+          <form data-signed-submit>
+            <label>Externally signed envelope
+              <textarea class="input mono governed-signers" name="signedEnvelope" spellcheck="false" autocomplete="off" required></textarea>
+            </label>
+            <button class="button" type="submit"${state.signedBusy || state.signedContext === undefined ? " disabled" : ""}>Submit signed action</button>
+          </form>
+        </section>` : ""}
+        ${state.board === undefined ? "" : `<section class="proposal-panel governed-panel" id="task-proposal">
+          <div>
+            <p class="eyebrow">Membership application</p>
+            <h2>Submit a governed proposal</h2>
+            <p>Use a redacted, signed evidence envelope from the applicant. Maintainers and the registered evidence verifier sign outside this browser; no private keys or raw VC/VP claims belong here.</p>
+          </div>
+          <form data-proposal-prepare>
+            <label>Proposal role
+              <select class="input" data-proposal-role${state.governedBusy ? " disabled" : ""}>
+                ${(["issuer", "verifier", "auditor", "maintainer"] as const).map((role) =>
+                  `<option value="${role}"${state.proposalRole === role ? " selected" : ""}>${role}</option>`).join("")}
+              </select>
+            </label>
+            <label>${state.proposalRole === "maintainer" ? "Maintainer membership" : "Authorization"} ID
+              <input class="input mono" data-proposal-id value="${escapeHtml(state.proposalAuthorizationId)}" placeholder="exact ${state.proposalRole === "maintainer" ? "membership" : "authorization"} ID" autocomplete="off"${state.governedBusy ? " disabled" : ""} />
+            </label>
+            <label>Redacted application evidence JSON
+              <textarea class="input mono proposal-evidence" data-proposal-evidence spellcheck="false" placeholder='{"envelope":{...},"commitment":"0x...","signature":{...}}'${state.governedBusy ? " disabled" : ""}>${escapeHtml(state.proposalEvidenceJson)}</textarea>
+            </label>
+            <button class="button secondary" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Prepare ${state.proposalRole} proposal</button>
+            <button class="button secondary" type="button" data-proposal-resolve${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Recover proposal receipt</button>
+          </form>
+          ${state.proposalPrepared === undefined ? "" : `
+            <p>Sign this exact policy, sequence, and evidence context. If the ledger or evidence changes, prepare again.</p>
+            <pre class="governed-context mono" data-proposal-context>${escapeHtml(JSON.stringify(state.proposalPrepared, null, 2))}</pre>
+            <form data-proposal-submit>
+              <label>External maintainer signer entries as JSON array
+                <textarea class="input mono governed-signers" data-proposal-signers spellcheck="false"${state.governedBusy ? " disabled" : ""}>${escapeHtml(state.proposalSignersJson)}</textarea>
+              </label>
+              <label>Registered evidence-verifier JubJub signature (hex)
+                <input class="input mono" data-proposal-verifier-signature value="${escapeHtml(state.proposalVerifierSignature)}" autocomplete="off" spellcheck="false"${state.governedBusy ? " disabled" : ""} />
+              </label>
+              <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Submit signed proposal</button>
+            </form>
+          `}
+        </section>`}
+        ${state.board === undefined ? "" : `<section class="proposal-panel governed-panel" id="task-policy">
+          <div>
+            <p class="eyebrow">Governance policy</p>
+            <h2>Revise maintainer quorum</h2>
+            <p>Prepare a threshold revision for external maintainer signatures. After Compact accepts it, separately register the evidence-verifier key under the new policy. Neither step implies network finality.</p>
+            ${state.policyRegistrationPending ? `<p class="alert error">Policy revision accepted locally; evidence-verifier registration is still required before new applications.</p>` : ""}
+          </div>
+          <div class="actions">
+            ${(["default", "emergency", "archival"] as const).map((field) => `
+              <label>${field} threshold
+                <input class="input mono" type="number" min="1" max="5" step="1" data-policy-threshold="${field}" value="${escapeHtml(state.policyThresholds[field])}"${state.governedBusy ? " disabled" : ""} />
+              </label>
+            `).join("")}
+          </div>
+          <div class="actions">
+            <button class="button secondary" type="button" data-policy-prepare-thresholds${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Prepare threshold revision</button>
+            <button class="button secondary" type="button" data-policy-prepare-verifier${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Prepare evidence-verifier registration</button>
+          </div>
+          ${state.policyPrepared === undefined ? "" : `
+            <p>Sign this exact ${state.policyPhase === "thresholds" ? "old-policy revision" : "new-policy registration"} context outside the browser. Changed policy or sequence requires fresh signatures.</p>
+            <pre class="governed-context mono" data-policy-context>${escapeHtml(JSON.stringify(state.policyPrepared, null, 2))}</pre>
+            <form data-policy-submit>
+              <label>External maintainer signer entries as JSON array
+                <textarea class="input mono governed-signers" data-policy-signers spellcheck="false"${state.governedBusy ? " disabled" : ""}>${escapeHtml(state.policySignersJson)}</textarea>
+              </label>
+              <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Submit signed ${state.policyPhase === "thresholds" ? "revision" : "registration"}</button>
+            </form>
+          `}
+        </section>`}
+        </details>
+        <section class="workspace" id="review-board">
+          ${state.board === undefined || state.board.sourceMode === "local-ledger" ? "" : `<div class="review-filters">
+            <div><p class="eyebrow">Review queue</p><h2>Find a trust record</h2><p>${visibleCards.length.toString()} of ${state.cards.length.toString()} ${state.cards.length === 1 ? "record" : "records"} shown</p></div>
+            <label>Search label, role, or exact identifier
+              <input class="input" type="search" data-review-query data-focus-key="review-query" value="${escapeHtml(state.reviewQuery)}" autocomplete="off" />
+            </label>
+            <label>Lifecycle status
+              <select class="input" data-review-status data-focus-key="review-status">
+                <option value="all"${state.reviewStatus === "all" ? " selected" : ""}>All statuses</option>
+                ${REVIEW_STATUSES.map((status) => `<option value="${status}"${state.reviewStatus === status ? " selected" : ""}>${escapeHtml(REVIEW_STATUS_LABELS[status])}</option>`).join("")}
+              </select>
+            </label>
+          </div>`}
+          ${state.board?.sourceMode === "local-ledger" ? `<div class="board" data-local-current-result>
+            ${state.cards.map(renderCard).join("")}
+          </div>` : `<div class="board">
+            ${state.board === undefined
+              ? `<div class="empty-state"><p>${state.loading
+                ? "Checking the registry source before showing review records."
+                : "Review records are unavailable until the connection succeeds."}</p></div>`
+              : visibleCards.length === 0 && (state.reviewQuery.trim() !== "" || state.reviewStatus !== "all")
+              ? `<div class="empty-state"><p>No records match these filters. Try a different label or status.</p></div>`
+              : visibleCards.length === 0
+                ? `<div class="empty-state"><p>No records yet. New requests will appear here after submission.</p></div>`
+                : REVIEW_STATUSES.filter((status) => groupedCards[status].length > 0)
+                  .map((status) => renderColumn(status, groupedCards[status])).join("")}
+          </div>`}
+          ${renderDetailPanel(state.board?.sourceMode === "local-ledger" ? undefined : visibleKeys)}
+        </section>
+      </main>
+    `;
+    const workspace = root.querySelector("#review-board");
+    const advanced = root.querySelector("#advanced-governance");
+    if (workspace !== null && advanced !== null) workspace.after(advanced);
+    if (previousSignedEnvelope !== undefined) {
+      const currentEnvelope = root.querySelector<HTMLTextAreaElement>("[data-signed-submit] [name='signedEnvelope']");
+      if (currentEnvelope !== null) currentEnvelope.value = previousSignedEnvelope;
+    }
+    if (pendingFocusKey !== null) {
+      const target = root.querySelector<HTMLElement>(`[data-focus-key="${pendingFocusKey}"]`);
+      if (target !== null && !(target instanceof HTMLButtonElement && target.disabled)) {
+        target.focus();
+        pendingFocusKey = null;
+      }
+    }
+    if (focusedCardKey !== undefined) {
+      [...root.querySelectorAll<HTMLButtonElement>("[data-select-key]")]
+        .find((card) => card.dataset.selectKey === focusedCardKey)?.focus();
+    }
+    bindEvents();
+  };
+
+  render();
+  window.addEventListener("hashchange", () => {
+    const shell = root.querySelector<HTMLElement>(".app-shell");
+    if (shell !== null) shell.dataset.settingsActive = String(window.location.hash === "#workspace-settings");
+  });
+  void refreshBoard();
+};

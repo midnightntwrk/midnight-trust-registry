@@ -1,0 +1,241 @@
+import type {
+  TrustRegistryApiApplicationAction,
+  TrustRegistryApiApplicationTarget,
+  TrustRegistryApiApplicationMutationResponse,
+  TrustRegistryApiHealthResponse,
+  TrustRegistryApiAuthorizationListResponse,
+  TrustRegistryApiRecognitionListResponse,
+  TrustRegistryApiSummary,
+} from "@midnight-ntwrk/trust-registry-api";
+
+type AuthorizationEntry = TrustRegistryApiAuthorizationListResponse["entries"][number];
+type RecognitionEntry = TrustRegistryApiRecognitionListResponse["entries"][number];
+
+export type ReviewTarget = TrustRegistryApiApplicationTarget;
+export type ReviewAction = TrustRegistryApiApplicationAction;
+export type ReviewStatus =
+  | AuthorizationEntry["authorization"]["status"]
+  | RecognitionEntry["recognition"]["status"];
+
+export type ReviewCard = {
+  detailRows: readonly { label: string; value: string }[];
+  id: string;
+  key: string;
+  label: string;
+  scope: string;
+  status: ReviewStatus;
+  subject: string;
+  target: ReviewTarget;
+  trustLevel: string;
+  updatedAt: string;
+};
+
+export type ReviewBoard = {
+  sourceMode: "snapshot" | "workspace" | "memory" | "local-ledger";
+  workspaceInstanceId?: string;
+  localPlanSha256?: string;
+  deploymentIdentity?: TrustRegistryApiHealthResponse["deploymentIdentity"];
+  nodeReportedCheckpointHash?: string;
+  snapshotGeneratedAt?: string;
+  auditors: readonly AuthorizationEntry[];
+  recognitions: readonly RecognitionEntry[];
+  summary: TrustRegistryApiSummary;
+  verifiers: readonly AuthorizationEntry[];
+  issuers: readonly AuthorizationEntry[];
+};
+
+export type ReviewBoardMutation = TrustRegistryApiApplicationMutationResponse;
+
+export type ReviewStatusBucket = Record<ReviewStatus, ReviewCard[]>;
+
+export const REVIEW_STATUSES: readonly ReviewStatus[] = [
+  "proposed",
+  "authorized",
+  "active",
+  "suspended",
+  "revoked",
+  "superseded",
+  "archived",
+];
+
+export const REVIEW_STATUS_LABELS: Record<ReviewStatus, string> = {
+  proposed: "Proposed",
+  authorized: "Authorized",
+  active: "Active",
+  suspended: "Suspended",
+  revoked: "Revoked",
+  superseded: "Superseded",
+  archived: "Archived",
+};
+
+const REVIEW_ACTIONS_BY_STATUS: Record<ReviewStatus, readonly ReviewAction[]> = {
+  proposed: ["approve", "archive"],
+  authorized: ["activate", "revoke", "archive"],
+  active: ["suspend", "revoke", "archive"],
+  suspended: ["revoke", "archive"],
+  revoked: ["archive"],
+  superseded: [],
+  archived: [],
+};
+
+const defaultBuckets = (): ReviewStatusBucket => ({
+  proposed: [],
+  authorized: [],
+  active: [],
+  suspended: [],
+  revoked: [],
+  superseded: [],
+  archived: [],
+});
+
+const latestAuthorizationTimestamp = (
+  entry: AuthorizationEntry,
+): string =>
+  entry.authorization.archivedAt
+  ?? entry.authorization.supersededAt
+  ?? entry.authorization.revokedAt
+  ?? entry.authorization.suspendedAt
+  ?? entry.authorization.effectiveUntil
+  ?? entry.authorization.activeFrom
+  ?? entry.authorization.authorizedAt
+  ?? entry.authorization.proposedAt;
+
+const latestRecognitionTimestamp = (
+  entry: RecognitionEntry,
+): string =>
+  entry.recognition.archivedAt
+  ?? entry.recognition.supersededAt
+  ?? entry.recognition.revokedAt
+  ?? entry.recognition.suspendedAt
+  ?? entry.recognition.effectiveUntil
+  ?? entry.recognition.effectiveFrom
+  ?? entry.recognition.authorizedAt
+  ?? entry.recognition.proposedAt;
+
+const statusSort = (left: ReviewCard, right: ReviewCard): number =>
+  right.updatedAt.localeCompare(left.updatedAt);
+
+export const getReviewActions = (
+  status: ReviewStatus,
+): readonly ReviewAction[] => REVIEW_ACTIONS_BY_STATUS[status];
+
+export const describeActionConfirmation = (
+  card: ReviewCard,
+  action: ReviewAction,
+): string =>
+  `${action.charAt(0).toUpperCase()}${action.slice(1)} "${card.label}" (${card.target}, ${card.status}) in this local fixture?\nExact record: ${card.id}\nThis does not change the deployed ledger. This action cannot be undone from the console.`;
+
+export const executeReviewAction = async (
+  card: ReviewCard,
+  action: ReviewAction,
+  confirm: (message: string) => boolean | Promise<boolean>,
+  mutate: (target: ReviewTarget, id: string, action: ReviewAction) => Promise<ReviewBoardMutation>,
+): Promise<ReviewBoardMutation | null> => {
+  if (!getReviewActions(card.status).includes(action)) {
+    throw new Error(`${action} is not available for ${card.status} ${card.target} record`);
+  }
+  if (!(await confirm(describeActionConfirmation(card, action)))) return null;
+  return mutate(card.target, card.id, action);
+};
+
+export const executeEpochPublication = async (
+  label: string,
+  confirm: (message: string) => boolean | Promise<boolean>,
+  publish: (label: string) => Promise<ReviewBoardMutation>,
+): Promise<ReviewBoardMutation | null> => {
+  if (!(await confirm(`Confirm publishing a new registry epoch${label.trim().length === 0 ? "" : ` (${label.trim()})`}? This anchors the current state root.`))) {
+    return null;
+  }
+  return publish(label);
+};
+
+export const toAuthorizationReviewCard = (
+  target: Extract<ReviewTarget, "issuer" | "verifier" | "auditor">,
+  entry: AuthorizationEntry,
+): ReviewCard => {
+  if (entry.authorization.role !== target) {
+    throw new Error(`Cannot render ${entry.authorization.role} authorization as ${target} review card`);
+  }
+  if (target !== "issuer" && (entry.authorization.resourceType !== "request-profile"
+    || !/^tr:request-resource:v1:[0-9a-f]{64}$/u.test(entry.authorization.resourceId))) {
+    throw new Error(`Cannot render ${target} authorization without a canonical composite request resource ID`);
+  }
+  return {
+    detailRows: [
+      { label: "Authorization ID", value: entry.authorization.authorizationId },
+      { label: "Subject DID", value: entry.authorization.subjectDid },
+      { label: "Scope", value: `${entry.authorization.resourceType}:${entry.authorization.resourceId}` },
+      { label: "Governed resource ID", value: entry.authorization.resourceId },
+      { label: "Trust level", value: entry.authorization.trustLevel },
+      { label: "Policy", value: entry.authorization.policyId },
+      { label: "Evidence epoch", value: entry.evidence.epoch.epochId },
+      { label: "Evidence state root", value: entry.evidence.epoch.stateRoot },
+    ],
+    id: entry.authorization.authorizationId,
+    key: `${target}:${entry.authorization.authorizationId}`,
+    label: entry.label,
+    scope: `${entry.authorization.resourceType}:${entry.authorization.resourceId}`,
+    status: entry.authorization.status,
+    subject: entry.authorization.subjectDid,
+    target,
+    trustLevel: entry.authorization.trustLevel,
+    updatedAt: latestAuthorizationTimestamp(entry),
+  };
+};
+
+export const toRecognitionReviewCard = (
+  entry: RecognitionEntry,
+): ReviewCard => ({
+  detailRows: [
+    { label: "Recognition ID", value: entry.recognition.recognitionId },
+    { label: "Authority DID", value: entry.recognition.recognizedAuthorityDid },
+    { label: "Recognized registry", value: entry.recognition.recognizedRegistryId },
+    { label: "Scope", value: `${entry.recognition.scope.resourceType}:${entry.recognition.scope.resourceId}` },
+    { label: "Trust level", value: entry.recognition.trustLevel },
+    { label: "Policy", value: entry.recognition.policyId },
+  ],
+  id: entry.recognition.recognitionId,
+  key: `recognition:${entry.recognition.recognitionId}`,
+  label: entry.label,
+  scope: `${entry.recognition.scope.resourceType}:${entry.recognition.scope.resourceId}`,
+  status: entry.recognition.status,
+  subject: entry.recognition.recognizedAuthorityDid,
+  target: "recognition",
+  trustLevel: entry.recognition.trustLevel,
+  updatedAt: latestRecognitionTimestamp(entry),
+});
+
+export const buildReviewCards = (
+  board: ReviewBoard,
+): readonly ReviewCard[] => [
+  ...board.issuers.map((entry) => toAuthorizationReviewCard("issuer", entry)),
+  ...board.verifiers.map((entry) => toAuthorizationReviewCard("verifier", entry)),
+  ...board.auditors.map((entry) => toAuthorizationReviewCard("auditor", entry)),
+  ...board.recognitions.map(toRecognitionReviewCard),
+].sort(statusSort);
+
+export const groupReviewCards = (
+  cards: readonly ReviewCard[],
+): ReviewStatusBucket => {
+  const buckets = defaultBuckets();
+  for (const card of cards) {
+    buckets[card.status].push(card);
+  }
+  for (const status of REVIEW_STATUSES) {
+    buckets[status].sort(statusSort);
+  }
+  return buckets;
+};
+
+export const describeMutation = (
+  result: ReviewBoardMutation,
+): string => {
+  switch (result.recordKind) {
+    case "authorization":
+      return `${result.operation.operation}d ${result.entry.label} (${result.entry.authorization.status})`;
+    case "recognition":
+      return `${result.operation.operation}d ${result.entry.label} (${result.entry.recognition.status})`;
+    case "epoch":
+      return `published epoch ${result.epoch.epochId}`;
+  }
+};

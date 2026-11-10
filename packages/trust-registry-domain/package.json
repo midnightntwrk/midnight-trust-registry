@@ -1,0 +1,50 @@
+{
+  "name": "@midnight-ntwrk/trust-registry-domain",
+  "version": "0.1.0-rc1",
+  "license": "Apache-2.0",
+  "private": false,
+  "type": "module",
+  "engines": {
+    "node": ">=24",
+    "pnpm": ">=10"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/midnightntwrk/midnight-trust-registry.git",
+    "directory": "packages/trust-registry-domain"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js"
+    }
+  },
+  "files": [
+    "dist/**",
+    "README.md"
+  ],
+  "scripts": {
+    "clean": "rm -rf dist tsconfig.build.tsbuildinfo",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "build:light": "pnpm run build",
+    "test:light": "pnpm run test"
+  },
+  "dependencies": {
+    "@midnight-ntwrk/midnight-did-domain": "0.7.0",
+    "@noble/hashes": "^2.2.0",
+    "zod": "^4.6.6"
+  }
+}

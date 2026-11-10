@@ -1,0 +1,430 @@
+import { Buffer } from "node:buffer";
+
+import type { JubjubPoint } from "@midnight-ntwrk/compact-runtime";
+import {
+  computeCreateEpochCommitmentPayloadHash,
+  decodeCanonicalJubjubSignatureHex,
+  encodeCompactActionKind,
+  verifyDeploymentBoundMaintainerAction,
+} from "@midnight-ntwrk/trust-registry-contract";
+import type { EpochCommitmentRecord } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+import {
+  TrustRegistryEvidenceBundleSchema,
+  compareRfc3339Instants,
+  computeAuthorizationStatementLeafHash,
+  computeGovernancePolicySnapshotCommitment,
+  assertIssuerStatusPolicyBindingMatchesAuthorization,
+  computeMerkleRootFromProof,
+  computeRecognitionStatementLeafHash,
+  deriveGovernancePolicySnapshot,
+  type AuthorizationRecord,
+  type TrustRegistryEvidenceBundle,
+} from "@midnight-ntwrk/trust-registry-domain";
+
+import {
+  bytes32Commitment,
+  defaultSequenceToTimestamp,
+  sameBytes32,
+  type SequenceToTimestamp,
+} from "./utils.js";
+
+const EPOCH_PUBLISH_ACTION_KIND = encodeCompactActionKind("tr:epoch:publish");
+
+/**
+ * Caller-authenticated epoch context. These values are not authenticated by
+ * the free bundle verifier: resolve them from a format-one registry ledger or
+ * another independently trusted source before treating its result as trust.
+ */
+export type EpochAnchorVerificationContext = {
+  epochRecord: EpochCommitmentRecord;
+  maintainerPublicKey: JubjubPoint;
+  registryIdCommitment: Uint8Array;
+  networkIdCommitment: Uint8Array;
+  contractAddress: Uint8Array;
+  sequenceToTimestamp?: SequenceToTimestamp;
+  policySupersededAt?: string;
+};
+
+export type BundleVerificationOptions = {
+  expectedRegistryId?: string;
+  expectedSubjectDid?: string;
+  expectedResourceId?: string;
+  expectedRecognizedRegistryId?: string;
+  expectedRole?: AuthorizationRecord["role"];
+  expectedTrustLevel?: string;
+  evaluationTime?: string;
+  requireActive?: boolean;
+} & EpochAnchorVerificationContext;
+
+const assertCommonBundleExpectations = (
+  bundle: TrustRegistryEvidenceBundle,
+  options: BundleVerificationOptions,
+): void => {
+  if (
+    options.expectedRegistryId !== undefined
+    && bundle.registryId !== options.expectedRegistryId
+  ) {
+    throw new Error(
+      `Trust registry mismatch: expected ${options.expectedRegistryId}, got ${bundle.registryId}`,
+    );
+  }
+  if (
+    options.expectedSubjectDid !== undefined
+    && bundle.subjectDid !== options.expectedSubjectDid
+  ) {
+    throw new Error(
+      `Subject DID mismatch: expected ${options.expectedSubjectDid}, got ${bundle.subjectDid}`,
+    );
+  }
+  if (
+    options.expectedTrustLevel !== undefined
+    && bundle.authorization?.trustLevel !== undefined
+    && bundle.authorization.trustLevel !== options.expectedTrustLevel
+  ) {
+    throw new Error(
+      `Authorization trust level mismatch: expected ${options.expectedTrustLevel}, got ${bundle.authorization.trustLevel}`,
+    );
+  }
+  if (
+    options.expectedTrustLevel !== undefined
+    && bundle.recognition?.trustLevel !== undefined
+    && bundle.recognition.trustLevel !== options.expectedTrustLevel
+  ) {
+    throw new Error(
+      `Recognition trust level mismatch: expected ${options.expectedTrustLevel}, got ${bundle.recognition.trustLevel}`,
+    );
+  }
+};
+
+const assertEpochAnchor = (
+  bundle: TrustRegistryEvidenceBundle,
+  options: BundleVerificationOptions,
+): void => {
+  const sequenceToTimestamp =
+    options.sequenceToTimestamp ?? defaultSequenceToTimestamp;
+  const { epochRecord } = options;
+  const expectedEpochIdCommitment = bytes32Commitment(bundle.epoch.epochId);
+
+  if (bundle.epoch.registryId !== bundle.registryId) {
+    throw new Error("Epoch registry mismatch");
+  }
+  if (bundle.authorization !== undefined && bundle.authorization.registryId !== bundle.registryId) {
+    throw new Error("Authorization registry mismatch");
+  }
+  if (bundle.recognition !== undefined && bundle.recognition.registryId !== bundle.registryId) {
+    throw new Error("Recognition registry mismatch");
+  }
+  if (!sameBytes32(expectedEpochIdCommitment, epochRecord.epochId)) {
+    throw new Error("Epoch id mismatch");
+  }
+  if (bundle.epoch.stateRoot !== `0x${Buffer.from(epochRecord.stateRoot).toString("hex")}`) {
+    throw new Error("Epoch state root mismatch");
+  }
+  if (bundle.epoch.eventRoot !== `0x${Buffer.from(epochRecord.eventRoot).toString("hex")}`) {
+    throw new Error("Epoch event root mismatch");
+  }
+  if (bundle.epoch.policyRoot !== `0x${Buffer.from(epochRecord.policyRoot).toString("hex")}`) {
+    throw new Error("Epoch policy root mismatch");
+  }
+  if (compareRfc3339Instants(bundle.epoch.validFrom, sequenceToTimestamp(epochRecord.validFromSequence)) !== 0) {
+    throw new Error("Epoch validFrom mismatch");
+  }
+  if (compareRfc3339Instants(bundle.epoch.validUntil, sequenceToTimestamp(epochRecord.validUntilSequence)) !== 0) {
+    throw new Error("Epoch validUntil mismatch");
+  }
+
+  const evaluationTime = options.evaluationTime ?? bundle.generatedAt;
+  if (compareRfc3339Instants(evaluationTime, bundle.epoch.validFrom) < 0) {
+    throw new Error("Epoch is not yet valid for this evidence bundle");
+  }
+  if (compareRfc3339Instants(evaluationTime, bundle.epoch.validUntil) > 0) {
+    throw new Error("Epoch is stale for this evidence bundle");
+  }
+
+  const maintainerSignature = bundle.epoch.maintainerSignatures[0]!;
+  if (maintainerSignature.algorithm !== "jubjub-schnorr") {
+    throw new Error("Epoch maintainer signature algorithm is unsupported");
+  }
+  if (!sameBytes32(bytes32Commitment(maintainerSignature.keyId), epochRecord.maintainerKeyId)) {
+    throw new Error("Epoch maintainer DID method does not match its accepted key commitment");
+  }
+  let signature: ReturnType<typeof decodeCanonicalJubjubSignatureHex>;
+  try {
+    signature = decodeCanonicalJubjubSignatureHex(maintainerSignature.signature);
+  } catch (error) {
+    throw new Error("Epoch maintainer signature encoding is invalid", { cause: error });
+  }
+  const payloadHash = computeCreateEpochCommitmentPayloadHash(
+    epochRecord.epochId,
+    epochRecord.stateRoot,
+    epochRecord.eventRoot,
+    epochRecord.policyRoot,
+    epochRecord.validFromSequence,
+    epochRecord.validUntilSequence,
+  );
+  if (
+    !(epochRecord.publicationPolicyCommitment instanceof Uint8Array)
+    || epochRecord.publicationPolicyCommitment.length !== 32
+    || epochRecord.publicationPolicyCommitment.every((byte) => byte === 0)
+  ) {
+    throw new Error("Epoch publication policy commitment is missing or malformed");
+  }
+  if (
+    !(options.registryIdCommitment instanceof Uint8Array)
+    || options.registryIdCommitment.length !== 32
+    || options.registryIdCommitment.every((byte) => byte === 0)
+  ) {
+    throw new Error("Registry ID commitment is missing or malformed");
+  }
+  if (!sameBytes32(bytes32Commitment(bundle.registryId), options.registryIdCommitment)) {
+    throw new Error("Registry ID commitment does not match the evidence bundle");
+  }
+  for (const [name, value] of [
+    ["Network ID commitment", options.networkIdCommitment],
+    ["Contract address", options.contractAddress],
+  ] as const) {
+    if (!(value instanceof Uint8Array) || value.length !== 32 || value.every((byte) => byte === 0)) {
+      throw new Error(`${name} is missing or malformed`);
+    }
+  }
+
+  let validSignature = false;
+  let verificationFault: unknown;
+  try {
+    validSignature = verifyDeploymentBoundMaintainerAction(
+      options.maintainerPublicKey,
+      options.registryIdCommitment,
+      options.networkIdCommitment,
+      options.contractAddress,
+      epochRecord.publicationPolicyCommitment,
+      EPOCH_PUBLISH_ACTION_KIND,
+      payloadHash,
+      epochRecord.publishedAtSequence,
+      signature,
+    );
+  } catch (error) {
+    verificationFault = error;
+  }
+  if (!validSignature) {
+    throw new Error("Epoch maintainer signature is invalid", { cause: verificationFault });
+  }
+};
+
+const assertPolicyAnchor = (
+  bundle: TrustRegistryEvidenceBundle,
+  options: BundleVerificationOptions,
+): void => {
+  const statementPolicyId = bundle.authorization?.policyId ?? bundle.recognition?.policyId;
+  if (statementPolicyId !== bundle.policy.policyId) {
+    throw new Error("Statement policy ID does not match the bundle policy");
+  }
+  const snapshot = deriveGovernancePolicySnapshot(bundle.policy);
+  const expectedPolicyRoot = computeGovernancePolicySnapshotCommitment(snapshot);
+  if (bundle.epoch.policyRoot !== expectedPolicyRoot) {
+    throw new Error("Policy root does not match the bundle policy");
+  }
+  const evaluationTime = options.evaluationTime ?? bundle.generatedAt;
+  if (compareRfc3339Instants(evaluationTime, snapshot.effectiveFrom) < 0) {
+    throw new Error("Policy snapshot is not yet effective");
+  }
+  if (
+    (snapshot.effectiveUntil !== null
+      && compareRfc3339Instants(evaluationTime, snapshot.effectiveUntil) >= 0)
+    || (options.policySupersededAt !== undefined
+      && compareRfc3339Instants(evaluationTime, options.policySupersededAt) >= 0)
+  ) {
+    throw new Error("Policy snapshot is superseded at the evaluation time");
+  }
+};
+
+const assertInclusionProof = (
+  bundle: TrustRegistryEvidenceBundle,
+): void => {
+  const expectedLeafHash =
+    bundle.authorization !== undefined
+      ? computeAuthorizationStatementLeafHash(bundle.authorization)
+      : computeRecognitionStatementLeafHash(bundle.recognition!);
+
+  if (bundle.inclusionProof.proofType !== "merkle-inclusion") {
+    throw new Error(
+      `Unsupported inclusion proof type: ${bundle.inclusionProof.proofType}`,
+    );
+  }
+  if (bundle.inclusionProof.leafHash !== expectedLeafHash) {
+    throw new Error("Inclusion proof leaf hash does not match the statement");
+  }
+  if (bundle.inclusionProof.root !== bundle.epoch.stateRoot) {
+    throw new Error("Inclusion proof root does not match the anchored state root");
+  }
+  if (bundle.inclusionProof.path[0] !== bundle.epoch.eventRoot) {
+    throw new Error(
+      "Inclusion proof event sibling does not match the anchored event root",
+    );
+  }
+
+  const computedStateRoot = computeMerkleRootFromProof(
+    expectedLeafHash,
+    bundle.inclusionProof.path,
+    bundle.inclusionProof.leafIndex,
+  );
+  if (computedStateRoot !== bundle.inclusionProof.root) {
+    throw new Error(
+      "Inclusion proof root does not match the reconstructed state root",
+    );
+  }
+};
+
+const assertIssuerStatusPolicyBinding = (
+  bundle: TrustRegistryEvidenceBundle,
+): void => {
+  if (bundle.authorization?.role !== "issuer") return;
+  if (bundle.statusPolicyBinding === undefined) {
+    throw new Error("Issuer status policy binding preimage is missing");
+  }
+  if (bundle.authorization.statusPolicyBindingCommitment === undefined) {
+    throw new Error("Issuer status policy binding commitment is missing");
+  }
+  assertIssuerStatusPolicyBindingMatchesAuthorization(
+    bundle.statusPolicyBinding,
+    bundle.registryId,
+    bundle.authorization.authorizationId,
+    bundle.authorization.statusPolicyBindingCommitment,
+  );
+  if (
+    bundle.referencedStatusRegistryId !== undefined
+    || bundle.referencedStatusPolicyUri !== undefined
+  ) {
+    throw new Error("Unanchored issuer status metadata is not accepted");
+  }
+};
+
+/** Verifies consistency with the caller's anchor, not that anchor's provenance. */
+export const verifyTrustRegistryEvidenceBundle = (
+  bundleInput: TrustRegistryEvidenceBundle,
+  options: BundleVerificationOptions,
+): TrustRegistryEvidenceBundle => {
+  const bundle = TrustRegistryEvidenceBundleSchema.parse(bundleInput);
+  assertCommonBundleExpectations(bundle, options);
+  if (
+    options.expectedRole !== undefined
+    && bundle.authorization?.role !== options.expectedRole
+  ) {
+    throw new Error(
+      `Authorization role mismatch: expected ${options.expectedRole}, got ${bundle.authorization?.role ?? "none"}`,
+    );
+  }
+  assertEpochAnchor(bundle, options);
+  assertPolicyAnchor(bundle, options);
+  assertInclusionProof(bundle);
+  assertIssuerStatusPolicyBinding(bundle);
+
+  return bundle;
+};
+
+export const verifyIssuerAuthorizationBundle = (
+  bundleInput: TrustRegistryEvidenceBundle,
+  options: BundleVerificationOptions,
+): TrustRegistryEvidenceBundle => {
+  const bundle = verifyTrustRegistryEvidenceBundle(bundleInput, options);
+  const authorization = bundle.authorization;
+
+  if (authorization === undefined || authorization.role !== "issuer") {
+    throw new Error("Evidence bundle does not contain issuer authorization");
+  }
+  if ((options.requireActive ?? true) && authorization.status !== "active") {
+    throw new Error("Issuer authorization is not active");
+  }
+  if (
+    options.expectedResourceId !== undefined
+    && authorization.resourceId !== options.expectedResourceId
+  ) {
+    throw new Error(
+      `Issuer authorization resource mismatch: expected ${options.expectedResourceId}, got ${authorization.resourceId}`,
+    );
+  }
+
+  return bundle;
+};
+
+export const verifyVerifierAuthorizationBundle = (
+  bundleInput: TrustRegistryEvidenceBundle,
+  options: BundleVerificationOptions,
+): TrustRegistryEvidenceBundle => {
+  const bundle = verifyTrustRegistryEvidenceBundle(bundleInput, options);
+  const authorization = bundle.authorization;
+
+  if (authorization === undefined || authorization.role !== "verifier") {
+    throw new Error("Evidence bundle does not contain verifier authorization");
+  }
+  if ((options.requireActive ?? true) && authorization.status !== "active") {
+    throw new Error("Verifier authorization is not active");
+  }
+  if (
+    options.expectedResourceId !== undefined
+    && authorization.resourceId !== options.expectedResourceId
+  ) {
+    throw new Error(
+      `Verifier authorization resource mismatch: expected ${options.expectedResourceId}, got ${authorization.resourceId}`,
+    );
+  }
+
+  return bundle;
+};
+
+export const verifyAuditorAuthorizationBundle = (
+  bundleInput: TrustRegistryEvidenceBundle,
+  options: BundleVerificationOptions,
+): TrustRegistryEvidenceBundle => {
+  const bundle = verifyTrustRegistryEvidenceBundle(bundleInput, options);
+  const authorization = bundle.authorization;
+
+  if (authorization === undefined || authorization.role !== "auditor") {
+    throw new Error("Evidence bundle does not contain auditor authorization");
+  }
+  if ((options.requireActive ?? true) && authorization.status !== "active") {
+    throw new Error("Auditor authorization is not active");
+  }
+  if (
+    options.expectedResourceId !== undefined
+    && authorization.resourceId !== options.expectedResourceId
+  ) {
+    throw new Error(
+      `Auditor authorization resource mismatch: expected ${options.expectedResourceId}, got ${authorization.resourceId}`,
+    );
+  }
+
+  return bundle;
+};
+
+export const verifyRecognitionBundle = (
+  bundleInput: TrustRegistryEvidenceBundle,
+  options: BundleVerificationOptions,
+): TrustRegistryEvidenceBundle => {
+  const bundle = verifyTrustRegistryEvidenceBundle(bundleInput, options);
+  const recognition = bundle.recognition;
+
+  if (recognition === undefined) {
+    throw new Error("Evidence bundle does not contain recognition");
+  }
+  if ((options.requireActive ?? true) && recognition.status !== "active") {
+    throw new Error("Recognition is not active");
+  }
+  if (
+    options.expectedResourceId !== undefined
+    && recognition.scope.resourceId !== options.expectedResourceId
+  ) {
+    throw new Error(
+      `Recognition scope mismatch: expected ${options.expectedResourceId}, got ${recognition.scope.resourceId}`,
+    );
+  }
+  if (
+    options.expectedRecognizedRegistryId !== undefined
+    && recognition.recognizedRegistryId !== options.expectedRecognizedRegistryId
+  ) {
+    throw new Error(
+      `Recognition registry mismatch: expected ${options.expectedRecognizedRegistryId}, got ${recognition.recognizedRegistryId}`,
+    );
+  }
+
+  return bundle;
+};

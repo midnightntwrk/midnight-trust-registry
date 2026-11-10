@@ -1,72 +1,310 @@
-# Midnight Template Repository
+# Midnight Trust Registry
 
-This GitHub repository should be used as a template when creating a new Midnight GitHub repository.
-The template is configured with default repository settings and a set of default files that are expected to exist in all Midnight GitHub repositories.
+`midnight-trust-registry` owns the trust-policy and registry-governance workstream for Midnight identity. It defines how issuers, verifiers, credential resources, and external authorities become trusted without moving DID resolution or verifiable credential issuance into this repository.
 
-### LICENSE
+The repository contains a simulator-first contract, client, API, and local app
+skeleton. The 0.1.0 milestone turns that foundation into a DID/VC-backed,
+governed reference journey without duplicating the sibling repositories'
+responsibilities.
 
-Apache 2.0.
+## Scope
 
-### README.md
+This repository owns:
 
-Provides a brief description for users and developers who want to understand the purpose, setup, and usage of the repository.
+- Trust registry governance and policy records.
+- Issuer, verifier, schema, and credential-definition authorization state.
+- Recognition of external authorities and registries.
+- Historical evidence needed for long-term credential verification.
+- Query and evidence surfaces that applications can consume.
+- Compact and TypeScript packages for registry contracts, clients, and adapters.
 
-### SECURITY.md
+This repository does not own:
 
-Provides a brief description of the Midnight Foundation's security policy and how to properly disclose security issues.
+- DID document resolution or DID CRUD operations. Those belong in `midnight-did`.
+- VC, VP, claim, holder-binding, or credential-status semantics. Those belong in `midnight-verifiable-credentials`.
+- Revocation/status registries. The first TR implementation should integrate with the VC status registry instead of cloning it.
 
-### CONTRIBUTING.md
+## Documentation Map
 
-Provides guidelines for how people can contribute to the Midnight project.
+Choose the path that matches what you need:
 
-### CODEOWNERS
+| Goal | Start here | What a successful run proves |
+| --- | --- | --- |
+| Explore the API, portals, and governed use cases on a laptop | [Quickstart and local demo](docs-site/guide/quickstart.md) | Fixture and Compact-simulator behavior; **not** a deployed ledger or release qualification. |
+| Install a self-hosted stack and prepare an offline-runtime run | [Standalone first run](docs-site/guide/standalone.md) | Source-pinned install and isolated local-ledger observations, up to the human approval stop. |
+| Test the use case and understand the evidence boundary | [End-to-end testing](docs-site/guide/end-to-end-testing.md) | Runnable demo path and the separate deployed standalone acceptance path. |
+| Qualify the 0.1.0 local release candidate | [Operator acceptance record](docs/guide/standalone-local-journey.md#operator-acceptance-record) | Only case-by-case evidence from one approved, deployed, finalized source candidate can support a release decision. The full actor journey has **not** been recorded yet. |
 
-Defines repository ownership rules.
+For a disposable-checkout adopter smoke after install and build, run
+`pnpm run test:e2e:demo`. It covers simulator-backed role journeys and the
+fixture API/UI, not standalone deployment. See the end-to-end guide for the
+separate local-ledger acceptance stop gates.
+With Google Chrome available, `pnpm run test:e2e:demo:browser` also runs the
+applicant and admin browser specs without a destructive light rebuild.
+In a checkout retaining full Compact proving artifacts, use
+`pnpm run integration:prebuilt` for the package and simulator integration lane;
+it verifies the existing 66-circuit output and rebuilds TypeScript/UI packages
+without recompiling Compact. Neither command is deployed-ledger evidence.
 
-### ISSUE_TEMPLATE
+The packaged signed local-ledger API currently serves reads but does not wire
+governed writes or a live VC status-authority adapter. Do not substitute demo
+results, mock-provider tests, or a node-reported genesis hash for the
+standalone acceptance cases. Preprod qualification is deferred; Kubernetes
+and Helm are optional and are not 0.1.0 local-RC gates.
 
-Provides templates for reporting various types of issues, such as: bug report, documentation improvement and feature request.
+- [Documentation site](docs-site/index.md) explains the reference implementation,
+  actors, contract, API, flows, and limitations; the GitHub Pages workflow
+  publishes it from `develop`.
+- [0.1.0 reference profile](docs/spec/milestone-0.1.0.md) defines the actor,
+  use-case, security, and release-acceptance contract for the next milestone.
+- [0.1.0 executable issue plan](docs/plans/milestone-0.1.0-issues.md) maps
+  each use case to a tracker issue, dependency, and definition of done.
+- [Trust registry specification](docs/spec/trust-registry.md) defines the v1 product and protocol scope.
+- [Implementation plan](docs/plans/trust-registry-implementation-plan.md) breaks execution into reviewable slices.
+- [Execution backlog](docs/plans/trust-registry-backlog.md) tracks the current maturity backlog.
+- [Requirements memo](docs/research/trust-registry-requirements-memo.md) captures the research inputs used to derive the requirements.
+- [Architecture boundaries](docs/architecture/trust-registry-boundaries.md) describes how TR integrates with DID and VC repositories.
+- [Demo and release guide](docs/guide/demo-and-release.md) documents the operator walkthrough, package boundaries, and manual publish/smoke workflows.
+- [Local demo walkthrough](docs/guide/local-demo-walkthrough.md) gives repeatable fixture journeys and a loopback UI walkthrough, without presenting them as deployed acceptance.
+- [Standalone local journey quickstart](docs/guide/standalone-local-journey.md) separates real offline deployment evidence from simulator tests and lists the operator stop gates.
+- [Self-hosted standalone first run](docs-site/guide/standalone.md) gives new operators the short verified-bundle and isolated-ledger path; it stops before human approvals and points to the full acceptance record.
+- [Decisions](docs/decisions/trust-registry-decisions.md) records current design decisions and unresolved questions.
 
-### PULL_REQUEST_TEMPLATE
+## Development Baseline
 
-Provides a template for a pull request.
+Target branch is `develop`.
 
-### CLA Assistant
+Use signed DCO commits for repository-facing changes:
 
-The Midnight Foundation appreciates contributions, and like many other open source projects asks contributors to sign a contributor
-License Agreement before accepting contributions. We use CLA assistant (https://github.com/cla-assistant/cla-assistant) to streamline the CLA
-signing process, enabling contributors to sign our CLAs directly within a GitHub pull request.
+```bash
+git commit -S -s -m "<type>: <subject>"
+```
 
-### Dependabot
+Current local validation baseline:
 
-The Midnight Foundation uses GitHub Dependabot feature to keep our projects dependencies up-to-date and address potential security vulnerabilities.
+```bash
+pnpm install --frozen-lockfile
+./run.sh --light
+```
 
-### Checkmarx
+For documentation changes, run `./run.sh docs` to check links, validate the
+OpenAPI inventory, and build the site. Use `pnpm run docs:dev` for local preview.
 
-The Midnight Foundation uses Checkmarx for application security (AppSec) to identify and fix security vulnerabilities.
-All repositories are scanned with Checkmarx's suite of tools including: Static Application Security Testing (SAST), Infrastructure as Code (IaC), Software Composition Analysis (SCA), API Security, Container Security and Supply Chain Scans (SCS).
+`.compact-version` is the single Compact compiler version pin for the Nix
+toolchain and all Compact GitHub workflows. The light gate checks every
+top-level workflow that directly installs Compact, plus Nix; add a future
+Compact-installing composite action to this guard. To upgrade, change that file, update the
+platform-specific fetch hashes in `nix/packages/compact-toolchain.nix`, then
+run `pnpm run check:compact-version` and `./run.sh --light`. Validate the
+toolchain itself with `nix develop --command compactc --version` and
+`nix develop --command ./run.sh --light` before opening a PR. The contract
+build wrapper passes the pin explicitly as `+VERSION`; an unqualified
+`compact compile` can select a different host-installed default. The light
+gate also checks that unqualified compiler default, so a host-installed
+`compact` outside the Nix shell must match the pin for `./run.sh --light` to
+pass. Use the Nix shell if the host default differs.
 
-### Unito
+For local simulator iterations, run the same integration suites and demo smoke
+journeys without generating proving keys:
 
-Facilitates two-way data synchronization, automated workflows and streamline processes between: Jira, GitHub issues and Github project Kanban board.
+```bash
+./run.sh integration --light
+```
 
-# TODO - New Repo Owner
+Before publishing contract or demo changes, run the full integration lane.
+It generates proving keys and remains the validation gate for those artifacts:
 
-### Software Package Data Exchange (SPDX)
-Include the following Software Package Data Exchange (SPDX) short-form identifier in a comment at the top headers of each source code file.
+```bash
+./run.sh integration
+```
 
+The fast GitHub CI lane also runs the focused DID/VC scenarios after
+`./run.sh --light`:
 
- <I>// This file is part of <B>REPLACE WITH REPO-NAME</B>.<BR>
- // Copyright (C) Midnight Foundation<BR>
- // SPDX-License-Identifier: Apache-2.0<BR>
- // Licensed under the Apache License, Version 2.0 (the "License");<BR>
- // You may not use this file except in compliance with the License.<BR>
- // You may obtain a copy of the License at<BR>
- //<BR>
- //	https://www.apache.org/licenses/LICENSE-2.0<BR>
- //<BR>
- // Unless required by applicable law or agreed to in writing, software<BR>
- // distributed under the License is distributed on an "AS IS" BASIS,<BR>
- // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.<BR>
- // See the License for the specific language governing permissions and<BR>
- // limitations under the License.</I>
+```bash
+pnpm --filter @midnight-ntwrk/trust-registry-integration run integration
+```
+
+Package artifact validation for downstream consumers:
+
+```bash
+pnpm run artifacts:pack
+pnpm run packages:check-contents:light
+pnpm run packed-artifacts:smoke
+```
+
+After a full `pnpm run build`, use `pnpm run packages:check-contents` instead;
+the release gate requires proving keys and ZK IR in the contract package.
+
+Artifact tarballs are written to `artifacts/npm/`. The current local artifact
+set is:
+
+- `@midnight-ntwrk/trust-registry-contract`
+- `@midnight-ntwrk/trust-registry-domain`
+- `@midnight-ntwrk/trust-registry-client`
+- `@midnight-ntwrk/trust-registry-integration`
+- `@midnight-ntwrk/trust-registry-cli`
+- `@midnight-ntwrk/trust-registry-api`
+- `@midnight-ntwrk/trust-registry-trqp-adapter`
+- `@midnight-ntwrk/trust-registry-openid-federation-adapter`
+
+The remotely publishable core package subset is intentionally narrower:
+
+- `@midnight-ntwrk/trust-registry-contract`
+- `@midnight-ntwrk/trust-registry-domain`
+- `@midnight-ntwrk/trust-registry-client`
+- `@midnight-ntwrk/trust-registry-trqp-adapter`
+- `@midnight-ntwrk/trust-registry-openid-federation-adapter`
+
+`@midnight-ntwrk/trust-registry-integration`, `@midnight-ntwrk/trust-registry-cli`,
+and `@midnight-ntwrk/trust-registry-api` remain local-only artifacts for now
+while their public packaging and deployment policy is finalized. Identity
+dependencies are installed from npm; local artifact smoke runs in a clean
+consumer without seeding vendored dependency tarballs.
+
+## Quick Demo Workflow
+
+For a single-command, role-guided local fixture walkthrough, run
+`pnpm demo:guided` and open the URL it prints. Start as an issuer, verifier
+or auditor, then switch among five maintainer personas to exercise a 3-of-5
+browser-local decision. This is not signed or finalized governance. See the
+[guided role demo](docs/guides/guided-role-demo.md).
+
+For the separate technical API and console surfaces, prepare a mutable local
+operator workspace from the repo root:
+
+```bash
+pnpm run demo:prepare
+```
+
+Then start the local surfaces in separate terminals:
+
+```bash
+pnpm run demo:serve:api
+pnpm run demo:serve:admin-console
+pnpm run demo:serve:applicant-portal
+```
+
+Default local endpoints:
+
+- API: `http://127.0.0.1:4400`
+- Admin console: `http://127.0.0.1:4173`
+- Applicant portal: `http://127.0.0.1:4175`
+
+You can also seed a deterministic read-only snapshot for fixture-driven demos:
+
+```bash
+pnpm run demo:prepare:snapshot
+```
+
+Smoke-test the documented demo flow from a clean local checkout:
+
+```bash
+pnpm run demo:smoke
+```
+
+For the separate, fixture-only auditor applicant journey, run
+`pnpm run demo:auditor` and open `http://127.0.0.1:4400`. This serves the
+portal and its private API on one loopback origin. Paste the DID-signed
+application printed by the command, issue a challenge, then generate the
+matching VP in another terminal with
+`node scripts/demo-auditor-admission.mjs vp <nonce>` and paste its JSON into
+the portal. `pnpm run demo:auditor:smoke` automates that same HTTP path and
+checks unauthorized access, wrong scope, and replay. The host uses a fixture
+identity, in-memory state, and a fixed virtual clock; it is not a public
+admission service or a production VC status verifier.
+
+`pnpm run demo:signed-issuer`, `pnpm run demo:signed-verifier`,
+`pnpm run demo:signed-auditor`, and `pnpm run demo:signed-maintainer` run the same joined local membership journey
+for each role. The harness derives
+registration preflight and API snapshots from one Compact simulator, then
+serves public queries from a fresh private file-backed operator workspace.
+Only the host's governed epoch-publication port updates that workspace from
+the simulator projection. It acquires the local workspace lock before Compact
+execution, so a competing process gets 409 without advancing governance.
+The demo then starts a separate read-only API process against the same file to
+check that the final epoch and historical/current decisions survive restart.
+Unsafe fixture mutation routes remain disabled. It
+exercises DID-signed application, one-use VP, redacted receipt, 2-of-3
+maintainer proposal/approval/activation, and externally signed registry epoch
+publication through the admin console API client. The publish route rejects
+a stale context or insufficient quorum before accepting a ledger commitment;
+the public epoch lookup then observes that exact commitment. The issuer,
+verifier, and auditor paths then use the same signed quorum to suspend and
+revoke the grant, reject single or duplicate signers, deny current trust,
+and preserve the earlier active decision. The maintainer path likewise
+suspends and revokes its non-bootstrap member and checks the active governor
+count in Compact. Issuer,
+verifier, and auditor grants reach an API bundle independently verified by the
+client; maintainer activation is checked in Compact. Single-maintainer actions cannot advance
+the ledger. Pending records, consumed nonces, challenges, and accepted redacted
+receipts use private files that a second store instance can reopen. The local
+journeys use the applicant portal client for the signed application and VP
+admission, and the admin console client for quorum proposal and lifecycle
+actions. Issuer and verifier journeys compare the public API trust decision
+and evidence leaf with TRQP at the same selected time; auditor has no TRQP
+mapping in this profile. `./run.sh integration --light` executes all four
+joined journeys as the deterministic local CI target. The local
+file adapter does not make challenge consumption, evidence acceptance, and
+Compact governance one atomic transaction; the demo does not establish
+production family/status verification or network finality.
+Per-grant evidence snapshots still use simulator fixture signing; the
+externally signed route covers registry epoch publication, not every evidence
+bundle created during projection.
+The auditor grant proves an exact request-profile mandate; it does not grant
+automatic access to a verifier's private records.
+The maintainer journey verifies activation in the Compact membership record;
+it does not claim a public issuer-style authorization bundle.
+
+Refresh published DID and VC dependencies with validation:
+
+```bash
+pnpm run refresh:identity-dependencies -- --did-version 0.7.0 --vc-version 0.2.0 --validate light
+```
+
+`pnpm run check:workspace-manifests` validates checked-in manifests before
+dependencies are installed. After `pnpm install`, run
+`pnpm run check:installed-identity-runtime` to verify the effective DID/VC
+packages, pnpm overrides, and resolved Compact runtime. The light gate runs
+both checks in that order.
+
+For docs-only edits, the minimum fallback remains:
+
+```bash
+./scripts/check-docs.sh
+git diff --check
+```
+
+## Project Files
+
+- [Contributing guide](CONTRIBUTING.md) describes the contribution process.
+- [Security policy](SECURITY.md) describes responsible disclosure.
+- [License](LICENSE) is Apache-2.0.
+- [Code owners](CODEOWNERS) defines repository ownership.
+
+## Current Package Surface
+
+Implemented now:
+
+```text
+packages/trust-registry-domain/  TypeScript domain records, lifecycle validators, and evidence schemas
+contracts/trust-registry/        Compact governance, authorization, recognition, and epoch contract
+packages/trust-registry-integration/  Local simulator harness and end-to-end trust scenarios
+packages/trust-registry-client/  TypeScript query and evidence-verification client
+packages/trust-registry-cli/     Operator CLI for local workspace initialization, governed participant workflows, snapshot inspection, evidence export, and audit reports
+packages/trust-registry-api/     HTTP query and governed-application surface over saved snapshots and operator workspaces
+packages/trust-registry-admin-console/  Local admin review UI for governed approval, lifecycle actions, and epoch publication
+packages/trust-registry-applicant-portal/  Local applicant submission and public active-registry inspection UI
+adapters/trqp/                   TRQP-style read adapter
+adapters/openid-federation/      OpenID Federation publication experiment
+```
+
+## Planned Additions
+
+The next package layout is intentionally narrow:
+
+```text
+examples/                         DID/VC integration examples
+```
+
+Do not create the remaining directories until the corresponding backlog item is implemented with tests and docs.

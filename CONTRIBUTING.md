@@ -41,6 +41,48 @@ Ensure the title is a clear summary of the requirement and provides enough conte
 * **Code Review:** All pull requests undergo code review by project maintainers.
   Be prepared to address feedback from reviewers.
 
+## Trust Registry Surface Change Discipline
+
+Use `develop` as the default target branch for repository changes unless a
+maintainer asks for a release or hotfix branch.
+
+Set up the repository with pnpm:
+
+```bash
+pnpm install --frozen-lockfile
+```
+
+Run the minimum review gate before opening a PR:
+
+```bash
+./run.sh --light
+```
+
+Also run the integration lane when a change touches any of these trust-registry
+surfaces:
+
+* Compact circuits, generated contract artifacts, or package export maps.
+* Domain, client, API, CLI, or UI runtime behavior.
+* DID or VC package dependency versions or vendored tarballs.
+* `./run.sh`, GitHub Actions workflows, or local demo/operator commands.
+* Documentation that changes how integrators or operators consume the repo.
+
+For these changes, update tests, docs, and the changelog in the same PR:
+
+```bash
+./run.sh integration
+```
+
+## Public Repository Policies
+
+Keep repository changes reviewable and reproducible:
+
+* Do not commit secrets, private research notes, local wallet state, proof-server logs, or absolute machine-specific paths.
+* Pin GitHub Actions to immutable commit references when adding or changing workflows.
+* Include a DCO sign-off and GPG signature on every repository-facing commit.
+* Describe release, packaging, workflow, and public documentation changes in the pull request and changelog when they affect users or operators.
+* Report vulnerabilities through the private GitHub security channel described in `SECURITY.md`, not through public issues.
+
 ## Requirements for Acceptable Contributions:
 
 * **Coding Standards:** Code must adhere to the coding style guides defined in our documentation

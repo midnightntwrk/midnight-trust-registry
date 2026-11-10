@@ -1,0 +1,65 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "cacheMaxAge": "7d",
+  "cacheMaxSize": "2GB",
+  "globalDependencies": [".compact-version", "scripts/compile-compact.mjs"],
+  "tasks": {
+    "lint": {
+      "outputs": []
+    },
+    "typecheck": {
+      "dependsOn": [
+        "build",
+        "^build"
+      ],
+      "outputs": []
+    },
+    "build": {
+      "dependsOn": [
+        "^build"
+      ],
+      "outputs": [
+        "dist/**",
+        "src/managed/**",
+        "tsconfig.build.tsbuildinfo"
+      ]
+    },
+    "test": {
+      "dependsOn": [
+        "build"
+      ],
+      "outputs": []
+    },
+    "integration": {
+      "dependsOn": [
+        "build"
+      ],
+      "outputs": []
+    },
+    "integration:light": {
+      "dependsOn": [
+        "build:light"
+      ],
+      "outputs": []
+    },
+    "clean": {
+      "cache": false
+    },
+    "build:light": {
+      "dependsOn": [
+        "^build:light"
+      ],
+      "outputs": [
+        "dist/**",
+        "src/managed/**",
+        "tsconfig.build.tsbuildinfo"
+      ]
+    },
+    "test:light": {
+      "dependsOn": [
+        "build:light"
+      ],
+      "outputs": []
+    }
+  }
+}

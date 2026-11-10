@@ -1,0 +1,380 @@
+import { Buffer } from "node:buffer";
+
+import {
+  createMidnightDIDString,
+  MidnightNetwork,
+  parseContractAddress,
+} from "@midnight-ntwrk/midnight-did";
+import {
+  createScopedIdentifier,
+  issuerGovernedResourceId,
+  requestGovernedResourceId,
+  sha256Hex,
+  type AuthorizationScope,
+  type AuthorizationRecord,
+  type IssuerGovernedResourceType,
+} from "@midnight-ntwrk/trust-registry-domain";
+import {
+  IssuerResourceType,
+} from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+
+export const issuerResourceTypeDetails = {
+  [IssuerResourceType.credentialFamily]: { governedType: "credentialFamily", recordType: "credential-family" },
+  [IssuerResourceType.schema]: { governedType: "schema", recordType: "schema" },
+  [IssuerResourceType.schemaVersion]: { governedType: "schemaVersion", recordType: "schema-version" },
+  [IssuerResourceType.credentialDefinition]: { governedType: "credentialDefinition", recordType: "credential-definition" },
+  [IssuerResourceType.statusMethodRequirement]: { governedType: "statusMethodRequirement", recordType: "status-method-requirement" },
+} as const satisfies Record<
+  IssuerResourceType,
+  { governedType: IssuerGovernedResourceType; recordType: AuthorizationRecord["resourceType"] }
+>;
+
+export const bytes32Commitment = (value: string): Uint8Array =>
+  Buffer.from(sha256Hex(value).slice(2), "hex");
+
+export const createMidnightDid = (label: string): string =>
+  createMidnightDIDString(
+    parseContractAddress(sha256Hex(`midnight-did:${label}`).slice(2)),
+    MidnightNetwork.Undeployed,
+  );
+
+export const createWebDid = (label: string): string =>
+  `did:web:${label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9.-]/g, "-")
+    .replace(/-+/g, "-")}.example`;
+
+export type IssuerScenarioFixture = {
+  authorizationId: string;
+  authorizationIdCommitment: Uint8Array;
+  subjectDid: string;
+  subjectDidCommitment: Uint8Array;
+  resourceType: IssuerResourceType;
+  resourceId: string;
+  resourceIdCommitment: Uint8Array;
+  trustLevel: string;
+  authorizationScope: Extract<AuthorizationScope, { role: "issuer" }>;
+  statusRegistryId: string;
+  statusAuthorityVerificationMethod: string;
+  statusPolicyId: string;
+  statusPolicyVersion: string;
+  statusPolicyContentCommitment: string;
+};
+
+export type VerifierScenarioFixture = {
+  authorizationId: string;
+  authorizationIdCommitment: Uint8Array;
+  subjectDid: string;
+  subjectDidCommitment: Uint8Array;
+  requestProfileId: string;
+  purpose: string;
+  credentialScopeCommitment: string;
+  requestResourceIdCommitment: Uint8Array;
+  allowedAttributeSetId: string;
+  allowedAttributeSetCommitment: Uint8Array;
+  allowedPredicateSetId: string;
+  allowedPredicateSetCommitment: Uint8Array;
+  disclosureLevelId: string;
+  disclosureLevelCommitment: Uint8Array;
+  scopeResourceId: string;
+  trustLevel: string;
+  referencedStatusRegistryId: string;
+};
+
+export type RecognitionScenarioFixture = {
+  recognitionId: string;
+  recognitionIdCommitment: Uint8Array;
+  recognizedAuthorityDid: string;
+  recognizedAuthorityDidCommitment: Uint8Array;
+  recognizedRegistryId: string;
+  recognizedRegistryIdCommitment: Uint8Array;
+  scopeResourceType: string;
+  scopeResourceTypeCommitment: Uint8Array;
+  scopeResourceId: string;
+  scopeResourceIdCommitment: Uint8Array;
+  trustLevel: string;
+};
+
+export type AuditorScenarioFixture = {
+  authorizationId: string;
+  authorizationIdCommitment: Uint8Array;
+  subjectDid: string;
+  subjectDidCommitment: Uint8Array;
+  requestProfileId: string;
+  purpose: string;
+  credentialScopeCommitment: string;
+  requestResourceIdCommitment: Uint8Array;
+  allowedAttributeSetId: string;
+  allowedAttributeSetCommitment: Uint8Array;
+  allowedPredicateSetId: string;
+  allowedPredicateSetCommitment: Uint8Array;
+  disclosureLevelId: string;
+  disclosureLevelCommitment: Uint8Array;
+  scopeResourceId: string;
+  trustLevel: string;
+};
+
+export type MaintainerScenarioFixture = {
+  maintainerId: string;
+  maintainerIdCommitment: Uint8Array;
+  subjectDid: string;
+  subjectDidCommitment: Uint8Array;
+  keyId: Uint8Array;
+  seed: Uint8Array;
+  trustLevel: string;
+};
+
+export const createIssuerAuthorizationScopeFixture = (
+  fixture: IssuerScenarioFixture,
+): Extract<AuthorizationScope, { role: "issuer" }> => fixture.authorizationScope;
+
+const createRequestAuthorizationScopeFixture = (
+  role: "verifier" | "auditor",
+  fixture: VerifierScenarioFixture | AuditorScenarioFixture,
+): Extract<AuthorizationScope, { role: "verifier" | "auditor" }> => ({
+  version: "tr-scope-v1",
+  role,
+  requestProfileId: fixture.requestProfileId,
+  purpose: fixture.purpose,
+  credentialScopeCommitment: fixture.credentialScopeCommitment,
+  allowedAttributes: [fixture.allowedAttributeSetId],
+  allowedPredicates: [fixture.allowedPredicateSetId],
+  disclosureLevel: fixture.disclosureLevelId,
+});
+
+export const createVerifierAuthorizationScopeFixture = (
+  fixture: VerifierScenarioFixture,
+): Extract<AuthorizationScope, { role: "verifier" }> => ({
+  ...createRequestAuthorizationScopeFixture("verifier", fixture),
+  role: "verifier",
+});
+
+export const createAuditorAuthorizationScopeFixture = (
+  fixture: AuditorScenarioFixture,
+): Extract<AuthorizationScope, { role: "auditor" }> => ({
+  ...createRequestAuthorizationScopeFixture("auditor", fixture),
+  role: "auditor",
+});
+
+export const createMaintainerAuthorizationScopeFixture = (
+  registryId: string,
+): Extract<AuthorizationScope, { role: "maintainer" }> => ({
+  version: "tr-scope-v1",
+  role: "maintainer",
+  registryId,
+});
+
+export const createIssuerScenarioFixture = (
+  label: string,
+  resourceType: IssuerResourceType = IssuerResourceType.credentialFamily,
+): IssuerScenarioFixture => {
+  const authorizationId = createScopedIdentifier("auth", "issuer", label, "v1");
+  const subjectDid = createMidnightDid(`issuer:${label}`);
+  const authorizationScope: Extract<AuthorizationScope, { role: "issuer" }> = {
+    version: "tr-scope-v1",
+    role: "issuer",
+    credentialFamilyId: createScopedIdentifier("credential-family", label, "v1"),
+    schemaId: createScopedIdentifier("schema", label, "v1"),
+    schemaVersion: "1.0.0",
+    credentialDefinitionId: createScopedIdentifier("credential-definition", label, "v1"),
+    statusMethod: "midnight-status-registry-v1",
+  };
+  const resourceKind = issuerResourceTypeDetails[resourceType]?.governedType;
+  if (resourceKind === undefined) throw new RangeError("Unsupported issuer resource type");
+  const resourceId = issuerGovernedResourceId(authorizationScope, resourceKind);
+
+  return {
+    authorizationId,
+    authorizationIdCommitment: bytes32Commitment(authorizationId),
+    subjectDid,
+    subjectDidCommitment: bytes32Commitment(subjectDid),
+    resourceType,
+    resourceId,
+    resourceIdCommitment: bytes32Commitment(resourceId),
+    trustLevel: "approved",
+    authorizationScope,
+    statusRegistryId: sha256Hex(`status-registry:${label}`),
+    statusAuthorityVerificationMethod: `${subjectDid}#status-1`,
+    statusPolicyId: createScopedIdentifier("status-policy", label, "v1"),
+    statusPolicyVersion: "v1",
+    statusPolicyContentCommitment: sha256Hex(`status-policy-content:${label}`),
+  };
+};
+
+export const createRecognitionScenarioFixture = (
+  label: string,
+): RecognitionScenarioFixture => {
+  const recognitionId = createScopedIdentifier("recognition", "authority", label, "v1");
+  const recognizedAuthorityDid = createWebDid(`${label}.authority`);
+  const recognizedRegistryId = createScopedIdentifier(
+    "registry",
+    "external",
+    label,
+    "v1",
+  );
+  const scopeResourceType = "recognized-scope";
+  const scopeResourceId = createScopedIdentifier("credential-family", label, "v1");
+
+  return {
+    recognitionId,
+    recognitionIdCommitment: bytes32Commitment(recognitionId),
+    recognizedAuthorityDid,
+    recognizedAuthorityDidCommitment: bytes32Commitment(recognizedAuthorityDid),
+    recognizedRegistryId,
+    recognizedRegistryIdCommitment: bytes32Commitment(recognizedRegistryId),
+    scopeResourceType,
+    scopeResourceTypeCommitment: bytes32Commitment(scopeResourceType),
+    scopeResourceId,
+    scopeResourceIdCommitment: bytes32Commitment(scopeResourceId),
+    trustLevel: "peer-approved",
+  };
+};
+
+export const createVerifierScenarioFixture = (
+  label: string,
+): VerifierScenarioFixture => {
+  const authorizationId = createScopedIdentifier(
+    "auth",
+    "verifier",
+    label,
+    "v1",
+  );
+  const subjectDid = createMidnightDid(`verifier:${label}`);
+  const requestProfileId = createScopedIdentifier("request-profile", label, "v1");
+  const allowedAttributeSetId = createScopedIdentifier(
+    "allowed-attribute-set",
+    label,
+    "minimal",
+  );
+  const allowedPredicateSetId = createScopedIdentifier(
+    "allowed-predicate-set",
+    label,
+    "adult",
+  );
+  const disclosureLevelId = createScopedIdentifier(
+    "disclosure-level",
+    label,
+    "selective",
+  );
+  const purpose = "admission";
+  const credentialScopeCommitment = sha256Hex(`credential-scope:${requestProfileId}`);
+  const scopeResourceId = requestGovernedResourceId({
+    version: "tr-scope-v1",
+    role: "verifier",
+    requestProfileId,
+    purpose,
+    credentialScopeCommitment,
+    allowedAttributes: [allowedAttributeSetId],
+    allowedPredicates: [allowedPredicateSetId],
+    disclosureLevel: disclosureLevelId,
+  });
+
+  return {
+    authorizationId,
+    authorizationIdCommitment: bytes32Commitment(authorizationId),
+    subjectDid,
+    subjectDidCommitment: bytes32Commitment(subjectDid),
+    requestProfileId,
+    purpose,
+    credentialScopeCommitment,
+    requestResourceIdCommitment: bytes32Commitment(scopeResourceId),
+    allowedAttributeSetId,
+    allowedAttributeSetCommitment: bytes32Commitment(allowedAttributeSetId),
+    allowedPredicateSetId,
+    allowedPredicateSetCommitment: bytes32Commitment(allowedPredicateSetId),
+    disclosureLevelId,
+    disclosureLevelCommitment: bytes32Commitment(disclosureLevelId),
+    scopeResourceId,
+    trustLevel: "approved",
+    referencedStatusRegistryId: createScopedIdentifier(
+      "status-registry",
+      label,
+      "v1",
+    ),
+  };
+};
+
+export const createAuditorScenarioFixture = (
+  label: string,
+): AuditorScenarioFixture => {
+  const authorizationId = createScopedIdentifier(
+    "auth",
+    "auditor",
+    label,
+    "v1",
+  );
+  const subjectDid = createMidnightDid(`auditor:${label}`);
+  const requestProfileId = createScopedIdentifier(
+    "audit-request-profile",
+    label,
+    "v1",
+  );
+  const allowedAttributeSetId = createScopedIdentifier(
+    "audit-attribute-set",
+    label,
+    "minimal",
+  );
+  const allowedPredicateSetId = createScopedIdentifier(
+    "audit-predicate-set",
+    label,
+    "compliance",
+  );
+  const disclosureLevelId = createScopedIdentifier(
+    "audit-disclosure-level",
+    label,
+    "restricted",
+  );
+  const purpose = "admission";
+  const credentialScopeCommitment = sha256Hex(`credential-scope:${requestProfileId}`);
+  const scopeResourceId = requestGovernedResourceId({
+    version: "tr-scope-v1",
+    role: "auditor",
+    requestProfileId,
+    purpose,
+    credentialScopeCommitment,
+    allowedAttributes: [allowedAttributeSetId],
+    allowedPredicates: [allowedPredicateSetId],
+    disclosureLevel: disclosureLevelId,
+  });
+
+  return {
+    authorizationId,
+    authorizationIdCommitment: bytes32Commitment(authorizationId),
+    subjectDid,
+    subjectDidCommitment: bytes32Commitment(subjectDid),
+    requestProfileId,
+    purpose,
+    credentialScopeCommitment,
+    requestResourceIdCommitment: bytes32Commitment(scopeResourceId),
+    allowedAttributeSetId,
+    allowedAttributeSetCommitment: bytes32Commitment(allowedAttributeSetId),
+    allowedPredicateSetId,
+    allowedPredicateSetCommitment: bytes32Commitment(allowedPredicateSetId),
+    disclosureLevelId,
+    disclosureLevelCommitment: bytes32Commitment(disclosureLevelId),
+    scopeResourceId,
+    trustLevel: "audit-approved",
+  };
+};
+
+export const createMaintainerScenarioFixture = (
+  label: string,
+): MaintainerScenarioFixture => {
+  const maintainerId = createScopedIdentifier(
+    "participant",
+    "maintainer",
+    label,
+    "v1",
+  );
+  const subjectDid = createMidnightDid(`maintainer:${label}`);
+  return {
+    maintainerId,
+    maintainerIdCommitment: bytes32Commitment(maintainerId),
+    subjectDid,
+    subjectDidCommitment: bytes32Commitment(subjectDid),
+    keyId: bytes32Commitment(`${subjectDid}#key-1`),
+    seed: bytes32Commitment(`maintainer-fixture-key:${label}`),
+    trustLevel: "governance-approved",
+  };
+};

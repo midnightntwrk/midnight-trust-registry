@@ -1,0 +1,49 @@
+{
+  "name": "@midnight-ntwrk/trust-registry-trqp-adapter",
+  "version": "0.1.0-rc1",
+  "license": "Apache-2.0",
+  "private": false,
+  "type": "module",
+  "engines": {
+    "node": ">=24",
+    "pnpm": ">=10"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/midnightntwrk/midnight-trust-registry.git",
+    "directory": "adapters/trqp"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/**",
+    "README.md"
+  ],
+  "scripts": {
+    "clean": "rm -rf dist tsconfig.build.tsbuildinfo",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run --testTimeout 30000",
+    "build:light": "pnpm run build",
+    "test:light": "pnpm run test"
+  },
+  "dependencies": {
+    "@midnight-ntwrk/trust-registry-client": "workspace:0.1.0-rc1",
+    "@midnight-ntwrk/trust-registry-domain": "workspace:0.1.0-rc1",
+    "zod": "^4.6.6"
+  },
+  "devDependencies": {
+    "@midnight-ntwrk/trust-registry-integration": "workspace:0.1.0-rc1"
+  }
+}
