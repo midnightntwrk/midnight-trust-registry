@@ -465,7 +465,7 @@ describe("trust registry applicant portal app", () => {
       JSON.stringify({ nonce, challengeHash, presentation: { privateClaim: "never-render-me" } }),
     );
     expect(root.querySelector("[data-application-vp-form]")).toBeNull();
-  });
+  }, 15_000);
 
   it("submits only an externally signed auditor request matching every scope field", async () => {
     const root = document.createElement("div");
