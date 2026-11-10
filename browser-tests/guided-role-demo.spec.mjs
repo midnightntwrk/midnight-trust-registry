@@ -303,3 +303,82 @@ test("unknown API status fails closed before HTML rendering", async ({ page, all
     await new Promise((done, reject) => server.close((error) => error ? reject(error) : done()));
   }
 });
+
+test("hostile API text and identifiers stay inert in the guided view", async ({ page, allowedLocalOrigins }) => {
+  const staticAssets = createStaticAssetHandler({
+    distDir: resolve("packages/trust-registry-admin-console/dist"), name: "guided-demo",
+  });
+  const label = `Issuer & '<img data-hostile src=x onerror="window.__mtrExecuted=1">`;
+  const id = `auth:fixture" autofocus onfocus="window.__mtrExecuted=1`;
+  const errorText = `API failed: <svg data-hostile onload="window.__mtrExecuted=1"> & 'quoted'`;
+  let failHealth = false;
+  const server = createServer(async (request, response) => {
+    const path = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+    if (path === "/demo.html" || path.endsWith(".js") || path === "/demo.css"
+      || path === "/brand.css" || path === "/midnight-logo.svg" || path.startsWith("/fonts/")) {
+      await staticAssets(request, response);
+      return;
+    }
+    response.setHeader("content-type", "application/json");
+    if (path === "/health") {
+      if (failHealth) {
+        response.statusCode = 500;
+        response.end(JSON.stringify({ detail: errorText }));
+      } else response.end(JSON.stringify({ status: "ok", sourceMode: "workspace", registryId }));
+    } else if (path === "/v1/registry/summary") {
+      response.end(JSON.stringify({
+        registryId, registryLabel, registryDid: "did:midnight:undeployed:registry",
+        policyId: "policy:guided", currentEpochId: "epoch:guided:1", epochCount: 1,
+        issuerCounts: emptyCounts(), verifierCounts: emptyCounts(), auditorCounts: emptyCounts(),
+        recognitionCounts: emptyCounts(),
+      }));
+    } else if (path === "/v1/applications" && request.method === "POST") {
+      response.statusCode = 201;
+      response.end(JSON.stringify({ recordKind: "authorization", entry: { authorization: { authorizationId: id } } }));
+    } else if (path === "/v1/authorizations/issuer") {
+      response.end(JSON.stringify({ entries: [{
+        label,
+        authorization: {
+          authorizationId: id, registryId, role: "issuer", status: "proposed",
+          subjectDid: "did:midnight:undeployed:issuer", resourceType: "schema",
+          resourceId: "schema:fixture", trustLevel: "approved", policyId: "policy:guided",
+          proposedAt: "2026-05-20T00:00:00Z",
+        },
+        evidence: { epoch: { epochId: "epoch:guided:1", stateRoot: "0xroot" } },
+      }] }));
+    } else if (path.startsWith("/v1/authorizations/") || path === "/v1/recognitions") {
+      response.end(JSON.stringify({ entries: [] }));
+    } else {
+      response.statusCode = 404;
+      response.end(JSON.stringify({ title: "not found" }));
+    }
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("expected TCP address");
+  const base = `http://127.0.0.1:${address.port}`;
+  allowedLocalOrigins.add(base);
+  try {
+    await page.goto(`${base}/demo.html?apiBase=${encodeURIComponent(base)}#issuer`);
+    await expect(page.getByText(label, { exact: true })).toBeVisible();
+    await page.getByLabel("Display name").fill(label);
+    await page.getByRole("button", { name: "Send demo request" }).click();
+    await expect(page.locator('.demo-alert.success[role="status"]')).toContainText(label);
+    expect(await page.locator("[data-hostile], [onerror]").count()).toBe(0);
+    await page.getByRole("link", { name: "Switch to Maintainer #1" }).click();
+    await expect(page.locator("[data-select-card]")).toHaveAttribute("data-select-card", `issuer:${id}`);
+    await expect(page.locator(".demo-review code")).toHaveText(id);
+    expect(await page.locator("[data-hostile], [autofocus], [onfocus], [onerror], [onload]").count()).toBe(0);
+    expect(await page.evaluate(() => window.__mtrExecuted)).toBeUndefined();
+
+    failHealth = true;
+    await page.getByRole("button", { name: "Refresh records" }).click();
+    await expect(page.getByRole("alert").filter({ hasText: errorText })).toBeVisible();
+    expect(await page.locator("[data-hostile], [onload]").count()).toBe(0);
+    expect(await page.evaluate(() => window.__mtrExecuted)).toBeUndefined();
+  } finally {
+    await page.close();
+    server.closeAllConnections();
+    await new Promise((done, reject) => server.close((error) => error ? reject(error) : done()));
+  }
+});

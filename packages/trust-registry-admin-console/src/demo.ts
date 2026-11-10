@@ -25,10 +25,6 @@ const isGuidedCard = (card: ReviewCard): boolean =>
   card.target === "issuer" || card.target === "verifier" || card.target === "auditor";
 const hasKnownStatus = (card: ReviewCard): boolean => REVIEW_STATUSES.includes(card.status);
 
-const escapeHtml = (value: string): string => value
-  .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
-  .replaceAll('"', "&quot;").replaceAll("'", "&#39;");
-
 const applicantRoles: readonly ApplicantRole[] = ["issuer", "verifier", "auditor"];
 const isApplicantRole = (value: DemoRole): value is ApplicantRole =>
   applicantRoles.includes(value as ApplicantRole);
@@ -77,6 +73,29 @@ export const createGuidedDemoApp = (
     board: undefined, cards: [], busy: false, error: undefined, message: undefined,
     role: roleFromHash(initialUrl.hash), selectedKey: undefined,
   };
+  // Only inert slot markers enter the HTML parser; API values are assigned through DOM APIs.
+  let dynamicValues: string[] = [];
+  const dynamic = (value: string): string => {
+    const slot = dynamicValues.length;
+    dynamicValues.push(value);
+    return `__MTR_DEMO_SLOT_${slot}__`;
+  };
+  const fillDynamicValues = (): void => {
+    const slotPattern = /__MTR_DEMO_SLOT_(\d+)__/gu;
+    const substitute = (value: string): string => value.replace(slotPattern, (_match, index: string) =>
+      dynamicValues[Number(index)] ?? "");
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      if (node.nodeType === Node.TEXT_NODE) {
+        node.textContent = substitute(node.textContent ?? "");
+      } else if (node instanceof Element) {
+        for (const attribute of Array.from(node.attributes)) {
+          if (attribute.value.includes("__MTR_DEMO_SLOT_")) node.setAttribute(attribute.name, substitute(attribute.value));
+        }
+      }
+    }
+  };
 
   const isFixture = (): boolean => isLoopback && apiIsLoopback && state.board !== undefined
     && isGuidedWorkspace(state.board);
@@ -113,7 +132,7 @@ export const createGuidedDemoApp = (
             pending > 0 ? `<span class="demo-nav-count">${pending}</span>` : "")).join("")}</div>
         </details>
       </nav>
-      <div class="demo-sidebar-footer"><a href="./index.html?demo=1&amp;apiBase=${encodeURIComponent(apiBase)}">Open technical admin console</a><span>Persona switching is not authentication.</span></div>
+      <div class="demo-sidebar-footer"><a href="${dynamic(`./index.html?demo=1&apiBase=${encodeURIComponent(apiBase)}`)}">Open technical admin console</a><span>Persona switching is not authentication.</span></div>
     </aside>`;
   };
 
@@ -139,7 +158,7 @@ export const createGuidedDemoApp = (
         </form>
       </section><section class="demo-card"><p class="demo-eyebrow">Step 2 · Track</p><h2>Your ${role} records</h2>
         ${cards.length === 0 ? '<p class="demo-empty">No requests in this fixture yet. Send one to start the journey.</p>'
-          : `<ul class="demo-record-list">${cards.map((card) => `<li><strong>${escapeHtml(card.label)}</strong><span class="demo-chip ${escapeHtml(card.status)}">${escapeHtml(card.status)}</span><p>${card.status === "proposed" ? "Waiting for committee demo votes." : card.status === "authorized" ? "Approved in fixture; activation is next." : card.status === "active" ? "Active in fixture only, not on chain." : "This record is no longer active."}</p></li>`).join("")}</ul>`}
+          : `<ul class="demo-record-list">${cards.map((card) => `<li><strong>${dynamic(card.label)}</strong><span class="demo-chip ${dynamic(card.status)}">${dynamic(card.status)}</span><p>${card.status === "proposed" ? "Waiting for committee demo votes." : card.status === "authorized" ? "Approved in fixture; activation is next." : card.status === "active" ? "Active in fixture only, not on chain." : "This record is no longer active."}</p></li>`).join("")}</ul>`}
         <a href="#maintainer-1" data-role="maintainer-1" class="demo-text-link">Switch to Maintainer #1 →</a>
       </section></div>`;
   };
@@ -154,11 +173,11 @@ export const createGuidedDemoApp = (
     return `<section class="demo-intro"><p class="demo-eyebrow">Committee · Maintainer #${number}</p><h1>Your review inbox</h1><p>Review this practice request and choose one vote. Three of five maintainers must agree before the demo record changes.</p></section>
       <div class="demo-content-grid"><section class="demo-card"><div class="demo-card-header"><div><p class="demo-eyebrow">Requests needing decisions</p><h2>Inbox</h2></div><span class="demo-chip">${pendingCards().length} open</span></div>
         ${pendingCards().length === 0 ? `<p class="demo-empty">The inbox is clear. ${card?.status === "active" || card?.status === "archived" ? "The latest demo request has a result." : "Start with an applicant role to create a request."}</p><a href="#${card?.target === "verifier" || card?.target === "auditor" ? card.target : "issuer"}" data-role="${card?.target === "verifier" || card?.target === "auditor" ? card.target : "issuer"}" class="demo-text-link">${card?.status === "active" || card?.status === "archived" ? "View applicant result" : "Start as Issuer #1"} →</a>`
-          : `<ul class="demo-inbox">${pendingCards().map((item) => `<li><button type="button" data-select-card="${escapeHtml(item.key)}" class="${item.key === card?.key ? "selected" : ""}"><span class="demo-inbox-top"><strong>${escapeHtml(item.label)}</strong><span class="demo-chip ${escapeHtml(item.status)}">${escapeHtml(item.status)}</span></span><small>${escapeHtml(item.target)} · ${item.status === "proposed" ? "authorization" : "activation"} decision</small></button></li>`).join("")}</ul>`}
+          : `<ul class="demo-inbox">${pendingCards().map((item) => `<li><button type="button" data-select-card="${dynamic(item.key)}" class="${item.key === card?.key ? "selected" : ""}"><span class="demo-inbox-top"><strong>${dynamic(item.label)}</strong><span class="demo-chip ${dynamic(item.status)}">${dynamic(item.status)}</span></span><small>${dynamic(item.target)} · ${item.status === "proposed" ? "authorization" : "activation"} decision</small></button></li>`).join("")}</ul>`}
       </section><section class="demo-card demo-decision"><p class="demo-eyebrow">Selected request</p>${card === undefined || !pendingCards().some((item) => item.key === card.key)
         ? '<h2>No decision selected</h2><p>Applications appear here after submission.</p>'
-        : `<h2>${escapeHtml(card.label)}</h2><p>${escapeHtml(card.target)} · ${card.status === "proposed" ? "authorize" : "activate"} fixture record</p>
-          <div class="demo-review"><strong>What you are reviewing</strong><span>Applicant: ${escapeHtml(card.label)}</span><span>Requested role: ${escapeHtml(card.target)}</span><span>Decision: ${card.status === "proposed" ? "allow this applicant in the demo" : "make this approved demo record active"}</span><details><summary>Technical identifiers and demo limits</summary><code>${escapeHtml(card.id)}</code><span>This practice request does not include signed identity or evidence. It cannot validate a real applicant.</span></details></div>
+        : `<h2>${dynamic(card.label)}</h2><p>${dynamic(card.target)} · ${card.status === "proposed" ? "authorize" : "activate"} fixture record</p>
+          <div class="demo-review"><strong>What you are reviewing</strong><span>Applicant: ${dynamic(card.label)}</span><span>Requested role: ${dynamic(card.target)}</span><span>Decision: ${card.status === "proposed" ? "allow this applicant in the demo" : "make this approved demo record active"}</span><details><summary>Technical identifiers and demo limits</summary><code>${dynamic(card.id)}</code><span>This practice request does not include signed identity or evidence. It cannot validate a real applicant.</span></details></div>
           <div class="demo-tally"><span><strong>${counts.approve}</strong> approvals</span><span><strong>${counts.reject}</strong> rejections</span><span>Need ${DEMO_QUORUM}</span></div>
           ${ownVote === undefined && outcome === undefined ? `<div class="demo-actions"><button type="button" class="demo-button primary" data-vote="approve"${state.busy || !isFixture() ? " disabled" : ""}>Approve in demo</button><button type="button" class="demo-button secondary" data-vote="reject"${state.busy || !isFixture() ? " disabled" : ""}>Reject in demo</button></div>`
             : ownVote !== undefined ? `<p class="demo-voted">Your demo vote: <strong>${ownVote}</strong>. Each persona votes once per stage.</p>` : '<p class="demo-voted">A majority has been reached. Apply the fixture result below.</p>'}
@@ -171,10 +190,11 @@ export const createGuidedDemoApp = (
   };
 
   const render = (): void => {
+    dynamicValues = [];
     const title = roleLabel(state.role);
     root.innerHTML = `<div class="demo-shell">${renderSidebar()}<div class="demo-main"><header class="demo-topbar"><div><span>Guided demo</span><span class="demo-divider">/</span><strong>${title}</strong></div><div><span class="demo-source">${isFixture() ? "Local fixture connected" : "Fixture unavailable"}</span><span class="demo-source warning">Simulation only</span></div></header><main class="demo-page">
-      ${state.error === undefined ? "" : `<div class="demo-alert error" role="alert">${escapeHtml(state.error)}</div>`}
-      ${state.message === undefined ? "" : `<div class="demo-alert success" role="status">${escapeHtml(state.message)}</div>`}
+      ${state.error === undefined ? "" : `<div class="demo-alert error" role="alert">${dynamic(state.error)}</div>`}
+      ${state.message === undefined ? "" : `<div class="demo-alert success" role="status">${dynamic(state.message)}</div>`}
       ${!isLoopback || !apiIsLoopback ? '<div class="demo-alert error" role="alert">The guided demo and its API must run over HTTP on loopback only.</div>'
         : state.board === undefined ? state.error === undefined
           ? '<div class="demo-alert error" role="alert">Connect the local fixture API before using this workspace. Run pnpm demo:guided, then reload.</div>' : ""
@@ -182,6 +202,7 @@ export const createGuidedDemoApp = (
       ${state.role === "overview" ? renderOverview() : isApplicantRole(state.role) ? renderApplicant(state.role) : renderMaintainer(maintainerNumber(state.role)!)}
       <footer class="demo-page-footer"><span>Midnight Trust Registry · guided local fixture</span><button type="button" data-refresh>Refresh records</button><button type="button" data-reset-votes>Clear browser demo votes</button></footer>
     </main></div></div>`;
+    fillDynamicValues();
     bind();
   };
 

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- render guided-demo API text and attribute values through DOM assignment
+  instead of a hand-written HTML escaping chain; cover hostile labels, IDs,
+  and API errors in the browser
 - add an operator-only `decide` command for standalone acceptance cases. It
   records each explicit verdict and referenced evidence hashes in a private
   decision file instead of requiring manual manifest edits; it never verifies
