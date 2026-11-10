@@ -1,3 +1,4 @@
+* @midnightntwrk/mn-codeowners-mnf-se
 /.github/pull_request_template.md @midnightntwrk/mn-security
 /.github/workflows/ @midnightntwrk/mn-security
 /AGENT.md @midnightntwrk/mn-security
