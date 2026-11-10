@@ -12,7 +12,7 @@ const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const DIGEST_IMAGE = /^[a-z0-9][a-z0-9.:/_-]*@sha256:[0-9a-f]{64}$/u;
 const REVISION = /^[0-9a-f]{40}$/u;
 const FINGERPRINT = /^[0-9A-F]{40}$/u;
-const PUBLIC_ASSET_TYPES = new Set([".html", ".js", ".css"]);
+const PUBLIC_ASSET_TYPES = new Set([".html", ".js", ".css", ".svg", ".woff2"]);
 const roles = {
   admin: "@midnight-ntwrk/trust-registry-admin-console",
   applicant: "@midnight-ntwrk/trust-registry-applicant-portal",

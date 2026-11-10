@@ -84,8 +84,12 @@ test("static asset manifest hashes regular files and rejects symlinks", async ()
     await writeFile(join(directory, "assets", "app.js"), "export {};");
     await writeFile(join(directory, "assets", "app.js.map"), "{}");
     await writeFile(join(directory, "assets", "app.d.ts"), "export {};");
+    await writeFile(join(directory, "assets", "mark.svg"), "<svg></svg>");
+    await writeFile(join(directory, "assets", "outfit.woff2"), "font bytes");
     const manifest = await staticAssetManifest(directory);
-    assert.deepEqual(manifest.map((record) => record.path), ["assets/app.js", "index.html"]);
+    assert.deepEqual(manifest.map((record) => record.path), [
+      "assets/app.js", "assets/mark.svg", "assets/outfit.woff2", "index.html",
+    ]);
     assert.ok(manifest.every((record) => /^[0-9a-f]{64}$/u.test(record.sha256)));
     await writeFile(join(directory, "assets", "secret.txt"), "never serve");
     await assert.rejects(staticAssetManifest(directory), /Unexpected static build output/u);
