@@ -3,6 +3,8 @@ import { spawn, spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { ensureWorkspaceInstanceId } from "@midnight-ntwrk/trust-registry-cli";
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const workspace = resolve(root, "artifacts/trust-registry/guided-role-demo-v2-workspace.json");
 const registryLabel = "guided-role-demo";
@@ -21,6 +23,7 @@ if (JSON.parse(readFileSync(workspace, "utf8")).registryLabel !== registryLabel)
   process.stderr.write("Guided demo workspace has an unexpected registry label; refusing to serve it.\n");
   process.exit(1);
 }
+await ensureWorkspaceInstanceId(workspace);
 
 const children = [];
 let stopping = false;

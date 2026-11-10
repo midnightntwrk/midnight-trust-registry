@@ -654,6 +654,15 @@ export const loadWorkspaceFromFile = async (
   workspacePath: string,
 ): Promise<TrustRegistryOperatorWorkspace> => loadWorkspaceJson(workspacePath);
 
+export const ensureWorkspaceInstanceId = async (workspacePath: string): Promise<string> =>
+  withExclusiveWorkspaceWrite(workspacePath, async () => {
+    const workspace = await loadWorkspaceJson(workspacePath);
+    if (workspace.workspaceInstanceId !== undefined) return workspace.workspaceInstanceId;
+    const workspaceInstanceId = randomUUID();
+    await writeWorkspaceJson(workspacePath, { ...workspace, workspaceInstanceId });
+    return workspaceInstanceId;
+  });
+
 export const writeWorkspaceToFile = async (
   workspacePath: string,
   workspace: TrustRegistryOperatorWorkspace,
@@ -674,6 +683,7 @@ export const applyWorkspaceOperation = (
 
   return TrustRegistryOperatorWorkspaceSchema.parse({
     workspaceVersion: "3",
+    ...(workspace.workspaceInstanceId === undefined ? {} : { workspaceInstanceId: workspace.workspaceInstanceId }),
     updatedAt: snapshot.generatedAt,
     registryLabel: workspace.registryLabel,
     operations,

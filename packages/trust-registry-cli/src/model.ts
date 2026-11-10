@@ -252,6 +252,7 @@ export const ConsumedMutationNonceSchema = z.object({
 
 export const TrustRegistryOperatorWorkspaceSchema = z.object({
   workspaceVersion: z.literal("3"),
+  workspaceInstanceId: z.uuid().optional(),
   updatedAt: z.string().datetime({ offset: true }),
   registryLabel: SnapshotEntryLabelSchema,
   operations: z.array(TrustRegistryOperatorWorkspaceOperationSchema),

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- scope guided-demo browser votes to a persisted local workspace instance ID,
+  so recreating the fixture cannot inherit votes from an earlier run
 - render guided-demo API text and attribute values through DOM assignment
   instead of a hand-written HTML escaping chain; cover hostile labels, IDs,
   and API errors in the browser

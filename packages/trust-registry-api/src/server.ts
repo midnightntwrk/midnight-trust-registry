@@ -1169,8 +1169,12 @@ export const createTrustRegistryApiServer = (
         if (options.source.mode === "local-ledger" && selection === undefined) {
           throw new CurrentLedgerSelectionUnavailableError();
         }
-        const summary = selection === undefined
-          ? await loadRegistrySummary(options.source) : buildSnapshotSummary(selection.snapshot);
+        const workspace = isMutableStateSource(options.source)
+          ? await options.source.loadWorkspace() : undefined;
+        const summary = selection !== undefined ? buildSnapshotSummary(selection.snapshot)
+          : workspace !== undefined ? buildSnapshotSummary(workspace.snapshot)
+            : await loadRegistrySummary(options.source);
+        const workspaceInstanceId = workspace?.workspaceInstanceId;
         writeJson(
           response,
           200,
@@ -1180,6 +1184,7 @@ export const createTrustRegistryApiServer = (
             configuredGovernedProposalRoles,
             generatedAt: summary.generatedAt,
             registryId: summary.registryId,
+            ...(workspaceInstanceId === undefined ? {} : { workspaceInstanceId }),
             ...(options.localPlanSha256 === undefined ? {} : { localPlanSha256: options.localPlanSha256 }),
             ...(selection === undefined ? {} : { finalizedBlockHash: selection.finalizedBlockHash }),
             ...(options.source.mode !== "local-ledger" || options.localPlanSha256 === undefined

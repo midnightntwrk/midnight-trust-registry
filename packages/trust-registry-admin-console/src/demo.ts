@@ -20,7 +20,9 @@ const GUIDED_DEMO_REGISTRY_LABEL = "guided-role-demo";
 const isGuidedWorkspace = (board: ReviewBoard): boolean =>
   board.sourceMode === "workspace"
     && board.summary.registryId === GUIDED_DEMO_REGISTRY_ID
-    && board.summary.registryLabel === GUIDED_DEMO_REGISTRY_LABEL;
+    && board.summary.registryLabel === GUIDED_DEMO_REGISTRY_LABEL
+    && typeof board.workspaceInstanceId === "string"
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(board.workspaceInstanceId);
 const isGuidedCard = (card: ReviewCard): boolean =>
   card.target === "issuer" || card.target === "verifier" || card.target === "auditor";
 const hasKnownStatus = (card: ReviewCard): boolean => REVIEW_STATUSES.includes(card.status);
@@ -100,7 +102,7 @@ export const createGuidedDemoApp = (
   const isFixture = (): boolean => isLoopback && apiIsLoopback && state.board !== undefined
     && isGuidedWorkspace(state.board);
   const voteKey = (card: ReviewCard): string =>
-    `trust-registry.demo-votes.v1:${state.board?.summary.registryId ?? "unknown"}:${card.key}:${card.status}:${card.updatedAt}`;
+    `trust-registry.demo-votes.v2:${state.board?.summary.registryId ?? "unknown"}:${state.board?.workspaceInstanceId ?? "unavailable"}:${card.key}:${card.status}:${card.updatedAt}`;
   const votesFor = (card: ReviewCard) => parseDemoVotes(storage.getItem(voteKey(card)));
   const selectedCard = (): ReviewCard | undefined => {
     const explicit = state.cards.find((card) => card.key === state.selectedKey);
@@ -294,6 +296,7 @@ export const createGuidedDemoApp = (
         const fresh = await client.loadReviewBoard();
         const current = buildReviewCards(fresh).filter(isGuidedCard).find((item) => item.key === card.key);
         if (!isGuidedWorkspace(fresh)
+          || fresh.workspaceInstanceId !== state.board?.workspaceInstanceId
           || !isGuidedCard(card)
           || (current !== undefined && !hasKnownStatus(current))
           || current?.status !== card.status) {

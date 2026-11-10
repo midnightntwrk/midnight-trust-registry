@@ -7,6 +7,8 @@ import { createStaticAssetHandler } from "../scripts/serve-static.mjs";
 
 const registryId = "registry:guided-role-demo:trusted";
 const registryLabel = "guided-role-demo";
+const instanceA = "00000000-0000-4000-8000-000000000001";
+const instanceB = "00000000-0000-4000-8000-000000000002";
 const emptyCounts = () => ({
   proposed: 0, authorized: 0, active: 0, suspended: 0,
   revoked: 0, superseded: 0, archived: 0,
@@ -53,7 +55,7 @@ test(`${target} request needs three distinct demo votes to ${decision}`, async (
     }
     response.setHeader("content-type", "application/json");
     if (path === "/health") {
-      response.end(JSON.stringify({ status: "ok", sourceMode: "workspace", registryId }));
+      response.end(JSON.stringify({ status: "ok", sourceMode: "workspace", registryId, workspaceInstanceId: instanceA }));
       return;
     }
     if (path === "/v1/registry/summary") {
@@ -176,11 +178,12 @@ test(`${target} request needs three distinct demo votes to ${decision}`, async (
 }
 }
 
-for (const { name, sourceMode, sourceRegistryId, sourceLabel } of [
+for (const { name, sourceMode, sourceRegistryId, sourceLabel, instanceId = instanceA } of [
   { name: "snapshot", sourceMode: "snapshot", sourceRegistryId: registryId, sourceLabel: registryLabel },
   { name: "memory fixture", sourceMode: "memory", sourceRegistryId: registryId, sourceLabel: registryLabel },
   { name: "other mutable workspace", sourceMode: "workspace", sourceRegistryId: "registry:midnight:trusted", sourceLabel: "midnight" },
   { name: "mismatched workspace label", sourceMode: "workspace", sourceRegistryId: registryId, sourceLabel: "midnight" },
+  { name: "workspace without instance ID", sourceMode: "workspace", sourceRegistryId: registryId, sourceLabel: registryLabel, instanceId: null },
 ]) {
 test(`${name} cannot submit guided demo applications`, async ({ page, allowedLocalOrigins }) => {
   const staticAssets = createStaticAssetHandler({
@@ -197,7 +200,8 @@ test(`${name} cannot submit guided demo applications`, async ({ page, allowedLoc
     response.setHeader("content-type", "application/json");
     if (request.method === "POST") mutations++;
     if (path === "/health") {
-      response.end(JSON.stringify({ status: "ok", sourceMode, registryId: sourceRegistryId }));
+      response.end(JSON.stringify({ status: "ok", sourceMode, registryId: sourceRegistryId,
+        ...(instanceId === null ? {} : { workspaceInstanceId: instanceId }) }));
     } else if (path === "/v1/registry/summary") {
       response.end(JSON.stringify({
         registryId: sourceRegistryId, registryLabel: sourceLabel,
@@ -259,7 +263,7 @@ test("unknown API status fails closed before HTML rendering", async ({ page, all
     response.setHeader("content-type", "application/json");
     if (request.method === "POST") mutations++;
     if (path === "/health") {
-      response.end(JSON.stringify({ status: "ok", sourceMode: "workspace", registryId }));
+      response.end(JSON.stringify({ status: "ok", sourceMode: "workspace", registryId, workspaceInstanceId: instanceA }));
     } else if (path === "/v1/registry/summary") {
       response.end(JSON.stringify({
         registryId, registryLabel, registryDid: "did:midnight:undeployed:registry",
@@ -324,7 +328,7 @@ test("hostile API text and identifiers stay inert in the guided view", async ({ 
       if (failHealth) {
         response.statusCode = 500;
         response.end(JSON.stringify({ detail: errorText }));
-      } else response.end(JSON.stringify({ status: "ok", sourceMode: "workspace", registryId }));
+      } else response.end(JSON.stringify({ status: "ok", sourceMode: "workspace", registryId, workspaceInstanceId: instanceA }));
     } else if (path === "/v1/registry/summary") {
       response.end(JSON.stringify({
         registryId, registryLabel, registryDid: "did:midnight:undeployed:registry",
@@ -376,6 +380,79 @@ test("hostile API text and identifiers stay inert in the guided view", async ({ 
     await expect(page.getByRole("alert").filter({ hasText: errorText })).toBeVisible();
     expect(await page.locator("[data-hostile], [onload]").count()).toBe(0);
     expect(await page.evaluate(() => window.__mtrExecuted)).toBeUndefined();
+  } finally {
+    await page.close();
+    server.closeAllConnections();
+    await new Promise((done, reject) => server.close((error) => error ? reject(error) : done()));
+  }
+});
+
+test("fresh workspace cannot inherit votes for the same record", async ({ page, allowedLocalOrigins }) => {
+  const staticAssets = createStaticAssetHandler({
+    distDir: resolve("packages/trust-registry-admin-console/dist"), name: "guided-demo",
+  });
+  let workspaceInstanceId = instanceA;
+  let mutations = 0;
+  const server = createServer(async (request, response) => {
+    const path = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+    if (path === "/demo.html" || path.endsWith(".js") || path === "/demo.css"
+      || path === "/brand.css" || path === "/midnight-logo.svg" || path.startsWith("/fonts/")) {
+      await staticAssets(request, response);
+      return;
+    }
+    response.setHeader("content-type", "application/json");
+    if (request.method === "POST") mutations++;
+    if (path === "/health") {
+      response.end(JSON.stringify({ status: "ok", sourceMode: "workspace", registryId, workspaceInstanceId }));
+    } else if (path === "/v1/registry/summary") {
+      response.end(JSON.stringify({
+        registryId, registryLabel, registryDid: "did:midnight:undeployed:registry",
+        policyId: "policy:guided", currentEpochId: "epoch:guided:1", epochCount: 1,
+        issuerCounts: emptyCounts(), verifierCounts: emptyCounts(), auditorCounts: emptyCounts(),
+        recognitionCounts: emptyCounts(),
+      }));
+    } else if (path === "/v1/authorizations/issuer") {
+      response.end(JSON.stringify({ entries: [{
+        label: "Repeated issuer",
+        authorization: {
+          authorizationId: "auth:issuer:repeated:v1", registryId, role: "issuer", status: "proposed",
+          subjectDid: "did:midnight:undeployed:issuer", resourceType: "schema",
+          resourceId: "schema:repeated", trustLevel: "approved", policyId: "policy:guided",
+          proposedAt: "2026-05-20T00:00:00Z",
+        },
+        evidence: { epoch: { epochId: "epoch:guided:1", stateRoot: "0xroot" } },
+      }] }));
+    } else if (path.startsWith("/v1/authorizations/") || path === "/v1/recognitions") {
+      response.end(JSON.stringify({ entries: [] }));
+    } else {
+      response.statusCode = 404;
+      response.end(JSON.stringify({ title: "not found" }));
+    }
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("expected TCP address");
+  const base = `http://127.0.0.1:${address.port}`;
+  allowedLocalOrigins.add(base);
+  page.on("dialog", (dialog) => dialog.accept());
+  try {
+    await page.goto(`${base}/demo.html?apiBase=${encodeURIComponent(base)}#maintainer-1`);
+    await expect(page.getByText("Local fixture connected")).toBeVisible();
+    for (let number = 1; number <= 3; number++) {
+      await page.getByRole("button", { name: "Approve in demo" }).click();
+      if (number < 3) await page.getByRole("link", { name: `Continue as Maintainer #${number + 1}` }).click();
+    }
+    await expect(page.getByRole("button", { name: "Apply authorization to demo" })).toBeVisible();
+
+    workspaceInstanceId = instanceB;
+    await page.getByRole("button", { name: "Apply authorization to demo" }).click();
+    await expect(page.getByText("The fixture changed. Refresh records and review this request again.")).toBeVisible();
+    expect(mutations).toBe(0);
+    await page.reload();
+    await expect(page.getByText("Local fixture connected")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Apply authorization to demo" })).toHaveCount(0);
+    await expect(page.getByText("0 approvals")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Approve in demo" })).toBeEnabled();
   } finally {
     await page.close();
     server.closeAllConnections();

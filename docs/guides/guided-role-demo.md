@@ -40,7 +40,11 @@ local API. Issuer, verifier, and auditor personas send **label-only** practice
 applications. The API writes Proposed records to the dedicated workspace.
 Maintainer #1 through #5 are navigation personas, not authenticated people or
 keys. Their votes are stored in this browser, scoped to the registry, record,
-status, and update time. After three matching votes, **Apply** asks for
+status, update time, and a local workspace instance ID. The launcher records
+that ID once in the dedicated workspace file; restarting keeps it, while
+recreating the workspace assigns a new ID so old browser votes cannot carry
+over. The API reports the ID in `/health`, and the guided page disables fixture
+controls if it is absent. After three matching votes, **Apply** asks for
 confirmation, rereads the current board, and calls the fixture API. Approval
 moves Proposed to Authorized; a second vote round can move Authorized to
 Active. Rejection archives a Proposed record. The API does not verify or
@@ -83,7 +87,7 @@ the [published architecture overview](../../docs-site/architecture/index.md).
    archives a proposed fixture request; it is not a signed denial ceremony.
 
 **Clear browser demo votes** removes vote progress but leaves fixture records
-unchanged. Restarting the command also keeps records. For a fresh walkthrough,
+unchanged. Restarting the command also keeps records and votes. For a fresh walkthrough,
 stop the services and archive or rename the dedicated workspace file before
 restarting; do not delete another operator workspace. Do not cite this demo
 as evidence of Compact quorum, external maintainer signatures, network

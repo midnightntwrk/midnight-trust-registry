@@ -9,6 +9,7 @@ import {
   collectDistinctEpochs,
   createDemoSnapshot,
   createOperatorWorkspace,
+  ensureWorkspaceInstanceId,
   resolveWorkspaceOperationRecord,
   writeSnapshotToFile,
   writeWorkspaceToFile,
@@ -124,6 +125,26 @@ describe("trust registry api", () => {
 
   afterEach(async () => {
     await rm(tempDir, { force: true, recursive: true });
+  });
+
+  it("reports the current mutable workspace instance in health", async () => {
+    const workspacePath = join(tempDir, "guided.json");
+    await writeWorkspaceToFile(workspacePath, createOperatorWorkspace({ label: "guided-role-demo" }));
+    const firstId = await ensureWorkspaceInstanceId(workspacePath);
+    const server = await startServer(createWorkspaceFileSource(workspacePath));
+    try {
+      const first = await fetch(`${server.url}/health`);
+      expect(first.status).toBe(200);
+      expect((await first.json()).workspaceInstanceId).toBe(firstId);
+
+      await writeWorkspaceToFile(workspacePath, createOperatorWorkspace({ label: "guided-role-demo" }));
+      const secondId = await ensureWorkspaceInstanceId(workspacePath);
+      const second = await fetch(`${server.url}/health`);
+      expect((await second.json()).workspaceInstanceId).toBe(secondId);
+      expect(secondId).not.toBe(firstId);
+    } finally {
+      await server.close();
+    }
   });
 
   it("omits wildcard CORS when the private-listener policy is selected", async () => {

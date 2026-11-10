@@ -139,6 +139,7 @@ export class TrustRegistryAdminConsoleClient {
 
     return {
       sourceMode: health.sourceMode,
+      ...(health.workspaceInstanceId === undefined ? {} : { workspaceInstanceId: health.workspaceInstanceId }),
       summary,
       issuers: issuers.entries,
       verifiers: verifiers.entries,
