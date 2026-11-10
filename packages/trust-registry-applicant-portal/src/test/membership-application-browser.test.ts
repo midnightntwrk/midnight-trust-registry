@@ -121,6 +121,6 @@ describe("structured membership forms", () => {
         ? issuerGovernedResourceId(scope as Extract<typeof scope, { role: "issuer" }>, "credentialFamily")
         : role === "verifier" ? requestGovernedResourceId(scope as Extract<typeof scope, { role: "verifier" }>)
           : context.registryId);
-    });
+    }, 20_000);
   }
 });

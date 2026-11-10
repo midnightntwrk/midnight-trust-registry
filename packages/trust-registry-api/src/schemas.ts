@@ -59,6 +59,7 @@ export const TrustRegistryApiHealthResponseSchema = z.object({
   configuredGovernedProposalRoles: z.array(z.enum(["issuer", "verifier", "auditor", "maintainer", "recognition"])),
   generatedAt: TimestampSchema,
   registryId: NonEmptyStringSchema,
+  workspaceInstanceId: z.uuid().optional(),
   localPlanSha256: z.string().regex(/^[0-9a-f]{64}$/u).optional(),
   finalizedBlockHash: z.string().regex(/^0x[0-9a-f]{64}$/u).optional(),
   deploymentIdentity: z.object({

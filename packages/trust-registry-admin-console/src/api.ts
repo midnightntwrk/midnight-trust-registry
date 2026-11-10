@@ -139,6 +139,7 @@ export class TrustRegistryAdminConsoleClient {
 
     return {
       sourceMode: health.sourceMode,
+      ...(health.workspaceInstanceId === undefined ? {} : { workspaceInstanceId: health.workspaceInstanceId }),
       summary,
       issuers: issuers.entries,
       verifiers: verifiers.entries,
@@ -203,6 +204,17 @@ export class TrustRegistryAdminConsoleClient {
         method: "POST",
       },
     );
+  }
+
+  async submitDemoApplication(
+    target: Extract<TrustRegistryApiApplicationTarget, "issuer" | "verifier" | "auditor">,
+    label: string,
+  ): Promise<TrustRegistryApiApplicationMutationResponse> {
+    return this.request<TrustRegistryApiApplicationMutationResponse>("/v1/applications", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ target, label }),
+    });
   }
 
   async loadMutationContext(): Promise<TrustRegistryApiMutationContext> {

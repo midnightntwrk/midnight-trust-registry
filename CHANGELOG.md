@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- scope guided-demo browser votes to a persisted local workspace instance ID,
+  so recreating the fixture cannot inherit votes from an earlier run
+- render guided-demo API text and attribute values through DOM assignment
+  instead of a hand-written HTML escaping chain; cover hostile labels, IDs,
+  and API errors in the browser
 - add an operator-only `decide` command for standalone acceptance cases. It
   records each explicit verdict and referenced evidence hashes in a private
   decision file instead of requiring manual manifest edits; it never verifies
@@ -178,6 +183,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- added a loopback-only guided role demo with issuer, verifier, auditor, and
+  maintainer personas; its dedicated labeled workspace and role-limited inbox
+  prevent accidental actions against other local operator workspaces, while
+  unknown API statuses fail closed before rendering. Browser votes remain
+  unauthenticated fixture controls, not governed approvals
 - defined a canonical V1 issuer status-policy binding preimage and fixed digest
   vector; ledger anchoring and supported status verification remain pending
 - added a five-minute, one-use off-ledger application challenge service with

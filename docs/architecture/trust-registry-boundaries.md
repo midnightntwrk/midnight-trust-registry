@@ -35,3 +35,20 @@ The two statement types must remain separate because recognition should not sile
 ## Historical Verification
 
 A verifier may need to validate a credential years after issuance. The registry therefore has to retain enough history to answer what was authorized at a past point in time. Current-state-only lookup is not enough.
+
+## Current Local Runtime Paths
+
+| Path | State source and authority | What it demonstrates |
+| --- | --- | --- |
+| Guided role demo | Dedicated file-backed operator workspace; browser-local persona votes; loopback-only unsigned fixture mutations | Navigation and Proposed, Authorized, Active, or Archived UI handoff only |
+| Signed simulator demos | Compact simulator plus signed local fixture/evidence inputs | Contract and consumer behavior without network finality |
+| Approved local-ledger runtime | Signed deployment plan and pinned local-ledger source, with externally supplied signer and finalized reads | Real deployment observation and governed actions when independently qualified |
+
+The guided role demo is served from the admin-console package but is a
+separate `/demo.html` route. Its 3-of-5 tally is a browser teaching aid, not
+the Compact committee. The file-backed API does not authenticate the five
+personas or enforce their votes. It refuses the unsigned demo-mutation switch
+on a non-loopback host; the page also disables controls for snapshot and
+`local-ledger` sources. Neither this UI nor its API supplies a genesis
+approval, DID/VC proof verifier, signer, or finality service. See the
+[guided demo architecture and walkthrough](../guides/guided-role-demo.md).

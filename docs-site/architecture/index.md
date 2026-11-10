@@ -36,3 +36,20 @@ flowchart LR
 [`midnight-did`](https://midnightntwrk.github.io/midnight-did/) owns DID lifecycle, resolution, and keys. [`midnight-verifiable-credentials`](https://midnightntwrk.github.io/midnight-verifiable-credentials/) owns credential/presentation proof and status. The Trust Registry owns scoped authorization, recognition, governance, epochs, and decision evidence. Neither raw VP claims nor holder activity should cross into public registry state.
 
 The packaged API is file-backed and local-first. It serves snapshots/workspaces; it does not install a production DID resolver, signing service, distributed lock, or network-backed Compact submission port. Embedded hosts can provide trusted ports for private intake and governed actions. See [API safety](../api/index.md).
+
+## Local runtime modes
+
+The UI can read several API sources, but their authority is not interchangeable:
+
+| Mode | Source | Mutation and evidence boundary |
+| --- | --- | --- |
+| Guided role demo | Dedicated operator-workspace file and static `/demo.html` route | Five browser-local personas collect practice votes; an explicit, unsigned loopback API call changes fixture records only. The API does not enforce the 3-of-5 tally. |
+| Snapshot | Saved projection | Read-only; the guided demo disables application and vote controls. |
+| Local ledger | Approved signed plan and pinned deployment reader | Requires independent approval, signer/finality inputs, and qualified actor evidence. The guided demo disables fixture controls. |
+
+Run `pnpm demo:guided` for the first mode. It starts the static UI on
+`127.0.0.1:4273` and the workspace API on `127.0.0.1:4500`; the browser's
+persona votes never become Compact signatures. The UI confirms and rereads a
+record before calling the API, but this is not cryptographic authorization.
+The [quickstart](../guide/quickstart.md#first-time-role-demo) separates that
+teaching journey from the signed simulator and deployed-ledger workflows.

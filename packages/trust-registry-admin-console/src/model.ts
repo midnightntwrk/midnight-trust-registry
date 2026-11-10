@@ -32,6 +32,7 @@ export type ReviewCard = {
 
 export type ReviewBoard = {
   sourceMode: "snapshot" | "workspace" | "memory" | "local-ledger";
+  workspaceInstanceId?: string;
   localPlanSha256?: string;
   deploymentIdentity?: TrustRegistryApiHealthResponse["deploymentIdentity"];
   nodeReportedCheckpointHash?: string;

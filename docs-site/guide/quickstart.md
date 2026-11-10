@@ -14,6 +14,29 @@ required evidence are listed in the
 - The pinned Midnight Compact compiler for full contract builds. `nix develop` supplies the repository toolchain.
 - A fresh checkout with `pnpm install --frozen-lockfile`.
 
+## First-time role demo
+
+If you want to understand the UI before running the signed simulator or a
+ledger-backed stack, use one command from the repository root:
+
+```bash
+pnpm demo:guided
+```
+
+Open the printed URL (normally `http://127.0.0.1:4273/demo.html`). The left
+menu separates issuer, verifier, auditor, and five maintainer personas. Submit
+a practice request as an applicant, follow the on-screen links to three
+maintainers, apply the demo result, then return to the applicant to see the
+status. The launcher starts the static UI and a dedicated loopback workspace
+API, and keeps practice records across restarts. Its 3-of-5 browser votes are
+not identities, Compact signatures, or ledger finality. See
+[runtime modes](../architecture/index.md#local-runtime-modes) for the exact
+boundary.
+
+The commands below are separate technical and signed simulator exercises;
+they are not prerequisites for the guided UI. Do not run a destructive light
+build in a checkout holding generated proving artifacts you need to preserve.
+
 ```bash
 pnpm install --frozen-lockfile
 ./run.sh --light
@@ -76,7 +99,7 @@ wrong-root rejection. Recognition still does not confer local issuer trust.
 
 For the cross-surface local API and UI smoke, use `pnpm run demo:smoke`. The repository's [demo guide](https://github.com/midnightntwrk/midnight-trust-registry/blob/develop/docs/guide/demo-and-release.md) explains its fixture and process model. `pnpm run integration` runs the broader simulator and API integration suite. The demos may take longer than `--light` because Compact artifacts and proving material can be generated.
 
-## Local API and applications
+## Alternative technical API and applications
 
 The packaged API can serve read-only query data from a saved operator workspace. The root scripts also offer local UI demo servers:
 

@@ -2,6 +2,12 @@
 
 Local admin review console for `midnight-trust-registry`.
 
+For the role-guided fixture demo, run `pnpm demo:guided` from the repo root
+and open the printed `/demo.html` URL. See
+[`docs/guides/guided-role-demo.md`](../../docs/guides/guided-role-demo.md).
+The guided view is separate from this technical console, local-only, and
+its browser-local 3-of-5 exercise is not a real committee signature.
+
 Current scope:
 
 - inspect registry summary and epoch metadata from the API
