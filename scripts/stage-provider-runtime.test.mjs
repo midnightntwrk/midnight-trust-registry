@@ -83,18 +83,26 @@ test("stages only committed source and verified packages without promoting quali
   await assert.rejects(stageProviderRuntime(bundle, destination, dependencies), { code: "EEXIST" });
 }));
 
-test("keyless provider staging regenerates inside the pinned image without network access", () => fixture(async ({
+for (const loadedImageKind of ["index", "config", "unrelated"]) test(`keyless provider staging ${loadedImageKind} image`, () => fixture(async ({
   bundle, destination, revision, packageSha, dependencies,
 }) => {
   const imageId = `sha256:${"b".repeat(64)}`;
+  const configId = `sha256:${"d".repeat(64)}`;
+  const loadedId = loadedImageKind === "index" ? imageId
+    : loadedImageKind === "config" ? configId : `sha256:${"e".repeat(64)}`;
   await mkdir(join(bundle, "proof-params"));
   await writeFile(join(bundle, "release-manifest.json"), JSON.stringify({ sourceRevision: revision,
     packages: [{ workspace: "contracts/trust-registry", filename: "demo-0.1.0.tgz",
       sha256: packageSha }] }));
   let regenerated = false;
   const command = (file, args, cwd) => {
-    if (file === "docker" && args[0] === "image") return imageId;
+    if (file === "docker" && args[0] === "image") {
+      assert.deepEqual(args, ["image", "inspect", `tr-standalone/api:sha-${revision}`,
+        "--format", "{{.Id}}"]);
+      return loadedId;
+    }
     if (file === "docker" && args[0] === "run") {
+      assert.equal(args[args.indexOf("--entrypoint") + 2], loadedId);
       assert.ok(args.includes("none"));
       assert.ok(args.includes("--read-only"));
       assert.ok(args.includes("HOME=/home/keygen"));
@@ -116,14 +124,22 @@ test("keyless provider staging regenerates inside the pinned image without netwo
     return run(file, args, cwd);
   };
   const verified = { sourceRevision: revision, inventorySha256: HASH,
-    apiRuntime: { imageId, configId: `sha256:${"d".repeat(64)}` },
+    apiRuntime: { imageId, configId },
     keylessRuntime: { manifestSha256: "c".repeat(64) } };
+  if (loadedImageKind === "unrelated") {
+    await assert.rejects(stageProviderRuntime(bundle, destination, {
+      ...dependencies, command, expectedWorkspaces: ["contracts/trust-registry"],
+      verifyBundle: async () => verified,
+    }), /differs from the verified install/u);
+    assert.equal(regenerated, false);
+    return;
+  }
   const result = await stageProviderRuntime(bundle, destination, {
     ...dependencies, command, expectedWorkspaces: ["contracts/trust-registry"],
     verifyBundle: async () => verified,
   });
   assert.equal(regenerated, true);
-  assert.equal(result.keygenImageId, imageId);
+  assert.equal(result.keygenImageId, loadedId);
   assert.equal(await readFile(join(destination,
     "contracts/trust-registry/dist/managed/trust-registry/keys/demo.prover"), "utf8"),
   "generated-and-checked\n");

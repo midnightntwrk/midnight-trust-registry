@@ -46,12 +46,16 @@ import { demoGenesisReference } from "./demo-genesis-reference.mjs";
 
 const sourceRevision = "a".repeat(40);
 
-test("keyless setup selects the verified loadable API image, not its OCI config digest", () => {
+test("keyless setup selects either verified loadable API image ID, never an unrelated image", () => {
   const imageId = `sha256:${"a".repeat(64)}`;
   const configId = `sha256:${"b".repeat(64)}`;
-  assert.equal(selectPinnedKeylessApiImageId({ apiRuntime: { imageId, configId } }), imageId);
-  assert.throws(() => selectPinnedKeylessApiImageId({ apiRuntime: { configId } }),
-    /verified API image ID/u);
+  const verified = { apiRuntime: { imageId, configId } };
+  assert.equal(selectPinnedKeylessApiImageId(verified, imageId), imageId);
+  assert.equal(selectPinnedKeylessApiImageId(verified, configId), configId);
+  assert.throws(() => selectPinnedKeylessApiImageId(verified, `sha256:${"c".repeat(64)}`),
+    /differs from the verified install/u);
+  assert.throws(() => selectPinnedKeylessApiImageId({ apiRuntime: { configId } }, configId),
+    /Verified API image IDs/u);
 });
 
 test("setup input reader rejects linked or unsafe private files", async () => {

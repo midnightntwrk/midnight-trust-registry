@@ -13,6 +13,7 @@ import { assertImmutableProviderTree } from "./immutable-provider-tree.mjs";
 import { providerRuntimeContent } from "./provider-runtime-content.mjs";
 import { providerStagePackageEntries } from "./provider-stage-package-policy.mjs";
 import { assertCanonicalPackedPaths, packedEntries } from "./release-candidate-manifest.mjs";
+import { pinnedKeylessApiImageTag, selectPinnedKeylessApiImageId } from "./standalone-keyless-api-image.mjs";
 import { artifactWorkspaces } from "./trust-registry-workspace-catalog.mjs";
 
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -154,6 +155,7 @@ export async function stageProviderRuntime(bundleDirectory, destination, depende
     throw new Error("Verified install bundle does not match the signed source commit");
   }
   const keylessRuntime = verified.keylessRuntime ?? null;
+  let keygenImageId = null;
   const manifest = JSON.parse(readFileSync(join(bundle, "release-manifest.json"), "utf8"));
   if (manifest.sourceRevision !== sourceRevision) {
     throw new Error("Release manifest does not match the signed source commit");
@@ -196,10 +198,10 @@ export async function stageProviderRuntime(bundleDirectory, destination, depende
           || !Number.isSafeInteger(groupId)) {
           throw new Error("Keyless provider stage requires a loaded, verified Linux API image and user identity");
         }
-        const imageId = apiRuntime.imageId;
-        if (run("docker", ["image", "inspect", imageId, "--format", "{{.Id}}"], root) !== imageId) {
-          throw new Error("Loaded key-generation image differs from the verified install image");
-        }
+        const imageId = selectPinnedKeylessApiImageId(verified,
+          run("docker", ["image", "inspect", pinnedKeylessApiImageTag(verified),
+            "--format", "{{.Id}}"], root));
+        keygenImageId = imageId;
         const generated = join(temporary, "materialized-contract");
         run("docker", ["run", "--rm", "--network", "none", "--read-only",
           "--security-opt", "no-new-privileges", "--user", `${getuid()}:${groupId}`,
@@ -229,7 +231,7 @@ export async function stageProviderRuntime(bundleDirectory, destination, depende
       packageCount: packages.length,
       ...(keylessRuntime === null ? {} : {
         keylessManifestSha256: keylessRuntime.manifestSha256,
-        keygenImageId: verified.apiRuntime?.imageId,
+        keygenImageId,
       }),
       contentSha256: content.sha256,
       contentEntries: content.entries,

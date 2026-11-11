@@ -18,6 +18,8 @@ import {
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
+import { pinnedKeylessApiImageTag, selectPinnedKeylessApiImageId } from "./standalone-keyless-api-image.mjs";
+export { selectPinnedKeylessApiImageId } from "./standalone-keyless-api-image.mjs";
 import { ensureMaterializedProtocolProofParams, verifyMaterializedProtocolProofParams } from "./materialize-standalone-proof-params.mjs";
 import { regularBytes } from "./standalone-private-file-bytes.mjs";
 export { regularBytes } from "./standalone-private-file-bytes.mjs";
@@ -69,22 +71,14 @@ const offlineComposePath = resolve(dirname(fileURLToPath(import.meta.url)), "../
 const validStandaloneDeploymentReceipt = (receipt) =>
   validLocalDeploymentReceipt(receipt, STANDALONE_PROFILE.networkId);
 
-export function selectPinnedKeylessApiImageId(verified) {
-  const imageId = verified?.apiRuntime?.imageId;
-  if (!/^sha256:[0-9a-f]{64}$/u.test(imageId ?? "")) {
-    throw new Error("A verified API image ID is required for keyless stack preparation");
-  }
-  return imageId;
-}
-
 async function materializeProtocolProofParams(bundle, root, verified) {
-  const imageId = selectPinnedKeylessApiImageId(verified);
   if (typeof process.getuid !== "function" || typeof process.getgid !== "function") {
     throw new Error("Load the verified Linux API image before keyless stack preparation");
   }
-  const { stdout: inspected } = await execFileAsync("docker", ["image", "inspect", imageId,
+  const { stdout: inspected } = await execFileAsync("docker", ["image", "inspect",
+    pinnedKeylessApiImageTag(verified),
     "--format", "{{.Id}}"]);
-  if (inspected.trim() !== imageId) throw new Error("Loaded API image differs from the verified install");
+  const imageId = selectPinnedKeylessApiImageId(verified, inspected.trim());
   await execFileAsync("docker", ["run", "--rm", "--network", "none", "--read-only",
     "--security-opt", "no-new-privileges", "--user", `${process.getuid()}:${process.getgid()}`,
     "--env", "HOME=/home/keygen",

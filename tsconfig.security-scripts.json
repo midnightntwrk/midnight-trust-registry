@@ -33,6 +33,7 @@
     "scripts/local-ledger-deploy.mjs",
     "scripts/local-ledger-insert-verifier-key.mjs",
     "scripts/stage-provider-runtime.mjs",
+    "scripts/standalone-keyless-api-image.mjs",
     "scripts/provider-runtime-content.mjs",
     "scripts/prepare-local-issuer-writer-review.mjs",
     "scripts/verify-installed-provider-runtime.mjs",
