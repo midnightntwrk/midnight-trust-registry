@@ -28,6 +28,8 @@
     "scripts/observe-standalone-qualification.mjs",
     "scripts/check-standalone-security-verdict.mjs",
     "scripts/immutable-provider-tree.mjs",
+    "scripts/keyless-zkir-bundle.mjs",
+    "scripts/pack-keyless-contract.mjs",
     "scripts/local-ledger-deploy.mjs",
     "scripts/local-ledger-insert-verifier-key.mjs",
     "scripts/stage-provider-runtime.mjs",
