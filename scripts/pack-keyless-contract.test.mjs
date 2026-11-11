@@ -6,6 +6,7 @@ import { chmod, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/p
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { gunzipSync } from "node:zlib";
 
 import { createKeylessZkirBundle } from "./keyless-zkir-bundle.mjs";
 import { materializeKeylessContractPackage, packKeylessContract,
@@ -34,6 +35,10 @@ async function fixture(t) {
     "compiler-version": "0.31.1", circuits: [{ name: "demoCircuit", proof: true }],
   }));
   await writeFile(join(full, "contract/index.js"), "export const demo = true;\n");
+  if (process.platform === "darwin") {
+    execFileSync("xattr", ["-w", "com.example.keyless-test", "metadata",
+      join(full, "contract/index.js")]);
+  }
   await writeFile(join(full, "contract/index.js.map"), "{}\n");
   await writeFile(join(full, "contract/index.d.ts"), "export declare const demo: boolean;\n");
   await writeFile(join(full, "zkir/demoCircuit.zkir"), "sample-zkir\n");
@@ -54,6 +59,9 @@ test("keyless contract package excludes keys and restores a verified local packa
   const listing = execFileSync("tar", ["-tzf", paths.tarball], { encoding: "utf8" });
   assert.match(listing, /package\/dist\/managed\/trust-registry\/keyless-manifest\.json/u);
   assert.doesNotMatch(listing, /\.prover|\.verifier/u);
+  const rawArchive = gunzipSync(await readFile(paths.tarball));
+  assert.equal(rawArchive.includes(Buffer.from("LIBARCHIVE.xattr.")), false);
+  assert.equal(rawArchive.includes(Buffer.from("._package")), false);
   const verified = await verifyKeylessContractPackage(paths.tarball,
     packed.tarballSha256, paths.manifestSha256);
   assert.equal(verified.circuitCount, 1);

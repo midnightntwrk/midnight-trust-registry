@@ -97,8 +97,9 @@ export async function packKeylessContract(packageDirectory, keylessDirectory,
     }
     const embedded = join(stage, "package", MANAGED_PREFIX, "keyless-manifest.json");
     await copyFile(await regularFile(join(keyless, "keyless-manifest.json")), embedded);
-    await runFile("tar", ["-czf", partial, "-C", stage, "package"],
-      { timeout: 120_000, maxBuffer: 1024 * 1024 });
+    await runFile("tar", ["--no-xattrs", "-czf", partial, "-C", stage, "package"],
+      { timeout: 120_000, maxBuffer: 1024 * 1024,
+        env: { ...process.env, COPYFILE_DISABLE: "1" } });
     await link(partial, destination);
   } finally {
     await rm(stage, { recursive: true });
