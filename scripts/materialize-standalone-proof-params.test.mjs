@@ -1,15 +1,73 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { chmod, mkdtemp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdtemp, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 
 import { KEYLESS_KEYGEN_PARAMETER_PATHS, PROTOCOL_KEY_PATHS } from "./standalone-proof-parameter-catalog.mjs";
 import { assertPrivateProtocolCacheParent, ensureMaterializedProtocolProofParams,
-  verifyMaterializedProtocolProofParams } from "./materialize-standalone-proof-params.mjs";
+  materializeStandaloneProofParams, verifyMaterializedProtocolProofParams } from "./materialize-standalone-proof-params.mjs";
 
 const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
+
+test("v7 generation publishes only complete pinned protocol keys", async () => {
+  for (const scenario of ["complete", "wrong-hash", "partial-failure"]) {
+    const root = await mkdtemp(join(tmpdir(), "tr-protocol-generation-"));
+    const bundle = join(root, "bundle");
+    const cache = join(root, "cache");
+    const generator = join(root, "zkir");
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, "platform");
+    const originalArch = Object.getOwnPropertyDescriptor(process, "arch");
+    try {
+      await mkdir(join(bundle, "proof-params"), { recursive: true });
+      const script = `#!/bin/sh\n[ "$1" = compile ] || exit 2\ncp "$2" "$3"\n${scenario === "partial-failure"
+        ? 'case "$2" in *zswap/9/spend.bzkir) exit 7;; esac\n' : ""}cp "$2" "$4"\n`;
+      await writeFile(generator, script, { mode: 0o700 });
+      const base = [];
+      for (const name of KEYLESS_KEYGEN_PARAMETER_PATHS) {
+        const bytes = Buffer.from(`input:${name}`);
+        const path = join(bundle, "proof-params", name);
+        await mkdir(dirname(path), { recursive: true });
+        await writeFile(path, bytes);
+        base.push({ path: name, sha256: sha(bytes) });
+      }
+      const protocolKeys = Object.fromEntries(PROTOCOL_KEY_PATHS.map((name) => {
+        const input = name.replace(/\.(?:prover|verifier)$/u, ".bzkir");
+        return [name, sha(Buffer.from(`input:${input}`))];
+      }));
+      if (scenario === "wrong-hash") protocolKeys[PROTOCOL_KEY_PATHS[0]] = sha("wrong");
+      const inventory = { format: "tr-standalone-install-v7",
+        proofParameters: { directory: "proof-params", files: base },
+        keylessRuntime: { path: "keygen/zkir", platform: "linux/arm64",
+          sha256: sha(script), protocolKeys } };
+      await mkdir(join(bundle, "keygen"));
+      await writeFile(join(bundle, "keygen/zkir"), script);
+      const inventoryBytes = Buffer.from(JSON.stringify(inventory));
+      await writeFile(join(bundle, "install-inventory.json"), inventoryBytes);
+      Object.defineProperty(process, "platform", { value: "linux", configurable: true });
+      Object.defineProperty(process, "arch", { value: "arm64", configurable: true });
+      if (scenario === "complete") {
+        const result = await materializeStandaloneProofParams(bundle, cache, generator,
+          sha(inventoryBytes));
+        assert.equal(result.fileCount, 25);
+        assert.equal((await verifyMaterializedProtocolProofParams(bundle, cache,
+          sha(inventoryBytes))).fileCount, 25);
+        await assert.rejects(materializeStandaloneProofParams(bundle, cache, generator,
+          sha(inventoryBytes)), /already exists/u);
+      } else {
+        await assert.rejects(materializeStandaloneProofParams(bundle, cache, generator,
+          sha(inventoryBytes)), scenario === "wrong-hash" ? /hash mismatch/u : /Command failed/u);
+        await assert.rejects(lstat(cache), { code: "ENOENT" });
+        assert.equal((await readdir(root)).some((name) => name.startsWith(".tr-proof-params-")), false);
+      }
+    } finally {
+      if (originalPlatform) Object.defineProperty(process, "platform", originalPlatform);
+      if (originalArch) Object.defineProperty(process, "arch", originalArch);
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+});
 
 test("private cache parent may be adjacent to, but never inside, the install bundle", async () => {
   const root = await mkdtemp(join(tmpdir(), "tr-protocol-cache-parent-"));
