@@ -69,10 +69,17 @@ const offlineComposePath = resolve(dirname(fileURLToPath(import.meta.url)), "../
 const validStandaloneDeploymentReceipt = (receipt) =>
   validLocalDeploymentReceipt(receipt, STANDALONE_PROFILE.networkId);
 
+export function selectPinnedKeylessApiImageId(verified) {
+  const imageId = verified?.apiRuntime?.imageId;
+  if (!/^sha256:[0-9a-f]{64}$/u.test(imageId ?? "")) {
+    throw new Error("A verified API image ID is required for keyless stack preparation");
+  }
+  return imageId;
+}
+
 async function materializeProtocolProofParams(bundle, root, verified) {
-  const imageId = verified.apiRuntime?.configId;
-  if (!/^sha256:[0-9a-f]{64}$/u.test(imageId ?? "")
-    || typeof process.getuid !== "function" || typeof process.getgid !== "function") {
+  const imageId = selectPinnedKeylessApiImageId(verified);
+  if (typeof process.getuid !== "function" || typeof process.getgid !== "function") {
     throw new Error("Load the verified Linux API image before keyless stack preparation");
   }
   const { stdout: inspected } = await execFileAsync("docker", ["image", "inspect", imageId,

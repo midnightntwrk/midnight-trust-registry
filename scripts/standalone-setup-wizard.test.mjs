@@ -36,6 +36,7 @@ import {
   reconcileStandaloneVerifierKeyInsertion as reconcileStandaloneVerifierKeyInsertionRaw,
   regularBytes,
   runStandaloneSetupInteractive,
+  selectPinnedKeylessApiImageId,
   standaloneSetupStatus,
   submitStandaloneCommitteeTransition as submitStandaloneCommitteeTransitionRaw,
   verifyDetachedReviewerSignature,
@@ -44,6 +45,14 @@ import { pinnedStandaloneImages } from "./build-standalone-install.mjs";
 import { demoGenesisReference } from "./demo-genesis-reference.mjs";
 
 const sourceRevision = "a".repeat(40);
+
+test("keyless setup selects the verified loadable API image, not its OCI config digest", () => {
+  const imageId = `sha256:${"a".repeat(64)}`;
+  const configId = `sha256:${"b".repeat(64)}`;
+  assert.equal(selectPinnedKeylessApiImageId({ apiRuntime: { imageId, configId } }), imageId);
+  assert.throws(() => selectPinnedKeylessApiImageId({ apiRuntime: { configId } }),
+    /verified API image ID/u);
+});
 
 test("setup input reader rejects linked or unsafe private files", async () => {
   const directory = await mkdtemp(join(tmpdir(), "tr-setup-reader-"));
