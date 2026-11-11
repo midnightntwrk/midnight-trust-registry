@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { KEYLESS_KEYGEN_PARAMETER_PATHS, STANDALONE_PROOF_PARAMETER_PATHS,
+import { KEYLESS_KEYGEN_PARAMETER_PATHS, PROTOCOL_KEY_PATHS, STANDALONE_PROOF_PARAMETER_PATHS,
   verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { approvedRuntimeHealthcheck } from "./runtime-healthcheck.mjs";
 
@@ -516,8 +516,14 @@ test("v7 requires a source-bound generator, keyless manifest, and offline keygen
     await mkdir(join(root, "keygen"));
     await writeFile(join(root, "keygen/zkir"), generator);
     const manifestDigest = "f".repeat(64);
+    const protocolKeys = Object.fromEntries(inventory.proofParameters.files
+      .filter(({ path }) => PROTOCOL_KEY_PATHS.includes(path))
+      .map(({ path, sha256 }) => [path, sha256]));
+    for (const name of PROTOCOL_KEY_PATHS) await rm(join(root, "proof-params", name));
+    inventory.proofParameters.files = inventory.proofParameters.files
+      .filter(({ path }) => !PROTOCOL_KEY_PATHS.includes(path));
     inventory.keylessRuntime = { path: "keygen/zkir", sha256: sha(generator),
-      platform: "linux/arm64", manifestSha256: manifestDigest };
+      platform: "linux/arm64", manifestSha256: manifestDigest, protocolKeys };
     const release = { format: "tr-release-candidate-manifest-v3", sourceRevision: revision,
       keyless: { manifestSha256: manifestDigest, keygenSha256: sha(generator),
         platform: "linux/arm64" } };
@@ -535,6 +541,10 @@ test("v7 requires a source-bound generator, keyless manifest, and offline keygen
     const verified = await verifyStandaloneInstallBundle(root, () => {});
     assert.equal(verified.keylessRuntime.sha256, sha(generator));
     assert.equal(verified.proofParameterCount, KEYLESS_KEYGEN_PARAMETER_PATHS.length);
+    assert.deepEqual(verified.keylessRuntime.protocolKeys, protocolKeys);
+    await writeFile(join(root, "proof-params", PROTOCOL_KEY_PATHS[0]), "forbidden key bytes");
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /extra files/u);
+    await rm(join(root, "proof-params", PROTOCOL_KEY_PATHS[0]));
     inventory.keylessRuntime.sha256 = "0".repeat(64);
     await save();
     await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /generator or manifest pin/u);

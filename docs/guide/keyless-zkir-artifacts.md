@@ -75,7 +75,8 @@ been independently compared.
 The v7 standalone builder accepts the three exact-source API and portal image
 directories plus `--keyless-dir`, `--keyless-manifest-sha256`, and `--keygen-bin`.
 Its inventory pins the Linux/arm64 generator, v3 release manifest, package and
-image digests, and the extra BLS parameters used by offline key generation.
+image digests, the BLS parameters used by offline key generation, and expected
+hashes for the four `dust`/`zswap` protocol key pairs.
 The bundle verifier checks those bytes before loading or staging. Provider
 staging uses the pinned API image with `--network none` to materialize the
 contract package in a private staging directory before services start. It
@@ -96,11 +97,14 @@ node scripts/release-candidate-manifest.mjs \
   --verify /absolute/new/release-manifest.json
 ```
 
-The 18 existing `proof-params` entries include **protocol** `dust` and
-`zswap` `.prover`/`.verifier` files for the node/proof server. The keyless
-claim applies to the **66 Trust Registry contract circuits**, not to those
-separate protocol parameters. Do not describe a complete v7 bundle as
-containing zero files with those extensions. A deployed verifier-key catalog
+The historical v6 bundle carries protocol `dust` and `zswap` key files.
+The v7 transport instead carries their four `.bzkir` inputs and BLS
+parameters, but **no `.prover` or `.verifier` files** in either the contract
+package or the proof-parameter directory. During `prepare-stack`, the wizard
+uses the pinned API image without network access to regenerate all four pairs
+into a new private cache; it verifies all eight expected hashes before setting
+the Compose proof-parameter path. A partial or changed cache blocks later
+topology observation. A deployed verifier-key catalog
 must be checked against the selected chain before reuse; predeployment uses
 regenerated verifier keys and the approved manifest hashes. Key regeneration
 alone does not establish deployed finality or actor E2E.

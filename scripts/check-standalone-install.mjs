@@ -12,10 +12,12 @@ import { verifyReleaseCandidateArtifacts } from "./release-candidate-manifest.mj
 import { matchesApprovedRuntimeHealthcheck } from "./runtime-healthcheck.mjs";
 import { staticImageIdentityFromArchive, validateStaticImageManifest } from "./static-runtime-archive.mjs";
 import { STANDALONE_IMAGE_REFERENCE } from "./standalone-image-reference.mjs";
+import { KEYLESS_KEYGEN_PARAMETER_PATHS, PROTOCOL_KEY_PATHS, STANDALONE_PROOF_PARAMETER_PATHS } from "./standalone-proof-parameter-catalog.mjs";
 import { pinnedStandaloneImagePolicy } from "./standalone-compose-image-policy.mjs";
 import { pinnedStandaloneInventoryImages } from "./standalone-install-image-inventory-policy.mjs";
 import { exactFields, exactStringSet } from "./standalone-exact-fields-policy.mjs";
 export { STANDALONE_IMAGE_REFERENCE } from "./standalone-image-reference.mjs";
+export { KEYLESS_KEYGEN_PARAMETER_PATHS, PROTOCOL_KEY_PATHS, STANDALONE_PROOF_PARAMETER_PATHS } from "./standalone-proof-parameter-catalog.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
 const REVISION = /^[0-9a-f]{40}$/u;
@@ -27,17 +29,6 @@ const FINGERPRINT = /^[0-9A-F]{40}$/u;
 export function pinnedStandaloneImages(composeSource) {
   return pinnedStandaloneImagePolicy(yaml.load(composeSource));
 }
-export const STANDALONE_PROOF_PARAMETER_PATHS = Object.freeze([
-  ...[10, 11, 12, 13, 14, 15].map((k) => `bls_midnight_2p${k}`),
-  ...["spend.prover", "spend.verifier", "spend.bzkir"].map((name) => `dust/9/${name}`),
-  ...["spend", "output", "sign"].flatMap((circuit) =>
-    ["prover", "verifier", "bzkir"].map((extension) => `zswap/9/${circuit}.${extension}`)),
-].sort());
-export const KEYLESS_KEYGEN_PARAMETER_PATHS = Object.freeze([
-  ...STANDALONE_PROOF_PARAMETER_PATHS,
-  ...[6, 7, 9, 16, 17, 18, 19].map((k) => `bls_midnight_2p${k}`),
-].sort());
-
 /** @param {string} root @param {string} name */
 function bundlePath(root, name) {
   if (typeof name !== "string" || name.length === 0 || isAbsolute(name)
@@ -437,6 +428,8 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
     const pin = inventory.keylessRuntime;
     if (pin?.path !== "keygen/zkir" || pin.platform !== "linux/arm64"
       || !SHA256.test(pin.sha256) || !SHA256.test(pin.manifestSha256)
+      || !exactStringSet(Object.keys(pin.protocolKeys ?? {}), PROTOCOL_KEY_PATHS)
+      || PROTOCOL_KEY_PATHS.some((name) => !SHA256.test(pin.protocolKeys[name]))
       || packageManifest.keyless?.keygenSha256 !== pin.sha256
       || packageManifest.keyless?.manifestSha256 !== pin.manifestSha256
       || packageManifest.keyless?.platform !== pin.platform) {
@@ -447,7 +440,8 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
       throw new Error("Standalone keyless generator bytes disagree with the install pin");
     }
     keylessRuntime = { path: generator, sha256: pin.sha256,
-      manifestSha256: pin.manifestSha256, platform: pin.platform };
+      manifestSha256: pin.manifestSha256, platform: pin.platform,
+      protocolKeys: pin.protocolKeys };
   }
   const proofDirectory = bundlePath(root, inventory.proofParameters.directory);
   if (!(await lstat(proofDirectory)).isDirectory()) {

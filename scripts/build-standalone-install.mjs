@@ -9,7 +9,7 @@ import { createHash } from "node:crypto";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { KEYLESS_KEYGEN_PARAMETER_PATHS, STANDALONE_PROOF_PARAMETER_PATHS,
+import { KEYLESS_KEYGEN_PARAMETER_PATHS, PROTOCOL_KEY_PATHS, STANDALONE_PROOF_PARAMETER_PATHS,
   pinnedStandaloneImages, verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { buildReleaseCandidateManifest } from "./release-candidate-manifest.mjs";
 import { artifactWorkspaces, packageManifestCatalog } from "./trust-registry-workspace-catalog.mjs";
@@ -163,7 +163,7 @@ export function validateStandaloneInstallInputs(options, sourceRevision, inspect
   const destination = join(outputRoot, sourceRevision);
   if (existsSync(destination)) throw new Error("Install bundle already exists; do not overwrite release bytes");
   const proofCatalog = keylessDirectory === undefined ? STANDALONE_PROOF_PARAMETER_PATHS
-    : KEYLESS_KEYGEN_PARAMETER_PATHS;
+    : [...KEYLESS_KEYGEN_PARAMETER_PATHS, ...PROTOCOL_KEY_PATHS];
   for (const name of proofCatalog) {
     const source = join(proofSource, name);
     if (!existsSync(source) || !lstatSync(source).isFile()) {
@@ -297,7 +297,10 @@ export async function buildStandaloneInstall(options = {}) {
     mkdirSync(join(destination, "keygen"));
     copyFileSync(keygenBinary, join(destination, path), fsConstants.COPYFILE_EXCL);
     keylessRuntime = { path, sha256: await sha256(join(destination, path)),
-      platform: "linux/arm64", manifestSha256: keylessManifestSha256 };
+      platform: "linux/arm64", manifestSha256: keylessManifestSha256,
+      protocolKeys: Object.fromEntries(await Promise.all(PROTOCOL_KEY_PATHS.map(async (name) =>
+        [name, await sha256(join(proofSource, name))]))),
+    };
   }
 
   const inventory = {
