@@ -125,6 +125,20 @@ export async function ensureMaterializedProtocolProofParams(bundle, target,
   return verifyMaterializedProtocolProofParams(bundle, target, trustedInventorySha256);
 }
 
+/** @param {string} bundle @param {string} destination */
+export async function assertPrivateProtocolCacheParent(bundle, destination) {
+  const parent = dirname(resolve(destination));
+  const parentStat = await lstat(parent);
+  if (!parentStat.isDirectory() || (parentStat.mode & 0o077) !== 0
+    || (typeof process.getuid === "function" && parentStat.uid !== process.getuid())) {
+    throw new Error("Protocol proof cache parent must be a private directory owned by the current user");
+  }
+  const fromBundle = relative(await realpath(resolve(bundle)), await realpath(parent));
+  if (fromBundle === "" || (fromBundle !== ".." && !fromBundle.startsWith(`..${sep}`))) {
+    throw new Error("Generated protocol keys must not modify the install bundle");
+  }
+}
+
 /** @param {string} bundle @param {string} destination @param {string} keygen
  * @param {string} trustedInventorySha256 */
 export async function materializeStandaloneProofParams(bundle, destination, keygen,
@@ -136,16 +150,8 @@ export async function materializeStandaloneProofParams(bundle, destination, keyg
     || await hashFile(await regularFile(resolve(keygen))) !== runtime.sha256) {
     throw new Error("Protocol key generator platform or bytes differ from the install pin");
   }
+  await assertPrivateProtocolCacheParent(source, target);
   const parent = dirname(target);
-  const parentStat = await lstat(parent);
-  if (!parentStat.isDirectory() || (parentStat.mode & 0o077) !== 0
-    || (typeof process.getuid === "function" && parentStat.uid !== process.getuid())) {
-    throw new Error("Protocol proof cache parent must be a private directory owned by the current user");
-  }
-  const withinBundle = relative(await realpath(source), await realpath(parent));
-  if (withinBundle === "" || !withinBundle.startsWith(`..${sep}`)) {
-    throw new Error("Generated protocol keys must not modify the install bundle");
-  }
   try {
     await lstat(target);
     throw new Error("Protocol proof cache already exists");

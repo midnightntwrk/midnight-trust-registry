@@ -6,9 +6,31 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 
 import { KEYLESS_KEYGEN_PARAMETER_PATHS, PROTOCOL_KEY_PATHS } from "./standalone-proof-parameter-catalog.mjs";
-import { ensureMaterializedProtocolProofParams, verifyMaterializedProtocolProofParams } from "./materialize-standalone-proof-params.mjs";
+import { assertPrivateProtocolCacheParent, ensureMaterializedProtocolProofParams,
+  verifyMaterializedProtocolProofParams } from "./materialize-standalone-proof-params.mjs";
 
 const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
+
+test("private cache parent may be adjacent to, but never inside, the install bundle", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-protocol-cache-parent-"));
+  const bundle = join(root, "bundle");
+  try {
+    await mkdir(bundle, { mode: 0o700 });
+    await mkdir(join(bundle, "private"), { mode: 0o700 });
+    await mkdir(join(root, "outside"), { mode: 0o700 });
+    await mkdir(join(root, "public"), { mode: 0o755 });
+    await assertPrivateProtocolCacheParent(bundle, join(root, "cache"));
+    await assertPrivateProtocolCacheParent(bundle, join(root, "outside", "cache"));
+    await assert.rejects(assertPrivateProtocolCacheParent(bundle, join(bundle, "cache")),
+      /must not modify the install bundle/u);
+    await assert.rejects(assertPrivateProtocolCacheParent(bundle, join(bundle, "private", "cache")),
+      /must not modify the install bundle/u);
+    await assert.rejects(assertPrivateProtocolCacheParent(bundle, join(root, "public", "cache")),
+      /private directory/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("v7 materialized protocol cache requires all pinned bytes and no extra keys", async () => {
   const root = await mkdtemp(join(tmpdir(), "tr-protocol-keyless-"));

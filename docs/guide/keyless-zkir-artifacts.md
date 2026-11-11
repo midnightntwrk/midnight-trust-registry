@@ -82,6 +82,10 @@ staging uses the pinned API image with `--network none` to materialize the
 contract package in a private staging directory before services start. It
 rejects partial output, a changed generator, missing or altered circuits, or
 regenerated keys that differ from the authenticated release hashes.
+Provider staging uses one generator worker by default to avoid overlapping
+multi-GiB circuits. Allow substantial free disk for both the temporary
+generation and the staged package; the local 66-circuit run took about 84
+minutes on Linux/arm64 with two workers, so a one-worker run may take longer.
 
 For an independently packed candidate, the release manifest CLI can bind and
 later re-verify the trusted keyless digest without repacking rc1:

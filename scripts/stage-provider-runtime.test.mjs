@@ -100,6 +100,7 @@ test("keyless provider staging regenerates inside the pinned image without netwo
       assert.ok(args.includes("HOME=/home/keygen"));
       assert.ok(args.some((arg) => arg.includes("dst=/home/keygen/.cache/midnight/zk-params,readonly")));
       assert.equal(args.at(-3), packageSha);
+      assert.equal(args.at(-1), "1");
       const output = args.find((arg) => arg.includes("dst=/output"));
       const stage = output?.match(/^type=bind,src=(.+),dst=\/output$/u)?.[1];
       assert.ok(stage);

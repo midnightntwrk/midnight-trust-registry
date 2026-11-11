@@ -211,7 +211,7 @@ export async function stageProviderRuntime(bundleDirectory, destination, depende
           "--entrypoint", "node", imageId,
           "/scripts/pack-keyless-contract.mjs", "materialize",
           `/bundle/packages/${item.filename}`, "/output/materialized-contract",
-          "/bundle/keygen/zkir", item.sha256, keylessRuntime.manifestSha256, "2"], root);
+          "/bundle/keygen/zkir", item.sha256, keylessRuntime.manifestSha256, "1"], root);
         if (!lstatSync(generated).isDirectory()) {
           throw new Error("Keyless contract generation did not produce a full package");
         }
