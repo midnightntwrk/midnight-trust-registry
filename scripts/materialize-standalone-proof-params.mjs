@@ -107,6 +107,20 @@ export async function verifyMaterializedProtocolProofParams(bundle, target, trus
   return { directory: cache, fileCount: FULL_PATHS.length, inventorySha256: trustedInventorySha256 };
 }
 
+/** Reuse only a fully verified private cache; interrupted generation never counts as complete.
+ * @param {string} bundle @param {string} target @param {string} trustedInventorySha256
+ * @param {() => Promise<unknown>} materialize */
+export async function ensureMaterializedProtocolProofParams(bundle, target,
+  trustedInventorySha256, materialize) {
+  try {
+    await lstat(target);
+  } catch (error) {
+    if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") throw error;
+    await materialize();
+  }
+  return verifyMaterializedProtocolProofParams(bundle, target, trustedInventorySha256);
+}
+
 /** @param {string} bundle @param {string} destination @param {string} keygen
  * @param {string} trustedInventorySha256 */
 export async function materializeStandaloneProofParams(bundle, destination, keygen,

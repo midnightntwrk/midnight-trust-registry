@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 
 import { KEYLESS_KEYGEN_PARAMETER_PATHS, PROTOCOL_KEY_PATHS } from "./standalone-proof-parameter-catalog.mjs";
-import { verifyMaterializedProtocolProofParams } from "./materialize-standalone-proof-params.mjs";
+import { ensureMaterializedProtocolProofParams, verifyMaterializedProtocolProofParams } from "./materialize-standalone-proof-params.mjs";
 
 const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
@@ -44,6 +44,14 @@ test("v7 materialized protocol cache requires all pinned bytes and no extra keys
     await writeFile(join(bundle, "install-inventory.json"), bytes);
     const digest = sha(bytes);
     assert.equal((await verifyMaterializedProtocolProofParams(bundle, cache, digest)).fileCount, 25);
+    assert.equal((await ensureMaterializedProtocolProofParams(bundle, cache, digest,
+      async () => { throw new Error("verified cache must be reused"); })).fileCount, 25);
+    const parked = join(root, "parked-cache");
+    await rename(cache, parked);
+    let materializations = 0;
+    assert.equal((await ensureMaterializedProtocolProofParams(bundle, cache, digest,
+      async () => { materializations += 1; await rename(parked, cache); })).fileCount, 25);
+    assert.equal(materializations, 1);
     await assert.rejects(verifyMaterializedProtocolProofParams(bundle, cache, "0".repeat(64)),
       /inventory changed/u);
     const missing = PROTOCOL_KEY_PATHS[0];
@@ -55,6 +63,8 @@ test("v7 materialized protocol cache requires all pinned bytes and no extra keys
     await writeFile(join(cache, missing), "substituted key");
     await assert.rejects(verifyMaterializedProtocolProofParams(bundle, cache, digest),
       /hash mismatch/u);
+    await assert.rejects(ensureMaterializedProtocolProofParams(bundle, cache, digest,
+      async () => { throw new Error("tampered cache must not be regenerated"); }), /hash mismatch/u);
     await writeFile(join(cache, missing), original);
     await writeFile(join(cache, "unexpected.prover"), "extra");
     await assert.rejects(verifyMaterializedProtocolProofParams(bundle, cache, digest),

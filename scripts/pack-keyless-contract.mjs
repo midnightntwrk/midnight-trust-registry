@@ -19,6 +19,7 @@ const KEY_PREFIX = "dist/managed/trust-registry/keys/";
 const MANAGED_PREFIX = "dist/managed/trust-registry/";
 const CONTRACT_NAME = "@midnight-ntwrk/trust-registry-contract";
 const SHA256 = /^[0-9a-f]{64}$/u;
+const repoLicense = resolve(dirname(fileURLToPath(import.meta.url)), "../LICENSE");
 
 /** @param {string} path */
 async function hashFile(path) {
@@ -94,6 +95,9 @@ export async function packKeylessContract(packageDirectory, keylessDirectory,
       const output = join(stage, "package", file);
       await mkdir(dirname(output), { recursive: true });
       await copyFile(await regularFile(join(source, file)), output);
+    }
+    if (!files.includes("LICENSE")) {
+      await copyFile(await regularFile(repoLicense), join(stage, "package", "LICENSE"));
     }
     const embedded = join(stage, "package", MANAGED_PREFIX, "keyless-manifest.json");
     await copyFile(await regularFile(join(keyless, "keyless-manifest.json")), embedded);

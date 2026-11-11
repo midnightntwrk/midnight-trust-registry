@@ -18,7 +18,7 @@ import {
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
-import { verifyMaterializedProtocolProofParams } from "./materialize-standalone-proof-params.mjs";
+import { ensureMaterializedProtocolProofParams, verifyMaterializedProtocolProofParams } from "./materialize-standalone-proof-params.mjs";
 import { regularBytes } from "./standalone-private-file-bytes.mjs";
 export { regularBytes } from "./standalone-private-file-bytes.mjs";
 import { verifyDetachedReviewerSignature } from "./standalone-reviewer-signature.mjs";
@@ -334,10 +334,10 @@ export async function prepareStandaloneStack(directory, requested, dependencies 
     await (dependencies.assertProjectUnused ?? assertUnusedStandaloneProject)(config.project);
     const keyless = parseJsonBytes(inventoryBytes).format === "tr-standalone-install-v7";
     if (keyless) {
-      await (dependencies.materializeProtocolProofParams ?? materializeProtocolProofParams)(
-        record.install.bundle, root, verified);
-      await verifyMaterializedProtocolProofParams(record.install.bundle,
-        join(root, "proof-params"), record.install.inventorySha256);
+      await ensureMaterializedProtocolProofParams(record.install.bundle,
+        join(root, "proof-params"), record.install.inventorySha256,
+        () => (dependencies.materializeProtocolProofParams ?? materializeProtocolProofParams)(
+          record.install.bundle, root, verified));
     }
     const proofDirectory = keyless ? join(root, "proof-params")
       : join(record.install.bundle, "proof-params");

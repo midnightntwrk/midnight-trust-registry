@@ -58,6 +58,7 @@ test("keyless contract package excludes keys and restores a verified local packa
   assert.equal(packed.name, "@midnight-ntwrk/trust-registry-contract");
   const listing = execFileSync("tar", ["-tzf", paths.tarball], { encoding: "utf8" });
   assert.match(listing, /package\/dist\/managed\/trust-registry\/keyless-manifest\.json/u);
+  assert.match(listing, /package\/LICENSE/u);
   assert.doesNotMatch(listing, /\.prover|\.verifier/u);
   const rawArchive = gunzipSync(await readFile(paths.tarball));
   assert.equal(rawArchive.includes(Buffer.from("LIBARCHIVE.xattr.")), false);
@@ -67,6 +68,8 @@ test("keyless contract package excludes keys and restores a verified local packa
   assert.equal(verified.circuitCount, 1);
   await materializeKeylessContractPackage(paths.tarball, paths.restored, paths.generator,
     packed.tarballSha256, paths.manifestSha256);
+  assert.equal(await readFile(join(paths.restored, "LICENSE"), "utf8"),
+    await readFile(new URL("../LICENSE", import.meta.url), "utf8"));
   assert.equal(await readFile(join(paths.restored,
     "dist/managed/trust-registry/keys/demoCircuit.prover"), "utf8"), "sample-zkir\n");
   assert.equal(await readFile(join(paths.restored, "dist/index.js"), "utf8"),
