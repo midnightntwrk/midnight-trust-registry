@@ -486,16 +486,18 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   let artifactDir = join(root, artifactDirectory);
   let output;
   let verifyPath;
+  let keylessManifestSha256;
   for (let index = 2; index < process.argv.length; index += 1) {
     const option = process.argv[index];
-    if (!["--artifact-dir", "--output", "--verify"].includes(option)
+    if (!["--artifact-dir", "--output", "--verify", "--keyless-manifest-sha256"].includes(option)
       || !process.argv[index + 1]) {
-      throw new Error("Usage: release-candidate-manifest.mjs [--artifact-dir dir] [--output file | --verify file]");
+      throw new Error("Usage: release-candidate-manifest.mjs [--artifact-dir dir] [--keyless-manifest-sha256 sha256] [--output file | --verify file]");
     }
-    const value = resolve(process.argv[++index]);
-    if (option === "--artifact-dir") artifactDir = value;
-    else if (option === "--output") output = value;
-    else verifyPath = value;
+    const value = process.argv[++index];
+    if (option === "--artifact-dir") artifactDir = resolve(value);
+    else if (option === "--output") output = resolve(value);
+    else if (option === "--verify") verifyPath = resolve(value);
+    else keylessManifestSha256 = value;
   }
   if (output && verifyPath) throw new Error("Choose manifest output or verification, not both");
   if (run("git", ["status", "--porcelain", "--untracked-files=normal"]) !== "") {
@@ -511,6 +513,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     repoRoot: root,
     artifactDir,
     revision,
+    keylessManifestSha256,
   });
   verifyReleaseCandidateArtifacts(manifest, artifactDir);
   if (verifyPath) {

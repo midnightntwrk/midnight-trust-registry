@@ -82,6 +82,20 @@ contract package in a private staging directory before services start. It
 rejects partial output, a changed generator, missing or altered circuits, or
 regenerated keys that differ from the authenticated release hashes.
 
+For an independently packed candidate, the release manifest CLI can bind and
+later re-verify the trusted keyless digest without repacking rc1:
+
+```sh
+node scripts/release-candidate-manifest.mjs \
+  --artifact-dir /absolute/new/packages \
+  --keyless-manifest-sha256 <trusted-manifest-sha256> \
+  --output /absolute/new/release-manifest.json
+node scripts/release-candidate-manifest.mjs \
+  --artifact-dir /absolute/new/packages \
+  --keyless-manifest-sha256 <trusted-manifest-sha256> \
+  --verify /absolute/new/release-manifest.json
+```
+
 The 18 existing `proof-params` entries include **protocol** `dust` and
 `zswap` `.prover`/`.verifier` files for the node/proof server. The keyless
 claim applies to the **66 Trust Registry contract circuits**, not to those
