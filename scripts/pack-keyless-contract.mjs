@@ -4,7 +4,7 @@ import { execFile } from "node:child_process";
 import console from "node:console";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { copyFile, link, lstat, mkdir, mkdtemp, readFile, rename, rm } from "node:fs/promises";
+import { chmod, copyFile, link, lstat, mkdir, mkdtemp, readFile, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import process from "node:process";
@@ -183,6 +183,7 @@ export async function materializeKeylessContractPackage(tarball, destination, ke
     const fullManaged = join(stage, "full-managed");
     const result = await materializeKeylessZkirBundle(managed, fullManaged, keygen,
       trustedManifestSha256, jobs);
+    await chmod(fullManaged, 0o755);
     await rm(managed, { recursive: true });
     await rename(fullManaged, managed);
     await rename(packageRoot, target);

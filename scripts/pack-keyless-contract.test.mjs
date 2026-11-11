@@ -68,6 +68,8 @@ test("keyless contract package excludes keys and restores a verified local packa
   assert.equal(verified.circuitCount, 1);
   await materializeKeylessContractPackage(paths.tarball, paths.restored, paths.generator,
     packed.tarballSha256, paths.manifestSha256);
+  assert.equal((await lstat(join(paths.restored,
+    "dist/managed/trust-registry"))).mode & 0o777, 0o755);
   assert.equal(await readFile(join(paths.restored, "LICENSE"), "utf8"),
     await readFile(new URL("../LICENSE", import.meta.url), "utf8"));
   assert.equal(await readFile(join(paths.restored,
