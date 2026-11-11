@@ -192,11 +192,11 @@ export async function stageProviderRuntime(bundleDirectory, destination, depende
       if (item.workspace === "contracts/trust-registry" && keylessRuntime !== null) {
         const apiRuntime = verified.apiRuntime;
         const groupId = getgid?.();
-        if (!apiRuntime?.configId || typeof groupId !== "number"
+        if (!apiRuntime?.imageId || typeof groupId !== "number"
           || !Number.isSafeInteger(groupId)) {
           throw new Error("Keyless provider stage requires a loaded, verified Linux API image and user identity");
         }
-        const imageId = apiRuntime.configId;
+        const imageId = apiRuntime.imageId;
         if (run("docker", ["image", "inspect", imageId, "--format", "{{.Id}}"], root) !== imageId) {
           throw new Error("Loaded key-generation image differs from the verified install image");
         }
@@ -229,7 +229,7 @@ export async function stageProviderRuntime(bundleDirectory, destination, depende
       packageCount: packages.length,
       ...(keylessRuntime === null ? {} : {
         keylessManifestSha256: keylessRuntime.manifestSha256,
-        keygenImageId: verified.apiRuntime?.configId,
+        keygenImageId: verified.apiRuntime?.imageId,
       }),
       contentSha256: content.sha256,
       contentEntries: content.entries,

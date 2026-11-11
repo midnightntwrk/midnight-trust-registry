@@ -115,7 +115,7 @@ test("keyless provider staging regenerates inside the pinned image without netwo
     return run(file, args, cwd);
   };
   const verified = { sourceRevision: revision, inventorySha256: HASH,
-    apiRuntime: { configId: imageId },
+    apiRuntime: { imageId, configId: `sha256:${"d".repeat(64)}` },
     keylessRuntime: { manifestSha256: "c".repeat(64) } };
   const result = await stageProviderRuntime(bundle, destination, {
     ...dependencies, command, expectedWorkspaces: ["contracts/trust-registry"],
