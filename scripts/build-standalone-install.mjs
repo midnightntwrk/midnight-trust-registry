@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "node:child_process";
-import { constants as fsConstants, createReadStream } from "node:fs";
+import { accessSync, constants as fsConstants, createReadStream } from "node:fs";
 import {
   copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync,
 } from "node:fs";
@@ -139,6 +139,15 @@ export function validateStandaloneInstallInputs(options, sourceRevision, inspect
       || !lstatSync(keygenBinary).isFile()
       || !apiImageDirectory || !adminImageDirectory || !applicantImageDirectory) {
       throw new Error("Keyless v7 install requires a complete absolute manifest, generator, and three runtime image directories");
+    }
+    try {
+      accessSync(keygenBinary, fsConstants.X_OK);
+    } catch {
+      throw new Error("Keyless v7 generator must be executable by the installer");
+    }
+    const apiManifest = JSON.parse(readFileSync(join(apiImageDirectory, "manifest.json"), "utf8"));
+    if (apiManifest.platform !== "linux/arm64") {
+      throw new Error("Keyless v7 requires a Linux/arm64 API image for the pinned generator");
     }
   }
   const staticDirectories = [adminImageDirectory, applicantImageDirectory];

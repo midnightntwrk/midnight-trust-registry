@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -42,8 +42,9 @@ async function imageArchive(root, role, digest = manifestDigest, repoTags = null
 
 async function apiImageArchive(root, labelRevision = revision, repoTags = null, options = {}) {
   const source = join(root, "source-api");
+  const architecture = options.architecture ?? "arm64";
   await mkdir(join(source, "blobs/sha256"), { recursive: true });
-  const config = JSON.stringify({ os: "linux", architecture: "arm64", config: {
+  const config = JSON.stringify({ os: "linux", architecture, config: {
     Labels: { "org.opencontainers.image.revision": labelRevision }, User: "1000:1000",
     WorkingDir: "/app", Entrypoint: ["node", "/app/bin/trust-registry-api.mjs"],
     ...(!options.omitHealthcheck ? { Healthcheck: options.healthcheck
@@ -55,7 +56,7 @@ async function apiImageArchive(root, labelRevision = revision, repoTags = null, 
   const image = JSON.stringify({ schemaVersion: 2, config: { digest: `sha256:${configId}` }, layers: [] });
   const imageDigest = sha(image);
   const imageIndex = JSON.stringify({ schemaVersion: 2, manifests: [{ digest: `sha256:${imageDigest}`,
-    platform: { os: "linux", architecture: "arm64" } },
+    platform: { os: "linux", architecture } },
   ...(options.extraPlatform ? [{ digest: `sha256:${"f".repeat(64)}`,
     platform: { os: "linux", architecture: "amd64" } }] : [])] });
   const imageId = `sha256:${sha(imageIndex)}`;
@@ -72,7 +73,7 @@ async function apiImageArchive(root, labelRevision = revision, repoTags = null, 
   const archiveSha256 = sha(await readFile(archive));
   const manifest = { format: options.portals ? "tr-api-runtime-image-v2" : "tr-api-runtime-image-v1",
     sourceRevision: revision,
-    approvedSignerFingerprint: "A".repeat(40), platform: "linux/arm64",
+    approvedSignerFingerprint: "A".repeat(40), platform: `linux/${architecture}`,
     baseImage: `example.test/base@sha256:${"b".repeat(64)}`,
     lockfileSha256: "c".repeat(64), dockerfileSha256: "d".repeat(64),
     payload: { fileCount: 1, sha256: "e".repeat(64) },
@@ -515,6 +516,7 @@ test("v7 requires a source-bound generator, keyless manifest, and offline keygen
     const generator = Buffer.from("pinned generator\n");
     await mkdir(join(root, "keygen"));
     await writeFile(join(root, "keygen/zkir"), generator);
+    await chmod(join(root, "keygen/zkir"), 0o755);
     const manifestDigest = "f".repeat(64);
     const protocolKeys = Object.fromEntries(inventory.proofParameters.files
       .filter(({ path }) => PROTOCOL_KEY_PATHS.includes(path))
@@ -542,6 +544,9 @@ test("v7 requires a source-bound generator, keyless manifest, and offline keygen
     assert.equal(verified.keylessRuntime.sha256, sha(generator));
     assert.equal(verified.proofParameterCount, KEYLESS_KEYGEN_PARAMETER_PATHS.length);
     assert.deepEqual(verified.keylessRuntime.protocolKeys, protocolKeys);
+    await chmod(join(root, "keygen/zkir"), 0o644);
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /generator is not executable/u);
+    await chmod(join(root, "keygen/zkir"), 0o755);
     await writeFile(join(root, "proof-params", PROTOCOL_KEY_PATHS[0]), "forbidden key bytes");
     await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /extra files/u);
     await rm(join(root, "proof-params", PROTOCOL_KEY_PATHS[0]));
@@ -557,6 +562,13 @@ test("v7 requires a source-bound generator, keyless manifest, and offline keygen
     await save();
     await writeFile(join(root, "keygen/zkir"), "changed\n");
     await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /generator bytes disagree/u);
+    await writeFile(join(root, "keygen/zkir"), generator);
+    await rm(join(root, "source-api"), { recursive: true });
+    inventory.apiRuntime = await apiImageArchive(root, revision, null,
+      { architecture: "amd64" });
+    await save();
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}),
+      /API image manifest is malformed/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

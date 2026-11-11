@@ -427,6 +427,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
   if (inventory.format === "tr-standalone-install-v7") {
     const pin = inventory.keylessRuntime;
     if (pin?.path !== "keygen/zkir" || pin.platform !== "linux/arm64"
+      || apiRuntime?.platform !== pin.platform
       || !SHA256.test(pin.sha256) || !SHA256.test(pin.manifestSha256)
       || !exactStringSet(Object.keys(pin.protocolKeys ?? {}), PROTOCOL_KEY_PATHS)
       || PROTOCOL_KEY_PATHS.some((name) => !SHA256.test(pin.protocolKeys[name]))
@@ -436,6 +437,9 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
       throw new Error("Standalone keyless generator or manifest pin is missing or malformed");
     }
     const generator = await regularBundleFile(root, pin.path);
+    if (((await lstat(generator)).mode & 0o111) === 0) {
+      throw new Error("Standalone keyless generator is not executable");
+    }
     if (await sha256(generator) !== pin.sha256) {
       throw new Error("Standalone keyless generator bytes disagree with the install pin");
     }
