@@ -6,6 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { createKeylessZkirBundle, materializeKeylessZkirBundle,
+  verifyKeylessZkirAgainstFullSource,
   verifyKeylessZkirBundle } from "./keyless-zkir-bundle.mjs";
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -60,6 +61,18 @@ test("trusted digest and ZKIR mutations fail before materialization", async (t) 
   await assert.rejects(materializeKeylessZkirBundle(paths.keyless, paths.restored,
     paths.generator, created.manifestSha256), /asset hash mismatch/u);
   await assert.rejects(lstat(paths.restored), { code: "ENOENT" });
+});
+
+test("builder rejects a keyless manifest that differs from signed-source outputs", async (t) => {
+  const paths = await fixture(t);
+  const created = await createKeylessZkirBundle(paths.full, paths.keyless, revision, paths.generator);
+  await verifyKeylessZkirAgainstFullSource(paths.keyless, paths.full, created.manifestSha256,
+    revision);
+  await assert.rejects(verifyKeylessZkirAgainstFullSource(paths.keyless, paths.full,
+    created.manifestSha256, "b".repeat(40)), /source revision/u);
+  await writeFile(join(paths.full, "keys/demoCircuit.verifier"), "changed\n");
+  await assert.rejects(verifyKeylessZkirAgainstFullSource(paths.keyless, paths.full,
+    created.manifestSha256, revision), /Expected key differs from full source/u);
 });
 
 test("wrong generator and wrong regenerated keys fail closed", async (t) => {

@@ -7,7 +7,8 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { STANDALONE_PROOF_PARAMETER_PATHS, verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
+import { KEYLESS_KEYGEN_PARAMETER_PATHS, STANDALONE_PROOF_PARAMETER_PATHS,
+  verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { approvedRuntimeHealthcheck } from "./runtime-healthcheck.mjs";
 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -486,6 +487,66 @@ test("v6 pins the installation relay script beside the complete runtime", async 
     inventory.installRelay.imageRole = "indexer";
     await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
     await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /relay pin is missing/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("v7 requires a source-bound generator, keyless manifest, and offline keygen parameters", async () => {
+  const { root, inventory } = await fixture();
+  try {
+    const compose = Buffer.from(`name: \${TR_STACK_NAME:-tr-standalone-local-smoke}\nservices:\n  node:\n    image: ${reference("node")}\n  indexer:\n    image: ${reference("indexer")}\n  proof-server:\n    image: ${reference("proof-server")}\n`);
+    const offline = Buffer.from("services: {}\n");
+    const apiCompose = Buffer.from("services:\n  api:\n    profiles: [runtime]\n");
+    for (const [name, bytes] of [["compose.yml", compose],
+      ["compose.offline.yml", offline], ["compose.api.yml", apiCompose]]) {
+      await writeFile(join(root, name), bytes);
+    }
+    inventory.format = "tr-standalone-install-v7";
+    inventory.runtimeCompose = { path: "compose.yml", sha256: sha(compose),
+      offlinePath: "compose.offline.yml", offlineSha256: sha(offline),
+      apiPath: "compose.api.yml", apiSha256: sha(apiCompose) };
+    inventory.apiRuntime = await apiImageArchive(root);
+    inventory.portalRuntimes = { admin: await staticImageArchive(root, "admin"),
+      applicant: await staticImageArchive(root, "applicant") };
+    const relay = Buffer.from("# pinned relay\n");
+    await writeFile(join(root, "install-relay.mjs"), relay);
+    inventory.installRelay = { path: "install-relay.mjs", sha256: sha(relay), imageRole: "api" };
+    const generator = Buffer.from("pinned generator\n");
+    await mkdir(join(root, "keygen"));
+    await writeFile(join(root, "keygen/zkir"), generator);
+    const manifestDigest = "f".repeat(64);
+    inventory.keylessRuntime = { path: "keygen/zkir", sha256: sha(generator),
+      platform: "linux/arm64", manifestSha256: manifestDigest };
+    const release = { format: "tr-release-candidate-manifest-v3", sourceRevision: revision,
+      keyless: { manifestSha256: manifestDigest, keygenSha256: sha(generator),
+        platform: "linux/arm64" } };
+    const releaseBytes = JSON.stringify(release);
+    await writeFile(join(root, "release.json"), releaseBytes);
+    inventory.packageManifestSha256 = sha(releaseBytes);
+    for (const path of KEYLESS_KEYGEN_PARAMETER_PATHS.filter((name) =>
+      !STANDALONE_PROOF_PARAMETER_PATHS.includes(name))) {
+      const bytes = Buffer.from(`keygen-parameter:${path}`);
+      await writeFile(join(root, "proof-params", path), bytes);
+      inventory.proofParameters.files.push({ path, sha256: sha(bytes) });
+    }
+    const save = () => writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
+    await save();
+    const verified = await verifyStandaloneInstallBundle(root, () => {});
+    assert.equal(verified.keylessRuntime.sha256, sha(generator));
+    assert.equal(verified.proofParameterCount, KEYLESS_KEYGEN_PARAMETER_PATHS.length);
+    inventory.keylessRuntime.sha256 = "0".repeat(64);
+    await save();
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /generator or manifest pin/u);
+    inventory.keylessRuntime.sha256 = sha(generator);
+    await save();
+    const omitted = inventory.proofParameters.files.pop();
+    await save();
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /inventory is incomplete/u);
+    inventory.proofParameters.files.push(omitted);
+    await save();
+    await writeFile(join(root, "keygen/zkir"), "changed\n");
+    await assert.rejects(verifyStandaloneInstallBundle(root, () => {}), /generator bytes disagree/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

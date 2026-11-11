@@ -9,16 +9,19 @@ import { createHash } from "node:crypto";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { STANDALONE_PROOF_PARAMETER_PATHS, pinnedStandaloneImages, verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
+import { KEYLESS_KEYGEN_PARAMETER_PATHS, STANDALONE_PROOF_PARAMETER_PATHS,
+  pinnedStandaloneImages, verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { buildReleaseCandidateManifest } from "./release-candidate-manifest.mjs";
 import { artifactWorkspaces, packageManifestCatalog } from "./trust-registry-workspace-catalog.mjs";
+import { verifyKeylessZkirAgainstFullSource } from "./keyless-zkir-bundle.mjs";
 
 export { pinnedStandaloneImages } from "./check-standalone-install.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** @typedef {{outputRoot?: string, proofSource?: string, apiImageDirectory?: string,
- * adminImageDirectory?: string, applicantImageDirectory?: string}} StandaloneInstallBuildOptions */
+ * adminImageDirectory?: string, applicantImageDirectory?: string,
+ * keylessDirectory?: string, keylessManifestSha256?: string, keygenBinary?: string}} StandaloneInstallBuildOptions */
 
 /** @param {string} program @param {string[]} args */
 function command(program, args) {
@@ -126,7 +129,18 @@ export async function stageStaticRuntimeImage(inputDirectory, destination, role,
  * @param {(reference: string) => unknown} [inspectImage] */
 export function validateStandaloneInstallInputs(options, sourceRevision, inspectImage = (reference) =>
   JSON.parse(command("docker", ["image", "inspect", reference, "--format", "{{json .RepoDigests}}"]))) {
-  const { apiImageDirectory, adminImageDirectory, applicantImageDirectory } = options;
+  const { apiImageDirectory, adminImageDirectory, applicantImageDirectory,
+    keylessDirectory, keylessManifestSha256, keygenBinary } = options;
+  if ([keylessDirectory, keylessManifestSha256, keygenBinary].some((value) => value !== undefined)) {
+    if (!keylessDirectory || !keylessManifestSha256 || !keygenBinary
+      || !isAbsolute(keylessDirectory) || !isAbsolute(keygenBinary)
+      || !/^[0-9a-f]{64}$/u.test(keylessManifestSha256)
+      || !lstatSync(join(keylessDirectory, "keyless-manifest.json")).isFile()
+      || !lstatSync(keygenBinary).isFile()
+      || !apiImageDirectory || !adminImageDirectory || !applicantImageDirectory) {
+      throw new Error("Keyless v7 install requires a complete absolute manifest, generator, and three runtime image directories");
+    }
+  }
   const staticDirectories = [adminImageDirectory, applicantImageDirectory];
   if (staticDirectories.some((directory) => directory !== undefined)
     && (staticDirectories.some((directory) => directory === undefined)
@@ -148,7 +162,9 @@ export function validateStandaloneInstallInputs(options, sourceRevision, inspect
   }
   const destination = join(outputRoot, sourceRevision);
   if (existsSync(destination)) throw new Error("Install bundle already exists; do not overwrite release bytes");
-  for (const name of STANDALONE_PROOF_PARAMETER_PATHS) {
+  const proofCatalog = keylessDirectory === undefined ? STANDALONE_PROOF_PARAMETER_PATHS
+    : KEYLESS_KEYGEN_PARAMETER_PATHS;
+  for (const name of proofCatalog) {
     const source = join(proofSource, name);
     if (!existsSync(source) || !lstatSync(source).isFile()) {
       throw new Error(`Proof parameter is missing or not a regular file: ${name}`);
@@ -162,7 +178,8 @@ export function validateStandaloneInstallInputs(options, sourceRevision, inspect
     }
   }
   return { sourceRevision, outputRoot, proofSource, destination, pinned,
-    apiImageDirectory, adminImageDirectory, applicantImageDirectory };
+    apiImageDirectory, adminImageDirectory, applicantImageDirectory,
+    keylessDirectory, keylessManifestSha256, keygenBinary };
 }
 
 /** @param {StandaloneInstallBuildOptions} [options] */
@@ -176,14 +193,29 @@ export function preflightStandaloneInstall(options = {}) {
 /** @param {StandaloneInstallBuildOptions} [options] */
 export async function buildStandaloneInstall(options = {}) {
   const { sourceRevision, outputRoot, proofSource, destination, pinned,
-    apiImageDirectory, adminImageDirectory, applicantImageDirectory } = preflightStandaloneInstall(options);
+    apiImageDirectory, adminImageDirectory, applicantImageDirectory,
+    keylessDirectory, keylessManifestSha256, keygenBinary } = preflightStandaloneInstall(options);
+  let keyless = null;
+  if (keylessDirectory !== undefined && keylessManifestSha256 !== undefined
+    && keygenBinary !== undefined) {
+    keyless = await verifyKeylessZkirAgainstFullSource(keylessDirectory,
+      join(root, "contracts/trust-registry/dist/managed/trust-registry"),
+      keylessManifestSha256, sourceRevision);
+    if (keyless.manifest.platform !== "linux/arm64"
+      || await sha256(keygenBinary) !== keyless.manifest.keygenSha256) {
+      throw new Error("Keyless release requires the pinned Linux/arm64 generator binary");
+    }
+  }
   mkdirSync(outputRoot, { recursive: true });
   mkdirSync(destination, { mode: 0o700 });
   const packages = join(destination, "packages");
   mkdirSync(packages);
-  command("node", ["scripts/pack-artifacts.mjs", "--output-dir", packages]);
+  command("node", ["scripts/pack-artifacts.mjs", "--output-dir", packages,
+    ...(keyless === null || keylessDirectory === undefined || keylessManifestSha256 === undefined
+      ? [] : ["--keyless-dir", keylessDirectory,
+        "--keyless-manifest-sha256", keylessManifestSha256])]);
   const manifest = buildReleaseCandidateManifest({ repoRoot: root, artifactDir: packages,
-    revision: sourceRevision });
+    revision: sourceRevision, ...(keyless === null ? {} : { keylessManifestSha256 }) });
   writeFileSync(join(destination, "release-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`,
     { flag: "wx", mode: 0o600 });
   const composeSource = join(root, "deploy/standalone/compose.yml");
@@ -208,7 +240,8 @@ export async function buildStandaloneInstall(options = {}) {
 
   const proofDirectory = join(destination, "proof-params");
   const proofFiles = [];
-  for (const name of STANDALONE_PROOF_PARAMETER_PATHS) {
+  for (const name of keyless === null ? STANDALONE_PROOF_PARAMETER_PATHS
+    : KEYLESS_KEYGEN_PARAMETER_PATHS) {
     const source = join(proofSource, name);
     if (!lstatSync(source).isFile()) throw new Error(`Proof parameter is not a regular file: ${name}`);
     const target = join(proofDirectory, name);
@@ -258,8 +291,18 @@ export async function buildStandaloneInstall(options = {}) {
     installRelay = { path, sha256: await sha256(join(destination, path)), imageRole: "api" };
   }
 
+  let keylessRuntime;
+  if (keyless !== null && keygenBinary !== undefined) {
+    const path = "keygen/zkir";
+    mkdirSync(join(destination, "keygen"));
+    copyFileSync(keygenBinary, join(destination, path), fsConstants.COPYFILE_EXCL);
+    keylessRuntime = { path, sha256: await sha256(join(destination, path)),
+      platform: "linux/arm64", manifestSha256: keylessManifestSha256 };
+  }
+
   const inventory = {
-    format: portalRuntimes ? "tr-standalone-install-v6"
+    format: keylessRuntime ? "tr-standalone-install-v7"
+      : portalRuntimes ? "tr-standalone-install-v6"
       : apiRuntime ? "tr-standalone-install-v4" : "tr-standalone-install-v3", sourceRevision,
     packageManifest: "release-manifest.json",
     packageManifestSha256: await sha256(join(destination, "release-manifest.json")),
@@ -268,6 +311,7 @@ export async function buildStandaloneInstall(options = {}) {
     ...(apiRuntime ? { apiRuntime } : {}),
     ...(portalRuntimes ? { portalRuntimes } : {}),
     ...(installRelay ? { installRelay } : {}),
+    ...(keylessRuntime ? { keylessRuntime } : {}),
   };
   writeFileSync(join(destination, "install-inventory.json"), `${JSON.stringify(inventory, null, 2)}\n`,
     { flag: "wx", mode: 0o600 });
@@ -284,11 +328,16 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   if (preflight) args.shift();
   if (args.length !== 0 && (args.length !== 2 || args[0] !== "--api-image-dir")
     && (args.length !== 6 || args[0] !== "--api-image-dir"
-      || args[2] !== "--admin-image-dir" || args[4] !== "--applicant-image-dir")) {
-    throw new Error("Usage: node scripts/build-standalone-install.mjs [--preflight] [--api-image-dir <absolute-directory> [--admin-image-dir <absolute-directory> --applicant-image-dir <absolute-directory>]]");
+      || args[2] !== "--admin-image-dir" || args[4] !== "--applicant-image-dir")
+    && (args.length !== 12 || args[0] !== "--api-image-dir"
+      || args[2] !== "--admin-image-dir" || args[4] !== "--applicant-image-dir"
+      || args[6] !== "--keyless-dir" || args[8] !== "--keyless-manifest-sha256"
+      || args[10] !== "--keygen-bin")) {
+    throw new Error("Usage: node scripts/build-standalone-install.mjs [--preflight] [--api-image-dir <dir> --admin-image-dir <dir> --applicant-image-dir <dir> [--keyless-dir <dir> --keyless-manifest-sha256 <sha256> --keygen-bin <linux-arm64-zkir>]]");
   }
   const options = { apiImageDirectory: args[1], adminImageDirectory: args[3],
-    applicantImageDirectory: args[5] };
+    applicantImageDirectory: args[5], keylessDirectory: args[7],
+    keylessManifestSha256: args[9], keygenBinary: args[11] };
   console.log(JSON.stringify(preflight ? preflightStandaloneInstall(options)
     : await buildStandaloneInstall(options)));
 }

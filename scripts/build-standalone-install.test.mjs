@@ -8,7 +8,7 @@ import { test } from "node:test";
 
 import { assertRequiredWorkspaceFiles, pinnedStandaloneImages, stageApiRuntimeImage, stageStaticRuntimeImage,
   validateStandaloneInstallInputs, validateStaticRuntimeImageInput } from "./build-standalone-install.mjs";
-import { STANDALONE_PROOF_PARAMETER_PATHS } from "./check-standalone-install.mjs";
+import { KEYLESS_KEYGEN_PARAMETER_PATHS, STANDALONE_PROOF_PARAMETER_PATHS } from "./check-standalone-install.mjs";
 import { packageManifestCatalog } from "./trust-registry-workspace-catalog.mjs";
 
 const image = `midnightntwrk/test@sha256:${"a".repeat(64)}`;
@@ -92,6 +92,23 @@ test("preflight checks proof and image inputs without creating an install direct
     /requires API, admin, and applicant/u);
     const selected = { ...options, apiImageDirectory, ...staticDirectories };
     const selectedPlan = validateStandaloneInstallInputs(selected, revision, inspectImage);
+    const keylessDirectory = join(root, "keyless");
+    await mkdir(keylessDirectory);
+    await writeFile(join(keylessDirectory, "keyless-manifest.json"), "{}\n");
+    const keygenBinary = join(root, "zkir");
+    await writeFile(keygenBinary, "pinned binary\n");
+    const keylessSelected = { ...selected, keylessDirectory, keygenBinary,
+      keylessManifestSha256: "f".repeat(64) };
+    assert.throws(() => validateStandaloneInstallInputs(keylessSelected, revision,
+      inspectImage), /Proof parameter is missing/u);
+    for (const name of KEYLESS_KEYGEN_PARAMETER_PATHS.filter((path) =>
+      !STANDALONE_PROOF_PARAMETER_PATHS.includes(path))) {
+      await writeFile(join(options.proofSource, name), "keygen parameter\n");
+    }
+    assert.equal(validateStandaloneInstallInputs(keylessSelected, revision,
+      inspectImage).keylessDirectory, keylessDirectory);
+    assert.throws(() => validateStandaloneInstallInputs({ ...keylessSelected,
+      keygenBinary: undefined }, revision, inspectImage), /Keyless v7 install requires/u);
     selected.applicantImageDirectory = undefined;
     assert.equal(selectedPlan.applicantImageDirectory, staticDirectories.applicantImageDirectory);
     assert.equal(existsSync(options.outputRoot), false);

@@ -962,7 +962,7 @@ export async function approveStandaloneCommitteeDeployment(
       throw new Error("Staged deployment manifest disagrees with approved install bytes");
     }
     const manifest = parseJsonBytes(manifestBytes);
-    if (manifest.format !== "tr-release-candidate-manifest-v2"
+    if (!["tr-release-candidate-manifest-v2", "tr-release-candidate-manifest-v3"].includes(manifest.format)
       || manifest.sourceRevision !== record.sourceRevision) {
       throw new Error("Staged deployment manifest has an invalid source or format");
     }
@@ -1486,7 +1486,7 @@ async function readApprovedCommitteeTransition(record, requestPath, dependencies
       throw new Error("Staged deployment manifest disagrees with approved install bytes");
     }
     const manifest = parseJsonBytes(manifestBytes);
-    if (manifest.format !== "tr-release-candidate-manifest-v2"
+    if (!["tr-release-candidate-manifest-v2", "tr-release-candidate-manifest-v3"].includes(manifest.format)
       || manifest.sourceRevision !== record.sourceRevision) {
       throw new Error("Staged deployment manifest has an invalid source or format");
     }

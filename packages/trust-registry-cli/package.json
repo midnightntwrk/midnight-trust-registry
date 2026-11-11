@@ -1,6 +1,6 @@
 {
   "name": "@midnight-ntwrk/trust-registry-cli",
-  "version": "0.1.0-rc1",
+  "version": "0.1.0-rc2",
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
@@ -44,9 +44,9 @@
     "test:light": "pnpm run test"
   },
   "dependencies": {
-    "@midnight-ntwrk/trust-registry-client": "workspace:0.1.0-rc1",
-    "@midnight-ntwrk/trust-registry-domain": "workspace:0.1.0-rc1",
-    "@midnight-ntwrk/trust-registry-integration": "workspace:0.1.0-rc1",
+    "@midnight-ntwrk/trust-registry-client": "workspace:0.1.0-rc2",
+    "@midnight-ntwrk/trust-registry-domain": "workspace:0.1.0-rc2",
+    "@midnight-ntwrk/trust-registry-integration": "workspace:0.1.0-rc2",
     "zod": "^4.6.6"
   }
 }

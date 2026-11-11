@@ -83,6 +83,51 @@ test("stages only committed source and verified packages without promoting quali
   await assert.rejects(stageProviderRuntime(bundle, destination, dependencies), { code: "EEXIST" });
 }));
 
+test("keyless provider staging regenerates inside the pinned image without network access", () => fixture(async ({
+  bundle, destination, revision, packageSha, dependencies,
+}) => {
+  const imageId = `sha256:${"b".repeat(64)}`;
+  await mkdir(join(bundle, "proof-params"));
+  await writeFile(join(bundle, "release-manifest.json"), JSON.stringify({ sourceRevision: revision,
+    packages: [{ workspace: "contracts/trust-registry", filename: "demo-0.1.0.tgz",
+      sha256: packageSha }] }));
+  let regenerated = false;
+  const command = (file, args, cwd) => {
+    if (file === "docker" && args[0] === "image") return imageId;
+    if (file === "docker" && args[0] === "run") {
+      assert.ok(args.includes("none"));
+      assert.ok(args.includes("--read-only"));
+      assert.ok(args.includes("HOME=/home/keygen"));
+      assert.ok(args.some((arg) => arg.includes("dst=/home/keygen/.cache/midnight/zk-params,readonly")));
+      assert.equal(args.at(-3), packageSha);
+      const output = args.find((arg) => arg.includes("dst=/output"));
+      const stage = output?.match(/^type=bind,src=(.+),dst=\/output$/u)?.[1];
+      assert.ok(stage);
+      mkdirSync(join(stage, "materialized-contract", "dist/managed/trust-registry/keys"),
+        { recursive: true });
+      writeFileSync(join(stage, "materialized-contract/package.json"),
+        "{\"name\":\"@midnight-ntwrk/trust-registry-contract\"}\n");
+      writeFileSync(join(stage, "materialized-contract/dist/managed/trust-registry/keys/demo.prover"),
+        "generated-and-checked\n");
+      regenerated = true;
+      return "";
+    }
+    return run(file, args, cwd);
+  };
+  const verified = { sourceRevision: revision, inventorySha256: HASH,
+    apiRuntime: { configId: imageId },
+    keylessRuntime: { manifestSha256: "c".repeat(64) } };
+  const result = await stageProviderRuntime(bundle, destination, {
+    ...dependencies, command, expectedWorkspaces: ["contracts/trust-registry"],
+    verifyBundle: async () => verified,
+  });
+  assert.equal(regenerated, true);
+  assert.equal(result.keygenImageId, imageId);
+  assert.equal(await readFile(join(destination,
+    "contracts/trust-registry/dist/managed/trust-registry/keys/demo.prover"), "utf8"),
+  "generated-and-checked\n");
+}));
+
 test("verifies a copied install against externally reviewed stage digests", () => fixture(async ({
   bundle, destination, parent, revision, dependencies,
 }) => {

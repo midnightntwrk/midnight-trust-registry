@@ -20,17 +20,20 @@ const MANAGED_PREFIX = "dist/managed/trust-registry/";
 const CONTRACT_NAME = "@midnight-ntwrk/trust-registry-contract";
 const SHA256 = /^[0-9a-f]{64}$/u;
 
+/** @param {string} path */
 async function hashFile(path) {
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(path)) hash.update(chunk);
   return hash.digest("hex");
 }
 
+/** @param {string} path */
 async function regularFile(path) {
   if (!(await lstat(path)).isFile()) throw new Error(`Expected a regular package file: ${path}`);
   return path;
 }
 
+/** @param {string} path */
 function safeRelative(path) {
   return typeof path === "string" && path.length > 0 && !isAbsolute(path)
     && !path.includes("\\") && !path.includes("\n")
@@ -38,6 +41,8 @@ function safeRelative(path) {
 }
 
 /** Pack a contract package without keys, retaining a separately trusted regeneration manifest. */
+/** @param {string} packageDirectory @param {string} keylessDirectory
+ * @param {string} trustedManifestSha256 @param {string} target */
 export async function packKeylessContract(packageDirectory, keylessDirectory,
   trustedManifestSha256, target) {
   const source = resolve(packageDirectory);
@@ -56,7 +61,7 @@ export async function packKeylessContract(packageDirectory, keylessDirectory,
   }
   const { stdout } = await runFile("pnpm", ["--config.ignore-scripts=true", "pack", "--dry-run", "--json"],
     { cwd: source, timeout: 60_000, maxBuffer: 4 * 1024 * 1024 });
-  const packument = JSON.parse(stdout);
+  const packument = /** @type {{name?: string, version?: string, files?: {path: string}[]}} */ (JSON.parse(stdout));
   if (packument.name !== CONTRACT_NAME || packument.version !== packageJson.version
     || !Array.isArray(packument.files)) {
     throw new Error("Contract package dry-run disagrees with the source package identity");
@@ -103,6 +108,8 @@ export async function packKeylessContract(packageDirectory, keylessDirectory,
     tarballSha256: await hashFile(destination), tarballBytes: (await lstat(destination)).size };
 }
 
+/** @param {string} tarball @param {string} stage @param {string} trustedTarballSha256
+ * @param {string} trustedManifestSha256 */
 async function inspectPackageArchive(tarball, stage, trustedTarballSha256,
   trustedManifestSha256) {
   if (!SHA256.test(trustedTarballSha256) || !SHA256.test(trustedManifestSha256)) {
@@ -136,6 +143,8 @@ async function inspectPackageArchive(tarball, stage, trustedTarballSha256,
 }
 
 /** Verify a transported keyless contract package before extracting its contents for use. */
+/** @param {string} tarball @param {string} trustedTarballSha256
+ * @param {string} trustedManifestSha256 */
 export async function verifyKeylessContractPackage(tarball, trustedTarballSha256,
   trustedManifestSha256) {
   const stage = await mkdtemp(join(tmpdir(), "tr-keyless-contract-check-"));
@@ -148,6 +157,9 @@ export async function verifyKeylessContractPackage(tarball, trustedTarballSha256
 }
 
 /** Reconstitute a complete local contract package only after all release hashes pass. */
+/** @param {string} tarball @param {string} destination @param {string} keygen
+ * @param {string} trustedTarballSha256 @param {string} trustedManifestSha256
+ * @param {number} [jobs] */
 export async function materializeKeylessContractPackage(tarball, destination, keygen,
   trustedTarballSha256, trustedManifestSha256, jobs = 1) {
   const target = resolve(destination);
@@ -178,11 +190,11 @@ export async function materializeKeylessContractPackage(tarball, destination, ke
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [command, ...args] = process.argv.slice(2);
   const result = command === "pack" && args.length === 4
-    ? await packKeylessContract(...args)
+    ? await packKeylessContract(args[0], args[1], args[2], args[3])
     : command === "verify" && args.length === 3
-      ? await verifyKeylessContractPackage(...args)
+      ? await verifyKeylessContractPackage(args[0], args[1], args[2])
       : command === "materialize" && (args.length === 5 || args.length === 6)
-        ? await materializeKeylessContractPackage(...args.slice(0, 5),
+        ? await materializeKeylessContractPackage(args[0], args[1], args[2], args[3], args[4],
           args[5] === undefined ? 1 : Number(args[5])) : null;
   if (result === null) throw new Error("Usage: pack-keyless-contract.mjs pack <full-contract-package-dir> <keyless-managed-dir> <trusted-manifest-sha256> <new-tarball> | verify <tarball> <trusted-tarball-sha256> <trusted-manifest-sha256> | materialize <tarball> <new-package-dir> <zkir-bin> <trusted-tarball-sha256> <trusted-manifest-sha256> [jobs]");
   console.log(JSON.stringify(result));

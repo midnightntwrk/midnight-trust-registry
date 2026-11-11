@@ -234,12 +234,14 @@ export async function loadApprovedLocalLedgerRuntimePlanWithDigest(
   const manifest = JSON.parse(manifestBytes.toString("utf8"));
   const installFormat = inventory?.format;
   const supportedFormat = ["tr-standalone-install-v4",
-    "tr-standalone-install-v5", "tr-standalone-install-v6"].includes(installFormat);
+    "tr-standalone-install-v5", "tr-standalone-install-v6",
+    "tr-standalone-install-v7"].includes(installFormat);
   if (installFormat === "tr-standalone-install-v3" && input.requireApiRuntimePin === true) {
     throw new Error("Cluster API binding requires a signed install with an API image pin");
   }
   const requiresPortalPins = installFormat === "tr-standalone-install-v5"
-    || installFormat === "tr-standalone-install-v6";
+    || installFormat === "tr-standalone-install-v6"
+    || installFormat === "tr-standalone-install-v7";
   const artifactPin = (value: unknown, manifestPath: string, archivePath: string): boolean => {
     if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
     const pin = value as Record<string, unknown>;
@@ -248,7 +250,8 @@ export async function loadApprovedLocalLedgerRuntimePlanWithDigest(
       && typeof pin.archiveSha256 === "string" && SHA256.test(pin.archiveSha256);
   };
   if (!supportedFormat
-    || manifest?.format !== "tr-release-candidate-manifest-v2"
+    || manifest?.format !== (installFormat === "tr-standalone-install-v7"
+      ? "tr-release-candidate-manifest-v3" : "tr-release-candidate-manifest-v2")
     || inventory.sourceRevision !== plan.sourceRevision
     || manifest.sourceRevision !== plan.sourceRevision
     || inventory.packageManifest !== "release-manifest.json"
@@ -260,11 +263,18 @@ export async function loadApprovedLocalLedgerRuntimePlanWithDigest(
       artifactPin(inventory.portalRuntimes?.[role],
         `images/${role}.manifest.json`, `images/${role}.image.tar`))
       || Object.keys(inventory.portalRuntimes ?? {}).sort().join(",") !== "admin,applicant"))
-    || (installFormat === "tr-standalone-install-v6"
+    || (["tr-standalone-install-v6", "tr-standalone-install-v7"].includes(installFormat)
       && (inventory.installRelay?.path !== "install-relay.mjs"
         || !["node", "api"].includes(inventory.installRelay.imageRole)
         || typeof inventory.installRelay.sha256 !== "string"
-        || !SHA256.test(inventory.installRelay.sha256)))) {
+        || !SHA256.test(inventory.installRelay.sha256)))
+    || (installFormat === "tr-standalone-install-v7"
+      && (inventory.keylessRuntime?.path !== "keygen/zkir"
+        || inventory.keylessRuntime?.platform !== "linux/arm64"
+        || typeof inventory.keylessRuntime?.sha256 !== "string"
+        || !SHA256.test(inventory.keylessRuntime.sha256)
+        || inventory.keylessRuntime?.sha256 !== manifest.keyless?.keygenSha256
+        || inventory.keylessRuntime?.manifestSha256 !== manifest.keyless?.manifestSha256))) {
     throw new Error("Local API runtime inventory or release manifest disagrees with approved install artifacts");
   }
   const approvedKeys = Object.entries(plan.verifierKeySha256);

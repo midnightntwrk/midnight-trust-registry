@@ -109,6 +109,14 @@ A complete v6 candidate additionally pins the API and both portals under
 verifier requires exact archive and manifest hashes for each image. A v3
 ledger-only inventory cannot start the local API or qualify actor journeys.
 
+A separate **v7 keyless candidate** replaces only the Trust Registry contract
+prover/verifier files with a 66-circuit ZKIR manifest and a pinned Linux/arm64
+generator. The bundle still carries the protocol proof-server parameters.
+See [Keyless ZKIR Standalone Candidate](keyless-zkir-artifacts.md) for the
+private, network-disabled materialization step and its remaining qualification
+limits. Do not relabel a v6/rc1 bundle as v7 or infer deployed actor evidence
+from a successful key-generation smoke.
+
 From a clean, GPG-signed and DCO-signed source commit with full generated
 contract artifacts already present, run `pnpm run artifacts:standalone-install`.
 To include a separately built API image from the **same signed source SHA**,

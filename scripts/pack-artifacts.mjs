@@ -10,12 +10,16 @@ import {
   artifactWorkspaces,
   packageManifestCatalog,
 } from "./trust-registry-workspace-catalog.mjs";
+import { packKeylessContract } from "./pack-keyless-contract.mjs";
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 const parseArgs = () => {
+  /** @type {{outputDir: string, keylessDirectory?: string, keylessManifestSha256?: string}} */
   const options = {
     outputDir: artifactDirectory,
+    keylessDirectory: undefined,
+    keylessManifestSha256: undefined,
   };
   const args = process.argv.slice(2);
 
@@ -27,6 +31,12 @@ const parseArgs = () => {
       case "--output-dir":
         options.outputDir = args[++index];
         break;
+      case "--keyless-dir":
+        options.keylessDirectory = args[++index];
+        break;
+      case "--keyless-manifest-sha256":
+        options.keylessManifestSha256 = args[++index];
+        break;
       case "--help":
         console.log(
           [
@@ -34,6 +44,8 @@ const parseArgs = () => {
             "",
             "Options:",
             `  --output-dir <dir>  Directory for packed tarballs. Defaults to ${artifactDirectory}.`,
+            "  --keyless-dir <dir>  Verified keyless managed contract directory.",
+            "  --keyless-manifest-sha256 <hash>  Trusted keyless manifest digest.",
           ].join("\n"),
         );
         process.exit(0);
@@ -79,7 +91,7 @@ const parsePackument = (workspace, stdout) => {
     return packument;
   } catch (error) {
     throw new Error(
-      `${workspace}: pnpm pack did not return parseable JSON (${error.message})`,
+      `${workspace}: pnpm pack did not return parseable JSON (${error instanceof Error ? error.message : String(error)})`,
     );
   }
 };
@@ -125,7 +137,10 @@ const packContractStreaming = (workspace, outputDir) => {
   return destination;
 };
 
-const { outputDir } = parseArgs();
+const { outputDir, keylessDirectory, keylessManifestSha256 } = parseArgs();
+if ((keylessDirectory === undefined) !== (keylessManifestSha256 === undefined)) {
+  throw new Error("Keyless directory and trusted manifest digest must be supplied together");
+}
 const resolvedOutputDir = path.resolve(repoRoot, outputDir);
 fs.mkdirSync(resolvedOutputDir, { recursive: true });
 
@@ -133,9 +148,17 @@ const packed = [];
 
 for (const workspace of artifactWorkspaces) {
   const isContractWorkspace = workspace.startsWith("contracts/");
-  const filename = isContractWorkspace
-    ? packContractStreaming(workspace, resolvedOutputDir)
-    : parsePackument(workspace, run("pnpm", [
+  let filename;
+  if (isContractWorkspace && keylessDirectory !== undefined) {
+    const manifest = JSON.parse(fs.readFileSync(path.join(repoRoot, workspace, "package.json"), "utf8"));
+    filename = path.join(resolvedOutputDir,
+      `${manifest.name.replace(/^@/u, "").replace("/", "-")}-${manifest.version}.tgz`);
+    await packKeylessContract(path.join(repoRoot, workspace), keylessDirectory,
+      keylessManifestSha256, filename);
+  } else if (isContractWorkspace) {
+    filename = packContractStreaming(workspace, resolvedOutputDir);
+  } else {
+    filename = parsePackument(workspace, run("pnpm", [
       "--filter",
       `./${workspace}`,
       "pack",
@@ -143,6 +166,7 @@ for (const workspace of artifactWorkspaces) {
       "--pack-destination",
       resolvedOutputDir,
     ])).filename;
+  }
   packed.push({
     workspace,
     packageName: packageManifestCatalog.get(workspace)?.name ?? workspace,

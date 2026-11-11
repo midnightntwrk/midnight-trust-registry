@@ -62,7 +62,8 @@ async function loadApprovedMaterial(plan, dependencies, approval, factoryName) {
   }
   const parsedManifest = /** @type {unknown} */ (JSON.parse(manifestBytes.toString("utf8")));
   if (!isRecord(parsedManifest)
-    || parsedManifest.format !== "tr-release-candidate-manifest-v2"
+    || typeof parsedManifest.format !== "string"
+    || !["tr-release-candidate-manifest-v2", "tr-release-candidate-manifest-v3"].includes(parsedManifest.format)
     || parsedManifest.sourceRevision !== plan.sourceRevision) {
     throw new Error("Approved source SHA disagrees with the release manifest");
   }
