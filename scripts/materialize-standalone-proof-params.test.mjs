@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -16,7 +16,7 @@ test("v7 materialized protocol cache requires all pinned bytes and no extra keys
   const cache = join(root, "cache");
   try {
     await mkdir(bundle);
-    await mkdir(cache);
+    await mkdir(cache, { mode: 0o700 });
     await mkdir(join(bundle, "proof-params"));
     await mkdir(join(bundle, "keygen"));
     const generator = Buffer.from("pinned generator");
@@ -44,6 +44,10 @@ test("v7 materialized protocol cache requires all pinned bytes and no extra keys
     await writeFile(join(bundle, "install-inventory.json"), bytes);
     const digest = sha(bytes);
     assert.equal((await verifyMaterializedProtocolProofParams(bundle, cache, digest)).fileCount, 25);
+    await chmod(cache, 0o755);
+    await assert.rejects(verifyMaterializedProtocolProofParams(bundle, cache, digest),
+      /owned private directory/u);
+    await chmod(cache, 0o700);
     assert.equal((await ensureMaterializedProtocolProofParams(bundle, cache, digest,
       async () => { throw new Error("verified cache must be reused"); })).fileCount, 25);
     const parked = join(root, "parked-cache");

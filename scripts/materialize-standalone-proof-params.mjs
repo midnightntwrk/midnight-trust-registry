@@ -86,7 +86,11 @@ export async function verifyMaterializedProtocolProofParams(bundle, target, trus
   const source = resolve(bundle);
   const cache = resolve(target);
   const { runtime, base } = await pins(source, trustedInventorySha256);
-  if (!(await lstat(cache)).isDirectory()) throw new Error("Materialized protocol cache is not a directory");
+  const cacheStat = await lstat(cache);
+  if (!cacheStat.isDirectory() || (cacheStat.mode & 0o077) !== 0
+    || (typeof process.getuid === "function" && cacheStat.uid !== process.getuid())) {
+    throw new Error("Materialized protocol cache must be an owned private directory");
+  }
   const inputs = join(source, "proof-params");
   exactPaths(await filesBelow(inputs), KEYLESS_KEYGEN_PARAMETER_PATHS);
   for (const name of KEYLESS_KEYGEN_PARAMETER_PATHS) {
