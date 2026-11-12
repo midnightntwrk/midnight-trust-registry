@@ -112,9 +112,12 @@ uses the pinned API image without network access to regenerate all four pairs
 into a new private cache. Run the wizard from a Git checkout containing the
 bundle's signed source revision and an available signer public key: it mounts
 private copies of the two keygen script blobs from that verified commit, not
-scripts from the mutable checkout. It verifies all eight expected hashes before
-setting the Compose proof-parameter path. A partial or changed cache blocks later
-topology observation. A deployed verifier-key catalog
+scripts from the mutable checkout. The wizard also checks a private copy of the
+pinned `zkir` generator and mounts it read-only; the container can write only to
+a fresh output directory, not the private setup root. The host verifies the
+generated cache before moving it into the setup directory. It verifies all
+eight expected hashes before setting the Compose proof-parameter path. A partial
+or changed cache blocks later topology observation. A deployed verifier-key catalog
 must be checked against the selected chain before reuse; predeployment uses
 regenerated verifier keys and the approved manifest hashes. Key regeneration
 alone does not establish deployed finality or actor E2E.

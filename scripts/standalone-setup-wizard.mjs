@@ -2,8 +2,8 @@
 
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { constants } from "node:fs";
-import { link, open, lstat, mkdir, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { constants, createReadStream } from "node:fs";
+import { copyFile, link, open, lstat, mkdir, mkdtemp, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
@@ -72,29 +72,51 @@ const offlineComposePath = resolve(dirname(fileURLToPath(import.meta.url)), "../
 const validStandaloneDeploymentReceipt = (receipt) =>
   validLocalDeploymentReceipt(receipt, STANDALONE_PROFILE.networkId);
 
-async function materializeProtocolProofParams(bundle, root, verified) {
+async function fileSha256(path) {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(path)) hash.update(chunk);
+  return hash.digest("hex");
+}
+
+export async function materializeProtocolProofParams(bundle, root, verified, dependencies = {}) {
   if (typeof process.getuid !== "function" || typeof process.getgid !== "function") {
     throw new Error("Load the verified Linux API image before keyless stack preparation");
   }
-  const { stdout: inspected } = await execFileAsync("docker", ["image", "inspect",
+  const run = dependencies.execFile ?? execFileAsync;
+  const { stdout: inspected } = await run("docker", ["image", "inspect",
     pinnedKeylessApiImageTag(verified),
     "--format", "{{.Id}}"]);
   const imageId = selectPinnedKeylessApiImageId(verified, inspected.trim());
-  const scripts = await signedKeygenScriptSnapshot(
-    resolve(dirname(fileURLToPath(import.meta.url)), ".."), verified.sourceRevision, root);
+  const output = await mkdtemp(join(root, ".tr-keygen-output-"));
+  let generatorDirectory;
+  let scripts;
   try {
-    await execFileAsync("docker", ["run", "--rm", "--network", "none", "--read-only",
+    generatorDirectory = await mkdtemp(join(root, ".tr-keygen-bin-"));
+    const generator = join(generatorDirectory, "zkir");
+    await copyFile(verified.keylessRuntime.path, generator, constants.COPYFILE_EXCL);
+    if (await fileSha256(generator) !== verified.keylessRuntime.sha256) {
+      throw new Error("Private key generator copy differs from the verified install pin");
+    }
+    scripts = await (dependencies.snapshot ?? signedKeygenScriptSnapshot)(
+      resolve(dirname(fileURLToPath(import.meta.url)), ".."), verified.sourceRevision, root);
+    await run("docker", ["run", "--rm", "--network", "none", "--read-only",
       "--security-opt", "no-new-privileges", "--user", `${process.getuid()}:${process.getgid()}`,
       "--env", "HOME=/home/keygen",
       "--mount", `type=bind,src=${bundle},dst=/bundle,readonly`,
-      "--mount", `type=bind,src=${root},dst=/output`,
+      "--mount", `type=bind,src=${output},dst=/output`,
+      "--mount", `type=bind,src=${generatorDirectory},dst=/keygen,readonly`,
       "--mount", `type=bind,src=${join(bundle, "proof-params")},dst=/home/keygen/.cache/midnight/zk-params,readonly`,
       "--mount", `type=bind,src=${scripts},dst=/scripts,readonly`,
       "--entrypoint", "node", imageId, "/scripts/materialize-standalone-proof-params.mjs",
-      "materialize", "/bundle", "/output/proof-params", "/bundle/keygen/zkir",
+      "materialize", "/bundle", "/output/proof-params", "/keygen/zkir",
       verified.inventorySha256], { timeout: 60 * 60_000, maxBuffer: 1024 * 1024 });
+    await (dependencies.verifyCache ?? verifyMaterializedProtocolProofParams)(
+      bundle, join(output, "proof-params"), verified.inventorySha256);
+    await rename(join(output, "proof-params"), join(root, "proof-params"));
   } finally {
-    await rm(scripts, { recursive: true });
+    if (scripts) await rm(scripts, { recursive: true });
+    await rm(output, { recursive: true });
+    if (generatorDirectory) await rm(generatorDirectory, { recursive: true });
   }
 }
 /** @param {Buffer} bytes @param {string} label @returns {any} */

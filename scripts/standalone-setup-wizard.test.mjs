@@ -27,6 +27,7 @@ import {
   collectStandaloneGenesisCandidate,
   draftStandaloneGenesisPin,
   initializeStandaloneSetup,
+  materializeProtocolProofParams,
   observeStandaloneLedger as observeStandaloneLedgerRaw,
   observeStandaloneStack,
   prepareStandaloneStack,
@@ -56,6 +57,97 @@ test("keyless setup selects either verified loadable API image ID, never an unre
     /differs from the verified install/u);
   assert.throws(() => selectPinnedKeylessApiImageId({ apiRuntime: { configId } }, configId),
     /Verified API image IDs/u);
+});
+
+test("keyless wizard runs a pinned private generator without mounting the setup root", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "tr-keygen-mount-test-"));
+  const root = join(directory, "setup");
+  const bundle = join(directory, "bundle");
+  const source = join(bundle, "keygen", "zkir");
+  const imageId = `sha256:${"a".repeat(64)}`;
+  const verified = {
+    sourceRevision, inventorySha256: "b".repeat(64),
+    apiRuntime: { imageId, configId: `sha256:${"c".repeat(64)}` },
+    keylessRuntime: { path: source, sha256: createHash("sha256").update("generator").digest("hex") },
+  };
+  await mkdir(root);
+  await mkdir(join(bundle, "keygen"), { recursive: true });
+  await writeFile(source, "generator");
+  await writeFile(join(root, "approval.json"), "private approval");
+  let output;
+  let generatorDirectory;
+  let snapshot;
+  let verifiedCache = false;
+  try {
+    await materializeProtocolProofParams(bundle, root, verified, {
+      snapshot: async (_source, revision, privateRoot) => {
+        assert.equal(revision, sourceRevision);
+        assert.equal(privateRoot, root);
+        snapshot = join(root, "scripts-snapshot");
+        await mkdir(snapshot);
+        return snapshot;
+      },
+      execFile: async (command, args) => {
+        assert.equal(command, "docker");
+        if (args[0] === "image") return { stdout: `${imageId}\n` };
+        assert.deepEqual(args.slice(0, 4), ["run", "--rm", "--network", "none"]);
+        const mounts = args.flatMap((arg, index) => arg === "--mount" ? [args[index + 1]] : []);
+        assert.ok(mounts.includes(`type=bind,src=${bundle},dst=/bundle,readonly`));
+        assert.ok(mounts.includes(`type=bind,src=${snapshot},dst=/scripts,readonly`));
+        assert.ok(!mounts.some((mount) => mount === `type=bind,src=${root},dst=/output`));
+        const outputMount = mounts.find((mount) => mount.endsWith(",dst=/output"));
+        assert.ok(outputMount);
+        output = outputMount.slice("type=bind,src=".length, -",dst=/output".length);
+        const generatorMount = mounts.find((mount) => mount.endsWith(",dst=/keygen,readonly"));
+        assert.ok(generatorMount);
+        generatorDirectory = generatorMount.slice("type=bind,src=".length, -",dst=/keygen,readonly".length);
+        assert.equal(await readFile(join(generatorDirectory, "zkir"), "utf8"), "generator");
+        assert.ok(args.includes("/keygen/zkir"));
+        assert.ok(!args.includes("/bundle/keygen/zkir"));
+        await mkdir(join(output, "proof-params"));
+        await writeFile(join(output, "proof-params", "proof-marker"), "generated");
+        return { stdout: "" };
+      },
+      verifyCache: async (actualBundle, cache, inventory) => {
+        assert.equal(actualBundle, bundle);
+        assert.equal(cache, join(output, "proof-params"));
+        assert.equal(inventory, verified.inventorySha256);
+        verifiedCache = true;
+      },
+    });
+    assert.equal(verifiedCache, true);
+    assert.equal(await readFile(join(root, "proof-params", "proof-marker"), "utf8"), "generated");
+    assert.equal(await readFile(join(root, "approval.json"), "utf8"), "private approval");
+    await assert.rejects(lstat(output), { code: "ENOENT" });
+    await assert.rejects(lstat(generatorDirectory), { code: "ENOENT" });
+    await assert.rejects(lstat(snapshot), { code: "ENOENT" });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("keyless wizard rejects a changed generator before Docker run", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "tr-keygen-pin-test-"));
+  const root = join(directory, "setup");
+  const source = join(directory, "zkir");
+  await mkdir(root);
+  await writeFile(source, "changed");
+  let dockerRuns = 0;
+  try {
+    await assert.rejects(materializeProtocolProofParams(directory, root, {
+      sourceRevision, inventorySha256: "b".repeat(64),
+      apiRuntime: { imageId: `sha256:${"a".repeat(64)}`, configId: `sha256:${"c".repeat(64)}` },
+      keylessRuntime: { path: source, sha256: "d".repeat(64) },
+    }, { execFile: async (_command, args) => {
+      if (args[0] === "image") return { stdout: `sha256:${"a".repeat(64)}` };
+      dockerRuns += 1;
+      return { stdout: "" };
+    } }), /Private key generator copy differs/u);
+    assert.equal(dockerRuns, 0);
+    assert.deepEqual(await readdir(root), []);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("setup input reader rejects linked or unsafe private files", async () => {
