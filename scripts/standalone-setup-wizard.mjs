@@ -21,6 +21,7 @@ import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { pinnedKeylessApiImageTag, selectPinnedKeylessApiImageId } from "./standalone-keyless-api-image.mjs";
 export { selectPinnedKeylessApiImageId } from "./standalone-keyless-api-image.mjs";
 import { ensureMaterializedProtocolProofParams, verifyMaterializedProtocolProofParams } from "./materialize-standalone-proof-params.mjs";
+import { signedKeygenScriptSnapshot } from "./signed-keygen-script-snapshot.mjs";
 import { regularBytes } from "./standalone-private-file-bytes.mjs";
 export { regularBytes } from "./standalone-private-file-bytes.mjs";
 import { verifyDetachedReviewerSignature } from "./standalone-reviewer-signature.mjs";
@@ -79,16 +80,22 @@ async function materializeProtocolProofParams(bundle, root, verified) {
     pinnedKeylessApiImageTag(verified),
     "--format", "{{.Id}}"]);
   const imageId = selectPinnedKeylessApiImageId(verified, inspected.trim());
-  await execFileAsync("docker", ["run", "--rm", "--network", "none", "--read-only",
-    "--security-opt", "no-new-privileges", "--user", `${process.getuid()}:${process.getgid()}`,
-    "--env", "HOME=/home/keygen",
-    "--mount", `type=bind,src=${bundle},dst=/bundle,readonly`,
-    "--mount", `type=bind,src=${root},dst=/output`,
-    "--mount", `type=bind,src=${join(bundle, "proof-params")},dst=/home/keygen/.cache/midnight/zk-params,readonly`,
-    "--mount", `type=bind,src=${resolve(dirname(fileURLToPath(import.meta.url)))},dst=/scripts,readonly`,
-    "--entrypoint", "node", imageId, "/scripts/materialize-standalone-proof-params.mjs",
-    "materialize", "/bundle", "/output/proof-params", "/bundle/keygen/zkir",
-    verified.inventorySha256], { timeout: 60 * 60_000, maxBuffer: 1024 * 1024 });
+  const scripts = await signedKeygenScriptSnapshot(
+    resolve(dirname(fileURLToPath(import.meta.url)), ".."), verified.sourceRevision, root);
+  try {
+    await execFileAsync("docker", ["run", "--rm", "--network", "none", "--read-only",
+      "--security-opt", "no-new-privileges", "--user", `${process.getuid()}:${process.getgid()}`,
+      "--env", "HOME=/home/keygen",
+      "--mount", `type=bind,src=${bundle},dst=/bundle,readonly`,
+      "--mount", `type=bind,src=${root},dst=/output`,
+      "--mount", `type=bind,src=${join(bundle, "proof-params")},dst=/home/keygen/.cache/midnight/zk-params,readonly`,
+      "--mount", `type=bind,src=${scripts},dst=/scripts,readonly`,
+      "--entrypoint", "node", imageId, "/scripts/materialize-standalone-proof-params.mjs",
+      "materialize", "/bundle", "/output/proof-params", "/bundle/keygen/zkir",
+      verified.inventorySha256], { timeout: 60 * 60_000, maxBuffer: 1024 * 1024 });
+  } finally {
+    await rm(scripts, { recursive: true });
+  }
 }
 /** @param {Buffer} bytes @param {string} label @returns {any} */
 const parseCanonicalSignedJson = (bytes, label) => parseUntrustedSignedJson(bytes, label);

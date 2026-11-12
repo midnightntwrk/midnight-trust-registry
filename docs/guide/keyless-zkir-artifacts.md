@@ -80,8 +80,11 @@ hashes for the four `dust`/`zswap` protocol key pairs.
 The bundle verifier checks those bytes before loading or staging. Provider
 staging uses the pinned API image with `--network none` to materialize the
 contract package in a private staging directory before services start. It
-rejects partial output, a changed generator, missing or altered circuits, or
-regenerated keys that differ from the authenticated release hashes.
+mounts scripts from the verified signed-source archive, checks the release
+manifest against the bundle verifier's digest, and uses private copies of the
+contract package and generator. It rejects partial output, a changed generator,
+missing or altered circuits, or regenerated keys that differ from the
+authenticated release hashes.
 Provider staging uses one generator worker by default to avoid overlapping
 multi-GiB circuits. Allow substantial free disk for both the temporary
 generation and the staged package; the local 66-circuit run took about 84
@@ -106,8 +109,11 @@ The v7 transport instead carries their four `.bzkir` inputs and BLS
 parameters, but **no `.prover` or `.verifier` files** in either the contract
 package or the proof-parameter directory. During `prepare-stack`, the wizard
 uses the pinned API image without network access to regenerate all four pairs
-into a new private cache; it verifies all eight expected hashes before setting
-the Compose proof-parameter path. A partial or changed cache blocks later
+into a new private cache. Run the wizard from a Git checkout containing the
+bundle's signed source revision and an available signer public key: it mounts
+private copies of the two keygen script blobs from that verified commit, not
+scripts from the mutable checkout. It verifies all eight expected hashes before
+setting the Compose proof-parameter path. A partial or changed cache blocks later
 topology observation. A deployed verifier-key catalog
 must be checked against the selected chain before reuse; predeployment uses
 regenerated verifier keys and the approved manifest hashes. Key regeneration

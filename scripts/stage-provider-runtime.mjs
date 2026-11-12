@@ -156,7 +156,12 @@ export async function stageProviderRuntime(bundleDirectory, destination, depende
   }
   const keylessRuntime = verified.keylessRuntime ?? null;
   let keygenImageId = null;
-  const manifest = JSON.parse(readFileSync(join(bundle, "release-manifest.json"), "utf8"));
+  const manifestBytes = readFileSync(join(bundle, "release-manifest.json"));
+  if (!/^[0-9a-f]{64}$/u.test(verified.packageManifestSha256 ?? "")
+    || createHash("sha256").update(manifestBytes).digest("hex") !== verified.packageManifestSha256) {
+    throw new Error("Release manifest changed after bundle verification");
+  }
+  const manifest = JSON.parse(manifestBytes.toString("utf8"));
   if (manifest.sourceRevision !== sourceRevision) {
     throw new Error("Release manifest does not match the signed source commit");
   }
@@ -203,17 +208,21 @@ export async function stageProviderRuntime(bundleDirectory, destination, depende
             "--format", "{{.Id}}"], root));
         keygenImageId = imageId;
         const generated = join(temporary, "materialized-contract");
+        const keygenCopy = join(temporary, "zkir");
+        copyFileSync(keylessRuntime.path, keygenCopy, constants.COPYFILE_EXCL);
+        if (await sha256File(keygenCopy) !== keylessRuntime.sha256) {
+          throw new Error("Keyless generator changed after bundle verification");
+        }
         run("docker", ["run", "--rm", "--network", "none", "--read-only",
           "--security-opt", "no-new-privileges", "--user", `${getuid()}:${groupId}`,
           "--env", "HOME=/home/keygen",
-          "--mount", `type=bind,src=${bundle},dst=/bundle,readonly`,
           "--mount", `type=bind,src=${temporary},dst=/output`,
           "--mount", `type=bind,src=${join(bundle, "proof-params")},dst=/home/keygen/.cache/midnight/zk-params,readonly`,
-          "--mount", `type=bind,src=${join(root, "scripts")},dst=/scripts,readonly`,
+          "--mount", `type=bind,src=${join(target, "scripts")},dst=/scripts,readonly`,
           "--entrypoint", "node", imageId,
           "/scripts/pack-keyless-contract.mjs", "materialize",
-          `/bundle/packages/${item.filename}`, "/output/materialized-contract",
-          "/bundle/keygen/zkir", item.sha256, keylessRuntime.manifestSha256, "1"], root);
+          `/output/${item.filename}`, "/output/materialized-contract",
+          "/output/zkir", item.sha256, keylessRuntime.manifestSha256, "1"], root);
         if (!lstatSync(generated).isDirectory()) {
           throw new Error("Keyless contract generation did not produce a full package");
         }
