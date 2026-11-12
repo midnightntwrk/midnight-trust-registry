@@ -2,8 +2,8 @@
 
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { constants } from "node:fs";
-import { link, open, lstat, mkdir, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { constants, createReadStream } from "node:fs";
+import { copyFile, link, open, lstat, mkdir, mkdtemp, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
@@ -18,6 +18,10 @@ import {
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
+import { pinnedKeylessApiImageTag, selectPinnedKeylessApiImageId } from "./standalone-keyless-api-image.mjs";
+export { selectPinnedKeylessApiImageId } from "./standalone-keyless-api-image.mjs";
+import { ensureMaterializedProtocolProofParams, verifyMaterializedProtocolProofParams } from "./materialize-standalone-proof-params.mjs";
+import { signedKeygenScriptSnapshot } from "./signed-keygen-script-snapshot.mjs";
 import { regularBytes } from "./standalone-private-file-bytes.mjs";
 export { regularBytes } from "./standalone-private-file-bytes.mjs";
 import { verifyDetachedReviewerSignature } from "./standalone-reviewer-signature.mjs";
@@ -67,6 +71,54 @@ const composePath = resolve(dirname(fileURLToPath(import.meta.url)), "../deploy/
 const offlineComposePath = resolve(dirname(fileURLToPath(import.meta.url)), "../deploy/standalone/compose.offline.yml");
 const validStandaloneDeploymentReceipt = (receipt) =>
   validLocalDeploymentReceipt(receipt, STANDALONE_PROFILE.networkId);
+
+async function fileSha256(path) {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(path)) hash.update(chunk);
+  return hash.digest("hex");
+}
+
+export async function materializeProtocolProofParams(bundle, root, verified, dependencies = {}) {
+  if (typeof process.getuid !== "function" || typeof process.getgid !== "function") {
+    throw new Error("Load the verified Linux API image before keyless stack preparation");
+  }
+  const run = dependencies.execFile ?? execFileAsync;
+  const { stdout: inspected } = await run("docker", ["image", "inspect",
+    pinnedKeylessApiImageTag(verified),
+    "--format", "{{.Id}}"]);
+  const imageId = selectPinnedKeylessApiImageId(verified, inspected.trim());
+  const output = await mkdtemp(join(root, ".tr-keygen-output-"));
+  let generatorDirectory;
+  let scripts;
+  try {
+    generatorDirectory = await mkdtemp(join(root, ".tr-keygen-bin-"));
+    const generator = join(generatorDirectory, "zkir");
+    await copyFile(verified.keylessRuntime.path, generator, constants.COPYFILE_EXCL);
+    if (await fileSha256(generator) !== verified.keylessRuntime.sha256) {
+      throw new Error("Private key generator copy differs from the verified install pin");
+    }
+    scripts = await (dependencies.snapshot ?? signedKeygenScriptSnapshot)(
+      resolve(dirname(fileURLToPath(import.meta.url)), ".."), verified.sourceRevision, root);
+    await run("docker", ["run", "--rm", "--network", "none", "--read-only",
+      "--security-opt", "no-new-privileges", "--user", `${process.getuid()}:${process.getgid()}`,
+      "--env", "HOME=/home/keygen",
+      "--mount", `type=bind,src=${bundle},dst=/bundle,readonly`,
+      "--mount", `type=bind,src=${output},dst=/output`,
+      "--mount", `type=bind,src=${generatorDirectory},dst=/keygen,readonly`,
+      "--mount", `type=bind,src=${join(bundle, "proof-params")},dst=/home/keygen/.cache/midnight/zk-params,readonly`,
+      "--mount", `type=bind,src=${scripts},dst=/scripts,readonly`,
+      "--entrypoint", "node", imageId, "/scripts/materialize-standalone-proof-params.mjs",
+      "materialize", "/bundle", "/output/proof-params", "/keygen/zkir",
+      verified.inventorySha256], { timeout: 60 * 60_000, maxBuffer: 1024 * 1024 });
+    await (dependencies.verifyCache ?? verifyMaterializedProtocolProofParams)(
+      bundle, join(output, "proof-params"), verified.inventorySha256);
+    await rename(join(output, "proof-params"), join(root, "proof-params"));
+  } finally {
+    if (scripts) await rm(scripts, { recursive: true });
+    await rm(output, { recursive: true });
+    if (generatorDirectory) await rm(generatorDirectory, { recursive: true });
+  }
+}
 /** @param {Buffer} bytes @param {string} label @returns {any} */
 const parseCanonicalSignedJson = (bytes, label) => parseUntrustedSignedJson(bytes, label);
 
@@ -303,7 +355,15 @@ export async function prepareStandaloneStack(directory, requested, dependencies 
       throw new Error("Current Compose images differ from the verified install bundle");
     }
     await (dependencies.assertProjectUnused ?? assertUnusedStandaloneProject)(config.project);
-    const proofDirectory = join(record.install.bundle, "proof-params");
+    const keyless = parseJsonBytes(inventoryBytes).format === "tr-standalone-install-v7";
+    if (keyless) {
+      await ensureMaterializedProtocolProofParams(record.install.bundle,
+        join(root, "proof-params"), record.install.inventorySha256,
+        () => (dependencies.materializeProtocolProofParams ?? materializeProtocolProofParams)(
+          record.install.bundle, root, verified));
+    }
+    const proofDirectory = keyless ? join(root, "proof-params")
+      : join(record.install.bundle, "proof-params");
     if (!(await lstat(proofDirectory)).isDirectory()
       || !/^[A-Za-z0-9_./ -]+$/u.test(proofDirectory)) {
       throw new Error("Pinned proof-parameter path is not safe for a Compose environment file");
@@ -382,10 +442,18 @@ async function preparedStandaloneTopology(root, record) {
     } catch {
       throw new Error("Prepared proof-parameter path is malformed");
     }
-    if (proofParamsDir !== join(record.install.bundle, "proof-params")
+    const keylessProofParams = record.install.verified?.keylessRuntime !== null
+      && record.install.verified?.keylessRuntime !== undefined;
+    const expectedProofParamsDir = keylessProofParams ? join(root, "proof-params")
+      : join(record.install.bundle, "proof-params");
+    if (proofParamsDir !== expectedProofParamsDir
       || !/^[0-9a-f]{48}$/u.test(selected.TR_INDEXER_PASSWORD ?? "")
       || !/^[0-9a-f]{64}$/u.test(selected.TR_INDEXER_SECRET ?? "")) {
       throw new Error("Prepared private stack inputs disagree with the install bundle");
+    }
+    if (keylessProofParams) {
+      await verifyMaterializedProtocolProofParams(record.install.bundle, proofParamsDir,
+        record.install.inventorySha256);
     }
     const expectedTopology = {
       requirePrivateInputs: true,
@@ -962,7 +1030,7 @@ export async function approveStandaloneCommitteeDeployment(
       throw new Error("Staged deployment manifest disagrees with approved install bytes");
     }
     const manifest = parseJsonBytes(manifestBytes);
-    if (manifest.format !== "tr-release-candidate-manifest-v2"
+    if (!["tr-release-candidate-manifest-v2", "tr-release-candidate-manifest-v3"].includes(manifest.format)
       || manifest.sourceRevision !== record.sourceRevision) {
       throw new Error("Staged deployment manifest has an invalid source or format");
     }
@@ -1486,7 +1554,7 @@ async function readApprovedCommitteeTransition(record, requestPath, dependencies
       throw new Error("Staged deployment manifest disagrees with approved install bytes");
     }
     const manifest = parseJsonBytes(manifestBytes);
-    if (manifest.format !== "tr-release-candidate-manifest-v2"
+    if (!["tr-release-candidate-manifest-v2", "tr-release-candidate-manifest-v3"].includes(manifest.format)
       || manifest.sourceRevision !== record.sourceRevision) {
       throw new Error("Staged deployment manifest has an invalid source or format");
     }

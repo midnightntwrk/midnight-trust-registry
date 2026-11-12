@@ -76,7 +76,7 @@ export type PublicRegistryGovernancePin = {
 };
 
 export type ReleaseVerifierKeyManifest = {
-  format: "tr-release-candidate-manifest-v2";
+  format: "tr-release-candidate-manifest-v2" | "tr-release-candidate-manifest-v3";
   verifierKeySha256: Readonly<Record<string, string>>;
 };
 
@@ -93,7 +93,7 @@ const verifierKeyCatalog = (manifest: ReleaseVerifierKeyManifest): {
 } => {
   const hashes = manifest?.verifierKeySha256;
   const names = Object.keys(new TrustRegistryContract.Contract(trustRegistryWitnesses).provableCircuits).sort();
-  if (manifest?.format !== "tr-release-candidate-manifest-v2"
+  if (!["tr-release-candidate-manifest-v2", "tr-release-candidate-manifest-v3"].includes(manifest?.format)
     || hashes === null || typeof hashes !== "object" || Array.isArray(hashes)
     || !hasExactFieldNames(hashes, names)
     || names.some((name) => !/^[0-9a-f]{64}$/u.test(hashes[name] ?? ""))) {

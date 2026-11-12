@@ -21,7 +21,7 @@ export async function verifyInstalledVerifierKeyAssets(
 ): Promise<void> {
   const expected = manifest?.verifierKeySha256;
   const circuitNames = Object.keys(new TrustRegistryContract.Contract(trustRegistryWitnesses).provableCircuits).sort();
-  if (manifest?.format !== "tr-release-candidate-manifest-v2"
+  if (!["tr-release-candidate-manifest-v2", "tr-release-candidate-manifest-v3"].includes(manifest?.format)
     || expected === null || typeof expected !== "object" || Array.isArray(expected)
     || !hasExactFieldNames(expected, circuitNames)
     || circuitNames.some((name) => !/^[0-9a-f]{64}$/u.test(expected[name] ?? ""))) {

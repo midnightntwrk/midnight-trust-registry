@@ -68,6 +68,7 @@ and Helm are optional and are not 0.1.0 local-RC gates.
 - [Local demo walkthrough](docs/guide/local-demo-walkthrough.md) gives repeatable fixture journeys and a loopback UI walkthrough, without presenting them as deployed acceptance.
 - [Standalone local journey quickstart](docs/guide/standalone-local-journey.md) separates real offline deployment evidence from simulator tests and lists the operator stop gates.
 - [Self-hosted standalone first run](docs-site/guide/standalone.md) gives new operators the short verified-bundle and isolated-ledger path; it stops before human approvals and points to the full acceptance record.
+- [Keyless ZKIR artifact experiment](docs/guide/keyless-zkir-artifacts.md) documents local, hash-verified key regeneration; it is not yet a standalone release path.
 - [Decisions](docs/decisions/trust-registry-decisions.md) records current design decisions and unresolved questions.
 
 ## Development Baseline

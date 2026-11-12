@@ -85,6 +85,71 @@ test("required packed paths reject an API tarball without its runtime entrypoint
   assert.doesNotThrow(() => assertRequiredPackedPaths([...entries, "package/dist/index.js"], workspace));
 });
 
+test("v3 candidate binds all keyless assets, key expectations, and local-only publication", () => {
+  const root = mkdtempSync(join(tmpdir(), "tr-keyless-manifest-"));
+  roots.push(root);
+  const revision = "a".repeat(40);
+  const digest = (value) => createHash("sha256").update(value).digest("hex");
+  const prefix = "dist/managed/trust-registry";
+  const info = JSON.stringify({ "compiler-version": "0.31.1",
+    circuits: [{ name: "proveA", proof: true }] });
+  const assetBytes = {
+    "compiler/contract-info.json": info,
+    "contract/index.js": "generated-test\n",
+    "contract/index.js.map": "{}\n",
+    "contract/index.d.ts": "export {};\n",
+    "zkir/proveA.zkir": "zkir-test\n",
+    "zkir/proveA.bzkir": "bzkir-test\n",
+  };
+  const keyless = { format: "tr-keyless-zkir-v1", sourceRevision: revision,
+    compilerVersion: "0.31.1", platform: "linux/arm64", keygenSha256: "e".repeat(64),
+    assets: Object.fromEntries(Object.entries(assetBytes).map(([name, bytes]) => [name, digest(bytes)])),
+    keys: { "proveA.prover": digest("prover-test\n"),
+      "proveA.verifier": digest("verifier-test\n") } };
+  const keylessBytes = `${JSON.stringify(keyless)}\n`;
+  put(root, "package.json", JSON.stringify({ version: "0.1.0", packageManager: "pnpm@10.34.1" }));
+  put(root, ".compact-version", "0.31.1\n");
+  put(root, "pnpm-lock.yaml", "lock-test\n");
+  put(root, "contracts/trust-registry/package.json", JSON.stringify({
+    name: "@midnight-ntwrk/trust-registry-contract", version: "0.1.0",
+  }));
+  put(root, "contracts/trust-registry/src/trust-registry.compact", "contract-test\n");
+  put(root, `contracts/trust-registry/${prefix}/compiler/contract-info.json`, info);
+  put(root, `contracts/trust-registry/${prefix}/contract/index.js`, assetBytes["contract/index.js"]);
+  put(root, `contracts/trust-registry/${prefix}/keys/proveA.prover`, "prover-test\n");
+  put(root, `contracts/trust-registry/${prefix}/keys/proveA.verifier`, "verifier-test\n");
+  put(root, "packed/package/package.json", JSON.stringify({
+    name: "@midnight-ntwrk/trust-registry-contract", version: "0.1.0",
+  }));
+  put(root, "packed/package/src/trust-registry.compact", "contract-test\n");
+  for (const name of ["README.md", "dist/index.js", "dist/contract.js",
+    "dist/signing.js", "dist/testing.js"]) put(root, `packed/package/${name}`, "fixture\n");
+  for (const [name, bytes] of Object.entries(assetBytes)) {
+    put(root, `packed/package/${prefix}/${name}`, bytes);
+  }
+  put(root, `packed/package/${prefix}/keyless-manifest.json`, keylessBytes);
+  const tarball = join(root, "artifacts/npm/midnight-ntwrk-trust-registry-contract-0.1.0.tgz");
+  mkdirSync(dirname(tarball), { recursive: true });
+  const pack = () => spawnSync("tar", ["-czf", tarball, "package"], {
+    cwd: join(root, "packed"), encoding: "utf8",
+  });
+  assert.equal(pack().status, 0);
+  const input = { repoRoot: root, artifactDir: dirname(tarball), revision,
+    workspaces: ["contracts/trust-registry"], publish: ["contracts/trust-registry"],
+    keylessManifestSha256: digest(keylessBytes) };
+  const manifest = buildReleaseCandidateManifest(input);
+  assert.equal(manifest.format, "tr-release-candidate-manifest-v3");
+  assert.equal(manifest.packages[0].publication, "local-only");
+  assert.equal(verifyReleaseCandidateArtifacts(manifest, input.artifactDir,
+    input.workspaces).length, 1);
+  assert.throws(() => verifyReleaseCandidateArtifacts({ ...manifest,
+    keyless: { ...manifest.keyless, proverKeySha256: { proveA: "0".repeat(64) } },
+  }, input.artifactDir, input.workspaces), /prover-key hashes/u);
+  put(root, `packed/package/${prefix}/zkir/extra.zkir`, "forged\n");
+  assert.equal(pack().status, 0);
+  assert.throws(() => buildReleaseCandidateManifest(input), /missing, extra, or renamed/u);
+});
+
 test("packed entrypoints must be regular files rather than symlinks", () => {
   const root = mkdtempSync(join(tmpdir(), "tr-packed-entry-type-"));
   roots.push(root);
