@@ -7,6 +7,12 @@ skeleton. The 0.1.0 milestone turns that foundation into a DID/VC-backed,
 governed reference journey without duplicating the sibling repositories'
 responsibilities.
 
+The [0.1.0 release scope](docs/guide/release-0.1.0.md) is a **non-production,
+self-hosted local/offline Ledger 8 reference**. Fixture/demo journeys and a
+healthy predeployment stack are not deployed end-to-end qualification. Public
+networks, Ledger 9, npm/GHCR publication, and production readiness are separate
+follow-up work.
+
 ## Scope
 
 This repository owns:
