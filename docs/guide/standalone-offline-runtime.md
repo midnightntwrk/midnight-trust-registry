@@ -109,6 +109,17 @@ A complete v6 candidate additionally pins the API and both portals under
 verifier requires exact archive and manifest hashes for each image. A v3
 ledger-only inventory cannot start the local API or qualify actor journeys.
 
+A separate **v7 keyless candidate** replaces Trust Registry contract
+prover/verifier files with a 66-circuit ZKIR manifest and a pinned Linux/arm64
+generator. Its proof-parameter directory contains BLS parameters and four
+protocol `.bzkir` inputs but no protocol `.prover` or `.verifier` files. The
+wizard regenerates those protocol keys into a private cache before Compose
+starts, verifies their eight pinned hashes, and points the stack at that cache.
+See [Keyless ZKIR Standalone Candidate](keyless-zkir-artifacts.md) for the
+private, network-disabled materialization step and its remaining qualification
+limits. Do not relabel a v6/rc1 bundle as v7 or infer deployed actor evidence
+from a successful key-generation smoke.
+
 From a clean, GPG-signed and DCO-signed source commit with full generated
 contract artifacts already present, run `pnpm run artifacts:standalone-install`.
 To include a separately built API image from the **same signed source SHA**,
@@ -892,6 +903,11 @@ proof-parameter path. Its output and setup record omit the credentials. It
 does not start Compose. It refuses a project with existing containers, ledger
 network, or node/indexer volumes; the operator must still confirm that the
 loopback ports are unused before `up` and keep the Docker context unchanged.
+For v7, load the bundle-pinned API image first. `prepare-stack` runs its pinned
+generator with no network access, publishes a private `proof-params` cache only
+after all eight protocol key hashes match, and records that cache path instead
+of the immutable bundle path. Later topology checks reverify the cache; do not
+copy key files back into the release bundle.
 If Docker reports `all predefined address pools have been fully subnetted`,
 do not run `docker network prune` or delete another project's network or
 volumes. First inspect `docker network ls` and the subnet of every existing

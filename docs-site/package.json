@@ -1,6 +1,6 @@
 {
   "name": "@midnight-ntwrk/trust-registry-docs",
-  "version": "0.1.0-rc1",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {

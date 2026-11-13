@@ -66,7 +66,7 @@ export async function loadStandaloneInstallImages(bundlePath, dependencies = {})
   const inventory = JSON.parse(inventoryBytes.toString("utf8"));
   if (!REVISION.test(inventory.sourceRevision)) throw new Error("Install inventory source is invalid");
   const hasApi = ["tr-standalone-install-v4", "tr-standalone-install-v5",
-    "tr-standalone-install-v6"].includes(inventory.format);
+    "tr-standalone-install-v6", "tr-standalone-install-v7"].includes(inventory.format);
   const apiImageId = hasApi ? verified?.apiRuntime?.imageId : null;
   const apiConfigId = hasApi ? verified?.apiRuntime?.configId : null;
   if (hasApi
@@ -74,7 +74,8 @@ export async function loadStandaloneInstallImages(bundlePath, dependencies = {})
       || !/^sha256:[0-9a-f]{64}$/u.test(apiConfigId ?? ""))) {
     throw new Error("Verified API image IDs are missing");
   }
-  const hasPortals = ["tr-standalone-install-v5", "tr-standalone-install-v6"].includes(inventory.format);
+  const hasPortals = ["tr-standalone-install-v5", "tr-standalone-install-v6",
+    "tr-standalone-install-v7"].includes(inventory.format);
   if (hasPortals && (verified.portalRuntimes === null
     || ["admin", "applicant"].some((role) =>
       !/^sha256:[0-9a-f]{64}$/u.test(verified.portalRuntimes?.[role]?.imageId ?? "")

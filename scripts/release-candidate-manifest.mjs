@@ -18,8 +18,10 @@ const SHA256 = /^[0-9a-f]{64}$/u;
 const CONTRACT_PREFIX = "package/dist/managed/trust-registry";
 const CONTRACT_SOURCE_ENTRY = "package/src/trust-registry.compact";
 const GENERATED_CONTRACT_ENTRY = `${CONTRACT_PREFIX}/contract/index.js`;
-/** @typedef {{workspace: string, name: string, version: string, filename: string, sha256: string, sizeBytes: number}} ReleasePackageEntry */
-/** @typedef {{format: string, sourceRevision: string, packageVersion: string, compactCompilerVersion: string, lockfileSha256: string, contractSourceSha256: string, generatedContractSha256: string, verifierKeySha256: unknown, packages: ReleasePackageEntry[]}} ReleaseCandidateManifest */
+const KEYLESS_ENTRY = `${CONTRACT_PREFIX}/keyless-manifest.json`;
+/** @typedef {{workspace: string, name: string, version: string, filename: string, sha256: string, sizeBytes: number, publication?: string}} ReleasePackageEntry */
+/** @typedef {{manifestSha256: string, keygenSha256: string, platform: string, proverKeySha256: Record<string, string>}} KeylessCandidate */
+/** @typedef {{format: string, sourceRevision: string, packageVersion: string, compactCompilerVersion: string, lockfileSha256: string, contractSourceSha256: string, generatedContractSha256: string, verifierKeySha256: unknown, packages: ReleasePackageEntry[], keyless?: KeylessCandidate}} ReleaseCandidateManifest */
 /** @param {unknown} value @returns {value is Record<string, unknown>} */
 const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 /** @param {string | Buffer} value */
@@ -111,10 +113,58 @@ function verifierKeyHashes(tarball, contractInfo) {
   }
 }
 
-/** @param {{repoRoot: string, artifactDir: string, revision: string, workspaces?: readonly string[], publish?: readonly string[]}} input */
+/** @param {string} tarball @param {unknown} contractInfo @param {string} trustedDigest
+ * @returns {{sourceRevision: string, keygenSha256: string, platform: string, keys: Record<string, string>, assets: Record<string, string>}} */
+function keylessContractManifest(tarball, contractInfo, trustedDigest) {
+  if (!SHA256.test(trustedDigest)) throw new Error("Trusted keyless manifest digest is required");
+  if (!isRecord(contractInfo)) throw new Error("Keyless contract metadata is invalid");
+  const entries = packedEntries(tarball);
+  assertCanonicalPackedPaths(entries);
+  if (entries.some((entry) => /\.(?:prover|verifier)$/u.test(entry))) {
+    throw new Error("Keyless contract package contains prover or verifier key bytes");
+  }
+  const names = proofCircuitNames(contractInfo).sort();
+  const assets = ["compiler/contract-info.json", "contract/index.d.ts", "contract/index.js",
+    "contract/index.js.map", ...names.flatMap((name) => [`zkir/${name}.zkir`, `zkir/${name}.bzkir`])].sort();
+  const keys = names.flatMap((name) => [`${name}.prover`, `${name}.verifier`]).sort();
+  const actual = entries.filter((entry) => entry.startsWith(`${CONTRACT_PREFIX}/`) && !entry.endsWith("/"))
+    .map((entry) => entry.slice(`${CONTRACT_PREFIX}/`.length));
+  if (!exactStringSet(actual, [...assets, "keyless-manifest.json"])) {
+    throw new Error("Keyless contract has missing, extra, or renamed managed files");
+  }
+  const bytes = readPackedTarEntry(tarball, KEYLESS_ENTRY);
+  if (hashBytes(bytes) !== trustedDigest) throw new Error("Keyless manifest digest differs from release pin");
+  const manifest = JSON.parse(bytes.toString("utf8"));
+  if (!isRecord(manifest) || manifest.format !== "tr-keyless-zkir-v1"
+    || typeof manifest.sourceRevision !== "string" || !HASH.test(manifest.sourceRevision)
+    || manifest.compilerVersion !== contractInfo["compiler-version"]
+    || manifest.platform !== "linux/arm64"
+    || typeof manifest.keygenSha256 !== "string" || !SHA256.test(manifest.keygenSha256)
+    || !isRecord(manifest.assets) || !isRecord(manifest.keys)
+    || !exactStringSet(Object.keys(manifest.assets), assets)
+    || !exactStringSet(Object.keys(manifest.keys), keys)) {
+    throw new Error("Keyless contract manifest identity or circuit catalog is invalid");
+  }
+  const assetHashes = /** @type {Record<string, string>} */ (manifest.assets);
+  const keyHashes = /** @type {Record<string, string>} */ (manifest.keys);
+  for (const asset of assets) {
+    if (!SHA256.test(assetHashes[asset])
+      || hashPackedTarEntry(tarball, `${CONTRACT_PREFIX}/${asset}`) !== assetHashes[asset]) {
+      throw new Error(`Keyless contract asset hash mismatch: ${asset}`);
+    }
+  }
+  if (keys.some((name) => !SHA256.test(keyHashes[name]))) {
+    throw new Error("Keyless contract expected-key hash is invalid");
+  }
+  return { sourceRevision: /** @type {string} */ (manifest.sourceRevision),
+    keygenSha256: /** @type {string} */ (manifest.keygenSha256),
+    platform: /** @type {string} */ (manifest.platform), keys: keyHashes, assets: assetHashes };
+}
+
+/** @param {{repoRoot: string, artifactDir: string, revision: string, workspaces?: readonly string[], publish?: readonly string[], keylessManifestSha256?: string}} input */
 export function buildReleaseCandidateManifest(input) {
   const { repoRoot, artifactDir, revision, workspaces = artifactWorkspaces,
-    publish = publishWorkspaces } = input;
+    publish = publishWorkspaces, keylessManifestSha256 } = input;
   if (!HASH.test(revision)) throw new Error("Release source must be a full Git commit SHA");
   const packageRoot = json(join(repoRoot, "package.json"));
   if (!isRecord(packageRoot) || typeof packageRoot.version !== "string"
@@ -138,7 +188,8 @@ export function buildReleaseCandidateManifest(input) {
       workspace,
       name: manifest.name,
       version: manifest.version,
-      publication: publish.includes(workspace) ? "npm" : "local-only",
+      publication: keylessManifestSha256 !== undefined ? "local-only"
+        : publish.includes(workspace) ? "npm" : "local-only",
       filename,
       sizeBytes,
       sha256: sha256(path),
@@ -173,7 +224,14 @@ export function buildReleaseCandidateManifest(input) {
       throw new Error(`Packed contract does not match the candidate tree: ${packed}`);
     }
   }
-  const verifierKeySha256 = verifierKeyHashes(contractTarball, contractInfo);
+  const keyless = keylessManifestSha256 === undefined ? null
+    : keylessContractManifest(contractTarball, contractInfo, keylessManifestSha256);
+  if (keyless !== null && keyless.sourceRevision !== revision) {
+    throw new Error("Keyless contract manifest differs from signed source revision");
+  }
+  const verifierKeySha256 = keyless === null ? verifierKeyHashes(contractTarball, contractInfo)
+    : Object.fromEntries(Object.entries(keyless.keys).filter(([name]) => name.endsWith(".verifier"))
+      .map(([name, hash]) => [name.slice(0, -".verifier".length), hash]));
   const sourceKeys = join(repoRoot, "contracts/trust-registry/dist/managed/trust-registry/keys");
   const sourceVerifierNames = readdirSync(sourceKeys).filter((name) => name.endsWith(".verifier"))
     .map((name) => name.slice(0, -".verifier".length)).sort();
@@ -186,12 +244,24 @@ export function buildReleaseCandidateManifest(input) {
       throw new Error(`Packed verifier key does not match the candidate tree: ${name}`);
     }
   }
+  if (keyless !== null) {
+    const sourceProverNames = readdirSync(sourceKeys).filter((name) => name.endsWith(".prover"))
+      .map((name) => name.slice(0, -".prover".length)).sort();
+    if (!exactStringSet(sourceProverNames, Object.keys(verifierKeySha256))) {
+      throw new Error("Generated prover keys do not match the proof-circuit catalog");
+    }
+    for (const name of sourceProverNames) {
+      if (sha256(join(sourceKeys, `${name}.prover`)) !== keyless.keys[`${name}.prover`]) {
+        throw new Error(`Expected prover key does not match the candidate tree: ${name}`);
+      }
+    }
+  }
   const dependencies = isRecord(packageRoot.dependencies) ? packageRoot.dependencies : {};
   if (Object.values(dependencies).some((value) => typeof value !== "string")) {
     throw new Error("Release identity dependencies must be version strings");
   }
   return {
-    format: "tr-release-candidate-manifest-v2",
+    format: keyless === null ? "tr-release-candidate-manifest-v2" : "tr-release-candidate-manifest-v3",
     sourceRevision: revision,
     packageVersion: packageRoot.version,
     compactCompilerVersion,
@@ -200,6 +270,11 @@ export function buildReleaseCandidateManifest(input) {
     contractSourceSha256: sha256(join(repoRoot, "contracts/trust-registry/src/trust-registry.compact")),
     generatedContractSha256: sha256(join(repoRoot, "contracts/trust-registry/dist/managed/trust-registry/contract/index.js")),
     verifierKeySha256,
+    ...(keyless === null ? {} : { keyless: { manifestSha256: keylessManifestSha256,
+      keygenSha256: keyless.keygenSha256, platform: keyless.platform,
+      proverKeySha256: Object.fromEntries(Object.entries(keyless.keys)
+        .filter(([name]) => name.endsWith(".prover"))
+        .map(([name, hash]) => [name.slice(0, -".prover".length), hash])) } }),
     identityDependencies: Object.fromEntries(Object.entries(dependencies)
       .filter(([name]) => name.startsWith("@midnight-ntwrk/midnight-did")
         || name.startsWith("@midnight-ntwrk/credential-"))
@@ -275,7 +350,7 @@ const isReleaseCandidateManifest = (value) => isRecord(value)
 /** @param {unknown} manifest @param {string} artifactDir @param {readonly string[]} [workspaces] */
 export function verifyReleaseCandidateArtifacts(manifest, artifactDir, workspaces = artifactWorkspaces) {
   if (!isReleaseCandidateManifest(manifest)
-    || manifest.format !== "tr-release-candidate-manifest-v2"
+    || !["tr-release-candidate-manifest-v2", "tr-release-candidate-manifest-v3"].includes(manifest.format)
     || !HASH.test(manifest.sourceRevision)
     || manifest.packages.length !== workspaces.length) {
     throw new Error("Release candidate manifest format or package count is invalid");
@@ -299,6 +374,8 @@ export function verifyReleaseCandidateArtifacts(manifest, artifactDir, workspace
       || typeof entry.filename !== "string"
       || !/^[a-z0-9][a-z0-9.-]*\.tgz$/u.test(entry.filename)
       || !SHA256.test(entry.sha256)
+      || (manifest.format === "tr-release-candidate-manifest-v3"
+        && entry.publication !== "local-only")
       || !Number.isSafeInteger(entry.sizeBytes) || entry.sizeBytes <= 0) {
       throw new Error("Release candidate package entry is invalid or duplicated");
     }
@@ -326,7 +403,23 @@ export function verifyReleaseCandidateArtifacts(manifest, artifactDir, workspace
     || contractInfo["compiler-version"] !== manifest.compactCompilerVersion) {
     throw new Error("Release candidate compiler version differs from packed contract metadata");
   }
-  const expectedHashes = verifierKeyHashes(contractTarball, contractInfo);
+  const keyless = manifest.format === "tr-release-candidate-manifest-v3"
+    ? keylessContractManifest(contractTarball, contractInfo, manifest.keyless?.manifestSha256 ?? "")
+    : null;
+  if ((keyless === null && manifest.keyless !== undefined)
+    || (keyless !== null && (!isRecord(manifest.keyless)
+      || !exactStringSet(Object.keys(manifest.keyless),
+        ["manifestSha256", "keygenSha256", "platform", "proverKeySha256"])))) {
+    throw new Error("Release candidate keyless mode is malformed");
+  }
+  if (keyless !== null && (keyless.sourceRevision !== manifest.sourceRevision
+    || keyless.keygenSha256 !== manifest.keyless?.keygenSha256
+    || keyless.platform !== manifest.keyless?.platform)) {
+    throw new Error("Keyless contract toolchain or source differs from the release manifest");
+  }
+  const expectedHashes = keyless === null ? verifierKeyHashes(contractTarball, contractInfo)
+    : Object.fromEntries(Object.entries(keyless.keys).filter(([name]) => name.endsWith(".verifier"))
+      .map(([name, hash]) => [name.slice(0, -".verifier".length), hash]));
   const actualHashes = manifest.verifierKeySha256;
   if (!isRecord(actualHashes)
     || Object.keys(actualHashes).length !== Object.keys(expectedHashes).length
@@ -334,6 +427,15 @@ export function verifyReleaseCandidateArtifacts(manifest, artifactDir, workspace
       || typeof actualHashes[name] !== "string"
       || !SHA256.test(actualHashes[name]) || actualHashes[name] !== expectedHashes[name])) {
     throw new Error("Release candidate verifier-key hashes are invalid or incomplete");
+  }
+  if (keyless !== null) {
+    const expectedProvers = Object.fromEntries(Object.entries(keyless.keys)
+      .filter(([name]) => name.endsWith(".prover"))
+      .map(([name, hash]) => [name.slice(0, -".prover".length), hash]));
+    if (!isRecord(manifest.keyless?.proverKeySha256)
+      || !isDeepStrictEqual(manifest.keyless.proverKeySha256, expectedProvers)) {
+      throw new Error("Release candidate prover-key hashes are invalid or incomplete");
+    }
   }
   return manifest.packages.map(({ filename }) => join(artifactDir, filename));
 }
@@ -384,16 +486,18 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   let artifactDir = join(root, artifactDirectory);
   let output;
   let verifyPath;
+  let keylessManifestSha256;
   for (let index = 2; index < process.argv.length; index += 1) {
     const option = process.argv[index];
-    if (!["--artifact-dir", "--output", "--verify"].includes(option)
+    if (!["--artifact-dir", "--output", "--verify", "--keyless-manifest-sha256"].includes(option)
       || !process.argv[index + 1]) {
-      throw new Error("Usage: release-candidate-manifest.mjs [--artifact-dir dir] [--output file | --verify file]");
+      throw new Error("Usage: release-candidate-manifest.mjs [--artifact-dir dir] [--keyless-manifest-sha256 sha256] [--output file | --verify file]");
     }
-    const value = resolve(process.argv[++index]);
-    if (option === "--artifact-dir") artifactDir = value;
-    else if (option === "--output") output = value;
-    else verifyPath = value;
+    const value = process.argv[++index];
+    if (option === "--artifact-dir") artifactDir = resolve(value);
+    else if (option === "--output") output = resolve(value);
+    else if (option === "--verify") verifyPath = resolve(value);
+    else keylessManifestSha256 = value;
   }
   if (output && verifyPath) throw new Error("Choose manifest output or verification, not both");
   if (run("git", ["status", "--porcelain", "--untracked-files=normal"]) !== "") {
@@ -409,6 +513,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     repoRoot: root,
     artifactDir,
     revision,
+    keylessManifestSha256,
   });
   verifyReleaseCandidateArtifacts(manifest, artifactDir);
   if (verifyPath) {

@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 
 import { assertRequiredWorkspaceFiles, pinnedStandaloneImages, stageApiRuntimeImage, stageStaticRuntimeImage,
   validateStandaloneInstallInputs, validateStaticRuntimeImageInput } from "./build-standalone-install.mjs";
-import { STANDALONE_PROOF_PARAMETER_PATHS } from "./check-standalone-install.mjs";
+import { KEYLESS_KEYGEN_PARAMETER_PATHS, STANDALONE_PROOF_PARAMETER_PATHS } from "./check-standalone-install.mjs";
 import { packageManifestCatalog } from "./trust-registry-workspace-catalog.mjs";
 
 const image = `midnightntwrk/test@sha256:${"a".repeat(64)}`;
@@ -75,7 +75,7 @@ test("preflight checks proof and image inputs without creating an install direct
     assert.throws(() => validateStandaloneInstallInputs({ ...options, apiImageDirectory },
       revision, inspectImage), /source revision/u);
     await writeFile(join(apiImageDirectory, "manifest.json"), JSON.stringify({
-      sourceRevision: revision, archiveName: "api.image.tar",
+      sourceRevision: revision, archiveName: "api.image.tar", platform: "linux/arm64",
     }));
     const staticDirectories = {};
     for (const role of ["admin", "applicant"]) {
@@ -92,6 +92,33 @@ test("preflight checks proof and image inputs without creating an install direct
     /requires API, admin, and applicant/u);
     const selected = { ...options, apiImageDirectory, ...staticDirectories };
     const selectedPlan = validateStandaloneInstallInputs(selected, revision, inspectImage);
+    const keylessDirectory = join(root, "keyless");
+    await mkdir(keylessDirectory);
+    await writeFile(join(keylessDirectory, "keyless-manifest.json"), "{}\n");
+    const keygenBinary = join(root, "zkir");
+    await writeFile(keygenBinary, "pinned binary\n");
+    await chmod(keygenBinary, 0o755);
+    const keylessSelected = { ...selected, keylessDirectory, keygenBinary,
+      keylessManifestSha256: "f".repeat(64) };
+    assert.throws(() => validateStandaloneInstallInputs(keylessSelected, revision,
+      inspectImage), /Proof parameter is missing/u);
+    for (const name of KEYLESS_KEYGEN_PARAMETER_PATHS.filter((path) =>
+      !STANDALONE_PROOF_PARAMETER_PATHS.includes(path))) {
+      await writeFile(join(options.proofSource, name), "keygen parameter\n");
+    }
+    assert.equal(validateStandaloneInstallInputs(keylessSelected, revision,
+      inspectImage).keylessDirectory, keylessDirectory);
+    await chmod(keygenBinary, 0o644);
+    assert.throws(() => validateStandaloneInstallInputs(keylessSelected, revision,
+      inspectImage), /generator must be executable/u);
+    await chmod(keygenBinary, 0o755);
+    await writeFile(join(apiImageDirectory, "manifest.json"), JSON.stringify({
+      sourceRevision: revision, archiveName: "api.image.tar", platform: "linux/amd64",
+    }));
+    assert.throws(() => validateStandaloneInstallInputs(keylessSelected, revision,
+      inspectImage), /Linux\/arm64 API image/u);
+    assert.throws(() => validateStandaloneInstallInputs({ ...keylessSelected,
+      keygenBinary: undefined }, revision, inspectImage), /Keyless v7 install requires/u);
     selected.applicantImageDirectory = undefined;
     assert.equal(selectedPlan.applicantImageDirectory, staticDirectories.applicantImageDirectory);
     assert.equal(existsSync(options.outputRoot), false);

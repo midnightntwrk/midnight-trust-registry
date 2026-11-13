@@ -110,7 +110,7 @@ function reservationFor(intent: DeploymentAttemptIntent): z.infer<typeof Reserva
       throw new Error("Deployment bootstrap requires nonzero 32-byte commitments");
     }
   }
-  if (releaseManifest?.format !== "tr-release-candidate-manifest-v2"
+  if (!["tr-release-candidate-manifest-v2", "tr-release-candidate-manifest-v3"].includes(releaseManifest?.format)
     || !releaseManifest.verifierKeySha256
     || Object.keys(releaseManifest.verifierKeySha256).length === 0) {
     throw new Error("Deployment requires a release verifier-key catalog");

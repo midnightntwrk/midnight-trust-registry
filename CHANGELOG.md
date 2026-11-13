@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0]
+
+### Release scope
+
+- First self-hosted, local/offline Ledger 8 reference release. This is a
+  non-production developer distribution, not a deployed-registry security or
+  end-to-end qualification. Preview, Preprod, Mainnet, and Ledger 9 are out of
+  scope.
+- Ship the Compact registry contract, domain/client and adapter packages,
+  local API and portals, and a source-bound standalone bundle with pinned
+  images and proof inputs. The contract package carries keyless ZKIR inputs,
+  not prover or verifier key bytes; operators regenerate keys privately.
+- Keep npm and GHCR publication separate from the GitHub bundle. The first
+  release does not claim public npm packages or published application images.
+- The local genesis reported by a node is configuration evidence, not an
+  independent signed approval. Contract deployment, finalized readback,
+  egress-denied actor journeys, deployed restore, and human security review
+  remain open for a deployable release.
+
 ### Changed
 
 - scope guided-demo browser votes to a persisted local workspace instance ID,

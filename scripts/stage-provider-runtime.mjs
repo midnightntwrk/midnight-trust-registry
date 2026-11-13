@@ -2,9 +2,9 @@
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { constants, copyFileSync, createReadStream, existsSync, lstatSync, mkdirSync, mkdtempSync, opendirSync,
+import { constants, copyFileSync, cpSync, createReadStream, existsSync, lstatSync, mkdirSync, mkdtempSync, opendirSync,
   readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { getuid } from "node:process";
+import { getgid, getuid } from "node:process";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -13,6 +13,7 @@ import { assertImmutableProviderTree } from "./immutable-provider-tree.mjs";
 import { providerRuntimeContent } from "./provider-runtime-content.mjs";
 import { providerStagePackageEntries } from "./provider-stage-package-policy.mjs";
 import { assertCanonicalPackedPaths, packedEntries } from "./release-candidate-manifest.mjs";
+import { pinnedKeylessApiImageTag, selectPinnedKeylessApiImageId } from "./standalone-keyless-api-image.mjs";
 import { artifactWorkspaces } from "./trust-registry-workspace-catalog.mjs";
 
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -153,7 +154,14 @@ export async function stageProviderRuntime(bundleDirectory, destination, depende
   if (verified.sourceRevision !== sourceRevision || !/^[0-9a-f]{64}$/u.test(verified.inventorySha256 ?? "")) {
     throw new Error("Verified install bundle does not match the signed source commit");
   }
-  const manifest = JSON.parse(readFileSync(join(bundle, "release-manifest.json"), "utf8"));
+  const keylessRuntime = verified.keylessRuntime ?? null;
+  let keygenImageId = null;
+  const manifestBytes = readFileSync(join(bundle, "release-manifest.json"));
+  if (!/^[0-9a-f]{64}$/u.test(verified.packageManifestSha256 ?? "")
+    || createHash("sha256").update(manifestBytes).digest("hex") !== verified.packageManifestSha256) {
+    throw new Error("Release manifest changed after bundle verification");
+  }
+  const manifest = JSON.parse(manifestBytes.toString("utf8"));
   if (manifest.sourceRevision !== sourceRevision) {
     throw new Error("Release manifest does not match the signed source commit");
   }
@@ -188,8 +196,41 @@ export async function stageProviderRuntime(bundleDirectory, destination, depende
         throw new Error(`Provider package changed after bundle verification: ${item.filename}`);
       }
       assertCanonicalPackedPaths(packedEntries(copy));
-      run("tar", ["-xzf", copy,
-        "--strip-components=1", "-C", join(target, item.workspace)], root);
+      if (item.workspace === "contracts/trust-registry" && keylessRuntime !== null) {
+        const apiRuntime = verified.apiRuntime;
+        const groupId = getgid?.();
+        if (!apiRuntime?.imageId || typeof groupId !== "number"
+          || !Number.isSafeInteger(groupId)) {
+          throw new Error("Keyless provider stage requires a loaded, verified Linux API image and user identity");
+        }
+        const imageId = selectPinnedKeylessApiImageId(verified,
+          run("docker", ["image", "inspect", pinnedKeylessApiImageTag(verified),
+            "--format", "{{.Id}}"], root));
+        keygenImageId = imageId;
+        const generated = join(temporary, "materialized-contract");
+        const keygenCopy = join(temporary, "zkir");
+        copyFileSync(keylessRuntime.path, keygenCopy, constants.COPYFILE_EXCL);
+        if (await sha256File(keygenCopy) !== keylessRuntime.sha256) {
+          throw new Error("Keyless generator changed after bundle verification");
+        }
+        run("docker", ["run", "--rm", "--network", "none", "--read-only",
+          "--security-opt", "no-new-privileges", "--user", `${getuid()}:${groupId}`,
+          "--env", "HOME=/home/keygen",
+          "--mount", `type=bind,src=${temporary},dst=/output`,
+          "--mount", `type=bind,src=${join(bundle, "proof-params")},dst=/home/keygen/.cache/midnight/zk-params,readonly`,
+          "--mount", `type=bind,src=${join(target, "scripts")},dst=/scripts,readonly`,
+          "--entrypoint", "node", imageId,
+          "/scripts/pack-keyless-contract.mjs", "materialize",
+          `/output/${item.filename}`, "/output/materialized-contract",
+          "/output/zkir", item.sha256, keylessRuntime.manifestSha256, "1"], root);
+        if (!lstatSync(generated).isDirectory()) {
+          throw new Error("Keyless contract generation did not produce a full package");
+        }
+        cpSync(generated, join(target, item.workspace), { recursive: true, force: true });
+      } else {
+        run("tar", ["-xzf", copy,
+          "--strip-components=1", "-C", join(target, item.workspace)], root);
+      }
     }
     const content = await providerRuntimeContent(target);
     const evidence = {
@@ -197,6 +238,10 @@ export async function stageProviderRuntime(bundleDirectory, destination, depende
       sourceRevision,
       installInventorySha256: verified.inventorySha256,
       packageCount: packages.length,
+      ...(keylessRuntime === null ? {} : {
+        keylessManifestSha256: keylessRuntime.manifestSha256,
+        keygenImageId,
+      }),
       contentSha256: content.sha256,
       contentEntries: content.entries,
       sourceSignature: "git-verify-commit-passed-not-independently-approved",
