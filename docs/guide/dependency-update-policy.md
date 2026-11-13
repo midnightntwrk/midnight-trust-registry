@@ -3,6 +3,10 @@
 Trust Registry uses the pinned pnpm version in `package.json` and resolves new
 dependencies with these workspace policies:
 
+The root `packageManager` pin selects the reviewed development/CI toolchain.
+Published workspace packages retain `engines.pnpm: >=10`; a toolchain security
+update must not silently narrow their consumer compatibility.
+
 - `blockExoticSubdeps: true` rejects transitive Git, URL, and other exotic
   sources outside the configured registries.
 - `trustPolicy: no-downgrade` rejects a version whose publication trust is
