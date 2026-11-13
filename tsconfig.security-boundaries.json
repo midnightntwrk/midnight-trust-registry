@@ -27,6 +27,8 @@
     "scripts/stage-provider-runtime.mjs",
     "scripts/provider-stage-package-policy.mjs",
     "scripts/release-candidate-manifest.mjs",
+    "scripts/pack-keyless-contract.mjs",
+    "scripts/materialize-standalone-proof-params.mjs",
     "scripts/check-published-package-integrity.mjs",
     "scripts/check-publish-tarball.mjs",
     "scripts/check-standalone-install.mjs",

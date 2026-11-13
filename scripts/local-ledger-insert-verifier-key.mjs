@@ -59,7 +59,9 @@ export async function runLocalVerifierKeyInsertion(plan, dependencies = {}, mode
     throw new Error("Release manifest bytes changed after setup approval");
   }
   const parsedManifest = /** @type {unknown} */ (JSON.parse(manifestBytes.toString("utf8")));
-  if (!isRecord(parsedManifest) || parsedManifest.format !== "tr-release-candidate-manifest-v2"
+  if (!isRecord(parsedManifest)
+    || typeof parsedManifest.format !== "string"
+    || !["tr-release-candidate-manifest-v2", "tr-release-candidate-manifest-v3"].includes(parsedManifest.format)
     || parsedManifest.sourceRevision !== plan.sourceRevision) {
     throw new Error("Approved source SHA disagrees with the release manifest");
   }

@@ -12,10 +12,12 @@ import { verifyReleaseCandidateArtifacts } from "./release-candidate-manifest.mj
 import { matchesApprovedRuntimeHealthcheck } from "./runtime-healthcheck.mjs";
 import { staticImageIdentityFromArchive, validateStaticImageManifest } from "./static-runtime-archive.mjs";
 import { STANDALONE_IMAGE_REFERENCE } from "./standalone-image-reference.mjs";
+import { KEYLESS_KEYGEN_PARAMETER_PATHS, PROTOCOL_KEY_PATHS, STANDALONE_PROOF_PARAMETER_PATHS } from "./standalone-proof-parameter-catalog.mjs";
 import { pinnedStandaloneImagePolicy } from "./standalone-compose-image-policy.mjs";
 import { pinnedStandaloneInventoryImages } from "./standalone-install-image-inventory-policy.mjs";
 import { exactFields, exactStringSet } from "./standalone-exact-fields-policy.mjs";
 export { STANDALONE_IMAGE_REFERENCE } from "./standalone-image-reference.mjs";
+export { KEYLESS_KEYGEN_PARAMETER_PATHS, PROTOCOL_KEY_PATHS, STANDALONE_PROOF_PARAMETER_PATHS } from "./standalone-proof-parameter-catalog.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
 const REVISION = /^[0-9a-f]{40}$/u;
@@ -27,13 +29,6 @@ const FINGERPRINT = /^[0-9A-F]{40}$/u;
 export function pinnedStandaloneImages(composeSource) {
   return pinnedStandaloneImagePolicy(yaml.load(composeSource));
 }
-export const STANDALONE_PROOF_PARAMETER_PATHS = Object.freeze([
-  ...[10, 11, 12, 13, 14, 15].map((k) => `bls_midnight_2p${k}`),
-  ...["spend.prover", "spend.verifier", "spend.bzkir"].map((name) => `dust/9/${name}`),
-  ...["spend", "output", "sign"].flatMap((circuit) =>
-    ["prover", "verifier", "bzkir"].map((extension) => `zswap/9/${circuit}.${extension}`)),
-].sort());
-
 /** @param {string} root @param {string} name */
 function bundlePath(root, name) {
   if (typeof name !== "string" || name.length === 0 || isAbsolute(name)
@@ -250,7 +245,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
   const inventorySha256 = createHash("sha256").update(inventoryBytes).digest("hex");
   const inventory = JSON.parse(inventoryBytes.toString("utf8"));
   if (!["tr-standalone-install-v2", "tr-standalone-install-v3", "tr-standalone-install-v4",
-    "tr-standalone-install-v5", "tr-standalone-install-v6"].includes(inventory?.format)
+    "tr-standalone-install-v5", "tr-standalone-install-v6", "tr-standalone-install-v7"].includes(inventory?.format)
     || !REVISION.test(inventory.sourceRevision)
     || typeof inventory.packageManifest !== "string"
     || typeof inventory.artifactDirectory !== "string"
@@ -267,7 +262,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
   const hasApiOverlayPin = inventory.runtimeCompose?.apiPath !== undefined
     || inventory.runtimeCompose?.apiSha256 !== undefined;
   if (hasApiOverlayPin && !["tr-standalone-install-v4", "tr-standalone-install-v5",
-    "tr-standalone-install-v6"].includes(inventory.format)) {
+    "tr-standalone-install-v6", "tr-standalone-install-v7"].includes(inventory.format)) {
     throw new Error("Standalone API Compose pin is unsupported by this inventory format");
   }
   const hasApiOverlayFile = await lstat(join(root, "compose.api.yml")).then(() => true, (error) => {
@@ -281,7 +276,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
   let runtimeOfflineComposeSha256 = null;
   let runtimeApiComposeSha256 = null;
   if (["tr-standalone-install-v3", "tr-standalone-install-v4",
-    "tr-standalone-install-v5", "tr-standalone-install-v6"].includes(inventory.format)) {
+    "tr-standalone-install-v5", "tr-standalone-install-v6", "tr-standalone-install-v7"].includes(inventory.format)) {
     if (inventory.runtimeCompose?.path !== "compose.yml"
       || !SHA256.test(inventory.runtimeCompose.sha256)
       || inventory.runtimeCompose.offlinePath !== "compose.offline.yml"
@@ -326,6 +321,13 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
   if (packageManifest.sourceRevision !== inventory.sourceRevision) {
     throw new Error("Standalone install source revision disagrees with the package manifest");
   }
+  if ((inventory.format === "tr-standalone-install-v7"
+    && packageManifest.format !== "tr-release-candidate-manifest-v3")
+    || (inventory.format !== "tr-standalone-install-v7"
+      && (packageManifest.format === "tr-release-candidate-manifest-v3"
+        || inventory.keylessRuntime !== undefined))) {
+    throw new Error("Standalone install and package manifest modes disagree");
+  }
   const artifactDirectory = bundlePath(root, inventory.artifactDirectory);
   const artifactRoot = await realpath(artifactDirectory);
   if (artifactRoot !== root && !artifactRoot.startsWith(`${root}${sep}`)) {
@@ -345,7 +347,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
   let apiRuntime = null;
   let apiManifest = null;
   if (["tr-standalone-install-v4", "tr-standalone-install-v5",
-    "tr-standalone-install-v6"].includes(inventory.format)) {
+    "tr-standalone-install-v6", "tr-standalone-install-v7"].includes(inventory.format)) {
     if (inventory.apiRuntime?.manifest !== "images/api.manifest.json"
       || inventory.apiRuntime.archive !== "images/api.image.tar"
       || !SHA256.test(inventory.apiRuntime.manifestSha256)
@@ -366,7 +368,8 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
       inventory.sourceRevision), platform: apiManifest.platform };
   }
   let portalRuntimes = null;
-  if (["tr-standalone-install-v5", "tr-standalone-install-v6"].includes(inventory.format)) {
+  if (["tr-standalone-install-v5", "tr-standalone-install-v6",
+    "tr-standalone-install-v7"].includes(inventory.format)) {
     if (!exactFields(inventory.portalRuntimes, ["admin", "applicant"])) {
       throw new Error("Standalone v5/v6 install requires both portal image pins");
     }
@@ -401,7 +404,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
     }
   }
   let installRelay = null;
-  if (inventory.format === "tr-standalone-install-v6") {
+  if (["tr-standalone-install-v6", "tr-standalone-install-v7"].includes(inventory.format)) {
     if (inventory.installRelay?.path !== "install-relay.mjs"
       || !SHA256.test(inventory.installRelay.sha256)
       || !["node", "api"].includes(inventory.installRelay.imageRole)) {
@@ -420,6 +423,30 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
     installRelay = { path: relayPath, sha256: inventory.installRelay.sha256,
       imageRole: inventory.installRelay.imageRole, image: relayImage };
   }
+  let keylessRuntime = null;
+  if (inventory.format === "tr-standalone-install-v7") {
+    const pin = inventory.keylessRuntime;
+    if (pin?.path !== "keygen/zkir" || pin.platform !== "linux/arm64"
+      || apiRuntime?.platform !== pin.platform
+      || !SHA256.test(pin.sha256) || !SHA256.test(pin.manifestSha256)
+      || !exactStringSet(Object.keys(pin.protocolKeys ?? {}), PROTOCOL_KEY_PATHS)
+      || PROTOCOL_KEY_PATHS.some((name) => !SHA256.test(pin.protocolKeys[name]))
+      || packageManifest.keyless?.keygenSha256 !== pin.sha256
+      || packageManifest.keyless?.manifestSha256 !== pin.manifestSha256
+      || packageManifest.keyless?.platform !== pin.platform) {
+      throw new Error("Standalone keyless generator or manifest pin is missing or malformed");
+    }
+    const generator = await regularBundleFile(root, pin.path);
+    if (((await lstat(generator)).mode & 0o111) === 0) {
+      throw new Error("Standalone keyless generator is not executable");
+    }
+    if (await sha256(generator) !== pin.sha256) {
+      throw new Error("Standalone keyless generator bytes disagree with the install pin");
+    }
+    keylessRuntime = { path: generator, sha256: pin.sha256,
+      manifestSha256: pin.manifestSha256, platform: pin.platform,
+      protocolKeys: pin.protocolKeys };
+  }
   const proofDirectory = bundlePath(root, inventory.proofParameters.directory);
   if (!(await lstat(proofDirectory)).isDirectory()) {
     throw new Error("Proof parameter directory must be a regular directory");
@@ -430,8 +457,10 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
   }
   const parameterFiles = inventory.proofParameters.files;
   const pinnedNames = parameterFiles.map((/** @type {any} */ file) => file?.path).sort();
-  if (!exactStringSet(pinnedNames, STANDALONE_PROOF_PARAMETER_PATHS)
-    || !exactStringSet(await regularFiles(proofRoot), STANDALONE_PROOF_PARAMETER_PATHS)) {
+  const parameterCatalog = inventory.format === "tr-standalone-install-v7"
+    ? KEYLESS_KEYGEN_PARAMETER_PATHS : STANDALONE_PROOF_PARAMETER_PATHS;
+  if (!exactStringSet(pinnedNames, parameterCatalog)
+    || !exactStringSet(await regularFiles(proofRoot), parameterCatalog)) {
     throw new Error("Standalone proof parameter inventory is incomplete or has extra files");
   }
   for (const file of parameterFiles) {
@@ -456,6 +485,7 @@ export async function verifyStandaloneInstallBundle(bundleRoot, verifyPackages =
     apiRuntime,
     portalRuntimes,
     installRelay,
+    keylessRuntime,
   };
 }
 

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
-import { link, mkdtemp, mkdir, readFile, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { chmod, link, mkdtemp, mkdir, readFile, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 import { getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
 
@@ -15,6 +15,7 @@ import {
   readStandaloneRestartEvidence,
   verifyStandaloneRestart,
 } from "./check-standalone-restart.mjs";
+import { KEYLESS_KEYGEN_PARAMETER_PATHS, PROTOCOL_KEY_PATHS } from "./standalone-proof-parameter-catalog.mjs";
 
 const revision = "a".repeat(40);
 const genesis = `0x${"1".repeat(64)}`;
@@ -38,6 +39,81 @@ test("prepared environment accepts only the selected profile's exact fields", ()
     /network profile differs/u);
   assert.throws(() => parsePreparedEnv(Buffer.from(`${current}TR_UNEXPECTED=1\n`), localProfile),
     /unexpected entries/u);
+});
+
+test("v7 restart selects and verifies the private materialized proof cache", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-restart-keyless-"));
+  const bundle = join(root, "bundle");
+  const directory = join(root, "private");
+  const project = "tr-standalone-local-restart-keyless";
+  const composeHash = "c".repeat(64);
+  const offlineHash = "d".repeat(64);
+  try {
+    await mkdir(bundle);
+    await mkdir(directory, { mode: 0o700 });
+    const cache = join(await realpath(directory), "proof-params");
+    await mkdir(cache, { mode: 0o700 });
+    await mkdir(join(bundle, "keygen"));
+    const generator = Buffer.from("pinned generator");
+    await writeFile(join(bundle, "keygen/zkir"), generator);
+    await chmod(join(bundle, "keygen/zkir"), 0o755);
+    const base = [];
+    const protocolKeys = {};
+    for (const name of [...KEYLESS_KEYGEN_PARAMETER_PATHS, ...PROTOCOL_KEY_PATHS]) {
+      const bytes = Buffer.from(`pinned:${name}`);
+      const target = join(cache, name);
+      await mkdir(dirname(target), { recursive: true });
+      await writeFile(target, bytes);
+      if (PROTOCOL_KEY_PATHS.includes(name)) protocolKeys[name] = digest(bytes);
+      else {
+        base.push({ path: name, sha256: digest(bytes) });
+        const input = join(bundle, "proof-params", name);
+        await mkdir(dirname(input), { recursive: true });
+        await writeFile(input, bytes);
+      }
+    }
+    const inventory = Buffer.from(JSON.stringify({ format: "tr-standalone-install-v7",
+      proofParameters: { directory: "proof-params", files: base },
+      keylessRuntime: { path: "keygen/zkir", platform: "linux/arm64",
+        sha256: digest(generator), protocolKeys } }));
+    await writeFile(join(bundle, "install-inventory.json"), inventory);
+    const env = Buffer.from([
+      `TR_STACK_NAME=${project}`, `COMPOSE_PROJECT_NAME=${project}`,
+      "TR_NODE_PORT=49944", "TR_INDEXER_PORT=48088", "TR_PROOF_PORT=46300",
+      `TR_NETWORK_ID=${localProfile.networkId}`,
+      `TR_PROOF_PARAMS_DIR=${JSON.stringify(cache)}`,
+      `TR_INDEXER_PASSWORD=${"a".repeat(48)}`,
+      `TR_INDEXER_SECRET=${"b".repeat(64)}`, "",
+    ].join("\n"));
+    const record = { sourceRevision: revision, networkProfile: localProfile,
+      install: { bundle, inventorySha256: digest(inventory) },
+      stack: { project, ports: { node: "49944", indexer: "48088", "proof-server": "46300" },
+        envFileSha256: digest(env), composeSha256: composeHash,
+        offlineComposeSha256: offlineHash, state: "observed-ledger-bridge-only",
+        observation: { observedAt: "2026-10-20T00:00:00Z" } } };
+    await writeFile(join(directory, "stack.env"), env, { mode: 0o600 });
+    await writeFile(join(directory, "setup-record.json"), JSON.stringify(record), { mode: 0o600 });
+    let topologyCalls = 0;
+    const dependencies = {
+      verifyBundle: async () => ({ sourceRevision: revision,
+        runtimeComposeSha256: composeHash, runtimeOfflineComposeSha256: offlineHash,
+        images: services.map((role) => ({ role })), keylessRuntime: { platform: "linux/arm64" } }),
+      observeTopology: async (_config, expected) => {
+        topologyCalls += 1;
+        assert.equal(expected.proofParamsDir, cache);
+        throw new Error("topology path verified");
+      },
+    };
+    await assert.rejects(observeStandaloneRestartSnapshot(directory, {}, dependencies),
+      /topology path verified/u);
+    assert.equal(topologyCalls, 1);
+    await writeFile(join(cache, PROTOCOL_KEY_PATHS[0]), "tampered key");
+    await assert.rejects(observeStandaloneRestartSnapshot(directory, {}, dependencies),
+      /Materialized proof parameter hash mismatch/u);
+    assert.equal(topologyCalls, 1);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("restart evidence refuses symlink and hard-linked private inputs", async () => {

@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
+import { verifyMaterializedProtocolProofParams } from "./materialize-standalone-proof-params.mjs";
 import { observeStandaloneTopology, standaloneStackConfig } from "./check-standalone-topology.mjs";
 import { getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
 
@@ -173,14 +174,19 @@ async function readContext(root, dependencies) {
   }
   const env = parsePreparedEnv(envBytes, record.networkProfile);
   const config = standaloneStackConfig(env);
+  const proofParamsDir = verified.keylessRuntime === null || verified.keylessRuntime === undefined
+    ? join(bundle, "proof-params") : join(root, "proof-params");
   if (config.project !== record.stack.project
     || JSON.stringify(config.ports) !== JSON.stringify(record.stack.ports)
-    || env.TR_PROOF_PARAMS_DIR !== JSON.stringify(join(bundle, "proof-params"))
+    || env.TR_PROOF_PARAMS_DIR !== JSON.stringify(proofParamsDir)
     || !/^[0-9a-f]{48}$/u.test(env.TR_INDEXER_PASSWORD ?? "")
     || !/^[0-9a-f]{64}$/u.test(env.TR_INDEXER_SECRET ?? "")) {
     throw new Error("Prepared private inputs differ from the selected project");
   }
-  return { record, bundle, verified, env, config };
+  if (verified.keylessRuntime !== null && verified.keylessRuntime !== undefined) {
+    await verifyMaterializedProtocolProofParams(bundle, proofParamsDir, record.install.inventorySha256);
+  }
+  return { record, bundle, verified, env, config, proofParamsDir };
 }
 
 async function docker(command, args) {
@@ -217,10 +223,10 @@ async function nodeRpc(command, containerId, method, params) {
 
 export async function observeStandaloneRestartSnapshot(directory, options = {}, dependencies = {}) {
   const root = await privateDirectory(directory);
-  const { record, bundle, verified, env, config } = await readContext(root, dependencies);
+  const { record, bundle, verified, env, config, proofParamsDir } = await readContext(root, dependencies);
   const topology = await (dependencies.observeTopology ?? observeStandaloneTopology)(config, {
     requirePrivateInputs: true,
-    proofParamsDir: join(bundle, "proof-params"),
+    proofParamsDir,
     indexerPassword: env.TR_INDEXER_PASSWORD,
     indexerSecret: env.TR_INDEXER_SECRET,
     sourceRevision: record.sourceRevision,
