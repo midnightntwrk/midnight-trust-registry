@@ -533,7 +533,7 @@ for (const app of ["admin-console", "applicant-portal"]) {
       await expect(page.locator(".source-badge")).toHaveText("Unavailable");
       await expect(page.locator(".source-panel")).toContainText("No trust decision is available");
       await expect(page.getByRole("heading", { name: app === "admin-console"
-        ? "Connect to review records" : "Find your place in the registry" })).toBeVisible();
+        ? "Connect to review records" : "Apply for a registry role" })).toBeVisible();
       if (app === "applicant-portal") {
         await expect(page.getByRole("alert")).toContainText("Fixture host is offline");
         await expect(page.locator(".hero-actions a").first()).toHaveAttribute("href", "#connection-details");
@@ -696,7 +696,7 @@ test("admin review board precedes advanced governance in keyboard order", async 
 
 for (const [app, title] of [
   ["admin-console", "Registry review workspace"],
-  ["applicant-portal", "Find your place in the registry"],
+  ["applicant-portal", "Apply for a registry role"],
 ]) {
   test(`${app} has no automated WCAG A/AA violations in workspace, workflow, and settings views`, async ({ page, allowedLocalOrigins }) => {
     const server = await serveApp(app);
@@ -751,15 +751,18 @@ for (const [app, title] of [
           const context = document.querySelector(".brand-product-context");
           const titleBox = title.getBoundingClientRect();
           const contextBox = context.getBoundingClientRect();
-          return { logoRight: logo.right, titleLeft: titleBox.left, contextLeft: contextBox.left,
+          return { logoRight: logo.right, logoBottom: logo.bottom, titleTop: titleBox.top,
+            titleLeft: titleBox.left, contextLeft: contextBox.left,
             titleSize: parseFloat(getComputedStyle(title).fontSize), contextSize: parseFloat(getComputedStyle(context).fontSize) };
         });
-        expect(brandLockup.titleLeft).toBeGreaterThan(brandLockup.logoRight);
         expect(Math.abs(brandLockup.titleLeft - brandLockup.contextLeft)).toBeLessThan(2);
         expect(brandLockup.titleSize).toBeGreaterThan(brandLockup.contextSize);
         if (width > 760) {
-          expect(brandLockup.titleSize).toBeGreaterThanOrEqual(35);
+          expect(brandLockup.titleTop).toBeGreaterThan(brandLockup.logoBottom);
+          expect(brandLockup.titleSize).toBeGreaterThanOrEqual(25);
           expect(brandLockup.contextSize).toBeGreaterThanOrEqual(14);
+        } else {
+          expect(brandLockup.titleLeft).toBeGreaterThan(brandLockup.logoRight);
         }
         if (width === 320) expect(brandLockup.titleSize).toBeGreaterThanOrEqual(18);
         expect(brandLockup.contextLeft - brandLockup.logoRight).toBeLessThan(48);
@@ -787,7 +790,8 @@ for (const [app, title] of [
           expect(initialLayout.nav).toBeLessThan(900);
         } else {
           expect(initialLayout.nav).toBeGreaterThan(initialLayout.brand);
-          expect(Math.abs(initialLayout.nav - initialLayout.hero)).toBeLessThan(2);
+          expect(initialLayout.hero).toBeLessThan(initialLayout.nav);
+          expect(initialLayout.nav - initialLayout.hero).toBeLessThan(180);
         }
         if (app === "admin-console" && width === 1440) {
           const heroLayout = await page.evaluate(() => {

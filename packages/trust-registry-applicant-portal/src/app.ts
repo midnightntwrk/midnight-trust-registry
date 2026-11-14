@@ -1460,16 +1460,17 @@ export const createApplicantPortalApp = (
     `;
     const journeyPicker = `
           <section class="journey-picker" id="governed-requests" aria-labelledby="journey-heading">
-            <div class="journey-heading"><p class="eyebrow">Governed requests</p><h2 id="journey-heading">${demoMode && state.inspection !== undefined && state.inspection.sourceMode !== "local-ledger" ? "Applying beyond the demo?" : "What would you like to do?"}</h2>
-              <p>Choose a role to see its scope, evidence, and signing steps. Nothing is submitted until you confirm.</p>
+            <div class="journey-heading"><p class="eyebrow">Choose a role</p><h2 id="journey-heading">What do you need access to?</h2>
+              <p>See the requirements before you submit.</p>
             </div>
             <p class="journey-prerequisite">${state.inspection === undefined ? "Connect to a registry source before preparing a governed request." : privateHost ? "You can prepare a request here. The host must authenticate your session before submission." : "Local connection: prepare only. Submission requires an authenticated same-origin host."}</p>
             <div class="journey-cards">
-              <a href="#issuer-request" data-open-workflow="issuer-request"><span class="role-mark" aria-hidden="true">I</span><strong>Become an issuer</strong><span>Issue credentials in a defined scope.</span><em>View issuer steps &rarr;</em></a>
-              <a href="#verifier-request" data-open-workflow="verifier-request"><span class="role-mark" aria-hidden="true">V</span><strong>Become a verifier</strong><span>Verify a precise scope.</span><em>View verifier steps &rarr;</em></a>
-              <a href="#auditor-request" data-open-workflow="auditor-request"><span class="role-mark" aria-hidden="true">A</span><strong>Become an auditor</strong><span>Oversee a defined audit scope.</span><em>View auditor steps &rarr;</em></a>
-              <a href="#maintainer-request" data-open-workflow="maintainer-request"><span class="role-mark" aria-hidden="true">M</span><strong>Join maintenance</strong><span>Request committee membership.</span><em>View maintainer steps &rarr;</em></a>
+              <a href="#issuer-request" data-open-workflow="issuer-request"><span class="role-mark" aria-hidden="true">I</span><strong>Issue credentials</strong><span>Request issuer authority for a specific scope.</span><em>View requirements &rarr;</em></a>
+              <a href="#verifier-request" data-open-workflow="verifier-request"><span class="role-mark" aria-hidden="true">V</span><strong>Verify presentations</strong><span>Request verifier authority for governed checks.</span><em>View requirements &rarr;</em></a>
+              <a href="#auditor-request" data-open-workflow="auditor-request"><span class="role-mark" aria-hidden="true">A</span><strong>Audit evidence</strong><span>Request an auditor role for approved evidence.</span><em>View requirements &rarr;</em></a>
+              <a href="#maintainer-request" data-open-workflow="maintainer-request"><span class="role-mark" aria-hidden="true">M</span><strong>Maintain the registry</strong><span>Requires a separate governed authority path.</span><em>View requirements &rarr;</em></a>
             </div>
+            <details class="journey-help"><summary>How applications work</summary>
             <div class="journey-guide">
               <div class="journey-steps">
                 <p class="eyebrow">Your path</p><h3>Four steps to submit a request</h3>
@@ -1485,6 +1486,7 @@ export const createApplicantPortalApp = (
                 <p>Private submission needs a same-origin authenticated host and an external signature. This browser never handles private keys.</p>
               </aside>
             </div>
+            </details>
           </section>`;
 
     const sourceMessage = state.loading
@@ -1519,12 +1521,12 @@ export const createApplicantPortalApp = (
         <section class="hero">
           <div class="hero-intro">
             <p class="eyebrow">Applicant workspace</p>
-            <h1>Find your place in the registry</h1>
+            <h1>Apply for a registry role</h1>
             <p>${state.inspection === undefined
               ? "Registry data is unavailable. Recheck the connection before inspecting or submitting a request."
               : state.inspection.sourceMode === "local-ledger"
-                ? "Look up an exact authorization or recognition, then prepare a governed request. Verify finalized registry state independently before relying on an API claim."
-                : demoMode ? "Try a local application, browse records, or prepare a governed request. Demo records are not on-chain trust decisions." : "Browse this registry snapshot or prepare a governed request. Fixture records are not on-chain trust decisions."}</p>
+                ? "Check an exact record or prepare a request. Verify finality independently before relying on an API claim."
+                : "Choose the work you need to do. We will show the requirements before you submit."}</p>
             <div class="hero-actions">
               <a class="button" href="${state.inspection === undefined ? "#connection-details" : state.inspection.sourceMode === "local-ledger" ? "#current-authorization-lookup" : !demoMode ? "#governed-requests" : "#demo-application"}">${state.inspection === undefined ? "Check connection" : state.inspection.sourceMode === "local-ledger" ? "Look up a record" : !demoMode ? "Choose a role" : "Try the demo"}</a>
               ${state.inspection === undefined ? "" : state.inspection.sourceMode === "local-ledger"
