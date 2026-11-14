@@ -59,8 +59,27 @@ Open the [admin console](http://127.0.0.1:4173) and
 The API is started with `--unsafe-demo-mutations` only for this loopback demo.
 Never expose it to an untrusted network or use its state as release evidence.
 
-To populate the board with one active issuer, submit and advance a fixture
-application, then publish an epoch:
+## Follow the UI-first fixture path
+
+Open the [portal with demo controls](http://127.0.0.1:4175/?demo=1&apiBase=http%3A%2F%2F127.0.0.1%3A4400)
+and [admin console with demo controls](http://127.0.0.1:4173/?demo=1&apiBase=http%3A%2F%2F127.0.0.1%3A4400).
+Both must show **Local fixture**, not **API claim** or **Unavailable**. The
+`demo=1` flag only exposes fixture shortcuts on loopback against a workspace
+source; it is not an authorization grant.
+
+1. In the portal, choose **Try the demo**, select **Issuer**, enter a recognizable label, and select **Send demo application**. The success message must say **proposed**, not active.
+2. In the admin console, select **Recheck**. Under **Review records**, find that label and inspect its **Proposed** detail. Select **Approve in demo**, then **Activate in demo**, confirming each fixture-only action.
+3. Return to the portal and select **Recheck**. Under **Explore active records**, find the same issuer. Open **Scope and DID** for its exact identifiers. The source banner must still say the record is not deployed ledger evidence.
+4. To explore a real governed application path without submitting anything, select **Choose a role** in the portal and open the issuer, verifier, auditor, or maintainer steps. Each path needs an external signature and an authenticated same-origin host; the two-port fixture demo does not supply that private host.
+
+The same portal-to-admin-to-portal fixture handoff is exercised by
+`browser-tests/demo-application-handoff.spec.mjs` for issuer and external
+recognition. Its Playwright/axe result is browser evidence, not a deployed
+standalone E2E result. For keyboard order and source-state checks, see the
+[UI audit](portal-admin-ui.md#ui-audit).
+
+Alternatively, use this direct API shortcut to populate the board with one
+active issuer and publish an epoch:
 
 ```sh
 curl -fsS -X POST -H 'content-type: application/json' \

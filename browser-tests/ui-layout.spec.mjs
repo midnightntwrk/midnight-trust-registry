@@ -184,6 +184,24 @@ test("admin describes a healthy empty fixture as empty rather than unavailable",
   }
 });
 
+test("applicant keeps an empty fixture distinct from an unavailable source", async ({ page, allowedLocalOrigins }) => {
+  const server = await serveApp("applicant-portal", { noIssuers: true });
+  try {
+    allowedLocalOrigins.add(server.base);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
+    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    await expect(page.locator(".source-panel")).not.toContainText("No trust decision is available");
+    await expect(page.locator("#trust-records")).not.toContainText("Local demo issuer");
+    await expect(page.locator(".journey-cards")).toBeVisible();
+    await expectNoWcagViolations(page, "applicant healthy empty fixture at 1440px");
+    expect(server.requests.some((request) => request.startsWith("POST "))).toBe(false);
+  } finally {
+    await page.close();
+    await server.close();
+  }
+});
+
 test("applicant role cards focus one governed request without submitting it", async ({ page, allowedLocalOrigins }, testInfo) => {
   const server = await serveApp("applicant-portal");
   try {
@@ -702,7 +720,7 @@ for (const [app, title] of [
     const server = await serveApp(app);
     try {
       allowedLocalOrigins.add(server.base);
-      for (const width of [1440, 390]) {
+      for (const width of [1440, 768, 390]) {
         await page.setViewportSize({ width, height: 900 });
         await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
         await expect(page.locator(".source-badge")).toHaveText("Local fixture");
