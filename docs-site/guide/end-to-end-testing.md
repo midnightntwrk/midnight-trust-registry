@@ -11,7 +11,8 @@ evidence. Passing the demo path does not advance the standalone release gate.
 | Goal | Run | Passing result means |
 | --- | --- | --- |
 | Try the product flows without a ledger | `pnpm run test:e2e:demo` | The four signed role journeys and fixture API/UI smoke completed in a Compact simulator. |
-| Run fast headless role journeys after a one-time clean `pnpm run build:light` | `pnpm run test:e2e:headless:fast` | Four signed Compact-simulator membership journeys (issuer, verifier, auditor, maintainer) with 2-of-3 governance and denial cases, followed by a private loopback fixture workspace covering issuer, verifier, auditor, and recognition application/activation/readback, negative submissions, epoch/evidence readback, and both served UI assets. This does not exercise DID login, a browser, or a deployed ledger. |
+| Run fast headless role journeys after a one-time clean `pnpm run build:light` | `pnpm run test:e2e:headless:fast` | Four signed Compact-simulator membership journeys (issuer, verifier, auditor, maintainer) with 2-of-3 governance and denial cases; a loopback fixture DID challenge/session journey with replay, origin, and revocation checks; then a private loopback workspace covering issuer, verifier, auditor, and recognition application/activation/readback, negative submissions, epoch/evidence readback, and both served UI assets. This does not exercise a browser sign-in or a deployed ledger. |
+| Isolate the opt-in DID HTTP session slice after that build | `pnpm run demo:did-auth:smoke` | A fixture DID key signs an exact deployment-bound challenge; the server issues identity-only bearer access and rejects replay, foreign Origin, and use after revocation. It does not grant a role or test a real DID provider. |
 | Isolate the loopback fixture smoke after that build | `pnpm run test:e2e:headless:fixture` | Runs only the API/UI fixture portion above. Fixture approval is not governed membership. |
 | Exercise the demo in a browser | `pnpm run test:e2e:demo:browser` | The same demo plus applicant/admin Playwright flows completed against fixture services; the test context blocked and reported non-loopback browser requests. |
 | Check submission restart quarantine without a live network | `pnpm --filter @midnight-ntwrk/trust-registry-api run test:light` | The journal write, mocked-node/provider restart, and fixture API-listener restart tests passed; this is not deployed-ledger recovery evidence. |
@@ -211,9 +212,11 @@ Before exposing applicant challenge issuance beyond a trusted local operator,
 the host must authenticate the applicant and return its verified DID from
 `authorizeRequest`. The challenge service rejects a DID that differs from the
 pending application, and the reference stores enforce a live per-subject quota
-atomically across local processes. This is not a built-in DID authentication
-method: a caller-provided DID or demo header is not a quota identity. The
-packaged local-ledger API has no production applicant port. Keep public
+atomically across local processes. An optional DID challenge/session API exists
+for an embedding host and can require an applicant-purpose bearer session
+matching `authorizeRequest`; the packaged CLI does not configure it. A
+caller-provided DID or demo header is not a quota identity. The packaged
+local-ledger API has no production applicant port. Keep public
 issuance disabled until a real authenticated host and durable atomic VP
 verification have been independently implemented and tested.
 The [standalone actor host handoff](standalone-actor-host.md) lists the
