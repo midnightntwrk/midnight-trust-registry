@@ -8,6 +8,7 @@ export * from "./recognition-proposal-admission.js";
 export * from "./governed-recognition-proposals.js";
 export * from "./workspace-commitment.js";
 export * from "./mutation-intent-verifier.js";
+export * from "./actor-authentication.js";
 export * from "./mutation-intent-preflight.js";
 export * from "./mutation-intent-actor-binding.js";
 export * from "./signed-mutation-state.js";

@@ -568,10 +568,10 @@ Those demo routes:
   local operator routes so the admin console can use a separate port; private
   application VP routes do not return wildcard CORS headers
 
-The application-evidence HTTP routes require an injected `applicationVp` port;
-without one, both return 503. Its required `authorizeRequest(applicationId,
+The four application-evidence HTTP routes require an injected `applicationVp` port;
+without one, they return 503. Its required `authorizeRequest(applicationId,
 request)` callback must authenticate the caller and authorize access to the
-current application, throwing on denial. It runs on both routes before the
+current application, throwing on denial. It runs on all four routes before the
 request body is read or any challenge or VP work begins. Denials return a
 generic 403 without exposing callback errors. Reverse-proxy authentication
 alone is not an API authorization seam; the port must still bind the
@@ -579,8 +579,9 @@ authenticated principal to the application and enforce CSRF protection where
 cookie credentials are used. Host the applicant frontend and these routes on
 the same origin or provide a narrowly configured authenticated reverse proxy;
 the reference server does not grant cross-origin browser access to raw VPs.
-For challenge issuance, `authorizeRequest` must return the applicant DID it
-authenticated; `void` or a DID that differs from the pending binding fails
+For every private application-evidence route, `authorizeRequest` must return
+the applicant DID it authenticated; `void` or a DID that differs from the
+pending binding or accepted evidence fails
 closed. Returning a caller-provided DID header without verifying control is
 not authentication. The file and memory reference stores limit live challenges
 per registry-scoped authenticated subject hash (default 32) as well as globally
@@ -589,6 +590,21 @@ returns 409, and global capacity, clock, or collision failures return stable
 503 problem types. Same-binding retry explicitly supersedes the previous
 challenge. The public route remains blocked until a deployment host supplies
 real authentication, durable atomic VP storage, and abuse controls.
+
+`createActorAuthenticationService` is a reusable DID-key-control primitive
+for that future host. It issues a two-minute, one-use transcript for the actor
+to sign, binding the
+registry, nonzero genesis and contract address, origin, purpose, actor DID,
+key, nonce, and time window. The caller supplies a current, independently
+authenticated DID resolver and an atomic challenge store shared across all
+serving processes. The store must enforce capacity and issue-rate limits;
+its `consume` operation must check expiry against store-side current time and
+succeed for only one verifier. The service
+returns the verified DID and key, **not** a registry role, session, or grant.
+It is not wired into the packaged HTTP server and is not a production login
+implementation. The host must still enforce session/CSRF rules, current
+registry authorization, exact DID-signed mutation intents, and quorum.
+
 Challenge issuance accepts only `{}`. Submission
 accepts exactly `{ "nonce": "0x...", "challengeHash": "0x...", "presentation": <VP> }`.
 The server never accepts a caller-supplied binding, policy, verifier list, or

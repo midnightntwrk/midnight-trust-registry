@@ -101,6 +101,15 @@ checkpoint, and test result in one private candidate record. Existing
    publish redacted evidence and a fresh-checkout adoption guide. Keep manual
    security and operator approval explicit.
 
+The first local code increment exports a domain-separated actor-authentication
+challenge transcript and a host-facing issue/verify service. It requires a
+host-provided, atomic one-use challenge store and an independently authenticated
+current DID resolver. It does not expose an HTTP login route, issue a session,
+grant a registry role, or provide a qualified production store or resolver.
+The existing private VP routes separately require the host to return the
+matching applicant DID on every request. These primitives are unit-test
+evidence only until the host integration and deployed tests above pass.
+
 Non-critical-path follow-ups include public-network bootstrap (#200),
 historical TRQP (#39), Helm (#218), npm publishing (#271), mobile acceptance
 (#265), and docs-site family styling (#293).
