@@ -280,7 +280,7 @@ select {
   --font-mono: var(--midnight-mono);
 }
 
-body { background: radial-gradient(circle at 100% 0, #e8e9ff 0, transparent 26rem), var(--midnight-surface); }
+body { background: radial-gradient(circle at 100% 0, #dce9e4 0, transparent 26rem), var(--midnight-surface); }
 .shell { width: min(1360px, calc(100vw - 2.5rem)); padding-top: 1rem; }
 .hero { background: var(--midnight-white); border-radius: 20px; }
 .hero h1 { max-width: 18ch; font-size: clamp(2rem, 3.5vw, 3.2rem); line-height: 1.05; letter-spacing: -0.04em; }
@@ -451,13 +451,13 @@ body { background: radial-gradient(circle at 100% 0, #e8e9ff 0, transparent 26re
 .journey-requirements p:not(.eyebrow) { margin: 0.4rem 0; color: #f1f1ff; font-size: 0.81rem; line-height: 1.45; }
 .hero { grid-template-columns: minmax(0, 1.65fr) minmax(17rem, 1fr); gap: 1rem; padding: 0; border: 0; background: transparent; box-shadow: none; }
 .hero-intro, .hero-overview { min-width: 0; border-radius: 18px; }
-.hero-intro { display: flex; flex-direction: column; align-items: flex-start; padding: clamp(1.4rem, 3vw, 2.4rem); background: var(--midnight-black); color: var(--midnight-white); }
-.hero-intro .eyebrow { color: #bfc1ff; }
+.hero-intro { display: flex; flex-direction: column; align-items: flex-start; padding: clamp(1.4rem, 3vw, 2.4rem); border: 1px solid var(--midnight-border); background: var(--midnight-white); color: var(--midnight-black); }
+.hero-intro .eyebrow { color: var(--midnight-blue); }
 .hero-intro h1 { max-width: 16ch; margin-top: 0.75rem; }
-.hero-intro p:not(.eyebrow) { max-width: 55ch; color: #d1d1dd; }
+.hero-intro p:not(.eyebrow) { max-width: 55ch; color: var(--midnight-muted); }
 .hero-actions { display: flex; flex-wrap: wrap; gap: 0.65rem; margin-top: auto; padding-top: 1.35rem; }
 .hero-actions .button { min-height: 2.8rem; text-decoration: none; }
-.hero-actions .button.secondary { border: 1px solid #8b8bb1; background: transparent; color: var(--midnight-white); }
+.hero-actions .button.secondary { border: 1px solid var(--midnight-border); background: var(--midnight-blue-soft); color: var(--midnight-blue); }
 .hero-overview { padding: 1.3rem; border: 1px solid var(--midnight-border); background: var(--midnight-white); }
 .hero-overview .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 1rem; padding: 0; border: 0; }
 .hero-overview .metric { padding: 0.65rem; border-radius: 8px; background: var(--midnight-surface); }
