@@ -7,6 +7,7 @@ export * from "./ids.js";
 export * from "./instant.js";
 export * from "./lifecycle.js";
 export * from "./mutation-intent.js";
+export * from "./actor-authentication.js";
 export * from "./pending-application.js";
 export * from "./policy-snapshot.js";
 export * from "./recognition-authority-assertion.js";

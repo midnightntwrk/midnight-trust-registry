@@ -49,8 +49,8 @@ export type ApplicationVpHttpSubmissionResult = {
 /** The embedding application owns authenticated applicant access, policy and atomic redacted persistence. */
 export interface ApplicationVpHttpPort {
   challengeStore: ApplicationChallengeStore;
-  /** Authenticate the caller and authorize access; return its verified DID for challenge issuance. The body is unread. */
-  authorizeRequest(applicationId: string, request: IncomingMessage): Promise<string | void>;
+  /** Authenticate the caller and return its verified DID before any private route reads a body or record. */
+  authorizeRequest(applicationId: string, request: IncomingMessage): Promise<string>;
   resolvePendingApplication(applicationId: string): Promise<{
     binding: ApplicationChallengeBinding;
     authorizedVerifiers: readonly AuthorizedEvidenceVerifier[];
@@ -108,7 +108,7 @@ function samePolicy(
 export function createApplicationVpHttpService(port: ApplicationVpHttpPort, clock: () => number) {
   const challenges = new ApplicationChallengeService(port.challengeStore, clock);
   return {
-    async accepted(applicationIdInput: string): Promise<ApplicationVpHttpSubmissionResult> {
+    async accepted(applicationIdInput: string, authenticatedSubjectDid: string): Promise<ApplicationVpHttpSubmissionResult> {
       const applicationId = parseApplicationId(applicationIdInput);
       const saved = await port.resolveAcceptedEvidence?.(applicationId);
       if (saved === undefined || saved === null) throw new ApplicationVpHttpError("not-found");
@@ -116,6 +116,7 @@ export function createApplicationVpHttpService(port: ApplicationVpHttpPort, cloc
         const evidence = ApplicationEvidenceSubmissionSchema.parse(saved.evidence);
         const receipt = ApplicationVpReceiptSchema.parse(saved.receipt);
         if (evidence.envelope.applicationId !== applicationId
+          || evidence.envelope.subjectDid !== authenticatedSubjectDid
           || evidence.commitment !== computeApplicationEvidenceCommitment(evidence.envelope)
           || receipt.evidenceCommitment !== evidence.commitment) {
           throw new ApplicationVpHttpError("rejected");
@@ -125,9 +126,11 @@ export function createApplicationVpHttpService(port: ApplicationVpHttpPort, cloc
         throw new ApplicationVpHttpError("rejected");
       }
     },
-    async binding(applicationIdInput: string): Promise<ApplicationChallengeBinding> {
+    async binding(applicationIdInput: string, authenticatedSubjectDid: string): Promise<ApplicationChallengeBinding> {
       const applicationId = parseApplicationId(applicationIdInput);
-      return (await resolve(port, applicationId)).binding;
+      const current = await resolve(port, applicationId);
+      if (current.binding.subjectDid !== authenticatedSubjectDid) throw new ApplicationVpHttpError("rejected");
+      return current.binding;
     },
     async issue(applicationIdInput: string, body: unknown, authenticatedSubjectDid: string) {
       const applicationId = parseApplicationId(applicationIdInput);
@@ -138,10 +141,11 @@ export function createApplicationVpHttpService(port: ApplicationVpHttpPort, cloc
       const challenge = await challenges.issue(current.binding, authenticatedSubjectDid);
       return { applicationId, ...challenge };
     },
-    async submit(applicationIdInput: string, body: unknown) {
+    async submit(applicationIdInput: string, body: unknown, authenticatedSubjectDid: string) {
       const applicationId = parseApplicationId(applicationIdInput);
       const request = parseSubmission(body);
       const current = await resolve(port, applicationId);
+      if (current.binding.subjectDid !== authenticatedSubjectDid) throw new ApplicationVpHttpError("rejected");
       const live = await challenges.isLive({
         binding: current.binding, nonce: request.nonce, challengeHash: request.challengeHash,
       });

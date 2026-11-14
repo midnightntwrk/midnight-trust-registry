@@ -20,6 +20,24 @@ including read-only listeners. They are not a substitute for a finalized local
 ledger. The signed local-ledger mode is the only CLI mode that can request
 cluster binding; that capability alone does not qualify a release deployment.
 
+Phase-0 actor authentication is an opt-in embedding API, not enabled by the
+packaged CLI. A host can inject `actorAuthentication` into
+`createTrustRegistryApiServer` with a deployment-bound DID challenge service,
+an atomic one-use challenge store, a resolver, and a process-local session
+service. The API exposes `POST /v1/actor-authentication/challenges`,
+`POST /v1/actor-authentication/sessions`, and `GET`/`DELETE`
+`/v1/actor-authentication/session`. It requires JSON for writes, rejects a
+foreign browser Origin, gives no cross-origin read grant, and marks responses
+`no-store`. Sessions use opaque bearer tokens, expire after 15 minutes, and
+vanish on process restart. The host must keep bearer tokens out of logs and
+must separately verify VP eligibility and governed registry authority. A DID
+signature or session never grants a role. There is no browser sign-in flow or
+production-ready authentication host yet.
+When `actorAuthentication` and `applicationVp` are injected together, the
+VP routes additionally require an applicant-purpose bearer session matching
+the embedding host's `authorizeRequest` DID. This does not replace that host
+callback, the pending application's subject check, or presentation verification.
+
 `assertLocalLedgerEvidenceMatchesSnapshot` is a building block for the
 separate local-ledger mode tracked in #219. Given a caller-authenticated
 finalized Compact ledger, contract address, and sequence-to-time mapping, it
@@ -568,10 +586,10 @@ Those demo routes:
   local operator routes so the admin console can use a separate port; private
   application VP routes do not return wildcard CORS headers
 
-The application-evidence HTTP routes require an injected `applicationVp` port;
-without one, both return 503. Its required `authorizeRequest(applicationId,
+The four application-evidence HTTP routes require an injected `applicationVp` port;
+without one, they return 503. Its required `authorizeRequest(applicationId,
 request)` callback must authenticate the caller and authorize access to the
-current application, throwing on denial. It runs on both routes before the
+current application, throwing on denial. It runs on all four routes before the
 request body is read or any challenge or VP work begins. Denials return a
 generic 403 without exposing callback errors. Reverse-proxy authentication
 alone is not an API authorization seam; the port must still bind the
@@ -579,8 +597,9 @@ authenticated principal to the application and enforce CSRF protection where
 cookie credentials are used. Host the applicant frontend and these routes on
 the same origin or provide a narrowly configured authenticated reverse proxy;
 the reference server does not grant cross-origin browser access to raw VPs.
-For challenge issuance, `authorizeRequest` must return the applicant DID it
-authenticated; `void` or a DID that differs from the pending binding fails
+For every private application-evidence route, `authorizeRequest` must return
+the applicant DID it authenticated; `void` or a DID that differs from the
+pending binding or accepted evidence fails
 closed. Returning a caller-provided DID header without verifying control is
 not authentication. The file and memory reference stores limit live challenges
 per registry-scoped authenticated subject hash (default 32) as well as globally
@@ -589,6 +608,38 @@ returns 409, and global capacity, clock, or collision failures return stable
 503 problem types. Same-binding retry explicitly supersedes the previous
 challenge. The public route remains blocked until a deployment host supplies
 real authentication, durable atomic VP storage, and abuse controls.
+
+`createActorAuthenticationService` is a reusable DID-key-control primitive
+for that future host. It issues a two-minute, one-use transcript for the actor
+to sign, binding the
+registry, nonzero genesis and contract address, origin, purpose, actor DID,
+key, nonce, and time window. The caller supplies a current, independently
+authenticated DID resolver and an atomic challenge store shared across all
+serving processes. `FileActorAuthenticationChallengeStore` is a local durable
+adapter: place its private state file in a trusted directory shared by the
+serving processes, outside web roots and backups exposed to applicants. It
+enforces global and per-actor two-minute issuance bounds, retains consumed
+digest tombstones until expiry, and checks expiry under its write lock. A
+full quota refuses issuance; the host still needs request-level rate limiting
+and abuse monitoring. The service
+returns the verified DID and key, **not** a registry role, session, or grant.
+It is not wired into the packaged HTTP server and is not a production login
+implementation. The host must still supply an authenticated resolver and
+enforce session/CSRF rules, current
+registry authorization, exact DID-signed mutation intents, and quorum.
+
+The file adapter's `<state-path>.lock` is deliberately not auto-reclaimed.
+After a process crash, issuance and consumption fail closed until an operator
+recovers it. Stop **all** serving processes for that local deployment and
+prevent automatic restarts; confirm no writer still holds the lock (for
+example with `lsof <state-path>.lock`) and that the path belongs to the
+expected private challenge store. If process ownership is uncertain, do not
+remove the lock. Back up the private state file, remove **only** the stale
+`.lock` file, then start one process and check that an already consumed
+challenge remains unusable. Never delete or replace the challenge state file
+to clear a lock. This is an operator action, not an HTTP recovery endpoint;
+the crash-lock denial and post-recovery tombstone are tested locally.
+
 Challenge issuance accepts only `{}`. Submission
 accepts exactly `{ "nonce": "0x...", "challengeHash": "0x...", "presentation": <VP> }`.
 The server never accepts a caller-supplied binding, policy, verifier list, or

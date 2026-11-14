@@ -665,7 +665,7 @@ describe("proposal admission", () => {
       source: createInMemorySource(createOperatorWorkspace({ label: "proposal-admission" }).snapshot),
       applicationVp: {
         challengeStore: new InMemoryApplicationChallengeStore(),
-        authorizeRequest: async () => {},
+        authorizeRequest: async () => "did:midnight:issuer:unused",
         resolvePendingApplication: async () => null,
         verifyPresentation: async () => { throw new Error("unused"); },
         signEvidence: async () => evidence.signature,
