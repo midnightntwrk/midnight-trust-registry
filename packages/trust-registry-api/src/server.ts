@@ -1346,12 +1346,11 @@ export const createTrustRegistryApiServer = (
         if (applicationVp === undefined || options.applicationVp === undefined) {
           throw jsonProblem(problemBaseUri, "application-vp-unavailable", 503, "application VP unavailable");
         }
-        let authenticatedSubjectDid: string | void;
+        let authenticatedSubjectDid: string;
         try {
           authenticatedSubjectDid = await options.applicationVp.authorizeRequest(segments[2]!, request);
-          if (segments[3] === "challenges" && (typeof authenticatedSubjectDid !== "string"
-            || authenticatedSubjectDid.length === 0)) {
-            throw new Error("Challenge issuance requires authenticated applicant identity");
+          if (typeof authenticatedSubjectDid !== "string" || authenticatedSubjectDid.length === 0) {
+            throw new Error("Private application VP access requires authenticated applicant identity");
           }
         } catch {
           throw jsonProblem(problemBaseUri, "application-vp-forbidden", 403, "application VP forbidden");
@@ -1362,11 +1361,11 @@ export const createTrustRegistryApiServer = (
               throw jsonProblem(problemBaseUri, "application-vp-receipt-unavailable", 503,
                 "application VP receipt unavailable");
             }
-            writeJson(response, 200, await applicationVp.accepted(segments[2]!), false);
+            writeJson(response, 200, await applicationVp.accepted(segments[2]!, authenticatedSubjectDid), false);
             return;
           }
           if (segments[3] === "binding") {
-            writeJson(response, 200, await applicationVp.binding(segments[2]!), false);
+            writeJson(response, 200, await applicationVp.binding(segments[2]!, authenticatedSubjectDid), false);
             return;
           }
           const raw = await readRequestBody(request, problemBaseUri);
@@ -1377,8 +1376,8 @@ export const createTrustRegistryApiServer = (
             throw new ApplicationVpHttpError("invalid-request");
           }
           const result = segments[3] === "challenges"
-            ? await applicationVp.issue(segments[2]!, body, authenticatedSubjectDid as string)
-            : await applicationVp.submit(segments[2]!, body);
+            ? await applicationVp.issue(segments[2]!, body, authenticatedSubjectDid)
+            : await applicationVp.submit(segments[2]!, body, authenticatedSubjectDid);
           writeJson(response, segments[3] === "challenges" ? 201 : 202, result, false);
           return;
         } catch (error) {

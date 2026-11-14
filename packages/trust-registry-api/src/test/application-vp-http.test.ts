@@ -178,7 +178,7 @@ describe("application VP HTTP intake", () => {
 
   it("requires a verified applicant DID for issuance and distinguishes subject and global capacity", async () => {
     const insert = vi.spyOn(port.challengeStore, "insert");
-    port.authorizeRequest = vi.fn(async () => {});
+    port.authorizeRequest = vi.fn(async () => "");
     await start();
     expect((await post("challenges", {})).status).toBe(403);
     expect(insert).not.toHaveBeenCalled();
@@ -217,6 +217,37 @@ describe("application VP HTTP intake", () => {
     });
     expect(full.status).toBe(503);
     expect(await full.json()).toMatchObject({ type: expect.stringContaining("application-vp-challenge-capacity") });
+  });
+
+  it("requires the same authenticated applicant DID on every private VP route", async () => {
+    await start();
+    const insert = vi.spyOn(port.challengeStore, "insert");
+    port.authorizeRequest = vi.fn(async () => "");
+    expect((await fetch(`${base}${path}/binding`)).status).toBe(403);
+    expect((await fetch(`${base}${path}/receipt`)).status).toBe(403);
+    expect((await post("challenges", {})).status).toBe(403);
+    expect((await post("submissions", {})).status).toBe(403);
+    expect(insert).not.toHaveBeenCalled();
+    expect(port.resolvePendingApplication).not.toHaveBeenCalled();
+
+    port.authorizeRequest = vi.fn(async () => binding.subjectDid);
+    const issued = await (await post("challenges", {})).json() as { nonce: string; challengeHash: string };
+    const presentation = {
+      nonce: issued.nonce, subjectDid: binding.subjectDid,
+      scopeCommitment: binding.scopeCommitment, secret: "private-vp",
+    };
+    port.authorizeRequest = vi.fn(async () => "did:midnight:issuer:other");
+    expect((await fetch(`${base}${path}/binding`)).status).toBe(403);
+    expect((await post("challenges", {})).status).toBe(403);
+    expect((await post("submissions", { nonce: issued.nonce, challengeHash: issued.challengeHash,
+      presentation })).status).toBe(403);
+    expect(port.verifyPresentation).not.toHaveBeenCalled();
+
+    port.authorizeRequest = vi.fn(async () => binding.subjectDid);
+    expect((await post("submissions", { nonce: issued.nonce, challengeHash: issued.challengeHash,
+      presentation })).status).toBe(202);
+    port.authorizeRequest = vi.fn(async () => "did:midnight:issuer:other");
+    expect((await fetch(`${base}${path}/receipt`)).status).toBe(403);
   });
 
   it("returns stable operational codes for collision and conflicting retry without exposing bindings", async () => {
