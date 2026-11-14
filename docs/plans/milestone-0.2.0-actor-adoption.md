@@ -105,13 +105,14 @@ The first local code increment exports a domain-separated actor-authentication
 challenge transcript and a host-facing issue/verify service. It requires a
 host-provided, atomic one-use challenge store and an independently authenticated
 current DID resolver. A local file adapter now provides cross-process atomic
-consumption, bounded issuance, and restart-safe consumed tombstones, but is
-not wired into the packaged host. It does not expose an HTTP login route,
-issue a session, grant a registry role, or provide a qualified production
-resolver.
-The existing private VP routes separately require the host to return the
-matching applicant DID on every request. These primitives are unit-test
-evidence only until the host integration and deployed tests above pass.
+consumption, bounded issuance, and restart-safe consumed tombstones. An opt-in
+HTTP adapter now exposes challenge verification and 15-minute process-local
+bearer sessions. When configured alongside private VP intake, it requires an
+applicant-purpose session matching the host-authenticated DID; the pending
+subject and VP policy remain separate checks. The packaged CLI does not wire
+this adapter, and neither browser app has a login flow. It grants no registry
+role and supplies no qualified production resolver. Its current evidence is
+HTTP/unit testing, not a deployed actor journey or a finished user flow.
 
 Non-critical-path follow-ups include public-network bootstrap (#200),
 historical TRQP (#39), Helm (#218), npm publishing (#271), mobile acceptance

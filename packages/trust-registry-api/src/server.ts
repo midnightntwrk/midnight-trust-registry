@@ -3,10 +3,12 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { z, ZodError } from "zod";
 
 import { buildSnapshotSummary } from "@midnight-ntwrk/trust-registry-cli";
-import { DecisionEvidenceSchema, SignedPendingApplicationSchema } from "@midnight-ntwrk/trust-registry-domain";
+import { ActorAuthenticationChallengeSchema, DecisionEvidenceSchema, SignedPendingApplicationSchema } from "@midnight-ntwrk/trust-registry-domain";
 import { encodeCompactActionKind } from "@midnight-ntwrk/trust-registry-contract";
 import { EvidenceVerifierDidResolutionUnavailableError } from "@midnight-ntwrk/trust-registry-integration";
 import { LocalIssuerEvidenceTimeRejectedError } from "./local-issuer-proposal-port.js";
+import { ActorAuthenticationResolverUnavailableError, type createActorAuthenticationService } from "./actor-authentication.js";
+import type { ActorSessionService } from "./actor-sessions.js";
 
 import {
   TrustRegistryTrqpAdapter,
@@ -254,6 +256,11 @@ export type TrustRegistryApiServerOptions = {
   governedAuditorProposals?: GovernedAuditorProposalPort;
   governedMaintainerProposals?: GovernedMaintainerProposalPort;
   applicationVp?: ApplicationVpHttpPort;
+  /** Optional DID-key authentication, independent of VP eligibility and governed role grants. */
+  actorAuthentication?: {
+    challenges: ReturnType<typeof createActorAuthenticationService>;
+    sessions: ActorSessionService;
+  };
   recognitionAccreditation?: RecognitionAccreditationHttpPort;
   /** Read from a trusted finalized source; clients must authenticate epoch and DID anchors independently. */
   readDecisionEvidence?: (role: "issuer" | "verifier", authorizationId: string) => Promise<unknown | null>;
@@ -1147,6 +1154,9 @@ export const createTrustRegistryApiServer = (
         throw jsonProblem(problemBaseUri, "invalid-request-path", 400, "invalid request path");
       }
       privateApplicantRoute = segments[0] === "v1" && (
+        (segments.length === 3 && segments[1] === "actor-authentication"
+          && (segments[2] === "challenges" || segments[2] === "sessions" || segments[2] === "session"))
+        ||
         (segments.length === 4 && segments[1] === "application-evidence"
           && (segments[3] === "binding" || segments[3] === "challenges"
             || segments[3] === "submissions" || segments[3] === "receipt"))
@@ -1161,6 +1171,61 @@ export const createTrustRegistryApiServer = (
       if (method === "OPTIONS") {
         writeNoContent(response, !privateApplicantRoute);
         return;
+      }
+
+      if (segments.length === 3 && segments[0] === "v1" && segments[1] === "actor-authentication"
+        && (segments[2] === "challenges" || segments[2] === "sessions" || segments[2] === "session")) {
+        response.setHeader("cache-control", "no-store");
+        const auth = options.actorAuthentication;
+        if (auth === undefined) {
+          throw jsonProblem(problemBaseUri, "actor-authentication-unavailable", 503, "actor authentication unavailable");
+        }
+        if (request.headers.origin !== undefined && request.headers.origin !== auth.challenges.origin) {
+          throw jsonProblem(problemBaseUri, "actor-authentication-forbidden", 403, "actor authentication forbidden");
+        }
+        if (method === "POST") {
+          if (request.headers["content-type"]?.split(";")[0]?.trim().toLowerCase() !== "application/json") {
+            throw jsonProblem(problemBaseUri, "actor-authentication-invalid-request", 415, "JSON content type required");
+          }
+          if (segments[2] === "challenges") {
+            const body = await parseJsonBody(request, (value) => z.strictObject({
+              actorDid: z.string(), actorKeyId: z.string(),
+              purpose: z.enum(["applicant-session", "maintainer-session"]),
+            }).parse(value), problemBaseUri);
+            writeJson(response, 201, await auth.challenges.issue(body.actorDid, body.actorKeyId, body.purpose), false);
+            return;
+          }
+          if (segments[2] === "sessions") {
+            const body = await parseJsonBody(request, (value) => z.strictObject({
+              challenge: z.unknown(), signature: z.unknown(),
+            }).parse(value), problemBaseUri);
+            const parsed = ActorAuthenticationChallengeSchema.safeParse(body.challenge);
+            if (!parsed.success) {
+              throw jsonProblem(problemBaseUri, "actor-authentication-rejected", 401, "actor authentication rejected");
+            }
+            const identity = await auth.challenges.verify(parsed.data, body.signature, parsed.data.purpose);
+            if (identity === null) {
+              throw jsonProblem(problemBaseUri, "actor-authentication-rejected", 401, "actor authentication rejected");
+            }
+            writeJson(response, 201, auth.sessions.issue({ ...identity, purpose: parsed.data.purpose }), false);
+            return;
+          }
+        }
+        if (segments[2] === "session" && method === "GET") {
+          const identity = auth.sessions.authenticate(request.headers.authorization);
+          if (identity === null) {
+            throw jsonProblem(problemBaseUri, "actor-session-invalid", 401, "actor session invalid");
+          }
+          writeJson(response, 200, identity, false);
+          return;
+        }
+        if (segments[2] === "session" && method === "DELETE") {
+          if (!auth.sessions.revoke(request.headers.authorization)) {
+            throw jsonProblem(problemBaseUri, "actor-session-invalid", 401, "actor session invalid");
+          }
+          writeNoContent(response, false);
+          return;
+        }
       }
 
       if (method === "GET" && segments.length === 1 && segments[0] === "health") {
@@ -1348,9 +1413,19 @@ export const createTrustRegistryApiServer = (
         }
         let authenticatedSubjectDid: string;
         try {
+          const actorSession = options.actorAuthentication?.sessions.authenticate(
+            request.headers.authorization, "applicant-session",
+          );
+          if (options.actorAuthentication !== undefined && actorSession === null) {
+            throw new Error("Applicant DID session required");
+          }
           authenticatedSubjectDid = await options.applicationVp.authorizeRequest(segments[2]!, request);
           if (typeof authenticatedSubjectDid !== "string" || authenticatedSubjectDid.length === 0) {
             throw new Error("Private application VP access requires authenticated applicant identity");
+          }
+          if (actorSession !== undefined && actorSession !== null
+            && authenticatedSubjectDid !== actorSession.actorDid) {
+            throw new Error("Applicant DID session and host identity differ");
           }
         } catch {
           throw jsonProblem(problemBaseUri, "application-vp-forbidden", 403, "application VP forbidden");
@@ -2820,6 +2895,11 @@ export const createTrustRegistryApiServer = (
         `No trust-registry API route matches ${method} ${url.pathname}.`,
       );
     } catch (error) {
+      if (error instanceof ActorAuthenticationResolverUnavailableError) {
+        const problem = jsonProblem(problemBaseUri, "did-resolution-unavailable", 503, "DID resolution unavailable").problem;
+        writeJson(response, problem.status, problem, false);
+        return;
+      }
       const problem = privateApplicantRoute && !(error instanceof HttpProblem)
         ? jsonProblem(problemBaseUri, "private-request-rejected",
           error instanceof SyntaxError || error instanceof ZodError ? 400 : 500,

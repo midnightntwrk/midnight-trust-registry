@@ -53,6 +53,7 @@ export function createActorAuthenticationService(input: {
 }) {
   const context = ActorAuthenticationContextSchema.parse(input.context);
   return {
+    origin: context.origin,
     async issue(actorDid: string, actorKeyId: string, purpose: ActorAuthenticationPurpose): Promise<ActorAuthenticationChallenge> {
       const nowMs = input.clock();
       if (!Number.isSafeInteger(nowMs)) throw new Error("Actor authentication clock unavailable");

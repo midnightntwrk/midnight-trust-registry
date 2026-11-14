@@ -491,6 +491,65 @@ paths:
       tags: [Private intake]
       summary: Register a DID-signed pending application
       responses: *governedResponses
+  /v1/actor-authentication/challenges:
+    post:
+      tags: [Private intake]
+      summary: Issue a deployment-bound DID-key authentication challenge
+      description: Opt-in phase-0 API. A challenge proves no registry role or VP eligibility.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [actorDid, actorKeyId, purpose]
+              properties:
+                actorDid: { type: string }
+                actorKeyId: { type: string }
+                purpose: { type: string, enum: [applicant-session, maintainer-session] }
+      responses:
+        '201': { description: One-use challenge issued }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '415': { description: JSON content type required }
+        '503': { $ref: '#/components/responses/PortUnavailable' }
+  /v1/actor-authentication/sessions:
+    post:
+      tags: [Private intake]
+      summary: Verify a one-use DID challenge and issue a short-lived bearer session
+      description: Opt-in phase-0 API. The response contains DID identity and purpose, never registry authority.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [challenge, signature]
+              properties:
+                challenge: { type: object }
+                signature: { type: object }
+      responses:
+        '201': { description: Process-local bearer session created }
+        '401': { description: Challenge signature rejected or already consumed }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '415': { description: JSON content type required }
+        '503': { $ref: '#/components/responses/PortUnavailable' }
+  /v1/actor-authentication/session:
+    get:
+      tags: [Private intake]
+      summary: Read identity and purpose from a bearer session
+      description: Requires Authorization Bearer token. No CORS grant or registry role is implied.
+      responses:
+        '200': { description: DID identity and session purpose }
+        '401': { description: Missing, expired, or revoked bearer session }
+    delete:
+      tags: [Private intake]
+      summary: Revoke a bearer session
+      responses:
+        '204': { description: Session revoked }
+        '401': { description: Missing, expired, or revoked bearer session }
   /v1/application-evidence/{id}/binding:
     parameters: [*id]
     get:

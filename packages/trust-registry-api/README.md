@@ -20,6 +20,24 @@ including read-only listeners. They are not a substitute for a finalized local
 ledger. The signed local-ledger mode is the only CLI mode that can request
 cluster binding; that capability alone does not qualify a release deployment.
 
+Phase-0 actor authentication is an opt-in embedding API, not enabled by the
+packaged CLI. A host can inject `actorAuthentication` into
+`createTrustRegistryApiServer` with a deployment-bound DID challenge service,
+an atomic one-use challenge store, a resolver, and a process-local session
+service. The API exposes `POST /v1/actor-authentication/challenges`,
+`POST /v1/actor-authentication/sessions`, and `GET`/`DELETE`
+`/v1/actor-authentication/session`. It requires JSON for writes, rejects a
+foreign browser Origin, gives no cross-origin read grant, and marks responses
+`no-store`. Sessions use opaque bearer tokens, expire after 15 minutes, and
+vanish on process restart. The host must keep bearer tokens out of logs and
+must separately verify VP eligibility and governed registry authority. A DID
+signature or session never grants a role. There is no browser sign-in flow or
+production-ready authentication host yet.
+When `actorAuthentication` and `applicationVp` are injected together, the
+VP routes additionally require an applicant-purpose bearer session matching
+the embedding host's `authorizeRequest` DID. This does not replace that host
+callback, the pending application's subject check, or presentation verification.
+
 `assertLocalLedgerEvidenceMatchesSnapshot` is a building block for the
 separate local-ledger mode tracked in #219. Given a caller-authenticated
 finalized Compact ledger, contract address, and sequence-to-time mapping, it
