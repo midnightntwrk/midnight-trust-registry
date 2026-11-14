@@ -112,7 +112,7 @@ repeatable UI acceptance evidence:
 | Choose issuer, verifier, auditor, or maintainer and complete challenge-bound evidence admission with an external signature | `applicant-portal.spec.mjs` (four role cases) |
 | Expose applicant source and historical/evidence failures as alert regions, and accepted application, evidence, recognition-recovery, and admin-action receipts as polite status regions; audit the partial-list failure at desktop width without inventing a zero count | `ui-layout.spec.mjs`, `applicant-portal.spec.mjs`, `recognition-evidence.spec.mjs`, `admin-console.spec.mjs`, applicant unit tests |
 | Choose each applicant role card by keyboard, keep only its governed form open, expose expanded state to assistive technology, retain the selected role after recheck, and make no submission merely by choosing | `ui-layout.spec.mjs` |
-| Reach the first desktop task by Tab in both apps and expose a visible, nonzero keyboard focus outline | `ui-layout.spec.mjs` |
+| Reach the first desktop task by Tab in both apps and expose a keyboard focus outline with at least 3:1 contrast against the dark navigation | `ui-layout.spec.mjs` |
 | Explain application versus authorization IDs and the DID key in each opened role form; show why signing preparation is disabled on a cross-origin connection. Keep an expanded verifier form within 320 px at 200% root text size and capture its 390 px appearance for visual review | `ui-layout.spec.mjs` |
 | Confirm an issuer's proposed, authorized, active, suspended, revoked, and archived transitions with refreshed board status | `admin-console.spec.mjs` (fixture review journey) |
 | Confirm fixture epoch publication, read back the exact new epoch, then submit an externally signed workspace intent against the refreshed context | `admin-console.spec.mjs` (fixture governance journey) |
@@ -159,6 +159,12 @@ Chromium browser lane with desktop focus-ring checks and the two-port startup
 path. Docs/OpenAPI checks and the VitePress build passed. This is
 agent-run visual and automated accessibility evidence, not an independent
 assistive-technology trial, a full clean Compact build, or deployed E2E.
+
+A subsequent computed-style check found the blue keyboard outline on the
+black sidebar at only 2.29:1 contrast. The shared dark-navigation outline now
+uses white while the blue outline remains on light surfaces. The 3:1 desktop
+sidebar contrast regression passes in both apps; this sampled indicator check
+does not replace the independent screen-reader and keyboard-usability trial.
 
 On 2026-11-06, an agent inspected the 1440 px admin capture after an auditor
 list failed while an issuer record had previously been visible. The board

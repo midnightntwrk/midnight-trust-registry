@@ -332,7 +332,7 @@ test("admin keyboard selection keeps the current record and detail in sync", asy
 });
 
 for (const app of ["admin-console", "applicant-portal"]) {
-  test(`${app} shows a visible desktop focus ring from keyboard navigation`, async ({ page, allowedLocalOrigins }) => {
+  test(`${app} shows a visible desktop focus ring from keyboard navigation`, async ({ page, allowedLocalOrigins }, testInfo) => {
     const server = await serveApp(app);
     try {
       allowedLocalOrigins.add(server.base);
@@ -344,17 +344,34 @@ for (const app of ["admin-console", "applicant-portal"]) {
       await expect(firstTask).toBeFocused();
       const focusStyle = await firstTask.evaluate((element) => {
         const style = getComputedStyle(element);
+        const channels = (value) => {
+          const match = /^rgba?\((\d+),\s*(\d+),\s*(\d+)/u.exec(value);
+          if (match === null) throw new Error(`Expected RGB color, got ${value}`);
+          return match.slice(1).map(Number);
+        };
+        const luminance = (value) => {
+          const [red, green, blue] = channels(value).map((channel) => {
+            const normalized = channel / 255;
+            return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+          });
+          return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+        };
+        const foreground = luminance(style.outlineColor);
+        const background = luminance(getComputedStyle(element.closest(".task-nav")).backgroundColor);
         return {
           visible: element.matches(":focus-visible"),
           width: parseFloat(style.outlineWidth),
-          color: style.outlineColor,
+          contrast: (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05),
           clipped: element.getBoundingClientRect().width <= 0 || element.getBoundingClientRect().height <= 0,
         };
       });
       expect(focusStyle.visible).toBe(true);
       expect(focusStyle.width).toBeGreaterThanOrEqual(2);
-      expect(focusStyle.color).not.toBe("rgba(0, 0, 0, 0)");
+      expect(focusStyle.contrast, JSON.stringify(focusStyle)).toBeGreaterThanOrEqual(3);
       expect(focusStyle.clipped).toBe(false);
+      if (process.env.TR_UI_CAPTURE === "1") {
+        await page.screenshot({ path: testInfo.outputPath(`${app}-desktop-keyboard-focus.png`) });
+      }
     } finally {
       await page.close();
       await server.close();
