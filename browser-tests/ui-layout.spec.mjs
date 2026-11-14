@@ -332,6 +332,35 @@ test("admin keyboard selection keeps the current record and detail in sync", asy
 });
 
 for (const app of ["admin-console", "applicant-portal"]) {
+  test(`${app} shows a visible desktop focus ring from keyboard navigation`, async ({ page, allowedLocalOrigins }) => {
+    const server = await serveApp(app);
+    try {
+      allowedLocalOrigins.add(server.base);
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
+      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await page.keyboard.press("Tab");
+      const firstTask = page.locator(".task-nav a").first();
+      await expect(firstTask).toBeFocused();
+      const focusStyle = await firstTask.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          visible: element.matches(":focus-visible"),
+          width: parseFloat(style.outlineWidth),
+          color: style.outlineColor,
+          clipped: element.getBoundingClientRect().width <= 0 || element.getBoundingClientRect().height <= 0,
+        };
+      });
+      expect(focusStyle.visible).toBe(true);
+      expect(focusStyle.width).toBeGreaterThanOrEqual(2);
+      expect(focusStyle.color).not.toBe("rgba(0, 0, 0, 0)");
+      expect(focusStyle.clipped).toBe(false);
+    } finally {
+      await page.close();
+      await server.close();
+    }
+  });
+
   test(`${app} keeps fixture shortcuts behind the loopback demo presentation flag`, async ({ page, allowedLocalOrigins }) => {
     const server = await serveApp(app);
     try {
