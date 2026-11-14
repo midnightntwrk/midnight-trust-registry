@@ -1083,6 +1083,7 @@ export const createAdminConsoleApp = (
           : "Fixture records are for exploration, not deployed ledger evidence.";
     const taskLinks = `
       <a href="#review-board">Review records</a>
+      <a href="./registry-manual.html">Registry Manual</a>
       <a href="#workspace-settings">Workspace settings</a>
       <a href="#advanced-governance">Advanced governance</a>
     `;

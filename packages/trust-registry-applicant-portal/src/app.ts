@@ -1447,15 +1447,18 @@ export const createApplicantPortalApp = (
     const taskLinks = state.inspection === undefined ? `
       <a href="#connection-details">Check connection</a>
       <a href="#governed-requests">View role requirements</a>
+      <a href="./registry-manual.html">Registry Manual</a>
     ` : state.inspection.sourceMode === "local-ledger" ? `
       <a href="#current-authorization-lookup">Look up authorization</a>
       <a href="#current-recognition-lookup">Look up recognition</a>
       <a href="#governed-requests">Prepare membership</a>
+      <a href="./registry-manual.html">Registry Manual</a>
       <a href="#connection-details">Workspace settings</a>
     ` : `
       ${demoMode ? `<a href="#demo-application">Try a local demo application</a>` : ""}
       <a href="#governed-requests">Prepare governed membership</a>
       <a href="#trust-records">Explore active records</a>
+      <a href="./registry-manual.html">Registry Manual</a>
       <a href="#connection-details">Workspace settings</a>
     `;
     const journeyPicker = `

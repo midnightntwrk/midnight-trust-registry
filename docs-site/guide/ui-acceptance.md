@@ -17,6 +17,12 @@ Registry Manual experiences. The shared left rail, palette, and concise
 applicant role choices are implemented locally; its DID sign-in, VP readiness,
 and dedicated application inbox remain concepts, not shipped behavior.
 
+Both static app bundles include an offline Registry Manual generated from the
+same Markdown source as the docs site. The sidebar links to that local copy;
+its return link goes back to the current workspace. Links to other chapters
+are plain text in the embedded copy because those chapters are not bundled.
+The full docs site remains the source for linked chapters and updates.
+
 | Design intent | Local implementation and acceptance |
 | --- | --- |
 | Lead with the next task, not a protocol field | The default portal leads to governed role preparation. On loopback, `demo=1` opts into the label-only fixture application ahead of that path. Admin headings distinguish pending decisions from a quiet review workspace. API editing lives in the separate Workspace settings view. `ui-layout.spec.mjs` and `demo-application-handoff.spec.mjs` check this hierarchy. |

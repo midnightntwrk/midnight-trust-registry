@@ -98,6 +98,28 @@ async function serveApp(app, { secondIssuer = false, noIssuers = false } = {}) {
   };
 }
 
+for (const app of ["applicant-portal", "admin-console"]) {
+  test(`${app} opens its bundled Registry Manual offline`, async ({ page, allowedLocalOrigins }) => {
+    const server = await serveApp(app);
+    try {
+      allowedLocalOrigins.add(server.base);
+      await page.goto(`${server.base}${server.packagedPath}?apiBase=${encodeURIComponent(server.base)}`);
+      await page.locator('.task-nav a[href="./registry-manual.html"]').click();
+      await expect(page).toHaveURL(`${server.base}${server.packagedPath}registry-manual.html`);
+      await expect(page.locator("main h1")).toContainText("Registry Manual");
+      await expect(page.getByText("DID sign-in and VP eligibility described below are planned", { exact: false })).toBeVisible();
+      await page.setViewportSize({ width: 390, height: 844 });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      await expectNoWcagViolations(page, `${app} bundled Manual at 390px`);
+      await page.getByRole("link", { name: "Back to workspace" }).click();
+      await expect(page).toHaveURL(`${server.base}${server.packagedPath}`);
+      await expect(page.locator(".mobile-task-menu > summary")).toBeVisible();
+    } finally {
+      await server.close();
+    }
+  });
+}
+
 test("applicant portal treats a failed list as unavailable, then recovers on recheck", async ({ page, allowedLocalOrigins }, testInfo) => {
   const server = await serveApp("applicant-portal");
   try {
@@ -882,8 +904,11 @@ for (const [app, title] of [
           const ids = [...document.querySelectorAll("[id]")].map((element) => element.id);
           return new Set(ids).size === ids.length;
         })).toBe(true);
-        expect(await links.evaluateAll((elements) => elements.every((link) =>
-          document.querySelector(link.getAttribute("href")) !== null))).toBe(true);
+        expect(await links.evaluateAll((elements) => elements.every((link) => {
+          const href = link.getAttribute("href");
+          return href === "./registry-manual.html" ||
+            (href?.startsWith("#") && document.querySelector(href) !== null);
+        }))).toBe(true);
         if (width === 390) {
           await expect(links.first()).toBeHidden();
           await page.locator(".mobile-task-menu > summary").focus();
