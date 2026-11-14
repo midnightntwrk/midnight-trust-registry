@@ -104,8 +104,11 @@ checkpoint, and test result in one private candidate record. Existing
 The first local code increment exports a domain-separated actor-authentication
 challenge transcript and a host-facing issue/verify service. It requires a
 host-provided, atomic one-use challenge store and an independently authenticated
-current DID resolver. It does not expose an HTTP login route, issue a session,
-grant a registry role, or provide a qualified production store or resolver.
+current DID resolver. A local file adapter now provides cross-process atomic
+consumption, bounded issuance, and restart-safe consumed tombstones, but is
+not wired into the packaged host. It does not expose an HTTP login route,
+issue a session, grant a registry role, or provide a qualified production
+resolver.
 The existing private VP routes separately require the host to return the
 matching applicant DID on every request. These primitives are unit-test
 evidence only until the host integration and deployed tests above pass.

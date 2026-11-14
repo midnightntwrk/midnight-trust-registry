@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 import {
   resolveMidnightDIDMethodBinding,
@@ -23,7 +23,7 @@ type MidnightResolver = ResolveMidnightDIDMethodBindingOptions["resolver"];
 
 export interface ActorAuthenticationChallengeStore {
   /** Insert and consume must be atomic across every process serving this deployment. */
-  insert(digest: string, expiresAtMs: number, nowMs: number): Promise<boolean>;
+  insert(digest: string, actorHash: string, expiresAtMs: number, nowMs: number): Promise<boolean>;
   /** Compare expiry against the store's current time at the atomic consume, never an earlier caller timestamp. */
   consume(digest: string, nowMs: number): Promise<boolean>;
 }
@@ -67,7 +67,8 @@ export function createActorAuthenticationService(input: {
         expiresAt: new Date(nowMs + MAX_ACTOR_AUTHENTICATION_CHALLENGE_AGE_MS).toISOString(),
       });
       const digest = `0x${Buffer.from(actorAuthenticationDigestBytes(challenge)).toString("hex")}`;
-      if (!await input.store.insert(digest, Date.parse(challenge.expiresAt), nowMs)) {
+      const actorHash = `0x${createHash("sha256").update(`tr-actor-auth-subject-v1:${challenge.actorDid}`).digest("hex")}`;
+      if (!await input.store.insert(digest, actorHash, Date.parse(challenge.expiresAt), nowMs)) {
         throw new Error("Actor authentication challenge unavailable");
       }
       return challenge;

@@ -597,13 +597,30 @@ to sign, binding the
 registry, nonzero genesis and contract address, origin, purpose, actor DID,
 key, nonce, and time window. The caller supplies a current, independently
 authenticated DID resolver and an atomic challenge store shared across all
-serving processes. The store must enforce capacity and issue-rate limits;
-its `consume` operation must check expiry against store-side current time and
-succeed for only one verifier. The service
+serving processes. `FileActorAuthenticationChallengeStore` is a local durable
+adapter: place its private state file in a trusted directory shared by the
+serving processes, outside web roots and backups exposed to applicants. It
+enforces global and per-actor two-minute issuance bounds, retains consumed
+digest tombstones until expiry, and checks expiry under its write lock. A
+full quota refuses issuance; the host still needs request-level rate limiting
+and abuse monitoring. The service
 returns the verified DID and key, **not** a registry role, session, or grant.
 It is not wired into the packaged HTTP server and is not a production login
-implementation. The host must still enforce session/CSRF rules, current
+implementation. The host must still supply an authenticated resolver and
+enforce session/CSRF rules, current
 registry authorization, exact DID-signed mutation intents, and quorum.
+
+The file adapter's `<state-path>.lock` is deliberately not auto-reclaimed.
+After a process crash, issuance and consumption fail closed until an operator
+recovers it. Stop **all** serving processes for that local deployment and
+prevent automatic restarts; confirm no writer still holds the lock (for
+example with `lsof <state-path>.lock`) and that the path belongs to the
+expected private challenge store. If process ownership is uncertain, do not
+remove the lock. Back up the private state file, remove **only** the stale
+`.lock` file, then start one process and check that an already consumed
+challenge remains unusable. Never delete or replace the challenge state file
+to clear a lock. This is an operator action, not an HTTP recovery endpoint;
+the crash-lock denial and post-recovery tombstone are tested locally.
 
 Challenge issuance accepts only `{}`. Submission
 accepts exactly `{ "nonce": "0x...", "challengeHash": "0x...", "presentation": <VP> }`.

@@ -1,4 +1,7 @@
 import { Buffer } from "node:buffer";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   deriveJubjubPublicKeyFromSeed,
@@ -22,6 +25,7 @@ import {
   createActorAuthenticationService,
   type ActorAuthenticationChallengeStore,
 } from "../actor-authentication.js";
+import { FileActorAuthenticationChallengeStore } from "../file-actor-authentication.js";
 
 const seed = new Uint8Array(32).fill(67);
 const did = createMidnightDid("actor-authentication");
@@ -37,7 +41,7 @@ const START = Date.parse("2026-11-14T00:00:00.000Z");
 function memoryStore(): ActorAuthenticationChallengeStore {
   const entries = new Map<string, number>();
   return {
-    async insert(digest, expiresAtMs, nowMs) {
+    async insert(digest, _actorHash, expiresAtMs, nowMs) {
       for (const [key, expiry] of entries) if (expiry <= nowMs) entries.delete(key);
       if (entries.has(digest)) return false;
       entries.set(digest, expiresAtMs);
@@ -70,6 +74,27 @@ const resolver = createMidnightDidResolver([
 ]);
 
 describe("actor DID authentication challenge", () => {
+  it("verifies once across file-store restart without reviving the signed challenge", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "tr-actor-auth-service-"));
+    try {
+      const path = join(directory, "challenges.json");
+      const first = createActorAuthenticationService({
+        context, store: new FileActorAuthenticationChallengeStore(path, () => START), resolver, clock: () => START,
+      });
+      const challenge = await first.issue(did, keyId, "applicant-session");
+      const signature = signatureFor(challenge);
+      const restarted = createActorAuthenticationService({
+        context, store: new FileActorAuthenticationChallengeStore(path, () => START), resolver, clock: () => START,
+      });
+      expect(await restarted.verify(challenge, signature, "applicant-session"))
+        .toEqual({ actorDid: did, actorKeyId: keyId });
+      expect(await first.verify(challenge, signature, "applicant-session")).toBeNull();
+      expect(await restarted.verify(challenge, signature, "applicant-session")).toBeNull();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("authenticates one exact transcript once without granting a registry role", async () => {
     const store = memoryStore();
     const suppliedContext = { ...context };
