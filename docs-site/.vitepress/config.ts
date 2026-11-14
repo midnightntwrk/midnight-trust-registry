@@ -26,7 +26,7 @@ export default defineConfig({
     siteTitle: "Trust Registry",
     search: { provider: "local" },
     nav: [
-      { text: "Start", link: "/guide/" },
+      { text: "Registry Manual", link: "/guide/registry-manual" },
       { text: "Specification", link: "/spec/" },
       { text: "Model", link: "/model/" },
       { text: "Architecture", link: "/architecture/" },
@@ -37,6 +37,7 @@ export default defineConfig({
     sidebar: {
       "/guide/": [{ text: "Guide", items: [
         { text: "Overview", link: "/guide/" },
+        { text: "Registry Manual", link: "/guide/registry-manual" },
         { text: "Start here: try, then qualify", link: "/guide/adoption" },
         { text: "Quickstart and demo", link: "/guide/quickstart" },
         { text: "Self-hosted standalone", link: "/guide/standalone" },
