@@ -11,6 +11,7 @@ evidence. Passing the demo path does not advance the standalone release gate.
 | Goal | Run | Passing result means |
 | --- | --- | --- |
 | Try the product flows without a ledger | `pnpm run test:e2e:demo` | The four signed role journeys and fixture API/UI smoke completed in a Compact simulator. |
+| Run fast headless fixture journeys after a one-time clean `pnpm run build:light` | `pnpm run test:e2e:headless:fast` | CLI-created private workspace, loopback API, four supported fixture application targets (issuer, verifier, auditor, recognition), approve/activate/readback, denied duplicate and unsupported target, epoch/evidence readback, and both served UI assets. This does not exercise maintainer quorum, DID/VP login, a browser, or a deployed ledger. |
 | Exercise the demo in a browser | `pnpm run test:e2e:demo:browser` | The same demo plus applicant/admin Playwright flows completed against fixture services; the test context blocked and reported non-loopback browser requests. |
 | Check submission restart quarantine without a live network | `pnpm --filter @midnight-ntwrk/trust-registry-api run test:light` | The journal write, mocked-node/provider restart, and fixture API-listener restart tests passed; this is not deployed-ledger recovery evidence. |
 | Check a real standalone candidate before actor testing | `node scripts/check-standalone-journey-prerequisites.mjs "$SETUP" "$SOURCE_SHA"` | Exit 0: the wizard recorded the prerequisite ledger observations for this exact source. Exit 2: stop and follow `nextActions`. |
