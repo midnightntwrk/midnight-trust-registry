@@ -17,11 +17,14 @@ Registry Manual experiences. The shared left rail, palette, and concise
 applicant role choices and Settings-based phase-0 DID sign-in are implemented
 locally. VP readiness and a dedicated application inbox remain concepts, not
 shipped behavior. DID sign-in requires an external signer and same-origin host.
+The applicant task rail instead links to the supported exact-ID pending-request
+continuation; it does not pretend to offer a personal application list.
 
 Both static app bundles include an offline Registry Manual generated from the
 same Markdown source as the docs site. The sidebar links to that local copy;
 its rail links directly to role choice or review inbox and to the current
-app's digital identity settings. These links navigate only; they do not sign
+app's digital identity settings. The applicant rail also links to exact-ID
+pending-request continuation. These links navigate only; they do not sign
 in or grant authority. Links to other chapters are plain text in the embedded
 copy because those chapters are not bundled.
 The full docs site remains the source for linked chapters and updates.
@@ -178,6 +181,7 @@ repeatable UI acceptance evidence:
 | The applicant role picker distinguishes signer unavailable, sign-in needed, signed-in identity, and cross-origin prepare-only states. It continues to name VP eligibility and governed approval as separate later steps after sign-in | `ui-layout.spec.mjs` |
 | A compact check summary near the role choices reflects only current DID sign-in state; it labels eligibility as unverified in this view and registry permission as requiring governed approval, never as completed because a user signed in | `ui-layout.spec.mjs` |
 | A selected admin record visibly offers “Next: review available actions” after evidence and decision detail; opening it explains external maintainer signing and does not submit a vote | `ui-layout.spec.mjs` |
+| Applicant task navigation and the bundled Manual open the exact-ID pending-request form, including its Advanced disclosure, without submitting a request or implying a personal inbox | `ui-layout.spec.mjs` |
 | Admin Settings offers a distinct maintainer-purpose DID sign-in and sign-out without presenting it as voting authority or exposing the bearer. Both apps pause the visible session during a source recheck, restore it only on a matching result, and clear it on source change. Browser auth is mocked here; the shared client also runs against the real loopback API in the headless journey | `ui-layout.spec.mjs`, `demo-did-session-journey.mjs` |
 | An idle applicant or admin page clears a locally expired DID session without navigation, tells the user to sign in again, and offers sign-in without implying a role grant or server revocation | `ui-layout.spec.mjs` (both apps, short-lived mocked bearer) |
 | Both built browser apps complete DID sign-in and sign-out against the real same-origin loopback HTTP API with a fixture resolver and external test signer. A bad applicant signature shows a recoverable error and no session; the issued valid bearer is purpose-isolated, not rendered, and never triggers a governance request | `did-auth-live-http.spec.mjs` |

@@ -9,7 +9,7 @@ const manualPath = resolve(docsRoot, "guide/registry-manual.md");
 
 export async function buildEmbeddedManual(outputPath, surface) {
   const task = surface === "applicant"
-    ? { label: "Choose a role", href: "./#governed-requests", settings: "./#connection-details" }
+    ? { label: "Choose a role", href: "./#governed-requests", pending: "./#pending-evidence", settings: "./#connection-details" }
     : surface === "admin"
       ? { label: "Open review inbox", href: "./#review-board", settings: "./#workspace-settings" }
       : undefined;
@@ -37,7 +37,7 @@ p,li{line-height:1.65}a{color:#275961}a:focus-visible,.rail a:focus-visible{outl
 table{display:block;overflow-x:auto;border-collapse:collapse;width:100%}th,td{padding:.7rem;border-bottom:1px solid #c7d9d0;text-align:left;vertical-align:top}th{background:#e4efea}
 pre{overflow-x:auto}code{overflow-wrap:anywhere}
 @media(max-width:740px){.layout{grid-template-columns:1fr}.rail{position:static}.rail strong{display:inline;margin-left:1rem}main{padding:1.25rem}}
-</style></head><body><div class="layout"><aside class="rail"><img src="./midnight-logo.svg" alt="Midnight"><strong>Trust Registry</strong><nav aria-label="Continue in the app"><a class="task-link" href="${task.href}">${task.label}</a><a href="${task.settings}">Digital identity settings</a></nav></aside>
+</style></head><body><div class="layout"><aside class="rail"><img src="./midnight-logo.svg" alt="Midnight"><strong>Trust Registry</strong><nav aria-label="Continue in the app"><a class="task-link" href="${task.href}">${task.label}</a>${"pending" in task ? `<a href="${task.pending}">Continue pending request</a>` : ""}<a href="${task.settings}">Digital identity settings</a></nav></aside>
 <main id="content"><p class="notice">This Manual is included for offline reading. Related chapters and the latest updates are in the separate documentation site. Phase-0 DID sign-in requires an external signer and same-origin host; it does not grant a role. VP-based eligibility is still planned.</p>${content}</main></div></body></html>`;
   await writeFile(outputPath, html, "utf8");
 }

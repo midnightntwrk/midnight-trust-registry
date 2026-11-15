@@ -1565,10 +1565,12 @@ export const createApplicantPortalApp = (
       <a href="#current-authorization-lookup">Look up authorization</a>
       <a href="#current-recognition-lookup">Look up recognition</a>
       <a href="#governed-requests">Prepare membership</a>
+      <a href="#pending-evidence" data-open-workflow="pending-evidence">Continue pending request</a>
       <a href="./registry-manual.html">Registry Manual</a>
       <a href="#connection-details">Workspace settings</a>
     ` : `
       <a href="#governed-requests">Prepare governed membership</a>
+      <a href="#pending-evidence" data-open-workflow="pending-evidence">Continue pending request</a>
       <a href="#trust-records">Explore active records</a>
       <a href="./registry-manual.html">Registry Manual</a>
       <a href="#connection-details">Workspace settings</a>

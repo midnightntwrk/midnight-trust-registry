@@ -104,6 +104,13 @@ for (const app of ["applicant-portal", "admin-console"]) {
     try {
       allowedLocalOrigins.add(server.base);
       await page.goto(`${server.base}${server.packagedPath}?apiBase=${encodeURIComponent(server.base)}`);
+      if (app === "applicant-portal") {
+        await page.locator('.task-nav a[data-open-workflow="pending-evidence"]').click();
+        await expect(page.locator(".advanced-tools")).toHaveAttribute("open", "");
+        await expect(page.locator("#pending-evidence")).toHaveAttribute("open", "");
+        await expect(page.locator("#pending-evidence [name='applicationId']")).toBeVisible();
+        expect(server.requests.filter((request) => request.startsWith("POST "))).toEqual([]);
+      }
       await page.locator('.task-nav a[href="./registry-manual.html"]').click();
       await expect(page).toHaveURL(`${server.base}${server.packagedPath}registry-manual.html`);
       await expect(page.locator("main h1")).toContainText("Registry Manual");
@@ -122,6 +129,12 @@ for (const app of ["applicant-portal", "admin-console"]) {
       await page.getByRole("link", { name: "Digital identity settings" }).click();
       await expect(page).toHaveURL(`${server.base}${server.packagedPath}${app === "applicant-portal" ? "#connection-details" : "#workspace-settings"}`);
       await expect(page.locator(".app-shell")).toHaveAttribute("data-settings-active", "true");
+      if (app === "applicant-portal") {
+        await page.goto(`${server.base}${server.packagedPath}registry-manual.html`);
+        await page.getByRole("link", { name: "Continue pending request" }).click();
+        await expect(page).toHaveURL(`${server.base}${server.packagedPath}#pending-evidence`);
+        await expect(page.locator("#pending-evidence [name='applicationId']")).toBeVisible();
+      }
     } finally {
       await page.waitForLoadState("networkidle");
       await server.close();

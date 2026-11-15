@@ -58,7 +58,9 @@ missing result as a denial by the registry or as a successful authorization.
 2. Review the exact role, resource, scope, intended action, and evidence
    requested before signing or sharing a proof.
 3. Submit only through an authenticated host. Keep the redacted receipt and
-   its request identifier. An accepted receipt is not an active grant.
+   its request identifier. The applicant portal's **Continue pending request**
+   task can retrieve that exact ID; it does not list applications by person.
+   An accepted receipt is not an active grant.
 4. A maintainer checks the evidence and current policy. Required signatures
    and quorum are separate from the applicant's sign-in or VP.
 5. Read back the current result from a qualified source. Distinguish
