@@ -412,10 +412,13 @@
   outline-offset: 3px;
 }
 
-.app-shell > .task-nav a:focus-visible,
 .mobile-task-menu > summary:focus-visible,
 .mobile-task-menu nav a:focus-visible {
   outline-color: var(--midnight-white);
+}
+
+.app-shell > .task-nav a:focus-visible {
+  outline-color: var(--midnight-blue);
 }
 
 @media (prefers-reduced-motion: reduce) {

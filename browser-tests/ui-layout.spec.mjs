@@ -115,6 +115,7 @@ for (const app of ["applicant-portal", "admin-console"]) {
       await expect(page).toHaveURL(`${server.base}${server.packagedPath}`);
       await expect(page.locator(".mobile-task-menu > summary")).toBeVisible();
     } finally {
+      await page.close();
       await server.close();
     }
   });
