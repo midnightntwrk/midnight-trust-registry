@@ -309,6 +309,45 @@ describe("phase-0 DID authentication HTTP", () => {
     expect(authorizeCalls).toBe(2);
   });
 
+  it("does not treat off-chain DID sign-in as VP eligibility for another host subject", async () => {
+    const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+    const publicJwk = publicKey.export({ format: "jwk" });
+    const offchainDid = createLongFormOffchainMidnightDIDString({
+      version: 1, alsoKnownAs: [], service: [],
+      verificationMethod: [{ id: "#auth-1",
+        publicKeyJwk: { kty: KeyType.OKP, crv: CurveType.Ed25519, x: publicJwk.x! },
+        relationships: { authentication: true, assertionMethod: false, keyAgreement: false,
+          capabilityInvocation: false, capabilityDelegation: false } }],
+    });
+    const offchainKeyId = `${offchainDid}#auth-1`;
+    const verifyPresentation = vi.fn(async () => { throw new Error("VP must not be reached"); });
+    const applicationVp: ApplicationVpHttpPort = {
+      challengeStore: new InMemoryApplicationChallengeStore(),
+      authorizeRequest: async () => actorDid,
+      resolvePendingApplication: async () => null,
+      verifyPresentation,
+      signEvidence: async () => { throw new Error("VP must not be reached"); },
+      verifyEvidenceSignature: () => false,
+      persistRedactedEvidence: async () => { throw new Error("VP must not be reached"); },
+    };
+    await start(true, applicationVp, undefined, false);
+    const challenge = await (await post("/v1/actor-authentication/challenges", {
+      actorDid: offchainDid, actorKeyId: offchainKeyId, purpose: "applicant-session",
+    })).json() as ActorAuthenticationChallenge;
+    const signature = { keyId: offchainKeyId, algorithm: "ed25519",
+      value: `0x${signEd25519(null, actorAuthenticationDigestBytes(challenge), privateKey).toString("hex")}` };
+    const session = await (await post("/v1/actor-authentication/sessions", {
+      challenge, signature,
+    })).json() as { accessToken: string };
+    const authorization = `Bearer ${session.accessToken}`;
+    const path = `${base}/v1/application-evidence/application:issuer:one/challenges`;
+    const response = await fetch(path, { method: "POST", headers: {
+      authorization, "content-type": "application/json",
+    }, body: "{}" });
+    expect(response.status).toBe(403);
+    expect(verifyPresentation).not.toHaveBeenCalled();
+  });
+
   it("bounds sessions per DID without denying a different actor and rejects expired revocation", () => {
     nowMs = START;
     const sessions = createActorSessionService(() => nowMs);
