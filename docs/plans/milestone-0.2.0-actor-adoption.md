@@ -143,7 +143,10 @@ uses the shared typed client to sign in and sign out, independently derives
 the synthetic workspace binding, and rejects a mismatched binding before
 signing. Playwright also exercises off-chain sign-in and sign-out in both
 actual CLI-served portals while blocking external browser egress and checking
-that no governed write is sent. This is fixture authentication,
+that no governed write is sent. The packaged headless journey denies
+unauthenticated and maintainer-purpose private-list reads; an applicant
+session sees an explicit unavailable result until a registration adapter is
+configured. This is fixture authentication,
 not a reviewed local-ledger host configuration or deployed actor
 authorization. The VC method-binding helper still rejects off-chain DIDs and
 must remain separate from sign-in. Off-chain long-form state is immutable and

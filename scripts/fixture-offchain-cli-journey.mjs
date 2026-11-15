@@ -154,7 +154,22 @@ try {
   assert.equal(clientSession.purpose, "applicant-session");
   assert.equal(Object.hasOwn(clientSession, "role"), false);
   assert.equal(signedChallenges, 1);
+  const privateList = "/v1/pending-applications";
+  await expectStatus(await fetch(`${origin}${privateList}`), 403);
+  await expectStatus(await fetch(`${origin}${privateList}`, {
+    headers: { authorization: `Bearer ${clientSession.accessToken}` },
+  }), 503);
+  const maintainerSession = await signInActorDid({
+    ...clientInput, purpose: "maintainer-session",
+    deploymentIdentity: { expectedGenesisHash, contractAddress },
+  });
+  assert.equal(maintainerSession.purpose, "maintainer-session");
+  assert.equal(Object.hasOwn(maintainerSession, "role"), false);
+  await expectStatus(await fetch(`${origin}${privateList}`, {
+    headers: { authorization: `Bearer ${maintainerSession.accessToken}` },
+  }), 403);
   await signOutActorDid({ apiBase: origin, pageOrigin: origin, session: clientSession });
+  await signOutActorDid({ apiBase: origin, pageOrigin: origin, session: maintainerSession });
   await expectStatus(await fetch(`${origin}/v1/actor-authentication/session`, {
     headers: { authorization: `Bearer ${clientSession.accessToken}` },
   }), 401);
@@ -174,7 +189,7 @@ try {
   const newChallenge = await expectStatus(await post(challengeRoute, body), 201);
   assert.equal(newChallenge.genesisHash, challenge.genesisHash);
   assert.equal(newChallenge.contractAddress, challenge.contractAddress);
-  process.stdout.write("[fixture-offchain-cli] Packaged same-origin portals, typed client, and loopback API accept off-chain DID sign-in only; invalid signature, origin, ledger DID, replay, sign-out reuse, and restart session revival denied. No role, VP, or deployed binding inferred.\n");
+  process.stdout.write("[fixture-offchain-cli] Packaged same-origin portals, typed client, and loopback API accept off-chain DID sign-in only; invalid signature, origin, ledger DID, replay, cross-purpose private read, sign-out reuse, and restart session revival denied. Applicant private list remains unavailable without a registration adapter. No role, VP, or deployed binding inferred.\n");
 } finally {
   if (host !== undefined) await host.stop();
   await rm(directory, { recursive: true, force: true });
