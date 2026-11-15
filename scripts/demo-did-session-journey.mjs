@@ -26,7 +26,7 @@ import {
   createTrustRegistryApiServer,
   FileActorAuthenticationChallengeStore,
 } from "../packages/trust-registry-api/dist/index.js";
-import { signInActorDid, signOutActorDid } from "../packages/trust-registry-client/dist/browser-authentication.js";
+import { listApplicantApplications, signInActorDid, signOutActorDid } from "../packages/trust-registry-client/dist/browser-authentication.js";
 
 const seed = new Uint8Array(32).fill(86);
 const actorDid = createMidnightDid("headless-did-authentication");
@@ -204,9 +204,8 @@ try {
   });
   assert.equal(offchainSession.actorDid, offchainDid);
   assert.equal(Object.hasOwn(offchainSession, "role"), false);
-  assert.deepEqual(await expectStatus(await fetch(`${origin}/v1/pending-applications`, {
-    headers: { authorization: `Bearer ${offchainSession.accessToken}` },
-  }), 200), { entries: [] });
+  assert.deepEqual(await listApplicantApplications({ apiBase: origin, pageOrigin: origin,
+    session: offchainSession, clock: () => now }), { status: "available", entries: [] });
   assert.equal(sessions.authenticate(`Bearer ${offchainSession.accessToken}`, "maintainer-session"), null);
   await signOutActorDid({ apiBase: origin, pageOrigin: origin, session: offchainSession });
   assert.equal(sessions.authenticate(`Bearer ${offchainSession.accessToken}`, "applicant-session"), null);
@@ -219,6 +218,12 @@ try {
       signDigest: async ({ digest }) => ({ keyId: actorKeyId, algorithm: "jubjub-schnorr",
         value: `0x${Buffer.from(encodeJubjubSignature(signJubjubPayloadFromSeed(seed, digest))).toString("hex")}` }),
     },
+  });
+  assert.deepEqual(await listApplicantApplications({ apiBase: origin, pageOrigin: origin,
+    session: expiringSession, clock: () => now }), {
+    status: "available", entries: [{ applicationId: "application:issuer:headless:v1",
+      authorizationId: "auth:issuer:headless:v1", role: "issuer", status: "pending",
+      createdAt: new Date(now).toISOString() }],
   });
   const expiringChallenge = await expectStatus(await post(challengeRoute, {
     actorDid, actorKeyId, purpose: "applicant-session",
@@ -237,7 +242,9 @@ try {
   await expectStatus(await fetch(`${origin}/v1/actor-authentication/session`, { headers: expiringBearer }), 200);
   now = Date.parse(expiringSession.expiresAt);
   await expectStatus(await fetch(`${origin}/v1/actor-authentication/session`, { headers: expiringBearer }), 401);
-  process.stdout.write("[did-auth-headless] Ledger and off-chain DID challenge sessions, private applicant-only request list, shared-client sign-in, bad-signature and deployment-context denial, one-use replay, origin denial, purpose isolation, identity-only claims, exact-boundary challenge/session expiry, and revocation passed. No role grant or deployed finality was inferred.\n");
+  await assert.rejects(listApplicantApplications({ apiBase: origin, pageOrigin: origin,
+    session: expiringSession, clock: () => now }), /current applicant DID session/u);
+  process.stdout.write("[did-auth-headless] Ledger and off-chain DID challenge sessions, shared-client applicant-only populated and empty request lists, bad-signature and deployment-context denial, one-use replay, origin denial, purpose isolation, identity-only claims, exact-boundary challenge/session expiry, and revocation passed. No role grant or deployed finality was inferred.\n");
 } finally {
   server.closeAllConnections();
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
