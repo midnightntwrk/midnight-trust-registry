@@ -177,6 +177,22 @@ describe("phase-0 DID authentication HTTP", () => {
     expect(listForSubjectDid).toHaveBeenCalledTimes(1);
   });
 
+  it("does not report an empty inbox when a signed-in host has no private list port", async () => {
+    await start();
+    const challenge = await (await post("/v1/actor-authentication/challenges", {
+      actorDid, actorKeyId, purpose: "applicant-session",
+    })).json() as ActorAuthenticationChallenge;
+    const session = await (await post("/v1/actor-authentication/sessions", {
+      challenge, signature: signatureFor(challenge),
+    })).json() as { accessToken: string };
+    const response = await fetch(`${base}/v1/pending-applications`, {
+      headers: { authorization: `Bearer ${session.accessToken}` },
+    });
+    expect(response.status).toBe(503);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.json()).toMatchObject({ status: 503 });
+  });
+
   it("rejects foreign origins, non-JSON, wrong signatures, and expired sessions", async () => {
     await start();
     const path = "/v1/actor-authentication/challenges";
