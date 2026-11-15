@@ -31,6 +31,6 @@ table{display:block;overflow-x:auto;border-collapse:collapse;width:100%}th,td{pa
 pre{overflow-x:auto}code{overflow-wrap:anywhere}
 @media(max-width:740px){.layout{grid-template-columns:1fr}.rail{position:static}.rail strong{display:inline;margin-left:1rem}main{padding:1.25rem}}
 </style></head><body><div class="layout"><aside class="rail"><img src="./midnight-logo.svg" alt="Midnight"><strong>Trust Registry</strong><a href="./">Back to workspace</a></aside>
-<main id="content"><p class="notice">This Manual is included for offline reading. Related chapters and the latest updates are in the separate documentation site. DID sign-in and VP eligibility described below are planned, not available in this app yet.</p>${content}</main></div></body></html>`;
+<main id="content"><p class="notice">This Manual is included for offline reading. Related chapters and the latest updates are in the separate documentation site. Phase-0 DID sign-in requires an external signer and same-origin host; it does not grant a role. VP-based eligibility is still planned.</p>${content}</main></div></body></html>`;
   await writeFile(outputPath, html, "utf8");
 }

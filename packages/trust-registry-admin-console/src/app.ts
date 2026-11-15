@@ -8,6 +8,12 @@ import type {
   PreparedGovernedPolicyAction,
   TrustRegistryApiApplicationAction,
 } from "@midnight-ntwrk/trust-registry-api";
+import {
+  signInActorDid,
+  signOutActorDid,
+  type ActorDidSession,
+  type ActorDidSigner,
+} from "@midnight-ntwrk/trust-registry-client/browser-authentication";
 
 import {
   TrustRegistryAdminConsoleApiError,
@@ -68,6 +74,10 @@ type AppState = {
   policySignersJson: string;
   policyRegistrationPending: boolean;
   selectedKey: string | undefined;
+  didSession: ActorDidSession<"maintainer-session"> | undefined;
+  didSourceMode: string | undefined;
+  didBusy: boolean;
+  didError: string | undefined;
 };
 
 const escapeHtml = (value: string): string =>
@@ -171,6 +181,8 @@ export const createAdminConsoleApp = (
     storage?: Storage;
     confirm?: (message: string) => boolean | Promise<boolean>;
     demoMode?: boolean;
+    didSigner?: ActorDidSigner;
+    clock?: () => number;
   } = {},
 ): void => {
   const initialUrl = options.initialUrl ?? new URL(window.location.href);
@@ -179,6 +191,10 @@ export const createAdminConsoleApp = (
   const storage = options.storage ?? window.localStorage;
   const fetchImpl = options.fetchImpl ?? window.fetch.bind(window);
   const confirm = options.confirm ?? window.confirm.bind(window);
+  const clock = options.clock ?? Date.now;
+  const didSigner = () => options.didSigner ?? (window as Window & {
+    midnightTrustRegistryDidSigner?: ActorDidSigner;
+  }).midnightTrustRegistryDidSigner;
   const sameOriginApi = initialUrl.pathname.startsWith("/admin/");
   const queryBase = initialUrl.searchParams.get("apiBase");
   const rememberedBase = storage.getItem(STORAGE_KEY);
@@ -220,6 +236,10 @@ export const createAdminConsoleApp = (
     policySignersJson: "",
     policyRegistrationPending: false,
     selectedKey: undefined,
+    didSession: undefined,
+    didSourceMode: undefined,
+    didBusy: false,
+    didError: undefined,
   };
   let signedContextRequestId = 0;
   let hostRevision = 0;
@@ -236,6 +256,55 @@ export const createAdminConsoleApp = (
 
   const getClient = (): TrustRegistryAdminConsoleClient =>
     new TrustRegistryAdminConsoleClient(state.apiBase, fetchImpl);
+
+  const canUseDidHost = () => {
+    const api = new URL(state.apiBase);
+    return api.origin === initialUrl.origin && api.username === "" && api.password === ""
+      && (api.protocol === "https:" || ["localhost", "127.0.0.1", "[::1]"].includes(api.hostname));
+  };
+  const liveDidSession = () => state.didSession !== undefined && Date.parse(state.didSession.expiresAt) > clock()
+    ? state.didSession : undefined;
+
+  const signInDid = async () => {
+    const signer = didSigner();
+    const board = state.board;
+    if (state.didBusy || signer === undefined || board === undefined || !canUseDidHost()) return;
+    const host = currentHost();
+    setState({ didBusy: true, didError: undefined, didSession: undefined, didSourceMode: undefined });
+    try {
+      const session = await signInActorDid({
+        apiBase: host.apiBase, pageOrigin: initialUrl.origin, registryId: board.summary.registryId,
+        purpose: "maintainer-session",
+        ...(board.sourceMode === "local-ledger" && board.deploymentIdentity !== undefined
+          ? { deploymentIdentity: board.deploymentIdentity } : {}),
+        signer, fetchImpl, clock,
+      });
+      if (!isCurrentHost(host) || state.board?.summary.registryId !== board.summary.registryId
+        || state.board?.sourceMode !== board.sourceMode
+        || state.board?.deploymentIdentity?.expectedGenesisHash !== board.deploymentIdentity?.expectedGenesisHash
+        || state.board?.deploymentIdentity?.contractAddress !== board.deploymentIdentity?.contractAddress) {
+        void signOutActorDid({ apiBase: host.apiBase, pageOrigin: initialUrl.origin, session, fetchImpl }).catch(() => undefined);
+        return;
+      }
+      setState({ didSession: session, didSourceMode: board.sourceMode, didBusy: false });
+    } catch (error) {
+      if (isCurrentHost(host)) setState({ didBusy: false, didError: formatApiError(error) });
+    }
+  };
+
+  const signOutDid = async () => {
+    const session = state.didSession;
+    if (session === undefined) return;
+    const host = currentHost();
+    setState({ didSession: undefined, didSourceMode: undefined, didError: undefined });
+    try {
+      await signOutActorDid({ apiBase: host.apiBase, pageOrigin: initialUrl.origin, session, fetchImpl });
+    } catch {
+      if (isCurrentHost(host)) {
+        setState({ didError: "The local session is cleared. Server revocation was not confirmed; the token expires within 15 minutes." });
+      }
+    }
+  };
 
   const loadSignedContext = async () => {
     if (state.signedBusy || state.board === undefined || state.board.sourceMode === "local-ledger") return;
@@ -322,9 +391,19 @@ export const createAdminConsoleApp = (
         && cards.some((card) => card.key === state.selectedKey)
         ? state.selectedKey
         : cards[0]?.key;
+      const currentSession = state.didSession;
+      const sessionMatchesSource = currentSession !== undefined
+        && state.didSourceMode === board.sourceMode
+        && currentSession.registryId === board.summary.registryId
+        && (board.deploymentIdentity === undefined
+          || currentSession.genesisHash === board.deploymentIdentity.expectedGenesisHash
+            && currentSession.contractAddress === board.deploymentIdentity.contractAddress);
       setState({
         board,
         cards,
+        didSession: sessionMatchesSource ? currentSession : undefined,
+        didSourceMode: sessionMatchesSource ? state.didSourceMode : undefined,
+        didBusy: false,
         governedKey: undefined,
         governedAction: undefined,
         governedPrepared: undefined,
@@ -343,6 +422,9 @@ export const createAdminConsoleApp = (
       setState({
         board: undefined,
         cards: [],
+        didSession: undefined,
+        didSourceMode: undefined,
+        didBusy: false,
         error: formatApiError(error),
         flash: undefined,
         governedKey: undefined,
@@ -704,6 +786,8 @@ export const createAdminConsoleApp = (
   };
 
   const bindEvents = () => {
+    root.querySelector<HTMLButtonElement>("[data-did-sign-in]")?.addEventListener("click", () => { void signInDid(); });
+    root.querySelector<HTMLButtonElement>("[data-did-sign-out]")?.addEventListener("click", () => { void signOutDid(); });
     root.querySelectorAll<HTMLAnchorElement>(".mobile-task-menu nav a").forEach((link) => {
       link.addEventListener("click", () => {
         const menu = link.closest<HTMLDetailsElement>(".mobile-task-menu");
@@ -726,6 +810,12 @@ export const createAdminConsoleApp = (
         void refreshBoard();
         return;
       }
+      const priorSession = state.didSession;
+      const priorApiBase = state.apiBase;
+      if (priorSession !== undefined) {
+        void signOutActorDid({ apiBase: priorApiBase, pageOrigin: initialUrl.origin,
+          session: priorSession, fetchImpl }).catch(() => undefined);
+      }
       storage.setItem(STORAGE_KEY, apiBase);
       hostRevision += 1;
       boardRequestId += 1;
@@ -741,7 +831,8 @@ export const createAdminConsoleApp = (
         proposalPrepared: undefined, proposalSignersJson: "", proposalVerifierSignature: "",
         policyPhase: undefined, policyPrepared: undefined, policyPreparedThresholds: undefined,
         policySignersJson: "", policyThresholds: { default: "2", emergency: "2", archival: "2" },
-        policyRegistrationPending: false, error: undefined, flash: undefined });
+        policyRegistrationPending: false, error: undefined, flash: undefined,
+        didSession: undefined, didSourceMode: undefined, didBusy: false, didError: undefined });
       void refreshBoard();
     });
 
@@ -1088,6 +1179,9 @@ export const createAdminConsoleApp = (
       <a href="#advanced-governance">Advanced governance</a>
     `;
     const deploymentIdentity = state.board?.sourceMode === "local-ledger" ? state.board.deploymentIdentity : undefined;
+    const activeDidSession = liveDidSession();
+    const didSignerAvailable = didSigner() !== undefined;
+    const didHostAvailable = canUseDidHost();
     const deploymentNotice = state.loading && state.board !== undefined
       ? "Rechecking this source. The identity below is from the last completed browser check and may be stale; do not rely on it until the check finishes."
       : state.board === undefined
@@ -1133,6 +1227,19 @@ export const createAdminConsoleApp = (
             <p>Check the source this browser is using and the deployment identity reported by the API. These details do not change registry governance.</p>
           </div>
           <div class="settings-cards">
+            <section class="settings-card portal-profile-card" aria-labelledby="admin-did-heading">
+              <p class="eyebrow">Identity</p>
+              <h2 id="admin-did-heading">DID sign-in</h2>
+              <p>Sign in to identify yourself to this registry. Identity alone does not grant a maintainer role, voting authority, or VP eligibility. Governed actions still require separate external signatures and policy checks.</p>
+              ${activeDidSession === undefined
+                ? `<p class="portal-profile-status">${didSignerAvailable ? "A DID signer is available." : "No DID signer is connected to this browser. Ask your host to provide one before signing in."}</p>
+                  <button class="button" type="button" data-did-sign-in data-focus-key="did-sign-in"${state.didBusy || !didSignerAvailable || !didHostAvailable || state.board === undefined ? " disabled" : ""}>${state.didBusy ? "Signing in…" : "Sign in with DID"}</button>
+                  ${didHostAvailable ? "" : '<p class="step-hint">Sign-in requires the same-origin API host.</p>'}`
+                : `<p class="portal-profile-status">Signed in as <strong class="technical-id">${escapeHtml(activeDidSession.actorDid)}</strong></p>
+                  <p class="step-hint">Identity only. Your maintainer authority is checked separately.</p>
+                  <button class="button secondary" type="button" data-did-sign-out data-focus-key="did-sign-out">Sign out</button>`}
+              ${state.didError === undefined ? "" : `<p class="alert error" role="alert">${escapeHtml(state.didError)}</p>`}
+            </section>
             <section class="settings-card" aria-labelledby="admin-connection-heading">
               <p class="eyebrow">Connection</p>
               <h2 id="admin-connection-heading">API and source</h2>
@@ -1186,7 +1293,7 @@ export const createAdminConsoleApp = (
               <p>Governed actions require an external signer. This browser prepares exact context but does not hold private keys or establish actor authority.</p>
             </section>
           </div>
-          <div class="settings-footer"><strong>No account profile in this browser</strong><p>The authenticated host and external signer establish who may act. Deployment identity and governance cannot be changed here.</p></div>
+          <div class="settings-footer"><strong>Identity is not authority</strong><p>The DID session is temporary and stays in browser memory. Maintainer authorization, external signing, and governance policy are separate.</p></div>
         </section>
         ${state.board?.sourceMode === "local-ledger" ? `
           <section class="proposal-panel governed-panel" id="exact-lookup">

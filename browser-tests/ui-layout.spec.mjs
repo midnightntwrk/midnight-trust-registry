@@ -370,6 +370,60 @@ test("applicant Settings signs in with DID without showing a registry role", asy
   }
 });
 
+test("admin Settings signs in with DID without granting maintainer authority", async ({ page, allowedLocalOrigins }) => {
+  const server = await serveApp("admin-console");
+  const actorDid = `did:midnight:undeployed:${"ab".repeat(32)}`;
+  const actorKeyId = `${actorDid}#auth-1`;
+  const accessToken = `trsa_${"a".repeat(43)}`;
+  let revokeCalls = 0;
+  try {
+    allowedLocalOrigins.add(server.base);
+    await page.addInitScript(({ actorDid, actorKeyId }) => {
+      window.midnightTrustRegistryDidSigner = {
+        getIdentity: async () => ({ actorDid, actorKeyId }),
+        signDigest: async () => ({ keyId: actorKeyId, algorithm: "jubjub-schnorr", value: `0x${"aa".repeat(96)}` }),
+      };
+    }, { actorDid, actorKeyId });
+    await page.route(`${server.base}/v1/actor-authentication/**`, async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path.endsWith("/challenges")) {
+        const now = Date.now();
+        await route.fulfill({ status: 201, json: { version: "tr-actor-authentication-v1",
+          registryId: summary.registryId, genesisHash: `0x${"11".repeat(32)}`,
+          contractAddress: `0x${"22".repeat(32)}`, origin: server.base,
+          purpose: "maintainer-session", actorDid, actorKeyId,
+          nonce: `0x${"33".repeat(32)}`, issuedAt: new Date(now).toISOString(),
+          expiresAt: new Date(now + 120_000).toISOString() } });
+      } else if (path.endsWith("/sessions")) {
+        await route.fulfill({ status: 201, json: { actorDid, actorKeyId,
+          purpose: "maintainer-session", accessToken,
+          expiresAt: new Date(Date.now() + 900_000).toISOString() } });
+      } else {
+        revokeCalls += 1;
+        expect(route.request().headers().authorization).toBe(`Bearer ${accessToken}`);
+        await route.fulfill({ status: 204, body: "" });
+      }
+    });
+    await page.goto(`${server.base}${server.packagedPath}`);
+    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    await page.getByRole("link", { name: "Workspace settings" }).first().click();
+    await page.getByRole("button", { name: "Sign in with DID" }).click();
+    await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
+    await expect(page.locator(".portal-profile-card")).toContainText("Your maintainer authority is checked separately");
+    await expect(page.locator("body")).not.toContainText(accessToken);
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await expect(page.locator(".portal-profile-card")).toContainText("A DID signer is available");
+    expect(revokeCalls).toBe(1);
+    await page.getByRole("button", { name: "Sign in with DID" }).click();
+    server.setSourceMode("snapshot");
+    await page.getByRole("button", { name: "Recheck connection" }).click();
+    await expect(page.locator(".portal-profile-card")).toContainText("A DID signer is available");
+  } finally {
+    await page.close();
+    await server.close();
+  }
+});
+
 test("admin keyboard selection keeps the current record and detail in sync", async ({ page, allowedLocalOrigins }) => {
   const server = await serveApp("admin-console", { secondIssuer: true });
   try {

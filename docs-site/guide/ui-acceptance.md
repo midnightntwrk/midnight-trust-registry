@@ -14,8 +14,9 @@ proposals, not evidence that a workflow is implemented or finalized.
 The [V2 canvas](https://uxpilot.ai/a/ui-design?page=rkHJ3LsTIYP0TaOZYr2k)
 is the current direction for the calmer applicant, maintainer, sign-in, and
 Registry Manual experiences. The shared left rail, palette, and concise
-applicant role choices are implemented locally; its DID sign-in, VP readiness,
-and dedicated application inbox remain concepts, not shipped behavior.
+applicant role choices and Settings-based phase-0 DID sign-in are implemented
+locally. VP readiness and a dedicated application inbox remain concepts, not
+shipped behavior. DID sign-in requires an external signer and same-origin host.
 
 Both static app bundles include an offline Registry Manual generated from the
 same Markdown source as the docs site. The sidebar links to that local copy;
@@ -91,6 +92,13 @@ private application-evidence routes. The UI must describe it as identity only:
 VP eligibility and governed role authority remain separate checks. The
 headless DID session journey exercises the real local HTTP challenge, replay
 denial, identity-only token, and revocation; it is not a deployed-ledger test.
+The admin console uses the same ephemeral browser client with a distinct
+`maintainer-session` purpose in Workspace settings. Its DID token is never
+attached to governance requests: external signatures, maintainer membership,
+VP eligibility, policy, and quorum remain independent authorization checks.
+Changing the API source or losing a healthy board clears the browser session.
+The browser test uses a mocked auth endpoint; the headless journey verifies
+the real API purpose boundary and revocation.
 
 ### Clean-checkout smoke record
 

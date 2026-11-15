@@ -34,6 +34,51 @@ const auditor = {
 };
 
 describe("admin console browser handlers", () => {
+  it("keeps DID sign-in in Settings as identity, not governance authority", async () => {
+    const root = document.createElement("div");
+    document.body.replaceChildren(root);
+    const now = Date.parse("2026-11-15T00:00:00.000Z");
+    const origin = "http://127.0.0.1:4173";
+    const actorDid = `did:midnight:undeployed:${"ab".repeat(32)}`;
+    const actorKeyId = `${actorDid}#auth-1`;
+    const challenge = { version: "tr-actor-authentication-v1", registryId: "registry:local",
+      genesisHash: `0x${"11".repeat(32)}`, contractAddress: `0x${"22".repeat(32)}`,
+      origin, purpose: "maintainer-session", actorDid, actorKeyId,
+      nonce: `0x${"33".repeat(32)}`, issuedAt: new Date(now).toISOString(),
+      expiresAt: new Date(now + 120_000).toISOString() };
+    const token = `trsa_${"a".repeat(43)}`;
+    const requests: string[] = [];
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const path = new URL(String(input)).pathname;
+      requests.push(`${init?.method ?? "GET"} ${path}`);
+      if (path === "/health") return Response.json({ status: "ok", sourceMode: "workspace", registryId: "registry:local" });
+      if (path === "/v1/registry/summary") return Response.json({ registryId: "registry:local",
+        registryLabel: "local", currentEpochId: "epoch:1", issuerCounts: counts(),
+        verifierCounts: counts(), auditorCounts: counts(), recognitionCounts: counts() });
+      if (path.endsWith("/challenges")) return Response.json(challenge);
+      if (path.endsWith("/sessions")) return Response.json({ actorDid, actorKeyId,
+        purpose: "maintainer-session", accessToken: token, expiresAt: new Date(now + 900_000).toISOString() });
+      if (path.endsWith("/session") && init?.method === "DELETE") return new Response(null, { status: 204 });
+      return Response.json({ entries: [] });
+    });
+    createAdminConsoleApp(root, { initialUrl: new URL(`${origin}/admin/`),
+      storage: window.localStorage, fetchImpl: fetchImpl as typeof fetch, clock: () => now,
+      confirm: () => false,
+      didSigner: { getIdentity: async () => ({ actorDid, actorKeyId }),
+        signDigest: async () => ({ keyId: actorKeyId, algorithm: "jubjub-schnorr", value: `0x${"aa".repeat(96)}` }) } });
+    await vi.waitFor(() => expect(root.querySelector<HTMLButtonElement>("[data-did-sign-in]")?.disabled).toBe(false));
+    expect(root.querySelector("#workspace-settings")?.textContent).toContain("does not grant a maintainer role");
+    root.querySelector<HTMLButtonElement>("[data-did-sign-in]")!.click();
+    await vi.waitFor(() => expect(root.querySelector("[data-did-sign-out]")).not.toBeNull());
+    expect(root.querySelector("#workspace-settings")?.textContent).toContain(actorDid);
+    expect(root.innerHTML).not.toContain(token);
+    expect(requests).toContain("POST /v1/actor-authentication/challenges");
+    expect(requests).toContain("POST /v1/actor-authentication/sessions");
+    root.querySelector<HTMLButtonElement>("[data-did-sign-out]")!.click();
+    await vi.waitFor(() => expect(root.querySelector("[data-did-sign-in]")).not.toBeNull());
+    expect(requests).toContain("DELETE /v1/actor-authentication/session");
+  });
+
   it("hides fixture shortcut actions unless local demo mode is explicit", async () => {
     const root = document.createElement("div");
     document.body.replaceChildren(root);

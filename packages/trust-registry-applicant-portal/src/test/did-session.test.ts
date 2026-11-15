@@ -20,7 +20,7 @@ const challenge = {
   expiresAt: new Date(NOW + 120_000).toISOString(),
 };
 const session = {
-  actorDid, actorKeyId, purpose: "applicant-session",
+  actorDid, actorKeyId, purpose: "applicant-session" as const,
   accessToken: `trsa_${"a".repeat(43)}`,
   expiresAt: new Date(NOW + 900_000).toISOString(),
 };
@@ -46,7 +46,7 @@ describe("applicant DID session client", () => {
       apiBase: origin, pageOrigin: origin, registryId: challenge.registryId,
       signer, fetchImpl, clock: () => NOW,
     });
-    expect(result).toEqual({ actorDid, actorKeyId, registryId: challenge.registryId,
+    expect(result).toEqual({ actorDid, actorKeyId, purpose: "applicant-session", registryId: challenge.registryId,
       genesisHash: challenge.genesisHash, contractAddress: challenge.contractAddress,
       accessToken: session.accessToken, expiresAt: session.expiresAt });
     expect(result).not.toHaveProperty("role");

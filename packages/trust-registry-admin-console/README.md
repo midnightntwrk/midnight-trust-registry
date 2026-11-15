@@ -10,6 +10,11 @@ its browser-local 3-of-5 exercise is not a real committee signature.
 
 Current scope:
 
+- optional same-origin DID challenge-response sign-in in Workspace settings,
+  with an external signer and a short-lived in-memory `maintainer-session`
+  token; it identifies the actor only and never grants maintainer authority,
+  VP eligibility, or quorum participation. The console does not attach this
+  token to governance requests
 - inspect registry summary and epoch metadata from the API
 - in current-only local-ledger mode, show the summary and require an exact
   issuer/verifier/auditor authorization or recognition ID for a current record;

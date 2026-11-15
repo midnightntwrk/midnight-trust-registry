@@ -27,12 +27,19 @@
     "./simulator": {
       "types": "./dist/simulator-client.d.ts",
       "import": "./dist/simulator-client.js"
+    },
+    "./browser-authentication": {
+      "types": "./dist/browser-authentication.d.ts",
+      "import": "./dist/browser-authentication.js"
     }
   },
   "typesVersions": {
     "*": {
       "simulator": [
         "dist/simulator-client.d.ts"
+      ],
+      "browser-authentication": [
+        "dist/browser-authentication.d.ts"
       ]
     }
   },
