@@ -7,7 +7,8 @@ import { ActorAuthenticationChallengeSchema, DecisionEvidenceSchema, SignedPendi
 import { encodeCompactActionKind } from "@midnight-ntwrk/trust-registry-contract";
 import { EvidenceVerifierDidResolutionUnavailableError } from "@midnight-ntwrk/trust-registry-integration";
 import { LocalIssuerEvidenceTimeRejectedError } from "./local-issuer-proposal-port.js";
-import { ActorAuthenticationResolverUnavailableError, type createActorAuthenticationService } from "./actor-authentication.js";
+import { ActorAuthenticationCapacityError, ActorAuthenticationResolverUnavailableError,
+  InvalidActorAuthenticationIdentityError, type createActorAuthenticationService } from "./actor-authentication.js";
 import type { ActorSessionService } from "./actor-sessions.js";
 
 import {
@@ -821,6 +822,8 @@ const performMutation = async (
 export const createTrustRegistryApiServer = (
   options: TrustRegistryApiServerOptions,
 ): Server => {
+  // Local single-process admission guard. Never use a caller-supplied forwarding header as the client identity.
+  const challengeClients = new Map<string, { count: number; expiresAt: number }>();
   if (options.localPlanSha256 !== undefined
     && (options.source.mode !== "local-ledger"
       || !/^[0-9a-f]{64}$/u.test(options.localPlanSha256))) {
@@ -1188,6 +1191,25 @@ export const createTrustRegistryApiServer = (
             throw jsonProblem(problemBaseUri, "actor-authentication-invalid-request", 415, "JSON content type required");
           }
           if (segments[2] === "challenges") {
+            const client = request.socket.remoteAddress ?? "unknown";
+            const now = Date.now();
+            let budget = challengeClients.get(client);
+            if (budget === undefined || budget.expiresAt <= now) {
+              if (challengeClients.size >= 4096) {
+                for (const [address, entry] of challengeClients) {
+                  if (entry.expiresAt <= now) challengeClients.delete(address);
+                }
+              }
+              if (challengeClients.size >= 4096) {
+                throw jsonProblem(problemBaseUri, "actor-authentication-rate-limited", 429, "challenge rate limited");
+              }
+              budget = { count: 0, expiresAt: now + 120_000 };
+              challengeClients.set(client, budget);
+            }
+            if (budget.count >= 8) {
+              throw jsonProblem(problemBaseUri, "actor-authentication-rate-limited", 429, "challenge rate limited");
+            }
+            budget.count += 1;
             const body = await parseJsonBody(request, (value) => z.strictObject({
               actorDid: z.string(), actorKeyId: z.string(),
               purpose: z.enum(["applicant-session", "maintainer-session"]),
@@ -2897,6 +2919,14 @@ export const createTrustRegistryApiServer = (
     } catch (error) {
       if (error instanceof ActorAuthenticationResolverUnavailableError) {
         const problem = jsonProblem(problemBaseUri, "did-resolution-unavailable", 503, "DID resolution unavailable").problem;
+        writeJson(response, problem.status, problem, false);
+        return;
+      }
+      if (error instanceof InvalidActorAuthenticationIdentityError || error instanceof ActorAuthenticationCapacityError) {
+        const problem = error instanceof InvalidActorAuthenticationIdentityError
+          ? jsonProblem(problemBaseUri, "actor-authentication-invalid-identity", 400, "actor identity invalid").problem
+          : jsonProblem(problemBaseUri, "actor-authentication-capacity-unavailable", 503,
+            "challenge capacity unavailable").problem;
         writeJson(response, problem.status, problem, false);
         return;
       }

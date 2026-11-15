@@ -35,6 +35,20 @@ export class ActorAuthenticationResolverUnavailableError extends Error {
   }
 }
 
+export class ActorAuthenticationCapacityError extends Error {
+  constructor() {
+    super("Actor authentication challenge capacity unavailable");
+    this.name = "ActorAuthenticationCapacityError";
+  }
+}
+
+export class InvalidActorAuthenticationIdentityError extends Error {
+  constructor() {
+    super("Actor DID authentication key is invalid");
+    this.name = "InvalidActorAuthenticationIdentityError";
+  }
+}
+
 function isDeterministicResolutionError(error: unknown): boolean {
   if (!(error instanceof Error) || !(
     error.name === "ResolverRequestError" || error.name === "InvalidDIDDocumentError"
@@ -57,6 +71,32 @@ export function createActorAuthenticationService(input: {
     async issue(actorDid: string, actorKeyId: string, purpose: ActorAuthenticationPurpose): Promise<ActorAuthenticationChallenge> {
       const nowMs = input.clock();
       if (!Number.isSafeInteger(nowMs)) throw new Error("Actor authentication clock unavailable");
+      let did: ReturnType<typeof parseMidnightDIDString>;
+      try {
+        did = parseMidnightDIDString(actorDid);
+      } catch {
+        throw new InvalidActorAuthenticationIdentityError();
+      }
+      let resolved: Awaited<ReturnType<MidnightResolver["resolveResult"]>>;
+      try {
+        resolved = await input.resolver.resolveResult(did);
+      } catch (error) {
+        if (isDeterministicResolutionError(error)) throw new InvalidActorAuthenticationIdentityError();
+        throw new ActorAuthenticationResolverUnavailableError(error);
+      }
+      try {
+        const method = await resolveMidnightDIDMethodBinding({
+          resolver: { resolveResult: async () => resolved },
+          did,
+          verificationMethodId: `#${actorKeyId.split("#")[1]}`,
+          relationship: "authentication",
+        });
+        if (actorKeyId !== `${actorDid}#${actorKeyId.split("#")[1]}` || !isPrimeOrderJubjubPoint(method.publicKey)) {
+          throw new InvalidActorAuthenticationIdentityError();
+        }
+      } catch {
+        throw new InvalidActorAuthenticationIdentityError();
+      }
       const challenge = ActorAuthenticationChallengeSchema.parse({
         version: "tr-actor-authentication-v1",
         ...context,
@@ -70,7 +110,7 @@ export function createActorAuthenticationService(input: {
       const digest = `0x${Buffer.from(actorAuthenticationDigestBytes(challenge)).toString("hex")}`;
       const actorHash = `0x${createHash("sha256").update(`tr-actor-auth-subject-v1:${challenge.actorDid}`).digest("hex")}`;
       if (!await input.store.insert(digest, actorHash, Date.parse(challenge.expiresAt), nowMs)) {
-        throw new Error("Actor authentication challenge unavailable");
+        throw new ActorAuthenticationCapacityError();
       }
       return challenge;
     },
