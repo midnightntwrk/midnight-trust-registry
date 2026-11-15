@@ -238,6 +238,9 @@ test("fixture admin review advances an issuer through approval, activation, risk
     await page.goto(`${base}/?demo=1&apiBase=${encodeURIComponent(base)}`);
     await expect(page.locator(".source-badge")).toHaveText("Local fixture");
     await expect(page.locator(".card")).toContainText("UI review issuer");
+    await expect(page.locator(".review-filters")).toContainText("Requests awaiting action");
+    await expect(page.locator(".review-checks")).toContainText("DID sign-in is not a vote");
+    await expect(page.locator(".review-checks")).toContainText("This board does not verify a VP");
     await page.locator("[data-review-query]").fill("missing record");
     await expect(page.getByText("No records match these filters.")).toBeVisible();
     await expect(page.locator(".card")).toHaveCount(0);
@@ -258,6 +261,8 @@ test("fixture admin review advances an issuer through approval, activation, risk
     await expect(page.locator(".card .status-chip")).toHaveText("Revoked");
     await page.locator('[data-action="archive"]').click();
     await expect(page.locator(".card .status-chip")).toHaveText("Archived");
+    await expect(page.locator(".review-checks")).toHaveCount(0);
+    await expect(page.locator(".review-filters")).toContainText("Browse registry records");
     await expect(page.locator(".source-panel")).toContainText("not deployed ledger evidence");
     await page.locator(".advanced-workflows > summary").click();
     await expect(page.locator(".governance-task-grid a")).toHaveCount(4);

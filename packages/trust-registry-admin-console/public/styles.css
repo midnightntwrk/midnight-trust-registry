@@ -368,6 +368,12 @@ textarea {
   flex-wrap: wrap;
   gap: 0.6rem;
 }
+.review-checks { min-width: 0; padding: 0.9rem 1rem; border: 1px solid var(--midnight-border); border-radius: 12px; background: var(--midnight-white); }
+.review-checks h3 { margin: 0 0 0.65rem; font-size: 0.92rem; }
+.review-checks ul { display: grid; gap: 0.65rem; margin: 0; padding: 0; list-style: none; }
+.review-checks li { display: grid; gap: 0.15rem; min-width: 0; padding-left: 0.7rem; border-left: 2px solid var(--midnight-border); }
+.review-checks strong { font-size: 0.78rem; }
+.review-checks span { color: var(--midnight-muted); font-size: 0.76rem; line-height: 1.4; }
 
 .governed-panel {
   display: grid;

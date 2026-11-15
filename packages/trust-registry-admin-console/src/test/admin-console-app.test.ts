@@ -98,6 +98,9 @@ describe("admin console browser handlers", () => {
     expect(root.querySelector("[data-action]")).toBeNull();
     expect(root.querySelector("#task-epoch")).toBeNull();
     expect(root.textContent).toContain("1 of 1 record shown");
+    expect(root.querySelector(".review-filters")?.textContent).toContain("Browse registry records");
+    expect(root.querySelector(".review-checks")?.textContent).toContain("this list does not prove current key control");
+    expect(root.querySelector(".review-checks")?.textContent).toContain("DID sign-in is not a vote");
     expect(root.querySelector(".column-header")?.textContent).toContain("1 item");
     await renderAt("http://127.0.0.1:4173/?demo=1&apiBase=http://127.0.0.1:4400");
     expect(root.querySelector("[data-action]")).not.toBeNull();
@@ -416,6 +419,8 @@ describe("admin console browser handlers", () => {
     });
 
     await vi.waitFor(() => expect(root.querySelector("[data-governed-prepare]")).not.toBeNull());
+    expect(root.querySelector(".review-filters")?.textContent).toContain("Requests awaiting action");
+    expect(root.querySelector(".review-filters")?.textContent).toContain("1 source-reported request needs action");
     root.querySelector<HTMLButtonElement>("[data-governed-prepare]")!.click();
     await vi.waitFor(() => expect(root.querySelector("[data-governed-submit]")).not.toBeNull());
     expect(root.textContent).toContain(prepared.policyCommitment);

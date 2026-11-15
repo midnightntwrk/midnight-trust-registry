@@ -1074,6 +1074,14 @@ export const createAdminConsoleApp = (
           <p>${escapeHtml(card.target)} · <span class="status-chip ${escapeHtml(card.status)}">${escapeHtml(REVIEW_STATUS_LABELS[card.status])}</span></p>
         </div>
         <div class="record-meaning"><p class="eyebrow">What this means</p><p>${lifecycleDescription} ${sourceDescription}</p></div>
+        ${getReviewActions(card.status).length === 0 ? "" : `<section class="review-checks" aria-labelledby="review-checks-heading">
+          <h3 id="review-checks-heading">Check before acting</h3>
+          <ul>
+            <li><strong>Identity</strong><span>This record names a DID; this list does not prove current key control.</span></li>
+            <li><strong>Eligibility</strong><span>Check the redacted evidence and its trusted status source. This board does not verify a VP.</span></li>
+            <li><strong>Authority</strong><span>Current maintainer membership, exact signatures, policy, and quorum are checked separately. DID sign-in is not a vote.</span></li>
+          </ul>
+        </section>`}
         <div class="decision-summary"><h3>Decision summary</h3><dl>
           <div><dt>Role</dt><dd>${escapeHtml(card.target)}</dd></div>
           <div><dt>${trustLevelLabel(card.status)}</dt><dd>${escapeHtml(card.trustLevel)}</dd></div>
@@ -1145,8 +1153,9 @@ export const createAdminConsoleApp = (
         ...card.detailRows.map((row) => row.value)].some((value) => value.toLocaleLowerCase().includes(normalizedQuery))));
     const groupedCards = groupReviewCards(visibleCards);
     const visibleKeys = new Set(visibleCards.map((card) => card.key));
-    const needsReview = state.board !== undefined && (
-      countCards(state.board, "proposed") + countCards(state.board, "authorized") > 0);
+    const pendingReviewCount = state.board === undefined ? 0
+      : countCards(state.board, "proposed") + countCards(state.board, "authorized");
+    const needsReview = pendingReviewCount > 0;
     const reviewTitle = state.board === undefined ? "Connect to review records"
       : state.board.sourceMode === "local-ledger" ? "Inspect current records"
         : needsReview ? "Decisions that need attention" : "Registry review workspace";
@@ -1411,7 +1420,7 @@ export const createAdminConsoleApp = (
         </details>
         <section class="workspace" id="review-board">
           ${state.board === undefined || state.board.sourceMode === "local-ledger" ? "" : `<div class="review-filters">
-            <div><p class="eyebrow">Review queue</p><h2>Find a trust record</h2><p>${visibleCards.length.toString()} of ${state.cards.length.toString()} ${state.cards.length === 1 ? "record" : "records"} shown</p></div>
+            <div><p class="eyebrow">Review inbox</p><h2>${needsReview ? "Requests awaiting action" : "Browse registry records"}</h2><p>${needsReview ? `${pendingReviewCount.toString()} source-reported ${pendingReviewCount === 1 ? "request needs" : "requests need"} action · ` : ""}${visibleCards.length.toString()} of ${state.cards.length.toString()} ${state.cards.length === 1 ? "record" : "records"} shown</p></div>
             <label>Search label, role, or exact identifier
               <input class="input" type="search" data-review-query data-focus-key="review-query" value="${escapeHtml(state.reviewQuery)}" autocomplete="off" />
             </label>
