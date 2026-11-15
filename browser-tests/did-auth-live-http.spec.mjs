@@ -143,6 +143,11 @@ test("both browser apps use real same-origin DID HTTP sessions without a role gr
     await expect(page.locator(".portal-profile-card")).toContainText("A DID signer is available");
 
     await page.goto(`${origin}/admin/`);
+    await page.locator('.task-nav a[href="./registry-manual.html"]').click();
+    await expect(page.locator("main h1")).toContainText("Registry Manual");
+    await page.getByRole("link", { name: "Open review inbox" }).click();
+    await expect(page.locator("#review-board")).toBeVisible();
+    assert.equal(requests.some((request) => request.startsWith("POST /v1/governed/")), false);
     await page.getByRole("link", { name: "Workspace settings" }).first().click();
     await page.getByRole("button", { name: "Sign in with DID" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
