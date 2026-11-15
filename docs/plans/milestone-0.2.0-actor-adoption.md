@@ -122,9 +122,10 @@ through a shared browser-only client and an external signer on a same-origin
 host. Applicant and maintainer sessions have distinct purposes; neither grants
 a registry role, VP eligibility, or governance authority. The fast headless
 journey tests that client against a real loopback HTTP host. Playwright covers
-both mocked source-state UI and a same-origin browser journey using the real
-loopback challenge/session API with a fixture DID resolver and external test
-signer. The applicant-only private request list is optional host admission
+both mocked source-state UI and same-origin browser journeys using the real
+loopback challenge/session API with external test signers: a fixture DID
+resolver for the ledger-backed path and a self-certifying long-form DID for
+the off-chain path. The applicant-only private request list is optional host admission
 metadata, not a ledger decision or VP eligibility proof. There is no qualified
 production resolver, live VC-owned status adapter, or deployed actor journey.
 The local challenge schema, verifier, and browser client now distinguish a
