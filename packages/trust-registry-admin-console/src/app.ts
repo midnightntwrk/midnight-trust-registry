@@ -1182,6 +1182,8 @@ export const createAdminConsoleApp = (
         ...card.detailRows.map((row) => row.value)].some((value) => value.toLocaleLowerCase().includes(normalizedQuery))));
     const groupedCards = groupReviewCards(visibleCards);
     const visibleKeys = new Set(visibleCards.map((card) => card.key));
+    const selectedDetailVisible = state.board?.sourceMode !== "local-ledger"
+      && state.selectedKey !== undefined && visibleKeys.has(state.selectedKey);
     const pendingReviewCount = state.board === undefined ? 0
       : countCards(state.board, "proposed") + countCards(state.board, "authorized");
     const needsReview = pendingReviewCount > 0;
@@ -1261,7 +1263,7 @@ export const createAdminConsoleApp = (
         </section>
         <section class="settings-view" id="workspace-settings" aria-labelledby="settings-heading">
           <div class="settings-heading">
-            <a class="settings-back" href="#review-board">&larr; Back to review workspace</a>
+            <a class="settings-back" href="${selectedDetailVisible ? "#selected-record-detail" : "#review-board"}">&larr; ${selectedDetailVisible ? "Back to selected record" : "Back to review workspace"}</a>
             <p class="eyebrow">Configuration</p>
             <h1 id="settings-heading">Workspace settings</h1>
             <p>Check the source this browser is using and the deployment identity reported by the API. These details do not change registry governance.</p>

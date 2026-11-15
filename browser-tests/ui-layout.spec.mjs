@@ -512,11 +512,16 @@ test("admin Settings signs in with DID without granting maintainer authority", a
     });
     await page.goto(`${server.base}${server.packagedPath}`);
     await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
+    await expect(page.locator("#selected-record-detail")).toBeVisible();
     await page.getByRole("link", { name: "Workspace settings" }).first().click();
     await page.getByRole("button", { name: "Sign in with DID" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
     await expect(page.locator(".portal-profile-card")).toContainText("Your maintainer authority is checked separately");
     await expect(page.locator("body")).not.toContainText(accessToken);
+    await page.getByRole("link", { name: "Back to selected record" }).click();
+    await expect(page.locator(".app-shell")).toHaveAttribute("data-settings-active", "false");
+    await expect(page.locator("#selected-record-detail")).toBeVisible();
+    await page.getByRole("link", { name: "Workspace settings" }).first().click();
     await page.getByRole("button", { name: "Sign out" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText("A DID signer is available");
     expect(revokeCalls).toBe(1);
