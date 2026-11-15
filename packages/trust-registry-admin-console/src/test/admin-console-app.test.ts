@@ -101,7 +101,7 @@ describe("admin console browser handlers", () => {
     expect(root.textContent).toContain("1 of 1 record shown");
     expect(root.querySelector(".review-filters")?.textContent).toContain("Browse registry records");
     expect(root.querySelector(".review-checks")?.textContent).toContain("this list does not prove current key control");
-    expect(root.querySelector(".review-checks")?.textContent).toContain("DID sign-in is not a vote");
+    expect(root.querySelector(".review-checks")?.textContent).toContain("Digital identity sign-in is not a vote");
     expect(root.querySelector(".column-header")?.textContent).toContain("1 item");
     await renderAt("http://127.0.0.1:4173/?demo=1&apiBase=http://127.0.0.1:4400");
     expect(root.querySelector("[data-action]")).not.toBeNull();

@@ -1516,9 +1516,9 @@ export const createApplicantPortalApp = (
     const demoApplication = !demoMode || state.inspection === undefined || state.inspection.sourceMode === "local-ledger" ? "" : `
       <form class="form-panel settings-card" id="demo-application" data-submit-form>
         <div class="demo-copy">
-          <p class="eyebrow">Local fixture</p>
+          <p class="eyebrow">Practice workspace</p>
           <h2>Try a local application</h2>
-          <p>Choose an application type and a name reviewers will recognize. An admin can review and activate this label-only fixture request next. It does not grant on-chain authority.</p>
+          <p>Choose an application type and a name reviewers will recognize. An admin can review and activate this sample request next. It does not grant on-chain authority.</p>
         </div>
         <div class="demo-fields">
           <fieldset class="demo-targets"><legend>Application type</legend>
@@ -1529,7 +1529,7 @@ export const createApplicantPortalApp = (
           <label class="label">Name shown to reviewers
             <input class="input" name="label" type="text" placeholder="Example issuer" required />
           </label>
-          <button class="button" type="submit"${state.submitting ? " disabled" : ""}>Send demo application</button>
+          <button class="button" type="submit"${state.submitting ? " disabled" : ""}>Send practice application</button>
         </div>
       </form>
     `;
@@ -1552,7 +1552,7 @@ export const createApplicantPortalApp = (
     const journeyPicker = `
           <section class="journey-picker" id="governed-requests" aria-labelledby="journey-heading">
             <div class="journey-heading"><p class="eyebrow">Choose a role</p><h2 id="journey-heading">What do you need access to?</h2>
-              <p>See the requirements before you submit.</p>
+              <p>See the requirements before you submit. <a href="./registry-manual.html#choose-your-task">Help me choose a role</a>.</p>
             </div>
             <p class="journey-prerequisite">${state.inspection === undefined
               ? "Connect to a registry source before preparing a governed request."
@@ -1560,9 +1560,9 @@ export const createApplicantPortalApp = (
                 ? "Local connection: prepare only. Submission requires an authenticated same-origin host."
                 : activeDidSession === undefined
                   ? didSignerAvailable
-                    ? 'Before private evidence, <a href="#connection-details">sign in with DID in Workspace settings</a>. You can prepare a request now; sign-in does not grant a role.'
-                    : 'You can prepare a request here. For private evidence, ask your host to connect a DID signer, then <a href="#connection-details">sign in in Workspace settings</a>.'
-                  : "DID identity confirmed for this session. Eligibility evidence and governed approval are still required before a role becomes active."}</p>
+                    ? 'Before sending private evidence, <a href="#connection-details">sign in with your digital identity in Workspace settings</a>. You can prepare a request now; sign-in does not grant a role.'
+                    : 'You can prepare a request here. To send private evidence, ask your host to connect a digital identity signer, then <a href="#connection-details">sign in in Workspace settings</a>.'
+                  : "Identity confirmed for this session. Proof of eligibility and governed approval are still required before a role becomes active."}</p>
             <div class="journey-cards">
               <a href="#issuer-request" data-open-workflow="issuer-request"><span class="role-mark" aria-hidden="true">I</span><strong>Issue credentials</strong><span>Request issuer authority for a specific scope.</span><em>View requirements &rarr;</em></a>
               <a href="#verifier-request" data-open-workflow="verifier-request"><span class="role-mark" aria-hidden="true">V</span><strong>Verify presentations</strong><span>Request verifier authority for governed checks.</span><em>View requirements &rarr;</em></a>
@@ -1572,9 +1572,9 @@ export const createApplicantPortalApp = (
             <section class="application-readiness" aria-labelledby="application-readiness-heading">
               <h3 id="application-readiness-heading">Your path</h3>
               <ol>
-                <li><span class="readiness-step">01 · Identify</span><strong>${activeDidSession === undefined ? "Not signed in" : "DID signed in"}</strong></li>
-                <li><span class="readiness-step">02 · Qualify</span><strong>Eligibility is checked separately</strong></li>
-                <li><span class="readiness-step">03 · Decide</span><strong>Governed approval grants access</strong></li>
+                <li><span class="readiness-step">01 · Identify</span><strong>${activeDidSession === undefined ? "Not signed in" : "Digital identity signed in"}</strong></li>
+                <li><span class="readiness-step">02 · Qualify</span><strong>Proof of eligibility is checked separately</strong></li>
+                <li><span class="readiness-step">03 · Decide</span><strong>Registry approval grants access</strong></li>
               </ol>
             </section>
             <details class="journey-help"><summary>How applications work</summary>
@@ -1604,7 +1604,7 @@ export const createApplicantPortalApp = (
           ? "Connect or retry to inspect this source. No trust decision is available."
           : state.inspection.sourceMode === "snapshot"
             ? "This read-only snapshot is not authenticated ledger finality or authorization evidence."
-          : "Fixture records are for exploration, not deployed ledger evidence.";
+          : "This practice workspace shows sample records, not deployed ledger evidence.";
     const partialFailureMessage = !state.loading && state.inspection?.sourceMode !== "local-ledger"
       && state.inspection?.unavailableLists?.length
       ? ` ${state.inspection.unavailableLists.length} list(s) unavailable; counts shown as n/a.` : "";
@@ -1640,7 +1640,7 @@ export const createApplicantPortalApp = (
                 ? `<a class="button secondary" href="#governed-requests">Choose a role</a>`
                 : `<a class="button secondary" href="#trust-records">Explore records</a>`}
               ${privateHost && state.inspection !== undefined
-                ? `<a class="hero-sign-in" href="#connection-details">${activeDidSession !== undefined ? "DID signed in" : didSignerAvailable ? "Sign in with DID" : "Set up DID sign-in"} &rarr;</a>` : ""}
+                ? `<a class="hero-sign-in" href="#connection-details">${activeDidSession !== undefined ? "Identity signed in" : didSignerAvailable ? "Sign in with digital identity" : "Set up digital identity sign-in"} &rarr;</a>` : ""}
             </div>
           </div>
           <div class="hero-overview">
@@ -1657,8 +1657,8 @@ export const createApplicantPortalApp = (
           ${state.inspection?.warnings?.map((warning) => `<div class="alert error">${escapeHtml(warning)}</div>`).join("") ?? ""}
           ${state.flash === undefined ? "" : `<div class="alert success" role="status">${escapeHtml(state.flash)}</div>`}
           <div class="source-panel" data-source-state="${state.loading ? "loading" : state.inspection === undefined ? "unavailable" : state.inspection.sourceMode === "local-ledger" ? "local-ledger" : state.inspection.sourceMode === "snapshot" ? "snapshot" : "fixture"}" role="status" aria-live="polite">
-            <span class="source-badge">${state.loading ? "Checking" : state.inspection === undefined ? "Unavailable" : state.inspection.sourceMode === "local-ledger" ? "API claim" : state.inspection.sourceMode === "snapshot" ? "Snapshot" : "Local fixture"}</span>
-            <div class="source-copy"><strong>${state.loading ? "Loading registry data" : state.inspection === undefined ? "No current registry data" : state.inspection.sourceMode === "local-ledger" ? "Current local-ledger API response" : state.inspection.sourceMode === "snapshot" ? "Read-only registry snapshot" : "Demo workspace data"}</strong>
+            <span class="source-badge">${state.loading ? "Checking" : state.inspection === undefined ? "Unavailable" : state.inspection.sourceMode === "local-ledger" ? "API claim" : state.inspection.sourceMode === "snapshot" ? "Snapshot" : "Practice workspace"}</span>
+            <div class="source-copy"><strong>${state.loading ? "Loading registry data" : state.inspection === undefined ? "No current registry data" : state.inspection.sourceMode === "local-ledger" ? "Current local-ledger API response" : state.inspection.sourceMode === "snapshot" ? "Read-only registry snapshot" : "Sample workspace data"}</strong>
               <span>${sourceMessage}${partialFailureMessage}</span>
             </div>
             ${state.observedAt === undefined || state.loading ? "" : `<span class="source-time">Checked <time datetime="${escapeHtml(state.observedAt)}">${escapeHtml(formatObservationTime(state.observedAt))}</time> (browser clock)</span>`}
@@ -1675,14 +1675,14 @@ export const createApplicantPortalApp = (
           <div class="settings-cards">
             <section class="settings-card portal-profile-card" aria-labelledby="portal-profile-heading">
               <p class="eyebrow">Identity</p>
-              <h2 id="portal-profile-heading">DID sign-in</h2>
-              <p>Sign in to identify yourself for private application actions. A DID session does not grant a registry role or establish VP eligibility.</p>
+              <h2 id="portal-profile-heading">Digital identity sign-in</h2>
+              <p>Use your decentralized identifier (DID) to identify yourself before private application actions. Sign-in does not grant a registry role or prove eligibility. Eligibility may later use a verifiable presentation (VP).</p>
               ${activeDidSession === undefined
                 ? `<p class="portal-profile-status">${didSignerAvailable ? "A DID signer is available." : "No DID signer is connected to this browser. Ask your host to provide one before signing in."}</p>
                   <button class="button" type="button" data-did-sign-in data-focus-key="did-sign-in"${state.didBusy || !didSignerAvailable || !privateHost || state.inspection === undefined ? " disabled" : ""}>${state.didBusy ? "Signing in…" : "Sign in with DID"}</button>
                   ${!privateHost ? '<p class="step-hint">Sign-in requires the same-origin API host.</p>' : ""}`
                 : `<p class="portal-profile-status">Signed in as <strong class="technical-id">${escapeHtml(activeDidSession.actorDid)}</strong></p>
-                  <p class="step-hint">Identity only. Registry roles and VP eligibility are checked separately.</p>
+                  <p class="step-hint">Identity only. Eligibility proof and registry permission are checked separately.</p>
                   <button class="button secondary" type="button" data-did-sign-out data-focus-key="did-sign-out">Sign out</button>`}
               ${state.didError === undefined ? "" : `<p class="alert error" role="alert">${escapeHtml(state.didError)}</p>`}
             </section>
@@ -2071,7 +2071,7 @@ export const createApplicantPortalApp = (
             `}
           </section>
           ${state.inspection === undefined || state.inspection.sourceMode === "local-ledger" ? "" : `<section class="records-overview" id="trust-records" aria-labelledby="records-heading">
-            <div class="records-heading"><div><p class="eyebrow">Explore the registry</p><h2 id="records-heading">Find an active record</h2><p>Search this fixture snapshot by name, role, scope, or DID. It is not a trust decision.</p></div>
+            <div class="records-heading"><div><p class="eyebrow">Explore the registry</p><h2 id="records-heading">Find an active record</h2><p>Search these sample records by name, role, scope, or DID. This view is not a trust decision.</p></div>
               <label class="record-search">Search active records<input class="input" type="search" data-record-search value="${escapeHtml(recordSearchQuery)}" autocomplete="off" placeholder="Name, role, scope, or DID" /></label>
             </div>
             <p class="record-count" data-record-count aria-live="polite"></p>
@@ -2082,7 +2082,7 @@ export const createApplicantPortalApp = (
               ${recognitionCards.length || state.inspection.unavailableLists?.includes("recognition") ? renderInspectionLane("Active recognitions", recognitionCards, state.inspection.unavailableLists?.includes("recognition") === true) : ""}
             </div>
             <p class="records-empty" data-record-no-match hidden>No loaded records match this search.${state.inspection.unavailableLists?.length ? " Unavailable categories were not searched." : " Try a different name, role, scope, or DID."}</p>
-            ${cards.length === 0 && !state.inspection.unavailableLists?.length ? `<p class="records-empty">No active records in this fixture yet.</p>` : ""}
+            ${cards.length === 0 && !state.inspection.unavailableLists?.length ? `<p class="records-empty">No active sample records yet.</p>` : ""}
           </section>`}
         </section>
       </main>

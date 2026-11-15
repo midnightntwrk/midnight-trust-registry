@@ -14,9 +14,16 @@ eligibility steps below are a 0.2.0 design, not an available login in 0.1.0.
 | If you want to... | Start with... | What happens next |
 | --- | --- | --- |
 | Find out whether an organization has a current role | [Browse and query](./use-cases.md) | Check the exact role, scope, source, and time of the reported decision. |
-| Request issuer, verifier, or auditor access | Applicant portal | Choose a role and exact scope, review the requested proof, submit, then retain the receipt. Submission is not approval. |
+| Request permission to issue credentials, verify presentations, or audit evidence | Applicant portal | Choose the role and exact scope, review the requested proof, submit, then retain the receipt. Submission is not approval. |
 | Review a request as a maintainer | Admin review inbox | Check your own authority, the applicant's evidence and scope, and the policy before a governed decision. |
-| Try the local fixture | [Local quickstart](./quickstart.md) | Practice the UI and review path. Fixture actions are not ledger grants. |
+| Practice without changing the ledger | [Local quickstart](./quickstart.md) | Try sample requests and review actions in a local practice workspace. These actions are not ledger grants. |
+
+If you are unsure which role to request: **issuer** means your organization
+creates credentials, **verifier** means it checks presentations supplied by
+others, and **auditor** means it reviews permitted evidence. A **maintainer**
+helps govern the registry; this is a separate authority path, not a general
+applicant shortcut. Choosing a card shows requirements; it does not submit a
+request or grant permission.
 
 ## Identity, eligibility, and permission
 

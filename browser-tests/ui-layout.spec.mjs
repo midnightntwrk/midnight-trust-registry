@@ -128,7 +128,7 @@ test("applicant portal treats a failed list as unavailable, then recovers on rec
     allowedLocalOrigins.add(server.base);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
-    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
     await expect(page.locator(".source-panel")).toContainText("1 list(s) unavailable; counts shown as n/a");
     const auditorLane = page.locator(".lane").filter({ has: page.getByRole("heading", { name: "Active auditors" }) });
     await expect(auditorLane).toContainText("unavailable");
@@ -142,7 +142,7 @@ test("applicant portal treats a failed list as unavailable, then recovers on rec
 
     server.setAuditorAvailable(true);
     await page.locator("[data-refresh]").click();
-    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
     await expect(page.locator(".source-panel")).not.toContainText("list(s) unavailable");
     await expect(page.locator(".lane").filter({ has: page.getByRole("heading", { name: "Active auditors" }) })).toHaveCount(0);
   } finally {
@@ -157,7 +157,7 @@ test("admin clears stale review records when one list fails, then recovers", asy
     allowedLocalOrigins.add(server.base);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
-    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
     await expect(page.locator(".card")).toHaveCount(1);
 
     server.setAuditorAvailable(false);
@@ -180,7 +180,7 @@ test("admin clears stale review records when one list fails, then recovers", asy
 
     server.setAuditorAvailable(true);
     await page.locator("[data-refresh]").click();
-    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
     await expect(page.locator(".card")).toHaveCount(1);
     await expect(page.locator(".card")).toContainText("Local demo issuer");
     expect(server.requests.some((request) => request.startsWith("POST "))).toBe(false);
@@ -195,7 +195,7 @@ test("admin describes a healthy empty fixture as empty rather than unavailable",
   try {
     allowedLocalOrigins.add(server.base);
     await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
-    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
     await expect(page.locator("#review-board .board")).toContainText("No records yet");
     await expect(page.locator("#review-board .board")).not.toContainText("unavailable");
     await expect(page.locator("#selected-record-detail"))
@@ -214,7 +214,9 @@ test("applicant role cards focus one governed request without submitting it", as
     await page.setViewportSize({ width: 390, height: 900 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
-    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
+    await expect(page.getByRole("link", { name: "Help me choose a role" }))
+      .toHaveAttribute("href", "./registry-manual.html#choose-your-task");
 
     const roles = ["issuer", "verifier", "auditor", "maintainer"];
     for (const role of roles) {
@@ -269,6 +271,9 @@ test("applicant role cards focus one governed request without submitting it", as
     expect(requestGeometry.page, JSON.stringify(requestGeometry)).toBeLessThanOrEqual(requestGeometry.viewport + 1);
     expect(requestGeometry.overflowing).toEqual([]);
     expect(server.requests.some((request) => request.startsWith("POST "))).toBe(false);
+    await page.getByRole("link", { name: "Help me choose a role" }).click();
+    await expect(page.locator("#choose-your-task")).toBeVisible();
+    await expect(page.getByText("issuer means your organization", { exact: false })).toBeVisible();
   } finally {
     await page.close();
     await server.close();
@@ -349,24 +354,24 @@ test("applicant Settings signs in with DID without showing a registry role", asy
       }
     });
     await page.goto(`${server.base}${server.packagedPath}`);
-    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
-    await expect(page.locator(".journey-prerequisite")).toContainText("sign in with DID in Workspace settings");
+    await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
+    await expect(page.locator(".journey-prerequisite")).toContainText("sign in with your digital identity in Workspace settings");
     await expect(page.locator(".application-readiness")).toContainText("Not signed in");
-    await expect(page.locator(".application-readiness")).toContainText("Eligibility is checked separately");
-    await expect(page.locator(".application-readiness")).toContainText("Governed approval grants access");
-    await expect(page.locator(".hero-sign-in")).toHaveText("Sign in with DID →");
+    await expect(page.locator(".application-readiness")).toContainText("Proof of eligibility is checked separately");
+    await expect(page.locator(".application-readiness")).toContainText("Registry approval grants access");
+    await expect(page.locator(".hero-sign-in")).toHaveText("Sign in with digital identity →");
     await page.locator(".hero-sign-in").click();
     await page.getByRole("button", { name: "Sign in with DID" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
-    await expect(page.locator(".application-readiness")).toContainText("DID signed in");
-    await expect(page.locator(".portal-profile-card")).toContainText("Registry roles and VP eligibility are checked separately");
-    await expect(page.locator(".journey-prerequisite")).toContainText("DID identity confirmed for this session");
-    await expect(page.locator(".journey-prerequisite")).toContainText("Eligibility evidence and governed approval are still required");
+    await expect(page.locator(".application-readiness")).toContainText("Digital identity signed in");
+    await expect(page.locator(".portal-profile-card")).toContainText("Eligibility proof and registry permission are checked separately");
+    await expect(page.locator(".journey-prerequisite")).toContainText("Identity confirmed for this session");
+    await expect(page.locator(".journey-prerequisite")).toContainText("Proof of eligibility and governed approval are still required");
     await expect(page.locator(".content [data-did-sign-in]")).toHaveCount(0);
     await page.getByRole("button", { name: "Sign out" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText("A DID signer is available");
     await expect(page.locator(".application-readiness")).toContainText("Not signed in");
-    await expect(page.locator(".journey-prerequisite")).toContainText("sign in with DID in Workspace settings");
+    await expect(page.locator(".journey-prerequisite")).toContainText("sign in with your digital identity in Workspace settings");
     expect(revokeCalls).toBe(1);
     await page.getByRole("button", { name: "Sign in with DID" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
@@ -385,7 +390,7 @@ test("applicant role guidance explains a missing DID signer", async ({ page, all
   try {
     allowedLocalOrigins.add(server.base);
     await page.goto(`${server.base}${server.packagedPath}`);
-    await expect(page.locator(".journey-prerequisite")).toContainText("ask your host to connect a DID signer");
+    await expect(page.locator(".journey-prerequisite")).toContainText("ask your host to connect a digital identity signer");
     await page.locator(".journey-prerequisite a").click();
     await expect(page.locator(".portal-profile-card")).toContainText("No DID signer is connected");
     await expect(page.locator("[data-did-sign-in]")).toBeDisabled();
@@ -430,7 +435,7 @@ test("admin Settings signs in with DID without granting maintainer authority", a
       }
     });
     await page.goto(`${server.base}${server.packagedPath}`);
-    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
     await page.getByRole("link", { name: "Workspace settings" }).first().click();
     await page.getByRole("button", { name: "Sign in with DID" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
@@ -478,7 +483,7 @@ for (const app of ["admin-console", "applicant-portal"]) {
     try {
       allowedLocalOrigins.add(server.base);
       await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
-      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
       if (app === "admin-console") {
         await expect(page.locator("[data-action], #task-epoch, #task-signed-intent")).toHaveCount(0);
         await expect(page.locator("#advanced-governance")).toBeVisible();
@@ -488,7 +493,7 @@ for (const app of ["admin-console", "applicant-portal"]) {
       }
 
       await page.goto(`${server.base}/?demo=1&apiBase=${encodeURIComponent(server.base)}`);
-      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
       if (app === "admin-console") {
         await expect(page.locator("[data-action]").first()).toBeAttached();
         await expect(page.locator("#task-epoch")).toBeAttached();
@@ -530,7 +535,7 @@ for (const app of ["admin-console", "applicant-portal"]) {
       allowedLocalOrigins.add(first.base);
       allowedLocalOrigins.add(second.base);
       await page.goto(`${first.base}/?apiBase=${encodeURIComponent(first.base)}`);
-      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
       const firstReads = first.requests.length;
       await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
       const form = page.locator("[data-api-base-form]");
@@ -543,7 +548,7 @@ for (const app of ["admin-console", "applicant-portal"]) {
       await expect(page.locator(".settings-view")).toBeVisible();
       await page.locator("[data-settings-refresh]").click();
       await expect(page.locator(".settings-view")).toBeVisible();
-      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
       await expect(page.locator(".settings-view")).toContainText(`${second.base} (local development setting)`);
       expect(second.requests).toContain("GET /health");
       expect(second.requests).toContain("GET /v1/registry/summary");
@@ -567,7 +572,7 @@ for (const app of ["admin-console", "applicant-portal"]) {
     try {
       allowedLocalOrigins.add(server.base);
       await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
-      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
       const ratios = await page.evaluate(() => {
         const rgb = (value) => {
           const channels = value.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/u);
@@ -616,7 +621,7 @@ for (const app of ["admin-console", "applicant-portal"]) {
       allowedLocalOrigins.add(server.base);
       await page.setViewportSize({ width: 390, height: 900 });
       await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
-      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
 
       const menu = page.locator(".mobile-task-menu > summary");
       await page.keyboard.press("Tab");
@@ -650,7 +655,7 @@ for (const app of ["admin-console", "applicant-portal"]) {
     try {
       allowedLocalOrigins.add(server.base);
       await page.goto(`${server.base}${server.packagedPath}?apiBase=https://outside.example`);
-      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
       await expect(page.locator("[data-api-base-form] [name='apiBase']")).toHaveValue(server.base);
       await expect(page.locator("[data-api-base-form] [name='apiBase']")).toBeDisabled();
       await expect(page.locator("[data-api-base-form] button[type='submit']")).toBeDisabled();
@@ -659,7 +664,7 @@ for (const app of ["admin-console", "applicant-portal"]) {
       await expect(page.locator(".settings-view")).not.toContainText("outside.example");
       if (app === "applicant-portal") {
         await expect(page.locator(".settings-view"))
-          .toContainText("A DID session does not grant a registry role or establish VP eligibility");
+          .toContainText("Sign-in does not grant a registry role or prove eligibility");
       }
     } finally {
       await page.close();
@@ -689,7 +694,7 @@ for (const app of ["admin-console", "applicant-portal"]) {
     try {
       allowedLocalOrigins.add(server.base);
       await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
-      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
       server.setHealthAvailable(false);
       await page.locator("[data-refresh]").click();
       await expect(page.locator(".source-badge")).toHaveText("Unavailable");
@@ -716,7 +721,7 @@ for (const app of ["admin-console", "applicant-portal"]) {
       await page.locator(".settings-back").click();
       server.setHealthAvailable(true);
       await page.locator("[data-refresh]").click();
-      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
     } finally {
       await page.close();
       await server.close();
@@ -729,7 +734,7 @@ for (const app of ["admin-console", "applicant-portal"]) {
     try {
       allowedLocalOrigins.add(server.base);
       await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
-      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
 
       const heldHealth = new Promise((resolve) => { releaseHealth = resolve; });
       await page.route(`${server.base}/health`, async (route) => {
@@ -760,7 +765,7 @@ for (const app of ["admin-console", "applicant-portal"]) {
 
       server.setHealthAvailable(true);
       await page.locator("[data-refresh]").click();
-      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
       expect(server.requests.some((request) => request.startsWith("POST "))).toBe(false);
     } finally {
       releaseHealth();
@@ -779,7 +784,7 @@ for (const app of ["admin-console", "applicant-portal"]) {
       allowedLocalOrigins.add(first.base);
       allowedLocalOrigins.add(second.base);
       await page.goto(`${first.base}/?apiBase=${encodeURIComponent(first.base)}`);
-      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
       await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
       const settings = page.locator(".settings-view");
       await expect(settings).toBeVisible();
@@ -790,7 +795,7 @@ for (const app of ["admin-console", "applicant-portal"]) {
       await expect(settings).toContainText("No successful check");
       releaseSecondHealth();
       releaseSecondHealth = undefined;
-      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
     } finally {
       releaseSecondHealth?.();
       await page.close();
@@ -815,7 +820,7 @@ for (const app of ["admin-console", "applicant-portal"]) {
         : '.task-nav a[href="#connection-details"]').focus();
       releaseHealth();
       releaseHealth = undefined;
-      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
       await expect(refresh).not.toBeFocused();
     } finally {
       releaseHealth?.();
@@ -847,7 +852,7 @@ test("admin review board precedes advanced governance in keyboard order", async 
   try {
     allowedLocalOrigins.add(server.base);
     await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
-    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
     expect(await page.evaluate(() => Boolean(document.querySelector("#review-board")
       ?.compareDocumentPosition(document.querySelector("#advanced-governance")) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
   } finally {
@@ -867,7 +872,7 @@ for (const [app, title] of [
       for (const width of [1440, 390]) {
         await page.setViewportSize({ width, height: 900 });
         await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
-        await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+        await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
         for (const view of ["workspace", "workflow", "settings"]) {
           if (view === "workflow") {
             if (app === "admin-console") {
@@ -938,7 +943,7 @@ for (const [app, title] of [
         }
         if (app === "applicant-portal") await expect(page.locator(".hero-intro > .eyebrow")).toHaveText("Applicant workspace");
         await expect(page.locator(".metrics")).toContainText("Midnight Trust Registry");
-        await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+        await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
         await expect(page.locator(".source-panel")).toContainText("not deployed ledger evidence");
         const initialLayout = await page.evaluate(() => {
           const top = (selector) => document.querySelector(selector).getBoundingClientRect().top;
@@ -1019,7 +1024,7 @@ for (const [app, title] of [
         const refresh = page.locator("[data-refresh]");
         await refresh.focus();
         await refresh.click();
-        await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+        await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
         await expect(refresh).toBeFocused();
         if (width <= 760) await page.locator(".mobile-task-menu > summary").click();
         const settingsLink = width <= 760 ? page.locator(".mobile-task-menu nav a").filter({ hasText: "Workspace settings" })

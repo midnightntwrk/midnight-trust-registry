@@ -22,7 +22,7 @@ describe("trust registry applicant portal app", () => {
       fetchImpl: fetchImpl as typeof fetch });
     await vi.waitFor(() => expect(root.querySelector("#portal-profile-heading")).not.toBeNull());
     expect(root.querySelector("[data-did-sign-in]")?.hasAttribute("disabled")).toBe(true);
-    expect(root.querySelector("#connection-details")?.textContent).toContain("DID session does not grant a registry role");
+    expect(root.querySelector("#connection-details")?.textContent).toContain("Sign-in does not grant a registry role");
     expect(root.querySelector(".content [data-did-sign-in]")).toBeNull();
   });
   it("keeps fixture shortcuts opt-in and collapses empty record categories", async () => {
@@ -43,7 +43,7 @@ describe("trust registry applicant portal app", () => {
     expect(root.querySelector("#demo-application")).toBeNull();
     expect(root.textContent).not.toContain("credentialFamily");
     expect(root.querySelectorAll("#trust-records .lane")).toHaveLength(0);
-    expect(root.textContent).toContain("No active records in this fixture yet.");
+    expect(root.textContent).toContain("No active sample records yet.");
     expect(root.querySelector(".advanced-tools")).not.toBeNull();
     await renderAt("http://127.0.0.1:4175/?demo=1&apiBase=http://127.0.0.1:4400");
     expect(root.querySelector("#demo-application")).not.toBeNull();

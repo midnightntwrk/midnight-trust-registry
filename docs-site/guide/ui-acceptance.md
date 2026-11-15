@@ -2,7 +2,7 @@
 
 The admin console and applicant portal use one Midnight visual language: Outfit,
 the approved logo, calm teal and mist tokens, a shared left task rail, and
-explicit source cues. The source cue is **Local fixture**, **API claim**, or
+explicit source cues. The source cue is **Practice workspace**, **API claim**, or
 **Unavailable**. It never labels a browser response as independently finalized.
 
 ## UX Pilot comparison
@@ -28,6 +28,7 @@ The full docs site remains the source for linked chapters and updates.
 | --- | --- |
 | Lead with the next task, not a protocol field | The portal leads to governed role preparation and a visible path to DID sign-in. On loopback, `demo=1` exposes the label-only fixture application only in Workspace settings, never ahead of the governed path. Admin headings distinguish pending decisions from a quiet review workspace. API editing also lives in Settings. `ui-layout.spec.mjs` and `demo-application-handoff.spec.mjs` check this hierarchy. |
 | Make the maintainer inbox truthful | The admin review heading names source-reported requests awaiting action when proposed or authorized records exist, and otherwise invites browsing. Selected actionable records show a compact identity, eligibility, and authority checklist without claiming the browser verified DID control, VP status, or quorum. DID sign-in is never presented as a vote. `admin-console-app.test.ts` covers both queue states. |
+| Explain first-use roles and terms | The applicant role picker links directly to the Manual's plain-language role comparison. Primary path copy says digital identity, eligibility proof, and registry approval; Settings defines DID and VP without suggesting either grants permission. The visible **Practice workspace** cue explains that sample records are not deployed ledger evidence. `ui-layout.spec.mjs` checks the route and source states. |
 | Explain the applicant path before exposing forms | Four compact role choices lead to a role-specific disclosure. Choosing another card closes the previous role form and keeps the chosen card visibly selected; the selected form can also be collapsed. On a 390 px viewport each role stays under 95 px high and the full introductory section stays under 1050 px. Optional “How applications work” help explains choice, redacted evidence, external signing, and retaining the receipt; a prerequisite card calls out DID, exact scope, external keys, and authenticated host. Each role form explains the two IDs and DID key before the fields, and an in-form reason accompanies disabled preparation on a cross-origin connection. A receipt is not approval, and opening a role does not submit it. |
 | One Midnight visual language | Both apps use the approved logo, Outfit, muted teal/mist tokens, and shared navigation/status components. On desktop the Midnight lockup and task links occupy one continuous left rail; on mobile the same lockup precedes the native Menu. |
 | Compact discovery and a bounded review detail | The fixture portal searches visible active records by name, role, scope, or DID without changing registry state. Empty lifecycle lanes are omitted from the admin view; selected detail stays beside the list on desktop and below it on mobile. The detail explains its source and lifecycle before the decision summary. Proposed and authorized records label their trust-level field as requested or authorized rather than displaying a bare value that could be mistaken for an approval decision. Exact IDs and external-signature preparation are separate disclosures. |
@@ -110,7 +111,7 @@ With the existing demo still on the default ports, the clean API ran on 4442
 using its CLI `--port` option, while `PORT=4187` and `PORT=4189` selected the
 admin and portal static-server ports. Chromium submitted a label-only issuer
 application, found it in admin, approved and activated it, and read the active
-record back in the portal. The source remained **Local fixture** throughout.
+record back in the portal. The source remained **Practice workspace** throughout.
 This was an agent-run setup check, not an independent new-engineer trial or a
 deployed-ledger end-to-end result.
 
@@ -120,7 +121,7 @@ light-build tasks, and `demo:prepare` passed. In Chromium, an issuer fixture
 application submitted in the portal appeared as Proposed in admin, moved to
 Authorized and Active through confirmed local-fixture actions, and appeared in
 the portal's active issuer list after a reload. The confirmation copy needed a
-follow-up: fixture actions now say "in fixture" and explicitly distinguish their
+follow-up: practice actions remain inside Settings and explicitly distinguish their
 effect from a deployed-ledger action. This remains an agent-run fixture trial,
 not a new-engineer or deployed standalone acceptance result.
 
@@ -169,7 +170,7 @@ repeatable UI acceptance evidence:
 | Open a governed issuer request by keyboard with reduced motion and verify the three visible preparation phases; keep mobile task targets at least 44 px high | `ui-layout.spec.mjs` |
 | Keep the 390 px applicant introduction compact without hiding role requirements or implying that submission is approval | `ui-layout.spec.mjs` (role-row and section-height assertions, visible prerequisite text) |
 | Choose a label-only demo application type with visible radio options and keyboard navigation; retain the selection and avoid horizontal overflow at 200% mobile text size | `demo-application-handoff.spec.mjs`, `ui-layout.spec.mjs` |
-| Keep label-only application, fixture lifecycle mutations, epoch publication, and signed workspace intent out of the ordinary UI; show them only with the loopback `demo=1` presentation flag on a mutable fixture source. Admin practice tools are grouped in Workspace settings, not in selected-record detail or Advanced governance. A read-only snapshot or API-claimed local ledger suppresses fixture controls even when the flag is requested. Merely switching views must not submit a mutation | `ui-layout.spec.mjs`, `admin-console.spec.mjs`, `local-lookup.spec.mjs` (both apps) |
+| Keep label-only application, fixture lifecycle mutations, epoch publication, and signed workspace intent out of the ordinary UI; show them only with the loopback `demo=1` presentation flag on a mutable fixture source. Admin practice tools are grouped in Workspace settings, not in selected-record detail or Advanced governance. A read-only snapshot or API-claimed local ledger suppresses practice controls even when the flag is requested. Merely switching views must not submit a mutation | `ui-layout.spec.mjs`, `admin-console.spec.mjs`, `local-lookup.spec.mjs` (both apps) |
 | Carry issuer and recognition fixture applications through both browser UIs against the packaged workspace API and a private temporary workspace, with demo controls absent before `demo=1`. Verify Proposed → Authorized → Active and the exact record in the API's active list; delete only the test-owned workspace afterward | `workspace-api-handoff.spec.mjs` (real packaged API, still fixture-only and not deployed E2E) |
 | Reflow at 200% root text size on 320/390 px viewports without page-level horizontal scroll or non-control internal overlap; check workspace, advanced, and settings views at 320 px. Long text inside native inputs may scroll within the control. | `ui-layout.spec.mjs` |
 | Reflow local-ledger exact lookup at 320 px and 200% root text size in both apps, including returned records and expanded technical details; keep API-claim labels and avoid page-level overflow. Raw JSON scrolls inside a bounded, keyboard-focusable region rather than becoming a wall of broken words | `local-lookup.spec.mjs` |
@@ -348,7 +349,7 @@ API timestamp remains under Identifiers and evidence. A filter never submits
 a mutation. Empty default status lanes do not precede populated results.
 **Advanced governance** contains governed proposal/recovery and quorum/verifier
 tasks. Fixture lifecycle, epoch, and signed-workspace controls are instead
-grouped under **Workspace settings > Fixture controls** and retain their
+grouped under **Workspace settings > Practice controls** and retain their
 existing prerequisites. The local-ledger adapter has
 no broad list, so its admin view keeps only exact-ID lookup. In the fixture
 applicant portal, the optional **Workspace settings** practice form submits a label-only request for

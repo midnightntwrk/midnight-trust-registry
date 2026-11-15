@@ -1058,7 +1058,7 @@ export const createAdminConsoleApp = (
       ? state.governedPrepared : undefined;
     const sourceDescription = state.board?.sourceMode === "local-ledger"
       ? "This is a current API claim, not independently verified ledger finality."
-      : "This is a local fixture record, not deployed ledger evidence.";
+      : "This is a sample record in a practice workspace, not deployed ledger evidence.";
     const lifecycleDescription = card.status === "active"
       ? "This record is active in the displayed registry view."
       : card.status === "proposed" || card.status === "authorized"
@@ -1077,8 +1077,8 @@ export const createAdminConsoleApp = (
           <h3 id="review-checks-heading">Check before acting</h3>
           <ul>
             <li><strong>Identity</strong><span>This record names a DID; this list does not prove current key control.</span></li>
-            <li><strong>Eligibility</strong><span>Check the redacted evidence and its trusted status source. This board does not verify a VP.</span></li>
-            <li><strong>Authority</strong><span>Current maintainer membership, exact signatures, policy, and quorum are checked separately. DID sign-in is not a vote.</span></li>
+            <li><strong>Eligibility</strong><span>Check the redacted proof and its trusted status source. This board does not verify a verifiable presentation (VP).</span></li>
+            <li><strong>Authority</strong><span>Current maintainer membership, exact signatures, policy, and quorum are checked separately. Digital identity sign-in is not a vote.</span></li>
           </ul>
         </section>`}
         <div class="decision-summary"><h3>Decision summary</h3><dl>
@@ -1118,7 +1118,7 @@ export const createAdminConsoleApp = (
           </details>
         `}
         ${hasMutablePracticeSource() && getReviewActions(card.status).length > 0
-          ? '<p class="step-hint">Exploring fixture data? Practice controls are in <a href="#workspace-settings">Workspace settings</a>.</p>' : ""}
+          ? '<p class="step-hint">Exploring sample data? Practice controls are in <a href="#workspace-settings">Workspace settings</a>.</p>' : ""}
       </aside>
     `;
   };
@@ -1172,7 +1172,7 @@ export const createAdminConsoleApp = (
           ? "Connect or retry to inspect this source. No trust decision is available."
           : state.board.sourceMode === "snapshot"
             ? "This read-only snapshot is not authenticated ledger finality or authorization evidence."
-          : "Fixture records are for exploration, not deployed ledger evidence.";
+          : "This practice workspace shows sample records, not deployed ledger evidence.";
     const taskLinks = `
       <a href="#review-board">Review records</a>
       <a href="./registry-manual.html">Registry Manual</a>
@@ -1214,8 +1214,8 @@ export const createAdminConsoleApp = (
           ${state.error === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.error)}</div>`}
           ${state.flash === undefined ? "" : `<div class="alert success" role="status">${escapeHtml(state.flash)}</div>`}
           <div class="source-panel" data-source-state="${state.loading ? "loading" : state.board?.sourceMode === "local-ledger" ? "local-ledger" : state.board === undefined ? "unavailable" : state.board.sourceMode === "snapshot" ? "snapshot" : "fixture"}" role="status" aria-live="polite">
-            <span class="source-badge">${state.loading ? "Checking" : state.board === undefined ? "Unavailable" : state.board.sourceMode === "local-ledger" ? "API claim" : state.board.sourceMode === "snapshot" ? "Snapshot" : "Local fixture"}</span>
-            <div class="source-copy"><strong>${state.loading ? "Loading registry data" : state.board === undefined ? "No current registry data" : state.board.sourceMode === "local-ledger" ? "Current local-ledger API response" : state.board.sourceMode === "snapshot" ? "Read-only registry snapshot" : "Demo workspace data"}</strong>
+            <span class="source-badge">${state.loading ? "Checking" : state.board === undefined ? "Unavailable" : state.board.sourceMode === "local-ledger" ? "API claim" : state.board.sourceMode === "snapshot" ? "Snapshot" : "Practice workspace"}</span>
+            <div class="source-copy"><strong>${state.loading ? "Loading registry data" : state.board === undefined ? "No current registry data" : state.board.sourceMode === "local-ledger" ? "Current local-ledger API response" : state.board.sourceMode === "snapshot" ? "Read-only registry snapshot" : "Sample workspace data"}</strong>
               <span>${sourceMessage}</span>
             </div>
             ${state.observedAt === undefined || state.loading ? "" : `<span class="source-time">Checked <time datetime="${escapeHtml(state.observedAt)}">${escapeHtml(formatReviewTime(state.observedAt))}</time> (browser clock)</span>`}
@@ -1232,8 +1232,8 @@ export const createAdminConsoleApp = (
           <div class="settings-cards">
             <section class="settings-card portal-profile-card" aria-labelledby="admin-did-heading">
               <p class="eyebrow">Identity</p>
-              <h2 id="admin-did-heading">DID sign-in</h2>
-              <p>Sign in to identify yourself to this registry. Identity alone does not grant a maintainer role, voting authority, or VP eligibility. Governed actions still require separate external signatures and policy checks.</p>
+              <h2 id="admin-did-heading">Digital identity sign-in</h2>
+              <p>Use your decentralized identifier (DID) to identify yourself. Sign-in does not grant a maintainer role, voting authority, or eligibility proof. Governed actions still require separate external signatures and policy checks.</p>
               ${activeDidSession === undefined
                 ? `<p class="portal-profile-status">${didSignerAvailable ? "A DID signer is available." : "No DID signer is connected to this browser. Ask your host to provide one before signing in."}</p>
                   <button class="button" type="button" data-did-sign-in data-focus-key="did-sign-in"${state.didBusy || !didSignerAvailable || !didHostAvailable || state.board === undefined ? " disabled" : ""}>${state.didBusy ? "Signing in…" : "Sign in with DID"}</button>
@@ -1297,7 +1297,7 @@ export const createAdminConsoleApp = (
             </section>
             ${practiceSource ? `<section class="settings-card practice-card" aria-labelledby="practice-heading">
               <p class="eyebrow">Local practice</p>
-              <h2 id="practice-heading">Fixture controls</h2>
+              <h2 id="practice-heading">Practice controls</h2>
               <p>These actions change only this local workspace. They do not grant ledger authority or prove finality.</p>
               <details class="settings-technical practice-controls"${practiceOpen ? " open" : ""}>
                 <summary>Open practice controls</summary>
@@ -1306,14 +1306,14 @@ export const createAdminConsoleApp = (
                     <h3 id="practice-record-heading">Selected record</h3>
                     <p>${practiceCard === undefined ? "Select a record in the review workspace first." : escapeHtml(practiceCard.label)}</p>
                     ${practiceCard === undefined ? "" : `<div class="actions">
-                      ${getReviewActions(practiceCard.status).map((action) => `<button class="button${action === "archive" ? " ghost" : ""}" type="button" data-action="${escapeHtml(action)}"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>${escapeHtml(action.charAt(0).toUpperCase() + action.slice(1))} in fixture</button>`).join("") || "<p>No practice actions for this lifecycle state.</p>"}
+                      ${getReviewActions(practiceCard.status).map((action) => `<button class="button${action === "archive" ? " ghost" : ""}" type="button" data-action="${escapeHtml(action)}"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>${escapeHtml(action.charAt(0).toUpperCase() + action.slice(1))} sample record</button>`).join("") || "<p>No practice actions for this lifecycle state.</p>"}
                     </div>`}
                   </section>
                   <form class="epoch-panel governed-panel" id="task-epoch" data-epoch-form>
                     <label>Workspace checkpoint label
                       <input class="input" data-epoch-label type="text" value="${escapeHtml(state.epochLabel)}" placeholder="optional operator label" />
                     </label>
-                    <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Publish fixture epoch</button>
+                    <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Publish practice checkpoint</button>
                   </form>
                   <section class="proposal-panel governed-panel" id="task-signed-intent">
                     <h3>Signed workspace intent</h3>

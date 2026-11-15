@@ -45,10 +45,10 @@ for (const target of ["issuer", "recognition"]) {
 
       const label = `Packaged API ${target} handoff`;
       await page.goto(`${base}/applicant/`);
-      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
       await expect(page.locator("#demo-application")).toHaveCount(0);
       await page.goto(`${base}/applicant/?demo=1`);
-      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
       await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
       await page.locator(`#demo-application [name='target'][value='${target}']`).check();
       await page.locator("#demo-application [name='label']").fill(label);
@@ -56,10 +56,10 @@ for (const target of ["issuer", "recognition"]) {
       await expect(page.locator(".alert.success")).toContainText("(proposed)");
 
       await page.goto(`${base}/admin/`);
-      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
       await expect(page.locator("[data-action]")).toHaveCount(0);
       await page.goto(`${base}/admin/?demo=1`);
-      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
       await expect(page.locator(".card").filter({ hasText: label })).toContainText("Proposed");
       await page.locator(".card").filter({ hasText: label }).click();
       await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
@@ -70,7 +70,7 @@ for (const target of ["issuer", "recognition"]) {
       await expect(page.locator(".card").filter({ hasText: label })).toContainText("Active");
 
       await page.goto(`${base}/applicant/?demo=1`);
-      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
       await expect(page.locator("#trust-records article").filter({ hasText: label })).toBeVisible();
       const activePath = target === "issuer" ? "/v1/authorizations/issuer?status=active"
         : "/v1/recognitions?status=active";

@@ -236,11 +236,11 @@ test("fixture admin review advances an issuer through approval, activation, risk
     allowedLocalOrigins.add(base);
     page.on("dialog", (dialog) => dialog.accept());
     await page.goto(`${base}/?demo=1&apiBase=${encodeURIComponent(base)}`);
-    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
     await expect(page.locator(".card")).toContainText("UI review issuer");
     await expect(page.locator(".review-filters")).toContainText("Requests awaiting action");
-    await expect(page.locator(".review-checks")).toContainText("DID sign-in is not a vote");
-    await expect(page.locator(".review-checks")).toContainText("This board does not verify a VP");
+    await expect(page.locator(".review-checks")).toContainText("Digital identity sign-in is not a vote");
+    await expect(page.locator(".review-checks")).toContainText("This board does not verify a verifiable presentation (VP)");
     await page.locator("[data-review-query]").fill("missing record");
     await expect(page.getByText("No records match these filters.")).toBeVisible();
     await expect(page.locator(".card")).toHaveCount(0);
@@ -343,7 +343,7 @@ test("fixture governance publishes an epoch and submits an externally signed wor
       await dialog.accept();
     });
     await page.goto(`${base}/?demo=1&apiBase=${encodeURIComponent(base)}`);
-    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
     await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
     await page.locator(".practice-controls > summary").click();
     await page.locator("[data-epoch-label]").fill("reviewed fixture epoch");
@@ -431,7 +431,7 @@ test("fixture policy revision requires a separate evidence-verifier registration
       await dialog.accept();
     });
     await page.goto(`${base}/?apiBase=${encodeURIComponent(base)}`);
-    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
     await page.locator(".advanced-workflows > summary").click();
     await page.locator("[data-policy-prepare-thresholds]").click();
     await expect(page.locator("[data-policy-context]")).toBeVisible();

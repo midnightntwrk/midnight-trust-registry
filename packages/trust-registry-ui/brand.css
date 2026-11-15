@@ -322,7 +322,9 @@
 .source-badge {
   display: inline-flex;
   align-items: center;
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
   min-height: 1.75rem;
   padding: 0.2rem 0.6rem;
   border-radius: 5px;
@@ -330,6 +332,7 @@
   color: var(--midnight-blue);
   font-size: 0.78rem;
   font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .source-panel[data-source-state="unavailable"] .source-badge {
