@@ -89,6 +89,17 @@ try {
       seed, actorAuthenticationDigestBytes(challenge),
     ))).toString("hex")}`,
   };
+  const wrongSignature = {
+    ...signature,
+    value: `0x${Buffer.from(encodeJubjubSignature(signJubjubPayloadFromSeed(
+      new Uint8Array(32).fill(87), actorAuthenticationDigestBytes(challenge),
+    ))).toString("hex")}`,
+  };
+  await expectStatus(await post(sessionRoute, { challenge, signature: wrongSignature }), 401);
+  await expectStatus(await post(sessionRoute, {
+    challenge: { ...challenge, contractAddress: `0x${"33".repeat(32)}` }, signature,
+  }), 401);
+  await expectStatus(await post(sessionRoute, { challenge, signature }, "https://unrelated.example"), 403);
   const session = await expectStatus(await post(sessionRoute, { challenge, signature }), 201);
   assert.equal(session.actorDid, actorDid);
   assert.equal(session.purpose, "applicant-session");
@@ -149,7 +160,7 @@ try {
   });
   await signOutActorDid({ apiBase: origin, pageOrigin: origin, session: clientSession });
   assert.equal(sessions.authenticate(`Bearer ${clientSession.accessToken}`, "maintainer-session"), null);
-  process.stdout.write("[did-auth-headless] Applicant and maintainer DID challenge sessions, shared-client sign-in, one-use replay, origin denial, purpose isolation, identity-only claims, and revocation passed. No role grant or deployed finality was inferred.\n");
+  process.stdout.write("[did-auth-headless] Applicant and maintainer DID challenge sessions, shared-client sign-in, bad-signature and deployment-context denial, one-use replay, origin denial, purpose isolation, identity-only claims, and revocation passed. No role grant or deployed finality was inferred.\n");
 } finally {
   server.closeAllConnections();
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
