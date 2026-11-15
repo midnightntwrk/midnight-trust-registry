@@ -1693,8 +1693,8 @@ export const createApplicantPortalApp = (
               <h2 id="portal-profile-heading">Digital identity sign-in</h2>
               <p>Use your decentralized identifier (DID) to identify yourself before private application actions. Sign-in does not grant a registry role or prove eligibility. Eligibility may later use a verifiable presentation (VP).</p>
               ${activeDidSession === undefined
-                ? `<p class="portal-profile-status">${state.loading && state.didSession !== undefined ? "Checking the source; sign-in is paused until it matches." : didSignerAvailable ? "A DID signer is available." : "No DID signer is connected to this browser. Ask your host to provide one before signing in."}</p>
-                  <button class="button" type="button" data-did-sign-in data-focus-key="did-sign-in"${state.didBusy || state.loading || !didSignerAvailable || !privateHost || state.inspection === undefined ? " disabled" : ""}>${state.didBusy ? "Signing in…" : "Sign in with DID"}</button>
+                ? `<p class="portal-profile-status">${state.loading && state.didSession !== undefined ? "Checking the source; sign-in is paused until it matches." : didSignerAvailable ? "A digital identity signer is connected." : "No digital identity signer is connected to this browser. Ask your host to provide one before signing in."}</p>
+                  <button class="button" type="button" data-did-sign-in data-focus-key="did-sign-in"${state.didBusy || state.loading || !didSignerAvailable || !privateHost || state.inspection === undefined ? " disabled" : ""}>${state.didBusy ? "Signing in…" : "Sign in with digital identity"}</button>
                   ${!privateHost ? '<p class="step-hint">Sign-in requires the same-origin API host.</p>' : ""}`
                 : `<p class="portal-profile-status">Signed in as <strong class="technical-id">${escapeHtml(activeDidSession.actorDid)}</strong></p>
                   <p class="step-hint">Identity only. Eligibility proof and registry permission are checked separately.</p>

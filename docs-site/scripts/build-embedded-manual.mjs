@@ -38,6 +38,6 @@ table{display:block;overflow-x:auto;border-collapse:collapse;width:100%}th,td{pa
 pre{overflow-x:auto}code{overflow-wrap:anywhere}
 @media(max-width:740px){.layout{grid-template-columns:1fr}.rail{position:static}.rail strong{display:inline;margin-left:1rem}main{padding:1.25rem}}
 </style></head><body><div class="layout"><aside class="rail"><img src="./midnight-logo.svg" alt="Midnight"><strong>Trust Registry</strong><nav aria-label="Continue in the app"><a class="task-link" href="${task.href}">${task.label}</a>${"pending" in task ? `<a href="${task.pending}">Continue pending request</a>` : ""}<a href="${task.settings}">Digital identity settings</a></nav></aside>
-<main id="content"><p class="notice">This Manual is included for offline reading. Related chapters and the latest updates are in the separate documentation site. Phase-0 DID sign-in requires an external signer and same-origin host; it does not grant a role. VP-based eligibility is still planned.</p>${content}</main></div></body></html>`;
+<main id="content"><p class="notice">This Manual is included for offline reading. Related chapters and the latest updates are in the separate documentation site. Digital identity sign-in needs a connected signer and an app served by the same host as its registry API; it does not grant a registry role. Eligibility credentials are a later step and are not required just to sign in.</p>${content}</main></div></body></html>`;
   await writeFile(outputPath, html, "utf8");
 }

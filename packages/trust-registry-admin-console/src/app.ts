@@ -1108,8 +1108,8 @@ export const createAdminConsoleApp = (
         ${getReviewActions(card.status).length === 0 ? "" : `<section class="review-checks" aria-labelledby="review-checks-heading">
           <h3 id="review-checks-heading">Check before acting</h3>
           <ul>
-            <li><strong>Identity</strong><span>This record names a DID; this list does not prove current key control.</span></li>
-            <li><strong>Eligibility</strong><span>Check the redacted proof and its trusted status source. This board does not verify a verifiable presentation (VP).</span></li>
+            <li><strong>Identity</strong><span>This record names a digital identity, but this list does not prove who controls its key now.</span></li>
+            <li><strong>Eligibility</strong><span>Check the redacted proof and its trusted status source. This board does not verify the underlying credential presentation.</span></li>
             <li><strong>Authority</strong><span>Current maintainer membership, exact signatures, policy, and quorum are checked separately. Digital identity sign-in is not a vote.</span></li>
           </ul>
         </section>`}
@@ -1274,8 +1274,8 @@ export const createAdminConsoleApp = (
               <h2 id="admin-did-heading">Digital identity sign-in</h2>
               <p>Use your decentralized identifier (DID) to identify yourself. Sign-in does not grant a maintainer role, voting authority, or eligibility proof. Governed actions still require separate external signatures and policy checks.</p>
               ${activeDidSession === undefined
-                ? `<p class="portal-profile-status">${state.loading && state.didSession !== undefined ? "Checking the source; sign-in is paused until it matches." : didSignerAvailable ? "A DID signer is available." : "No DID signer is connected to this browser. Ask your host to provide one before signing in."}</p>
-                  <button class="button" type="button" data-did-sign-in data-focus-key="did-sign-in"${state.didBusy || state.loading || !didSignerAvailable || !didHostAvailable || state.board === undefined ? " disabled" : ""}>${state.didBusy ? "Signing in…" : "Sign in with DID"}</button>
+                ? `<p class="portal-profile-status">${state.loading && state.didSession !== undefined ? "Checking the source; sign-in is paused until it matches." : didSignerAvailable ? "A digital identity signer is connected." : "No digital identity signer is connected to this browser. Ask your host to provide one before signing in."}</p>
+                  <button class="button" type="button" data-did-sign-in data-focus-key="did-sign-in"${state.didBusy || state.loading || !didSignerAvailable || !didHostAvailable || state.board === undefined ? " disabled" : ""}>${state.didBusy ? "Signing in…" : "Sign in with digital identity"}</button>
                   ${didHostAvailable ? "" : '<p class="step-hint">Sign-in requires the same-origin API host.</p>'}`
                 : `<p class="portal-profile-status">Signed in as <strong class="technical-id">${escapeHtml(activeDidSession.actorDid)}</strong></p>
                   <p class="step-hint">Identity only. Your maintainer authority is checked separately.</p>
@@ -1370,7 +1370,7 @@ export const createAdminConsoleApp = (
               </details>
             </section>` : ""}
           </div>
-          <div class="settings-footer"><strong>Identity is not authority</strong><p>The DID session is temporary and stays in browser memory. Maintainer authorization, external signing, and governance policy are separate.</p></div>
+          <div class="settings-footer"><strong>Identity is not authority</strong><p>Your sign-in session is temporary and stays in browser memory. Maintainer authorization, external signing, and governance policy are separate.</p></div>
         </section>
         ${state.board?.sourceMode === "local-ledger" ? `
           <section class="proposal-panel governed-panel" id="exact-lookup">

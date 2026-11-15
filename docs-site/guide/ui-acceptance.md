@@ -17,6 +17,9 @@ Registry Manual experiences. The shared left rail, palette, and concise
 applicant role choices and Settings-based phase-0 DID sign-in are implemented
 locally. VP readiness and a dedicated application inbox remain concepts, not
 shipped behavior. DID sign-in requires an external signer and same-origin host.
+The primary sign-in controls and maintainer checklist use plain-language
+identity and credential terms; Settings and the Manual retain the protocol
+definitions and explicitly separate identity from eligibility and authority.
 The applicant task rail instead links to the supported exact-ID pending-request
 continuation; it does not pretend to offer a personal application list.
 

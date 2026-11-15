@@ -114,7 +114,7 @@ for (const app of ["applicant-portal", "admin-console"]) {
       await page.locator('.task-nav a[href="./registry-manual.html"]').click();
       await expect(page).toHaveURL(`${server.base}${server.packagedPath}registry-manual.html`);
       await expect(page.locator("main h1")).toContainText("Registry Manual");
-      await expect(page.getByText("Phase-0 DID sign-in requires an external signer and same-origin host", { exact: false })).toBeVisible();
+      await expect(page.getByText("Digital identity sign-in needs a connected signer and an app served by the same host as its registry API", { exact: false })).toBeVisible();
       await page.setViewportSize({ width: 390, height: 844 });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       await expectNoWcagViolations(page, `${app} bundled Manual at 390px`);
@@ -382,7 +382,7 @@ test("applicant Settings signs in with DID without showing a registry role", asy
     await expect(page.locator(".application-readiness")).toContainText("Requires governed approval");
     await expect(page.locator(".hero-sign-in")).toHaveText("Sign in with digital identity →");
     await page.locator(".hero-sign-in").click();
-    await page.getByRole("button", { name: "Sign in with DID" }).click();
+    await page.getByRole("button", { name: "Sign in with digital identity" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
     await expect(page.locator(".application-readiness")).toContainText("Signed in for this session");
     await expect(page.locator(".portal-profile-card")).toContainText("Eligibility proof and registry permission are checked separately");
@@ -390,25 +390,25 @@ test("applicant Settings signs in with DID without showing a registry role", asy
     await expect(page.locator(".journey-prerequisite")).toContainText("Proof of eligibility and governed approval are still required");
     await expect(page.locator(".content [data-did-sign-in]")).toHaveCount(0);
     await page.getByRole("button", { name: "Sign out" }).click();
-    await expect(page.locator(".portal-profile-card")).toContainText("A DID signer is available");
+    await expect(page.locator(".portal-profile-card")).toContainText("A digital identity signer is connected");
     await expect(page.locator(".application-readiness")).toContainText("Not signed in");
     await expect(page.locator(".journey-prerequisite")).toContainText("sign in with your digital identity in Workspace settings");
     expect(revokeCalls).toBe(1);
-    await page.getByRole("button", { name: "Sign in with DID" }).click();
+    await page.getByRole("button", { name: "Sign in with digital identity" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
     const releaseApplicantHealth = server.pauseHealth();
     try {
       await page.getByRole("button", { name: "Recheck connection" }).click();
       await expect(page.locator(".portal-profile-card")).toContainText("Checking the source; sign-in is paused until it matches.");
       await expect(page.locator(".application-readiness")).toContainText("Paused while checking source");
-      await expect(page.getByRole("button", { name: "Sign in with DID" })).toBeDisabled();
+      await expect(page.getByRole("button", { name: "Sign in with digital identity" })).toBeDisabled();
     } finally {
       releaseApplicantHealth();
     }
     await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
     server.setSourceMode("snapshot");
     await page.getByRole("button", { name: "Recheck connection" }).click();
-    await expect(page.locator(".portal-profile-card")).toContainText("A DID signer is available");
+    await expect(page.locator(".portal-profile-card")).toContainText("A digital identity signer is connected");
     await expect(page.locator(".portal-profile-card [data-did-sign-out]")).toHaveCount(0);
   } finally {
     await page.close();
@@ -423,7 +423,7 @@ test("applicant role guidance explains a missing DID signer", async ({ page, all
     await page.goto(`${server.base}${server.packagedPath}`);
     await expect(page.locator(".journey-prerequisite")).toContainText("ask your host to connect a digital identity signer");
     await page.locator(".journey-prerequisite a").click();
-    await expect(page.locator(".portal-profile-card")).toContainText("No DID signer is connected");
+    await expect(page.locator(".portal-profile-card")).toContainText("No digital identity signer is connected");
     await expect(page.locator("[data-did-sign-in]")).toBeDisabled();
   } finally {
     await page.close();
@@ -464,10 +464,10 @@ for (const appName of ["applicant-portal", "admin-console"]) {
       });
       await page.goto(`${server.base}${server.packagedPath}`);
       await page.getByRole("link", { name: "Workspace settings" }).first().click();
-      await page.getByRole("button", { name: "Sign in with DID" }).click();
+      await page.getByRole("button", { name: "Sign in with digital identity" }).click();
       await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
       await expect(page.locator(".portal-profile-card")).toContainText("Your digital identity session expired. Sign in again.");
-      await expect(page.getByRole("button", { name: "Sign in with DID" })).toBeEnabled();
+      await expect(page.getByRole("button", { name: "Sign in with digital identity" })).toBeEnabled();
       await expect(page.locator(".portal-profile-card [data-did-sign-out]")).toHaveCount(0);
     } finally {
       await page.close();
@@ -514,7 +514,7 @@ test("admin Settings signs in with DID without granting maintainer authority", a
     await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
     await expect(page.locator("#selected-record-detail")).toBeVisible();
     await page.getByRole("link", { name: "Workspace settings" }).first().click();
-    await page.getByRole("button", { name: "Sign in with DID" }).click();
+    await page.getByRole("button", { name: "Sign in with digital identity" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
     await expect(page.locator(".portal-profile-card")).toContainText("Your maintainer authority is checked separately");
     await expect(page.locator("body")).not.toContainText(accessToken);
@@ -523,22 +523,22 @@ test("admin Settings signs in with DID without granting maintainer authority", a
     await expect(page.locator("#selected-record-detail")).toBeVisible();
     await page.getByRole("link", { name: "Workspace settings" }).first().click();
     await page.getByRole("button", { name: "Sign out" }).click();
-    await expect(page.locator(".portal-profile-card")).toContainText("A DID signer is available");
+    await expect(page.locator(".portal-profile-card")).toContainText("A digital identity signer is connected");
     expect(revokeCalls).toBe(1);
-    await page.getByRole("button", { name: "Sign in with DID" }).click();
+    await page.getByRole("button", { name: "Sign in with digital identity" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
     const releaseAdminHealth = server.pauseHealth();
     try {
       await page.getByRole("button", { name: "Recheck connection" }).click();
       await expect(page.locator(".portal-profile-card")).toContainText("Checking the source; sign-in is paused until it matches.");
-      await expect(page.getByRole("button", { name: "Sign in with DID" })).toBeDisabled();
+      await expect(page.getByRole("button", { name: "Sign in with digital identity" })).toBeDisabled();
     } finally {
       releaseAdminHealth();
     }
     await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
     server.setSourceMode("snapshot");
     await page.getByRole("button", { name: "Recheck connection" }).click();
-    await expect(page.locator(".portal-profile-card")).toContainText("A DID signer is available");
+    await expect(page.locator(".portal-profile-card")).toContainText("A digital identity signer is connected");
   } finally {
     await page.close();
     await server.close();

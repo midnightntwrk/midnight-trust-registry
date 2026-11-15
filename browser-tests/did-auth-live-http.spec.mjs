@@ -124,11 +124,11 @@ test("both browser apps use real same-origin DID HTTP sessions without a role gr
     assert.equal(requests.some((request) => request.startsWith("POST /v1/governed/")), false);
     await page.locator(".hero-sign-in").click();
     await page.evaluate(() => { window.trDidSignerUseWrongKey = true; });
-    await page.getByRole("button", { name: "Sign in with DID" }).click();
+    await page.getByRole("button", { name: "Sign in with digital identity" }).click();
     await expect(page.locator(".portal-profile-card [role='alert']")).toContainText("HTTP 401");
     await expect(page.locator(".application-readiness")).toContainText("Not signed in");
     await page.evaluate(() => { window.trDidSignerUseWrongKey = false; });
-    await page.getByRole("button", { name: "Sign in with DID" }).click();
+    await page.getByRole("button", { name: "Sign in with digital identity" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
     await expect(page.locator(".portal-profile-card [role='alert']")).toHaveCount(0);
     await expect(page.locator(".application-readiness")).toContainText("Requires governed approval");
@@ -140,7 +140,7 @@ test("both browser apps use real same-origin DID HTTP sessions without a role gr
     await expect(page.locator("#issuer-request")).toBeVisible();
     await page.getByRole("link", { name: "Workspace settings" }).first().click();
     await page.getByRole("button", { name: "Sign out" }).click();
-    await expect(page.locator(".portal-profile-card")).toContainText("A DID signer is available");
+    await expect(page.locator(".portal-profile-card")).toContainText("A digital identity signer is connected");
 
     await page.goto(`${origin}/admin/`);
     await page.locator('.task-nav a[href="./registry-manual.html"]').click();
@@ -149,12 +149,12 @@ test("both browser apps use real same-origin DID HTTP sessions without a role gr
     await expect(page.locator("#review-board")).toBeVisible();
     assert.equal(requests.some((request) => request.startsWith("POST /v1/governed/")), false);
     await page.getByRole("link", { name: "Workspace settings" }).first().click();
-    await page.getByRole("button", { name: "Sign in with DID" }).click();
+    await page.getByRole("button", { name: "Sign in with digital identity" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
     await expect(page.locator(".portal-profile-card")).toContainText("Your maintainer authority is checked separately");
     await expect(page.locator("body")).not.toContainText("trsa_");
     await page.getByRole("button", { name: "Sign out" }).click();
-    await expect(page.locator(".portal-profile-card")).toContainText("A DID signer is available");
+    await expect(page.locator(".portal-profile-card")).toContainText("A digital identity signer is connected");
     assert.equal(requests.filter((request) => request === "POST /v1/actor-authentication/challenges").length, 3);
     assert.equal(requests.filter((request) => request === "POST /v1/actor-authentication/sessions").length, 3);
     assert.equal(requests.filter((request) => request === "DELETE /v1/actor-authentication/session").length, 2);
