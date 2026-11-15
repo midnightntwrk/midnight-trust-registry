@@ -1035,7 +1035,7 @@ for (const [app, title] of [
           expect(headerRows).toBeLessThan(5);
         }
         if (app === "applicant-portal") await expect(page.locator(".hero-intro > .eyebrow")).toHaveText("Applicant workspace");
-        await expect(page.locator(".metrics")).toContainText("Midnight Trust Registry");
+        if (app === "admin-console") await expect(page.locator(".metrics")).toContainText("Midnight Trust Registry");
         await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
         await expect(page.locator(".source-panel")).toContainText("not deployed ledger evidence");
         const initialLayout = await page.evaluate(() => {
@@ -1069,19 +1069,12 @@ for (const [app, title] of [
           expect(heroLayout.reviewTop).toBeLessThan(350);
         }
         if (app === "applicant-portal") {
-          await expect(page.locator(".hero-actions a").first()).toHaveAttribute("href", "#governed-requests");
+          await expect(page.locator(".hero-overview, .hero-actions .button")).toHaveCount(0);
           if (width === 768) {
             const tabletLayout = await page.evaluate(() => ({
-              overviewHeight: document.querySelector(".hero-overview").getBoundingClientRect().height,
               rolesTop: document.querySelector("#governed-requests").getBoundingClientRect().top,
-              metricRows: [...document.querySelectorAll(".hero-overview .metric")]
-                .map((metric) => Math.round(metric.getBoundingClientRect().top)),
             }));
-            expect(tabletLayout.overviewHeight, JSON.stringify(tabletLayout)).toBeLessThan(180);
-            expect(tabletLayout.rolesTop, JSON.stringify(tabletLayout)).toBeLessThan(830);
-            expect(tabletLayout.metricRows).toHaveLength(4);
-            expect(new Set(tabletLayout.metricRows).size).toBe(2);
-            expect(new Set(tabletLayout.metricRows.slice(1)).size).toBe(1);
+            expect(tabletLayout.rolesTop, JSON.stringify(tabletLayout)).toBeLessThan(650);
           }
           if (width === 390) {
             const journeyLayout = await page.evaluate(() => ({

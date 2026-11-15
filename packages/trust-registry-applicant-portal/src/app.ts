@@ -1649,24 +1649,13 @@ export const createApplicantPortalApp = (
               : state.inspection.sourceMode === "local-ledger"
                 ? "Check an exact record or prepare a request. Verify finality independently before relying on an API claim."
                 : "Choose the work you need to do. We will show the requirements before you submit."}</p>
-            <div class="hero-actions">
-              <a class="button" href="${state.inspection === undefined ? "#connection-details" : state.inspection.sourceMode === "local-ledger" ? "#current-authorization-lookup" : "#governed-requests"}">${state.inspection === undefined ? "Check connection" : state.inspection.sourceMode === "local-ledger" ? "Look up a record" : "Choose a role"}</a>
-              ${state.inspection === undefined ? "" : state.inspection.sourceMode === "local-ledger"
-                ? `<a class="button secondary" href="#governed-requests">Choose a role</a>`
-                : `<a class="button secondary" href="#trust-records">Explore records</a>`}
+            ${state.inspection === undefined || state.inspection.sourceMode === "local-ledger" || privateHost ? `<div class="hero-actions">
+              ${state.inspection === undefined ? '<a class="button" href="#connection-details">Check connection</a>'
+                : state.inspection.sourceMode === "local-ledger"
+                  ? '<a class="button" href="#current-authorization-lookup">Look up a record</a><a class="button secondary" href="#governed-requests">Choose a role</a>' : ""}
               ${privateHost && state.inspection !== undefined
                 ? `<a class="hero-sign-in" href="#connection-details">${activeDidSession !== undefined ? "Identity signed in" : didSignerAvailable ? "Sign in with digital identity" : "Set up digital identity sign-in"} &rarr;</a>` : ""}
-            </div>
-          </div>
-          <div class="hero-overview">
-            <p class="eyebrow">${state.inspection?.sourceMode === "local-ledger" ? "Registry context" : "Registry snapshot"}</p>
-            <div class="panel metrics">
-              <div class="metric"><span>Registry</span><strong>${escapeHtml(state.inspection?.summary.registryLabel ?? "Unavailable")}</strong></div>
-              <div class="metric"><span>${state.inspection?.sourceMode === "local-ledger" ? "API-reported epoch" : "Current epoch"}</span><strong>${state.inspection?.summary.epochCount === undefined ? "Unavailable" : `#${state.inspection.summary.epochCount.toString()}`}</strong></div>
-              ${state.inspection?.sourceMode === "local-ledger" ? "" : `
-                <div class="metric"><span>Active issuers</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("issuer") ? "n/a" : state.inspection.activeIssuers.length.toString()}</strong></div>
-                <div class="metric"><span>Active verifiers</span><strong>${state.inspection === undefined || state.inspection.unavailableLists?.includes("verifier") ? "n/a" : state.inspection.activeVerifiers.length.toString()}</strong></div>`}
-            </div>
+            </div>` : ""}
           </div>
           ${state.error === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.error)}</div>`}
           ${state.inspection?.warnings?.map((warning) => `<div class="alert error">${escapeHtml(warning)}</div>`).join("") ?? ""}
