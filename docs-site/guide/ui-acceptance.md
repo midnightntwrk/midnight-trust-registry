@@ -103,8 +103,11 @@ The admin console uses the same ephemeral browser client with a distinct
 attached to governance requests: external signatures, maintainer membership,
 VP eligibility, policy, and quorum remain independent authorization checks.
 Changing the API source or losing a healthy board clears the browser session.
-The browser test uses a mocked auth endpoint; the headless journey verifies
-the real API purpose boundary and revocation.
+The per-view browser tests use mocked auth endpoints. A separate browser test
+serves both built apps beside the real loopback challenge/session API with a
+fixture DID resolver and external test signer; the headless journey also
+verifies the API purpose boundary and revocation. Neither is a deployed DID
+provider or an authorization test.
 
 ### Clean-checkout smoke record
 
@@ -171,6 +174,7 @@ repeatable UI acceptance evidence:
 | A compact check summary near the role choices reflects only current DID sign-in state; it labels eligibility as unverified in this view and registry permission as requiring governed approval, never as completed because a user signed in | `ui-layout.spec.mjs` |
 | A selected admin record visibly offers “Next: review available actions” after evidence and decision detail; opening it explains external maintainer signing and does not submit a vote | `ui-layout.spec.mjs` |
 | Admin Settings offers a distinct maintainer-purpose DID sign-in and sign-out without presenting it as voting authority or exposing the bearer. Source change clears the visible session. Browser auth is mocked here; the shared client also runs against the real loopback API in the headless journey | `ui-layout.spec.mjs`, `demo-did-session-journey.mjs` |
+| Both built browser apps complete DID sign-in and sign-out against the real same-origin loopback HTTP API with a fixture resolver and external test signer; the issued bearer is purpose-isolated, not rendered, and never triggers a governance request | `did-auth-live-http.spec.mjs` |
 | Switch an editable development endpoint between two loopback fixture hosts without carrying reads to the old host or enabling cross-origin private actions | `ui-layout.spec.mjs` (both apps) |
 | Open a governed issuer request by keyboard with reduced motion and verify the three visible preparation phases; keep mobile task targets at least 44 px high | `ui-layout.spec.mjs` |
 | Keep the 390 px applicant introduction compact without hiding role requirements or implying that submission is approval | `ui-layout.spec.mjs` (role-row and section-height assertions, visible prerequisite text) |

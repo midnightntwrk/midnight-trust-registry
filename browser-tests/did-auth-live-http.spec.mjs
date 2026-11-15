@@ -1,0 +1,144 @@
+import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
+import { createServer } from "node:http";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+
+import {
+  deriveJubjubPublicKeyFromSeed,
+  encodeJubjubSignature,
+  signJubjubPayloadFromSeed,
+} from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
+
+import { test, expect } from "./offline-browser-fixture.mjs";
+import { createStaticAssetHandler } from "../scripts/serve-static.mjs";
+import { createOperatorWorkspace } from "../packages/trust-registry-cli/dist/index.js";
+import {
+  createMidnightDid,
+  createMidnightDidLedgerFixture,
+  createMidnightDidResolver,
+} from "../packages/trust-registry-integration/dist/index.js";
+import {
+  createActorAuthenticationService,
+  createActorSessionService,
+  createInMemorySource,
+  createTrustRegistryApiServer,
+  FileActorAuthenticationChallengeStore,
+} from "../packages/trust-registry-api/dist/index.js";
+
+test("both browser apps use real same-origin DID HTTP sessions without a role grant", async ({ page, allowedLocalOrigins }) => {
+  const directory = await mkdtemp(join(tmpdir(), "tr-browser-did-auth-"));
+  const seed = new Uint8Array(32).fill(86);
+  const actorDid = createMidnightDid("browser-did-authentication");
+  const actorKeyId = `${actorDid}#auth-1`;
+  const workspace = createOperatorWorkspace({ label: "browser-did-auth" });
+  const options = { source: createInMemorySource(workspace.snapshot) };
+  const sessions = createActorSessionService(Date.now);
+  const api = createTrustRegistryApiServer(options);
+  const staticHandlers = new Map([
+    ["applicant", createStaticAssetHandler({
+      distDir: resolve("packages/trust-registry-applicant-portal/dist"), name: "applicant-auth-browser",
+    })],
+    ["admin", createStaticAssetHandler({
+      distDir: resolve("packages/trust-registry-admin-console/dist"), name: "admin-auth-browser",
+    })],
+  ]);
+  const requests = [];
+  const revokedPurposes = [];
+  const server = createServer((request, response) => {
+    const pathname = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+    if (pathname === "/health" || pathname.startsWith("/v1/")) {
+      requests.push(`${request.method} ${pathname}`);
+      if (request.method === "DELETE" && pathname === "/v1/actor-authentication/session") {
+        const identity = sessions.authenticate(request.headers.authorization);
+        revokedPurposes.push({
+          purpose: identity?.purpose,
+          wrongPurposeAccepted: sessions.authenticate(request.headers.authorization,
+            identity?.purpose === "applicant-session" ? "maintainer-session" : "applicant-session") !== null,
+        });
+      }
+      api.emit("request", request, response);
+      return;
+    }
+    const surface = pathname.startsWith("/applicant/") ? "applicant"
+      : pathname.startsWith("/admin/") ? "admin" : undefined;
+    if (surface === undefined) {
+      response.writeHead(404).end();
+      return;
+    }
+    request.url = (request.url ?? "/").replace(/^\/(?:applicant|admin)\//u, "/");
+    void staticHandlers.get(surface)(request, response);
+  });
+  try {
+    await new Promise((done) => server.listen(0, "127.0.0.1", done));
+    const address = server.address();
+    assert(address !== null && typeof address !== "string");
+    const origin = `http://127.0.0.1:${address.port}`;
+    allowedLocalOrigins.add(origin);
+    const resolver = createMidnightDidResolver([
+      createMidnightDidLedgerFixture(actorDid, {
+        verificationMethodId: "auth-1",
+        schnorrJubjubPublicKey: deriveJubjubPublicKeyFromSeed(seed),
+      }),
+    ]);
+    options.actorAuthentication = {
+      challenges: createActorAuthenticationService({
+        context: {
+          registryId: workspace.snapshot.registry.registryId,
+          genesisHash: `0x${"11".repeat(32)}`,
+          contractAddress: `0x${"22".repeat(32)}`,
+          origin,
+        },
+        resolver,
+        store: new FileActorAuthenticationChallengeStore(join(directory, "challenges.json"), Date.now),
+        clock: Date.now,
+      }),
+      sessions,
+    };
+    await page.exposeFunction("signTrustRegistryDigest", (digest) => ({
+      keyId: actorKeyId,
+      algorithm: "jubjub-schnorr",
+      value: `0x${Buffer.from(encodeJubjubSignature(signJubjubPayloadFromSeed(
+        seed, Uint8Array.from(digest),
+      ))).toString("hex")}`,
+    }));
+    await page.addInitScript(({ actorDid, actorKeyId }) => {
+      window.midnightTrustRegistryDidSigner = {
+        getIdentity: async () => ({ actorDid, actorKeyId }),
+        signDigest: async ({ digest }) => window.signTrustRegistryDigest(Array.from(digest)),
+      };
+    }, { actorDid, actorKeyId });
+
+    await page.goto(`${origin}/applicant/`);
+    await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
+    await page.locator(".hero-sign-in").click();
+    await page.getByRole("button", { name: "Sign in with DID" }).click();
+    await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
+    await expect(page.locator(".application-readiness")).toContainText("Requires governed approval");
+    await expect(page.locator("body")).not.toContainText("trsa_");
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await expect(page.locator(".portal-profile-card")).toContainText("A DID signer is available");
+
+    await page.goto(`${origin}/admin/`);
+    await page.getByRole("link", { name: "Workspace settings" }).first().click();
+    await page.getByRole("button", { name: "Sign in with DID" }).click();
+    await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
+    await expect(page.locator(".portal-profile-card")).toContainText("Your maintainer authority is checked separately");
+    await expect(page.locator("body")).not.toContainText("trsa_");
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await expect(page.locator(".portal-profile-card")).toContainText("A DID signer is available");
+    assert.equal(requests.filter((request) => request === "POST /v1/actor-authentication/challenges").length, 2);
+    assert.equal(requests.filter((request) => request === "POST /v1/actor-authentication/sessions").length, 2);
+    assert.equal(requests.filter((request) => request === "DELETE /v1/actor-authentication/session").length, 2);
+    assert.deepEqual(revokedPurposes, [
+      { purpose: "applicant-session", wrongPurposeAccepted: false },
+      { purpose: "maintainer-session", wrongPurposeAccepted: false },
+    ]);
+    assert.equal(requests.some((request) => request.startsWith("POST /v1/governed/")), false);
+  } finally {
+    server.closeAllConnections();
+    await new Promise((done, reject) => server.close((error) => error ? reject(error) : done()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
