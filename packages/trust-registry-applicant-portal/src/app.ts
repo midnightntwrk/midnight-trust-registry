@@ -1654,7 +1654,7 @@ export const createApplicantPortalApp = (
                 : state.inspection.sourceMode === "local-ledger"
                   ? '<a class="button" href="#current-authorization-lookup">Look up a record</a><a class="button secondary" href="#governed-requests">Choose a role</a>' : ""}
               ${privateHost && state.inspection !== undefined
-                ? `<a class="hero-sign-in" href="#connection-details">${activeDidSession !== undefined ? "Identity signed in" : didSignerAvailable ? "Sign in with digital identity" : "Set up digital identity sign-in"} &rarr;</a>` : ""}
+                ? `<a class="hero-sign-in" href="#connection-details">${activeDidSession !== undefined ? "Identity signed in" : didSignerAvailable ? "Sign in with digital identity" : "Sign-in requirements"} &rarr;</a>` : ""}
             </div>` : ""}
           </div>
           ${state.error === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.error)}</div>`}

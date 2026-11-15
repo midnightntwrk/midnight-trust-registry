@@ -422,7 +422,8 @@ test("applicant role guidance explains a missing DID signer", async ({ page, all
     allowedLocalOrigins.add(server.base);
     await page.goto(`${server.base}${server.packagedPath}`);
     await expect(page.locator(".journey-prerequisite")).toContainText("ask your host to connect a digital identity signer");
-    await page.locator(".journey-prerequisite a").click();
+    await expect(page.locator(".hero-sign-in")).toHaveText("Sign-in requirements →");
+    await page.locator(".hero-sign-in").click();
     await expect(page.locator(".portal-profile-card")).toContainText("No digital identity signer is connected");
     await expect(page.locator("[data-did-sign-in]")).toBeDisabled();
   } finally {
