@@ -349,7 +349,8 @@ test("applicant Settings signs in with DID without showing a registry role", asy
     });
     await page.goto(`${server.base}${server.packagedPath}`);
     await expect(page.locator(".source-badge")).toHaveText("Local fixture");
-    await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
+    await expect(page.locator(".hero-sign-in")).toHaveText("Sign in with DID →");
+    await page.locator(".hero-sign-in").click();
     await page.getByRole("button", { name: "Sign in with DID" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
     await expect(page.locator(".portal-profile-card")).toContainText("Registry roles and VP eligibility are checked separately");
@@ -1079,6 +1080,7 @@ test("loopback demo application choices stay usable at mobile zoom", async ({ pa
     allowedLocalOrigins.add(server.base);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`${server.base}/?demo=1&apiBase=${encodeURIComponent(server.base)}`);
+    await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
     if (process.env.TR_UI_CAPTURE === "1") {
       await page.screenshot({ path: testInfo.outputPath("demo-choices-1440.png"), fullPage: true });
     }

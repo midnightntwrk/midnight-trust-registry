@@ -125,6 +125,10 @@ for (const target of ["issuer", "recognition"]) {
       });
       await page.goto(`${base}/applicant/?demo=1&apiBase=${encodeURIComponent(base)}`);
       await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(page.locator("#demo-application")).toBeHidden();
+      await expect(page.locator(".content #demo-application")).toHaveCount(0);
+      await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
+      await expect(page.locator(".settings-view #demo-application")).toBeVisible();
       await expect(page.locator("#demo-application .demo-target-option")).toHaveCount(3);
       await expect(page.locator("#demo-application")).not.toContainText("credential families");
       if (target === "issuer") {

@@ -47,6 +47,8 @@ describe("trust registry applicant portal app", () => {
     expect(root.querySelector(".advanced-tools")).not.toBeNull();
     await renderAt("http://127.0.0.1:4175/?demo=1&apiBase=http://127.0.0.1:4400");
     expect(root.querySelector("#demo-application")).not.toBeNull();
+    expect(root.querySelector(".settings-view #demo-application")).not.toBeNull();
+    expect(root.querySelector(".content #demo-application")).toBeNull();
     await renderAt("https://registry.example/?demo=1&apiBase=http://127.0.0.1:4400");
     expect(root.querySelector("#demo-application")).toBeNull();
   });

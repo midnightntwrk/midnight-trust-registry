@@ -49,6 +49,7 @@ for (const target of ["issuer", "recognition"]) {
       await expect(page.locator("#demo-application")).toHaveCount(0);
       await page.goto(`${base}/applicant/?demo=1`);
       await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
       await page.locator(`#demo-application [name='target'][value='${target}']`).check();
       await page.locator("#demo-application [name='label']").fill(label);
       await page.locator("#demo-application button[type='submit']").click();

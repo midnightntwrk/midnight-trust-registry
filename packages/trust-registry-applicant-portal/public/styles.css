@@ -461,6 +461,7 @@ body { background: radial-gradient(circle at 100% 0, #dce9e4 0, transparent 26re
 .hero-actions { display: flex; flex-wrap: wrap; gap: 0.65rem; margin-top: auto; padding-top: 1.35rem; }
 .hero-actions .button { min-height: 2.8rem; text-decoration: none; }
 .hero-actions .button.secondary { border: 1px solid var(--midnight-border); background: var(--midnight-blue-soft); color: var(--midnight-blue); }
+.hero-actions .hero-sign-in { align-self: center; color: var(--midnight-blue); font-weight: 700; text-underline-offset: 0.2em; }
 .hero-overview { padding: 1.3rem; border: 1px solid var(--midnight-border); background: var(--midnight-white); }
 .hero-overview .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 1rem; padding: 0; border: 0; }
 .hero-overview .metric { padding: 0.65rem; border-radius: 8px; background: var(--midnight-surface); }
