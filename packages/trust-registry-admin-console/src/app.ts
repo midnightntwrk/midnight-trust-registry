@@ -1189,7 +1189,7 @@ export const createAdminConsoleApp = (
     const needsReview = pendingReviewCount > 0;
     const reviewTitle = state.board === undefined ? "Connect to review records"
       : state.board.sourceMode === "local-ledger" ? "Inspect current records"
-        : needsReview ? "Decisions that need attention" : "Registry review workspace";
+        : needsReview ? "Review inbox" : "Registry review";
     const reviewDescription = state.board === undefined
       ? "No current registry data is available. Recheck the connection before making a trust decision."
       : state.board.sourceMode === "local-ledger"

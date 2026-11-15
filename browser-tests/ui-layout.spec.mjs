@@ -999,7 +999,7 @@ test("admin review board precedes advanced governance in keyboard order", async 
 });
 
 for (const [app, title] of [
-  ["admin-console", "Registry review workspace"],
+  ["admin-console", "Registry review"],
   ["applicant-portal", "Apply for a registry role"],
 ]) {
   test(`${app} has no automated WCAG A/AA violations in workspace, workflow, and settings views`, async ({ page, allowedLocalOrigins }) => {
