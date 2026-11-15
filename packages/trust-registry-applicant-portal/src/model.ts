@@ -35,6 +35,7 @@ export type PublicInspection = {
   activeVerifiers: readonly PublicVerifierEntry[];
   summary: TrustRegistryApiSummary;
   sourceMode?: "snapshot" | "workspace" | "memory" | "local-ledger";
+  pendingApplicationListConfigured?: boolean;
   localPlanSha256?: string;
   deploymentIdentity?: TrustRegistryApiHealthResponse["deploymentIdentity"];
   nodeReportedCheckpointHash?: string;

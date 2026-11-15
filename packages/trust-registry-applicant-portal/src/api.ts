@@ -273,6 +273,10 @@ export class TrustRegistryApplicantPortalClient {
 
   async loadPublicInspection(): Promise<PublicInspection> {
     const health = await this.request<TrustRegistryApiHealthResponse>("/health", { cache: "no-store" });
+    if (health.pendingApplicationListConfigured !== undefined
+      && typeof health.pendingApplicationListConfigured !== "boolean") {
+      throw new Error("API health has an invalid private application list capability.");
+    }
     if (health.sourceMode === "local-ledger") {
       const localHealth = requireLocalHealth(health);
       const summary = await this.request<TrustRegistryApiSummary>("/v1/registry/summary", { cache: "no-store" });
@@ -282,6 +286,8 @@ export class TrustRegistryApplicantPortalClient {
       }
       const unavailableLists = ["issuer", "verifier", "auditor", "recognition"] as const;
       return { summary, sourceMode: "local-ledger", localPlanSha256: localHealth.localPlanSha256,
+        ...(health.pendingApplicationListConfigured === undefined ? {}
+          : { pendingApplicationListConfigured: health.pendingApplicationListConfigured }),
         ...(localHealth.deploymentIdentity === undefined ? {} : { deploymentIdentity: deploymentIdentity(localHealth.deploymentIdentity) }),
         nodeReportedCheckpointHash: localHealth.finalizedBlockHash,
         snapshotGeneratedAt: localHealth.generatedAt,
@@ -335,6 +341,8 @@ export class TrustRegistryApplicantPortalClient {
     return {
       summary,
       sourceMode: health.sourceMode,
+      ...(health.pendingApplicationListConfigured === undefined ? {}
+        : { pendingApplicationListConfigured: health.pendingApplicationListConfigured }),
       activeAuditors: auditorEntries?.filter((entry) =>
         entry?.authorization?.role === "auditor"
           && isCurrentlyActive(entry.authorization, entry.authorization.activeFrom, nowMs)) ?? [],

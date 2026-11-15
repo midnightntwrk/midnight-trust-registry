@@ -154,6 +154,13 @@ has no live deactivation signal, so short session lifetime and explicit mode
 labeling matter. The signed local-ledger CLI remains read-only and cannot
 claim deployed actor authentication or authorization.
 
+The API health response now reports whether a private application list port
+is configured. The applicant portal omits its "My applications" route only
+when the host explicitly reports `false`; older hosts without this hint retain
+the existing path. This is navigation guidance, not an authorization check:
+the private endpoint still requires an applicant-purpose session and may
+return unavailable even when a port is configured.
+
 Non-critical-path follow-ups include public-network bootstrap (#200),
 historical TRQP (#39), Helm (#218), npm publishing (#271), mobile acceptance
 (#265), and docs-site family styling (#293).

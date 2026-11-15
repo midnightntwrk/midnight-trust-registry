@@ -44,11 +44,12 @@ const recognitionEntry = (recognitionId: string, effectiveUntil?: string) => ({
   },
 });
 
-const inspectionClient = (auditorResponse: Response) => new TrustRegistryApplicantPortalClient(
+const inspectionClient = (auditorResponse: Response, privateListConfigured?: unknown) => new TrustRegistryApplicantPortalClient(
   "http://127.0.0.1:4400",
   (async (input: RequestInfo | URL): Promise<Response> => {
     const path = new URL(String(input)).pathname;
-    if (path === "/health") return Response.json({ status: "ok", sourceMode: "workspace" });
+    if (path === "/health") return Response.json({ status: "ok", sourceMode: "workspace",
+      ...(privateListConfigured === undefined ? {} : { pendingApplicationListConfigured: privateListConfigured }) });
     if (path === "/v1/registry/summary") return Response.json({ registryLabel: "local" });
     if (path === "/v1/authorizations/auditor") return auditorResponse;
     if (path === "/v1/authorizations/issuer") return Response.json({ entries: [
@@ -64,6 +65,15 @@ const inspectionClient = (auditorResponse: Response) => new TrustRegistryApplica
 );
 
 describe("public auditor inspection", () => {
+  it("carries a valid private-list capability without trusting malformed health", async () => {
+    expect((await inspectionClient(Response.json({ entries: [] }), false).loadPublicInspection())
+      .pendingApplicationListConfigured).toBe(false);
+    expect((await inspectionClient(Response.json({ entries: [] }), true).loadPublicInspection())
+      .pendingApplicationListConfigured).toBe(true);
+    await expect(inspectionClient(Response.json({ entries: [] }), "false").loadPublicInspection())
+      .rejects.toThrow("invalid private application list capability");
+  });
+
   it("does not display expired auditor grants as active", async () => {
     const client = inspectionClient(Response.json({ entries: [
       auditorEntry("2024-01-01T00:00:00Z", "auth:auditor:expired:v1"),

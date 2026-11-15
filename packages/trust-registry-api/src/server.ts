@@ -1249,6 +1249,7 @@ export const createTrustRegistryApiServer = (
             status: "ok",
             sourceMode: options.source.mode,
             configuredGovernedProposalRoles,
+            pendingApplicationListConfigured: options.pendingApplicationRegistration?.listForSubjectDid !== undefined,
             generatedAt: summary.generatedAt,
             registryId: summary.registryId,
             ...(workspaceInstanceId === undefined ? {} : { workspaceInstanceId }),

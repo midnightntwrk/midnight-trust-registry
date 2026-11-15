@@ -109,6 +109,9 @@ test("packaged fixture host signs in off-chain DID in both portals without grant
 
     await page.goto(`${host.origin}/applicant/`);
     await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
+    await expect(page.locator("#my-applications")).toHaveCount(0);
+    await expect(page.locator('a[href="#my-applications"]')).toHaveCount(0);
+    await expect(page.locator(".journey-prerequisite")).toContainText("no private application list");
     await page.locator(".hero-sign-in").click();
     await page.getByRole("button", { name: "Sign in with digital identity" }).click();
     await expect(page.locator(".portal-profile-status")).toContainText(actorDid);

@@ -57,6 +57,7 @@ export const TrustRegistryApiHealthResponseSchema = z.object({
   status: z.literal("ok"),
   sourceMode: z.enum(["snapshot", "workspace", "memory", "local-ledger"]),
   configuredGovernedProposalRoles: z.array(z.enum(["issuer", "verifier", "auditor", "maintainer", "recognition"])),
+  pendingApplicationListConfigured: z.boolean().optional(),
   generatedAt: TimestampSchema,
   registryId: NonEmptyStringSchema,
   workspaceInstanceId: z.uuid().optional(),

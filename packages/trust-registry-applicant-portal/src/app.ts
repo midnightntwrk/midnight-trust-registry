@@ -1629,7 +1629,8 @@ export const createApplicantPortalApp = (
     `;
     const ownApplications = activeDidSession !== undefined
       && state.myApplicationsToken === activeDidSession.accessToken ? state.myApplications : undefined;
-    const myApplicationsPanel = state.inspection === undefined ? "" : `
+    const myApplicationsPanel = state.inspection === undefined
+      || state.inspection.pendingApplicationListConfigured === false ? "" : `
       <section class="records-overview" id="my-applications" aria-labelledby="my-applications-heading">
         <div class="records-heading"><div><p class="eyebrow">Private workspace</p>
           <h2 id="my-applications-heading">My applications</h2>
@@ -1662,13 +1663,13 @@ export const createApplicantPortalApp = (
       <a href="#current-recognition-lookup">Look up recognition</a>
       <a href="#governed-requests">Prepare membership</a>
       <a href="#pending-evidence" data-open-workflow="pending-evidence">Continue pending request</a>
-      <a href="#my-applications">My applications</a>
+      ${state.inspection.pendingApplicationListConfigured === false ? "" : '<a href="#my-applications">My applications</a>'}
       <a href="./registry-manual.html">Registry Manual</a>
       <a href="#connection-details">Workspace settings</a>
     ` : `
       <a href="#governed-requests">Prepare governed membership</a>
       <a href="#pending-evidence" data-open-workflow="pending-evidence">Continue pending request</a>
-      <a href="#my-applications">My applications</a>
+      ${state.inspection.pendingApplicationListConfigured === false ? "" : '<a href="#my-applications">My applications</a>'}
       <a href="#trust-records">Explore active records</a>
       <a href="./registry-manual.html">Registry Manual</a>
       <a href="#connection-details">Workspace settings</a>
@@ -1682,6 +1683,8 @@ export const createApplicantPortalApp = (
               ? "Connect to a registry source before preparing a governed request."
               : !privateHost
                 ? "Local connection: prepare only. Submission requires an authenticated same-origin host."
+                : state.inspection.pendingApplicationListConfigured === false
+                  ? "This host supports identity sign-in but has no private application list. Sign-in alone does not register a request or grant a role."
                 : activeDidSession === undefined
                   ? didSignerAvailable
                     ? 'Before sending private evidence, <a href="#connection-details">sign in with your digital identity in Workspace settings</a>. You can prepare a request now; sign-in does not grant a role.'
