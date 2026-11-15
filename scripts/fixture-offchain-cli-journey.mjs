@@ -204,7 +204,18 @@ try {
   const newChallenge = await expectStatus(await post(challengeRoute, body), 201);
   assert.equal(newChallenge.genesisHash, challenge.genesisHash);
   assert.equal(newChallenge.contractAddress, challenge.contractAddress);
-  process.stdout.write("[fixture-offchain-cli] Packaged same-origin portals, typed client, and loopback API accept off-chain DID sign-in only; invalid signature, origin, ledger DID, replay, cross-purpose private read, sign-out reuse, and restart session revival denied. Registration and governance writes remain unavailable without their separate ports. No role, VP, or deployed binding inferred.\n");
+  const renewed = await expectStatus(await post(sessionRoute, {
+    challenge: newChallenge,
+    signature: { keyId: actorKeyId, algorithm: "ed25519",
+      value: `0x${signEd25519(null, actorAuthenticationDigestBytes(newChallenge), privateKey).toString("hex")}` },
+  }), 201);
+  assert.equal(renewed.actorDid, actorDid);
+  assert.notEqual(renewed.accessToken, session.accessToken);
+  assert.deepEqual(await expectStatus(await fetch(`${origin}/v1/actor-authentication/session`, {
+    headers: { authorization: `Bearer ${renewed.accessToken}` },
+  }), 200), { actorDid, actorKeyId, purpose: "applicant-session" });
+  await signOutActorDid({ apiBase: origin, pageOrigin: origin, session: renewed });
+  process.stdout.write("[fixture-offchain-cli] Packaged same-origin portals, typed client, and loopback API accept off-chain DID sign-in, including fresh sign-in after host restart. Invalid signature, origin, ledger DID, replay, cross-purpose private read, sign-out reuse, and old-session revival denied. Registration and governance writes remain unavailable without their separate ports. No role, VP, or deployed binding inferred.\n");
 } finally {
   if (host !== undefined) await host.stop();
   await rm(directory, { recursive: true, force: true });
