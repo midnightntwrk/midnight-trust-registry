@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { resolve } from "node:path";
 
+import { expectNoWcagViolations } from "./accessibility-audit.mjs";
 import { expect, test } from "./offline-browser-fixture.mjs";
 import { createStaticAssetHandler } from "../scripts/serve-static.mjs";
 
@@ -13,7 +14,7 @@ const counts = (status) => ({
 });
 
 for (const target of ["issuer", "recognition"]) {
-  test(`fixture ${target} application moves from portal to admin and back`, async ({ page, allowedLocalOrigins }) => {
+  test(`fixture ${target} application moves from portal to admin and back`, async ({ page, allowedLocalOrigins }, testInfo) => {
     const staticHandlers = {
       applicant: createStaticAssetHandler({
         distDir: resolve("packages/trust-registry-applicant-portal/dist"), name: "handoff-applicant",
@@ -147,6 +148,10 @@ for (const target of ["issuer", "recognition"]) {
       await expect(page.locator(".card .status-chip")).toHaveText("Proposed");
       await expect(page.locator(".card .meta-row").first()).toHaveText("Requested trust level: approved");
       await expect(page.locator('[data-action="approve"]')).toHaveText("Approve in demo");
+      await expectNoWcagViolations(page, `${target} proposed review`);
+      if (process.env.TR_UI_CAPTURE === "1") {
+        await page.screenshot({ path: testInfo.outputPath(`${target}-proposed-review.png`), fullPage: true });
+      }
       await page.locator('[data-action="approve"]').click();
       await expect(page.locator(".card .status-chip")).toHaveText("Authorized");
       await expect(page.locator(".card .meta-row").first()).toHaveText("Authorized trust level: approved");
@@ -167,6 +172,10 @@ for (const target of ["issuer", "recognition"]) {
       await expect(page.locator(".source-badge")).toHaveText("Local fixture");
       await expect(page.locator("#trust-records article")).toContainText(label);
       await expect(page.locator(".source-panel")).toContainText("not deployed ledger evidence");
+      await expectNoWcagViolations(page, `${target} active applicant record`);
+      if (process.env.TR_UI_CAPTURE === "1") {
+        await page.screenshot({ path: testInfo.outputPath(`${target}-active-applicant.png`), fullPage: true });
+      }
       expect(posts).toEqual([
         { pathname: "/v1/applications", submitted: { target, label } },
         { pathname: `/v1/applications/${target}/${encodeURIComponent(id)}/approve`, action: "approve" },
