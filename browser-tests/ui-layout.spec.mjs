@@ -139,6 +139,7 @@ for (const app of ["applicant-portal", "admin-console"]) {
       }
     } finally {
       await page.waitForLoadState("networkidle");
+      await page.close();
       await server.close();
     }
   });
