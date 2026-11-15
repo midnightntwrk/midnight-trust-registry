@@ -176,6 +176,26 @@ describe("actor DID authentication challenge", () => {
       .toEqual({ actorDid: did, actorKeyId: keyId });
   });
 
+  it("rejects a DID deactivated after challenge issuance without consuming the challenge", async () => {
+    const store = memoryStore();
+    const service = createActorAuthenticationService({ context, store, resolver, clock: () => START });
+    const challenge = await service.issue(did, keyId, "applicant-session");
+    const fixture = createMidnightDidLedgerFixture(did, {
+      verificationMethodId: "auth-1",
+      schnorrJubjubPublicKey: deriveJubjubPublicKeyFromSeed(seed),
+    });
+    const deactivatedResolver = createMidnightDidResolver([{
+      ...fixture,
+      ledgerState: { ...fixture.ledgerState, active: false, deactivated: true },
+    }]);
+    const deactivated = createActorAuthenticationService({
+      context, store, resolver: deactivatedResolver, clock: () => START,
+    });
+    expect(await deactivated.verify(challenge, signatureFor(challenge), "applicant-session")).toBeNull();
+    expect(await service.verify(challenge, signatureFor(challenge), "applicant-session"))
+      .toEqual({ actorDid: did, actorKeyId: keyId });
+  });
+
   it("rejects a challenge that expires during DID resolution before store consumption", async () => {
     let nowMs = START;
     const store = {
