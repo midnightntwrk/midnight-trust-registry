@@ -21,9 +21,12 @@ This plan does not silently move unfinished 0.1.0 acceptance issues into
 
 ## Authentication and authorization
 
-1. **Identity:** an applicant or maintainer presents a `did:midnight` DID.
-   Resolve its current, non-deactivated document against an authenticated
-   ledger source. DID possession alone grants no registry role.
+1. **Identity:** phase 0 accepts a self-certifying long-form off-chain
+   `did:midnight` document for sign-in. Resolve and verify the encoded state
+   against its short-form DID; do not mistake a caller-supplied document for
+   ledger freshness or revocation. A later, explicit on-chain mode must resolve
+   the current, non-deactivated DID document against an authenticated ledger
+   source. DID possession alone grants no registry role in either mode.
 2. **Request authentication:** the host issues a random, one-use, short-lived
    challenge bound to origin, registry deployment, actor DID, intended
    audience, and operation. Verify the response against a current DID
@@ -90,9 +93,13 @@ checkpoint, and test result in one private candidate record. Existing
 
 ## Delivery order
 
-1. Specify and test the DID request-authentication adapter, challenge store,
-   session boundary, and fail-closed API integration. Reuse DID resolution and
-   signing libraries; do not implement DID CRUD here.
+1. Specify and test the off-chain DID request-authentication adapter, challenge
+   store, session boundary, and fail-closed API integration. Bind the exact
+   long-form state to a versioned challenge transcript, authenticate only a
+   verification method in the document's `authentication` relationship, and
+   keep its algorithm distinct from the ledger/Jubjub mutation-signature
+   format. Reuse DID resolution and signing libraries; do not implement DID
+   CRUD here. Keep on-chain resolution behind an explicit later mode.
 2. Add the typed API client and CLI commands, with protocol-level positive
    and negative tests. Reuse the existing signed-intent verifier.
 3. Supply the approved host ports, live VC status adapter, and independent
@@ -120,6 +127,14 @@ loopback challenge/session API with a fixture DID resolver and external test
 signer. The applicant-only private request list is optional host admission
 metadata, not a ledger decision or VP eligibility proof. There is no qualified
 production resolver, live VC-owned status adapter, or deployed actor journey.
+The current challenge schema, verifier, and browser client accept only
+ledger-backed Jubjub DIDs. They do not implement the requested phase-0
+off-chain DID sign-in: the VC method-binding helper rejects off-chain DIDs and
+the existing signer schema is specific to Jubjub mutation intents. A separate
+versioned off-chain transcript and signature type must be implemented and
+tested before describing the sign-in path as phase-0 complete. Off-chain
+long-form state is self-certifying but immutable; it has no live deactivation
+signal, so short session lifetime and explicit mode labeling matter.
 
 Non-critical-path follow-ups include public-network bootstrap (#200),
 historical TRQP (#39), Helm (#218), npm publishing (#271), mobile acceptance
