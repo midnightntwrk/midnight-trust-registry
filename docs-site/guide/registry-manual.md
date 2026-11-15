@@ -25,7 +25,10 @@ These are three different checks. Passing one never silently passes the next.
 1. **Sign in:** a short-lived, one-use challenge proves control of a Midnight
    decentralized identifier (DID) authentication key. This is the phase-0
    0.2.0 MVP. It does not assign a registry role and is not a claim of SIOP
-   protocol conformance. The packaged 0.1.0 app has no qualified sign-in host.
+   protocol conformance. In the V2 applicant portal, an external DID signer and
+   same-origin host can enable this in **Workspace settings**. The short-lived
+   session remains in browser memory and is cleared on sign-out or source
+   change. A local fixture or packaged 0.1.0 app is not a qualified sign-in host.
 2. **Show eligibility:** after reviewing the requester, purpose, and exact
    claims, the actor may provide a verifiable presentation (VP). The verifier
    must check holder binding, issuer trust, status, audience, freshness, and

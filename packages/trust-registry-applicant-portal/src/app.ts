@@ -5,6 +5,7 @@ import type { ApplicationChallengeBinding, ApplicationVpHttpIssueResult, Applica
 import { canonicalizeAuthorizationScope, computeAuthorizationScopeCommitment, type PendingApplicationPayload } from "@midnight-ntwrk/trust-registry-domain/browser";
 import { prepareAuditorApplication, signPreparedAuditorApplication, type AuditorApplicationDraft, type PreparedAuditorApplication } from "./auditor-application.js";
 import { prepareIssuerApplication, prepareMaintainerApplication, prepareVerifierApplication, signPreparedMembershipApplication, type IssuerApplicationDraft, type MaintainerApplicationDraft, type PreparedMembershipApplication, type VerifierApplicationDraft } from "./membership-application.js";
+import { signInApplicantDid, signOutApplicantDid, type ApplicantDidSession, type ApplicantDidSigner } from "./did-session.js";
 
 const STORAGE_KEY = "trust-registry.portal.api-base";
 
@@ -57,6 +58,10 @@ type AppState = {
   recognitionId: string;
   recognitionChallenge: { recognitionId: string; nonce: string; challengeHash: string; expiresAt: string } | undefined;
   recognitionAdmission: RecognitionAdmissionReceipt | undefined;
+  didSession: ApplicantDidSession | undefined;
+  didSourceMode: string | undefined;
+  didBusy: boolean;
+  didError: string | undefined;
 };
 
 type AuditorScopeInput = {
@@ -253,6 +258,8 @@ export const createApplicantPortalApp = (
     initialUrl?: URL;
     storage?: Storage;
     demoMode?: boolean;
+    didSigner?: ApplicantDidSigner;
+    clock?: () => number;
   } = {},
 ): void => {
   const initialUrl = options.initialUrl ?? new URL(window.location.href);
@@ -260,6 +267,10 @@ export const createApplicantPortalApp = (
     && ["localhost", "127.0.0.1", "[::1]"].includes(initialUrl.hostname);
   const storage = options.storage ?? window.localStorage;
   const fetchImpl = options.fetchImpl ?? window.fetch.bind(window);
+  const clock = options.clock ?? Date.now;
+  const didSigner = () => options.didSigner ?? (window as Window & {
+    midnightTrustRegistryDidSigner?: ApplicantDidSigner;
+  }).midnightTrustRegistryDidSigner;
   const sameOriginApi = initialUrl.pathname.startsWith("/applicant/");
   // An explicit query parameter is a one-off override for local testing and
   // should not silently replace the persisted default.
@@ -315,6 +326,10 @@ export const createApplicantPortalApp = (
     recognitionId: "",
     recognitionChallenge: undefined,
     recognitionAdmission: undefined,
+    didSession: undefined,
+    didSourceMode: undefined,
+    didBusy: false,
+    didError: undefined,
   };
   let evidenceRequestId = 0;
   let signedContextRequestId = 0;
@@ -360,7 +375,53 @@ export const createApplicantPortalApp = (
     render();
   };
 
-  const client = () => new TrustRegistryApplicantPortalClient(state.apiBase, fetchImpl);
+  const liveDidSession = () => state.didSession !== undefined && Date.parse(state.didSession.expiresAt) > clock()
+    ? state.didSession : undefined;
+  const client = () => {
+    const session = liveDidSession();
+    return new TrustRegistryApplicantPortalClient(state.apiBase, fetchImpl,
+      canUsePrivateEvidenceHost(state.apiBase, initialUrl) && session !== undefined
+        ? { accessToken: session.accessToken, pageOrigin: initialUrl.origin } : undefined);
+  };
+
+  const signInDid = async () => {
+    const signer = didSigner();
+    const inspection = state.inspection;
+    if (state.didBusy || signer === undefined || inspection === undefined
+      || !canUsePrivateEvidenceHost(state.apiBase, initialUrl)) return;
+    const apiBase = state.apiBase;
+    setState({ didBusy: true, didError: undefined, didSession: undefined, didSourceMode: undefined });
+    try {
+      const session = await signInApplicantDid({
+        apiBase, pageOrigin: initialUrl.origin, registryId: inspection.summary.registryId,
+        ...(inspection.sourceMode === "local-ledger" && inspection.deploymentIdentity !== undefined
+          ? { deploymentIdentity: inspection.deploymentIdentity } : {}),
+        signer, fetchImpl, clock,
+      });
+      if (apiBase !== state.apiBase || state.inspection?.summary.registryId !== inspection.summary.registryId
+        || state.inspection?.sourceMode !== inspection.sourceMode
+        || state.inspection?.deploymentIdentity?.expectedGenesisHash !== inspection.deploymentIdentity?.expectedGenesisHash
+        || state.inspection?.deploymentIdentity?.contractAddress !== inspection.deploymentIdentity?.contractAddress) return;
+      setState({ didSession: session, didSourceMode: inspection.sourceMode, didBusy: false });
+    } catch (error) {
+      if (apiBase !== state.apiBase) return;
+      setState({ didBusy: false, didError: formatApiError(error) });
+    }
+  };
+
+  const signOutDid = async () => {
+    const session = state.didSession;
+    if (session === undefined) return;
+    const apiBase = state.apiBase;
+    setState({ didSession: undefined, didSourceMode: undefined, didError: undefined });
+    try {
+      await signOutApplicantDid({ apiBase, pageOrigin: initialUrl.origin, session, fetchImpl });
+    } catch {
+      if (apiBase === state.apiBase) {
+        setState({ didError: "The local session is cleared. Server revocation was not confirmed; the token expires within 15 minutes." });
+      }
+    }
+  };
 
   const issueRecognitionChallenge = async (recognitionId: string) => {
     if (state.recognitionRecoveryBusy || !canUsePrivateEvidenceHost(state.apiBase, initialUrl)) return;
@@ -731,11 +792,21 @@ export const createApplicantPortalApp = (
     try {
       const inspection = await client().loadPublicInspection();
       if (requestId !== inspectionRequestId || apiBase !== state.apiBase) return;
+      const currentSession = state.didSession;
+      const sessionMatchesSource = currentSession !== undefined
+        && state.didSourceMode === inspection.sourceMode
+        && currentSession.registryId === inspection.summary.registryId
+        && (inspection.deploymentIdentity === undefined
+          || currentSession.genesisHash === inspection.deploymentIdentity.expectedGenesisHash
+            && currentSession.contractAddress === inspection.deploymentIdentity.contractAddress);
       setState({
         error: undefined,
         inspection,
         loading: false,
         observedAt: new Date().toISOString(),
+        didSession: sessionMatchesSource ? currentSession : undefined,
+        didSourceMode: sessionMatchesSource ? state.didSourceMode : undefined,
+        didBusy: false,
       });
     } catch (error) {
       if (requestId !== inspectionRequestId || apiBase !== state.apiBase) return;
@@ -743,6 +814,9 @@ export const createApplicantPortalApp = (
         error: formatApiError(error),
         flash: undefined,
         inspection: undefined,
+        didSession: undefined,
+        didSourceMode: undefined,
+        didBusy: false,
         loading: false,
         observedAt: undefined,
       });
@@ -958,6 +1032,12 @@ export const createApplicantPortalApp = (
   };
 
   const bindEvents = () => {
+    root.querySelector<HTMLButtonElement>("[data-did-sign-in]")?.addEventListener("click", () => {
+      void signInDid();
+    });
+    root.querySelector<HTMLButtonElement>("[data-did-sign-out]")?.addEventListener("click", () => {
+      void signOutDid();
+    });
     root.querySelectorAll<HTMLAnchorElement>(".mobile-task-menu nav a").forEach((link) => {
       link.addEventListener("click", () => {
         const menu = link.closest<HTMLDetailsElement>(".mobile-task-menu");
@@ -976,6 +1056,12 @@ export const createApplicantPortalApp = (
         return;
       }
       const apiBase = normalizeApiBaseUrl(input.value);
+      const priorSession = state.didSession;
+      const priorApiBase = state.apiBase;
+      if (priorSession !== undefined) {
+        void signOutApplicantDid({ apiBase: priorApiBase, pageOrigin: initialUrl.origin,
+          session: priorSession, fetchImpl }).catch(() => undefined);
+      }
       storage.setItem(STORAGE_KEY, apiBase);
       evidenceRequestId += 1;
       signedContextRequestId += 1;
@@ -989,6 +1075,7 @@ export const createApplicantPortalApp = (
       recognitionRequestId += 1;
       state.observedAt = undefined;
       setState({ apiBase, inspection: undefined, signedBusy: false, signedContext: undefined, pendingApplication: undefined, auditorStatus: undefined, auditorStatusBusy: false, auditorDraft: undefined, preparedAuditor: undefined, auditorPreparationBusy: false, memberDraft: undefined, preparedMember: undefined, memberPreparationBusy: false, currentAuthorizationBusy: false, currentAuthorizationResult: undefined, currentAuthorizationError: undefined, currentRecognitionBusy: false, currentRecognitionResult: undefined, currentRecognitionError: undefined, historicalBusy: false, historicalResult: undefined, historicalError: undefined, historicalDraft: undefined, historicalRecognitionBusy: false, historicalRecognitionResult: undefined, historicalRecognitionError: undefined, historicalRecognitionDraft: undefined, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined,
+        didSession: undefined, didSourceMode: undefined, didBusy: false, didError: undefined,
         recognitionId: "", recognitionChallenge: undefined, recognitionAdmission: undefined,
         recognitionRecoveryBusy: false, recognitionRecoveryMessage: undefined });
       void refreshInspection();
@@ -1409,6 +1496,8 @@ export const createApplicantPortalApp = (
     const auditorCards = cards.filter((card) => card.target === "auditor");
     const recognitionCards = cards.filter((card) => card.target === "recognition");
     const privateHost = canUsePrivateEvidenceHost(state.apiBase, initialUrl);
+    const activeDidSession = liveDidSession();
+    const didSignerAvailable = didSigner() !== undefined;
     const pending = state.pendingApplication;
     const auditorDraft = state.auditorDraft;
     const preparedAuditor = state.preparedAuditor;
@@ -1567,6 +1656,19 @@ export const createApplicantPortalApp = (
             <p>Check the API source and the registry identity it reports. These are browser observations, not independently verified trust evidence.</p>
           </div>
           <div class="settings-cards">
+            <section class="settings-card portal-profile-card" aria-labelledby="portal-profile-heading">
+              <p class="eyebrow">Identity</p>
+              <h2 id="portal-profile-heading">DID sign-in</h2>
+              <p>Sign in to identify yourself for private application actions. A DID session does not grant a registry role or establish VP eligibility.</p>
+              ${activeDidSession === undefined
+                ? `<p class="portal-profile-status">${didSignerAvailable ? "A DID signer is available." : "No DID signer is connected to this browser."}</p>
+                  <button class="button" type="button" data-did-sign-in data-focus-key="did-sign-in"${state.didBusy || !didSignerAvailable || !privateHost || state.inspection === undefined ? " disabled" : ""}>${state.didBusy ? "Signing in…" : "Sign in with DID"}</button>
+                  ${!privateHost ? '<p class="step-hint">Sign-in requires the same-origin API host.</p>' : ""}`
+                : `<p class="portal-profile-status">Signed in as <strong class="technical-id">${escapeHtml(activeDidSession.actorDid)}</strong></p>
+                  <p class="step-hint">Identity only. Registry roles and VP eligibility are checked separately.</p>
+                  <button class="button secondary" type="button" data-did-sign-out data-focus-key="did-sign-out">Sign out</button>`}
+              ${state.didError === undefined ? "" : `<p class="alert error" role="alert">${escapeHtml(state.didError)}</p>`}
+            </section>
             <section class="settings-card" aria-labelledby="portal-connection-heading">
               <p class="eyebrow">Connection</p>
               <h2 id="portal-connection-heading">API and source</h2>
@@ -1615,7 +1717,7 @@ export const createApplicantPortalApp = (
             <p class="settings-callout">${deploymentNotice}</p>
             </section>
           </div>
-          <div class="settings-footer"><strong>No account profile in this browser</strong><p>Private actions require the authenticated same-origin host and external signing. Connection details are not proof of finality.</p></div>
+          <div class="settings-footer"><strong>Registry trust is separate from sign-in</strong><p>Private actions also require an eligible presentation and governed authorization. Connection details are not proof of finality.</p></div>
         </section>
         <section class="content">
           ${demoApplication}

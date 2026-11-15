@@ -223,8 +223,22 @@ export class TrustRegistryApplicantPortalClient {
   constructor(
     baseUrl: string,
     private readonly fetchImpl: FetchLike = fetch,
+    private readonly applicantSession?: { accessToken: string; pageOrigin: string },
   ) {
     this.baseUrl = normalizeApiBaseUrl(baseUrl);
+    if (applicantSession !== undefined && new URL(this.baseUrl).origin !== applicantSession.pageOrigin) {
+      throw new Error("Applicant DID session cannot be sent to a different API origin.");
+    }
+  }
+
+  private privateSessionHeaders(): Record<string, string> {
+    return this.applicantSession === undefined ? {} : {
+      authorization: `Bearer ${this.applicantSession.accessToken}`,
+    };
+  }
+
+  private privateCredentials(): RequestCredentials {
+    return this.applicantSession === undefined ? "same-origin" : "omit";
   }
 
   async loadHistoricalAuthorizationEvidence(
@@ -436,7 +450,8 @@ export class TrustRegistryApplicantPortalClient {
   async loadPendingApplicationBinding(applicationId: string): Promise<ApplicationChallengeBinding> {
     const response = await this.fetchImpl(`${this.baseUrl}${privateApplicationPath(applicationId, "binding")}`, {
       method: "GET",
-      credentials: "same-origin",
+      credentials: this.privateCredentials(),
+      ...(this.applicantSession === undefined ? {} : { headers: this.privateSessionHeaders() }),
     });
     return parsePrivateResponse<ApplicationChallengeBinding>(response);
   }
@@ -445,8 +460,8 @@ export class TrustRegistryApplicantPortalClient {
   async issueApplicationChallenge(applicationId: string): Promise<ApplicationVpHttpIssueResult> {
     const response = await this.fetchImpl(`${this.baseUrl}${privateApplicationPath(applicationId, "challenges")}`, {
       method: "POST",
-      credentials: "same-origin",
-      headers: { "content-type": "application/json" },
+      credentials: this.privateCredentials(),
+      headers: { "content-type": "application/json", ...this.privateSessionHeaders() },
       body: "{}",
     });
     return parsePrivateResponse<ApplicationVpHttpIssueResult>(response);
@@ -460,8 +475,8 @@ export class TrustRegistryApplicantPortalClient {
   ): Promise<ApplicationVpHttpSubmissionResult> {
     const response = await this.fetchImpl(`${this.baseUrl}${privateApplicationPath(applicationId, "submissions")}`, {
       method: "POST",
-      credentials: "same-origin",
-      headers: { "content-type": "application/json" },
+      credentials: this.privateCredentials(),
+      headers: { "content-type": "application/json", ...this.privateSessionHeaders() },
       body: JSON.stringify({
         nonce: challenge.nonce,
         challengeHash: challenge.challengeHash,
@@ -475,7 +490,8 @@ export class TrustRegistryApplicantPortalClient {
   async loadAcceptedApplicationEvidence(applicationId: string): Promise<ApplicationVpHttpSubmissionResult> {
     const response = await this.fetchImpl(`${this.baseUrl}${privateApplicationPath(applicationId, "receipt")}`, {
       method: "GET",
-      credentials: "same-origin",
+      credentials: this.privateCredentials(),
+      ...(this.applicantSession === undefined ? {} : { headers: this.privateSessionHeaders() }),
     });
     return parsePrivateResponse<ApplicationVpHttpSubmissionResult>(response);
   }

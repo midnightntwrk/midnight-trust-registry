@@ -84,6 +84,14 @@ same-origin host; a separate cross-origin demo API does not enable them. A
 same-origin URL check does not prove that a user session is authenticated; the
 host must authenticate each private request.
 
+The V2 portal places opt-in DID sign-in in Workspace settings, not in the
+public task area. An external signer proves control of the exact DID challenge;
+the short-lived bearer is held only in memory and sent only to same-origin
+private application-evidence routes. The UI must describe it as identity only:
+VP eligibility and governed role authority remain separate checks. The
+headless DID session journey exercises the real local HTTP challenge, replay
+denial, identity-only token, and revocation; it is not a deployed-ledger test.
+
 ### Clean-checkout smoke record
 
 On 2026-11-04, an agent repeated the trial in a detached clean checkout at
@@ -144,6 +152,7 @@ repeatable UI acceptance evidence:
 | During Recheck, label the admin's last-loaded records as potentially stale with actions paused, hide portal records until the response arrives, then show an offline error without stale trust data and recover on a later successful check | `ui-layout.spec.mjs` (held health response, both apps) |
 | Show an operable Menu beside the brand lockup in one row at the default 320 px mobile size, before the main content; allow reflow at text zoom. Stack the brand lockup above task navigation in the desktop left rail, with the main work area starting beside it; place fixture admin review counts beside the task introduction on wide screens and ahead of source details on mobile | `ui-layout.spec.mjs` (fresh-page geometry assertions) |
 | Reject an external endpoint override on packaged same-origin admin and portal paths while preserving the authenticated-host warning | `ui-layout.spec.mjs` |
+| In applicant Settings, a fixture DID signer completes sign-in and sign-out without displaying a registry role or exposing the sign-in action in the public task area; the browser auth endpoint is mocked, while the separate headless HTTP journey covers real challenge verification | `ui-layout.spec.mjs`, `demo-did-session-journey.mjs` |
 | Switch an editable development endpoint between two loopback fixture hosts without carrying reads to the old host or enabling cross-origin private actions | `ui-layout.spec.mjs` (both apps) |
 | Open a governed issuer request by keyboard with reduced motion and verify the three visible preparation phases; keep mobile task targets at least 44 px high | `ui-layout.spec.mjs` |
 | Keep the 390 px applicant introduction compact without hiding role requirements or implying that submission is approval | `ui-layout.spec.mjs` (role-row and section-height assertions, visible prerequisite text) |

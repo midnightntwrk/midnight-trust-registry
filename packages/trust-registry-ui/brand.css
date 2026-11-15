@@ -204,6 +204,8 @@
 .settings-back { display: inline-flex; align-items: center; min-height: 2.75rem; margin-bottom: 1rem; color: var(--midnight-blue); font-size: 0.87rem; font-weight: 700; text-decoration: none; }
 .settings-back:hover, .settings-back:focus-visible { text-decoration: underline; }
 .settings-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.portal-profile-card { grid-column: 1 / -1; }
+.portal-profile-status { overflow-wrap: anywhere; }
 .settings-card { min-width: 0; padding: clamp(1rem, 2vw, 1.5rem); border: 1px solid var(--midnight-border); border-radius: 16px; background: var(--midnight-white); }
 .settings-card h2 { margin: 0.2rem 0 0.9rem; font-size: 1.35rem; }
 .settings-card p { line-height: 1.5; }
