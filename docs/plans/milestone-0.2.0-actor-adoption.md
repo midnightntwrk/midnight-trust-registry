@@ -138,7 +138,10 @@ explicit loopback workspace-only off-chain sign-in option with a private
 durable challenge store, synthetic workspace-instance binding, and an
 optional same-origin built-portal asset root. A
 process-level headless journey checks origin denial, one-use replay after
-restart, and session revocation on restart. This is fixture authentication,
+restart, and session revocation on restart. The packaged-host journey also
+uses the shared typed client to sign in and sign out, independently derives
+the synthetic workspace binding, and rejects a mismatched binding before
+signing. This is fixture authentication,
 not a reviewed local-ledger host configuration or deployed actor
 authorization. The VC method-binding helper still rejects off-chain DIDs and
 must remain separate from sign-in. Off-chain long-form state is immutable and

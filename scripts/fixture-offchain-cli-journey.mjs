@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { generateKeyPairSync, sign as signEd25519 } from "node:crypto";
+import { createHash, generateKeyPairSync, sign as signEd25519 } from "node:crypto";
 import { createServer } from "node:net";
 import { cp, mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { createLongFormOffchainMidnightDIDString, CurveType, KeyType } from "@midnight-ntwrk/midnight-did-domain";
 
 import { createOperatorWorkspace, writeWorkspaceToFile } from "../packages/trust-registry-cli/dist/index.js";
+import { signInActorDid, signOutActorDid } from "@midnight-ntwrk/trust-registry-client/browser-authentication";
 import { actorAuthenticationDigestBytes } from "../packages/trust-registry-domain/dist/index.js";
 
 const directory = await mkdtemp(join(tmpdir(), "tr-fixture-offchain-cli-"));
@@ -121,13 +122,47 @@ try {
   assert.equal(Object.hasOwn(session, "role"), false);
   assert.equal(Object.hasOwn(session, "vpEligible"), false);
   await expectStatus(await post(sessionRoute, { challenge, signature }), 401);
+  const workspace = JSON.parse(await readFile(workspacePath, "utf8"));
+  assert.match(workspace.workspaceInstanceId, /^[0-9a-f-]{36}$/u);
+  const fixtureHash = (kind) => `0x${createHash("sha256")
+    .update(JSON.stringify(["tr:fixture:actor-auth:v1", kind, workspace.workspaceInstanceId,
+      challenge.registryId])).digest("hex")}`;
+  const expectedGenesisHash = fixtureHash("genesis");
+  const contractAddress = fixtureHash("contract");
+  assert.equal(challenge.genesisHash, expectedGenesisHash);
+  assert.equal(challenge.contractAddress, contractAddress);
+  let signedChallenges = 0;
+  const signer = {
+    getIdentity: async () => ({ actorDid, actorKeyId }),
+    signDigest: async ({ digest }) => {
+      signedChallenges += 1;
+      return { keyId: actorKeyId, algorithm: "ed25519",
+        value: `0x${signEd25519(null, digest, privateKey).toString("hex")}` };
+    },
+  };
+  const clientInput = { apiBase: origin, pageOrigin: origin, registryId: challenge.registryId,
+    purpose: "applicant-session", signer };
+  await assert.rejects(signInActorDid({ ...clientInput,
+    deploymentIdentity: { expectedGenesisHash: `0x${"ff".repeat(32)}`, contractAddress },
+  }), /does not match this actor and registry/u);
+  assert.equal(signedChallenges, 0);
+  const clientSession = await signInActorDid({
+    ...clientInput,
+    deploymentIdentity: { expectedGenesisHash, contractAddress },
+  });
+  assert.equal(clientSession.actorDid, actorDid);
+  assert.equal(clientSession.purpose, "applicant-session");
+  assert.equal(Object.hasOwn(clientSession, "role"), false);
+  assert.equal(signedChallenges, 1);
+  await signOutActorDid({ apiBase: origin, pageOrigin: origin, session: clientSession });
+  await expectStatus(await fetch(`${origin}/v1/actor-authentication/session`, {
+    headers: { authorization: `Bearer ${clientSession.accessToken}` },
+  }), 401);
   const ledgerDid = `did:midnight:undeployed:${"ab".repeat(32)}`;
   await expectStatus(await post(challengeRoute, { actorDid: ledgerDid,
     actorKeyId: `${ledgerDid}#auth-1`, purpose: "applicant-session" }), 400);
   const challengeStat = await stat(challengeStorePath);
   assert.equal(challengeStat.mode & 0o077, 0);
-  const workspace = JSON.parse(await readFile(workspacePath, "utf8"));
-  assert.match(workspace.workspaceInstanceId, /^[0-9a-f-]{36}$/u);
 
   await host.stop();
   host = undefined;
@@ -139,7 +174,7 @@ try {
   const newChallenge = await expectStatus(await post(challengeRoute, body), 201);
   assert.equal(newChallenge.genesisHash, challenge.genesisHash);
   assert.equal(newChallenge.contractAddress, challenge.contractAddress);
-  process.stdout.write("[fixture-offchain-cli] Packaged same-origin portals and loopback API accept off-chain DID sign-in only; invalid signature, origin, ledger DID, replay, and restart session revival denied. No role, VP, or deployed binding inferred.\n");
+  process.stdout.write("[fixture-offchain-cli] Packaged same-origin portals, typed client, and loopback API accept off-chain DID sign-in only; invalid signature, origin, ledger DID, replay, sign-out reuse, and restart session revival denied. No role, VP, or deployed binding inferred.\n");
 } finally {
   if (host !== undefined) await host.stop();
   await rm(directory, { recursive: true, force: true });
