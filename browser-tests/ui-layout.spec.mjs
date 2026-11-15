@@ -107,7 +107,7 @@ for (const app of ["applicant-portal", "admin-console"]) {
       await page.locator('.task-nav a[href="./registry-manual.html"]').click();
       await expect(page).toHaveURL(`${server.base}${server.packagedPath}registry-manual.html`);
       await expect(page.locator("main h1")).toContainText("Registry Manual");
-      await expect(page.getByText("DID sign-in and VP eligibility described below are planned", { exact: false })).toBeVisible();
+      await expect(page.getByText("Phase-0 DID sign-in requires an external signer and same-origin host", { exact: false })).toBeVisible();
       await page.setViewportSize({ width: 390, height: 844 });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       await expectNoWcagViolations(page, `${app} bundled Manual at 390px`);
