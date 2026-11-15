@@ -1054,17 +1054,19 @@ for (const [app, title] of [
           expect(initialLayout.nav - initialLayout.hero).toBeLessThan(180);
         }
         if (app === "admin-console" && width === 1440) {
+          await expect(page.locator(".hero-copy .button")).toHaveCount(0);
           const heroLayout = await page.evaluate(() => {
             const intro = document.querySelector(".hero > .hero-copy").getBoundingClientRect();
             const metrics = document.querySelector(".hero > .metrics").getBoundingClientRect();
             const cards = [...document.querySelectorAll(".hero > .metrics .metric")];
             return { introTop: intro.top, metricsTop: metrics.top, introRight: intro.right,
-              metricsLeft: metrics.left, cardWidths: cards.map((card) => card.getBoundingClientRect().width) };
+              metricsLeft: metrics.left, cardCount: cards.length,
+              reviewTop: document.querySelector("#review-board").getBoundingClientRect().top };
           });
           expect(Math.abs(heroLayout.introTop - heroLayout.metricsTop)).toBeLessThan(2);
           expect(heroLayout.introRight).toBeLessThan(heroLayout.metricsLeft);
-          expect(heroLayout.cardWidths).toHaveLength(3);
-          expect(Math.min(...heroLayout.cardWidths)).toBeGreaterThan(150);
+          expect(heroLayout.cardCount).toBe(0);
+          expect(heroLayout.reviewTop).toBeLessThan(350);
         }
         if (app === "applicant-portal") {
           await expect(page.locator(".hero-actions a").first()).toHaveAttribute("href", "#governed-requests");

@@ -1024,11 +1024,7 @@ export const createAdminConsoleApp = (
   const renderMetrics = (board: ReviewBoard): string => `
     <div class="metrics">
       <div class="registry-context"><span>Registry</span><strong>${escapeHtml(board.summary.registryLabel)}</strong><small>${board.summary.epochCount === undefined ? "Epoch unavailable" : `Epoch #${board.summary.epochCount.toString()}`}</small></div>
-      ${board.sourceMode === "local-ledger" ? "" : `
-        <div class="metric"><span>Proposed</span><strong>${countCards(board, "proposed").toString()}</strong></div>
-        <div class="metric"><span>Authorized</span><strong>${countCards(board, "authorized").toString()}</strong></div>
-        <div class="metric"><span>Active</span><strong>${countCards(board, "active").toString()}</strong></div>
-        ${countCards(board, "suspended") + countCards(board, "revoked") === 0 ? "" : `<p class="risk-summary">${(countCards(board, "suspended") + countCards(board, "revoked")).toString()} suspended or revoked record(s) need inspection.</p>`}`}
+      ${board.sourceMode === "local-ledger" || countCards(board, "suspended") + countCards(board, "revoked") === 0 ? "" : `<p class="risk-summary">${(countCards(board, "suspended") + countCards(board, "revoked")).toString()} suspended or revoked record(s) need inspection.</p>`}
     </div>
   `;
 
@@ -1199,8 +1195,7 @@ export const createAdminConsoleApp = (
           : "No requests need a decision right now. Browse active records or prepare a governed action.";
     const reviewAction = state.board === undefined ? { href: "#workspace-settings", label: "Check connection" }
       : state.board.sourceMode === "local-ledger" ? { href: "#exact-lookup", label: "Look up a record" }
-        : needsReview ? { href: "#review-board", label: "Open review queue" }
-          : { href: "#review-board", label: "Browse records" };
+        : undefined;
     const sourceMessage = state.loading
       ? state.board === undefined
         ? "Checking this source. No current records are available yet."
@@ -1246,7 +1241,7 @@ export const createAdminConsoleApp = (
               <p class="eyebrow">Review operations</p>
               <h1>${reviewTitle}</h1>
               <p>${reviewDescription}</p>
-              <a class="button" href="${reviewAction.href}">${reviewAction.label}</a>
+              ${reviewAction === undefined ? "" : `<a class="button" href="${reviewAction.href}">${reviewAction.label}</a>`}
             </div>
           </div>
           ${state.board === undefined ? "" : renderMetrics(state.board)}

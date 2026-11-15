@@ -34,7 +34,7 @@ The full docs site remains the source for linked chapters and updates.
 
 | Design intent | Local implementation and acceptance |
 | --- | --- |
-| Lead with the next task, not a protocol field | The portal leads to governed role preparation and a visible path to DID sign-in. On loopback, `demo=1` exposes the label-only fixture application only in Workspace settings, never ahead of the governed path. Admin headings distinguish pending decisions from a quiet review workspace. API editing also lives in Settings. `ui-layout.spec.mjs` and `demo-application-handoff.spec.mjs` check this hierarchy. |
+| Lead with the next task, not a protocol field | The portal leads to governed role preparation and a visible path to digital identity sign-in. On loopback, `demo=1` exposes the label-only fixture application only in Workspace settings, never ahead of the governed path. Admin headings distinguish pending decisions from a quiet review workspace. The admin header keeps registry and source context but omits duplicate lifecycle metric cards and a second fixture navigation button, bringing the review board into the first desktop viewport; local-ledger lookup and unavailable-source recovery links remain. API editing also lives in Settings. `ui-layout.spec.mjs` and `demo-application-handoff.spec.mjs` check this hierarchy. |
 | Make the maintainer inbox truthful | The admin review heading names source-reported requests awaiting action when proposed or authorized records exist, and otherwise invites browsing. Selected actionable records show a compact identity, eligibility, and authority checklist without claiming the browser verified DID control, VP status, or quorum. DID sign-in is never presented as a vote. `admin-console-app.test.ts` covers both queue states. |
 | Show one advanced governance task at a time | Opening Advanced governance reveals proposal/recovery and policy revision as separate native disclosures, not two signing forms at once. Opening one closes the other; prepared context stays visible across board refreshes. `admin-console.spec.mjs`, `governed-proposal-recovery.spec.mjs`, and `ui-layout.spec.mjs` cover action, recovery, keyboard and zoom paths. |
 | Explain first-use roles and terms | The applicant role picker links directly to the Manual's plain-language role comparison. Primary path copy says digital identity, eligibility proof, and registry approval; Settings defines DID and VP without suggesting either grants permission. The visible **Practice workspace** cue explains that sample records are not deployed ledger evidence. `ui-layout.spec.mjs` checks the route and source states. |
@@ -203,6 +203,15 @@ repeatable UI acceptance evidence:
 | Deny unapproved browser egress and discard stale local checkpoint responses | `browser-egress-control.spec.mjs`, `admin-console.spec.mjs` |
 
 ### Visual review record
+
+On 2026-11-15, the 1440 px fixture admin capture was compared with the V2
+maintainer inbox mock. Three lifecycle cards and a duplicate Browse action
+made the header taller than the task area. The compact header now keeps the
+registry/epoch context and practice-source warning while the review board
+starts within the first 350 px of the desktop viewport. Counts remain in the
+review board and its lifecycle lanes; suspended/revoked warnings remain in the
+header. This is a visual fixture comparison, not an independent usability
+study or a finalized-ledger review.
 
 On 2026-11-06, an agent inspected the 1440 px admin capture after an auditor
 list failed while an issuer record had previously been visible. The board
