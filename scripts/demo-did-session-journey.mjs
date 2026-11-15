@@ -68,6 +68,13 @@ try {
     }),
     sessions,
   };
+  serverOptions.pendingApplicationRegistration = {
+    register: async () => { throw new Error("Not used by the private-list journey"); },
+    listForSubjectDid: async (subjectDid) => subjectDid === actorDid ? [{
+      applicationId: "application:issuer:headless:v1", authorizationId: "auth:issuer:headless:v1",
+      role: "issuer", status: "pending", createdAt: new Date(now).toISOString(),
+    }] : [],
+  };
   const post = (route, body, requestOrigin = origin) => fetch(`${origin}${route}`, {
     method: "POST",
     headers: { "content-type": "application/json", origin: requestOrigin },
@@ -107,12 +114,19 @@ try {
   assert.equal(Object.hasOwn(session, "vpEligible"), false);
   await expectStatus(await post(sessionRoute, { challenge, signature }), 401);
   const bearer = { authorization: `Bearer ${session.accessToken}` };
+  await expectStatus(await fetch(`${origin}/v1/pending-applications`), 403);
+  assert.deepEqual(await expectStatus(await fetch(`${origin}/v1/pending-applications`, {
+    headers: bearer,
+  }), 200), { entries: [{ applicationId: "application:issuer:headless:v1",
+    authorizationId: "auth:issuer:headless:v1", role: "issuer", status: "pending",
+    createdAt: new Date(now).toISOString() }] });
   const identity = await expectStatus(await fetch(`${origin}/v1/actor-authentication/session`, { headers: bearer }), 200);
   assert.deepEqual(identity, { actorDid, actorKeyId, purpose: "applicant-session" });
   await expectStatus(await fetch(`${origin}/v1/actor-authentication/session`, {
     method: "DELETE", headers: bearer,
   }), 204);
   await expectStatus(await fetch(`${origin}/v1/actor-authentication/session`, { headers: bearer }), 401);
+  await expectStatus(await fetch(`${origin}/v1/pending-applications`, { headers: bearer }), 403);
 
   const maintainerChallenge = await expectStatus(await post(challengeRoute, {
     actorDid, actorKeyId, purpose: "maintainer-session",
@@ -133,6 +147,7 @@ try {
     challenge: maintainerChallenge, signature: maintainerSignature,
   }), 401);
   const maintainerBearer = { authorization: `Bearer ${maintainerSession.accessToken}` };
+  await expectStatus(await fetch(`${origin}/v1/pending-applications`, { headers: maintainerBearer }), 403);
   assert.equal(sessions.authenticate(maintainerBearer.authorization, "applicant-session"), null);
   assert.deepEqual(sessions.authenticate(maintainerBearer.authorization, "maintainer-session"), {
     actorDid, actorKeyId, purpose: "maintainer-session",
@@ -187,7 +202,7 @@ try {
   await expectStatus(await fetch(`${origin}/v1/actor-authentication/session`, { headers: expiringBearer }), 200);
   now = Date.parse(expiringSession.expiresAt);
   await expectStatus(await fetch(`${origin}/v1/actor-authentication/session`, { headers: expiringBearer }), 401);
-  process.stdout.write("[did-auth-headless] Applicant and maintainer DID challenge sessions, shared-client sign-in, bad-signature and deployment-context denial, one-use replay, origin denial, purpose isolation, identity-only claims, exact-boundary challenge/session expiry, and revocation passed. No role grant or deployed finality was inferred.\n");
+  process.stdout.write("[did-auth-headless] Applicant and maintainer DID challenge sessions, private applicant-only request list, shared-client sign-in, bad-signature and deployment-context denial, one-use replay, origin denial, purpose isolation, identity-only claims, exact-boundary challenge/session expiry, and revocation passed. No role grant or deployed finality was inferred.\n");
 } finally {
   server.closeAllConnections();
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

@@ -45,6 +45,7 @@ test("both browser apps use real same-origin DID HTTP sessions without a role gr
     })],
   ]);
   const requests = [];
+  const listedFor = [];
   const revokedPurposes = [];
   const server = createServer((request, response) => {
     const pathname = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
@@ -96,6 +97,16 @@ test("both browser apps use real same-origin DID HTTP sessions without a role gr
       }),
       sessions,
     };
+    options.pendingApplicationRegistration = {
+      register: async () => { throw new Error("Not used in this browser journey"); },
+      listForSubjectDid: async (subjectDid) => {
+        listedFor.push(subjectDid);
+        return subjectDid === actorDid ? [{
+          applicationId: "application:issuer:mine:v1", authorizationId: "auth:issuer:mine:v1",
+          role: "issuer", status: "pending", createdAt: "2026-11-14T00:00:00.000Z",
+        }] : [];
+      },
+    };
     await page.exposeFunction("signTrustRegistryDigest", (digest, useWrongKey) => ({
       keyId: actorKeyId,
       algorithm: "jubjub-schnorr",
@@ -138,9 +149,20 @@ test("both browser apps use real same-origin DID HTTP sessions without a role gr
     await page.getByRole("link", { name: "Back to issuer request" }).click();
     await expect(page.locator(".app-shell")).toHaveAttribute("data-settings-active", "false");
     await expect(page.locator("#issuer-request")).toBeVisible();
+    await page.locator('.task-nav a[href="#my-applications"]').click();
+    await page.getByRole("button", { name: "Load my applications" }).click();
+    await expect(page.locator("#my-applications")).toContainText("application:issuer:mine:v1");
+    await page.getByRole("link", { name: "Continue private evidence" }).click();
+    await expect(page.locator("#pending-evidence")).toHaveAttribute("open", "");
+    await expect(page.locator("[data-application-binding-form] [name='applicationId']"))
+      .toHaveValue("application:issuer:mine:v1");
+    assert.deepEqual(listedFor, [actorDid]);
+    assert.equal(requests.filter((request) => request === "GET /v1/pending-applications").length, 1);
     await page.getByRole("link", { name: "Workspace settings" }).first().click();
     await page.getByRole("button", { name: "Sign out" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText("A digital identity signer is connected");
+    await expect(page.locator("#my-applications")).toContainText("Sign in with your digital identity");
+    await expect(page.locator("#my-applications")).not.toContainText("application:issuer:mine:v1");
 
     await page.goto(`${origin}/admin/`);
     await page.locator('.task-nav a[href="./registry-manual.html"]').click();

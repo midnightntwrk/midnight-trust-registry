@@ -121,6 +121,18 @@ describe("pending application registration transition", () => {
     expect(port.readPending("application:auditor:company:v2")).toBeNull();
   });
 
+  it("lists only redacted requests for the exact applicant DID", async () => {
+    const state = initialState();
+    const port = new InMemoryPendingApplicationRegistrationPort(state, evidenceVerifierDid, resolver);
+    const accepted = await port.register(requestFor(state), now);
+    expect(await port.listForSubjectDid(applicantDid)).toEqual([{
+      applicationId: accepted.binding.applicationId,
+      authorizationId: accepted.authorizationId,
+      role: "auditor", status: "pending", createdAt: now.toISOString(),
+    }]);
+    expect(await port.listForSubjectDid(createMidnightDid("other-applicant"))).toEqual([]);
+  });
+
   it("authenticates the applicant DID and binds the complete request scope to current policy", async () => {
     const initial = initialState();
     const request = requestFor(initial);

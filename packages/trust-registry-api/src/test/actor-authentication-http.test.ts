@@ -13,12 +13,13 @@ import {
   createMidnightDidLedgerFixture,
   createMidnightDidResolver,
 } from "@midnight-ntwrk/trust-registry-integration";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createActorAuthenticationService, type ActorAuthenticationChallengeStore } from "../actor-authentication.js";
 import { createActorSessionService } from "../actor-sessions.js";
 import { InMemoryApplicationChallengeStore } from "../application-challenges.js";
 import type { ApplicationVpHttpPort } from "../application-vp-http.js";
+import type { PendingApplicationRegistrationPort } from "../pending-application-registration.js";
 import { createTrustRegistryApiServer } from "../server.js";
 import { createInMemorySource } from "../source.js";
 
@@ -75,7 +76,8 @@ describe("phase-0 DID authentication HTTP", () => {
     }
   });
 
-  async function start(configured = true, applicationVp?: ApplicationVpHttpPort) {
+  async function start(configured = true, applicationVp?: ApplicationVpHttpPort,
+    pendingApplicationRegistration?: PendingApplicationRegistrationPort) {
     nowMs = START;
     const resolver = createMidnightDidResolver([
       createMidnightDidLedgerFixture(actorDid, {
@@ -96,6 +98,7 @@ describe("phase-0 DID authentication HTTP", () => {
       source: createInMemorySource(createOperatorWorkspace({ label: "actor-auth-http" }).snapshot),
       ...(configured ? { actorAuthentication: { challenges, sessions: createActorSessionService(() => nowMs) } } : {}),
       ...(applicationVp === undefined ? {} : { applicationVp }),
+      ...(pendingApplicationRegistration === undefined ? {} : { pendingApplicationRegistration }),
     });
     base = await listen(server);
   }
@@ -133,6 +136,45 @@ describe("phase-0 DID authentication HTTP", () => {
       method: "DELETE", headers: { authorization },
     })).status).toBe(204);
     expect((await fetch(`${base}/v1/actor-authentication/session`, { headers: { authorization } })).status).toBe(401);
+  });
+
+  it("lists only minimal request metadata for an authenticated applicant purpose", async () => {
+    const listForSubjectDid = vi.fn(async (subjectDid: string) => subjectDid === actorDid ? [{
+      applicationId: "application:issuer:mine:v1", authorizationId: "auth:issuer:mine:v1",
+      role: "issuer" as const, status: "pending" as const,
+      createdAt: "2026-11-14T00:00:00.000Z",
+    }] : []);
+    await start(true, undefined, {
+      register: async () => { throw new Error("not used"); }, listForSubjectDid,
+    });
+    const route = `${base}/v1/pending-applications`;
+    expect((await fetch(route)).status).toBe(403);
+    const challenge = await (await post("/v1/actor-authentication/challenges", {
+      actorDid, actorKeyId, purpose: "applicant-session",
+    })).json() as ActorAuthenticationChallenge;
+    const sessionResponse = await post("/v1/actor-authentication/sessions", {
+      challenge, signature: signatureFor(challenge),
+    });
+    const session = await sessionResponse.json() as { accessToken: string };
+    const response = await fetch(route, { headers: { authorization: `Bearer ${session.accessToken}` } });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.json()).toEqual({ entries: [{
+      applicationId: "application:issuer:mine:v1", authorizationId: "auth:issuer:mine:v1",
+      role: "issuer", status: "pending", createdAt: "2026-11-14T00:00:00.000Z",
+    }] });
+    expect(listForSubjectDid).toHaveBeenCalledExactlyOnceWith(actorDid);
+
+    const maintainerChallenge = await (await post("/v1/actor-authentication/challenges", {
+      actorDid, actorKeyId, purpose: "maintainer-session",
+    })).json() as ActorAuthenticationChallenge;
+    const maintainerSession = await (await post("/v1/actor-authentication/sessions", {
+      challenge: maintainerChallenge, signature: signatureFor(maintainerChallenge),
+    })).json() as { accessToken: string };
+    expect((await fetch(route, { headers: {
+      authorization: `Bearer ${maintainerSession.accessToken}`,
+    } })).status).toBe(403);
+    expect(listForSubjectDid).toHaveBeenCalledTimes(1);
   });
 
   it("rejects foreign origins, non-JSON, wrong signatures, and expired sessions", async () => {

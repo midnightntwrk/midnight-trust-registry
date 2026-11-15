@@ -165,6 +165,7 @@ import {
   type RecognitionAccreditationHttpPort,
 } from "./recognition-accreditation-http.js";
 import {
+  PendingApplicationListResponseSchema,
   PendingApplicationRegistrationRejectedError,
   type PendingApplicationRegistrationPort,
 } from "./pending-application-registration.js";
@@ -1402,6 +1403,28 @@ export const createTrustRegistryApiServer = (
           }
           throw error;
         }
+      }
+
+      if (method === "GET" && segments.length === 2 && segments[0] === "v1"
+        && segments[1] === "pending-applications") {
+        response.setHeader("cache-control", "no-store");
+        const subjectDid = options.actorAuthentication?.sessions.authenticate(
+          request.headers.authorization, "applicant-session",
+        )?.actorDid;
+        if (subjectDid === undefined) {
+          throw jsonProblem(problemBaseUri, "applicant-session-required", 403,
+            "applicant session required");
+        }
+        const list = options.pendingApplicationRegistration?.listForSubjectDid;
+        if (list === undefined) {
+          throw jsonProblem(problemBaseUri, "pending-application-list-unavailable", 503,
+            "pending application list unavailable");
+        }
+        const entries = await list.call(options.pendingApplicationRegistration, subjectDid);
+        writeJson(response, 200, PendingApplicationListResponseSchema.parse({
+          entries,
+        }), false);
+        return;
       }
 
       if (segments.length === 4 && segments[0] === "v1" && segments[1] === "application-evidence"

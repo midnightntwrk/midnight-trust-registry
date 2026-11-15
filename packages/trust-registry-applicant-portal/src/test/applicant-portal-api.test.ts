@@ -334,6 +334,25 @@ describe("private application VP exchange", () => {
     );
   });
 
+  it("lists only validated applicant summaries with an identity bearer", async () => {
+    const entries = [{ applicationId: "application:issuer:mine:v1",
+      authorizationId: "auth:issuer:mine:v1", role: "issuer", status: "pending",
+      createdAt: "2026-11-14T00:00:00.000Z" }];
+    const fetchImpl = vi.fn(async () => Response.json({ entries })) as typeof fetch;
+    const unauthenticated = new TrustRegistryApplicantPortalClient("https://registry.example", fetchImpl);
+    await expect(unauthenticated.listMyApplications()).rejects.toThrow("Applicant DID sign-in is required");
+    expect(fetchImpl).not.toHaveBeenCalled();
+    const authenticated = new TrustRegistryApplicantPortalClient("https://registry.example", fetchImpl,
+      { accessToken: "private-token", pageOrigin: "https://registry.example" });
+    expect(await authenticated.listMyApplications()).toEqual(entries);
+    expect(fetchImpl).toHaveBeenCalledWith("https://registry.example/v1/pending-applications", {
+      method: "GET", credentials: "omit", cache: "no-store", redirect: "error",
+      headers: { authorization: "Bearer private-token" },
+    });
+    fetchImpl.mockResolvedValueOnce(Response.json({ entries: [{ ...entries[0], privateVp: "secret" }] }));
+    await expect(authenticated.listMyApplications()).rejects.toThrow();
+  });
+
   it("recovers accepted evidence with a read-only same-origin request", async () => {
     const accepted = {
       evidence: { envelope: { applicationId: "application:issuer:one" }, commitment: `0x${"3".repeat(64)}` },

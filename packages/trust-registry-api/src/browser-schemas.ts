@@ -16,3 +16,14 @@ export const TrustRegistryApiEvaluateRecognitionRequestSchema =
   TrustRegistryApiResolveRecognitionRequestSchema.extend({
     at: z.string().datetime({ offset: true }),
   });
+
+export const PendingApplicationSummarySchema = z.strictObject({
+  applicationId: z.string().trim().min(1).max(256),
+  authorizationId: z.string().trim().min(1).max(256),
+  role: z.enum(["issuer", "verifier", "auditor", "maintainer"]),
+  status: z.enum(["pending", "archived"]),
+  createdAt: z.string().datetime({ offset: true }),
+});
+export const PendingApplicationListResponseSchema = z.strictObject({
+  entries: z.array(PendingApplicationSummarySchema),
+});

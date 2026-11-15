@@ -1,7 +1,7 @@
 import { TrustRegistryApplicantPortalApiError, TrustRegistryApplicantPortalClient, isCurrentlyActive, normalizeApiBaseUrl } from "./api.js";
 import { TARGET_OPTIONS, describeSubmission, toInspectionCards, type PortalSubmissionTarget, type PublicInspection } from "./model.js";
 import { TrustRegistryApiEvaluateRecognitionRequestSchema, TrustRegistryApiResolveRecognitionRequestSchema } from "@midnight-ntwrk/trust-registry-api/browser-schemas";
-import type { ApplicationChallengeBinding, ApplicationVpHttpIssueResult, ApplicationVpHttpSubmissionResult, RecognitionAdmissionReceipt, TrustRegistryApiAuthorizationEvidenceEvaluationResponse, TrustRegistryApiAuthorizationListResponse, TrustRegistryApiEvaluateAuthorizationRequest, TrustRegistryApiEvaluateRecognitionRequest, TrustRegistryApiMutationContext, TrustRegistryApiRecognitionEvidenceEvaluationResponse, TrustRegistryApiRecognitionListResponse, TrustRegistryApiResolveAuthorizationRequest, TrustRegistryApiResolveRecognitionRequest, TrustRegistryApiSignedMutationRequest } from "@midnight-ntwrk/trust-registry-api";
+import type { ApplicationChallengeBinding, ApplicationVpHttpIssueResult, ApplicationVpHttpSubmissionResult, PendingApplicationSummary, RecognitionAdmissionReceipt, TrustRegistryApiAuthorizationEvidenceEvaluationResponse, TrustRegistryApiAuthorizationListResponse, TrustRegistryApiEvaluateAuthorizationRequest, TrustRegistryApiEvaluateRecognitionRequest, TrustRegistryApiMutationContext, TrustRegistryApiRecognitionEvidenceEvaluationResponse, TrustRegistryApiRecognitionListResponse, TrustRegistryApiResolveAuthorizationRequest, TrustRegistryApiResolveRecognitionRequest, TrustRegistryApiSignedMutationRequest } from "@midnight-ntwrk/trust-registry-api";
 import { canonicalizeAuthorizationScope, computeAuthorizationScopeCommitment, type PendingApplicationPayload } from "@midnight-ntwrk/trust-registry-domain/browser";
 import { prepareAuditorApplication, signPreparedAuditorApplication, type AuditorApplicationDraft, type PreparedAuditorApplication } from "./auditor-application.js";
 import { prepareIssuerApplication, prepareMaintainerApplication, prepareVerifierApplication, signPreparedMembershipApplication, type IssuerApplicationDraft, type MaintainerApplicationDraft, type PreparedMembershipApplication, type VerifierApplicationDraft } from "./membership-application.js";
@@ -25,6 +25,10 @@ type AppState = {
   evidenceFlash: string | undefined;
   acceptedEvidence: ApplicationVpHttpSubmissionResult | undefined;
   pendingApplication: { binding: ApplicationChallengeBinding; challenge?: ApplicationVpHttpIssueResult } | undefined;
+  myApplications: readonly PendingApplicationSummary[] | undefined;
+  myApplicationsToken: string | undefined;
+  myApplicationsBusy: boolean;
+  myApplicationsError: string | undefined;
   auditorStatus: { authorizationId: string; status: string; currentTrust: boolean } | undefined;
   auditorStatusBusy: boolean;
   auditorDraft: AuditorApplicationDraft | undefined;
@@ -298,6 +302,10 @@ export const createApplicantPortalApp = (
     evidenceFlash: undefined,
     acceptedEvidence: undefined,
     pendingApplication: undefined,
+    myApplications: undefined,
+    myApplicationsToken: undefined,
+    myApplicationsBusy: false,
+    myApplicationsError: undefined,
     auditorStatus: undefined,
     auditorStatusBusy: false,
     auditorDraft: undefined,
@@ -351,7 +359,7 @@ export const createApplicantPortalApp = (
   let didExpiryTimer: ReturnType<typeof setTimeout> | undefined;
 
   const filterRecordCards = () => {
-    const overview = root.querySelector<HTMLElement>(".records-overview");
+    const overview = root.querySelector<HTMLElement>("#trust-records");
     if (overview === null) return;
     const query = recordSearchQuery.trim().toLocaleLowerCase();
     let visible = 0;
@@ -418,7 +426,9 @@ export const createApplicantPortalApp = (
     if (state.didBusy || state.loading || signer === undefined || inspection === undefined
       || !canUsePrivateEvidenceHost(state.apiBase, initialUrl)) return;
     const apiBase = state.apiBase;
-    setState({ didBusy: true, didError: undefined, didSession: undefined, didSourceMode: undefined });
+    setState({ didBusy: true, didError: undefined, didSession: undefined, didSourceMode: undefined,
+      myApplications: undefined, myApplicationsToken: undefined, myApplicationsBusy: false,
+      myApplicationsError: undefined });
     try {
       const session = await signInApplicantDid({
         apiBase, pageOrigin: initialUrl.origin, registryId: inspection.summary.registryId,
@@ -441,13 +451,31 @@ export const createApplicantPortalApp = (
     const session = state.didSession;
     if (session === undefined) return;
     const apiBase = state.apiBase;
-    setState({ didSession: undefined, didSourceMode: undefined, didError: undefined });
+    setState({ didSession: undefined, didSourceMode: undefined, didError: undefined,
+      myApplications: undefined, myApplicationsToken: undefined, myApplicationsBusy: false,
+      myApplicationsError: undefined });
     try {
       await signOutApplicantDid({ apiBase, pageOrigin: initialUrl.origin, session, fetchImpl });
     } catch {
       if (apiBase === state.apiBase) {
         setState({ didError: "The local session is cleared. Server revocation was not confirmed; the token expires within 15 minutes." });
       }
+    }
+  };
+
+  const loadMyApplications = async () => {
+    const session = liveDidSession();
+    if (session === undefined || state.myApplicationsBusy) return;
+    const apiBase = state.apiBase;
+    setState({ myApplicationsBusy: true, myApplicationsError: undefined });
+    try {
+      const entries = await client().listMyApplications();
+      if (state.apiBase !== apiBase || liveDidSession()?.accessToken !== session.accessToken) return;
+      setState({ myApplications: entries, myApplicationsToken: session.accessToken,
+        myApplicationsBusy: false });
+    } catch (error) {
+      if (state.apiBase !== apiBase || liveDidSession()?.accessToken !== session.accessToken) return;
+      setState({ myApplicationsBusy: false, myApplicationsError: formatApiError(error) });
     }
   };
 
@@ -1060,6 +1088,15 @@ export const createApplicantPortalApp = (
   };
 
   const bindEvents = () => {
+    root.querySelector<HTMLButtonElement>("[data-load-my-applications]")?.addEventListener("click", () => {
+      void loadMyApplications();
+    });
+    root.querySelectorAll<HTMLAnchorElement>("[data-use-application-id]").forEach((link) => {
+      link.addEventListener("click", () => {
+        const input = root.querySelector<HTMLInputElement>("[data-application-binding-form] [name='applicationId']");
+        if (input !== null) input.value = link.dataset.useApplicationId ?? "";
+      });
+    });
     root.querySelector<HTMLButtonElement>("[data-did-sign-in]")?.addEventListener("click", () => {
       void signInDid();
     });
@@ -1104,6 +1141,8 @@ export const createApplicantPortalApp = (
       state.observedAt = undefined;
       setState({ apiBase, inspection: undefined, signedBusy: false, signedContext: undefined, pendingApplication: undefined, auditorStatus: undefined, auditorStatusBusy: false, auditorDraft: undefined, preparedAuditor: undefined, auditorPreparationBusy: false, memberDraft: undefined, preparedMember: undefined, memberPreparationBusy: false, currentAuthorizationBusy: false, currentAuthorizationResult: undefined, currentAuthorizationError: undefined, currentRecognitionBusy: false, currentRecognitionResult: undefined, currentRecognitionError: undefined, historicalBusy: false, historicalResult: undefined, historicalError: undefined, historicalDraft: undefined, historicalRecognitionBusy: false, historicalRecognitionResult: undefined, historicalRecognitionError: undefined, historicalRecognitionDraft: undefined, evidenceBusy: false, evidenceError: undefined, evidenceFlash: undefined,
         didSession: undefined, didSourceMode: undefined, didBusy: false, didError: undefined,
+        myApplications: undefined, myApplicationsToken: undefined, myApplicationsBusy: false,
+        myApplicationsError: undefined,
         recognitionId: "", recognitionChallenge: undefined, recognitionAdmission: undefined,
         recognitionRecoveryBusy: false, recognitionRecoveryMessage: undefined });
       void refreshInspection();
@@ -1567,6 +1606,25 @@ export const createApplicantPortalApp = (
         </div>
       </form>
     `;
+    const ownApplications = activeDidSession !== undefined
+      && state.myApplicationsToken === activeDidSession.accessToken ? state.myApplications : undefined;
+    const myApplicationsPanel = state.inspection === undefined ? "" : `
+      <section class="records-overview" id="my-applications" aria-labelledby="my-applications-heading">
+        <div class="records-heading"><div><p class="eyebrow">Private workspace</p>
+          <h2 id="my-applications-heading">My applications</h2>
+          <p>Requests registered for this signed-in identity. This private list is not a ledger decision.</p></div></div>
+        ${activeDidSession === undefined
+          ? '<p>Sign in with your digital identity in <a href="#connection-details">Workspace settings</a> to see your requests.</p>'
+          : `<button class="button secondary" type="button" data-load-my-applications${state.myApplicationsBusy ? " disabled" : ""}>${state.myApplicationsBusy ? "Loading…" : ownApplications === undefined ? "Load my applications" : "Refresh my applications"}</button>
+            ${state.myApplicationsError === undefined ? "" : `<p class="alert error" role="alert">${escapeHtml(state.myApplicationsError)}</p>`}
+            ${ownApplications === undefined ? "" : ownApplications.length === 0
+              ? "<p>No registered requests for this identity.</p>"
+              : `<ul class="application-list">${ownApplications.map((entry) => `<li><strong>${escapeHtml(entry.role)} request</strong>
+                  <span class="technical-id">${escapeHtml(entry.applicationId)}</span>
+                  <span>${escapeHtml(entry.status)} · ${escapeHtml(entry.createdAt)}</span>
+                  ${entry.status === "pending" ? `<a href="#pending-evidence" data-open-workflow="pending-evidence" data-use-application-id="${escapeHtml(entry.applicationId)}">Continue private evidence</a>` : ""}
+                </li>`).join("")}</ul>`}`}
+      </section>`;
     const taskLinks = state.inspection === undefined ? `
       <a href="#connection-details">Check connection</a>
       <a href="#governed-requests">View role requirements</a>
@@ -1576,11 +1634,13 @@ export const createApplicantPortalApp = (
       <a href="#current-recognition-lookup">Look up recognition</a>
       <a href="#governed-requests">Prepare membership</a>
       <a href="#pending-evidence" data-open-workflow="pending-evidence">Continue pending request</a>
+      <a href="#my-applications">My applications</a>
       <a href="./registry-manual.html">Registry Manual</a>
       <a href="#connection-details">Workspace settings</a>
     ` : `
       <a href="#governed-requests">Prepare governed membership</a>
       <a href="#pending-evidence" data-open-workflow="pending-evidence">Continue pending request</a>
+      <a href="#my-applications">My applications</a>
       <a href="#trust-records">Explore active records</a>
       <a href="./registry-manual.html">Registry Manual</a>
       <a href="#connection-details">Workspace settings</a>
@@ -1747,6 +1807,7 @@ export const createApplicantPortalApp = (
         </section>
         <section class="content">
           ${state.inspection?.sourceMode === "local-ledger" ? "" : journeyPicker}
+          ${state.inspection?.sourceMode === "local-ledger" ? "" : myApplicationsPanel}
           ${state.inspection?.sourceMode === "local-ledger" ? `
           <section class="lookup-picker" aria-labelledby="lookup-picker-heading">
             <p class="eyebrow">Current local ledger</p>
@@ -1811,6 +1872,7 @@ export const createApplicantPortalApp = (
             </aside>
           </section>
           ${journeyPicker}
+          ${myApplicationsPanel}
           ` : state.inspection === undefined ? `<div class="alert error">Registry mode is unavailable; inspection controls are disabled.</div>` : `
           <section class="form-panel">
             <h2>Historical authorization evidence</h2>

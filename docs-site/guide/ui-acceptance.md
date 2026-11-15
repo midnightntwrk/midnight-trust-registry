@@ -15,13 +15,17 @@ The [V2 canvas](https://uxpilot.ai/a/ui-design?page=rkHJ3LsTIYP0TaOZYr2k)
 is the current direction for the calmer applicant, maintainer, sign-in, and
 Registry Manual experiences. The shared left rail, palette, and concise
 applicant role choices and Settings-based phase-0 DID sign-in are implemented
-locally. VP readiness and a dedicated application inbox remain concepts, not
-shipped behavior. DID sign-in requires an external signer and same-origin host.
+locally. A minimal **My applications** list is available only to an applicant
+with a same-origin DID session and a host-provided pending-application store;
+it shows private admission metadata, not VP readiness or a finalized ledger
+decision. VP readiness remains a concept, not shipped behavior. DID sign-in
+requires an external signer and same-origin host.
 The primary sign-in controls and maintainer checklist use plain-language
 identity and credential terms; Settings and the Manual retain the protocol
 definitions and explicitly separate identity from eligibility and authority.
-The applicant task rail instead links to the supported exact-ID pending-request
-continuation; it does not pretend to offer a personal application list.
+The applicant task rail links to both the authenticated personal list and the
+exact-ID pending-request continuation. The latter remains usable on hosts
+without the optional list port.
 
 Both static app bundles include an offline Registry Manual generated from the
 same Markdown source as the docs site. The sidebar links to that local copy;
@@ -38,6 +42,7 @@ The full docs site remains the source for linked chapters and updates.
 | Make the maintainer inbox truthful | The admin review heading names source-reported requests awaiting action when proposed or authorized records exist, and otherwise invites browsing. The task rail keeps Advanced governance beside review, with Manual and Settings after task links. Selected actionable records show a compact identity, eligibility, and authority checklist without claiming the browser verified DID control, VP status, or quorum. DID sign-in is never presented as a vote. `admin-console-app.test.ts` and `ui-layout.spec.mjs` cover these states. |
 | Show one advanced governance task at a time | The rail's Advanced governance link opens its disclosure, including after direct-link reload. It reveals proposal/recovery and policy revision as separate native disclosures, not two signing forms at once. Opening one closes the other; prepared context stays visible across board refreshes. `admin-console.spec.mjs`, `governed-proposal-recovery.spec.mjs`, and `ui-layout.spec.mjs` cover action, recovery, keyboard and zoom paths. |
 | Explain first-use roles and terms | The applicant role picker links directly to the Manual's plain-language role comparison. Primary path copy says digital identity, eligibility proof, and registry approval; Settings defines DID and VP without suggesting either grants permission. When no external DID signer is present, the hero links to sign-in requirements rather than promising a setup control the app cannot provide. The visible **Practice workspace** cue explains that sample records are not deployed ledger evidence. `ui-layout.spec.mjs` checks the route and source states. |
+| Show only the applicant's requests | **My applications** requires an applicant-purpose DID bearer on the same origin. The private API returns only application ID, authorization ID, role, admission status, and creation time for that DID; it never returns scope or VP payload. A pending entry opens exact-ID evidence continuation. No sign-in or unavailable list port is shown as a granted role or an empty registry. The file and in-memory stores, HTTP route, client, and real-browser host journey test filtering, purpose denial, and navigation. |
 | Explain the applicant path before exposing forms | Four compact role choices lead to a role-specific disclosure. Choosing another card closes the previous role form and keeps the chosen card visibly selected; the selected form can also be collapsed. On a 390 px viewport each role stays under 95 px high and the full introductory section stays under 1050 px. A compact check summary distinguishes current DID session state from eligibility not verified in this view and a registry role requiring governed approval; it is not a progress indicator. The Registry Manual holds the longer submission guidance, with a direct link beside role choice. The prerequisite message names the source or host restriction. Each role form explains the two IDs and DID key before the fields, and an in-form reason accompanies disabled preparation on a cross-origin connection. A receipt is not approval, and opening a role does not submit it. |
 | One Midnight visual language | Both apps use the approved logo, Outfit, muted teal/mist tokens, and shared navigation/status components. On desktop the Midnight lockup and task links occupy one continuous left rail; on mobile the same lockup precedes the native Menu. |
 | Compact discovery and a bounded review detail | The fixture portal searches visible active records by name, role, scope, or DID without changing registry state. Empty lifecycle lanes are omitted from the admin view; selected detail stays beside the list on desktop and below it on mobile. The detail explains its source and lifecycle before the decision summary. Proposed and authorized records label their trust-level field as requested or authorized rather than displaying a bare value that could be mistaken for an approval decision. Exact IDs and external-signature preparation are separate disclosures. |
