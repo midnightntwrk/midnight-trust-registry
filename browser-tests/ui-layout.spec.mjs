@@ -949,6 +949,11 @@ test("admin review board precedes advanced governance in keyboard order", async 
     ]);
     expect(await page.evaluate(() => Boolean(document.querySelector("#review-board")
       ?.compareDocumentPosition(document.querySelector("#advanced-governance")) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+    await page.locator('.task-nav a[href="#advanced-governance"]').click();
+    await expect(page.locator(".advanced-workflows")).toHaveAttribute("open", "");
+    await page.reload();
+    await expect(page.locator(".advanced-workflows")).toHaveAttribute("open", "");
+    await expect(page.locator(".governance-task[open]")).toHaveCount(0);
   } finally {
     await page.close();
     await server.close();

@@ -1162,7 +1162,7 @@ export const createAdminConsoleApp = (
       ? document.activeElement?.getAttribute("data-focus-key") : null;
     pendingFocusKey = focusKey ?? (root.contains(document.activeElement) ? null : pendingFocusKey);
     const advancedOpen = root.querySelector<HTMLDetailsElement>(".advanced-workflows")?.open
-      ?? ["#task-proposal", "#task-policy"].includes(window.location.hash);
+      ?? ["#advanced-governance", "#task-proposal", "#task-policy"].includes(window.location.hash);
     const proposalTaskOpen = root.querySelector<HTMLDetailsElement>("#task-proposal")?.open
       ?? window.location.hash === "#task-proposal";
     const policyTaskOpen = root.querySelector<HTMLDetailsElement>("#task-policy")?.open
@@ -1514,12 +1514,14 @@ export const createAdminConsoleApp = (
     const shell = root.querySelector<HTMLElement>(".app-shell");
     if (shell !== null) shell.dataset.settingsActive = String(window.location.hash === "#workspace-settings");
     const target = window.location.hash.slice(1);
-    if (target === "task-proposal" || target === "task-policy") {
+    if (target === "advanced-governance" || target === "task-proposal" || target === "task-policy") {
       const advanced = root.querySelector<HTMLDetailsElement>(".advanced-workflows");
       if (advanced !== null) advanced.open = true;
-      root.querySelectorAll<HTMLDetailsElement>(".governance-task").forEach((task) => {
-        task.open = task.id === target;
-      });
+      if (target !== "advanced-governance") {
+        root.querySelectorAll<HTMLDetailsElement>(".governance-task").forEach((task) => {
+          task.open = task.id === target;
+        });
+      }
     }
   });
   void refreshBoard();
