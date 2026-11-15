@@ -56,6 +56,7 @@ export function createActorAuthenticationService(input: {
   context: ActorAuthenticationContext;
   store: ActorAuthenticationChallengeStore;
   resolver?: MidnightResolver;
+  allowedModes?: "both" | "offchain-only" | "ledger-only";
   clock: () => number;
 }) {
   const context = ActorAuthenticationContextSchema.parse(input.context);
@@ -65,9 +66,19 @@ export function createActorAuthenticationService(input: {
       const nowMs = input.clock();
       if (!Number.isSafeInteger(nowMs)) throw new Error("Actor authentication clock unavailable");
       const offchain = actorDid.startsWith("did:midnight:offchain:");
+      if ((offchain && input.allowedModes === "ledger-only")
+        || (!offchain && input.allowedModes === "offchain-only")) {
+        throw new InvalidActorAuthenticationIdentityError();
+      }
       if (offchain) {
         try {
-          if (resolveLongFormOffchainMidnightDID(actorDid).did !== actorDid) {
+          const resolved = resolveLongFormOffchainMidnightDID(actorDid);
+          const method = resolved.didDocument.verificationMethod?.find((candidate) =>
+            String(candidate.id) === actorKeyId && String(candidate.controller) === actorDid);
+          if (resolved.did !== actorDid || resolved.didDocumentMetadata.deactivated === true
+            || !resolved.didDocument.authentication?.some((entry) => String(entry) === actorKeyId)
+            || method?.publicKeyJwk.kty !== "OKP" || method.publicKeyJwk.crv !== "Ed25519"
+            || typeof method.publicKeyJwk.x !== "string") {
             throw new InvalidActorAuthenticationIdentityError();
           }
         } catch {
@@ -101,6 +112,8 @@ export function createActorAuthenticationService(input: {
       if (!parsedChallenge.success || !parsedSignature.success) return null;
       const challenge = parsedChallenge.data;
       const signature = parsedSignature.data;
+      if ((challenge.version === "tr-actor-authentication-offchain-v1" && input.allowedModes === "ledger-only")
+        || (challenge.version === "tr-actor-authentication-v1" && input.allowedModes === "offchain-only")) return null;
       const nowMs = input.clock();
       if (!Number.isSafeInteger(nowMs)) throw new Error("Actor authentication clock unavailable");
       if (challenge.registryId !== context.registryId || challenge.genesisHash !== context.genesisHash

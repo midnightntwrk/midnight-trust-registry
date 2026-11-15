@@ -20,8 +20,7 @@ including read-only listeners. They are not a substitute for a finalized local
 ledger. The signed local-ledger mode is the only CLI mode that can request
 cluster binding; that capability alone does not qualify a release deployment.
 
-Phase-0 actor authentication is an opt-in embedding API, not enabled by the
-packaged CLI. A host can inject `actorAuthentication` into
+Phase-0 actor authentication is an opt-in embedding API. A host can inject `actorAuthentication` into
 `createTrustRegistryApiServer` with a deployment-bound DID challenge service,
 an atomic one-use challenge store, a resolver, and a process-local session
 service. The API exposes `POST /v1/actor-authentication/challenges`,
@@ -31,8 +30,28 @@ foreign browser Origin, gives no cross-origin read grant, and marks responses
 `no-store`. Sessions use opaque bearer tokens, expire after 15 minutes, and
 vanish on process restart. The host must keep bearer tokens out of logs and
 must separately verify VP eligibility and governed registry authority. A DID
-signature or session never grants a role. There is no browser sign-in flow or
-production-ready authentication host yet.
+signature or session never grants a role. The browser apps offer sign-in only
+when an external signer is injected by a same-origin host; they do not hold
+wallet keys. The packaged CLI supports a narrow fixture-only loopback mode:
+
+```bash
+trust-registry-api serve --workspace /absolute/path/workspace.json \
+  --fixture-offchain-auth-store /absolute/private/path/challenges.json \
+  --fixture-portal-root /absolute/path/built-portals
+```
+
+This mode accepts only self-certifying long-form off-chain Midnight DIDs with
+an Ed25519 `authentication` method. It assigns a workspace instance ID if
+missing and binds challenges to a synthetic, domain-separated fixture identity
+and the exact loopback origin. The store must be a private regular file on a
+trusted filesystem; consumed challenges survive restart, sessions do not.
+The synthetic genesis/contract fields are **not** a ledger deployment or
+finality proof. This mode does not enable VP intake, private application lists,
+governed writes, or role grants. The signed local-ledger CLI mode does not
+enable actor authentication. The optional portal root must contain built
+`admin/` and `applicant/` asset directories; serving them from the API origin
+allows the external signer integration to use the same-origin challenge API.
+There is no production-ready authentication host.
 When `actorAuthentication` and `applicationVp` are injected together, the
 VP routes additionally require an applicant-purpose bearer session matching
 the embedding host's `authorizeRequest` DID. This does not replace that host

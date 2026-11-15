@@ -133,12 +133,18 @@ self-certifying long-form off-chain DID with an Ed25519 authentication key from
 the ledger-backed Jubjub path. Focused API and browser-client tests plus
 `pnpm run demo:did-auth:smoke` exercise both sign-in paths through a real
 loopback HTTP host, including a path-based authentication method and explicit
-no-role/no-other-applicant-data checks. They do not prove packaged-host
-availability or deployed actor authorization. The VC method-binding helper still rejects
-off-chain DIDs and must remain separate from sign-in. Off-chain long-form state
-is immutable and has no live deactivation signal, so short session lifetime
-and explicit mode labeling matter. The packaged CLI still lacks an approved
-host configuration and cannot yet claim phase-0 sign-in is available there.
+no-role/no-other-applicant-data checks. The packaged API CLI now has an
+explicit loopback workspace-only off-chain sign-in option with a private
+durable challenge store, synthetic workspace-instance binding, and an
+optional same-origin built-portal asset root. A
+process-level headless journey checks origin denial, one-use replay after
+restart, and session revocation on restart. This is fixture authentication,
+not a reviewed local-ledger host configuration or deployed actor
+authorization. The VC method-binding helper still rejects off-chain DIDs and
+must remain separate from sign-in. Off-chain long-form state is immutable and
+has no live deactivation signal, so short session lifetime and explicit mode
+labeling matter. The signed local-ledger CLI remains read-only and cannot
+claim deployed actor authentication or authorization.
 
 Non-critical-path follow-ups include public-network bootstrap (#200),
 historical TRQP (#39), Helm (#218), npm publishing (#271), mobile acceptance

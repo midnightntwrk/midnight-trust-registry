@@ -241,41 +241,52 @@ describe("actor DID authentication challenge", () => {
         relationships: { ...state.verificationMethod[0]!.relationships, authentication: false,
           assertionMethod: true } }],
     });
-    const assertionChallenge = await service.issue(assertionDid, `${assertionDid}#auth-1`,
-      "applicant-session");
-    const assertionSignature = {
-      keyId: `${assertionDid}#auth-1`, algorithm: "ed25519",
-      value: `0x${signEd25519(null, actorAuthenticationDigestBytes(assertionChallenge), privateKey).toString("hex")}`,
-    };
-    expect(await service.verify(assertionChallenge, assertionSignature, "applicant-session")).toBeNull();
+    await expect(service.issue(assertionDid, `${assertionDid}#auth-1`, "applicant-session"))
+      .rejects.toMatchObject({ name: "InvalidActorAuthenticationIdentityError" });
   });
 
-  it("accepts a resolved path authentication method but not another DID's method", async () => {
+  it("accepts resolved fragment and path authentication methods but not another DID's method", async () => {
     const { publicKey, privateKey } = generateKeyPairSync("ed25519");
     const publicJwk = publicKey.export({ format: "jwk" });
-    const actorDid = createLongFormOffchainMidnightDIDString({
-      version: 1,
-      alsoKnownAs: [],
-      verificationMethod: [{
-        id: "./keys#auth",
-        publicKeyJwk: { kty: KeyType.OKP, crv: CurveType.Ed25519, x: publicJwk.x! },
-        relationships: { authentication: true, assertionMethod: false, keyAgreement: false,
-          capabilityInvocation: false, capabilityDelegation: false },
-      }],
-      service: [],
-    });
-    const actorKeyId = `${actorDid}/keys#auth`;
-    expect(resolveLongFormOffchainMidnightDID(actorDid).didDocument.authentication).toContain(actorKeyId);
     const service = createActorAuthenticationService({ context, store: memoryStore(), clock: () => START });
-    await expect(service.issue(actorDid, `${did}/keys#auth`, "applicant-session")).rejects.toThrow();
-    const challenge = await service.issue(actorDid, actorKeyId, "applicant-session");
-    const signature = {
-      keyId: actorKeyId,
-      algorithm: "ed25519",
-      value: `0x${signEd25519(null, actorAuthenticationDigestBytes(challenge), privateKey).toString("hex")}`,
-    };
-    expect(await service.verify(challenge, signature, "applicant-session"))
-      .toEqual({ actorDid, actorKeyId });
+    for (const id of ["#auth%2Fkey", "./keys?version=1#auth", "./keys#auth"]) {
+      const actorDid = createLongFormOffchainMidnightDIDString({
+        version: 1,
+        alsoKnownAs: [],
+        verificationMethod: [{
+          id,
+          publicKeyJwk: { kty: KeyType.OKP, crv: CurveType.Ed25519, x: publicJwk.x! },
+          relationships: { authentication: true, assertionMethod: false, keyAgreement: false,
+            capabilityInvocation: false, capabilityDelegation: false },
+        }],
+        service: [],
+      });
+      const actorKeyId = String(resolveLongFormOffchainMidnightDID(actorDid).didDocument.authentication?.[0]);
+      await expect(service.issue(actorDid, `${did}#auth-1`, "applicant-session")).rejects.toThrow();
+      await expect(service.issue(actorDid, `${actorDid}/not-a-method#auth`, "applicant-session"))
+        .rejects.toMatchObject({ name: "InvalidActorAuthenticationIdentityError" });
+      const challenge = await service.issue(actorDid, actorKeyId, "applicant-session");
+      const signature = {
+        keyId: actorKeyId,
+        algorithm: "ed25519",
+        value: `0x${signEd25519(null, actorAuthenticationDigestBytes(challenge), privateKey).toString("hex")}`,
+      };
+      expect(await service.verify(challenge, signature, "applicant-session"))
+        .toEqual({ actorDid, actorKeyId });
+    }
+  });
+
+  it("does not admit ledger DID challenges in off-chain-only mode", async () => {
+    const store = memoryStore();
+    const unrestricted = createActorAuthenticationService({ context, store, resolver, clock: () => START });
+    const offchainOnly = createActorAuthenticationService({
+      context, store, allowedModes: "offchain-only", clock: () => START,
+    });
+    const ledgerChallenge = await unrestricted.issue(did, keyId, "applicant-session");
+    await expect(offchainOnly.issue(did, keyId, "applicant-session"))
+      .rejects.toMatchObject({ name: "InvalidActorAuthenticationIdentityError" });
+    expect(await offchainOnly.verify(ledgerChallenge, signatureFor(ledgerChallenge), "applicant-session"))
+      .toBeNull();
   });
 
   it("rejects a challenge that expires during DID resolution before store consumption", async () => {
