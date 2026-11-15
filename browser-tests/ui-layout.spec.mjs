@@ -357,13 +357,13 @@ test("applicant Settings signs in with DID without showing a registry role", asy
     await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
     await expect(page.locator(".journey-prerequisite")).toContainText("sign in with your digital identity in Workspace settings");
     await expect(page.locator(".application-readiness")).toContainText("Not signed in");
-    await expect(page.locator(".application-readiness")).toContainText("Proof of eligibility is checked separately");
-    await expect(page.locator(".application-readiness")).toContainText("Registry approval grants access");
+    await expect(page.locator(".application-readiness")).toContainText("Not verified in this view");
+    await expect(page.locator(".application-readiness")).toContainText("Requires governed approval");
     await expect(page.locator(".hero-sign-in")).toHaveText("Sign in with digital identity →");
     await page.locator(".hero-sign-in").click();
     await page.getByRole("button", { name: "Sign in with DID" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
-    await expect(page.locator(".application-readiness")).toContainText("Digital identity signed in");
+    await expect(page.locator(".application-readiness")).toContainText("Signed in for this session");
     await expect(page.locator(".portal-profile-card")).toContainText("Eligibility proof and registry permission are checked separately");
     await expect(page.locator(".journey-prerequisite")).toContainText("Identity confirmed for this session");
     await expect(page.locator(".journey-prerequisite")).toContainText("Proof of eligibility and governed approval are still required");
@@ -999,9 +999,9 @@ for (const [app, title] of [
             expect(journeyLayout.sectionHeight).toBeLessThan(1050);
             expect(journeyLayout.roleHeights).toHaveLength(4);
             expect(Math.max(...journeyLayout.roleHeights)).toBeLessThan(95);
-            await expect(page.locator(".journey-steps")).toContainText("A receipt is not approval");
-            await expect(page.locator(".journey-steps")).not.toContainText("Check the decision");
-            await expect(page.locator(".journey-requirements")).toContainText("authenticated host");
+            await expect(page.locator(".application-readiness li")).toHaveCount(3);
+            await expect(page.locator(".journey-prerequisite")).toBeVisible();
+            await expect(page.getByRole("link", { name: "Help me choose a role" })).toBeVisible();
           }
           const contentOrder = await page.evaluate(() => ({
             rolesTop: document.querySelector(".journey-picker").getBoundingClientRect().top,
@@ -1085,7 +1085,8 @@ for (const [app, title] of [
           await expect(page.locator(".detail-panel")).toContainText(longDid);
           await page.locator(".technical-details > summary").click();
         } else {
-          await expect(page.locator(".journey-steps li")).toHaveCount(4);
+          await expect(page.locator(".application-readiness li")).toHaveCount(3);
+          await expect(page.locator(".journey-help")).toHaveCount(0);
           await page.locator(".record-identifiers > summary").click();
           const recordSearch = page.locator("[data-record-search]");
           await recordSearch.fill("not-a-registry-entry");

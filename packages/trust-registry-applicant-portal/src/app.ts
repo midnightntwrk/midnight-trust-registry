@@ -1570,30 +1570,13 @@ export const createApplicantPortalApp = (
               <a href="#maintainer-request" data-open-workflow="maintainer-request"><span class="role-mark" aria-hidden="true">M</span><strong>Maintain the registry</strong><span>Requires a separate governed authority path.</span><em>View requirements &rarr;</em></a>
             </div>
             <section class="application-readiness" aria-labelledby="application-readiness-heading">
-              <h3 id="application-readiness-heading">Your path</h3>
-              <ol>
-                <li><span class="readiness-step">01 · Identify</span><strong>${activeDidSession === undefined ? "Not signed in" : "Digital identity signed in"}</strong></li>
-                <li><span class="readiness-step">02 · Qualify</span><strong>Proof of eligibility is checked separately</strong></li>
-                <li><span class="readiness-step">03 · Decide</span><strong>Registry approval grants access</strong></li>
-              </ol>
+              <h3 id="application-readiness-heading">Checks before access</h3>
+              <ul>
+                <li><span class="readiness-step">Identity</span><strong>${activeDidSession === undefined ? "Not signed in" : "Signed in for this session"}</strong></li>
+                <li><span class="readiness-step">Eligibility</span><strong>Not verified in this view</strong></li>
+                <li><span class="readiness-step">Registry role</span><strong>Requires governed approval</strong></li>
+              </ul>
             </section>
-            <details class="journey-help"><summary>How applications work</summary>
-            <div class="journey-guide">
-              <div class="journey-steps">
-                <p class="eyebrow">Your path</p><h3>Four steps to submit a request</h3>
-                <ol>
-                  <li><strong>Choose a role</strong><span>Confirm the authority and scope.</span></li>
-                  <li><strong>Prepare evidence</strong><span>Provide the exact resource and redacted role evidence.</span></li>
-                  <li><strong>Sign and submit</strong><span>Sign externally; submit through an authenticated host.</span></li>
-                  <li><strong>Keep the receipt</strong><span>Save returned IDs. A receipt is not approval.</span></li>
-                </ol>
-              </div>
-              <aside class="journey-requirements"><p class="eyebrow">Before you start</p><h3>What you’ll need</h3>
-                <p>Your subject DID, exact scope or registry resource, and role evidence.</p>
-                <p>Private submission needs a same-origin authenticated host and an external signature. This browser never handles private keys.</p>
-              </aside>
-            </div>
-            </details>
           </section>`;
 
     const sourceMessage = state.loading
