@@ -184,6 +184,7 @@ describe("phase-0 DID authentication HTTP", () => {
       register: async () => { throw new Error("not used"); }, listForSubjectDid,
     });
     expect(await (await fetch(`${base}/health`)).json()).toMatchObject({
+      pendingApplicationRegistrationConfigured: true,
       pendingApplicationListConfigured: true,
     });
     const route = `${base}/v1/pending-applications`;
@@ -219,6 +220,7 @@ describe("phase-0 DID authentication HTTP", () => {
   it("does not report an empty inbox when a signed-in host has no private list port", async () => {
     await start();
     expect(await (await fetch(`${base}/health`)).json()).toMatchObject({
+      pendingApplicationRegistrationConfigured: false,
       pendingApplicationListConfigured: false,
     });
     const challenge = await (await post("/v1/actor-authentication/challenges", {

@@ -1590,6 +1590,8 @@ export const createApplicantPortalApp = (
     const auditorCards = cards.filter((card) => card.target === "auditor");
     const recognitionCards = cards.filter((card) => card.target === "recognition");
     const privateHost = canUsePrivateEvidenceHost(state.apiBase, initialUrl);
+    const canRegisterApplications = privateHost
+      && state.inspection?.pendingApplicationRegistrationConfigured !== false;
     const activeDidSession = liveDidSession();
     const didSignerAvailable = didSigner() !== undefined;
     const pending = state.pendingApplication;
@@ -1606,7 +1608,10 @@ export const createApplicantPortalApp = (
     const verifierLocked = preparedVerifier === undefined ? "" : " disabled";
     const maintainerLocked = preparedMaintainer === undefined ? "" : " disabled";
     const applicantIdGuide = `<p class="step-hint">Application ID tracks this submission; authorization ID names the grant you are requesting. Choose distinct lowercase IDs, then enter a Midnight DID you control and its full key ID from that DID. Never enter a private key.</p>`;
-    const privateHostGuide = privateHost ? "" : `<p class="step-hint" data-private-host-guide>Signing preparation is unavailable on this connection. Open the portal through the same authenticated host as its API.</p>`;
+    const privateHostGuide = !privateHost
+      ? `<p class="step-hint" data-private-host-guide>Signing preparation is unavailable on this connection. Open the portal through the same authenticated host as its API.</p>`
+      : canRegisterApplications ? ""
+        : `<p class="step-hint" data-private-host-guide>This host has no application registration service. Review the requirements here, then connect to a host that can accept signed requests.</p>`;
     const demoApplication = !demoMode || state.inspection === undefined || state.inspection.sourceMode === "local-ledger" ? "" : `
       <form class="form-panel settings-card" id="demo-application" data-submit-form>
         <div class="demo-copy">
@@ -1661,13 +1666,13 @@ export const createApplicantPortalApp = (
     ` : state.inspection.sourceMode === "local-ledger" ? `
       <a href="#current-authorization-lookup">Look up authorization</a>
       <a href="#current-recognition-lookup">Look up recognition</a>
-      <a href="#governed-requests">Prepare membership</a>
+      <a href="#governed-requests">${state.inspection.pendingApplicationRegistrationConfigured === false ? "Review membership requirements" : "Prepare membership"}</a>
       <a href="#pending-evidence" data-open-workflow="pending-evidence">Continue pending request</a>
       ${state.inspection.pendingApplicationListConfigured === false ? "" : '<a href="#my-applications">My applications</a>'}
       <a href="./registry-manual.html">Registry Manual</a>
       <a href="#connection-details">Workspace settings</a>
     ` : `
-      <a href="#governed-requests">Prepare governed membership</a>
+      <a href="#governed-requests">${state.inspection.pendingApplicationRegistrationConfigured === false ? "Review membership requirements" : "Prepare governed membership"}</a>
       <a href="#pending-evidence" data-open-workflow="pending-evidence">Continue pending request</a>
       ${state.inspection.pendingApplicationListConfigured === false ? "" : '<a href="#my-applications">My applications</a>'}
       <a href="#trust-records">Explore active records</a>
@@ -1683,8 +1688,10 @@ export const createApplicantPortalApp = (
               ? "Connect to a registry source before preparing a governed request."
               : !privateHost
                 ? "Local connection: prepare only. Submission requires an authenticated same-origin host."
+                : state.inspection.pendingApplicationRegistrationConfigured === false
+                  ? "This host supports identity sign-in but cannot register applications. Review requirements here; use a host with registration enabled to submit. Sign-in never grants a role."
                 : state.inspection.pendingApplicationListConfigured === false
-                  ? "This host supports identity sign-in but has no private application list. Sign-in alone does not register a request or grant a role."
+                  ? "This host can accept signed applications but cannot list them. Keep your receipt ID to continue. Sign-in never grants a role."
                 : activeDidSession === undefined
                   ? didSignerAvailable
                     ? 'Before sending private evidence, <a href="#connection-details">sign in with your digital identity in Workspace settings</a>. You can prepare a request now; sign-in does not grant a role.'
@@ -1980,7 +1987,7 @@ export const createApplicantPortalApp = (
               <h3 class="request-step"><span>03</span> Prepare, sign externally, and register</h3>
               <p class="step-hint">Preparation fixes the exact scope and digest. A changed request needs a fresh digest and signature.</p>
               ${privateHostGuide}
-              <button class="button secondary" type="button" data-prepare-issuer${!privateHost || state.evidenceBusy || state.memberPreparationBusy || preparedIssuer !== undefined ? " disabled" : ""}>Prepare signing digest</button>
+              <button class="button secondary" type="button" data-prepare-issuer${!canRegisterApplications || state.evidenceBusy || state.memberPreparationBusy || preparedIssuer !== undefined ? " disabled" : ""}>Prepare signing digest</button>
               ${preparedIssuer === undefined ? "" : `
                 <p data-issuer-resource class="mono">Governed resource: ${escapeHtml(preparedIssuer.payload.governedResource.id)}</p>
                 <p data-issuer-digest class="mono">Sign digest bytes: ${escapeHtml(preparedIssuer.digest)}</p>
@@ -1988,7 +1995,7 @@ export const createApplicantPortalApp = (
                 <label class="label">External JubJub signature (96-byte hex)<input class="input mono" name="memberSignature" pattern="0x[0-9a-f]{192}" autocomplete="off" required /></label>
                 <button class="button secondary" type="button" data-reset-member>Change request or refresh context</button>
               `}
-              <button class="button" type="submit"${!privateHost || state.evidenceBusy || state.memberPreparationBusy || preparedIssuer === undefined ? " disabled" : ""}>Register issuer application</button>
+              <button class="button" type="submit"${!canRegisterApplications || state.evidenceBusy || state.memberPreparationBusy || preparedIssuer === undefined ? " disabled" : ""}>Register issuer application</button>
               <p class="step-hint">After registration, continue to <a href="#pending-evidence" data-open-workflow="pending-evidence">one-use private evidence</a>. Registration alone is not approval.</p>
             </form>
           </section>
@@ -2012,7 +2019,7 @@ export const createApplicantPortalApp = (
               <h3 class="request-step"><span>03</span> Prepare, sign externally, and register</h3>
               <p class="step-hint">Preparation fixes the exact scope and digest. A changed request needs a fresh digest and signature.</p>
               ${privateHostGuide}
-              <button class="button secondary" type="button" data-prepare-verifier${!privateHost || state.evidenceBusy || state.memberPreparationBusy || preparedVerifier !== undefined ? " disabled" : ""}>Prepare signing digest</button>
+              <button class="button secondary" type="button" data-prepare-verifier${!canRegisterApplications || state.evidenceBusy || state.memberPreparationBusy || preparedVerifier !== undefined ? " disabled" : ""}>Prepare signing digest</button>
               ${preparedVerifier === undefined ? "" : `
                 <p data-verifier-resource class="mono">Governed resource: ${escapeHtml(preparedVerifier.payload.governedResource.id)}</p>
                 <p data-verifier-digest class="mono">Sign digest bytes: ${escapeHtml(preparedVerifier.digest)}</p>
@@ -2020,7 +2027,7 @@ export const createApplicantPortalApp = (
                 <label class="label">External JubJub signature (96-byte hex)<input class="input mono" name="memberSignature" pattern="0x[0-9a-f]{192}" autocomplete="off" required /></label>
                 <button class="button secondary" type="button" data-reset-member>Change request or refresh context</button>
               `}
-              <button class="button" type="submit"${!privateHost || state.evidenceBusy || state.memberPreparationBusy || preparedVerifier === undefined ? " disabled" : ""}>Register verifier application</button>
+              <button class="button" type="submit"${!canRegisterApplications || state.evidenceBusy || state.memberPreparationBusy || preparedVerifier === undefined ? " disabled" : ""}>Register verifier application</button>
               <p class="step-hint">After registration, continue to <a href="#pending-evidence" data-open-workflow="pending-evidence">one-use private evidence</a>. Registration alone is not approval.</p>
             </form>
           </section>
@@ -2037,7 +2044,7 @@ export const createApplicantPortalApp = (
               <h3 class="request-step"><span>02</span> Prepare, sign externally, and register</h3>
               <p class="step-hint">The server supplies the governed registry scope. A changed context needs a fresh digest and signature.</p>
               ${privateHostGuide}
-              <button class="button secondary" type="button" data-prepare-maintainer${!privateHost || state.evidenceBusy || state.memberPreparationBusy || preparedMaintainer !== undefined ? " disabled" : ""}>Prepare signing digest</button>
+              <button class="button secondary" type="button" data-prepare-maintainer${!canRegisterApplications || state.evidenceBusy || state.memberPreparationBusy || preparedMaintainer !== undefined ? " disabled" : ""}>Prepare signing digest</button>
               ${preparedMaintainer === undefined ? "" : `
                 <p data-maintainer-resource class="mono">Governed registry: ${escapeHtml(preparedMaintainer.payload.governedResource.id)}</p>
                 <p data-maintainer-digest class="mono">Sign digest bytes: ${escapeHtml(preparedMaintainer.digest)}</p>
@@ -2045,7 +2052,7 @@ export const createApplicantPortalApp = (
                 <label class="label">External JubJub signature (96-byte hex)<input class="input mono" name="memberSignature" pattern="0x[0-9a-f]{192}" autocomplete="off" required /></label>
                 <button class="button secondary" type="button" data-reset-member>Change request or refresh context</button>
               `}
-              <button class="button" type="submit"${!privateHost || state.evidenceBusy || state.memberPreparationBusy || preparedMaintainer === undefined ? " disabled" : ""}>Register maintainer application</button>
+              <button class="button" type="submit"${!canRegisterApplications || state.evidenceBusy || state.memberPreparationBusy || preparedMaintainer === undefined ? " disabled" : ""}>Register maintainer application</button>
               <p class="step-hint">After registration, continue to <a href="#pending-evidence" data-open-workflow="pending-evidence">one-use private evidence</a>. Existing maintainers still decide membership.</p>
             </form>
           </section>
@@ -2069,7 +2076,7 @@ export const createApplicantPortalApp = (
               <h3 class="request-step"><span>03</span> Prepare, sign externally, and register</h3>
               <p class="step-hint">Preparation fixes the complete scope. A changed request needs a fresh digest and signature.</p>
               ${privateHostGuide}
-              <button class="button secondary" type="button" data-prepare-auditor${!privateHost || state.evidenceBusy || state.auditorPreparationBusy || preparedAuditor !== undefined ? " disabled" : ""}>${state.auditorPreparationBusy ? "Preparing…" : "Prepare signing digest"}</button>
+              <button class="button secondary" type="button" data-prepare-auditor${!canRegisterApplications || state.evidenceBusy || state.auditorPreparationBusy || preparedAuditor !== undefined ? " disabled" : ""}>${state.auditorPreparationBusy ? "Preparing…" : "Prepare signing digest"}</button>
               ${preparedAuditor === undefined ? "" : `
                 <p data-auditor-resource class="mono">Governed resource: ${escapeHtml(preparedAuditor.payload.governedResource.id)}</p>
                 <p data-auditor-digest class="mono">Sign digest bytes: ${escapeHtml(preparedAuditor.digest)}</p>
@@ -2080,7 +2087,7 @@ export const createApplicantPortalApp = (
               ${preparedAuditor === undefined
                 ? `<label class="label">Advanced: externally DID-signed auditor application JSON<textarea class="input mono" name="auditorSignedApplication" rows="7" required></textarea></label>`
                 : `<textarea name="auditorSignedApplication" hidden></textarea>`}
-              <button class="button" type="submit"${!privateHost || state.evidenceBusy || state.auditorPreparationBusy ? " disabled" : ""}>Register auditor application</button>
+              <button class="button" type="submit"${!canRegisterApplications || state.evidenceBusy || state.auditorPreparationBusy ? " disabled" : ""}>Register auditor application</button>
               <p class="step-hint">After registration, continue to <a href="#pending-evidence" data-open-workflow="pending-evidence">one-use private evidence</a>. An audit request is not an active authorization.</p>
             </form>
             <form data-auditor-status-form>

@@ -273,6 +273,10 @@ export class TrustRegistryApplicantPortalClient {
 
   async loadPublicInspection(): Promise<PublicInspection> {
     const health = await this.request<TrustRegistryApiHealthResponse>("/health", { cache: "no-store" });
+    if (health.pendingApplicationRegistrationConfigured !== undefined
+      && typeof health.pendingApplicationRegistrationConfigured !== "boolean") {
+      throw new Error("API health has an invalid private application registration capability.");
+    }
     if (health.pendingApplicationListConfigured !== undefined
       && typeof health.pendingApplicationListConfigured !== "boolean") {
       throw new Error("API health has an invalid private application list capability.");
@@ -286,6 +290,8 @@ export class TrustRegistryApplicantPortalClient {
       }
       const unavailableLists = ["issuer", "verifier", "auditor", "recognition"] as const;
       return { summary, sourceMode: "local-ledger", localPlanSha256: localHealth.localPlanSha256,
+        ...(health.pendingApplicationRegistrationConfigured === undefined ? {}
+          : { pendingApplicationRegistrationConfigured: health.pendingApplicationRegistrationConfigured }),
         ...(health.pendingApplicationListConfigured === undefined ? {}
           : { pendingApplicationListConfigured: health.pendingApplicationListConfigured }),
         ...(localHealth.deploymentIdentity === undefined ? {} : { deploymentIdentity: deploymentIdentity(localHealth.deploymentIdentity) }),
@@ -341,6 +347,8 @@ export class TrustRegistryApplicantPortalClient {
     return {
       summary,
       sourceMode: health.sourceMode,
+      ...(health.pendingApplicationRegistrationConfigured === undefined ? {}
+        : { pendingApplicationRegistrationConfigured: health.pendingApplicationRegistrationConfigured }),
       ...(health.pendingApplicationListConfigured === undefined ? {}
         : { pendingApplicationListConfigured: health.pendingApplicationListConfigured }),
       activeAuditors: auditorEntries?.filter((entry) =>

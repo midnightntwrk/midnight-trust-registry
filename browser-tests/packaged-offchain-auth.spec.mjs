@@ -111,7 +111,13 @@ test("packaged fixture host signs in off-chain DID in both portals without grant
     await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
     await expect(page.locator("#my-applications")).toHaveCount(0);
     await expect(page.locator('a[href="#my-applications"]')).toHaveCount(0);
-    await expect(page.locator(".journey-prerequisite")).toContainText("no private application list");
+    await expect(page.locator(".journey-prerequisite")).toContainText("cannot register applications");
+    await expect(page.locator('.task-nav a[href="#governed-requests"]'))
+      .toContainText("Review membership requirements");
+    await page.locator('.journey-cards a[href="#issuer-request"]').click();
+    await expect(page.locator("#issuer-request [data-prepare-issuer]")).toBeDisabled();
+    await expect(page.locator("#issuer-request [data-private-host-guide]"))
+      .toContainText("no application registration service");
     await page.locator(".hero-sign-in").click();
     await page.getByRole("button", { name: "Sign in with digital identity" }).click();
     await expect(page.locator(".portal-profile-status")).toContainText(actorDid);
