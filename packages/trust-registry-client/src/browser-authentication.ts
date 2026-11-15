@@ -64,7 +64,7 @@ export async function signInActorDid<P extends ActorAuthenticationPurpose>(
   const clock = input.clock ?? Date.now;
   const { actorDid, actorKeyId } = await input.signer.getIdentity();
   const challengeResponse = await fetchImpl(`${base}/v1/actor-authentication/challenges`, {
-    method: "POST", credentials: "omit", cache: "no-store",
+    method: "POST", credentials: "omit", cache: "no-store", redirect: "error",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ actorDid, actorKeyId, purpose: input.purpose }),
   });
@@ -86,7 +86,7 @@ export async function signInActorDid<P extends ActorAuthenticationPurpose>(
     throw new Error("DID signer returned a mismatched signature.");
   }
   const sessionResponse = await fetchImpl(`${base}/v1/actor-authentication/sessions`, {
-    method: "POST", credentials: "omit", cache: "no-store",
+    method: "POST", credentials: "omit", cache: "no-store", redirect: "error",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ challenge, signature: signed.data }),
   });
@@ -114,7 +114,7 @@ export async function signOutActorDid(input: {
 }): Promise<void> {
   const base = sameOriginApi(input.apiBase, input.pageOrigin);
   const response = await (input.fetchImpl ?? fetch)(`${base}/v1/actor-authentication/session`, {
-    method: "DELETE", credentials: "omit", cache: "no-store",
+    method: "DELETE", credentials: "omit", cache: "no-store", redirect: "error",
     headers: { authorization: `Bearer ${input.session.accessToken}` },
   });
   if (!response.ok) throw new Error(`DID sign-out failed (HTTP ${response.status.toString()}).`);
