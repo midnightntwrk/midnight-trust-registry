@@ -70,9 +70,9 @@ export const workspaceCatalog = [
     manifest: {
       name: "@midnight-ntwrk/trust-registry-client",
       files: ["dist/**", "README.md"],
-      exports: [".", "./simulator"],
-      requiredPackedPaths: ["README.md", "package.json", "dist/index.js", "dist/simulator-client.js"],
-      smokeImports: ["@midnight-ntwrk/trust-registry-client", "@midnight-ntwrk/trust-registry-client/simulator"],
+      exports: [".", "./simulator", "./browser-authentication"],
+      requiredPackedPaths: ["README.md", "package.json", "dist/index.js", "dist/simulator-client.js", "dist/browser-authentication.js"],
+      smokeImports: ["@midnight-ntwrk/trust-registry-client", "@midnight-ntwrk/trust-registry-client/simulator", "@midnight-ntwrk/trust-registry-client/browser-authentication"],
     },
   },
   {
