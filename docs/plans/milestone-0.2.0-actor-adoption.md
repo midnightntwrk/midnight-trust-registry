@@ -129,9 +129,11 @@ metadata, not a ledger decision or VP eligibility proof. There is no qualified
 production resolver, live VC-owned status adapter, or deployed actor journey.
 The local challenge schema, verifier, and browser client now distinguish a
 self-certifying long-form off-chain DID with an Ed25519 authentication key from
-the ledger-backed Jubjub path. Focused API, HTTP, and browser-client tests
-exercise that opt-in protocol; they do not prove packaged-host availability or
-deployed actor authorization. The VC method-binding helper still rejects
+the ledger-backed Jubjub path. Focused API and browser-client tests plus
+`pnpm run demo:did-auth:smoke` exercise both sign-in paths through a real
+loopback HTTP host, including a path-based authentication method and explicit
+no-role/no-other-applicant-data checks. They do not prove packaged-host
+availability or deployed actor authorization. The VC method-binding helper still rejects
 off-chain DIDs and must remain separate from sign-in. Off-chain long-form state
 is immutable and has no live deactivation signal, so short session lifetime
 and explicit mode labeling matter. The packaged CLI still lacks an approved

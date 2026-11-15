@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
+import { generateKeyPairSync, sign as signEd25519 } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +10,7 @@ import {
   encodeJubjubSignature,
   signJubjubPayloadFromSeed,
 } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
+import { createLongFormOffchainMidnightDIDString, CurveType, KeyType } from "@midnight-ntwrk/midnight-did-domain";
 
 import { createOperatorWorkspace } from "../packages/trust-registry-cli/dist/index.js";
 import { actorAuthenticationDigestBytes } from "../packages/trust-registry-domain/dist/index.js";
@@ -177,6 +179,38 @@ try {
   await signOutActorDid({ apiBase: origin, pageOrigin: origin, session: clientSession });
   assert.equal(sessions.authenticate(`Bearer ${clientSession.accessToken}`, "maintainer-session"), null);
 
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const publicJwk = publicKey.export({ format: "jwk" });
+  const offchainDid = createLongFormOffchainMidnightDIDString({
+    version: 1,
+    alsoKnownAs: [],
+    verificationMethod: [{
+      id: "./keys#auth",
+      publicKeyJwk: { kty: KeyType.OKP, crv: CurveType.Ed25519, x: publicJwk.x },
+      relationships: { authentication: true, assertionMethod: false, keyAgreement: false,
+        capabilityInvocation: false, capabilityDelegation: false },
+    }],
+    service: [],
+  });
+  const offchainKeyId = `${offchainDid}/keys#auth`;
+  const offchainSession = await signInActorDid({
+    apiBase: origin, pageOrigin: origin, registryId: "tr:registry:headless",
+    purpose: "applicant-session", clock: () => now,
+    signer: {
+      getIdentity: async () => ({ actorDid: offchainDid, actorKeyId: offchainKeyId }),
+      signDigest: async ({ digest }) => ({ keyId: offchainKeyId, algorithm: "ed25519",
+        value: `0x${signEd25519(null, digest, privateKey).toString("hex")}` }),
+    },
+  });
+  assert.equal(offchainSession.actorDid, offchainDid);
+  assert.equal(Object.hasOwn(offchainSession, "role"), false);
+  assert.deepEqual(await expectStatus(await fetch(`${origin}/v1/pending-applications`, {
+    headers: { authorization: `Bearer ${offchainSession.accessToken}` },
+  }), 200), { entries: [] });
+  assert.equal(sessions.authenticate(`Bearer ${offchainSession.accessToken}`, "maintainer-session"), null);
+  await signOutActorDid({ apiBase: origin, pageOrigin: origin, session: offchainSession });
+  assert.equal(sessions.authenticate(`Bearer ${offchainSession.accessToken}`, "applicant-session"), null);
+
   const expiringSession = await signInActorDid({
     apiBase: origin, pageOrigin: origin, registryId: "tr:registry:headless",
     purpose: "applicant-session", clock: () => now,
@@ -203,7 +237,7 @@ try {
   await expectStatus(await fetch(`${origin}/v1/actor-authentication/session`, { headers: expiringBearer }), 200);
   now = Date.parse(expiringSession.expiresAt);
   await expectStatus(await fetch(`${origin}/v1/actor-authentication/session`, { headers: expiringBearer }), 401);
-  process.stdout.write("[did-auth-headless] Applicant and maintainer DID challenge sessions, private applicant-only request list, shared-client sign-in, bad-signature and deployment-context denial, one-use replay, origin denial, purpose isolation, identity-only claims, exact-boundary challenge/session expiry, and revocation passed. No role grant or deployed finality was inferred.\n");
+  process.stdout.write("[did-auth-headless] Ledger and off-chain DID challenge sessions, private applicant-only request list, shared-client sign-in, bad-signature and deployment-context denial, one-use replay, origin denial, purpose isolation, identity-only claims, exact-boundary challenge/session expiry, and revocation passed. No role grant or deployed finality was inferred.\n");
 } finally {
   server.closeAllConnections();
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
