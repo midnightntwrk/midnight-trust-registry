@@ -1080,8 +1080,12 @@ for (const [app, title] of [
           await expect(page.locator(".decision-summary time")).toContainText("20 May 2026");
           await expect(page.locator(".decision-summary time")).toHaveAttribute("datetime", "2026-05-20T00:04:00.000Z");
           await expect(page.locator(".governed-actions")).not.toHaveAttribute("open", "");
-          await page.locator(".governed-actions > summary").click();
+          const reviewActions = page.getByText("Next: review available actions", { exact: true });
+          await expect(reviewActions).toBeVisible();
+          await reviewActions.click();
           await expect(page.locator('[data-governed-prepare="suspend"]')).toBeVisible();
+          await expect(page.locator(".governed-actions")).toContainText("Opening this section does not cast a vote");
+          expect(server.requests.filter((request) => request.startsWith("POST "))).toEqual([]);
           await expect(page.locator(".detail-panel")).toContainText(longDid);
           await page.locator(".technical-details > summary").click();
         } else {

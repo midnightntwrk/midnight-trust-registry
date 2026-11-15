@@ -580,7 +580,8 @@ body {
 .technical-details summary { cursor: pointer; color: var(--midnight-blue); font-weight: 700; }
 .technical-details dl { margin-top: 0.9rem; }
 .governed-actions { min-width: 0; border-top: 1px solid var(--midnight-border); padding-top: 0.8rem; }
-.governed-actions > summary { cursor: pointer; color: var(--midnight-blue); font-size: 0.85rem; font-weight: 700; }
+.governed-actions > summary { width: fit-content; max-width: 100%; min-height: 2.75rem; padding: 0.7rem 0.85rem; border: 1px solid var(--midnight-border); border-radius: 9px; background: var(--midnight-blue-soft); color: var(--midnight-blue); cursor: pointer; font-size: 0.85rem; font-weight: 700; overflow-wrap: anywhere; }
+.governed-actions > summary:hover, .governed-actions > summary:focus-visible { border-color: var(--midnight-blue); }
 .governed-actions > .governed-panel { margin-top: 0.75rem; }
 .governed-panel { background: var(--midnight-white); }
 .proposal-panel { margin-top: 1.2rem; }

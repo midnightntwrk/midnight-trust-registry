@@ -1106,11 +1106,11 @@ export const createAdminConsoleApp = (
         </dl></details>
         ${getReviewActions(card.status).length === 0 ? "" : `
           <details class="governed-actions" data-record-key="${escapeHtml(card.key)}"${prepared !== undefined || (governedActionsOpen && governedActionsKey === card.key) ? " open" : ""}>
-            <summary>Prepare a governed action</summary>
+            <summary>Next: review available actions</summary>
           <section class="governed-panel">
             <p class="eyebrow">Compact quorum</p>
-            <h3>External maintainer signatures</h3>
-            <p>Prepare the current ledger-bound action, have existing maintainers sign its policy-bound digest outside this browser, then submit their public keys and signatures. This console never handles private keys.</p>
+            <h3>Prepare an action for maintainer signing</h3>
+            <p>Opening this section does not cast a vote. Review the identifiers and evidence first, then prepare the current ledger-bound action. Existing maintainers sign its policy-bound digest outside this browser; this console never handles private keys.</p>
             ${getReviewActions(card.status).map((action) => `<button class="button secondary" type="button" data-governed-prepare="${escapeHtml(action)}"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Prepare ${escapeHtml(action)}</button>`).join("")}
             ${prepared === undefined ? "" : `
               <p>Sign this exact context. A changed sequence or policy requires a fresh preparation.</p>
