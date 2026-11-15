@@ -1569,6 +1569,14 @@ export const createApplicantPortalApp = (
               <a href="#auditor-request" data-open-workflow="auditor-request"><span class="role-mark" aria-hidden="true">A</span><strong>Audit evidence</strong><span>Request an auditor role for approved evidence.</span><em>View requirements &rarr;</em></a>
               <a href="#maintainer-request" data-open-workflow="maintainer-request"><span class="role-mark" aria-hidden="true">M</span><strong>Maintain the registry</strong><span>Requires a separate governed authority path.</span><em>View requirements &rarr;</em></a>
             </div>
+            <section class="application-readiness" aria-labelledby="application-readiness-heading">
+              <h3 id="application-readiness-heading">Your path</h3>
+              <ol>
+                <li><span class="readiness-step">01 · Identify</span><strong>${activeDidSession === undefined ? "Not signed in" : "DID signed in"}</strong></li>
+                <li><span class="readiness-step">02 · Qualify</span><strong>Eligibility is checked separately</strong></li>
+                <li><span class="readiness-step">03 · Decide</span><strong>Governed approval grants access</strong></li>
+              </ol>
+            </section>
             <details class="journey-help"><summary>How applications work</summary>
             <div class="journey-guide">
               <div class="journey-steps">

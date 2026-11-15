@@ -436,6 +436,12 @@ body { background: radial-gradient(circle at 100% 0, #dce9e4 0, transparent 26re
 .journey-cards .role-mark { color: var(--midnight-blue); }
 .journey-cards em { margin-top: auto; color: var(--midnight-blue); font-size: 0.78rem; font-style: normal; font-weight: 700; }
 .journey-prerequisite { margin: 0.85rem 0 0.8rem; color: var(--midnight-muted); font-size: 0.8rem; }
+.application-readiness { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 1rem; margin-top: 0.8rem; padding: 0.8rem 1rem; border: 1px solid var(--midnight-border); border-radius: 10px; background: var(--midnight-white); }
+.application-readiness h3 { margin: 0; font-size: 0.9rem; white-space: nowrap; }
+.application-readiness ol { display: grid; min-width: 0; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; margin: 0; padding: 0; list-style: none; }
+.application-readiness li { min-width: 0; padding-left: 0.75rem; border-left: 1px solid var(--midnight-border); }
+.application-readiness .readiness-step { display: block; color: var(--midnight-muted); font-size: 0.7rem; font-weight: 700; }
+.application-readiness strong { display: block; min-width: 0; overflow-wrap: anywhere; font-size: 0.76rem; line-height: 1.3; }
 .journey-guide { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(15rem, 0.8fr); gap: 0.75rem; margin-top: 1.1rem; }
 .journey-help { margin-top: 0.8rem; }
 .journey-help > summary { width: fit-content; min-height: 2.75rem; padding: 0.7rem 0.2rem; color: var(--midnight-blue); font-size: 0.85rem; font-weight: 700; cursor: pointer; }
@@ -499,6 +505,7 @@ body { background: radial-gradient(circle at 100% 0, #dce9e4 0, transparent 26re
 
 @media (max-width: 1100px) {
   .journey-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .application-readiness { grid-template-columns: minmax(0, 1fr); gap: 0.5rem; }
   .journey-guide { grid-template-columns: minmax(0, 1fr); }
 }
 
@@ -522,6 +529,9 @@ body { background: radial-gradient(circle at 100% 0, #dce9e4 0, transparent 26re
 @media (max-width: 620px) {
   .lanes { grid-template-columns: minmax(0, 1fr); }
   .journey-cards { grid-template-columns: minmax(0, 1fr); }
+  .application-readiness ol { grid-template-columns: minmax(0, 1fr); gap: 0.35rem; }
+  .application-readiness li { display: block; }
+  .application-readiness .readiness-step { min-width: 0; overflow-wrap: anywhere; }
   .journey-picker { padding: 0.9rem; }
   .journey-heading p:not(.eyebrow) { margin: 0.5rem 0; }
   .journey-prerequisite { margin: 0.45rem 0 0.7rem; }
