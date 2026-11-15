@@ -20,8 +20,10 @@ shipped behavior. DID sign-in requires an external signer and same-origin host.
 
 Both static app bundles include an offline Registry Manual generated from the
 same Markdown source as the docs site. The sidebar links to that local copy;
-its return link goes back to the current workspace. Links to other chapters
-are plain text in the embedded copy because those chapters are not bundled.
+its rail links directly to role choice or review inbox and to the current
+app's digital identity settings. These links navigate only; they do not sign
+in or grant authority. Links to other chapters are plain text in the embedded
+copy because those chapters are not bundled.
 The full docs site remains the source for linked chapters and updates.
 
 | Design intent | Local implementation and acceptance |

@@ -111,9 +111,17 @@ for (const app of ["applicant-portal", "admin-console"]) {
       await page.setViewportSize({ width: 390, height: 844 });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       await expectNoWcagViolations(page, `${app} bundled Manual at 390px`);
-      await page.getByRole("link", { name: "Back to workspace" }).click();
-      await expect(page).toHaveURL(`${server.base}${server.packagedPath}`);
+      const task = app === "applicant-portal"
+        ? { label: "Choose a role", hash: "#governed-requests" }
+        : { label: "Open review inbox", hash: "#review-board" };
+      await page.getByRole("link", { name: task.label }).click();
+      await expect(page).toHaveURL(`${server.base}${server.packagedPath}${task.hash}`);
+      await expect(page.locator(task.hash)).toBeVisible();
       await expect(page.locator(".mobile-task-menu > summary")).toBeVisible();
+      await page.goto(`${server.base}${server.packagedPath}registry-manual.html`);
+      await page.getByRole("link", { name: "Digital identity settings" }).click();
+      await expect(page).toHaveURL(`${server.base}${server.packagedPath}${app === "applicant-portal" ? "#connection-details" : "#workspace-settings"}`);
+      await expect(page.locator(".app-shell")).toHaveAttribute("data-settings-active", "true");
     } finally {
       await page.waitForLoadState("networkidle");
       await server.close();
