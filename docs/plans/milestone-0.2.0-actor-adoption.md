@@ -162,6 +162,10 @@ reports that the list port is absent; older hosts without these hints retain
 the existing paths. These are navigation hints, not authorization checks:
 private endpoints still require their own signed-intent or applicant-session
 checks and may return unavailable even when a port is configured.
+The packaged-host process smoke asserts both capabilities are absent, and that
+neither an applicant DID session nor a maintainer-purpose session enables
+registration or governance writes without their separate host ports. This is
+fixture denial evidence, not a deployed authorization or finality result.
 
 Non-critical-path follow-ups include public-network bootstrap (#200),
 historical TRQP (#39), Helm (#218), npm publishing (#271), mobile acceptance

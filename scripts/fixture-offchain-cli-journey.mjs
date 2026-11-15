@@ -100,6 +100,9 @@ try {
   });
   const actorKeyId = `${actorDid}/keys#auth`;
   host = await startHost();
+  const health = await expectStatus(await fetch(`${origin}/health`), 200);
+  assert.equal(health.pendingApplicationRegistrationConfigured, false);
+  assert.equal(health.pendingApplicationListConfigured, false);
   for (const role of ["admin", "applicant"]) {
     const portal = await fetch(`${origin}/${role}/`);
     assert.equal(portal.status, 200);
@@ -121,6 +124,7 @@ try {
   assert.equal(session.actorDid, actorDid);
   assert.equal(Object.hasOwn(session, "role"), false);
   assert.equal(Object.hasOwn(session, "vpEligible"), false);
+  await expectStatus(await post("/v1/pending-applications", {}, origin), 503);
   await expectStatus(await post(sessionRoute, { challenge, signature }), 401);
   const workspace = JSON.parse(await readFile(workspacePath, "utf8"));
   assert.match(workspace.workspaceInstanceId, /^[0-9a-f-]{36}$/u);
@@ -154,6 +158,10 @@ try {
   assert.equal(clientSession.purpose, "applicant-session");
   assert.equal(Object.hasOwn(clientSession, "role"), false);
   assert.equal(signedChallenges, 1);
+  await expectStatus(await fetch(`${origin}/v1/pending-applications`, {
+    method: "POST", headers: { "content-type": "application/json",
+      authorization: `Bearer ${clientSession.accessToken}` }, body: "{}",
+  }), 503);
   const privateList = "/v1/pending-applications";
   await expectStatus(await fetch(`${origin}${privateList}`), 403);
   await expectStatus(await fetch(`${origin}${privateList}`, {
@@ -165,6 +173,11 @@ try {
   });
   assert.equal(maintainerSession.purpose, "maintainer-session");
   assert.equal(Object.hasOwn(maintainerSession, "role"), false);
+  const governanceWrite = `${origin}/v1/governed/issuer/auth:issuer:fixture:v1/proposal/prepare`;
+  await expectStatus(await fetch(governanceWrite, {
+    method: "POST", headers: { "content-type": "application/json",
+      authorization: `Bearer ${maintainerSession.accessToken}` }, body: "{}",
+  }), 503);
   await expectStatus(await fetch(`${origin}${privateList}`, {
     headers: { authorization: `Bearer ${maintainerSession.accessToken}` },
   }), 403);
@@ -189,7 +202,7 @@ try {
   const newChallenge = await expectStatus(await post(challengeRoute, body), 201);
   assert.equal(newChallenge.genesisHash, challenge.genesisHash);
   assert.equal(newChallenge.contractAddress, challenge.contractAddress);
-  process.stdout.write("[fixture-offchain-cli] Packaged same-origin portals, typed client, and loopback API accept off-chain DID sign-in only; invalid signature, origin, ledger DID, replay, cross-purpose private read, sign-out reuse, and restart session revival denied. Applicant private list remains unavailable without a registration adapter. No role, VP, or deployed binding inferred.\n");
+  process.stdout.write("[fixture-offchain-cli] Packaged same-origin portals, typed client, and loopback API accept off-chain DID sign-in only; invalid signature, origin, ledger DID, replay, cross-purpose private read, sign-out reuse, and restart session revival denied. Registration and governance writes remain unavailable without their separate ports. No role, VP, or deployed binding inferred.\n");
 } finally {
   if (host !== undefined) await host.stop();
   await rm(directory, { recursive: true, force: true });
