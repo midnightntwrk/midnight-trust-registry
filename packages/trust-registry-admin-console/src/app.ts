@@ -1104,9 +1104,9 @@ export const createAdminConsoleApp = (
         ${getReviewActions(card.status).length === 0 ? "" : `<section class="review-checks" aria-labelledby="review-checks-heading">
           <h3 id="review-checks-heading">Check before acting</h3>
           <ul>
-            <li><strong>Identity</strong><span>This record names a digital identity, but this list does not prove who controls its key now.</span></li>
-            <li><strong>Eligibility</strong><span>Check the redacted proof and its trusted status source. This board does not verify the underlying credential presentation.</span></li>
-            <li><strong>Authority</strong><span>Current maintainer membership, exact signatures, policy, and quorum are checked separately. Digital identity sign-in is not a vote.</span></li>
+            <li><strong>Identity</strong><span>DID named; current key control is not verified here.</span></li>
+            <li><strong>Eligibility</strong><span>Inspect proof and status source; this view does not verify the presentation.</span></li>
+            <li><strong>Authority</strong><span>Check membership, signatures, policy, and quorum separately. Sign-in is not a vote.</span></li>
           </ul>
         </section>`}
         <div class="decision-summary"><h3>Decision summary</h3><dl>
@@ -1209,9 +1209,9 @@ export const createAdminConsoleApp = (
           : "This practice workspace shows sample records, not deployed ledger evidence.";
     const taskLinks = `
       <a href="#review-board">Review records</a>
+      <a href="#advanced-governance">Advanced governance</a>
       <a href="./registry-manual.html">Registry Manual</a>
       <a href="#workspace-settings">Workspace settings</a>
-      <a href="#advanced-governance">Advanced governance</a>
     `;
     const deploymentIdentity = state.board?.sourceMode === "local-ledger" ? state.board.deploymentIdentity : undefined;
     const activeDidSession = liveDidSession();

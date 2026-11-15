@@ -944,6 +944,9 @@ test("admin review board precedes advanced governance in keyboard order", async 
     allowedLocalOrigins.add(server.base);
     await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
     await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
+    await expect(page.locator(".task-nav a")).toHaveText([
+      "Review records", "Advanced governance", "Registry Manual", "Workspace settings",
+    ]);
     expect(await page.evaluate(() => Boolean(document.querySelector("#review-board")
       ?.compareDocumentPosition(document.querySelector("#advanced-governance")) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
   } finally {
