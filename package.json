@@ -75,7 +75,7 @@
     "ci:build": "pnpm run ci:build:light",
     "demo:smoke": "node scripts/demo-smoke.mjs",
     "test:e2e:headless:fixture": "pnpm run demo:smoke",
-    "test:e2e:headless:fast": "pnpm run demo:membership:smoke && pnpm run demo:did-auth:smoke && pnpm run test:e2e:headless:fixture",
+    "test:e2e:headless:fast": "bash scripts/build-prebuilt-runtime.sh && pnpm run demo:membership:smoke && pnpm run demo:did-auth:smoke && pnpm run test:e2e:headless:fixture",
     "test:e2e:demo": "bash scripts/build-prebuilt-runtime.sh && pnpm run demo:membership:smoke && pnpm run demo:smoke",
     "test:e2e:demo:browser": "pnpm run test:e2e:demo && playwright test",
     "demo:governed:check": "node scripts/check-governed-demo.mjs",

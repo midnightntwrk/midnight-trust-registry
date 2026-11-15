@@ -9,14 +9,14 @@ import { fileURLToPath } from "node:url";
 const source = dirname(fileURLToPath(import.meta.url));
 const contract = "contracts/trust-registry";
 
-test("documented demo and browser aliases never select destructive light builds", () => {
+test("documented demo and browser aliases rebuild current source without destructive light builds", () => {
   const scripts = JSON.parse(readFileSync(join(source, "../package.json"), "utf8")).scripts;
-  for (const name of ["test:e2e:demo", "test:e2e:demo:browser", "test:browser", "demo:signed",
+  for (const name of ["test:e2e:headless:fast", "test:e2e:demo", "test:e2e:demo:browser", "test:browser", "demo:signed",
     "demo:signed-issuer", "demo:signed-verifier", "demo:signed-auditor", "demo:signed-maintainer",
     "demo:governed", "demo:auditor", "demo:auditor:smoke"]) {
     assert.doesNotMatch(scripts[name], /build:light|integration:light/u, name);
   }
-  for (const name of ["test:e2e:demo", "test:browser", "demo:signed", "demo:governed",
+  for (const name of ["test:e2e:headless:fast", "test:e2e:demo", "test:browser", "demo:signed", "demo:governed",
     "demo:auditor", "demo:auditor:smoke"]) {
     assert.match(scripts[name], /^bash scripts\/build-prebuilt-runtime\.sh && /u, name);
   }
