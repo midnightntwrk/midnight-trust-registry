@@ -24,6 +24,7 @@ import {
   createTrustRegistryApiServer,
   FileActorAuthenticationChallengeStore,
 } from "../packages/trust-registry-api/dist/index.js";
+import { signInActorDid, signOutActorDid } from "../packages/trust-registry-client/dist/browser-authentication.js";
 
 const seed = new Uint8Array(32).fill(86);
 const actorDid = createMidnightDid("headless-did-authentication");
@@ -131,7 +132,24 @@ try {
   await expectStatus(await fetch(`${origin}/v1/actor-authentication/session`, {
     headers: maintainerBearer,
   }), 401);
-  process.stdout.write("[did-auth-headless] Applicant and maintainer DID challenge sessions, one-use replay, origin denial, purpose isolation, identity-only claims, and revocation passed. No role grant or deployed finality was inferred.\n");
+  const clientSession = await signInActorDid({
+    apiBase: origin, pageOrigin: origin, registryId: "tr:registry:headless",
+    purpose: "maintainer-session", clock: () => now,
+    signer: {
+      getIdentity: async () => ({ actorDid, actorKeyId }),
+      signDigest: async ({ digest }) => ({ keyId: actorKeyId, algorithm: "jubjub-schnorr",
+        value: `0x${Buffer.from(encodeJubjubSignature(signJubjubPayloadFromSeed(seed, digest))).toString("hex")}` }),
+    },
+  });
+  assert.equal(clientSession.purpose, "maintainer-session");
+  assert.equal(Object.hasOwn(clientSession, "role"), false);
+  assert.equal(sessions.authenticate(`Bearer ${clientSession.accessToken}`, "applicant-session"), null);
+  assert.deepEqual(sessions.authenticate(`Bearer ${clientSession.accessToken}`, "maintainer-session"), {
+    actorDid, actorKeyId, purpose: "maintainer-session",
+  });
+  await signOutActorDid({ apiBase: origin, pageOrigin: origin, session: clientSession });
+  assert.equal(sessions.authenticate(`Bearer ${clientSession.accessToken}`, "maintainer-session"), null);
+  process.stdout.write("[did-auth-headless] Applicant and maintainer DID challenge sessions, shared-client sign-in, one-use replay, origin denial, purpose isolation, identity-only claims, and revocation passed. No role grant or deployed finality was inferred.\n");
 } finally {
   server.closeAllConnections();
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

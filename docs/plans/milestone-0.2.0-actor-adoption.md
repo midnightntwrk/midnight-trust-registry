@@ -110,9 +110,13 @@ HTTP adapter now exposes challenge verification and 15-minute process-local
 bearer sessions. When configured alongside private VP intake, it requires an
 applicant-purpose session matching the host-authenticated DID; the pending
 subject and VP policy remain separate checks. The packaged CLI does not wire
-this adapter, and neither browser app has a login flow. It grants no registry
-role and supplies no qualified production resolver. Its current evidence is
-HTTP/unit testing, not a deployed actor journey or a finished user flow.
+this adapter. Both browser apps offer opt-in DID sign-in in Workspace settings
+through a shared browser-only client and an external signer on a same-origin
+host. Applicant and maintainer sessions have distinct purposes; neither grants
+a registry role, VP eligibility, or governance authority. The fast headless
+journey tests that client against a real loopback HTTP host, while Playwright
+tests the browser surfaces with mocked auth endpoints. There is no qualified
+production resolver, live VC-owned status adapter, or deployed actor journey.
 
 Non-critical-path follow-ups include public-network bootstrap (#200),
 historical TRQP (#39), Helm (#218), npm publishing (#271), mobile acceptance
