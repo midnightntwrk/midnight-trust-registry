@@ -383,6 +383,16 @@ test("applicant Settings signs in with DID without showing a registry role", asy
     expect(revokeCalls).toBe(1);
     await page.getByRole("button", { name: "Sign in with DID" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
+    const releaseApplicantHealth = server.pauseHealth();
+    try {
+      await page.getByRole("button", { name: "Recheck connection" }).click();
+      await expect(page.locator(".portal-profile-card")).toContainText("Checking the source; sign-in is paused until it matches.");
+      await expect(page.locator(".application-readiness")).toContainText("Paused while checking source");
+      await expect(page.getByRole("button", { name: "Sign in with DID" })).toBeDisabled();
+    } finally {
+      releaseApplicantHealth();
+    }
+    await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
     server.setSourceMode("snapshot");
     await page.getByRole("button", { name: "Recheck connection" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText("A DID signer is available");
@@ -453,6 +463,16 @@ test("admin Settings signs in with DID without granting maintainer authority", a
     await expect(page.locator(".portal-profile-card")).toContainText("A DID signer is available");
     expect(revokeCalls).toBe(1);
     await page.getByRole("button", { name: "Sign in with DID" }).click();
+    await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
+    const releaseAdminHealth = server.pauseHealth();
+    try {
+      await page.getByRole("button", { name: "Recheck connection" }).click();
+      await expect(page.locator(".portal-profile-card")).toContainText("Checking the source; sign-in is paused until it matches.");
+      await expect(page.getByRole("button", { name: "Sign in with DID" })).toBeDisabled();
+    } finally {
+      releaseAdminHealth();
+    }
+    await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
     server.setSourceMode("snapshot");
     await page.getByRole("button", { name: "Recheck connection" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText("A DID signer is available");

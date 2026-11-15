@@ -102,7 +102,10 @@ The admin console uses the same ephemeral browser client with a distinct
 `maintainer-session` purpose in Workspace settings. Its DID token is never
 attached to governance requests: external signatures, maintainer membership,
 VP eligibility, policy, and quorum remain independent authorization checks.
-Changing the API source or losing a healthy board clears the browser session.
+While a source recheck is pending, both apps pause use and display of the
+in-memory DID session. A matching source restores it; a changed or unavailable
+source clears it. Clearing a browser session is not proof that an unreachable
+server revoked its short-lived bearer.
 The per-view browser tests use mocked auth endpoints. A separate browser test
 serves both built apps beside the real loopback challenge/session API with a
 fixture DID resolver and external test signer; the headless journey also
@@ -173,7 +176,7 @@ repeatable UI acceptance evidence:
 | The applicant role picker distinguishes signer unavailable, sign-in needed, signed-in identity, and cross-origin prepare-only states. It continues to name VP eligibility and governed approval as separate later steps after sign-in | `ui-layout.spec.mjs` |
 | A compact check summary near the role choices reflects only current DID sign-in state; it labels eligibility as unverified in this view and registry permission as requiring governed approval, never as completed because a user signed in | `ui-layout.spec.mjs` |
 | A selected admin record visibly offers “Next: review available actions” after evidence and decision detail; opening it explains external maintainer signing and does not submit a vote | `ui-layout.spec.mjs` |
-| Admin Settings offers a distinct maintainer-purpose DID sign-in and sign-out without presenting it as voting authority or exposing the bearer. Source change clears the visible session. Browser auth is mocked here; the shared client also runs against the real loopback API in the headless journey | `ui-layout.spec.mjs`, `demo-did-session-journey.mjs` |
+| Admin Settings offers a distinct maintainer-purpose DID sign-in and sign-out without presenting it as voting authority or exposing the bearer. Both apps pause the visible session during a source recheck, restore it only on a matching result, and clear it on source change. Browser auth is mocked here; the shared client also runs against the real loopback API in the headless journey | `ui-layout.spec.mjs`, `demo-did-session-journey.mjs` |
 | Both built browser apps complete DID sign-in and sign-out against the real same-origin loopback HTTP API with a fixture resolver and external test signer. A bad applicant signature shows a recoverable error and no session; the issued valid bearer is purpose-isolated, not rendered, and never triggers a governance request | `did-auth-live-http.spec.mjs` |
 | Switch an editable development endpoint between two loopback fixture hosts without carrying reads to the old host or enabling cross-origin private actions | `ui-layout.spec.mjs` (both apps) |
 | Open a governed issuer request by keyboard with reduced motion and verify the three visible preparation phases; keep mobile task targets at least 44 px high | `ui-layout.spec.mjs` |

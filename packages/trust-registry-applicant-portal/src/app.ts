@@ -375,8 +375,18 @@ export const createApplicantPortalApp = (
     render();
   };
 
-  const liveDidSession = () => state.didSession !== undefined && Date.parse(state.didSession.expiresAt) > clock()
-    ? state.didSession : undefined;
+  const liveDidSession = () => {
+    const session = state.didSession;
+    const inspection = state.inspection;
+    return !state.loading && session !== undefined && inspection !== undefined
+      && Date.parse(session.expiresAt) > clock()
+      && state.didSourceMode === inspection.sourceMode
+      && session.registryId === inspection.summary.registryId
+      && (inspection.deploymentIdentity === undefined
+        || session.genesisHash === inspection.deploymentIdentity.expectedGenesisHash
+          && session.contractAddress === inspection.deploymentIdentity.contractAddress)
+      ? session : undefined;
+  };
   const client = () => {
     const session = liveDidSession();
     return new TrustRegistryApplicantPortalClient(state.apiBase, fetchImpl,
@@ -387,7 +397,7 @@ export const createApplicantPortalApp = (
   const signInDid = async () => {
     const signer = didSigner();
     const inspection = state.inspection;
-    if (state.didBusy || signer === undefined || inspection === undefined
+    if (state.didBusy || state.loading || signer === undefined || inspection === undefined
       || !canUsePrivateEvidenceHost(state.apiBase, initialUrl)) return;
     const apiBase = state.apiBase;
     setState({ didBusy: true, didError: undefined, didSession: undefined, didSourceMode: undefined });
@@ -1572,7 +1582,7 @@ export const createApplicantPortalApp = (
             <section class="application-readiness" aria-labelledby="application-readiness-heading">
               <h3 id="application-readiness-heading">Checks before access</h3>
               <ul>
-                <li><span class="readiness-step">Identity</span><strong>${activeDidSession === undefined ? "Not signed in" : "Signed in for this session"}</strong></li>
+                <li><span class="readiness-step">Identity</span><strong>${activeDidSession !== undefined ? "Signed in for this session" : state.loading && state.didSession !== undefined ? "Paused while checking source" : "Not signed in"}</strong></li>
                 <li><span class="readiness-step">Eligibility</span><strong>Not verified in this view</strong></li>
                 <li><span class="readiness-step">Registry role</span><strong>Requires governed approval</strong></li>
               </ul>
@@ -1661,8 +1671,8 @@ export const createApplicantPortalApp = (
               <h2 id="portal-profile-heading">Digital identity sign-in</h2>
               <p>Use your decentralized identifier (DID) to identify yourself before private application actions. Sign-in does not grant a registry role or prove eligibility. Eligibility may later use a verifiable presentation (VP).</p>
               ${activeDidSession === undefined
-                ? `<p class="portal-profile-status">${didSignerAvailable ? "A DID signer is available." : "No DID signer is connected to this browser. Ask your host to provide one before signing in."}</p>
-                  <button class="button" type="button" data-did-sign-in data-focus-key="did-sign-in"${state.didBusy || !didSignerAvailable || !privateHost || state.inspection === undefined ? " disabled" : ""}>${state.didBusy ? "Signing in…" : "Sign in with DID"}</button>
+                ? `<p class="portal-profile-status">${state.loading && state.didSession !== undefined ? "Checking the source; sign-in is paused until it matches." : didSignerAvailable ? "A DID signer is available." : "No DID signer is connected to this browser. Ask your host to provide one before signing in."}</p>
+                  <button class="button" type="button" data-did-sign-in data-focus-key="did-sign-in"${state.didBusy || state.loading || !didSignerAvailable || !privateHost || state.inspection === undefined ? " disabled" : ""}>${state.didBusy ? "Signing in…" : "Sign in with DID"}</button>
                   ${!privateHost ? '<p class="step-hint">Sign-in requires the same-origin API host.</p>' : ""}`
                 : `<p class="portal-profile-status">Signed in as <strong class="technical-id">${escapeHtml(activeDidSession.actorDid)}</strong></p>
                   <p class="step-hint">Identity only. Eligibility proof and registry permission are checked separately.</p>

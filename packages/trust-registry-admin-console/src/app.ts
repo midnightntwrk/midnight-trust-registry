@@ -264,13 +264,23 @@ export const createAdminConsoleApp = (
     return api.origin === initialUrl.origin && api.username === "" && api.password === ""
       && (api.protocol === "https:" || ["localhost", "127.0.0.1", "[::1]"].includes(api.hostname));
   };
-  const liveDidSession = () => state.didSession !== undefined && Date.parse(state.didSession.expiresAt) > clock()
-    ? state.didSession : undefined;
+  const liveDidSession = () => {
+    const session = state.didSession;
+    const board = state.board;
+    return !state.loading && session !== undefined && board !== undefined
+      && Date.parse(session.expiresAt) > clock()
+      && state.didSourceMode === board.sourceMode
+      && session.registryId === board.summary.registryId
+      && (board.deploymentIdentity === undefined
+        || session.genesisHash === board.deploymentIdentity.expectedGenesisHash
+          && session.contractAddress === board.deploymentIdentity.contractAddress)
+      ? session : undefined;
+  };
 
   const signInDid = async () => {
     const signer = didSigner();
     const board = state.board;
-    if (state.didBusy || signer === undefined || board === undefined || !canUseDidHost()) return;
+    if (state.didBusy || state.loading || signer === undefined || board === undefined || !canUseDidHost()) return;
     const host = currentHost();
     setState({ didBusy: true, didError: undefined, didSession: undefined, didSourceMode: undefined });
     try {
@@ -1248,8 +1258,8 @@ export const createAdminConsoleApp = (
               <h2 id="admin-did-heading">Digital identity sign-in</h2>
               <p>Use your decentralized identifier (DID) to identify yourself. Sign-in does not grant a maintainer role, voting authority, or eligibility proof. Governed actions still require separate external signatures and policy checks.</p>
               ${activeDidSession === undefined
-                ? `<p class="portal-profile-status">${didSignerAvailable ? "A DID signer is available." : "No DID signer is connected to this browser. Ask your host to provide one before signing in."}</p>
-                  <button class="button" type="button" data-did-sign-in data-focus-key="did-sign-in"${state.didBusy || !didSignerAvailable || !didHostAvailable || state.board === undefined ? " disabled" : ""}>${state.didBusy ? "Signing in…" : "Sign in with DID"}</button>
+                ? `<p class="portal-profile-status">${state.loading && state.didSession !== undefined ? "Checking the source; sign-in is paused until it matches." : didSignerAvailable ? "A DID signer is available." : "No DID signer is connected to this browser. Ask your host to provide one before signing in."}</p>
+                  <button class="button" type="button" data-did-sign-in data-focus-key="did-sign-in"${state.didBusy || state.loading || !didSignerAvailable || !didHostAvailable || state.board === undefined ? " disabled" : ""}>${state.didBusy ? "Signing in…" : "Sign in with DID"}</button>
                   ${didHostAvailable ? "" : '<p class="step-hint">Sign-in requires the same-origin API host.</p>'}`
                 : `<p class="portal-profile-status">Signed in as <strong class="technical-id">${escapeHtml(activeDidSession.actorDid)}</strong></p>
                   <p class="step-hint">Identity only. Your maintainer authority is checked separately.</p>
