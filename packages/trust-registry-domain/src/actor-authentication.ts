@@ -16,7 +16,7 @@ const OffchainLongFormSchema = z.string().max(8192).regex(
   /^did:midnight:offchain:[0-9a-f]{64}:[A-Za-z0-9_-]+$/u,
 );
 const OffchainKeySchema = z.string().max(8292).regex(
-  /^did:midnight:offchain:[0-9a-f]{64}:[A-Za-z0-9_-]+#[A-Za-z0-9:._-]+$/u,
+  /^did:midnight:offchain:[0-9a-f]{64}:[A-Za-z0-9_-]+(?:\/[A-Za-z0-9._~!$&'()*+,;=:@%-]+)*#[A-Za-z0-9:._-]+$/u,
 );
 const CanonicalTimestampSchema = z.string().datetime({ offset: false }).refine(
   (value) => new Date(value).toISOString() === value,
@@ -69,7 +69,8 @@ const OffchainChallengeSchema = ChallengeFields.extend({
   actorDid: OffchainLongFormSchema,
   actorKeyId: OffchainKeySchema,
 }).superRefine((challenge, context) => {
-  if (!challenge.actorKeyId.startsWith(`${challenge.actorDid}#`)) {
+  if (!challenge.actorKeyId.startsWith(`${challenge.actorDid}#`)
+    && !challenge.actorKeyId.startsWith(`${challenge.actorDid}/`)) {
     context.addIssue({ code: "custom", path: ["actorKeyId"], message: "Key must belong to actor DID" });
   }
   validChallengeLifetime(challenge, context);

@@ -250,6 +250,34 @@ describe("actor DID authentication challenge", () => {
     expect(await service.verify(assertionChallenge, assertionSignature, "applicant-session")).toBeNull();
   });
 
+  it("accepts a resolved path authentication method but not another DID's method", async () => {
+    const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+    const publicJwk = publicKey.export({ format: "jwk" });
+    const actorDid = createLongFormOffchainMidnightDIDString({
+      version: 1,
+      alsoKnownAs: [],
+      verificationMethod: [{
+        id: "./keys#auth",
+        publicKeyJwk: { kty: KeyType.OKP, crv: CurveType.Ed25519, x: publicJwk.x! },
+        relationships: { authentication: true, assertionMethod: false, keyAgreement: false,
+          capabilityInvocation: false, capabilityDelegation: false },
+      }],
+      service: [],
+    });
+    const actorKeyId = `${actorDid}/keys#auth`;
+    expect(resolveLongFormOffchainMidnightDID(actorDid).didDocument.authentication).toContain(actorKeyId);
+    const service = createActorAuthenticationService({ context, store: memoryStore(), clock: () => START });
+    await expect(service.issue(actorDid, `${did}/keys#auth`, "applicant-session")).rejects.toThrow();
+    const challenge = await service.issue(actorDid, actorKeyId, "applicant-session");
+    const signature = {
+      keyId: actorKeyId,
+      algorithm: "ed25519",
+      value: `0x${signEd25519(null, actorAuthenticationDigestBytes(challenge), privateKey).toString("hex")}`,
+    };
+    expect(await service.verify(challenge, signature, "applicant-session"))
+      .toEqual({ actorDid, actorKeyId });
+  });
+
   it("rejects a challenge that expires during DID resolution before store consumption", async () => {
     let nowMs = START;
     const store = {
