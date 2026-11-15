@@ -52,6 +52,7 @@ try {
       schnorrJubjubPublicKey: deriveJubjubPublicKeyFromSeed(seed),
     }),
   ]);
+  const sessions = createActorSessionService(() => now);
   serverOptions.actorAuthentication = {
     challenges: createActorAuthenticationService({
       context: {
@@ -64,7 +65,7 @@ try {
       store: new FileActorAuthenticationChallengeStore(join(directory, "challenges.json"), () => now),
       clock: () => now,
     }),
-    sessions: createActorSessionService(() => now),
+    sessions,
   };
   const post = (route, body, requestOrigin = origin) => fetch(`${origin}${route}`, {
     method: "POST",
@@ -100,7 +101,37 @@ try {
     method: "DELETE", headers: bearer,
   }), 204);
   await expectStatus(await fetch(`${origin}/v1/actor-authentication/session`, { headers: bearer }), 401);
-  process.stdout.write("[did-auth-headless] Fixture DID sign-in, one-use replay, origin denial, identity-only session, and revocation passed. No role grant or deployed finality was inferred.\n");
+
+  const maintainerChallenge = await expectStatus(await post(challengeRoute, {
+    actorDid, actorKeyId, purpose: "maintainer-session",
+  }), 201);
+  const maintainerSignature = {
+    ...signature,
+    value: `0x${Buffer.from(encodeJubjubSignature(signJubjubPayloadFromSeed(
+      seed, actorAuthenticationDigestBytes(maintainerChallenge),
+    ))).toString("hex")}`,
+  };
+  const maintainerSession = await expectStatus(await post(sessionRoute, {
+    challenge: maintainerChallenge, signature: maintainerSignature,
+  }), 201);
+  assert.equal(maintainerSession.purpose, "maintainer-session");
+  assert.equal(Object.hasOwn(maintainerSession, "role"), false);
+  assert.equal(Object.hasOwn(maintainerSession, "vpEligible"), false);
+  await expectStatus(await post(sessionRoute, {
+    challenge: maintainerChallenge, signature: maintainerSignature,
+  }), 401);
+  const maintainerBearer = { authorization: `Bearer ${maintainerSession.accessToken}` };
+  assert.equal(sessions.authenticate(maintainerBearer.authorization, "applicant-session"), null);
+  assert.deepEqual(sessions.authenticate(maintainerBearer.authorization, "maintainer-session"), {
+    actorDid, actorKeyId, purpose: "maintainer-session",
+  });
+  await expectStatus(await fetch(`${origin}/v1/actor-authentication/session`, {
+    method: "DELETE", headers: maintainerBearer,
+  }), 204);
+  await expectStatus(await fetch(`${origin}/v1/actor-authentication/session`, {
+    headers: maintainerBearer,
+  }), 401);
+  process.stdout.write("[did-auth-headless] Applicant and maintainer DID challenge sessions, one-use replay, origin denial, purpose isolation, identity-only claims, and revocation passed. No role grant or deployed finality was inferred.\n");
 } finally {
   server.closeAllConnections();
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
