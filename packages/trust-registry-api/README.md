@@ -28,7 +28,13 @@ service. The API exposes `POST /v1/actor-authentication/challenges`,
 `/v1/actor-authentication/session`. It requires JSON for writes, rejects a
 foreign browser Origin, gives no cross-origin read grant, and marks responses
 `no-store`. Sessions use opaque bearer tokens, expire after 15 minutes, and
-vanish on process restart. The host must keep bearer tokens out of logs and
+vanish on process restart. The local single-process HTTP host admits at most
+eight challenge requests per connecting socket address per two minutes; it
+does not trust `X-Forwarded-For`. A rate denial is `429
+actor-authentication-rate-limited`, while full challenge storage returns
+`503 actor-authentication-capacity-unavailable`. Invalid or deactivated DID
+authentication keys are rejected before storage. This is a bounded local
+guard, not distributed internet-facing abuse protection. The host must keep bearer tokens out of logs and
 must separately verify VP eligibility and governed registry authority. A DID
 signature or session never grants a role. The browser apps offer sign-in only
 when an external signer is injected by a same-origin host; they do not hold
@@ -52,6 +58,9 @@ enable actor authentication. The optional portal root must contain built
 `admin/` and `applicant/` asset directories; serving them from the API origin
 allows the external signer integration to use the same-origin challenge API.
 There is no production-ready authentication host.
+The wallet or signer must recompute the domain-separated digest from the exact
+challenge fields it displays; it must not blindly sign a digest supplied by a
+page, even if the page labels it as a DID challenge.
 When `actorAuthentication` and `applicationVp` are injected together, the
 VP routes additionally require an applicant-purpose bearer session matching
 the embedding host's `authorizeRequest` DID. This does not replace that host
@@ -644,12 +653,12 @@ adapter: place its private state file in a trusted directory shared by the
 serving processes, outside web roots and backups exposed to applicants. It
 enforces global and per-actor two-minute issuance bounds, retains consumed
 digest tombstones until expiry, and checks expiry under its write lock. A
-full quota refuses issuance; the host still needs request-level rate limiting
-and abuse monitoring. The service
+full quota refuses issuance; an internet-facing host still needs distributed
+request-level rate limiting and abuse monitoring. The service
 returns the verified DID and key, **not** a registry role, session, or grant.
-It is not wired into the packaged HTTP server and is not a production login
-implementation. The host must still select the intended DID mode, supply an
-authenticated resolver for ledger-backed DIDs, and enforce session/CSRF rules, current
+It is enabled only in the packaged CLI's opt-in loopback fixture mode, not a
+production login implementation. Other hosts must select the intended DID mode,
+supply an authenticated resolver for ledger-backed DIDs, and enforce session/CSRF rules, current
 registry authorization, exact DID-signed mutation intents, and quorum.
 
 The file adapter's `<state-path>.lock` is deliberately not auto-reclaimed.

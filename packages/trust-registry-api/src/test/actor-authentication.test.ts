@@ -25,6 +25,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   ActorAuthenticationResolverUnavailableError,
+  InvalidActorAuthenticationIdentityError,
   createActorAuthenticationService,
   type ActorAuthenticationChallengeStore,
 } from "../actor-authentication.js";
@@ -156,9 +157,32 @@ describe("actor DID authentication challenge", () => {
       }),
     ]);
     const wrongRelationship = createActorAuthenticationService({ context, store, resolver: assertionOnly, clock: () => nowMs });
+    await expect(wrongRelationship.issue(did, keyId, "applicant-session"))
+      .rejects.toBeInstanceOf(InvalidActorAuthenticationIdentityError);
     expect(await wrongRelationship.verify(challenge, signatureFor(challenge), "applicant-session")).toBeNull();
     nowMs += 120_000;
     expect(await service.verify(challenge, signatureFor(challenge), "applicant-session")).toBeNull();
+  });
+
+  it("rejects invalid or deactivated identities before consuming challenge capacity", async () => {
+    let inserts = 0;
+    const store = { ...memoryStore(), insert: async () => { inserts += 1; return true; } };
+    const fixture = createMidnightDidLedgerFixture(did, {
+      verificationMethodId: "auth-1",
+      schnorrJubjubPublicKey: deriveJubjubPublicKeyFromSeed(seed),
+    });
+    const deactivatedResolver = createMidnightDidResolver([{
+      ...fixture,
+      ledgerState: { ...fixture.ledgerState, active: false, deactivated: true },
+    }]);
+    const service = createActorAuthenticationService({
+      context, store, resolver: deactivatedResolver, clock: () => START,
+    });
+    await expect(service.issue(did, keyId, "applicant-session"))
+      .rejects.toBeInstanceOf(InvalidActorAuthenticationIdentityError);
+    await expect(service.issue(createMidnightDid("unknown"), keyId, "applicant-session"))
+      .rejects.toBeInstanceOf(InvalidActorAuthenticationIdentityError);
+    expect(inserts).toBe(0);
   });
 
   it("keeps a challenge available across resolver outage and fails closed on store failure", async () => {
@@ -296,8 +320,10 @@ describe("actor DID authentication challenge", () => {
       consume: async () => { throw new Error("Expired challenge must not reach the store"); },
     };
     const delayedResolver = {
+      calls: 0,
       resolveResult: async (parsedDid: Parameters<typeof resolver.resolveResult>[0]) => {
-        nowMs += 120_000;
+        delayedResolver.calls += 1;
+        if (delayedResolver.calls === 2) nowMs += 120_000;
         return resolver.resolveResult(parsedDid);
       },
     };
