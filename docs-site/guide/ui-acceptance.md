@@ -28,6 +28,7 @@ The full docs site remains the source for linked chapters and updates.
 | --- | --- |
 | Lead with the next task, not a protocol field | The portal leads to governed role preparation and a visible path to DID sign-in. On loopback, `demo=1` exposes the label-only fixture application only in Workspace settings, never ahead of the governed path. Admin headings distinguish pending decisions from a quiet review workspace. API editing also lives in Settings. `ui-layout.spec.mjs` and `demo-application-handoff.spec.mjs` check this hierarchy. |
 | Make the maintainer inbox truthful | The admin review heading names source-reported requests awaiting action when proposed or authorized records exist, and otherwise invites browsing. Selected actionable records show a compact identity, eligibility, and authority checklist without claiming the browser verified DID control, VP status, or quorum. DID sign-in is never presented as a vote. `admin-console-app.test.ts` covers both queue states. |
+| Show one advanced governance task at a time | Opening Advanced governance reveals proposal/recovery and policy revision as separate native disclosures, not two signing forms at once. Opening one closes the other; prepared context stays visible across board refreshes. `admin-console.spec.mjs`, `governed-proposal-recovery.spec.mjs`, and `ui-layout.spec.mjs` cover action, recovery, keyboard and zoom paths. |
 | Explain first-use roles and terms | The applicant role picker links directly to the Manual's plain-language role comparison. Primary path copy says digital identity, eligibility proof, and registry approval; Settings defines DID and VP without suggesting either grants permission. The visible **Practice workspace** cue explains that sample records are not deployed ledger evidence. `ui-layout.spec.mjs` checks the route and source states. |
 | Explain the applicant path before exposing forms | Four compact role choices lead to a role-specific disclosure. Choosing another card closes the previous role form and keeps the chosen card visibly selected; the selected form can also be collapsed. On a 390 px viewport each role stays under 95 px high and the full introductory section stays under 1050 px. Optional “How applications work” help explains choice, redacted evidence, external signing, and retaining the receipt; a prerequisite card calls out DID, exact scope, external keys, and authenticated host. Each role form explains the two IDs and DID key before the fields, and an in-form reason accompanies disabled preparation on a cross-origin connection. A receipt is not approval, and opening a role does not submit it. |
 | One Midnight visual language | Both apps use the approved logo, Outfit, muted teal/mist tokens, and shared navigation/status components. On desktop the Midnight lockup and task links occupy one continuous left rail; on mobile the same lockup precedes the native Menu. |
@@ -347,8 +348,9 @@ see what its lifecycle means before opening exact identifiers or preparing an
 external-signature action. The primary date is formatted in UTC; the exact
 API timestamp remains under Identifiers and evidence. A filter never submits
 a mutation. Empty default status lanes do not precede populated results.
-**Advanced governance** contains governed proposal/recovery and quorum/verifier
-tasks. Fixture lifecycle, epoch, and signed-workspace controls are instead
+**Advanced governance** offers separate disclosures for governed
+proposal/recovery and quorum/verifier tasks, with one expanded at a time.
+Fixture lifecycle, epoch, and signed-workspace controls are instead
 grouped under **Workspace settings > Practice controls** and retain their
 existing prerequisites. The local-ledger adapter has
 no broad list, so its admin view keeps only exact-ID lookup. In the fixture

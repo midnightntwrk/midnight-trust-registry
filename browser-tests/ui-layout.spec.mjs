@@ -878,6 +878,8 @@ for (const [app, title] of [
             if (app === "admin-console") {
               await page.locator("#advanced-governance > summary").click();
               await expect(page.locator("#advanced-governance")).toHaveAttribute("open", "");
+              await page.locator("#task-proposal > summary").click();
+              await expect(page.locator("#task-proposal")).toHaveAttribute("open", "");
             } else {
               await page.locator('[data-open-workflow="issuer-request"]').click();
               await expect(page.locator("#issuer-request")).toBeVisible();
@@ -1142,6 +1144,7 @@ for (const [app, title] of [
           if (width === 320) {
             const advanced = app === "admin-console" ? ".advanced-workflows" : ".advanced-tools";
             await page.locator(`${advanced} > summary`).click();
+            if (app === "admin-console") await page.locator("#task-proposal > summary").click();
             const advancedGeometry = await readZoomGeometry();
             expect(advancedGeometry.page, JSON.stringify(advancedGeometry)).toBeLessThanOrEqual(width);
             expect(advancedGeometry.overflowing).toEqual([]);

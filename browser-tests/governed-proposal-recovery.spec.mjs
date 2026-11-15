@@ -188,6 +188,7 @@ for (const { role, responseLost } of [
     page.on("dialog", (dialog) => dialog.accept());
     await page.goto(`${base}/?apiBase=${encodeURIComponent(base)}`);
     await page.locator(".advanced-workflows > summary").click();
+    await page.locator("#task-proposal > summary").click();
     await expect(page.locator("[data-proposal-prepare] button[type='submit']")).toBeEnabled();
     await page.locator("[data-proposal-role]").selectOption(role);
     await page.locator("[data-proposal-id]").fill(scenario.id);

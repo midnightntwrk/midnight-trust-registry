@@ -268,9 +268,22 @@ test("fixture admin review advances an issuer through approval, activation, risk
     await expect(page.locator(".source-panel")).toContainText("not deployed ledger evidence");
     await page.locator(".settings-back").click();
     await page.locator(".advanced-workflows > summary").click();
-    await expect(page.locator(".governance-task-grid a")).toHaveCount(2);
-    expect(await page.locator(".governance-task-grid a").evaluateAll((links) => links.every((link) =>
-      document.querySelector(link.getAttribute("href")) !== null))).toBe(true);
+    await expect(page.locator(".governance-task")).toHaveCount(2);
+    await expect(page.locator(".governance-task[open]")).toHaveCount(0);
+    await page.locator("#task-proposal > summary").click();
+    await expect(page.locator("#task-proposal")).toHaveAttribute("open", "");
+    await page.locator("#task-policy > summary").click();
+    await expect(page.locator("#task-policy")).toHaveAttribute("open", "");
+    await expect(page.locator("#task-proposal")).not.toHaveAttribute("open", "");
+    await page.locator("[data-refresh]").click();
+    await expect(page.locator("#task-policy")).toHaveAttribute("open", "");
+    await page.goto(`${base}/?demo=1&apiBase=${encodeURIComponent(base)}#task-proposal`);
+    await expect(page.locator(".advanced-workflows")).toHaveAttribute("open", "");
+    await expect(page.locator("#task-proposal")).toHaveAttribute("open", "");
+    await expect(page.locator("#task-policy")).not.toHaveAttribute("open", "");
+    await page.reload();
+    await expect(page.locator(".advanced-workflows")).toHaveAttribute("open", "");
+    await expect(page.locator("#task-proposal")).toHaveAttribute("open", "");
     expect(posted).toEqual([
       `/v1/applications/issuer/${encodeURIComponent(id)}/approve`,
       `/v1/applications/issuer/${encodeURIComponent(id)}/activate`,
@@ -433,6 +446,7 @@ test("fixture policy revision requires a separate evidence-verifier registration
     await page.goto(`${base}/?apiBase=${encodeURIComponent(base)}`);
     await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
     await page.locator(".advanced-workflows > summary").click();
+    await page.locator("#task-policy > summary").click();
     await page.locator("[data-policy-prepare-thresholds]").click();
     await expect(page.locator("[data-policy-context]")).toBeVisible();
     await page.locator("[data-policy-threshold='default']").fill("3");

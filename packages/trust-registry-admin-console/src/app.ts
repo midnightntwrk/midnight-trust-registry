@@ -785,6 +785,14 @@ export const createAdminConsoleApp = (
   };
 
   const bindEvents = () => {
+    root.querySelectorAll<HTMLDetailsElement>(".governance-task").forEach((task) => {
+      task.addEventListener("toggle", () => {
+        if (!task.open || !root.contains(task)) return;
+        root.querySelectorAll<HTMLDetailsElement>(".governance-task").forEach((other) => {
+          if (other !== task) other.open = false;
+        });
+      });
+    });
     root.querySelector<HTMLButtonElement>("[data-did-sign-in]")?.addEventListener("click", () => { void signInDid(); });
     root.querySelector<HTMLButtonElement>("[data-did-sign-out]")?.addEventListener("click", () => { void signOutDid(); });
     root.querySelectorAll<HTMLAnchorElement>(".mobile-task-menu nav a").forEach((link) => {
@@ -1133,7 +1141,12 @@ export const createAdminConsoleApp = (
     const focusKey = root.contains(document.activeElement)
       ? document.activeElement?.getAttribute("data-focus-key") : null;
     pendingFocusKey = focusKey ?? (root.contains(document.activeElement) ? null : pendingFocusKey);
-    const advancedOpen = root.querySelector<HTMLDetailsElement>(".advanced-workflows")?.open ?? false;
+    const advancedOpen = root.querySelector<HTMLDetailsElement>(".advanced-workflows")?.open
+      ?? ["#task-proposal", "#task-policy"].includes(window.location.hash);
+    const proposalTaskOpen = root.querySelector<HTMLDetailsElement>("#task-proposal")?.open
+      ?? window.location.hash === "#task-proposal";
+    const policyTaskOpen = root.querySelector<HTMLDetailsElement>("#task-policy")?.open
+      ?? window.location.hash === "#task-policy";
     const practiceOpen = root.querySelector<HTMLDetailsElement>(".practice-controls")?.open ?? false;
     const previousGovernedActions = root.querySelector<HTMLDetailsElement>(".governed-actions");
     governedActionsOpen = previousGovernedActions?.open ?? false;
@@ -1354,11 +1367,9 @@ export const createAdminConsoleApp = (
           </section>
         ` : ""}
         <details class="advanced-workflows" id="advanced-governance"${advancedOpen ? " open" : ""}><summary>Advanced governance and signing actions</summary>
-        ${state.board === undefined ? `<p class="settings-note">Connect to a registry source before preparing governance work.</p>` : `<nav class="governance-task-grid" aria-label="Governance tasks">
-          <a href="#task-proposal"><strong>Prepare or recover a proposal</strong><span>Exact applicant evidence and external quorum</span></a>
-          <a href="#task-policy"><strong>Revise quorum and register verifier</strong><span>Separate policy-bound steps</span></a>
-        </nav>`}
-        ${state.board === undefined ? "" : `<section class="proposal-panel governed-panel" id="task-proposal">
+        ${state.board === undefined ? `<p class="settings-note">Connect to a registry source before preparing governance work.</p>` : ""}
+        ${state.board === undefined ? "" : `<details class="governance-task" id="task-proposal"${proposalTaskOpen ? " open" : ""}><summary><strong>Prepare or recover a proposal</strong><span>Exact applicant evidence and external quorum</span></summary>
+        <section class="proposal-panel governed-panel">
           <div>
             <p class="eyebrow">Membership application</p>
             <h2>Submit a governed proposal</h2>
@@ -1393,8 +1404,9 @@ export const createAdminConsoleApp = (
               <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Submit signed proposal</button>
             </form>
           `}
-        </section>`}
-        ${state.board === undefined ? "" : `<section class="proposal-panel governed-panel" id="task-policy">
+        </section></details>`}
+        ${state.board === undefined ? "" : `<details class="governance-task" id="task-policy"${policyTaskOpen ? " open" : ""}><summary><strong>Revise quorum and register verifier</strong><span>Separate policy-bound steps</span></summary>
+        <section class="proposal-panel governed-panel">
           <div>
             <p class="eyebrow">Governance policy</p>
             <h2>Revise maintainer quorum</h2>
@@ -1422,7 +1434,7 @@ export const createAdminConsoleApp = (
               <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Submit signed ${state.policyPhase === "thresholds" ? "revision" : "registration"}</button>
             </form>
           `}
-        </section>`}
+        </section></details>`}
         </details>
         <section class="workspace" id="review-board">
           ${state.board === undefined || state.board.sourceMode === "local-ledger" ? "" : `<div class="review-filters">
@@ -1480,6 +1492,14 @@ export const createAdminConsoleApp = (
   window.addEventListener("hashchange", () => {
     const shell = root.querySelector<HTMLElement>(".app-shell");
     if (shell !== null) shell.dataset.settingsActive = String(window.location.hash === "#workspace-settings");
+    const target = window.location.hash.slice(1);
+    if (target === "task-proposal" || target === "task-policy") {
+      const advanced = root.querySelector<HTMLDetailsElement>(".advanced-workflows");
+      if (advanced !== null) advanced.open = true;
+      root.querySelectorAll<HTMLDetailsElement>(".governance-task").forEach((task) => {
+        task.open = task.id === target;
+      });
+    }
   });
   void refreshBoard();
 };
