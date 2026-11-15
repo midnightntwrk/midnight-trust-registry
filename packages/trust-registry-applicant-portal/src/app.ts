@@ -1619,10 +1619,17 @@ export const createApplicantPortalApp = (
             ${state.myApplicationsError === undefined ? "" : `<p class="alert error" role="alert">${escapeHtml(state.myApplicationsError)}</p>`}
             ${ownApplications === undefined ? "" : ownApplications.length === 0
               ? "<p>No registered requests for this identity.</p>"
-              : `<ul class="application-list">${ownApplications.map((entry) => `<li><strong>${escapeHtml(entry.role)} request</strong>
-                  <span class="technical-id">${escapeHtml(entry.applicationId)}</span>
-                  <span>${escapeHtml(entry.status)} · ${escapeHtml(entry.createdAt)}</span>
-                  ${entry.status === "pending" ? `<a href="#pending-evidence" data-open-workflow="pending-evidence" data-use-application-id="${escapeHtml(entry.applicationId)}">Continue private evidence</a>` : ""}
+              : `<ul class="application-list">${ownApplications.map((entry) => `<li class="application-item">
+                  <div class="application-item-heading"><strong>${escapeHtml(entry.role)} request</strong>
+                    <span class="application-state">${entry.status === "pending" ? "Request registered" : "Admission archived"}</span></div>
+                  <p>Created <time datetime="${escapeHtml(entry.createdAt)}">${escapeHtml(formatObservationTime(entry.createdAt))}</time></p>
+                  <div class="application-item-actions">
+                    ${entry.status === "pending" ? `<a href="#pending-evidence" data-open-workflow="pending-evidence" data-use-application-id="${escapeHtml(entry.applicationId)}">Continue private evidence</a>` : ""}
+                    <details class="application-identifiers"><summary>Request identifiers</summary>
+                      <dl><dt>Application ID</dt><dd>${escapeHtml(entry.applicationId)}</dd>
+                        <dt>Authorization ID</dt><dd>${escapeHtml(entry.authorizationId)}</dd></dl>
+                    </details>
+                  </div>
                 </li>`).join("")}</ul>`}`}
       </section>`;
     const taskLinks = state.inspection === undefined ? `

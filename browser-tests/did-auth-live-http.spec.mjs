@@ -151,7 +151,20 @@ test("both browser apps use real same-origin DID HTTP sessions without a role gr
     await expect(page.locator("#issuer-request")).toBeVisible();
     await page.locator('.task-nav a[href="#my-applications"]').click();
     await page.getByRole("button", { name: "Load my applications" }).click();
-    await expect(page.locator("#my-applications")).toContainText("application:issuer:mine:v1");
+    const applicationCard = page.locator("#my-applications .application-item");
+    await expect(applicationCard).toContainText("Request registered");
+    await expect(applicationCard.locator("time")).not.toContainText("2026-11-14T00:00:00.000Z");
+    const applicationId = applicationCard.getByText("application:issuer:mine:v1");
+    await expect(applicationId).toBeHidden();
+    await applicationCard.getByText("Request identifiers").click();
+    await expect(applicationId).toBeVisible();
+    const viewport = page.viewportSize();
+    await page.setViewportSize({ width: 320, height: 900 });
+    await page.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
+    const width = await page.evaluate(() => document.documentElement.scrollWidth);
+    assert.ok(width <= 320, `expanded application identifiers overflow at 320px: ${width}`);
+    await page.evaluate(() => { document.documentElement.style.removeProperty("font-size"); });
+    if (viewport !== null) await page.setViewportSize(viewport);
     await page.getByRole("link", { name: "Continue private evidence" }).click();
     await expect(page.locator("#pending-evidence")).toHaveAttribute("open", "");
     await expect(page.locator("[data-application-binding-form] [name='applicationId']"))

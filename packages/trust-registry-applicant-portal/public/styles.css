@@ -312,6 +312,19 @@ body { background: radial-gradient(circle at 100% 0, #dce9e4 0, transparent 26re
 .records-overview [hidden] { display: none !important; }
 .records-overview .lanes { display: grid; }
 .records-overview .lane { box-shadow: none; }
+.application-list { display: grid; gap: 0.7rem; margin: 1rem 0 0; padding: 0; list-style: none; }
+.application-item { min-width: 0; padding: 1rem; border: 1px solid var(--midnight-border); border-radius: 12px; background: var(--midnight-surface); }
+.application-item-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.8rem; }
+.application-item-heading strong { font-size: 1rem; text-transform: capitalize; }
+.application-state { padding: 0.25rem 0.55rem; border-radius: 999px; background: var(--midnight-blue-soft); color: var(--midnight-blue); font-size: 0.75rem; font-weight: 700; }
+.application-item p { margin: 0.5rem 0; color: var(--midnight-muted); font-size: 0.85rem; }
+.application-item-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.2rem; }
+.application-item-actions a, .application-identifiers summary { color: var(--midnight-blue); font-size: 0.85rem; font-weight: 700; }
+.application-identifiers { min-width: 0; }
+.application-identifiers summary { cursor: pointer; }
+.application-identifiers dl { display: grid; gap: 0.25rem; margin: 0.7rem 0 0; }
+.application-identifiers dt { color: var(--midnight-muted); font-size: 0.75rem; font-weight: 700; }
+.application-identifiers dd { min-width: 0; margin: 0 0 0.35rem; overflow-wrap: anywhere; font-family: var(--midnight-mono); font-size: 0.78rem; }
 .advanced-tools { border: 1px solid var(--midnight-border); border-radius: 18px; background: var(--midnight-white); }
 .advanced-tools > summary { cursor: pointer; padding: 1.15rem 1.35rem; font-weight: 700; }
 .advanced-tools[open] > summary { border-bottom: 1px solid var(--midnight-border); }
