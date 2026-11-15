@@ -344,6 +344,7 @@ export const createApplicantPortalApp = (
   let recognitionRequestId = 0;
   let recordSearchQuery = "";
   let demoSelection: PortalSubmissionTarget = "issuer";
+  let didExpiryTimer: ReturnType<typeof setTimeout> | undefined;
 
   const filterRecordCards = () => {
     const overview = root.querySelector<HTMLElement>(".records-overview");
@@ -372,6 +373,19 @@ export const createApplicantPortalApp = (
 
   const setState = (next: Partial<AppState>) => {
     Object.assign(state, next);
+    if (Object.hasOwn(next, "didSession")) {
+      if (didExpiryTimer !== undefined) clearTimeout(didExpiryTimer);
+      didExpiryTimer = undefined;
+      if (state.didSession !== undefined) {
+        const session = state.didSession;
+        didExpiryTimer = setTimeout(() => {
+          if (state.didSession?.accessToken === session.accessToken) {
+            setState({ didSession: undefined, didSourceMode: undefined,
+              didError: "Your digital identity session expired. Sign in again." });
+          }
+        }, Math.max(0, Date.parse(session.expiresAt) - clock()));
+      }
+    }
     render();
   };
 

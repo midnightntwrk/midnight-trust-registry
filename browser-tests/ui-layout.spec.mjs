@@ -418,6 +418,51 @@ test("applicant role guidance explains a missing DID signer", async ({ page, all
   }
 });
 
+for (const appName of ["applicant-portal", "admin-console"]) {
+  test(`${appName} clears an expired DID session without a page refresh`, async ({ page, allowedLocalOrigins }) => {
+    const server = await serveApp(appName);
+    const actorDid = `did:midnight:undeployed:${"ab".repeat(32)}`;
+    const actorKeyId = `${actorDid}#auth-1`;
+    try {
+      allowedLocalOrigins.add(server.base);
+      await page.addInitScript(({ actorDid, actorKeyId }) => {
+        window.midnightTrustRegistryDidSigner = {
+          getIdentity: async () => ({ actorDid, actorKeyId }),
+          signDigest: async () => ({ keyId: actorKeyId, algorithm: "jubjub-schnorr", value: `0x${"aa".repeat(96)}` }),
+        };
+      }, { actorDid, actorKeyId });
+      await page.route(`${server.base}/v1/actor-authentication/**`, async (route) => {
+        const path = new URL(route.request().url()).pathname;
+        if (path.endsWith("/challenges")) {
+          const now = Date.now();
+          await route.fulfill({ status: 201, json: {
+            version: "tr-actor-authentication-v1", registryId: summary.registryId,
+            genesisHash: `0x${"11".repeat(32)}`, contractAddress: `0x${"22".repeat(32)}`,
+            origin: server.base, purpose: appName === "admin-console" ? "maintainer-session" : "applicant-session",
+            actorDid, actorKeyId, nonce: `0x${"33".repeat(32)}`,
+            issuedAt: new Date(now).toISOString(), expiresAt: new Date(now + 120_000).toISOString(),
+          } });
+        } else {
+          await route.fulfill({ status: 201, json: {
+            actorDid, actorKeyId, purpose: appName === "admin-console" ? "maintainer-session" : "applicant-session",
+            accessToken: `trsa_${"a".repeat(43)}`, expiresAt: new Date(Date.now() + 2_000).toISOString(),
+          } });
+        }
+      });
+      await page.goto(`${server.base}${server.packagedPath}`);
+      await page.getByRole("link", { name: "Workspace settings" }).first().click();
+      await page.getByRole("button", { name: "Sign in with DID" }).click();
+      await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
+      await expect(page.locator(".portal-profile-card")).toContainText("Your digital identity session expired. Sign in again.");
+      await expect(page.getByRole("button", { name: "Sign in with DID" })).toBeEnabled();
+      await expect(page.locator(".portal-profile-card [data-did-sign-out]")).toHaveCount(0);
+    } finally {
+      await page.close();
+      await server.close();
+    }
+  });
+}
+
 test("admin Settings signs in with DID without granting maintainer authority", async ({ page, allowedLocalOrigins }) => {
   const server = await serveApp("admin-console");
   const actorDid = `did:midnight:undeployed:${"ab".repeat(32)}`;

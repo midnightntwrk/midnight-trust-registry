@@ -246,6 +246,7 @@ export const createAdminConsoleApp = (
   let signedContextRequestId = 0;
   let hostRevision = 0;
   let boardRequestId = 0;
+  let didExpiryTimer: ReturnType<typeof setTimeout> | undefined;
 
   const currentHost = () => ({ apiBase: state.apiBase, revision: hostRevision });
   const isCurrentHost = (host: ReturnType<typeof currentHost>) =>
@@ -253,6 +254,19 @@ export const createAdminConsoleApp = (
 
   const setState = (next: Partial<AppState>) => {
     Object.assign(state, next);
+    if (Object.hasOwn(next, "didSession")) {
+      if (didExpiryTimer !== undefined) clearTimeout(didExpiryTimer);
+      didExpiryTimer = undefined;
+      if (state.didSession !== undefined) {
+        const session = state.didSession;
+        didExpiryTimer = setTimeout(() => {
+          if (state.didSession?.accessToken === session.accessToken) {
+            setState({ didSession: undefined, didSourceMode: undefined,
+              didError: "Your digital identity session expired. Sign in again." });
+          }
+        }, Math.max(0, Date.parse(session.expiresAt) - clock()));
+      }
+    }
     render();
   };
 
