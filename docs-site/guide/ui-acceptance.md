@@ -97,7 +97,7 @@ private application-evidence routes. The UI must describe it as identity only:
 VP eligibility and governed role authority remain separate checks. The
 headless DID session journey exercises the real local HTTP challenge,
 bad-signature and deployment-context denial, replay denial, identity-only
-token, and revocation; it is not a deployed-ledger test.
+token, exact-boundary challenge and bearer expiry, and revocation; it is not a deployed-ledger test.
 The admin console uses the same ephemeral browser client with a distinct
 `maintainer-session` purpose in Workspace settings. Its DID token is never
 attached to governance requests: external signatures, maintainer membership,
