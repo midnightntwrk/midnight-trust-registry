@@ -114,6 +114,14 @@ test("both browser apps use real same-origin DID HTTP sessions without a role gr
 
     await page.goto(`${origin}/applicant/`);
     await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
+    await page.locator('.task-nav a[href="./registry-manual.html"]').click();
+    await expect(page.locator("main h1")).toContainText("Registry Manual");
+    await page.getByRole("link", { name: "Choose a role" }).click();
+    await expect(page.locator("#governed-requests")).toBeVisible();
+    await page.locator('.journey-cards a[href="#issuer-request"]').click();
+    await expect(page.locator("#issuer-request")).toHaveAttribute("open", "");
+    await expect(page.locator(".journey-prerequisite")).toContainText("sign in with your digital identity");
+    assert.equal(requests.some((request) => request.startsWith("POST /v1/governed/")), false);
     await page.locator(".hero-sign-in").click();
     await page.evaluate(() => { window.trDidSignerUseWrongKey = true; });
     await page.getByRole("button", { name: "Sign in with DID" }).click();
@@ -124,7 +132,13 @@ test("both browser apps use real same-origin DID HTTP sessions without a role gr
     await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
     await expect(page.locator(".portal-profile-card [role='alert']")).toHaveCount(0);
     await expect(page.locator(".application-readiness")).toContainText("Requires governed approval");
+    await expect(page.locator(".journey-prerequisite")).toContainText("Proof of eligibility and governed approval are still required");
+    await expect(page.locator("#issuer-request")).toHaveAttribute("open", "");
     await expect(page.locator("body")).not.toContainText("trsa_");
+    await page.getByRole("link", { name: "Back to issuer request" }).click();
+    await expect(page.locator(".app-shell")).toHaveAttribute("data-settings-active", "false");
+    await expect(page.locator("#issuer-request")).toBeVisible();
+    await page.getByRole("link", { name: "Workspace settings" }).first().click();
     await page.getByRole("button", { name: "Sign out" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText("A DID signer is available");
 

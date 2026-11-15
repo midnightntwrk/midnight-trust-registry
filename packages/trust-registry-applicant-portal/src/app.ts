@@ -1510,6 +1510,12 @@ export const createApplicantPortalApp = (
     pendingFocusKey = focusKey ?? (root.contains(document.activeElement) ? null : pendingFocusKey);
     const openWorkflows = new Set([...root.querySelectorAll<HTMLDetailsElement>(".workflow-disclosure[open]")]
       .map((details) => details.dataset.workflow));
+    const selectedRole = (["issuer", "verifier", "auditor", "maintainer"] as const)
+      .find((role) => root.querySelector(`#${role}-request.role-workflow[open]`) !== null);
+    const settingsBackHref = selectedRole !== undefined ? `#${selectedRole}-request`
+      : state.inspection?.sourceMode === "local-ledger" ? `#current-${lookupActive}-lookup` : "#governed-requests";
+    const settingsBackLabel = selectedRole === undefined ? "Back to applicant workspace"
+      : `Back to ${selectedRole} request`;
     const advancedOpen = root.querySelector<HTMLDetailsElement>(".advanced-tools")?.open ?? false;
     const previousVpForm = root.querySelector<HTMLFormElement>("[data-application-vp-form]");
     const previousVp = previousVpForm?.querySelector<HTMLTextAreaElement>("[name='presentation']")?.value;
@@ -1676,7 +1682,7 @@ export const createApplicantPortalApp = (
         </section>
         <section class="settings-view" id="connection-details" aria-labelledby="settings-heading">
           <div class="settings-heading">
-            <a class="settings-back" href="${state.inspection?.sourceMode === "local-ledger" ? `#current-${lookupActive}-lookup` : "#governed-requests"}">&larr; Back to applicant workspace</a>
+            <a class="settings-back" href="${settingsBackHref}">&larr; ${settingsBackLabel}</a>
             <p class="eyebrow">Configuration</p>
             <h1 id="settings-heading">Workspace settings</h1>
             <p>Check the API source and the registry identity it reports. These are browser observations, not independently verified trust evidence.</p>
