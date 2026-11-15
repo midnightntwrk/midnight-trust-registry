@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { createLongFormOffchainMidnightDIDString, CurveType, KeyType } from "@midnight-ntwrk/midnight-did-domain";
 
 import { createOperatorWorkspace, writeWorkspaceToFile } from "../packages/trust-registry-cli/dist/index.js";
-import { signInActorDid, signOutActorDid } from "@midnight-ntwrk/trust-registry-client/browser-authentication";
+import { listApplicantApplications, signInActorDid, signOutActorDid } from "@midnight-ntwrk/trust-registry-client/browser-authentication";
 import { actorAuthenticationDigestBytes } from "../packages/trust-registry-domain/dist/index.js";
 
 const directory = await mkdtemp(join(tmpdir(), "tr-fixture-offchain-cli-"));
@@ -167,6 +167,8 @@ try {
   await expectStatus(await fetch(`${origin}${privateList}`, {
     headers: { authorization: `Bearer ${clientSession.accessToken}` },
   }), 503);
+  assert.deepEqual(await listApplicantApplications({ apiBase: origin, pageOrigin: origin,
+    session: clientSession }), { status: "unavailable" });
   const maintainerSession = await signInActorDid({
     ...clientInput, purpose: "maintainer-session",
     deploymentIdentity: { expectedGenesisHash, contractAddress },

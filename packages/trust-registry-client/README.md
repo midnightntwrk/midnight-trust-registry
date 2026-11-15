@@ -34,6 +34,13 @@ not establish VP eligibility, a registry role, quorum, or finalized ledger
 state; those remain separate authorization checks. The UI and headless tests
 use a fixture DID resolver and test signer, not a production DID provider.
 
+`listApplicantApplications` accepts only a current applicant-purpose session
+on the same origin. It validates returned request summaries and distinguishes
+an available empty list from the API's specific `pending-application-list-unavailable`
+problem. Other HTTP failures, malformed data, and maintainer-purpose sessions
+fail rather than appearing as an empty inbox. This read does not confer a role
+or authorize any application or governance write.
+
 For challenge-backed application proposals, `scopeCommitment` means the
 canonical `tr-scope-v1` authorization-scope digest, not a hash of the governed
 resource ID. The resource ID remains a separate proposal input. The

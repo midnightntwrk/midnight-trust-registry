@@ -166,6 +166,11 @@ The packaged-host process smoke asserts both capabilities are absent, and that
 neither an applicant DID session nor a maintainer-purpose session enables
 registration or governance writes without their separate host ports. This is
 fixture denial evidence, not a deployed authorization or finality result.
+The shared typed client now distinguishes an unconfigured private applicant
+list from an available empty list, validates entries, and rejects other HTTP
+errors or the wrong session purpose. The packaged CLI smoke uses this client
+against the real loopback host; it does not substitute for a qualified
+registration port or finalized decision polling.
 
 Non-critical-path follow-ups include public-network bootstrap (#200),
 historical TRQP (#39), Helm (#218), npm publishing (#271), mobile acceptance

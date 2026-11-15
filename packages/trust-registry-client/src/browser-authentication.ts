@@ -2,9 +2,11 @@ import {
   ActorAuthenticationChallengeSchema,
   ActorAuthenticationSignatureSchema,
   actorAuthenticationDigestBytes,
+  PendingApplicationListResponseSchema,
   type ActorAuthenticationChallenge,
   type ActorAuthenticationPurpose,
   type ActorAuthenticationSignature,
+  type PendingApplicationSummary,
 } from "@midnight-ntwrk/trust-registry-domain/browser";
 
 const TOKEN_PATTERN = /^trsa_[A-Za-z0-9_-]{43}$/u;
@@ -133,4 +135,40 @@ export async function signOutActorDid(input: {
     headers: { authorization: `Bearer ${input.session.accessToken}` },
   });
   if (!response.ok) throw new Error(`DID sign-out failed (HTTP ${response.status.toString()}).`);
+}
+
+export type ApplicantApplicationList =
+  | { status: "available"; entries: readonly PendingApplicationSummary[] }
+  | { status: "unavailable" };
+
+export async function listApplicantApplications(input: {
+  apiBase: string;
+  pageOrigin: string;
+  session: ActorDidSession<"applicant-session">;
+  fetchImpl?: typeof fetch;
+  clock?: () => number;
+}): Promise<ApplicantApplicationList> {
+  const base = sameOriginApi(input.apiBase, input.pageOrigin);
+  const expiresAt = Date.parse(input.session.expiresAt);
+  if (input.session.purpose !== "applicant-session"
+    || !TOKEN_PATTERN.test(input.session.accessToken)
+    || !Number.isFinite(expiresAt) || expiresAt <= (input.clock ?? Date.now)()) {
+    throw new Error("A current applicant DID session is required.");
+  }
+  const response = await (input.fetchImpl ?? fetch)(`${base}/v1/pending-applications`, {
+    method: "GET", credentials: "omit", cache: "no-store", redirect: "error",
+    headers: { authorization: `Bearer ${input.session.accessToken}` },
+  });
+  if (response.status === 503) {
+    const problem: unknown = await response.json().catch(() => null);
+    if (problem !== null && typeof problem === "object" && "type" in problem
+      && typeof problem.type === "string"
+      && problem.type.endsWith("/pending-application-list-unavailable")) {
+      return { status: "unavailable" };
+    }
+  }
+  const payload = await responsePayload(response, "Pending application list");
+  const parsed = PendingApplicationListResponseSchema.safeParse(payload);
+  if (!parsed.success) throw new Error("Pending application list returned an invalid response.");
+  return { status: "available", entries: parsed.data.entries };
 }
