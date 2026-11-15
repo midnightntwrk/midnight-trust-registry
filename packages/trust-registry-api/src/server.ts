@@ -7,7 +7,8 @@ import { ActorAuthenticationChallengeSchema, DecisionEvidenceSchema, SignedPendi
 import { encodeCompactActionKind } from "@midnight-ntwrk/trust-registry-contract";
 import { EvidenceVerifierDidResolutionUnavailableError } from "@midnight-ntwrk/trust-registry-integration";
 import { LocalIssuerEvidenceTimeRejectedError } from "./local-issuer-proposal-port.js";
-import { ActorAuthenticationResolverUnavailableError, type createActorAuthenticationService } from "./actor-authentication.js";
+import { ActorAuthenticationResolverUnavailableError, InvalidActorAuthenticationIdentityError,
+  type createActorAuthenticationService } from "./actor-authentication.js";
 import type { ActorSessionService } from "./actor-sessions.js";
 
 import {
@@ -2922,6 +2923,12 @@ export const createTrustRegistryApiServer = (
     } catch (error) {
       if (error instanceof ActorAuthenticationResolverUnavailableError) {
         const problem = jsonProblem(problemBaseUri, "did-resolution-unavailable", 503, "DID resolution unavailable").problem;
+        writeJson(response, problem.status, problem, false);
+        return;
+      }
+      if (error instanceof InvalidActorAuthenticationIdentityError) {
+        const problem = jsonProblem(problemBaseUri, "actor-authentication-invalid-identity", 400,
+          "actor authentication identity invalid").problem;
         writeJson(response, problem.status, problem, false);
         return;
       }

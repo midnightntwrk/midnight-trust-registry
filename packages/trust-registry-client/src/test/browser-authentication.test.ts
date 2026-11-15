@@ -50,6 +50,30 @@ describe("shared browser DID authentication", () => {
     expect(fetchMock.mock.calls.every(([, init]) => init?.redirect === "error" && init.credentials === "omit")).toBe(true);
   });
 
+  it("accepts a matching off-chain DID challenge only with an Ed25519 authentication signature", async () => {
+    const offchainDid = `did:midnight:offchain:${"ab".repeat(32)}:YWJj`;
+    const offchainKeyId = `${offchainDid}#auth-1`;
+    const offchainChallenge = { ...challenge, version: "tr-actor-authentication-offchain-v1" as const,
+      actorDid: offchainDid, actorKeyId: offchainKeyId };
+    const offchainSession = { ...session, actorDid: offchainDid, actorKeyId: offchainKeyId };
+    const fetchMock = vi.fn(async (url: string) => Response.json(
+      url.endsWith("/challenges") ? offchainChallenge : offchainSession,
+    ));
+    const signer = { getIdentity: async () => ({ actorDid: offchainDid, actorKeyId: offchainKeyId }),
+      signDigest: vi.fn(async () => ({ keyId: offchainKeyId, algorithm: "ed25519" as const,
+        value: `0x${"aa".repeat(64)}` })) };
+    const input = { apiBase: origin, pageOrigin: origin, registryId: challenge.registryId,
+      purpose: "maintainer-session" as const, signer, fetchImpl: fetchMock as unknown as typeof fetch,
+      clock: () => NOW };
+    expect((await signInActorDid(input)).actorDid).toBe(offchainDid);
+    expect(signer.signDigest).toHaveBeenCalledOnce();
+    const wrongAlgorithm = { ...signer, signDigest: vi.fn(async () => ({
+      keyId: offchainKeyId, algorithm: "jubjub-schnorr" as const, value: `0x${"aa".repeat(96)}`,
+    })) };
+    await expect(signInActorDid({ ...input, signer: wrongAlgorithm })).rejects.toThrow("mismatched signature");
+    expect(fetchMock.mock.calls).toHaveLength(3);
+  });
+
   it("rejects an applicant-purpose challenge before external signing", async () => {
     const signDigest = vi.fn(async () => signature);
     await expect(signInActorDid({ apiBase: origin, pageOrigin: origin,

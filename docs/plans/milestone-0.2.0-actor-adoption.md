@@ -127,14 +127,15 @@ loopback challenge/session API with a fixture DID resolver and external test
 signer. The applicant-only private request list is optional host admission
 metadata, not a ledger decision or VP eligibility proof. There is no qualified
 production resolver, live VC-owned status adapter, or deployed actor journey.
-The current challenge schema, verifier, and browser client accept only
-ledger-backed Jubjub DIDs. They do not implement the requested phase-0
-off-chain DID sign-in: the VC method-binding helper rejects off-chain DIDs and
-the existing signer schema is specific to Jubjub mutation intents. A separate
-versioned off-chain transcript and signature type must be implemented and
-tested before describing the sign-in path as phase-0 complete. Off-chain
-long-form state is self-certifying but immutable; it has no live deactivation
-signal, so short session lifetime and explicit mode labeling matter.
+The local challenge schema, verifier, and browser client now distinguish a
+self-certifying long-form off-chain DID with an Ed25519 authentication key from
+the ledger-backed Jubjub path. Focused API, HTTP, and browser-client tests
+exercise that opt-in protocol; they do not prove packaged-host availability or
+deployed actor authorization. The VC method-binding helper still rejects
+off-chain DIDs and must remain separate from sign-in. Off-chain long-form state
+is immutable and has no live deactivation signal, so short session lifetime
+and explicit mode labeling matter. The packaged CLI still lacks an approved
+host configuration and cannot yet claim phase-0 sign-in is available there.
 
 Non-critical-path follow-ups include public-network bootstrap (#200),
 historical TRQP (#39), Helm (#218), npm publishing (#271), mobile acceptance

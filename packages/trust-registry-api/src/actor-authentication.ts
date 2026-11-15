@@ -1,18 +1,18 @@
 import { Buffer } from "node:buffer";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, createPublicKey, randomBytes, verify as verifySignature } from "node:crypto";
 
 import {
   resolveMidnightDIDMethodBinding,
   type ResolveMidnightDIDMethodBindingOptions,
 } from "@midnight-ntwrk/credential-did-midnight";
-import { parseMidnightDIDString } from "@midnight-ntwrk/midnight-did";
+import { parseMidnightDIDString, resolveLongFormOffchainMidnightDID } from "@midnight-ntwrk/midnight-did";
 import { verifyJubjubPayload } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import { decodeCanonicalJubjubSignatureHex, isPrimeOrderJubjubPoint } from "@midnight-ntwrk/trust-registry-contract";
 import {
   ActorAuthenticationChallengeSchema,
   ActorAuthenticationContextSchema,
+  ActorAuthenticationSignatureSchema,
   MAX_ACTOR_AUTHENTICATION_CHALLENGE_AGE_MS,
-  MutationIntentSignatureSchema,
   actorAuthenticationDigestBytes,
   type ActorAuthenticationChallenge,
   type ActorAuthenticationContext,
@@ -35,6 +35,13 @@ export class ActorAuthenticationResolverUnavailableError extends Error {
   }
 }
 
+export class InvalidActorAuthenticationIdentityError extends Error {
+  constructor() {
+    super("Actor DID identity is invalid");
+    this.name = "InvalidActorAuthenticationIdentityError";
+  }
+}
+
 function isDeterministicResolutionError(error: unknown): boolean {
   if (!(error instanceof Error) || !(
     error.name === "ResolverRequestError" || error.name === "InvalidDIDDocumentError"
@@ -48,7 +55,7 @@ function isDeterministicResolutionError(error: unknown): boolean {
 export function createActorAuthenticationService(input: {
   context: ActorAuthenticationContext;
   store: ActorAuthenticationChallengeStore;
-  resolver: MidnightResolver;
+  resolver?: MidnightResolver;
   clock: () => number;
 }) {
   const context = ActorAuthenticationContextSchema.parse(input.context);
@@ -57,8 +64,18 @@ export function createActorAuthenticationService(input: {
     async issue(actorDid: string, actorKeyId: string, purpose: ActorAuthenticationPurpose): Promise<ActorAuthenticationChallenge> {
       const nowMs = input.clock();
       if (!Number.isSafeInteger(nowMs)) throw new Error("Actor authentication clock unavailable");
+      const offchain = actorDid.startsWith("did:midnight:offchain:");
+      if (offchain) {
+        try {
+          if (resolveLongFormOffchainMidnightDID(actorDid).did !== actorDid) {
+            throw new InvalidActorAuthenticationIdentityError();
+          }
+        } catch {
+          throw new InvalidActorAuthenticationIdentityError();
+        }
+      }
       const challenge = ActorAuthenticationChallengeSchema.parse({
-        version: "tr-actor-authentication-v1",
+        version: offchain ? "tr-actor-authentication-offchain-v1" : "tr-actor-authentication-v1",
         ...context,
         purpose,
         actorDid,
@@ -80,7 +97,7 @@ export function createActorAuthenticationService(input: {
       purpose: ActorAuthenticationPurpose,
     ): Promise<{ actorDid: string; actorKeyId: string } | null> {
       const parsedChallenge = ActorAuthenticationChallengeSchema.safeParse(challengeInput);
-      const parsedSignature = MutationIntentSignatureSchema.safeParse(signatureInput);
+      const parsedSignature = ActorAuthenticationSignatureSchema.safeParse(signatureInput);
       if (!parsedChallenge.success || !parsedSignature.success) return null;
       const challenge = parsedChallenge.data;
       const signature = parsedSignature.data;
@@ -91,34 +108,57 @@ export function createActorAuthenticationService(input: {
         || challenge.purpose !== purpose || signature.keyId !== challenge.actorKeyId
         || nowMs < Date.parse(challenge.issuedAt) || nowMs >= Date.parse(challenge.expiresAt)) return null;
 
-      let did: ReturnType<typeof parseMidnightDIDString>;
-      try {
-        did = parseMidnightDIDString(challenge.actorDid);
-      } catch {
-        return null;
-      }
-      let resolved: Awaited<ReturnType<MidnightResolver["resolveResult"]>>;
-      try {
-        resolved = await input.resolver.resolveResult(did);
-      } catch (error) {
-        if (isDeterministicResolutionError(error)) return null;
-        throw new ActorAuthenticationResolverUnavailableError(error);
-      }
       let verified = false;
-      try {
-        const method = await resolveMidnightDIDMethodBinding({
-          resolver: { resolveResult: async () => resolved },
-          did,
-          verificationMethodId: `#${challenge.actorKeyId.split("#")[1]}`,
-          relationship: "authentication",
-        });
-        verified = isPrimeOrderJubjubPoint(method.publicKey) && verifyJubjubPayload(
-          method.publicKey,
-          actorAuthenticationDigestBytes(challenge),
-          decodeCanonicalJubjubSignatureHex(signature.value),
-        );
-      } catch {
-        return null;
+      if (challenge.version === "tr-actor-authentication-offchain-v1") {
+        if (signature.algorithm !== "ed25519") return null;
+        try {
+          const resolved = resolveLongFormOffchainMidnightDID(challenge.actorDid);
+          if (resolved.did !== challenge.actorDid || resolved.didDocumentMetadata.deactivated === true) return null;
+          const method = resolved.didDocument.verificationMethod?.find((candidate) =>
+            String(candidate.id) === challenge.actorKeyId && String(candidate.controller) === challenge.actorDid);
+          const authenticated = resolved.didDocument.authentication?.some((entry) =>
+            String(entry) === challenge.actorKeyId) === true;
+          if (method?.publicKeyJwk.kty !== "OKP" || method.publicKeyJwk.crv !== "Ed25519"
+            || typeof method.publicKeyJwk.x !== "string" || !authenticated) return null;
+          const key = createPublicKey({ key: {
+            kty: "OKP", crv: "Ed25519", x: method.publicKeyJwk.x,
+          }, format: "jwk" });
+          verified = verifySignature(null, actorAuthenticationDigestBytes(challenge), key,
+            Buffer.from(signature.value.slice(2), "hex"));
+        } catch {
+          return null;
+        }
+      } else {
+        if (signature.algorithm !== "jubjub-schnorr") return null;
+        if (input.resolver === undefined) throw new ActorAuthenticationResolverUnavailableError(new Error("Resolver not configured"));
+        let did: ReturnType<typeof parseMidnightDIDString>;
+        try {
+          did = parseMidnightDIDString(challenge.actorDid);
+        } catch {
+          return null;
+        }
+        let resolved: Awaited<ReturnType<MidnightResolver["resolveResult"]>>;
+        try {
+          resolved = await input.resolver.resolveResult(did);
+        } catch (error) {
+          if (isDeterministicResolutionError(error)) return null;
+          throw new ActorAuthenticationResolverUnavailableError(error);
+        }
+        try {
+          const method = await resolveMidnightDIDMethodBinding({
+            resolver: { resolveResult: async () => resolved },
+            did,
+            verificationMethodId: `#${challenge.actorKeyId.split("#")[1]}`,
+            relationship: "authentication",
+          });
+          verified = isPrimeOrderJubjubPoint(method.publicKey) && verifyJubjubPayload(
+            method.publicKey,
+            actorAuthenticationDigestBytes(challenge),
+            decodeCanonicalJubjubSignatureHex(signature.value),
+          );
+        } catch {
+          return null;
+        }
       }
       if (!verified) return null;
       const consumeAtMs = input.clock();

@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { generateKeyPairSync, sign as signEd25519 } from "node:crypto";
 import type { Server } from "node:http";
 
 import {
@@ -6,6 +7,7 @@ import {
   encodeJubjubSignature,
   signJubjubPayloadFromSeed,
 } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
+import { createLongFormOffchainMidnightDIDString, CurveType, KeyType } from "@midnight-ntwrk/midnight-did-domain";
 import { createOperatorWorkspace } from "@midnight-ntwrk/trust-registry-cli";
 import { actorAuthenticationDigestBytes, type ActorAuthenticationChallenge } from "@midnight-ntwrk/trust-registry-domain";
 import {
@@ -77,7 +79,7 @@ describe("phase-0 DID authentication HTTP", () => {
   });
 
   async function start(configured = true, applicationVp?: ApplicationVpHttpPort,
-    pendingApplicationRegistration?: PendingApplicationRegistrationPort) {
+    pendingApplicationRegistration?: PendingApplicationRegistrationPort, ledgerResolver = true) {
     nowMs = START;
     const resolver = createMidnightDidResolver([
       createMidnightDidLedgerFixture(actorDid, {
@@ -92,7 +94,7 @@ describe("phase-0 DID authentication HTTP", () => {
         contractAddress: `0x${"22".repeat(32)}`,
         origin: expectedOrigin,
       },
-      resolver, store: challengeStore(), clock: () => nowMs,
+      ...(ledgerResolver ? { resolver } : {}), store: challengeStore(), clock: () => nowMs,
     });
     server = createTrustRegistryApiServer({
       source: createInMemorySource(createOperatorWorkspace({ label: "actor-auth-http" }).snapshot),
@@ -105,6 +107,36 @@ describe("phase-0 DID authentication HTTP", () => {
 
   const post = (path: string, body: unknown, headers: Record<string, string> = {}) => fetch(`${base}${path}`, {
     method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body),
+  });
+
+  it("signs in with a self-certifying off-chain DID without a ledger resolver", async () => {
+    await start(true, undefined, undefined, false);
+    const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+    const publicJwk = publicKey.export({ format: "jwk" });
+    const offchainDid = createLongFormOffchainMidnightDIDString({
+      version: 1, alsoKnownAs: [], service: [],
+      verificationMethod: [{ id: "#auth-1",
+        publicKeyJwk: { kty: KeyType.OKP, crv: CurveType.Ed25519, x: publicJwk.x! },
+        relationships: { authentication: true, assertionMethod: false, keyAgreement: false,
+          capabilityInvocation: false, capabilityDelegation: false } }],
+    });
+    const offchainKeyId = `${offchainDid}#auth-1`;
+    const issued = await post("/v1/actor-authentication/challenges", {
+      actorDid: offchainDid, actorKeyId: offchainKeyId, purpose: "applicant-session",
+    }, { origin: expectedOrigin });
+    expect(issued.status).toBe(201);
+    const challenge = await issued.json() as ActorAuthenticationChallenge;
+    expect(challenge.version).toBe("tr-actor-authentication-offchain-v1");
+    const signature = { keyId: offchainKeyId, algorithm: "ed25519",
+      value: `0x${signEd25519(null, actorAuthenticationDigestBytes(challenge), privateKey).toString("hex")}` };
+    const verified = await post("/v1/actor-authentication/sessions", { challenge, signature },
+      { origin: expectedOrigin });
+    expect(verified.status).toBe(201);
+    const session = await verified.json() as { accessToken: string; actorDid: string; purpose: string };
+    expect(session).toMatchObject({ actorDid: offchainDid, purpose: "applicant-session" });
+    expect(session).not.toHaveProperty("role");
+    expect((await post("/v1/actor-authentication/sessions", { challenge, signature },
+      { origin: expectedOrigin })).status).toBe(401);
   });
 
   it("signs in once, exposes identity without role, and revokes the bearer token", async () => {

@@ -523,7 +523,11 @@ paths:
     post:
       tags: [Private intake]
       summary: Issue a deployment-bound DID-key authentication challenge
-      description: Opt-in phase-0 API. A challenge proves no registry role or VP eligibility.
+      description: >-
+        Opt-in phase-0 API. Ledger-backed DIDs use the v1 Jubjub challenge;
+        self-certifying long-form off-chain DIDs use a distinct Ed25519 challenge.
+        Neither proves a registry role or VP eligibility. Off-chain state has no
+        live deactivation signal.
       requestBody:
         required: true
         content:
@@ -546,7 +550,10 @@ paths:
     post:
       tags: [Private intake]
       summary: Verify a one-use DID challenge and issue a short-lived bearer session
-      description: Opt-in phase-0 API. The response contains DID identity and purpose, never registry authority.
+      description: >-
+        Opt-in phase-0 API. The response contains DID identity and purpose, never
+        registry authority. The challenge version selects the corresponding
+        Jubjub or Ed25519 authentication-signature format.
       requestBody:
         required: true
         content:

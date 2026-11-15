@@ -1,10 +1,10 @@
 import {
   ActorAuthenticationChallengeSchema,
-  MutationIntentSignatureSchema,
+  ActorAuthenticationSignatureSchema,
   actorAuthenticationDigestBytes,
   type ActorAuthenticationChallenge,
   type ActorAuthenticationPurpose,
-  type MutationIntentSignature,
+  type ActorAuthenticationSignature,
 } from "@midnight-ntwrk/trust-registry-domain/browser";
 
 const TOKEN_PATTERN = /^trsa_[A-Za-z0-9_-]{43}$/u;
@@ -12,7 +12,7 @@ const MAX_SESSION_AGE_MS = 15 * 60 * 1000;
 
 export interface ActorDidSigner {
   getIdentity(): Promise<{ actorDid: string; actorKeyId: string }>;
-  signDigest(input: { challenge: ActorAuthenticationChallenge; digest: Uint8Array }): Promise<MutationIntentSignature>;
+  signDigest(input: { challenge: ActorAuthenticationChallenge; digest: Uint8Array }): Promise<ActorAuthenticationSignature>;
 }
 
 export function isActorDidSigner(value: unknown): value is ActorDidSigner {
@@ -83,16 +83,21 @@ export async function signInActorDid<P extends ActorAuthenticationPurpose>(
   if (!parsed.success || parsed.data.actorDid !== actorDid || parsed.data.actorKeyId !== actorKeyId
     || parsed.data.registryId !== input.registryId || parsed.data.origin !== input.pageOrigin
     || parsed.data.purpose !== input.purpose
+    || (actorDid.startsWith("did:midnight:offchain:")
+      ? parsed.data.version !== "tr-actor-authentication-offchain-v1"
+      : parsed.data.version !== "tr-actor-authentication-v1")
     || (input.deploymentIdentity !== undefined && (parsed.data.genesisHash !== input.deploymentIdentity.expectedGenesisHash
       || parsed.data.contractAddress !== input.deploymentIdentity.contractAddress))) {
     throw new Error("DID challenge does not match this actor and registry.");
   }
   const challenge = parsed.data;
   if (Date.parse(challenge.expiresAt) <= clock()) throw new Error("DID challenge has expired.");
-  const signed = MutationIntentSignatureSchema.safeParse(await input.signer.signDigest({
+  const signed = ActorAuthenticationSignatureSchema.safeParse(await input.signer.signDigest({
     challenge, digest: actorAuthenticationDigestBytes(challenge),
   }));
-  if (!signed.success || signed.data.keyId !== actorKeyId) {
+  if (!signed.success || signed.data.keyId !== actorKeyId
+    || signed.data.algorithm !== (challenge.version === "tr-actor-authentication-v1"
+      ? "jubjub-schnorr" : "ed25519")) {
     throw new Error("DID signer returned a mismatched signature.");
   }
   const sessionResponse = await fetchImpl(`${base}/v1/actor-authentication/sessions`, {
