@@ -271,6 +271,7 @@ let apiProcess;
 let stdout = "";
 let stderr = "";
 const uiProcesses = [];
+const sourceProcesses = [];
 let primaryError;
 const cleanupProblems = [];
 let retainedWorkspacePath;
@@ -331,6 +332,33 @@ const baseUrl = `http://127.0.0.1:${port}`;
   const summary = await requestJson(`${baseUrl}/v1/registry/summary`);
   if (summary.registryLabel !== "demo-smoke") {
     throw new Error(`expected registry label demo-smoke, got ${summary.registryLabel}`);
+  }
+
+  const snapshotPort = await findFreePort();
+  const snapshotProcess = spawn("node", [
+    "packages/trust-registry-api/bin/trust-registry-api.mjs", "serve",
+    "--snapshot", snapshotPath, "--port", String(snapshotPort),
+  ], { cwd: repoRoot, env: process.env, stdio: ["ignore", "pipe", "pipe"] });
+  const snapshotService = { name: "snapshot api", child: snapshotProcess, stdout: "", stderr: "" };
+  snapshotProcess.on("error", (error) => { snapshotProcess.launchError = error; });
+  snapshotProcess.stdout.on("data", (chunk) => { snapshotService.stdout += String(chunk); });
+  snapshotProcess.stderr.on("data", (chunk) => { snapshotService.stderr += String(chunk); });
+  sourceProcesses.push(snapshotService);
+  const snapshotBase = `http://127.0.0.1:${snapshotPort}`;
+  const snapshotHealth = await waitForHealth(snapshotBase, snapshotProcess);
+  if (snapshotHealth.sourceMode !== "snapshot") {
+    throw new Error(`expected snapshot source mode, got ${snapshotHealth.sourceMode}`);
+  }
+  const snapshotSummary = await requestJson(`${snapshotBase}/v1/registry/summary`);
+  if (snapshotSummary.registryLabel !== "demo-smoke-snapshot") {
+    throw new Error("read-only snapshot did not return the expected registry");
+  }
+  const deniedSnapshotMutation = await fetch(`${snapshotBase}/v1/applications`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ target: "issuer", label: "must-not-enter-snapshot" }),
+  });
+  if (deniedSnapshotMutation.status !== 403) {
+    throw new Error(`read-only snapshot allowed fixture mutation (HTTP ${deniedSnapshotMutation.status})`);
   }
 
   let issuerId;
@@ -452,7 +480,8 @@ const baseUrl = `http://127.0.0.1:${port}`;
 } catch (error) {
   primaryError = error;
 } finally {
-  const children = [...(apiProcess ? [{ name: "api", child: apiProcess }] : []), ...uiProcesses];
+  const children = [...(apiProcess ? [{ name: "api", child: apiProcess }] : []),
+    ...sourceProcesses, ...uiProcesses];
   const stopped = await Promise.allSettled(children.map(({ child }) => stopChild(child)));
   for (const [index, outcome] of stopped.entries()) {
     const name = children[index].name;
@@ -497,7 +526,7 @@ if (primaryError !== undefined || cleanupProblems.length > 0) {
     primaryError === undefined ? "demo smoke cleanup failed" : primaryError instanceof Error ? primaryError.message : String(primaryError),
     stdout && `[demo-smoke] api stdout:\n${stdout}`,
     stderr && `[demo-smoke] api stderr:\n${stderr}`,
-    ...uiProcesses.flatMap((service) => [
+    ...[...sourceProcesses, ...uiProcesses].flatMap((service) => [
       service.stdout && `[demo-smoke] ${service.name} stdout:\n${service.stdout}`,
       service.stderr && `[demo-smoke] ${service.name} stderr:\n${service.stderr}`,
     ]),
@@ -508,5 +537,5 @@ if (primaryError !== undefined || cleanupProblems.length > 0) {
 }
 
 console.log(
-  `[demo-smoke] Verified issuer, verifier, auditor, and recognition fixture journeys plus both served UI surfaces on ephemeral loopback ports.${keepArtifacts || retainedWorkspacePath !== undefined ? ` Artifacts: ${retainedWorkspacePath ?? workspaceDir}` : ""}`,
+  `[demo-smoke] Verified issuer, verifier, auditor, and recognition fixture journeys, read-only snapshot mutation denial, and both served UI surfaces on ephemeral loopback ports.${keepArtifacts || retainedWorkspacePath !== undefined ? ` Artifacts: ${retainedWorkspacePath ?? workspaceDir}` : ""}`,
 );
