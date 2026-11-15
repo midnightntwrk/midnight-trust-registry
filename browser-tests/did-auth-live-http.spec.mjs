@@ -27,7 +27,7 @@ import {
   FileActorAuthenticationChallengeStore,
 } from "../packages/trust-registry-api/dist/index.js";
 
-test("both browser apps use real same-origin DID HTTP sessions without a role grant", async ({ page, allowedLocalOrigins }) => {
+test("both browser apps use real same-origin DID HTTP sessions without a role grant", async ({ page, allowedLocalOrigins }, testInfo) => {
   const directory = await mkdtemp(join(tmpdir(), "tr-browser-did-auth-"));
   const seed = new Uint8Array(32).fill(86);
   const actorDid = createMidnightDid("browser-did-authentication");
@@ -46,6 +46,8 @@ test("both browser apps use real same-origin DID HTTP sessions without a role gr
   ]);
   const requests = [];
   const listedFor = [];
+  let heldList;
+  let notifyHeldListStarted;
   const revokedPurposes = [];
   const server = createServer((request, response) => {
     const pathname = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
@@ -101,9 +103,14 @@ test("both browser apps use real same-origin DID HTTP sessions without a role gr
       register: async () => { throw new Error("Not used in this browser journey"); },
       listForSubjectDid: async (subjectDid) => {
         listedFor.push(subjectDid);
+        if (heldList !== undefined) {
+          notifyHeldListStarted();
+          await heldList;
+        }
         return subjectDid === actorDid ? [{
-          applicationId: "application:issuer:mine:v1", authorizationId: "auth:issuer:mine:v1",
-          role: "issuer", status: "pending", createdAt: "2026-11-14T00:00:00.000Z",
+          subjectDid: actorDid,
+          summary: { applicationId: "application:issuer:mine:v1", authorizationId: "auth:issuer:mine:v1",
+            role: "issuer", status: "pending", createdAt: "2026-11-14T00:00:00.000Z" },
         }] : [];
       },
     };
@@ -158,6 +165,9 @@ test("both browser apps use real same-origin DID HTTP sessions without a role gr
     await expect(applicationId).toBeHidden();
     await applicationCard.getByText("Request identifiers").click();
     await expect(applicationId).toBeVisible();
+    if (process.env.TR_UI_CAPTURE === "1") {
+      await page.locator("#my-applications").screenshot({ path: testInfo.outputPath("applicant-my-applications.png") });
+    }
     const viewport = page.viewportSize();
     await page.setViewportSize({ width: 320, height: 900 });
     await page.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
@@ -171,6 +181,34 @@ test("both browser apps use real same-origin DID HTTP sessions without a role gr
       .toHaveValue("application:issuer:mine:v1");
     assert.deepEqual(listedFor, [actorDid]);
     assert.equal(requests.filter((request) => request === "GET /v1/pending-applications").length, 1);
+    let releaseHeldList;
+    heldList = new Promise((resolve) => { releaseHeldList = resolve; });
+    const heldListStarted = new Promise((resolve) => { notifyHeldListStarted = resolve; });
+    await page.getByRole("button", { name: "Refresh my applications" }).click();
+    await heldListStarted;
+    const staleResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === "/v1/pending-applications" && response.request().method() === "GET");
+    await page.getByRole("button", { name: "Recheck", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Load my applications" })).toBeVisible();
+    releaseHeldList();
+    await staleResponse;
+    await expect(page.locator("#my-applications .application-item")).toHaveCount(0);
+    heldList = undefined;
+    await page.getByRole("button", { name: "Load my applications" }).click();
+    await expect(page.locator("#my-applications .application-item")).toHaveCount(1);
+    options.pendingApplicationRegistration = undefined;
+    await page.getByRole("button", { name: "Refresh my applications" }).click();
+    await expect(page.locator("#my-applications [role='alert']"))
+      .toContainText("Use Continue pending request with the ID from your receipt");
+    await expect(page.locator("#my-applications .application-item")).toHaveCount(0);
+    await expect(page.locator("#my-applications")).not.toContainText("No registered requests");
+    const actorAuthentication = options.actorAuthentication;
+    options.actorAuthentication = undefined;
+    await page.getByRole("button", { name: "Load my applications" }).click();
+    await expect(page.locator("#my-applications [role='alert']"))
+      .toContainText("Sign out, then sign in again in Workspace settings");
+    await expect(page.locator("#my-applications .application-item")).toHaveCount(0);
+    options.actorAuthentication = actorAuthentication;
     await page.getByRole("link", { name: "Workspace settings" }).first().click();
     await page.getByRole("button", { name: "Sign out" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText("A digital identity signer is connected");

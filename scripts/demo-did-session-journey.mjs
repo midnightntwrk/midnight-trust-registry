@@ -71,8 +71,9 @@ try {
   serverOptions.pendingApplicationRegistration = {
     register: async () => { throw new Error("Not used by the private-list journey"); },
     listForSubjectDid: async (subjectDid) => subjectDid === actorDid ? [{
-      applicationId: "application:issuer:headless:v1", authorizationId: "auth:issuer:headless:v1",
-      role: "issuer", status: "pending", createdAt: new Date(now).toISOString(),
+      subjectDid: actorDid,
+      summary: { applicationId: "application:issuer:headless:v1", authorizationId: "auth:issuer:headless:v1",
+        role: "issuer", status: "pending", createdAt: new Date(now).toISOString() },
     }] : [],
   };
   const post = (route, body, requestOrigin = origin) => fetch(`${origin}${route}`, {

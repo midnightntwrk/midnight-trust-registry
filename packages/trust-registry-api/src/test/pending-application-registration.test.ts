@@ -126,9 +126,12 @@ describe("pending application registration transition", () => {
     const port = new InMemoryPendingApplicationRegistrationPort(state, evidenceVerifierDid, resolver);
     const accepted = await port.register(requestFor(state), now);
     expect(await port.listForSubjectDid(applicantDid)).toEqual([{
-      applicationId: accepted.binding.applicationId,
-      authorizationId: accepted.authorizationId,
-      role: "auditor", status: "pending", createdAt: now.toISOString(),
+      subjectDid: applicantDid,
+      summary: {
+        applicationId: accepted.binding.applicationId,
+        authorizationId: accepted.authorizationId,
+        role: "auditor", status: "pending", createdAt: now.toISOString(),
+      },
     }]);
     expect(await port.listForSubjectDid(createMidnightDid("other-applicant"))).toEqual([]);
   });

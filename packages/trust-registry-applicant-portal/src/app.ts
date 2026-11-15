@@ -353,6 +353,7 @@ export const createApplicantPortalApp = (
   let currentAuthorizationRequestId = 0;
   let currentRecognitionRequestId = 0;
   let inspectionRequestId = 0;
+  let myApplicationsRequestId = 0;
   let recognitionRequestId = 0;
   let recordSearchQuery = "";
   let demoSelection: PortalSubmissionTarget = "issuer";
@@ -384,8 +385,16 @@ export const createApplicantPortalApp = (
   };
 
   const setState = (next: Partial<AppState>) => {
+    const priorDidToken = state.didSession?.accessToken;
     Object.assign(state, next);
     if (Object.hasOwn(next, "didSession")) {
+      if (priorDidToken !== state.didSession?.accessToken) {
+        myApplicationsRequestId += 1;
+        state.myApplications = undefined;
+        state.myApplicationsToken = undefined;
+        state.myApplicationsBusy = false;
+        state.myApplicationsError = undefined;
+      }
       if (didExpiryTimer !== undefined) clearTimeout(didExpiryTimer);
       didExpiryTimer = undefined;
       if (state.didSession !== undefined) {
@@ -466,16 +475,25 @@ export const createApplicantPortalApp = (
   const loadMyApplications = async () => {
     const session = liveDidSession();
     if (session === undefined || state.myApplicationsBusy) return;
+    const requestId = ++myApplicationsRequestId;
     const apiBase = state.apiBase;
     setState({ myApplicationsBusy: true, myApplicationsError: undefined });
     try {
       const entries = await client().listMyApplications();
-      if (state.apiBase !== apiBase || liveDidSession()?.accessToken !== session.accessToken) return;
+      if (requestId !== myApplicationsRequestId || state.apiBase !== apiBase
+        || liveDidSession()?.accessToken !== session.accessToken) return;
       setState({ myApplications: entries, myApplicationsToken: session.accessToken,
         myApplicationsBusy: false });
     } catch (error) {
-      if (state.apiBase !== apiBase || liveDidSession()?.accessToken !== session.accessToken) return;
-      setState({ myApplicationsBusy: false, myApplicationsError: formatApiError(error) });
+      if (requestId !== myApplicationsRequestId || state.apiBase !== apiBase
+        || liveDidSession()?.accessToken !== session.accessToken) return;
+      const message = error instanceof TrustRegistryApplicantPortalApiError && error.problem.status === 503
+        ? "This host cannot show your applications right now. Use Continue pending request with the ID from your receipt."
+        : error instanceof TrustRegistryApplicantPortalApiError && error.problem.status === 403
+          ? "Your sign-in no longer opens this private list. Sign out, then sign in again in Workspace settings."
+          : formatApiError(error);
+      setState({ myApplications: undefined, myApplicationsToken: undefined,
+        myApplicationsBusy: false, myApplicationsError: message });
     }
   };
 
@@ -838,10 +856,13 @@ export const createApplicantPortalApp = (
 
   const refreshInspection = async (flash?: string) => {
     const requestId = ++inspectionRequestId;
+    myApplicationsRequestId += 1;
     const apiBase = state.apiBase;
     currentAuthorizationRequestId += 1;
     currentRecognitionRequestId += 1;
     setState({ loading: true, error: undefined, inspection: undefined,
+      myApplications: undefined, myApplicationsToken: undefined, myApplicationsBusy: false,
+      myApplicationsError: undefined,
       currentAuthorizationBusy: false, currentAuthorizationResult: undefined, currentAuthorizationError: undefined,
       currentRecognitionBusy: false, currentRecognitionResult: undefined, currentRecognitionError: undefined,
       ...(flash === undefined ? {} : { flash }) });

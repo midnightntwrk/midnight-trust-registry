@@ -1108,7 +1108,7 @@ export const createAdminConsoleApp = (
         ${getReviewActions(card.status).length === 0 ? "" : `<section class="review-checks" aria-labelledby="review-checks-heading">
           <h3 id="review-checks-heading">Check before acting</h3>
           <ul>
-            <li><strong>Identity</strong><span>DID named; current key control is not verified here.</span></li>
+            <li><strong>Identity</strong><span>The applicant's digital identity is listed, but key control is not verified here.</span></li>
             <li><strong>Eligibility</strong><span>Inspect proof and status source; this view does not verify the presentation.</span></li>
             <li><strong>Authority</strong><span>Check membership, signatures, policy, and quorum separately. Sign-in is not a vote.</span></li>
           </ul>

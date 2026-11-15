@@ -318,7 +318,7 @@ body { background: radial-gradient(circle at 100% 0, #dce9e4 0, transparent 26re
 .application-item-heading strong { font-size: 1rem; text-transform: capitalize; }
 .application-state { padding: 0.25rem 0.55rem; border-radius: 999px; background: var(--midnight-blue-soft); color: var(--midnight-blue); font-size: 0.75rem; font-weight: 700; }
 .application-item p { margin: 0.5rem 0; color: var(--midnight-muted); font-size: 0.85rem; }
-.application-item-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.2rem; }
+.application-item-actions { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.5rem 1.2rem; }
 .application-item-actions a, .application-identifiers summary { color: var(--midnight-blue); font-size: 0.85rem; font-weight: 700; }
 .application-identifiers { min-width: 0; }
 .application-identifiers summary { cursor: pointer; }

@@ -43,13 +43,21 @@ export type PendingApplicationRecord = z.infer<typeof PendingApplicationRecordSc
 
 export type PendingApplicationSummary = z.infer<typeof PendingApplicationSummarySchema>;
 
-export function summarizePendingApplication(record: PendingApplicationRecord): PendingApplicationSummary {
+export type PendingApplicationScopedSummary = {
+  subjectDid: string;
+  summary: PendingApplicationSummary;
+};
+
+export function summarizePendingApplication(record: PendingApplicationRecord): PendingApplicationScopedSummary {
   return {
-    applicationId: record.binding.applicationId,
-    authorizationId: record.authorizationId,
-    role: record.binding.role,
-    status: record.status,
-    createdAt: record.createdAt,
+    subjectDid: record.binding.subjectDid,
+    summary: {
+      applicationId: record.binding.applicationId,
+      authorizationId: record.authorizationId,
+      role: record.binding.role,
+      status: record.status,
+      createdAt: record.createdAt,
+    },
   };
 }
 
@@ -62,7 +70,7 @@ export type PendingApplicationRegistrationState = {
 /** The host owns atomic persistence and must use the same pending records for VP intake. */
 export interface PendingApplicationRegistrationPort {
   register(request: SignedPendingApplication, now: Date): Promise<PendingApplicationRecord>;
-  listForSubjectDid?(subjectDid: string): Promise<readonly PendingApplicationSummary[]>;
+  listForSubjectDid?(subjectDid: string): Promise<readonly PendingApplicationScopedSummary[]>;
 }
 
 export class PendingApplicationRegistrationRejectedError extends Error {
@@ -218,7 +226,7 @@ export class InMemoryPendingApplicationRegistrationPort implements PendingApplic
     return record === undefined ? null : structuredClone(record);
   }
 
-  async listForSubjectDid(subjectDid: string): Promise<readonly PendingApplicationSummary[]> {
+  async listForSubjectDid(subjectDid: string): Promise<readonly PendingApplicationScopedSummary[]> {
     await this.tail;
     return this.state.applications.filter(
       (item) => item.binding.subjectDid === subjectDid,

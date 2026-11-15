@@ -6,6 +6,7 @@ The 0.1.0 reference profile is a **target**, not a release conformance claim. Th
 | --- | --- |
 | Issuer, verifier, auditor, maintainer lifecycle | Compact circuits and simulator/integration coverage; HTTP governed actions require injected ports |
 | DID/VC application evidence | Midnight DID and VC/VP fixture-backed flows; private HTTP intake requires trusted application port |
+| V2 phase-0 digital identity sign-in | Optional same-origin DID challenge-response with an external signer and resolver; identity-only session, no VP eligibility or registry role grant. Not in packaged 0.1.0. |
 | Maintainer signatures | Policy-bound JubJub Schnorr checked by Compact in simulator paths |
 | Epoch and historical evidence | Commitments, bundles, query/client projections; caller must authenticate a finalized ledger anchor independently |
 | External recognition | Scoped evidence and admission paths; no implicit federation or cross-registry authority |

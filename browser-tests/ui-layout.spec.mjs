@@ -115,6 +115,8 @@ for (const app of ["applicant-portal", "admin-console"]) {
       await expect(page).toHaveURL(`${server.base}${server.packagedPath}registry-manual.html`);
       await expect(page.locator("main h1")).toContainText("Registry Manual");
       await expect(page.getByText("Digital identity sign-in needs a connected signer and an app served by the same host as its registry API", { exact: false })).toBeVisible();
+      await expect(page.locator("main")).toContainText("Local practice sign-in uses sample identity services");
+      await expect(page.locator("main")).toContainText("a general user-facing eligibility check is still planned");
       await page.setViewportSize({ width: 390, height: 844 });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       await expectNoWcagViolations(page, `${app} bundled Manual at 390px`);
@@ -477,15 +479,32 @@ for (const appName of ["applicant-portal", "admin-console"]) {
         } else {
           await route.fulfill({ status: 201, json: {
             actorDid, actorKeyId, purpose: appName === "admin-console" ? "maintainer-session" : "applicant-session",
-            accessToken: `trsa_${"a".repeat(43)}`, expiresAt: new Date(Date.now() + 2_000).toISOString(),
+            accessToken: `trsa_${"a".repeat(43)}`, expiresAt: new Date(Date.now() + 5_000).toISOString(),
           } });
         }
       });
+      if (appName === "applicant-portal") {
+        await page.route(`${server.base}/v1/pending-applications`, async (route) => {
+          await route.fulfill({ status: 200, json: { entries: [{
+            applicationId: "application:issuer:expires:v1", authorizationId: "auth:issuer:expires:v1",
+            role: "issuer", status: "pending", createdAt: new Date().toISOString(),
+          }] } });
+        });
+      }
       await page.goto(`${server.base}${server.packagedPath}`);
       await page.getByRole("link", { name: "Workspace settings" }).first().click();
       await page.getByRole("button", { name: "Sign in with digital identity" }).click();
       await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
-      await expect(page.locator(".portal-profile-card")).toContainText("Your digital identity session expired. Sign in again.");
+      if (appName === "applicant-portal") {
+        await page.locator('.task-nav a[href="#my-applications"]').click();
+        await page.getByRole("button", { name: "Load my applications" }).click();
+        await expect(page.locator("#my-applications .application-item")).toHaveCount(1);
+        await expect(page.locator("#my-applications")).toContainText("Sign in with your digital identity", { timeout: 10_000 });
+        await expect(page.locator("#my-applications .application-item")).toHaveCount(0);
+        await expect(page.locator("#my-applications")).not.toContainText("application:issuer:expires:v1");
+        await page.getByRole("link", { name: "Workspace settings" }).first().click();
+      }
+      await expect(page.locator(".portal-profile-card")).toContainText("Your digital identity session expired. Sign in again.", { timeout: 10_000 });
       await expect(page.getByRole("button", { name: "Sign in with digital identity" })).toBeEnabled();
       await expect(page.locator(".portal-profile-card [data-did-sign-out]")).toHaveCount(0);
     } finally {

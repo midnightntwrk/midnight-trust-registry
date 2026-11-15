@@ -140,9 +140,13 @@ describe("phase-0 DID authentication HTTP", () => {
 
   it("lists only minimal request metadata for an authenticated applicant purpose", async () => {
     const listForSubjectDid = vi.fn(async (subjectDid: string) => subjectDid === actorDid ? [{
-      applicationId: "application:issuer:mine:v1", authorizationId: "auth:issuer:mine:v1",
-      role: "issuer" as const, status: "pending" as const,
-      createdAt: "2026-11-14T00:00:00.000Z",
+      subjectDid: actorDid,
+      summary: { applicationId: "application:issuer:mine:v1", authorizationId: "auth:issuer:mine:v1",
+        role: "issuer" as const, status: "pending" as const, createdAt: "2026-11-14T00:00:00.000Z" },
+    }, {
+      subjectDid: createMidnightDid("foreign-applicant"),
+      summary: { applicationId: "application:issuer:foreign:v1", authorizationId: "auth:issuer:foreign:v1",
+        role: "issuer" as const, status: "pending" as const, createdAt: "2026-11-14T00:00:00.000Z" },
     }] : []);
     await start(true, undefined, {
       register: async () => { throw new Error("not used"); }, listForSubjectDid,

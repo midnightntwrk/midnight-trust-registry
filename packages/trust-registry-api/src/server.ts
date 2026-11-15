@@ -1420,7 +1420,9 @@ export const createTrustRegistryApiServer = (
           throw jsonProblem(problemBaseUri, "pending-application-list-unavailable", 503,
             "pending application list unavailable");
         }
-        const entries = await list.call(options.pendingApplicationRegistration, subjectDid);
+        const entries = (await list.call(options.pendingApplicationRegistration, subjectDid))
+          .filter((entry) => entry.subjectDid === subjectDid)
+          .map((entry) => entry.summary);
         writeJson(response, 200, PendingApplicationListResponseSchema.parse({
           entries,
         }), false);

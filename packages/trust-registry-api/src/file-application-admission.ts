@@ -27,7 +27,7 @@ import {
   transitionPendingApplicationRegistration,
   type ArchivedApplicationObservation,
   type PendingApplicationRecord,
-  type PendingApplicationSummary,
+  type PendingApplicationScopedSummary,
   type PendingApplicationRegistrationPort,
   type VerifyArchivedApplicationObservation,
 } from "./pending-application-registration.js";
@@ -148,7 +148,7 @@ export class FileApplicationAdmissionStore implements PendingApplicationRegistra
     return record === undefined ? null : structuredClone(record);
   }
 
-  async listForSubjectDid(subjectDid: string): Promise<readonly PendingApplicationSummary[]> {
+  async listForSubjectDid(subjectDid: string): Promise<readonly PendingApplicationScopedSummary[]> {
     return (await this.readState()).applications.filter(
       (item) => item.binding.subjectDid === subjectDid,
     ).map(summarizePendingApplication);
