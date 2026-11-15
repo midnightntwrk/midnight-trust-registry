@@ -338,7 +338,8 @@ describe("private application VP exchange", () => {
     const entries = [{ applicationId: "application:issuer:mine:v1",
       authorizationId: "auth:issuer:mine:v1", role: "issuer", status: "pending",
       createdAt: "2026-11-14T00:00:00.000Z" }];
-    const fetchImpl = vi.fn(async () => Response.json({ entries })) as typeof fetch;
+    const fetchMock = vi.fn(async () => Response.json({ entries }));
+    const fetchImpl: typeof fetch = fetchMock;
     const unauthenticated = new TrustRegistryApplicantPortalClient("https://registry.example", fetchImpl);
     await expect(unauthenticated.listMyApplications()).rejects.toThrow("Applicant DID sign-in is required");
     expect(fetchImpl).not.toHaveBeenCalled();
@@ -349,7 +350,7 @@ describe("private application VP exchange", () => {
       method: "GET", credentials: "omit", cache: "no-store", redirect: "error",
       headers: { authorization: "Bearer private-token" },
     });
-    fetchImpl.mockResolvedValueOnce(Response.json({ entries: [{ ...entries[0], privateVp: "secret" }] }));
+    fetchMock.mockResolvedValueOnce(Response.json({ entries: [{ ...entries[0], privateVp: "secret" }] }));
     await expect(authenticated.listMyApplications()).rejects.toThrow();
   });
 
