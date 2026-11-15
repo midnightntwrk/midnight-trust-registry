@@ -1554,7 +1554,15 @@ export const createApplicantPortalApp = (
             <div class="journey-heading"><p class="eyebrow">Choose a role</p><h2 id="journey-heading">What do you need access to?</h2>
               <p>See the requirements before you submit.</p>
             </div>
-            <p class="journey-prerequisite">${state.inspection === undefined ? "Connect to a registry source before preparing a governed request." : privateHost ? "You can prepare a request here. The host must authenticate your session before submission." : "Local connection: prepare only. Submission requires an authenticated same-origin host."}</p>
+            <p class="journey-prerequisite">${state.inspection === undefined
+              ? "Connect to a registry source before preparing a governed request."
+              : !privateHost
+                ? "Local connection: prepare only. Submission requires an authenticated same-origin host."
+                : activeDidSession === undefined
+                  ? didSignerAvailable
+                    ? 'Before private evidence, <a href="#connection-details">sign in with DID in Workspace settings</a>. You can prepare a request now; sign-in does not grant a role.'
+                    : 'You can prepare a request here. For private evidence, ask your host to connect a DID signer, then <a href="#connection-details">sign in in Workspace settings</a>.'
+                  : "DID identity confirmed for this session. Eligibility evidence and governed approval are still required before a role becomes active."}</p>
             <div class="journey-cards">
               <a href="#issuer-request" data-open-workflow="issuer-request"><span class="role-mark" aria-hidden="true">I</span><strong>Issue credentials</strong><span>Request issuer authority for a specific scope.</span><em>View requirements &rarr;</em></a>
               <a href="#verifier-request" data-open-workflow="verifier-request"><span class="role-mark" aria-hidden="true">V</span><strong>Verify presentations</strong><span>Request verifier authority for governed checks.</span><em>View requirements &rarr;</em></a>

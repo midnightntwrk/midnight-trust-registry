@@ -349,14 +349,18 @@ test("applicant Settings signs in with DID without showing a registry role", asy
     });
     await page.goto(`${server.base}${server.packagedPath}`);
     await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    await expect(page.locator(".journey-prerequisite")).toContainText("sign in with DID in Workspace settings");
     await expect(page.locator(".hero-sign-in")).toHaveText("Sign in with DID →");
     await page.locator(".hero-sign-in").click();
     await page.getByRole("button", { name: "Sign in with DID" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
     await expect(page.locator(".portal-profile-card")).toContainText("Registry roles and VP eligibility are checked separately");
+    await expect(page.locator(".journey-prerequisite")).toContainText("DID identity confirmed for this session");
+    await expect(page.locator(".journey-prerequisite")).toContainText("Eligibility evidence and governed approval are still required");
     await expect(page.locator(".content [data-did-sign-in]")).toHaveCount(0);
     await page.getByRole("button", { name: "Sign out" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText("A DID signer is available");
+    await expect(page.locator(".journey-prerequisite")).toContainText("sign in with DID in Workspace settings");
     expect(revokeCalls).toBe(1);
     await page.getByRole("button", { name: "Sign in with DID" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
@@ -364,6 +368,21 @@ test("applicant Settings signs in with DID without showing a registry role", asy
     await page.getByRole("button", { name: "Recheck connection" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText("A DID signer is available");
     await expect(page.locator(".portal-profile-card [data-did-sign-out]")).toHaveCount(0);
+  } finally {
+    await page.close();
+    await server.close();
+  }
+});
+
+test("applicant role guidance explains a missing DID signer", async ({ page, allowedLocalOrigins }) => {
+  const server = await serveApp("applicant-portal");
+  try {
+    allowedLocalOrigins.add(server.base);
+    await page.goto(`${server.base}${server.packagedPath}`);
+    await expect(page.locator(".journey-prerequisite")).toContainText("ask your host to connect a DID signer");
+    await page.locator(".journey-prerequisite a").click();
+    await expect(page.locator(".portal-profile-card")).toContainText("No DID signer is connected");
+    await expect(page.locator("[data-did-sign-in]")).toBeDisabled();
   } finally {
     await page.close();
     await server.close();
