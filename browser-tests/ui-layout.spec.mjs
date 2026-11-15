@@ -184,6 +184,24 @@ test("admin describes a healthy empty fixture as empty rather than unavailable",
   }
 });
 
+test("applicant keeps an empty fixture distinct from an unavailable source", async ({ page, allowedLocalOrigins }) => {
+  const server = await serveApp("applicant-portal", { noIssuers: true });
+  try {
+    allowedLocalOrigins.add(server.base);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
+    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+    await expect(page.locator(".source-panel")).not.toContainText("No trust decision is available");
+    await expect(page.locator("#trust-records")).not.toContainText("Local demo issuer");
+    await expect(page.locator(".journey-cards")).toBeVisible();
+    await expectNoWcagViolations(page, "applicant healthy empty fixture at 1440px");
+    expect(server.requests.some((request) => request.startsWith("POST "))).toBe(false);
+  } finally {
+    await page.close();
+    await server.close();
+  }
+});
+
 test("applicant role cards focus one governed request without submitting it", async ({ page, allowedLocalOrigins }, testInfo) => {
   const server = await serveApp("applicant-portal");
   try {
@@ -314,6 +332,52 @@ test("admin keyboard selection keeps the current record and detail in sync", asy
 });
 
 for (const app of ["admin-console", "applicant-portal"]) {
+  test(`${app} shows a visible desktop focus ring from keyboard navigation`, async ({ page, allowedLocalOrigins }, testInfo) => {
+    const server = await serveApp(app);
+    try {
+      allowedLocalOrigins.add(server.base);
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
+      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await page.keyboard.press("Tab");
+      const firstTask = page.locator(".task-nav a").first();
+      await expect(firstTask).toBeFocused();
+      const focusStyle = await firstTask.evaluate((element) => {
+        const style = getComputedStyle(element);
+        const channels = (value) => {
+          const match = /^rgba?\((\d+),\s*(\d+),\s*(\d+)/u.exec(value);
+          if (match === null) throw new Error(`Expected RGB color, got ${value}`);
+          return match.slice(1).map(Number);
+        };
+        const luminance = (value) => {
+          const [red, green, blue] = channels(value).map((channel) => {
+            const normalized = channel / 255;
+            return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+          });
+          return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+        };
+        const foreground = luminance(style.outlineColor);
+        const background = luminance(getComputedStyle(element.closest(".task-nav")).backgroundColor);
+        return {
+          visible: element.matches(":focus-visible"),
+          width: parseFloat(style.outlineWidth),
+          contrast: (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05),
+          clipped: element.getBoundingClientRect().width <= 0 || element.getBoundingClientRect().height <= 0,
+        };
+      });
+      expect(focusStyle.visible).toBe(true);
+      expect(focusStyle.width).toBeGreaterThanOrEqual(2);
+      expect(focusStyle.contrast, JSON.stringify(focusStyle)).toBeGreaterThanOrEqual(3);
+      expect(focusStyle.clipped).toBe(false);
+      if (process.env.TR_UI_CAPTURE === "1") {
+        await page.screenshot({ path: testInfo.outputPath(`${app}-desktop-keyboard-focus.png`) });
+      }
+    } finally {
+      await page.close();
+      await server.close();
+    }
+  });
+
   test(`${app} keeps fixture shortcuts behind the loopback demo presentation flag`, async ({ page, allowedLocalOrigins }) => {
     const server = await serveApp(app);
     try {
@@ -702,7 +766,7 @@ for (const [app, title] of [
     const server = await serveApp(app);
     try {
       allowedLocalOrigins.add(server.base);
-      for (const width of [1440, 390]) {
+      for (const width of [1440, 768, 390]) {
         await page.setViewportSize({ width, height: 900 });
         await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
         await expect(page.locator(".source-badge")).toHaveText("Local fixture");

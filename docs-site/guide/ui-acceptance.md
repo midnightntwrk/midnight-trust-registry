@@ -107,11 +107,12 @@ repeatable UI acceptance evidence:
 | --- | --- |
 | Browse fixture records and review a bounded admin detail; keyboard selection retains focus and identifies the current card and detail pane | `ui-layout.spec.mjs` |
 | Search the fixture portal by DID, see an explicit no-match state, and return to a visible record; keep the admin signing controls collapsed until requested | `ui-layout.spec.mjs` |
-| Submit a label-only issuer or recognition demo application in the portal, approve and activate it in admin, then read the active record back in the portal | `demo-application-handoff.spec.mjs` (two cross-app fixture journeys) |
+| Submit a label-only issuer or recognition demo application in the portal, approve and activate it in admin, then read the active record back in the portal; audit the proposed review and active applicant states for automated WCAG A/AA violations | `demo-application-handoff.spec.mjs` (two cross-app fixture journeys) |
 | Identify fixture-only admin actions before clicking, and confirm the exact record without implying an on-chain grant | `demo-application-handoff.spec.mjs`, admin model and app tests |
 | Choose issuer, verifier, auditor, or maintainer and complete challenge-bound evidence admission with an external signature | `applicant-portal.spec.mjs` (four role cases) |
 | Expose applicant source and historical/evidence failures as alert regions, and accepted application, evidence, recognition-recovery, and admin-action receipts as polite status regions; audit the partial-list failure at desktop width without inventing a zero count | `ui-layout.spec.mjs`, `applicant-portal.spec.mjs`, `recognition-evidence.spec.mjs`, `admin-console.spec.mjs`, applicant unit tests |
 | Choose each applicant role card by keyboard, keep only its governed form open, expose expanded state to assistive technology, retain the selected role after recheck, and make no submission merely by choosing | `ui-layout.spec.mjs` |
+| Reach the first desktop task by Tab in both apps and expose a keyboard focus outline with at least 3:1 contrast against the dark navigation | `ui-layout.spec.mjs` |
 | Explain application versus authorization IDs and the DID key in each opened role form; show why signing preparation is disabled on a cross-origin connection. Keep an expanded verifier form within 320 px at 200% root text size and capture its 390 px appearance for visual review | `ui-layout.spec.mjs` |
 | Confirm an issuer's proposed, authorized, active, suspended, revoked, and archived transitions with refreshed board status | `admin-console.spec.mjs` (fixture review journey) |
 | Confirm fixture epoch publication, read back the exact new epoch, then submit an externally signed workspace intent against the refreshed context | `admin-console.spec.mjs` (fixture governance journey) |
@@ -142,11 +143,28 @@ repeatable UI acceptance evidence:
 | Reflow at 200% root text size on 320/390 px viewports without page-level horizontal scroll or non-control internal overlap; check workspace, advanced, and settings views at 320 px. Long text inside native inputs may scroll within the control. | `ui-layout.spec.mjs` |
 | Reflow local-ledger exact lookup at 320 px and 200% root text size in both apps, including returned records and expanded technical details; keep API-claim labels and avoid page-level overflow. Raw JSON scrolls inside a bounded, keyboard-focusable region rather than becoming a wall of broken words | `local-lookup.spec.mjs` |
 | Check browser-computed normal-text contrast for the brand lockup, navigation, source badge, and primary/secondary actions in both apps | `ui-layout.spec.mjs` (selected solid surfaces, at least 4.5:1) |
-| Audit rendered workspace, expanded workflow, settings, and unavailable-source views, plus 390 px local-ledger results and settings, for automated WCAG 2.0/2.1/2.2 A/AA violations | `ui-layout.spec.mjs`, `local-lookup.spec.mjs` (`@axe-core/playwright`, no external browser requests) |
+| Audit rendered workspace, expanded workflow, settings, healthy-empty applicant, unavailable-source, proposed-review, and active-applicant views, plus 390 px local-ledger results and settings, for automated WCAG 2.0/2.1/2.2 A/AA violations | `ui-layout.spec.mjs`, `local-lookup.spec.mjs`, `demo-application-handoff.spec.mjs` (`@axe-core/playwright`, no external browser requests) |
 | Serve the shared Midnight browser icon from each built app without a missing-resource response | `ui-layout.spec.mjs` |
 | Deny unapproved browser egress and discard stale local checkpoint responses | `browser-egress-control.spec.mjs`, `admin-console.spec.mjs` |
 
 ### Visual review record
+
+On 2026-11-14, an agent reviewed fresh 1440 px admin and applicant full-page
+fixture captures, including an issuer proposal awaiting a demo decision. The
+admin's selected detail stayed separate from the review list, the applicant's
+role choices preceded advanced tools, and the proposal's controls and source
+caveat were visible without overlap. A source-matched prebuilt runtime in a
+disposable worktree passed 59 focused browser cases, then the full 85-case
+Chromium browser lane with desktop focus-ring checks and the two-port startup
+path. Docs/OpenAPI checks and the VitePress build passed. This is
+agent-run visual and automated accessibility evidence, not an independent
+assistive-technology trial, a full clean Compact build, or deployed E2E.
+
+A subsequent computed-style check found the blue keyboard outline on the
+black sidebar at only 2.29:1 contrast. The shared dark-navigation outline now
+uses white while the blue outline remains on light surfaces. The 3:1 desktop
+sidebar contrast regression passes in both apps; this sampled indicator check
+does not replace the independent screen-reader and keyboard-usability trial.
 
 On 2026-11-06, an agent inspected the 1440 px admin capture after an auditor
 list failed while an issuer record had previously been visible. The board
