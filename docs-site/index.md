@@ -7,8 +7,8 @@ hero:
   tagline: Governed issuer, verifier, and auditor authorization for the Midnight identity ecosystem.
   actions:
     - theme: brand
-      text: Understand the registry
-      link: /guide/
+      text: Read the Registry Manual
+      link: /guide/registry-manual
     - theme: alt
       text: Run the local demo
       link: /guide/quickstart
@@ -25,7 +25,7 @@ features:
     details: Simulator demos and isolated-ledger observations are different; neither alone qualifies a deployed offline release.
 ---
 
-The registry answers **who may do what, for which scope, under which policy, at which observed state**. It does not issue VCs, resolve DIDs, hold personal data, or replace credential status checks.
+The registry answers **who may do what, for which scope, under which policy, at which observed state**. It does not issue VCs, resolve DIDs, hold personal data, or replace credential status checks. New users should [read the Registry Manual](./guide/registry-manual.md) before choosing an application or review task.
 
 For a quick evaluation or a self-hosted install, [start with the two-path adoption guide](./guide/adoption.md).
 For a self-hosted install, follow the [standalone first run](./guide/standalone.md),

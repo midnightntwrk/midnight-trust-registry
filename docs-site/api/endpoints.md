@@ -36,6 +36,8 @@ Timestamped evidence export uses the same selector and snapshot as the temporal 
 
 | Method and path | Availability |
 | --- | --- |
+| `POST /v1/actor-authentication/challenges`, `/sessions` | Opt-in DID-key challenge and one-use verification; returns a short-lived bearer session, not a registry role |
+| `GET`, `DELETE /v1/actor-authentication/session` | Read DID identity and purpose, or revoke the process-local bearer session |
 | `POST /v1/pending-applications` | Signed pending registration via injected trusted port |
 | `POST /v1/application-evidence/{id}/challenges`, `/submissions` | Authenticated, one-use VP challenge/intake via `applicationVp` port |
 | `GET /v1/application-evidence/{id}/binding`, `/receipt` | Applicant-authorized binding and accepted redacted receipt |
@@ -48,6 +50,19 @@ Timestamped evidence export uses the same selector and snapshot as the temporal 
 | `POST /v1/governed/policy/maintainer-recovery/{prepare,submit}` | Caller supplies a recovery-evidence commitment; the old quorum signs one atomic policy revision and target suspension; target cannot sign |
 | `POST /v1/governed/epochs/prepare`, `/publish` | Governed epoch signing/publication port |
 | `GET /v1/registry/mutation-context`, `POST /v1/mutations` | Workspace revision, epoch, host evaluation time, and DID-signed intent; resolver required for writes |
+
+All four `application-evidence/{id}` routes call the embedding host's
+`authorizeRequest` before reading the request body or returning private data.
+The host must return the verified applicant DID; an empty identity or a DID
+different from the pending application's subject is rejected, including for
+binding, submission, and accepted-receipt reads. An optional phase-0 DID
+challenge/session API is available to an embedding host, but the packaged CLI
+does not enable it and it does not automatically wire the `authorizeRequest`
+callback. If the host enables both services, VP intake requires an
+applicant-purpose bearer session whose DID matches the callback's verified
+DID. The host must still check the exact pending subject and VP policy. A demo header or
+caller-supplied DID is not a trusted implementation of this callback; see the
+[0.2.0 actor adoption plan](https://github.com/midnightntwrk/midnight-trust-registry/blob/develop/docs/plans/milestone-0.2.0-actor-adoption.md).
 
 The `governed` proposal roles are `issuer`, `verifier`, `auditor`, `maintainer`, and `recognition`; recognition has a receipt-gated prepare/submit route. The action route supports `approve`, `activate`, `suspend`, `revoke`, and `archive` under the injected governed port. Archiving a proposed record is a quorum-signed denial that retains its history without inventing approval or activation timestamps. Any absent port yields `503` rather than a workspace mutation. Proposals bind the evidence-verifier key and policy; action signatures bind the current sequence and predecessor event.
 

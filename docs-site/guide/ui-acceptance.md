@@ -1,7 +1,7 @@
 # UI acceptance for the local workspace
 
 The admin console and applicant portal use one Midnight visual language: Outfit,
-the approved logo, black/white/blue tokens, a shared task navigation frame, and
+the approved logo, calm teal and mist tokens, a shared left task rail, and
 explicit source cues. The source cue is **Local fixture**, **API claim**, or
 **Unavailable**. It never labels a browser response as independently finalized.
 
@@ -11,12 +11,23 @@ The single [Midnight Trust Registry UX Pilot canvas](https://uxpilot.ai/a/ui-des
 contains the shared UI system, admin review workspace, applicant portal, mobile
 portal, workspace settings, and exact local-ledger lookup. These are design
 proposals, not evidence that a workflow is implemented or finalized.
+The [V2 canvas](https://uxpilot.ai/a/ui-design?page=rkHJ3LsTIYP0TaOZYr2k)
+is the current direction for the calmer applicant, maintainer, sign-in, and
+Registry Manual experiences. The shared left rail, palette, and concise
+applicant role choices are implemented locally; its DID sign-in, VP readiness,
+and dedicated application inbox remain concepts, not shipped behavior.
+
+Both static app bundles include an offline Registry Manual generated from the
+same Markdown source as the docs site. The sidebar links to that local copy;
+its return link goes back to the current workspace. Links to other chapters
+are plain text in the embedded copy because those chapters are not bundled.
+The full docs site remains the source for linked chapters and updates.
 
 | Design intent | Local implementation and acceptance |
 | --- | --- |
 | Lead with the next task, not a protocol field | The default portal leads to governed role preparation. On loopback, `demo=1` opts into the label-only fixture application ahead of that path. Admin headings distinguish pending decisions from a quiet review workspace. API editing lives in the separate Workspace settings view. `ui-layout.spec.mjs` and `demo-application-handoff.spec.mjs` check this hierarchy. |
-| Explain the applicant path before exposing forms | Four compact role choices lead to a role-specific disclosure. Choosing another card closes the previous role form and keeps the chosen card visibly selected; the selected form can also be collapsed. On a 390 px viewport each role stays under 95 px high and the full introductory section stays under 1050 px. A four-step guide explains choice, redacted evidence, external signing, and retaining the receipt; a prerequisite card calls out DID, exact scope, external keys, and authenticated host. Each role form explains the two IDs and DID key before the fields, and an in-form reason accompanies disabled preparation on a cross-origin connection. A receipt is not approval, and opening a role does not submit it. |
-| One Midnight visual language | Both apps use the approved logo, Outfit, black/white/blue tokens, and shared navigation/status components. The header groups the logo, Trust Registry title, and current portal/console context in one lockup instead of separating them across the bar. |
+| Explain the applicant path before exposing forms | Four compact role choices lead to a role-specific disclosure. Choosing another card closes the previous role form and keeps the chosen card visibly selected; the selected form can also be collapsed. On a 390 px viewport each role stays under 95 px high and the full introductory section stays under 1050 px. Optional “How applications work” help explains choice, redacted evidence, external signing, and retaining the receipt; a prerequisite card calls out DID, exact scope, external keys, and authenticated host. Each role form explains the two IDs and DID key before the fields, and an in-form reason accompanies disabled preparation on a cross-origin connection. A receipt is not approval, and opening a role does not submit it. |
+| One Midnight visual language | Both apps use the approved logo, Outfit, muted teal/mist tokens, and shared navigation/status components. On desktop the Midnight lockup and task links occupy one continuous left rail; on mobile the same lockup precedes the native Menu. |
 | Compact discovery and a bounded review detail | The fixture portal searches visible active records by name, role, scope, or DID without changing registry state. Empty lifecycle lanes are omitted from the admin view; selected detail stays beside the list on desktop and below it on mobile. The detail explains its source and lifecycle before the decision summary. Proposed and authorized records label their trust-level field as requested or authorized rather than displaying a bare value that could be mistaken for an approval decision. Exact IDs and external-signature preparation are separate disclosures. |
 | Truthful source and certainty | A visible source strip identifies fixture, API claim, or unavailable state and offers Recheck. Navigation follows the source: optional fixture demo and browse, exact lookup for local-ledger API claims, connection recovery when unavailable. Local-ledger exact lookups precede membership preparation in DOM and visual order; unsupported broad lists are explained once, not shown as four failures or empty trust. The admin hero does not present counts of fetched exact results as registry-wide lifecycle totals; the applicant hero omits unavailable list totals and labels its epoch as API-reported. Actual failed fixture lists still show unavailable warnings. Empty fixture record categories are summarized instead of rendered as large cards; evidence/recovery tools are grouped under Advanced. Epoch and technical identity stay in details. No fixture record is called final. |
 | Mobile and tablet task access | The desktop sidebar becomes a native keyboard-operable Menu at narrow widths. At 768 px, the portal keeps the full registry name on a separate line above compact metrics so governed requests begin in the first viewport; on small phones it omits the nonessential snapshot card so the role path appears sooner. Source status and Recheck remain visible. |
@@ -132,7 +143,7 @@ repeatable UI acceptance evidence:
 | Show an unavailable auditor list as unavailable rather than zero, keep loaded issuers visible, and recover the lane after recheck | `ui-layout.spec.mjs` (controlled partial-failure fixture) |
 | Fail closed in admin when one review list fails: clear previously visible records and actions, announce the error, then restore records after a successful recheck; distinguish that failure from a healthy, genuinely empty fixture | `ui-layout.spec.mjs` (controlled partial-failure and empty fixtures) |
 | During Recheck, label the admin's last-loaded records as potentially stale with actions paused, hide portal records until the response arrives, then show an offline error without stale trust data and recover on a later successful check | `ui-layout.spec.mjs` (held health response, both apps) |
-| Show an operable Menu beside the brand lockup in one row at the default 320 px mobile size, before the hero; allow reflow at text zoom. Align the task sidebar with the hero on desktop; place fixture admin review counts beside the task introduction on wide screens and ahead of source details on mobile | `ui-layout.spec.mjs` (fresh-page geometry assertions) |
+| Show an operable Menu beside the brand lockup in one row at the default 320 px mobile size, before the main content; allow reflow at text zoom. Stack the brand lockup above task navigation in the desktop left rail, with the main work area starting beside it; place fixture admin review counts beside the task introduction on wide screens and ahead of source details on mobile | `ui-layout.spec.mjs` (fresh-page geometry assertions) |
 | Reject an external endpoint override on packaged same-origin admin and portal paths while preserving the authenticated-host warning | `ui-layout.spec.mjs` |
 | Switch an editable development endpoint between two loopback fixture hosts without carrying reads to the old host or enabling cross-origin private actions | `ui-layout.spec.mjs` (both apps) |
 | Open a governed issuer request by keyboard with reduced motion and verify the three visible preparation phases; keep mobile task targets at least 44 px high | `ui-layout.spec.mjs` |

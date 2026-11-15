@@ -498,15 +498,15 @@ body {
   grid-column: 2;
   grid-row: 2;
   align-self: start;
-  border-color: var(--midnight-black);
-  background: var(--midnight-black);
+  border-color: var(--midnight-border);
+  background: var(--midnight-white);
 }
 .hero > .source-panel .source-copy,
 .hero > .source-panel .source-copy strong,
-.hero > .source-panel .source-time { color: var(--midnight-white); }
-.hero > .source-panel .source-copy span { color: #d1d1dd; }
-.hero > .source-panel .source-refresh { border-color: #67677d; background: transparent; color: var(--midnight-white); }
-.hero > .source-panel .source-refresh:hover { border-color: var(--midnight-white); }
+.hero > .source-panel .source-time { color: var(--midnight-black); }
+.hero > .source-panel .source-copy span { color: var(--midnight-muted); }
+.hero > .source-panel .source-refresh { border-color: var(--midnight-border); background: var(--midnight-blue-soft); color: var(--midnight-blue); }
+.hero > .source-panel .source-refresh:hover { border-color: var(--midnight-blue); }
 .registry-context { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.35rem 0.65rem; grid-column: 1 / -1; min-width: 0; }
 .registry-context span, .registry-context small { color: var(--midnight-muted); font-size: 0.78rem; }
 .registry-context strong { min-width: 0; overflow-wrap: anywhere; font-size: 1rem; }

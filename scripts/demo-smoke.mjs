@@ -333,25 +333,54 @@ const baseUrl = `http://127.0.0.1:${port}`;
     throw new Error(`expected registry label demo-smoke, got ${summary.registryLabel}`);
   }
 
-  const submit = await requestJson(`${baseUrl}/v1/applications`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      target: "issuer",
-      label: "passport-demo",
-    }),
-  });
-  const issuerId = submit.entry?.authorization?.authorizationId;
-  if (!issuerId) {
-    throw new Error("demo submit did not return an issuer authorization id");
+  let issuerId;
+  for (const target of ["issuer", "verifier", "auditor", "recognition"]) {
+    const submit = await requestJson(`${baseUrl}/v1/applications`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ target, label: `smoke-${target}` }),
+    });
+    const record = target === "recognition" ? submit.entry?.recognition : submit.entry?.authorization;
+    const id = target === "recognition" ? record?.recognitionId : record?.authorizationId;
+    if (!id || record.status !== "proposed") {
+      throw new Error(`${target} submit did not return a proposed record`);
+    }
+    if (target === "issuer") issuerId = id;
+
+    for (const [action, expectedStatus] of [["approve", "authorized"], ["activate", "active"]]) {
+      const result = await requestJson(`${baseUrl}/v1/applications/${target}/${encodeURIComponent(id)}/${action}`, {
+        method: "POST",
+      });
+      const updated = target === "recognition" ? result.entry?.recognition : result.entry?.authorization;
+      if (updated?.status !== expectedStatus) {
+        throw new Error(`${target} ${action} did not return ${expectedStatus}`);
+      }
+    }
+
+    const listPath = target === "recognition" ? "/v1/recognitions?status=active"
+      : `/v1/authorizations/${target}?status=active`;
+    const active = await requestJson(`${baseUrl}${listPath}`);
+    if (!active.entries.some((entry) => {
+      const value = target === "recognition" ? entry.recognition : entry.authorization;
+      return (target === "recognition" ? value?.recognitionId : value?.authorizationId) === id
+        && value.status === "active";
+    })) {
+      throw new Error(`${target} active record did not round-trip through the api`);
+    }
   }
 
-  for (const action of ["approve", "activate"]) {
-    await requestJson(`${baseUrl}/v1/applications/issuer/${issuerId}/${action}`, {
+  for (const body of [
+    { target: "issuer", label: "smoke-issuer" },
+    { target: "maintainer", label: "unsupported-fixture-maintainer" },
+  ]) {
+    const denied = await fetch(`${baseUrl}/v1/applications`, {
       method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
     });
+    if (denied.status < 400 || denied.status >= 500) {
+      throw new Error(`${body.target} negative fixture submission returned ${denied.status}`);
+    }
   }
 
   const epoch = await requestJson(`${baseUrl}/v1/epochs/publish`, {
@@ -370,7 +399,7 @@ const baseUrl = `http://127.0.0.1:${port}`;
   const activeIssuers = await requestJson(
     `${baseUrl}/v1/authorizations/issuer?status=active`,
   );
-  if (activeIssuers.total < 1) {
+  if (activeIssuers.total !== 1) {
     throw new Error("expected at least one active issuer after activation");
   }
 
@@ -479,5 +508,5 @@ if (primaryError !== undefined || cleanupProblems.length > 0) {
 }
 
 console.log(
-  `[demo-smoke] Verified CLI/API demo flow and both served UI surfaces on ephemeral loopback ports.${keepArtifacts || retainedWorkspacePath !== undefined ? ` Artifacts: ${retainedWorkspacePath ?? workspaceDir}` : ""}`,
+  `[demo-smoke] Verified issuer, verifier, auditor, and recognition fixture journeys plus both served UI surfaces on ephemeral loopback ports.${keepArtifacts || retainedWorkspacePath !== undefined ? ` Artifacts: ${retainedWorkspacePath ?? workspaceDir}` : ""}`,
 );

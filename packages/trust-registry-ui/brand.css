@@ -8,13 +8,13 @@
 
 :root {
   color-scheme: light;
-  --midnight-black: #0a0a0a;
-  --midnight-white: #ffffff;
-  --midnight-blue: #0000fe;
-  --midnight-blue-soft: #e8e9ff;
-  --midnight-surface: #f5f5f2;
-  --midnight-muted: #535666;
-  --midnight-border: #d9dbe3;
+  --midnight-black: #19383e;
+  --midnight-white: #f8faf8;
+  --midnight-blue: #275961;
+  --midnight-blue-soft: #e4efea;
+  --midnight-surface: #e9efef;
+  --midnight-muted: #496168;
+  --midnight-border: #c7d9d0;
   --midnight-error: #a32620;
   --midnight-error-soft: #fff0ee;
   --midnight-font: "Outfit", "Avenir Next", sans-serif;
@@ -29,18 +29,18 @@
   flex-wrap: wrap;
   gap: 0.75rem 1.5rem;
   margin-bottom: 0;
-  padding: 1rem 1.3rem;
-  border-radius: 18px;
-  background: var(--midnight-black);
-  color: var(--midnight-white);
+  padding: 1.6rem 1rem 0.8rem;
+  border-radius: 18px 0 0 0;
+  background: #dae5e4;
+  color: var(--midnight-black);
 }
 
 .brand-name {
-  display: inline-flex;
-  align-items: center;
+  display: grid;
+  align-items: start;
   min-width: 0;
-  gap: 0.95rem;
-  color: var(--midnight-white);
+  gap: 0.5rem;
+  color: var(--midnight-black);
   text-decoration: none;
 }
 
@@ -49,26 +49,28 @@
   width: 7.4rem;
   height: auto;
   flex: none;
+  filter: brightness(0);
+  opacity: 0.78;
 }
 
 .brand-product {
   display: grid;
   min-width: 0;
   gap: 0.15rem;
-  padding-left: 0.95rem;
-  border-left: 2px solid #8888ff;
+  padding-left: 0;
+  border-left: 0;
 }
 
 .brand-product-title {
-  color: var(--midnight-white);
-  font-size: 2.25rem;
+  color: var(--midnight-black);
+  font-size: 1.65rem;
   font-weight: 700;
   letter-spacing: -0.045em;
   line-height: 1.1;
 }
 
 .brand-product-context {
-  color: #c8c9d8;
+  color: var(--midnight-muted);
   font-size: 0.95rem;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -117,15 +119,16 @@
 
 .shell.app-shell {
   display: grid;
-  grid-template-columns: minmax(11rem, 14rem) minmax(0, 1fr);
+  grid-template-columns: 16.5rem minmax(0, 1fr);
   align-items: start;
   gap: 1rem 1.5rem;
   width: min(1440px, calc(100vw - 2rem));
   max-width: 100%;
+  background: linear-gradient(90deg, #dae5e4 0 16.5rem, transparent 16.5rem);
 }
 
-.app-shell > .brand-bar { grid-column: 1 / -1; }
-.app-shell > .hero { grid-column: 2; grid-row: 2; min-width: 0; }
+.app-shell > .brand-bar { grid-column: 1; grid-row: 1; }
+.app-shell > .hero { grid-column: 2; grid-row: 1 / span 2; min-width: 0; }
 .app-shell > .task-nav {
   position: sticky;
   top: 1rem;
@@ -136,15 +139,15 @@
   gap: 0.25rem;
   min-width: 0;
   margin: 0;
-  padding: 0.75rem;
-  border-radius: 16px;
-  background: var(--midnight-black);
+  padding: 0.75rem 1rem;
+  border-radius: 0;
+  background: #dae5e4;
 }
 
 .app-shell > .task-nav::before {
   content: "WORKSPACE";
   padding: 0.45rem 0.6rem 0.65rem;
-  color: #aeb1ca;
+  color: var(--midnight-muted);
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.16em;
@@ -156,13 +159,13 @@
   min-height: 2.75rem;
   border: 1px solid transparent;
   background: transparent;
-  color: var(--midnight-white);
+  color: var(--midnight-black);
 }
 
 .app-shell > .task-nav a:hover,
 .app-shell > .task-nav a:focus-visible {
-  border-color: #7778ff;
-  background: #20205b;
+  border-color: #a6c2b6;
+  background: #eff5f2;
 }
 
 .app-shell > .workspace,
@@ -178,7 +181,7 @@
 .app-shell > .settings-view {
   display: none;
   grid-column: 2;
-  grid-row: 2;
+  grid-row: 1 / span 2;
   min-width: 0;
 }
 
@@ -191,7 +194,7 @@
 
 .app-shell[data-settings-active="true"] > .task-nav a[href="#workspace-settings"],
 .app-shell[data-settings-active="true"] > .task-nav a[href="#connection-details"] {
-  background: var(--midnight-white);
+  background: #eff5f2;
   color: var(--midnight-black);
 }
 
@@ -213,15 +216,15 @@
 .settings-technical .settings-grid { margin-top: 0.5rem; }
 .settings-card .connection-form { margin-top: 1rem; }
 .settings-card .source-refresh { margin: 0.8rem 0 0; }
-.settings-callout { padding: 0.85rem 1rem; border: 1px solid #bcbcff; border-radius: 10px; background: var(--midnight-blue-soft); color: var(--midnight-black); font-size: 0.84rem; }
-.settings-footer { padding: 1rem 1.2rem; border-radius: 12px; background: var(--midnight-black); color: var(--midnight-white); }
-.settings-footer p { margin: 0.35rem 0 0; color: #d1d1dd; font-size: 0.84rem; line-height: 1.5; }
+.settings-callout { padding: 0.85rem 1rem; border: 1px solid #a6c2b6; border-radius: 10px; background: var(--midnight-blue-soft); color: var(--midnight-black); font-size: 0.84rem; }
+.settings-footer { padding: 1rem 1.2rem; border: 1px solid var(--midnight-border); border-radius: 12px; background: #eff5f2; color: var(--midnight-black); }
+.settings-footer p { margin: 0.35rem 0 0; color: var(--midnight-muted); font-size: 0.84rem; line-height: 1.5; }
 
 @media (max-width: 760px) {
   .brand-bar { flex-wrap: wrap; padding: 0.8rem 0.9rem; }
-  .brand-name { gap: 0.6rem; min-width: min-content; max-width: 100%; }
+  .brand-name { display: inline-flex; align-items: center; gap: 0.6rem; min-width: min-content; max-width: 100%; }
   .brand-logo { width: min(6.4rem, 26vw); }
-  .brand-product { padding-left: 0.6rem; }
+  .brand-product { padding-left: 0.6rem; border-left: 2px solid #9db8ae; }
   .brand-product-title { font-size: 1.3rem; }
   .brand-product-context { font-size: 0.78rem; }
   .mobile-task-menu { display: block; margin-left: auto; }
@@ -230,9 +233,9 @@
     place-items: center;
     min-width: 4.5rem;
     min-height: 2.75rem;
-    border: 1px solid #777889;
+    border: 1px solid #8fa9a2;
     border-radius: 8px;
-    color: var(--midnight-white);
+    color: var(--midnight-black);
     cursor: pointer;
     font-weight: 700;
     list-style: none;
@@ -266,6 +269,7 @@
     grid-template-columns: minmax(0, 1fr);
     gap: 0.75rem;
     width: calc(100vw - 1rem);
+    background: transparent;
   }
 
   .app-shell > .brand-bar,
@@ -408,10 +412,13 @@
   outline-offset: 3px;
 }
 
-.app-shell > .task-nav a:focus-visible,
 .mobile-task-menu > summary:focus-visible,
 .mobile-task-menu nav a:focus-visible {
   outline-color: var(--midnight-white);
+}
+
+.app-shell > .task-nav a:focus-visible {
+  outline-color: var(--midnight-blue);
 }
 
 @media (prefers-reduced-motion: reduce) {
