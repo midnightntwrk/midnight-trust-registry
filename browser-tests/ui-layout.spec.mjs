@@ -1116,6 +1116,20 @@ for (const [app, title] of [
         }
         if (app === "applicant-portal") {
           await expect(page.locator(".hero-overview, .hero-actions .button")).toHaveCount(0);
+          if (width === 1440) {
+            const workspaceLayout = await page.evaluate(() => {
+              const roles = document.querySelector(".journey-role-panel").getBoundingClientRect();
+              const readiness = document.querySelector(".application-readiness").getBoundingClientRect();
+              const applications = document.querySelector("#my-applications").getBoundingClientRect();
+              return { rolesTop: roles.top, readinessTop: readiness.top,
+                rolesBottom: roles.bottom, readinessBottom: readiness.bottom,
+                rolesRight: roles.right, readinessLeft: readiness.left, applicationsTop: applications.top };
+            });
+            expect(Math.abs(workspaceLayout.rolesTop - workspaceLayout.readinessTop)).toBeLessThan(2);
+            expect(Math.abs(workspaceLayout.rolesBottom - workspaceLayout.readinessBottom)).toBeLessThan(2);
+            expect(workspaceLayout.rolesRight).toBeLessThan(workspaceLayout.readinessLeft);
+            expect(workspaceLayout.applicationsTop).toBeLessThan(900);
+          }
           if (width === 768) {
             const tabletLayout = await page.evaluate(() => ({
               rolesTop: document.querySelector("#governed-requests").getBoundingClientRect().top,

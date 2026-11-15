@@ -397,24 +397,37 @@ body { background: radial-gradient(circle at 100% 0, #dce9e4 0, transparent 26re
 
 .journey-picker {
   grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.32fr) minmax(17rem, 1fr);
+  align-items: stretch;
+  gap: 1rem;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--midnight-black);
+}
+.journey-role-panel, .application-readiness {
   min-width: 0;
   padding: clamp(1rem, 2.2vw, 1.7rem);
   border: 1px solid var(--midnight-border);
   border-radius: 18px;
-  background: transparent;
-  color: var(--midnight-black);
+  background: var(--midnight-white);
 }
 
 .journey-heading h2 { margin: 0; font-size: clamp(1.45rem, 2.1vw, 2rem); }
 .journey-heading p:not(.eyebrow) { max-width: 70ch; color: var(--midnight-muted); line-height: 1.5; }
-.journey-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.7rem; }
+.journey-cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.55rem; }
 .journey-cards a {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) auto;
+  grid-template-areas: "mark title action" "mark copy action";
+  align-items: center;
+  column-gap: 0.8rem;
+  row-gap: 0.2rem;
   min-width: 0;
-  min-height: 8rem;
-  padding: 1rem;
+  min-height: 4.8rem;
+  padding: 0.75rem 0.9rem;
   border: 1px solid var(--midnight-border);
   border-radius: 10px;
   background: var(--midnight-white);
@@ -423,23 +436,25 @@ body { background: radial-gradient(circle at 100% 0, #dce9e4 0, transparent 26re
 }
 .journey-cards a:hover, .journey-cards a:focus-visible { border-color: var(--midnight-blue); background: var(--midnight-blue-soft); }
 .journey-cards a[aria-expanded="true"] { border-color: var(--midnight-blue); box-shadow: inset 3px 0 var(--midnight-blue); }
-.journey-cards .role-mark { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: 0.5rem; background: var(--midnight-blue-soft); color: var(--midnight-blue); font-size: 0.86rem; font-weight: 800; }
-.journey-cards strong { font-size: 1.13rem; }
-.journey-cards span { color: var(--midnight-muted); font-size: 0.83rem; line-height: 1.4; }
+.journey-cards .role-mark { grid-area: mark; display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: 0.5rem; background: var(--midnight-blue-soft); color: var(--midnight-blue); font-size: 0.86rem; font-weight: 800; }
+.journey-cards strong { grid-area: title; font-size: 1rem; }
+.journey-cards span { grid-area: copy; color: var(--midnight-muted); font-size: 0.8rem; line-height: 1.35; }
 .journey-cards .role-mark { color: var(--midnight-blue); }
-.journey-cards em { margin-top: auto; color: var(--midnight-blue); font-size: 0.78rem; font-style: normal; font-weight: 700; }
+.journey-cards em { grid-area: action; min-width: 0; overflow-wrap: anywhere; color: var(--midnight-blue); font-size: 0.78rem; font-style: normal; font-weight: 700; }
 .journey-prerequisite { margin: 0.85rem 0 0.8rem; color: var(--midnight-muted); font-size: 0.8rem; }
-.application-readiness { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 1rem; margin-top: 0.8rem; padding: 0.8rem 1rem; border: 1px solid var(--midnight-border); border-radius: 10px; background: var(--midnight-white); }
-.application-readiness h3 { min-width: 0; margin: 0; font-size: 0.9rem; overflow-wrap: anywhere; }
-.application-readiness ul { display: grid; min-width: 0; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; margin: 0; padding: 0; list-style: none; }
-.application-readiness li { min-width: 0; padding-left: 0.75rem; border-left: 1px solid var(--midnight-border); }
-.application-readiness .readiness-step { display: block; color: var(--midnight-muted); font-size: 0.7rem; font-weight: 700; }
-.application-readiness strong { display: block; min-width: 0; overflow-wrap: anywhere; font-size: 0.76rem; line-height: 1.3; }
+.application-readiness { display: flex; flex-direction: column; gap: 0.9rem; margin: 0; }
+.application-readiness h3 { min-width: 0; margin: 0; font-size: 1.5rem; overflow-wrap: anywhere; }
+.readiness-heading, .readiness-heading .eyebrow { min-width: 0; overflow-wrap: anywhere; }
+.application-readiness ul { display: grid; min-width: 0; gap: 0.6rem; margin: 0; padding: 0; list-style: none; counter-reset: readiness; }
+.application-readiness li { display: grid; grid-template-columns: 2rem minmax(0, 1fr); min-width: 0; column-gap: 0.7rem; padding: 0.8rem; border: 1px solid var(--midnight-border); border-radius: 10px; background: var(--midnight-surface); counter-increment: readiness; }
+.application-readiness li::before { content: "0" counter(readiness); grid-row: 1 / 3; align-self: center; color: var(--midnight-blue); font-size: 0.8rem; font-weight: 800; }
+.application-readiness .readiness-step { display: block; color: var(--midnight-muted); font-size: 0.75rem; font-weight: 700; }
+.application-readiness strong { display: block; min-width: 0; overflow-wrap: anywhere; font-size: 0.88rem; line-height: 1.3; }
 .hero { grid-template-columns: minmax(0, 1fr); gap: 1rem; padding: 0; border: 0; background: transparent; box-shadow: none; }
-.hero-intro { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; padding: clamp(1.2rem, 2vw, 1.7rem); border: 1px solid var(--midnight-border); border-radius: 18px; background: var(--midnight-white); color: var(--midnight-black); }
+.hero-intro { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; padding: 0.4rem 0 0.2rem; border: 0; background: transparent; color: var(--midnight-black); }
 .hero-intro .eyebrow { color: var(--midnight-blue); }
 .hero-intro h1 { max-width: none; margin-top: 0.4rem; }
-.hero-intro p:not(.eyebrow) { max-width: 55ch; color: var(--midnight-muted); }
+.hero-intro p:not(.eyebrow) { max-width: 72ch; color: var(--midnight-muted); }
 .hero-actions { display: flex; flex-wrap: wrap; gap: 0.65rem; padding-top: 0.65rem; }
 .hero-actions .button { min-height: 2.8rem; text-decoration: none; }
 .hero-actions .button.secondary { border: 1px solid var(--midnight-border); background: var(--midnight-blue-soft); color: var(--midnight-blue); }
@@ -476,8 +491,8 @@ body { background: radial-gradient(circle at 100% 0, #dce9e4 0, transparent 26re
 .lane-header > * { min-width: 0; overflow-wrap: anywhere; }
 
 @media (max-width: 1100px) {
-  .journey-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .application-readiness { grid-template-columns: minmax(0, 1fr); gap: 0.5rem; }
+  .journey-picker { grid-template-columns: minmax(0, 1fr); }
+  .application-readiness ul { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 @media (max-width: 900px) {
@@ -488,18 +503,17 @@ body { background: radial-gradient(circle at 100% 0, #dce9e4 0, transparent 26re
 
 @media (max-width: 620px) {
   .lanes { grid-template-columns: minmax(0, 1fr); }
-  .journey-cards { grid-template-columns: minmax(0, 1fr); }
   .application-readiness ul { grid-template-columns: minmax(0, 1fr); gap: 0.35rem; }
-  .application-readiness li { display: block; }
   .application-readiness .readiness-step { min-width: 0; overflow-wrap: anywhere; }
-  .journey-picker { padding: 0.9rem; }
+  .journey-role-panel, .application-readiness { padding: 0.9rem; }
   .journey-heading p:not(.eyebrow) { margin: 0.5rem 0; }
   .journey-prerequisite { margin: 0.45rem 0 0.7rem; }
   .journey-cards { gap: 0.5rem; }
   .journey-cards a {
     display: grid;
     grid-template-columns: 2rem minmax(0, 1fr);
-    grid-template-rows: auto auto;
+    grid-template-areas: "mark title" "mark copy" ". action";
+    grid-template-rows: auto auto auto;
     align-items: center;
     gap: 0 min(0.65rem, 10px);
     min-height: 4.7rem;

@@ -1681,6 +1681,7 @@ export const createApplicantPortalApp = (
     `;
     const journeyPicker = `
           <section class="journey-picker" id="governed-requests" aria-labelledby="journey-heading">
+            <div class="journey-role-panel">
             <div class="journey-heading"><p class="eyebrow">Choose a role</p><h2 id="journey-heading">What do you need access to?</h2>
               <p>See the requirements before you submit. <a href="./registry-manual.html#choose-your-task">Help me choose a role</a>.</p>
             </div>
@@ -1703,8 +1704,9 @@ export const createApplicantPortalApp = (
               <a href="#auditor-request" data-open-workflow="auditor-request"><span class="role-mark" aria-hidden="true">A</span><strong>Audit evidence</strong><span>Request an auditor role for approved evidence.</span><em>View requirements &rarr;</em></a>
               <a href="#maintainer-request" data-open-workflow="maintainer-request"><span class="role-mark" aria-hidden="true">M</span><strong>Maintain the registry</strong><span>Requires a separate governed authority path.</span><em>View requirements &rarr;</em></a>
             </div>
+            </div>
             <section class="application-readiness" aria-labelledby="application-readiness-heading">
-              <h3 id="application-readiness-heading">Checks before access</h3>
+              <div class="readiness-heading"><p class="eyebrow">Application readiness</p><h3 id="application-readiness-heading">What happens next</h3></div>
               <ul>
                 <li><span class="readiness-step">Identity</span><strong>${activeDidSession !== undefined ? "Signed in for this session" : state.loading && state.didSession !== undefined ? "Paused while checking source" : "Not signed in"}</strong></li>
                 <li><span class="readiness-step">Eligibility</span><strong>Not verified in this view</strong></li>
