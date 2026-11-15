@@ -27,13 +27,43 @@ force applicant and maintainer workflows into one generic component.
 
 ## UI audit
 
-Run `pnpm exec playwright test browser-tests/ui-layout.spec.mjs` after building
-both UI packages. The offline-browser fixture rejects external requests. It
-checks the wordmark, representative long registry/epoch/DID/resource values,
-selected-record detail, and horizontal overflow at 1440, 768, and 390 pixels.
-Set `TR_UI_CAPTURE=1` to save desktop and mobile screenshots in Playwright's
-ignored `test-results` directory for visual review. Also run the applicant
-and admin browser flow specs to catch disclosure or focus regressions.
+From a clean, **disposable** checkout with Node.js 24, pnpm, the pinned
+Compact compiler, and Playwright Chromium installed:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm run check:compact-installed
+pnpm run build:light
+pnpm exec playwright test browser-tests/ui-layout.spec.mjs \
+  browser-tests/admin-console.spec.mjs browser-tests/applicant-portal.spec.mjs \
+  browser-tests/local-lookup.spec.mjs browser-tests/demo-application-handoff.spec.mjs
+```
+
+`build:light` replaces generated `dist` outputs. Never run it in a checkout
+holding irreplaceable Compact keys, install bundles, or private setup
+evidence. The browser tests start their own loopback fixture hosts; no live
+node, API token, or pre-existing demo service is required. The offline-browser
+fixture rejects external requests. A passing run checks task navigation,
+selected-record details, empty versus unavailable source states, the
+applicant-to-admin fixture handoff, long IDs, keyboard focus, text zoom, and
+automated WCAG A/AA rules. It covers the
+desktop layout at 1440 px and responsive layouts at 768 and 390 px; the
+320 px stress checks are retained as regression evidence, not a mobile-device
+acceptance claim.
+
+Set `TR_UI_CAPTURE=1` for screenshots in the ignored `test-results` directory.
+Review the desktop workspace, open workflow, settings, and local exact-lookup
+screens visually; width and axe assertions do not detect confusing task order
+or every overlap. A manual keyboard and assistive-technology pass is still
+separate from automated accessibility evidence.
+
+The two source paths must not be conflated:
+
+| Source | What the UI offers | What the label proves |
+| --- | --- | --- |
+| Local workspace fixture | Review board, active lists, and explicitly marked demo shortcuts when enabled | Only that a loopback fixture API responded |
+| Local-ledger API claim | Exact current authorization or recognition lookup; no broad list or fixture mutation controls | Only that the API reported a current claim, not independently authenticated finality |
+| Unavailable or partial response | Error/retry guidance; stale records are cleared or marked unavailable | No current trust decision |
 
 This audit is not a deployed standalone end-to-end qualification. It uses a
 local fixture HTTP server and does not establish contract finality, human

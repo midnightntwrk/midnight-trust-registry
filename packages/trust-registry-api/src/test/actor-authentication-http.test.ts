@@ -77,7 +77,8 @@ describe("phase-0 DID authentication HTTP", () => {
   });
 
   async function start(configured = true, applicationVp?: ApplicationVpHttpPort,
-    pendingApplicationRegistration?: PendingApplicationRegistrationPort) {
+    pendingApplicationRegistration?: PendingApplicationRegistrationPort,
+    store: ActorAuthenticationChallengeStore = challengeStore()) {
     nowMs = START;
     const resolver = createMidnightDidResolver([
       createMidnightDidLedgerFixture(actorDid, {
@@ -92,7 +93,7 @@ describe("phase-0 DID authentication HTTP", () => {
         contractAddress: `0x${"22".repeat(32)}`,
         origin: expectedOrigin,
       },
-      resolver, store: challengeStore(), clock: () => nowMs,
+      resolver, store, clock: () => nowMs,
     });
     server = createTrustRegistryApiServer({
       source: createInMemorySource(createOperatorWorkspace({ label: "actor-auth-http" }).snapshot),
@@ -225,6 +226,24 @@ describe("phase-0 DID authentication HTTP", () => {
     expect((await post("/v1/actor-authentication/challenges", {
       actorDid, actorKeyId, purpose: "applicant-session",
     })).status).toBe(503);
+  });
+
+  it("returns stable identity, capacity, and socket-client rate problems", async () => {
+    await start(true, undefined, undefined, { ...challengeStore(), insert: async () => false });
+    const path = "/v1/actor-authentication/challenges";
+    const body = { actorDid, actorKeyId, purpose: "applicant-session" };
+    const invalid = await post(path, { ...body, actorKeyId: `${actorDid}#missing` });
+    expect(invalid.status).toBe(400);
+    expect((await invalid.json()).type).toMatch(/actor-authentication-invalid-identity$/u);
+    const full = await post(path, body);
+    expect(full.status).toBe(503);
+    expect((await full.json()).type).toMatch(/actor-authentication-capacity-unavailable$/u);
+    for (let index = 0; index < 6; index += 1) {
+      expect((await post(path, body, { "x-forwarded-for": `198.51.100.${index.toString()}` })).status).toBe(503);
+    }
+    const limited = await post(path, body, { "x-forwarded-for": "203.0.113.42" });
+    expect(limited.status).toBe(429);
+    expect((await limited.json()).type).toMatch(/actor-authentication-rate-limited$/u);
   });
 
   it("keeps applicant and maintainer purposes separate and loses tokens on restart", () => {
