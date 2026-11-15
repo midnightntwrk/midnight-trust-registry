@@ -96,25 +96,33 @@ test("both browser apps use real same-origin DID HTTP sessions without a role gr
       }),
       sessions,
     };
-    await page.exposeFunction("signTrustRegistryDigest", (digest) => ({
+    await page.exposeFunction("signTrustRegistryDigest", (digest, useWrongKey) => ({
       keyId: actorKeyId,
       algorithm: "jubjub-schnorr",
       value: `0x${Buffer.from(encodeJubjubSignature(signJubjubPayloadFromSeed(
-        seed, Uint8Array.from(digest),
+        useWrongKey ? new Uint8Array(32).fill(87) : seed, Uint8Array.from(digest),
       ))).toString("hex")}`,
     }));
     await page.addInitScript(({ actorDid, actorKeyId }) => {
       window.midnightTrustRegistryDidSigner = {
         getIdentity: async () => ({ actorDid, actorKeyId }),
-        signDigest: async ({ digest }) => window.signTrustRegistryDigest(Array.from(digest)),
+        signDigest: async ({ digest }) => window.signTrustRegistryDigest(
+          Array.from(digest), window.trDidSignerUseWrongKey === true,
+        ),
       };
     }, { actorDid, actorKeyId });
 
     await page.goto(`${origin}/applicant/`);
     await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
     await page.locator(".hero-sign-in").click();
+    await page.evaluate(() => { window.trDidSignerUseWrongKey = true; });
+    await page.getByRole("button", { name: "Sign in with DID" }).click();
+    await expect(page.locator(".portal-profile-card [role='alert']")).toContainText("HTTP 401");
+    await expect(page.locator(".application-readiness")).toContainText("Not signed in");
+    await page.evaluate(() => { window.trDidSignerUseWrongKey = false; });
     await page.getByRole("button", { name: "Sign in with DID" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
+    await expect(page.locator(".portal-profile-card [role='alert']")).toHaveCount(0);
     await expect(page.locator(".application-readiness")).toContainText("Requires governed approval");
     await expect(page.locator("body")).not.toContainText("trsa_");
     await page.getByRole("button", { name: "Sign out" }).click();
@@ -128,8 +136,8 @@ test("both browser apps use real same-origin DID HTTP sessions without a role gr
     await expect(page.locator("body")).not.toContainText("trsa_");
     await page.getByRole("button", { name: "Sign out" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText("A DID signer is available");
-    assert.equal(requests.filter((request) => request === "POST /v1/actor-authentication/challenges").length, 2);
-    assert.equal(requests.filter((request) => request === "POST /v1/actor-authentication/sessions").length, 2);
+    assert.equal(requests.filter((request) => request === "POST /v1/actor-authentication/challenges").length, 3);
+    assert.equal(requests.filter((request) => request === "POST /v1/actor-authentication/sessions").length, 3);
     assert.equal(requests.filter((request) => request === "DELETE /v1/actor-authentication/session").length, 2);
     assert.deepEqual(revokedPurposes, [
       { purpose: "applicant-session", wrongPurposeAccepted: false },
