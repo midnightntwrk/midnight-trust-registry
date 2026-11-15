@@ -15,6 +15,16 @@ export interface ActorDidSigner {
   signDigest(input: { challenge: ActorAuthenticationChallenge; digest: Uint8Array }): Promise<MutationIntentSignature>;
 }
 
+export function isActorDidSigner(value: unknown): value is ActorDidSigner {
+  if (value === null || typeof value !== "object") return false;
+  try {
+    return typeof (value as Record<string, unknown>).getIdentity === "function"
+      && typeof (value as Record<string, unknown>).signDigest === "function";
+  } catch {
+    return false;
+  }
+}
+
 export type ActorDidSession<P extends ActorAuthenticationPurpose = ActorAuthenticationPurpose> = {
   actorDid: string;
   actorKeyId: string;

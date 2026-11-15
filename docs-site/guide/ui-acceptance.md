@@ -104,6 +104,18 @@ VP eligibility and governed role authority remain separate checks. The
 headless DID session journey exercises the real local HTTP challenge,
 bad-signature and deployment-context denial, replay denial, identity-only
 token, exact-boundary challenge and bearer expiry, and revocation; it is not a deployed-ledger test.
+The embedding host supplies an `ActorDidSigner` through the app option or
+`window.midnightTrustRegistryDidSigner` before boot. It must implement both
+`getIdentity()` and `signDigest({ challenge, digest })`; an absent or malformed
+integration leaves sign-in disabled rather than presenting a broken action.
+The signer keeps its private key outside the page and signs only the exact
+challenge digest after showing the actor, origin, registry, purpose, and
+deployment context to the key holder. Do not add a browser-stored demo key as
+a fallback. Both apps need a same-origin API with actor authentication and a
+trusted DID resolver configured; a cross-origin fixture API is prepare-only.
+See `packages/trust-registry-client/src/browser-authentication.ts` for the
+typed contract and `browser-tests/did-auth-live-http.spec.mjs` for a loopback
+host example. That test signer is not a deployable wallet or DID provider.
 The admin console uses the same ephemeral browser client with a distinct
 `maintainer-session` purpose in Workspace settings. Its DID token is never
 attached to governance requests: external signatures, maintainer membership,

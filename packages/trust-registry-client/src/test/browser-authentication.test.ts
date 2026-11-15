@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { signInActorDid, signOutActorDid } from "../browser-authentication.js";
+import { isActorDidSigner, signInActorDid, signOutActorDid } from "../browser-authentication.js";
 
 const NOW = Date.parse("2026-11-15T00:00:00.000Z");
 const origin = "http://127.0.0.1:4400";
@@ -26,6 +26,16 @@ const session = { actorDid, actorKeyId, purpose: "maintainer-session" as const,
   accessToken: `trsa_${"a".repeat(43)}`, expiresAt: new Date(NOW + 900_000).toISOString() };
 
 describe("shared browser DID authentication", () => {
+  it("offers sign-in only for a host signer with both required methods", () => {
+    expect(isActorDidSigner(null)).toBe(false);
+    expect(isActorDidSigner({ getIdentity: async () => ({ actorDid, actorKeyId }) })).toBe(false);
+    expect(isActorDidSigner({ getIdentity: async () => ({ actorDid, actorKeyId }),
+      signDigest: async () => signature })).toBe(true);
+    expect(isActorDidSigner(Object.defineProperty({}, "getIdentity", {
+      get: () => { throw new Error("broken host integration"); },
+    }))).toBe(false);
+  });
+
   it("requests and verifies a maintainer-purpose identity session without granting authority", async () => {
     const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => Response.json(url.endsWith("/challenges") ? challenge : session));
     const signer = { getIdentity: vi.fn(async () => ({ actorDid, actorKeyId })),

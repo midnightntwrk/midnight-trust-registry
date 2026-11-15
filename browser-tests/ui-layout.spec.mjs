@@ -433,6 +433,24 @@ test("applicant role guidance explains a missing DID signer", async ({ page, all
 });
 
 for (const appName of ["applicant-portal", "admin-console"]) {
+  test(`${appName} does not offer sign-in for a malformed host signer`, async ({ page, allowedLocalOrigins }) => {
+    const server = await serveApp(appName);
+    try {
+      allowedLocalOrigins.add(server.base);
+      await page.addInitScript(() => {
+        window.midnightTrustRegistryDidSigner = { getIdentity: async () => ({ actorDid: "did:example:broken" }) };
+      });
+      await page.goto(`${server.base}${server.packagedPath}`);
+      await expect(page.locator(".portal-profile-card")).toContainText("No digital identity signer is connected");
+      await expect(page.locator("[data-did-sign-in]")).toBeDisabled();
+    } finally {
+      await page.close();
+      await server.close();
+    }
+  });
+}
+
+for (const appName of ["applicant-portal", "admin-console"]) {
   test(`${appName} clears an expired DID session without a page refresh`, async ({ page, allowedLocalOrigins }) => {
     const server = await serveApp(appName);
     const actorDid = `did:midnight:undeployed:${"ab".repeat(32)}`;

@@ -11,6 +11,7 @@ import type {
 import {
   signInActorDid,
   signOutActorDid,
+  isActorDidSigner,
   type ActorDidSession,
   type ActorDidSigner,
 } from "@midnight-ntwrk/trust-registry-client/browser-authentication";
@@ -194,9 +195,12 @@ export const createAdminConsoleApp = (
   const fetchImpl = options.fetchImpl ?? window.fetch.bind(window);
   const confirm = options.confirm ?? window.confirm.bind(window);
   const clock = options.clock ?? Date.now;
-  const didSigner = () => options.didSigner ?? (window as Window & {
-    midnightTrustRegistryDidSigner?: ActorDidSigner;
-  }).midnightTrustRegistryDidSigner;
+  const didSigner = (): ActorDidSigner | undefined => {
+    const candidate: unknown = options.didSigner ?? (window as Window & {
+      midnightTrustRegistryDidSigner?: unknown;
+    }).midnightTrustRegistryDidSigner;
+    return isActorDidSigner(candidate) ? candidate : undefined;
+  };
   const sameOriginApi = initialUrl.pathname.startsWith("/admin/");
   const queryBase = initialUrl.searchParams.get("apiBase");
   const rememberedBase = storage.getItem(STORAGE_KEY);
