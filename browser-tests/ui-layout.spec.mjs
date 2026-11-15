@@ -124,6 +124,7 @@ for (const app of ["applicant-portal", "admin-console"]) {
       await expect(page.locator(".app-shell")).toHaveAttribute("data-settings-active", "true");
     } finally {
       await page.waitForLoadState("networkidle");
+      await page.close();
       await server.close();
     }
   });
