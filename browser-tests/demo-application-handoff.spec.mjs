@@ -150,11 +150,13 @@ for (const target of ["issuer", "recognition"]) {
       await expect(page.locator(".card")).toContainText(label);
       await expect(page.locator(".card .status-chip")).toHaveText("Proposed");
       await expect(page.locator(".card .meta-row").first()).toHaveText("Requested trust level: approved");
-      await expect(page.locator('[data-action="approve"]')).toHaveText("Approve in demo");
+      await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
+      await page.locator(".practice-controls > summary").click();
+      await expect(page.locator('[data-action="approve"]')).toHaveText("Approve in fixture");
       await page.locator('[data-action="approve"]').click();
       await expect(page.locator(".card .status-chip")).toHaveText("Authorized");
       await expect(page.locator(".card .meta-row").first()).toHaveText("Authorized trust level: approved");
-      await expect(page.locator('[data-action="activate"]')).toHaveText("Activate in demo");
+      await expect(page.locator('[data-action="activate"]')).toHaveText("Activate in fixture");
       await page.locator('[data-action="activate"]').click();
       await expect(page.locator(".card .status-chip")).toHaveText("Active");
       await expect(page.locator(".card .meta-row").first()).toHaveText("Trust level: approved");
@@ -164,6 +166,7 @@ for (const target of ["issuer", "recognition"]) {
         expect(message).toContain("Exact record:");
         expect(message).toContain("This does not change the deployed ledger.");
       }
+      await page.locator(".settings-back").click();
       await expect(page.getByRole("heading", { name: "Registry review workspace" })).toBeVisible();
       await expect(page.locator(".column")).toHaveCount(1);
 

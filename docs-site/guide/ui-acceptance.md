@@ -120,7 +120,7 @@ light-build tasks, and `demo:prepare` passed. In Chromium, an issuer fixture
 application submitted in the portal appeared as Proposed in admin, moved to
 Authorized and Active through confirmed local-fixture actions, and appeared in
 the portal's active issuer list after a reload. The confirmation copy needed a
-follow-up: fixture actions now say "in demo" and explicitly distinguish their
+follow-up: fixture actions now say "in fixture" and explicitly distinguish their
 effect from a deployed-ledger action. This remains an agent-run fixture trial,
 not a new-engineer or deployed standalone acceptance result.
 
@@ -169,7 +169,7 @@ repeatable UI acceptance evidence:
 | Open a governed issuer request by keyboard with reduced motion and verify the three visible preparation phases; keep mobile task targets at least 44 px high | `ui-layout.spec.mjs` |
 | Keep the 390 px applicant introduction compact without hiding role requirements or implying that submission is approval | `ui-layout.spec.mjs` (role-row and section-height assertions, visible prerequisite text) |
 | Choose a label-only demo application type with visible radio options and keyboard navigation; retain the selection and avoid horizontal overflow at 200% mobile text size | `demo-application-handoff.spec.mjs`, `ui-layout.spec.mjs` |
-| Keep label-only application, fixture lifecycle mutations, epoch publication, and signed workspace intent out of the ordinary UI; show them only with the loopback `demo=1` presentation flag on a fixture source. An API-claimed local ledger still suppresses fixture controls when the flag is requested. Merely switching views must not submit a mutation | `ui-layout.spec.mjs`, `local-lookup.spec.mjs` (both apps) |
+| Keep label-only application, fixture lifecycle mutations, epoch publication, and signed workspace intent out of the ordinary UI; show them only with the loopback `demo=1` presentation flag on a mutable fixture source. Admin practice tools are grouped in Workspace settings, not in selected-record detail or Advanced governance. A read-only snapshot or API-claimed local ledger suppresses fixture controls even when the flag is requested. Merely switching views must not submit a mutation | `ui-layout.spec.mjs`, `admin-console.spec.mjs`, `local-lookup.spec.mjs` (both apps) |
 | Carry issuer and recognition fixture applications through both browser UIs against the packaged workspace API and a private temporary workspace, with demo controls absent before `demo=1`. Verify Proposed → Authorized → Active and the exact record in the API's active list; delete only the test-owned workspace afterward | `workspace-api-handoff.spec.mjs` (real packaged API, still fixture-only and not deployed E2E) |
 | Reflow at 200% root text size on 320/390 px viewports without page-level horizontal scroll or non-control internal overlap; check workspace, advanced, and settings views at 320 px. Long text inside native inputs may scroll within the control. | `ui-layout.spec.mjs` |
 | Reflow local-ledger exact lookup at 320 px and 200% root text size in both apps, including returned records and expanded technical details; keep API-claim labels and avoid page-level overflow. Raw JSON scrolls inside a bounded, keyboard-focusable region rather than becoming a wall of broken words | `local-lookup.spec.mjs` |
@@ -346,9 +346,10 @@ see what its lifecycle means before opening exact identifiers or preparing an
 external-signature action. The primary date is formatted in UTC; the exact
 API timestamp remains under Identifiers and evidence. A filter never submits
 a mutation. Empty default status lanes do not precede populated results.
-**Advanced governance** names the separate epoch, signed-intent,
-proposal/recovery, and quorum/verifier tasks; each link opens a real task
-section and retains its existing prerequisites. The local-ledger adapter has
+**Advanced governance** contains governed proposal/recovery and quorum/verifier
+tasks. Fixture lifecycle, epoch, and signed-workspace controls are instead
+grouped under **Workspace settings > Fixture controls** and retain their
+existing prerequisites. The local-ledger adapter has
 no broad list, so its admin view keeps only exact-ID lookup. In the fixture
 applicant portal, the optional **Workspace settings** practice form submits a label-only request for
 admin review; it never grants on-chain authority. Its three application types

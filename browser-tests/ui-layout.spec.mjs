@@ -115,6 +115,7 @@ for (const app of ["applicant-portal", "admin-console"]) {
       await expect(page).toHaveURL(`${server.base}${server.packagedPath}`);
       await expect(page.locator(".mobile-task-menu > summary")).toBeVisible();
     } finally {
+      await page.waitForLoadState("networkidle");
       await server.close();
     }
   });
@@ -492,6 +493,9 @@ for (const app of ["admin-console", "applicant-portal"]) {
         await expect(page.locator("[data-action]").first()).toBeAttached();
         await expect(page.locator("#task-epoch")).toBeAttached();
         await expect(page.locator("#task-signed-intent")).toBeAttached();
+        await expect(page.locator("#workspace-settings [data-action]").first()).toBeAttached();
+        await expect(page.locator("#workspace-settings #task-epoch, #workspace-settings #task-signed-intent")).toHaveCount(2);
+        await expect(page.locator("#advanced-governance #task-epoch, #advanced-governance #task-signed-intent")).toHaveCount(0);
       } else {
         await expect(page.locator("#demo-application")).toBeAttached();
       }

@@ -188,6 +188,8 @@ export const createAdminConsoleApp = (
   const initialUrl = options.initialUrl ?? new URL(window.location.href);
   const demoMode = (options.demoMode ?? initialUrl.searchParams.get("demo") === "1")
     && ["localhost", "127.0.0.1", "[::1]"].includes(initialUrl.hostname);
+  const hasMutablePracticeSource = () => demoMode
+    && (state.board?.sourceMode === "workspace" || state.board?.sourceMode === "memory");
   const storage = options.storage ?? window.localStorage;
   const fetchImpl = options.fetchImpl ?? window.fetch.bind(window);
   const confirm = options.confirm ?? window.confirm.bind(window);
@@ -307,7 +309,7 @@ export const createAdminConsoleApp = (
   };
 
   const loadSignedContext = async () => {
-    if (state.signedBusy || state.board === undefined || state.board.sourceMode === "local-ledger") return;
+    if (state.signedBusy || !hasMutablePracticeSource()) return;
     const requestId = ++signedContextRequestId;
     setState({ signedBusy: true, signedContext: undefined, error: undefined, flash: undefined });
     try {
@@ -321,8 +323,7 @@ export const createAdminConsoleApp = (
   };
 
   const submitSignedAction = async (raw: string) => {
-    if (state.signedBusy || state.signedContext === undefined
-      || state.board === undefined || state.board.sourceMode === "local-ledger") return;
+    if (state.signedBusy || state.signedContext === undefined || !hasMutablePracticeSource()) return;
     const host = currentHost();
     let candidate: unknown;
     try {
@@ -469,8 +470,7 @@ export const createAdminConsoleApp = (
   const runAction = async (
     action: TrustRegistryApiApplicationAction,
   ) => {
-    if (!demoMode || state.loading || state.publishing || state.governedBusy
-      || state.board === undefined || state.board.sourceMode === "local-ledger") return;
+    if (!hasMutablePracticeSource() || state.loading || state.publishing || state.governedBusy) return;
     const host = currentHost();
     const card = selectedCard();
     if (card === undefined) {
@@ -500,8 +500,7 @@ export const createAdminConsoleApp = (
   };
 
   const publishEpoch = async (label: string) => {
-    if (!demoMode || state.loading || state.publishing || state.governedBusy
-      || state.board === undefined || state.board.sourceMode === "local-ledger") return;
+    if (!hasMutablePracticeSource() || state.loading || state.publishing || state.governedBusy) return;
     const host = currentHost();
     setState({ publishing: true, error: undefined, flash: undefined });
     try {
@@ -1118,16 +1117,8 @@ export const createAdminConsoleApp = (
           </section>
           </details>
         `}
-        ${!demoMode || state.board?.sourceMode === "local-ledger" ? "" : `
-          <p class="eyebrow">Local fixture controls</p>
-          <div class="actions">
-            ${getReviewActions(card.status).map((action) => `
-              <button class="button${action === "archive" ? " ghost" : ""}" type="button" data-action="${escapeHtml(action)}"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>
-                ${escapeHtml(action.charAt(0).toUpperCase() + action.slice(1))} in demo
-              </button>
-            `).join("") || "<p>No maintainer actions available for this lifecycle state.</p>"}
-          </div>
-        `}
+        ${hasMutablePracticeSource() && getReviewActions(card.status).length > 0
+          ? '<p class="step-hint">Exploring fixture data? Practice controls are in <a href="#workspace-settings">Workspace settings</a>.</p>' : ""}
       </aside>
     `;
   };
@@ -1143,6 +1134,7 @@ export const createAdminConsoleApp = (
       ? document.activeElement?.getAttribute("data-focus-key") : null;
     pendingFocusKey = focusKey ?? (root.contains(document.activeElement) ? null : pendingFocusKey);
     const advancedOpen = root.querySelector<HTMLDetailsElement>(".advanced-workflows")?.open ?? false;
+    const practiceOpen = root.querySelector<HTMLDetailsElement>(".practice-controls")?.open ?? false;
     const previousGovernedActions = root.querySelector<HTMLDetailsElement>(".governed-actions");
     governedActionsOpen = previousGovernedActions?.open ?? false;
     governedActionsKey = previousGovernedActions?.dataset.recordKey;
@@ -1191,6 +1183,8 @@ export const createAdminConsoleApp = (
     const activeDidSession = liveDidSession();
     const didSignerAvailable = didSigner() !== undefined;
     const didHostAvailable = canUseDidHost();
+    const practiceSource = hasMutablePracticeSource();
+    const practiceCard = selectedCard();
     const deploymentNotice = state.loading && state.board !== undefined
       ? "Rechecking this source. The identity below is from the last completed browser check and may be stale; do not rely on it until the check finishes."
       : state.board === undefined
@@ -1301,6 +1295,41 @@ export const createAdminConsoleApp = (
               <h2 id="admin-signing-heading">External signing</h2>
               <p>Governed actions require an external signer. This browser prepares exact context but does not hold private keys or establish actor authority.</p>
             </section>
+            ${practiceSource ? `<section class="settings-card practice-card" aria-labelledby="practice-heading">
+              <p class="eyebrow">Local practice</p>
+              <h2 id="practice-heading">Fixture controls</h2>
+              <p>These actions change only this local workspace. They do not grant ledger authority or prove finality.</p>
+              <details class="settings-technical practice-controls"${practiceOpen ? " open" : ""}>
+                <summary>Open practice controls</summary>
+                <div class="practice-control-content">
+                  <section aria-labelledby="practice-record-heading">
+                    <h3 id="practice-record-heading">Selected record</h3>
+                    <p>${practiceCard === undefined ? "Select a record in the review workspace first." : escapeHtml(practiceCard.label)}</p>
+                    ${practiceCard === undefined ? "" : `<div class="actions">
+                      ${getReviewActions(practiceCard.status).map((action) => `<button class="button${action === "archive" ? " ghost" : ""}" type="button" data-action="${escapeHtml(action)}"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>${escapeHtml(action.charAt(0).toUpperCase() + action.slice(1))} in fixture</button>`).join("") || "<p>No practice actions for this lifecycle state.</p>"}
+                    </div>`}
+                  </section>
+                  <form class="epoch-panel governed-panel" id="task-epoch" data-epoch-form>
+                    <label>Workspace checkpoint label
+                      <input class="input" data-epoch-label type="text" value="${escapeHtml(state.epochLabel)}" placeholder="optional operator label" />
+                    </label>
+                    <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Publish fixture epoch</button>
+                  </form>
+                  <section class="proposal-panel governed-panel" id="task-signed-intent">
+                    <h3>Signed workspace intent</h3>
+                    <p>Load the current workspace context, sign a maintainer action outside this browser, and paste only the signed envelope. This is separate from Compact quorum governance and never handles private keys.</p>
+                    <button class="button secondary" type="button" data-signed-context${state.signedBusy ? " disabled" : ""}>Load signing context</button>
+                    ${state.signedContext === undefined ? "" : `<pre class="governed-context mono">${escapeHtml(JSON.stringify(state.signedContext, null, 2))}</pre>`}
+                    <form data-signed-submit>
+                      <label>Externally signed envelope
+                        <textarea class="input mono governed-signers" name="signedEnvelope" spellcheck="false" autocomplete="off" required></textarea>
+                      </label>
+                      <button class="button" type="submit"${state.signedBusy || state.signedContext === undefined ? " disabled" : ""}>Submit signed action</button>
+                    </form>
+                  </section>
+                </div>
+              </details>
+            </section>` : ""}
           </div>
           <div class="settings-footer"><strong>Identity is not authority</strong><p>The DID session is temporary and stays in browser memory. Maintainer authorization, external signing, and governance policy are separate.</p></div>
         </section>
@@ -1326,32 +1355,9 @@ export const createAdminConsoleApp = (
         ` : ""}
         <details class="advanced-workflows" id="advanced-governance"${advancedOpen ? " open" : ""}><summary>Advanced governance and signing actions</summary>
         ${state.board === undefined ? `<p class="settings-note">Connect to a registry source before preparing governance work.</p>` : `<nav class="governance-task-grid" aria-label="Governance tasks">
-          ${state.board.sourceMode === "local-ledger" || !demoMode ? "" : `<a href="#task-epoch"><strong>Publish an epoch</strong><span>Fixture workspace checkpoint, not ledger finality</span></a>
-          <a href="#task-signed-intent"><strong>Submit a signed workspace intent</strong><span>External maintainer signature; local workspace only</span></a>`}
           <a href="#task-proposal"><strong>Prepare or recover a proposal</strong><span>Exact applicant evidence and external quorum</span></a>
           <a href="#task-policy"><strong>Revise quorum and register verifier</strong><span>Separate policy-bound steps</span></a>
         </nav>`}
-        ${demoMode && state.board !== undefined && state.board.sourceMode !== "local-ledger" ? `<form class="epoch-panel governed-panel" id="task-epoch" data-epoch-form>
-          <label>Publish epoch label
-            <input class="input" data-epoch-label type="text" value="${escapeHtml(state.epochLabel)}" placeholder="optional operator label" />
-          </label>
-          <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Publish epoch</button>
-        </form>` : ""}
-        ${demoMode && state.board !== undefined && state.board.sourceMode !== "local-ledger" ? `<section class="proposal-panel governed-panel" id="task-signed-intent">
-          <div>
-            <p class="eyebrow">Signed workspace action</p>
-            <h2>Submit an external maintainer intent</h2>
-            <p>Load the current workspace context, sign a maintainer action outside this browser, and paste only the signed envelope. This local workspace path is separate from Compact quorum governance and never handles private keys.</p>
-          </div>
-          <button class="button secondary" type="button" data-signed-context${state.signedBusy ? " disabled" : ""}>Load signing context</button>
-          ${state.signedContext === undefined ? "" : `<pre class="governed-context mono">${escapeHtml(JSON.stringify(state.signedContext, null, 2))}</pre>`}
-          <form data-signed-submit>
-            <label>Externally signed envelope
-              <textarea class="input mono governed-signers" name="signedEnvelope" spellcheck="false" autocomplete="off" required></textarea>
-            </label>
-            <button class="button" type="submit"${state.signedBusy || state.signedContext === undefined ? " disabled" : ""}>Submit signed action</button>
-          </form>
-        </section>` : ""}
         ${state.board === undefined ? "" : `<section class="proposal-panel governed-panel" id="task-proposal">
           <div>
             <p class="eyebrow">Membership application</p>

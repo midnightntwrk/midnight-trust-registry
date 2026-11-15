@@ -81,7 +81,9 @@ describe("admin signed browser journey", () => {
       storage: { getItem: () => null, setItem: vi.fn() } as unknown as Storage,
       fetchImpl: fetchImpl as typeof fetch, confirm,
     });
-    await vi.waitFor(() => expect(root.textContent).toContain("Submit an external maintainer intent"));
+    await vi.waitFor(() => expect(root.textContent).toContain("Signed workspace intent"));
+    expect(root.querySelector("[data-signed-submit]")?.closest("#workspace-settings")).not.toBeNull();
+    expect(root.querySelector(".advanced-workflows [data-signed-submit]")).toBeNull();
     root.querySelector<HTMLButtonElement>("[data-signed-context]")!.click();
     await vi.waitFor(() => expect(root.textContent).toContain(context.expectedWorkspaceCommitment));
     expect(calls.find((call) => call.path === "/v1/registry/mutation-context")?.init).toEqual({ cache: "no-store" });

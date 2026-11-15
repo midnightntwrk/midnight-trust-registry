@@ -62,6 +62,8 @@ for (const target of ["issuer", "recognition"]) {
       await expect(page.locator(".source-badge")).toHaveText("Local fixture");
       await expect(page.locator(".card").filter({ hasText: label })).toContainText("Proposed");
       await page.locator(".card").filter({ hasText: label }).click();
+      await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
+      await page.locator(".practice-controls > summary").click();
       await page.locator('[data-action="approve"]').click();
       await expect(page.locator(".card").filter({ hasText: label })).toContainText("Authorized");
       await page.locator('[data-action="activate"]').click();

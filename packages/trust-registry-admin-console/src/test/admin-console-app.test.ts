@@ -82,9 +82,10 @@ describe("admin console browser handlers", () => {
   it("hides fixture shortcut actions unless local demo mode is explicit", async () => {
     const root = document.createElement("div");
     document.body.replaceChildren(root);
+    let sourceMode = "workspace";
     const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
       const path = new URL(String(input)).pathname;
-      if (path === "/health") return Response.json({ status: "ok", sourceMode: "workspace", registryId: "registry:local" });
+      if (path === "/health") return Response.json({ status: "ok", sourceMode, registryId: "registry:local" });
       if (path === "/v1/registry/summary") return Response.json({ registryLabel: "local", currentEpochId: "epoch:1",
         issuerCounts: counts(), verifierCounts: counts(), auditorCounts: { ...counts(), active: 1 }, recognitionCounts: counts() });
       return Response.json({ entries: path === "/v1/authorizations/auditor" ? [auditor] : [] });
@@ -104,6 +105,14 @@ describe("admin console browser handlers", () => {
     expect(root.querySelector(".column-header")?.textContent).toContain("1 item");
     await renderAt("http://127.0.0.1:4173/?demo=1&apiBase=http://127.0.0.1:4400");
     expect(root.querySelector("[data-action]")).not.toBeNull();
+    expect(root.querySelector("#workspace-settings [data-action]")).not.toBeNull();
+    expect(root.querySelector("#selected-record-detail [data-action]")).toBeNull();
+    expect(root.querySelector("#workspace-settings #task-epoch")).not.toBeNull();
+    expect(root.querySelector(".advanced-workflows #task-epoch")).toBeNull();
+    sourceMode = "snapshot";
+    await renderAt("http://127.0.0.1:4173/?demo=1&apiBase=http://127.0.0.1:4400");
+    expect(root.querySelector("[data-action], #task-epoch, #task-signed-intent")).toBeNull();
+    sourceMode = "workspace";
     await renderAt("https://registry.example/?demo=1&apiBase=http://127.0.0.1:4400");
     expect(root.querySelector("[data-action]")).toBeNull();
   });

@@ -66,7 +66,8 @@ test("a late governance receipt cannot replace another registry's board", async 
     const registryLabel = page.locator(".registry-context strong");
     await expect(registryLabel).toHaveText("Registry A");
 
-    await page.locator(".advanced-workflows > summary").click();
+    await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
+    await page.locator(".practice-controls > summary").click();
     await page.locator("[data-signed-submit] [name='signedEnvelope']").fill("signed-for-registry-a");
     const completedPublication = page.waitForResponse((response) => response.url().endsWith("/a/v1/epochs/publish"));
     await page.locator("[data-epoch-label]").fill("first-registry-epoch");
@@ -76,7 +77,6 @@ test("a late governance receipt cannot replace another registry's board", async 
       new Promise((_, reject) => setTimeout(() => reject(new Error("epoch publication request did not start")), 3000)),
     ]);
 
-    await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
     await page.locator("[data-api-base-form] [name='apiBase']").fill(`${base}/b`);
     await page.locator("[data-api-base-form] button[type='submit']").click();
     await expect(registryLabel).toHaveText("Registry B");
@@ -251,6 +251,8 @@ test("fixture admin review advances an issuer through approval, activation, risk
     await page.locator("[data-review-status]").selectOption("all");
     await expect(page.locator(".card")).toHaveCount(1);
     expect(posted).toEqual([]);
+    await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
+    await page.locator(".practice-controls > summary").click();
     await page.locator('[data-action="approve"]').click();
     await expect(page.locator(".card .status-chip")).toHaveText("Authorized");
     await page.locator('[data-action="activate"]').click();
@@ -264,8 +266,9 @@ test("fixture admin review advances an issuer through approval, activation, risk
     await expect(page.locator(".review-checks")).toHaveCount(0);
     await expect(page.locator(".review-filters")).toContainText("Browse registry records");
     await expect(page.locator(".source-panel")).toContainText("not deployed ledger evidence");
+    await page.locator(".settings-back").click();
     await page.locator(".advanced-workflows > summary").click();
-    await expect(page.locator(".governance-task-grid a")).toHaveCount(4);
+    await expect(page.locator(".governance-task-grid a")).toHaveCount(2);
     expect(await page.locator(".governance-task-grid a").evaluateAll((links) => links.every((link) =>
       document.querySelector(link.getAttribute("href")) !== null))).toBe(true);
     expect(posted).toEqual([
@@ -341,13 +344,12 @@ test("fixture governance publishes an epoch and submits an externally signed wor
     });
     await page.goto(`${base}/?demo=1&apiBase=${encodeURIComponent(base)}`);
     await expect(page.locator(".source-badge")).toHaveText("Local fixture");
-    await page.locator(".advanced-workflows > summary").click();
+    await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
+    await page.locator(".practice-controls > summary").click();
     await page.locator("[data-epoch-label]").fill("reviewed fixture epoch");
     await page.locator("[data-epoch-form] button[type='submit']").click();
     await expect(page.locator("[data-epoch-label]")).toBeEmpty();
-    await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
     await expect(page.locator(".settings-view")).toContainText("epoch:ui-governance:2");
-    await page.locator(".settings-back").click();
     expect(confirmations[0]).toContain("reviewed fixture epoch");
     expect(posted[0]).toEqual({ path: "/v1/epochs/publish", body: { label: "reviewed fixture epoch" } });
 

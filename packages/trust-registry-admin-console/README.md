@@ -100,7 +100,9 @@ Notes:
   fields across reload or host changes. Simulator observation is not network
   finality
 - fixture shortcut actions, epoch publication, and workspace-intent controls
-  are hidden by default. Add `demo=1` to a loopback console URL to show them.
+  are hidden by default. Add `demo=1` to a loopback console URL and open
+  **Workspace settings > Fixture controls** to show them on a mutable fixture
+  source. Read-only snapshots and local-ledger sources never show these tools.
   This presentation switch grants no API permissions: the fixture API also
   requires `--unsafe-demo-mutations` on loopback. Omit both for ordinary use
 - auditor cards show the exact composite request-resource ID, policy, epoch,
