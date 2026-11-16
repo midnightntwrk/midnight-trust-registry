@@ -90,6 +90,10 @@ consent nor a verified VP is itself a registry role grant.
 DID sign-in requires a trusted same-origin host to inject
 `window.midnightTrustRegistryDidSigner`; see the
 [client signer contract](../trust-registry-client/README.md#browser-identity-session).
+When a current applicant session is supplied to the portal client, private
+registration and VP requests send its bearer only to that exact API origin,
+without ambient browser credentials or redirects. The host still authenticates
+each route; the client token is not a signed mutation intent.
 The host owns key custody and signer-side challenge verification. A successful
 sign-in only proves DID key control; it never grants issuer, verifier, auditor,
 or maintainer authority. VP eligibility and governed registry authorization

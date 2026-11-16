@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { z, ZodError } from "zod";
 
 import { buildSnapshotSummary } from "@midnight-ntwrk/trust-registry-cli";
-import { ActorAuthenticationChallengeSchema, DecisionEvidenceSchema, SignedPendingApplicationSchema } from "@midnight-ntwrk/trust-registry-domain";
+import { ActorAuthenticationChallengeSchema, DecisionEvidenceSchema, PendingApplicationRecordSchema, SignedPendingApplicationSchema } from "@midnight-ntwrk/trust-registry-domain";
 import { encodeCompactActionKind } from "@midnight-ntwrk/trust-registry-contract";
 import { EvidenceVerifierDidResolutionUnavailableError } from "@midnight-ntwrk/trust-registry-integration";
 import { LocalIssuerEvidenceTimeRejectedError } from "./local-issuer-proposal-port.js";
@@ -1170,7 +1170,7 @@ export const createTrustRegistryApiServer = (
         || (segments.length === 6 && segments[1] === "governed" && segments[2] === "recognition"
           && segments[4] === "proposal" && (segments[5] === "prepare" || segments[5] === "submit"
             || segments[5] === "resolve" || segments[5] === "evidence"))
-        || (segments.length === 2 && segments[1] === "pending-applications")
+        || ((segments.length === 2 || segments.length === 3) && segments[1] === "pending-applications")
       );
 
       if (method === "OPTIONS") {
@@ -1402,6 +1402,12 @@ export const createTrustRegistryApiServer = (
         if (port === undefined) {
           throw jsonProblem(problemBaseUri, "pending-application-unavailable", 503, "pending application unavailable");
         }
+        const authenticatedSubjectDid = options.actorAuthentication?.sessions.authenticate(
+          request.headers.authorization, "applicant-session",
+        )?.actorDid;
+        if (options.actorAuthentication !== undefined && authenticatedSubjectDid === undefined) {
+          throw jsonProblem(problemBaseUri, "pending-application-forbidden", 403, "pending application forbidden");
+        }
         if (options.authorizePendingApplicationRegistration !== undefined) {
           try {
             await options.authorizePendingApplicationRegistration(request);
@@ -1410,6 +1416,9 @@ export const createTrustRegistryApiServer = (
           }
         }
         const requestBody = await parseJsonBody(request, (value) => SignedPendingApplicationSchema.parse(value), problemBaseUri);
+        if (authenticatedSubjectDid !== undefined && requestBody.intent.actorDid !== authenticatedSubjectDid) {
+          throw jsonProblem(problemBaseUri, "pending-application-forbidden", 403, "pending application forbidden");
+        }
         try {
           const record = await port.register(requestBody, new Date(options.clock?.() ?? new Date().toISOString()));
           writeJson(response, 201, record, false);
@@ -1455,6 +1464,33 @@ export const createTrustRegistryApiServer = (
         writeJson(response, 200, PendingApplicationListResponseSchema.parse({
           entries,
         }), false);
+        return;
+      }
+
+      if (method === "GET" && segments.length === 3 && segments[0] === "v1"
+        && segments[1] === "pending-applications") {
+        response.setHeader("cache-control", "no-store");
+        const subjectDid = options.actorAuthentication?.sessions.authenticate(
+          request.headers.authorization, "applicant-session",
+        )?.actorDid;
+        if (subjectDid === undefined) {
+          throw jsonProblem(problemBaseUri, "applicant-session-required", 403, "applicant session required");
+        }
+        const applicationId = z.string().min(3).max(256).regex(/^[a-z0-9][a-z0-9:._-]*$/u).safeParse(segments[2]);
+        if (!applicationId.success) {
+          throw jsonProblem(problemBaseUri, "invalid-application-id", 400, "invalid application ID");
+        }
+        const read = options.pendingApplicationRegistration?.readForSubjectDid;
+        if (read === undefined) {
+          throw jsonProblem(problemBaseUri, "pending-application-read-unavailable", 503,
+            "pending application read unavailable");
+        }
+        const record = await read.call(options.pendingApplicationRegistration, subjectDid, applicationId.data);
+        if (record === null || record.binding.subjectDid !== subjectDid
+          || record.binding.applicationId !== applicationId.data) {
+          throw jsonProblem(problemBaseUri, "pending-application-not-found", 404, "pending application not found");
+        }
+        writeJson(response, 200, PendingApplicationRecordSchema.parse(record), false);
         return;
       }
 

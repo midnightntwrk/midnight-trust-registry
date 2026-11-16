@@ -35,7 +35,8 @@ These are three different checks. Passing one never silently passes the next.
    decentralized identifier (DID) authentication key. This is the phase-0
    0.2.0 MVP. It does not assign a registry role and is not a claim of SIOP
    protocol conformance. In the V2 applicant and admin apps, an external DID
-   signer and same-origin host can enable this in **Workspace settings**;
+   signer and same-origin host can enable this from **Application readiness**
+   in the applicant portal or **Workspace settings** in either app;
    the purposes are distinct and admin sign-in is not voting authority. The short-lived
    session remains in browser memory and is cleared on sign-out or source
    change. Packaged 0.1.0 has no such sign-in. Local practice sign-in uses
@@ -80,6 +81,10 @@ missing result as a denial by the registry or as a successful authorization.
 
 For the current implementation and its exact APIs, see the [use cases](./use-cases.md),
 [API reference](../api/), and [end-to-end qualification](./end-to-end-testing.md).
+Advanced operators can run the headless DID and signed-intake fixture from the
+[end-to-end guide](./end-to-end-testing.md). Its pending list is not a
+finalized decision or exact signed-request reconciliation. Keep the ephemeral
+session and signed request out of shell arguments, logs, and saved examples.
 
 ## Know your source
 

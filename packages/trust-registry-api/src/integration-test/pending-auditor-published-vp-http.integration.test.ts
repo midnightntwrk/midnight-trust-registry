@@ -4,6 +4,8 @@ import type { Server } from "node:http";
 import { createOperatorWorkspace } from "@midnight-ntwrk/trust-registry-cli";
 import { encodeJubjubSignature, payloadToJubjubDigest, signJubjubDigest } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import {
+  ActorAuthenticationChallengeSchema,
+  actorAuthenticationDigestBytes,
   computeAuthorizationScopeCommitment,
   computePendingApplicationPayloadCommitment,
   mutationIntentDigestBytes,
@@ -12,16 +14,20 @@ import {
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
   createApplicationVpIntakePorts,
+  createQualifiedApplicationVpIntakePorts,
   createApplicationVpScenarioFixture,
   createMidnightDid,
   VP_FIXTURE_TIME_MS,
+  VP_FIXTURE_TRUST_CONTEXT,
 } from "@midnight-ntwrk/trust-registry-integration";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { createActorAuthenticationService } from "../actor-authentication.js";
+import { createActorSessionService } from "../actor-sessions.js";
 import { InMemoryApplicationChallengeStore } from "../application-challenges.js";
 import type { ApplicationVpHttpPort } from "../application-vp-http.js";
 import { InMemoryPendingApplicationRegistrationPort } from "../pending-application-registration.js";
-import { createTrustRegistryApiServer } from "../server.js";
+import { createTrustRegistryApiServer, type TrustRegistryApiServerOptions } from "../server.js";
 import { createInMemorySource } from "../source.js";
 import { computeOperatorWorkspaceCommitment } from "../workspace-commitment.js";
 
@@ -58,8 +64,11 @@ describe("auditor signed apply through published DID/VC/VP HTTP intake", () => {
   });
 
   it("registers a DID applicant and accepts one genuinely signed, policy-scoped VP without exposing claims", async () => {
-    const fixture = await createApplicationVpScenarioFixture(undefined, { scope, subjectDid, evidenceVerifierDid });
     const workspace = createOperatorWorkspace({ label: "auditor-published-vp-http" });
+    const fixtureContext = { ...VP_FIXTURE_TRUST_CONTEXT, registryId: workspace.snapshot.registry.registryId };
+    const fixture = await createApplicationVpScenarioFixture(undefined, {
+      scope, subjectDid, evidenceVerifierDid, trustContext: fixtureContext,
+    });
     const registration = new InMemoryPendingApplicationRegistrationPort({
       workspace, applications: [], consumedNonces: [],
     }, evidenceVerifierDid, fixture.input.resolver);
@@ -69,6 +78,7 @@ describe("auditor signed apply through published DID/VC/VP HTTP intake", () => {
       signer: fixture.signer,
     });
     let storedEvidence: unknown;
+    let qualifiedVerifier: ApplicationVpHttpPort["verifyPresentation"] | undefined;
     const applicationVp: ApplicationVpHttpPort = {
       challengeStore: new InMemoryApplicationChallengeStore(),
       authorizeRequest: async (id, request) => {
@@ -90,6 +100,21 @@ describe("auditor signed apply through published DID/VC/VP HTTP intake", () => {
         };
       },
       ...ports,
+      verifyPresentation: async (presentation, context) => {
+        if (qualifiedVerifier === undefined) {
+          if (server === undefined) throw new Error("HTTP host is not listening");
+          const address = server.address();
+          if (address === null || typeof address === "string") throw new Error("TCP address expected");
+          const qualified = await createQualifiedApplicationVpIntakePorts({
+            resolver: fixture.input.resolver,
+            family: fixture.family,
+            signer: fixture.signer,
+            trustContext: { ...fixtureContext, origin: `http://127.0.0.1:${address.port.toString()}` },
+          });
+          qualifiedVerifier = qualified.verifyPresentation;
+        }
+        return qualifiedVerifier(presentation, context);
+      },
       persistRedactedEvidence: async (_id, evidence) => {
         storedEvidence = evidence;
         return {
@@ -99,13 +124,59 @@ describe("auditor signed apply through published DID/VC/VP HTTP intake", () => {
         };
       },
     };
-    server = createTrustRegistryApiServer({
+    const serverOptions: TrustRegistryApiServerOptions = {
       source: createInMemorySource(workspace.snapshot),
       clock: () => NOW,
       pendingApplicationRegistration: registration,
       applicationVp,
-    });
+    };
+    server = createTrustRegistryApiServer(serverOptions);
     const base = await listen(server);
+    const authChallenges = new Map<string, number>();
+    serverOptions.actorAuthentication = {
+      challenges: createActorAuthenticationService({
+        context: { ...fixtureContext, origin: base },
+        resolver: fixture.input.resolver,
+        store: {
+          async insert(digest, _actorHash, expiresAtMs, nowMs) {
+            for (const [key, expiry] of authChallenges) if (expiry <= nowMs) authChallenges.delete(key);
+            if (authChallenges.has(digest)) return false;
+            authChallenges.set(digest, expiresAtMs);
+            return true;
+          },
+          async consume(digest, nowMs) {
+            const expiry = authChallenges.get(digest);
+            if (expiry === undefined || expiry <= nowMs) return false;
+            authChallenges.delete(digest);
+            return true;
+          },
+        },
+        clock: () => VP_FIXTURE_TIME_MS,
+      }),
+      sessions: createActorSessionService(() => VP_FIXTURE_TIME_MS),
+    };
+    const authenticationChallenge = await fetch(`${base}/v1/actor-authentication/challenges`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: base },
+      body: JSON.stringify({ actorDid: subjectDid, actorKeyId: `${subjectDid}#auth-1`, purpose: "applicant-session" }),
+    });
+    expect(authenticationChallenge.status).toBe(201);
+    const authChallenge = ActorAuthenticationChallengeSchema.parse(await authenticationChallenge.json());
+    const authenticationSession = await fetch(`${base}/v1/actor-authentication/sessions`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: base },
+      body: JSON.stringify({ challenge: authChallenge, signature: {
+        keyId: `${subjectDid}#auth-1`,
+        algorithm: "jubjub-schnorr",
+        value: `0x${Buffer.from(encodeJubjubSignature(signJubjubDigest(
+          23n, payloadToJubjubDigest(actorAuthenticationDigestBytes(authChallenge)),
+        ))).toString("hex")}`,
+      } }),
+    });
+    expect(authenticationSession.status).toBe(201);
+    const session = await authenticationSession.json() as { accessToken: string; role?: string; vpEligible?: boolean };
+    expect(session.role).toBeUndefined();
+    expect(session.vpEligible).toBeUndefined();
     const intent: MutationIntent = {
       version: "tr-mutation-intent-v1",
       registryId: workspace.snapshot.registry.registryId,
@@ -141,24 +212,46 @@ describe("auditor signed apply through published DID/VC/VP HTTP intake", () => {
     };
     const post = (path: string, body: unknown) => fetch(`${base}${path}`, {
       method: "POST",
-      headers: { "content-type": "application/json", "x-applicant-did": subjectDid },
+      headers: { "content-type": "application/json", "x-applicant-did": subjectDid,
+        authorization: `Bearer ${session.accessToken}` },
       body: JSON.stringify(body),
     });
     const registered = await post("/v1/pending-applications", signed);
     expect(registered.status).toBe(201);
     expect((await registered.json() as { binding: { scope: unknown } }).binding.scope).toEqual(scope);
+    const pending = registration.readPending(applicationId);
+    if (pending === null) throw new Error("Registered application is missing");
+    const vpOptions = {
+      scope, subjectDid, evidenceVerifierDid,
+      trustContext: { ...fixtureContext, origin: base },
+      policyId: pending.binding.policyId,
+      policyVersion: pending.binding.policyVersion,
+    };
     const path = `/v1/application-evidence/${applicationId}`;
+    const unauthenticatedChallenge = await fetch(`${base}${path}/challenges`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-applicant-did": subjectDid },
+      body: "{}",
+    });
+    expect(unauthenticatedChallenge.status).toBe(403);
     const challengeResponse = await post(`${path}/challenges`, {});
     expect(challengeResponse.status).toBe(201);
     const challenge = await challengeResponse.json() as { nonce: string; challengeHash: string };
-    const validVp = await createApplicationVpScenarioFixture(challenge.nonce, {
-      scope, subjectDid, evidenceVerifierDid,
-    });
+    const validVp = await createApplicationVpScenarioFixture(challenge.nonce, vpOptions);
     const wrongScopeVp = await createApplicationVpScenarioFixture(challenge.nonce, {
-      scope: { ...scope, purpose: "different-purpose" }, subjectDid, evidenceVerifierDid,
+      ...vpOptions, scope: { ...scope, purpose: "different-purpose" },
     });
     const wrongCredentialScopeVp = await createApplicationVpScenarioFixture(challenge.nonce, {
-      scope: { ...scope, credentialScopeCommitment: `0x${"33".repeat(32)}` }, subjectDid, evidenceVerifierDid,
+      ...vpOptions, scope: { ...scope, credentialScopeCommitment: `0x${"33".repeat(32)}` },
+    });
+    const wrongOriginVp = await createApplicationVpScenarioFixture(challenge.nonce, {
+      ...vpOptions, presentationContext: { audience: "http://127.0.0.1:1" },
+    });
+    const wrongRegistryVp = await createApplicationVpScenarioFixture(challenge.nonce, {
+      ...vpOptions, presentationContext: { registryId: "registry:other" },
+    });
+    const wrongPolicyVp = await createApplicationVpScenarioFixture(challenge.nonce, {
+      ...vpOptions, presentationContext: { policyVersion: "v2" },
     });
     const submission = (presentation: unknown) => ({
       nonce: challenge.nonce,
@@ -168,6 +261,9 @@ describe("auditor signed apply through published DID/VC/VP HTTP intake", () => {
     const wrong = await post(`${path}/submissions`, submission(wrongScopeVp.input.submission));
     expect(wrong.status).toBe(403);
     expect((await post(`${path}/submissions`, submission(wrongCredentialScopeVp.input.submission))).status).toBe(403);
+    for (const rejected of [wrongOriginVp, wrongRegistryVp, wrongPolicyVp]) {
+      expect((await post(`${path}/submissions`, submission(rejected.input.submission))).status).toBe(403);
+    }
     const assertStatusActive = fixture.family.assertStatusActive;
     fixture.family.assertStatusActive = async () => { throw new Error("Credential status is revoked"); };
     try {
@@ -184,5 +280,11 @@ describe("auditor signed apply through published DID/VC/VP HTTP intake", () => {
     expect(JSON.stringify(body)).not.toContain("private-presentation-payload");
     expect(JSON.stringify(storedEvidence)).not.toContain("private-presentation-payload");
     expect((await post(`${path}/submissions`, submission(validVp.input.submission))).status).toBe(409);
+    const signedOut = await fetch(`${base}/v1/actor-authentication/session`, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${session.accessToken}` },
+    });
+    expect(signedOut.status).toBe(204);
+    expect((await post(`${path}/challenges`, {})).status).toBe(403);
   });
 });

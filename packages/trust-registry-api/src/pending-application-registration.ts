@@ -1,11 +1,14 @@
 import type { TrustRegistryOperatorWorkspace } from "@midnight-ntwrk/trust-registry-cli";
 import {
   ApplicationChallengeBindingSchema,
+  PendingApplicationRecordSchema,
   SignedPendingApplicationSchema,
   canonicalizeJson,
   computeAuthorizationScopeCommitment,
+  computeSignedPendingApplicationCommitment,
   pendingApplicationMutationPayload,
   type SignedPendingApplication,
+  type PendingApplicationRecord,
 } from "@midnight-ntwrk/trust-registry-domain";
 import { z } from "zod";
 
@@ -15,17 +18,7 @@ export { MAX_PENDING_APPLICATION_LIST_ITEMS, PendingApplicationListResponseSchem
 import type { MutationIntentActorFailure } from "./mutation-intent-actor-binding.js";
 import { verifyMutationIntentDidSignature } from "./mutation-intent-verifier.js";
 
-export const PendingApplicationRecordSchema = z.strictObject({
-  authorizationId: z.string().trim().min(1).max(256),
-  binding: ApplicationChallengeBindingSchema,
-  status: z.enum(["pending", "archived"]),
-  createdAt: z.string().datetime({ offset: true }),
-  archiveEventHash: z.string().regex(/^0x[0-9a-f]{64}$/u).optional(),
-}).superRefine((record, context) => {
-  if ((record.status === "archived") !== (record.archiveEventHash !== undefined)) {
-    context.addIssue({ code: "custom", path: ["archiveEventHash"], message: "Archive event is required only for archived applications" });
-  }
-});
+export { PendingApplicationRecordSchema };
 
 export const ArchivedApplicationObservationSchema = z.strictObject({
   authorizationId: z.string().trim().min(1).max(256),
@@ -39,7 +32,7 @@ export type VerifyArchivedApplicationObservation = (
   observation: ArchivedApplicationObservation,
 ) => string | null | Promise<string | null>;
 
-export type PendingApplicationRecord = z.infer<typeof PendingApplicationRecordSchema>;
+export type { PendingApplicationRecord };
 
 export type PendingApplicationSummary = z.infer<typeof PendingApplicationSummarySchema>;
 
@@ -71,6 +64,7 @@ export type PendingApplicationRegistrationState = {
 export interface PendingApplicationRegistrationPort {
   register(request: SignedPendingApplication, now: Date): Promise<PendingApplicationRecord>;
   listForSubjectDid?(subjectDid: string): Promise<readonly PendingApplicationScopedSummary[]>;
+  readForSubjectDid?(subjectDid: string, applicationId: string): Promise<PendingApplicationRecord | null>;
 }
 
 export class PendingApplicationRegistrationRejectedError extends Error {
@@ -174,6 +168,7 @@ export async function transitionPendingApplicationRegistration(
     workspace: state.workspace,
     applications: [...state.applications, {
       authorizationId: request.authorizationId, binding, status: "pending", createdAt: now.toISOString(),
+      requestCommitment: computeSignedPendingApplicationCommitment(request),
     }],
     consumedNonces: [...state.consumedNonces, nonceKey],
   };
@@ -231,5 +226,12 @@ export class InMemoryPendingApplicationRegistrationPort implements PendingApplic
     return this.state.applications.filter(
       (item) => item.binding.subjectDid === subjectDid,
     ).map(summarizePendingApplication);
+  }
+
+  async readForSubjectDid(subjectDid: string, applicationId: string): Promise<PendingApplicationRecord | null> {
+    await this.tail;
+    const record = this.state.applications.find((entry) => entry.binding.subjectDid === subjectDid
+      && entry.binding.applicationId === applicationId);
+    return record === undefined ? null : structuredClone(record);
   }
 }

@@ -14,7 +14,7 @@ proposals, not evidence that a workflow is implemented or finalized.
 The [V2 canvas](https://uxpilot.ai/a/ui-design?page=rkHJ3LsTIYP0TaOZYr2k)
 is the current direction for the calmer applicant, maintainer, sign-in, and
 Registry Manual experiences. The shared left rail, palette, and concise
-applicant role choices and Settings-based phase-0 DID sign-in are implemented
+applicant role choices and phase-0 DID sign-in from the readiness step or Settings are implemented
 locally. A minimal **My applications** list is available only to an applicant
 with a same-origin DID session and a host-provided pending-application store;
 it shows private admission metadata, not VP readiness or a finalized ledger
@@ -106,8 +106,10 @@ same-origin host; a separate cross-origin demo API does not enable them. A
 same-origin URL check does not prove that a user session is authenticated; the
 host must authenticate each private request.
 
-The V2 portal places opt-in DID sign-in in Workspace settings, not in the
-public task area. An external signer proves control of the exact DID challenge;
+The V2 applicant portal offers opt-in DID sign-in in the readiness step when
+a same-origin host supplies a signer; Workspace settings also shows the
+session and connection details. The admin console keeps its distinct
+maintainer-purpose sign-in in Settings. An external signer proves control of the exact DID challenge;
 the short-lived bearer is held only in memory and sent only to same-origin
 private application-evidence routes. The UI must describe it as identity only:
 VP eligibility and governed role authority remain separate checks. The
@@ -203,14 +205,14 @@ repeatable UI acceptance evidence:
 | During Recheck, label the admin's last-loaded records as potentially stale with actions paused, hide portal records until the response arrives, then show an offline error without stale trust data and recover on a later successful check | `ui-layout.spec.mjs` (held health response, both apps) |
 | Show an operable Menu beside the brand lockup in one row at the default 320 px mobile size, before the main content; allow reflow at text zoom. Stack the brand lockup above task navigation in the desktop left rail, with the main work area starting beside it; place fixture admin review counts beside the task introduction on wide screens and ahead of source details on mobile | `ui-layout.spec.mjs` (fresh-page geometry assertions) |
 | Reject an external endpoint override on packaged same-origin admin and portal paths while preserving the authenticated-host warning | `ui-layout.spec.mjs` |
-| The applicant hero links to DID sign-in without granting a role; the actual signer action and identity-only session live in Settings. A fixture signer completes sign-in and sign-out there; the browser auth endpoint is mocked, while the separate headless HTTP journey covers real challenge verification | `ui-layout.spec.mjs`, `demo-did-session-journey.mjs` |
+| With a same-origin signer, the applicant readiness step offers sign-in directly, retains keyboard focus after success or failure, and shows a failed challenge without opening Settings. Settings also shows the identity-only session and sign-out; neither path grants a role. The readiness browser test uses a mocked auth endpoint, while the separate headless HTTP journey covers real challenge verification | `ui-layout.spec.mjs`, `demo-did-session-journey.mjs` |
 | The applicant role picker distinguishes signer unavailable, sign-in needed, signed-in identity, and cross-origin prepare-only states. It continues to name VP eligibility and governed approval as separate later steps after sign-in | `ui-layout.spec.mjs` |
 | A compact check summary near the role choices reflects only current DID sign-in state; it labels eligibility as unverified in this view and registry permission as requiring governed approval, never as completed because a user signed in | `ui-layout.spec.mjs` |
 | A selected admin record visibly offers “Next: review available actions” after evidence and decision detail; opening it explains external maintainer signing and does not submit a vote | `ui-layout.spec.mjs` |
 | Applicant task navigation and the bundled Manual open the exact-ID pending-request form, including its Advanced disclosure, without submitting a request. The separate **My applications** list requires an applicant-purpose DID session and an enabled private host port; it does not imply a grant or ledger decision | `ui-layout.spec.mjs`, `did-auth-live-http.spec.mjs` |
 | Admin Settings offers a distinct maintainer-purpose DID sign-in and sign-out without presenting it as voting authority or exposing the bearer. A visible selected record remains the return destination after sign-in; empty or filtered views return to the review board. Both apps pause the visible session during a source recheck, restore it only on a matching result, and clear it on source change. Browser auth is mocked here; the shared client also runs against the real loopback API in the headless journey | `ui-layout.spec.mjs`, `demo-did-session-journey.mjs` |
 | An idle applicant or admin page clears a locally expired DID session without navigation, tells the user to sign in again, and offers sign-in without implying a role grant or server revocation | `ui-layout.spec.mjs` (both apps, short-lived mocked bearer) |
-| A first-time applicant follows the bundled Manual to issuer role requirements, then signs in against the real same-origin loopback DID API. A bad signature shows a recoverable error and no session; valid sign-in retains the chosen role, returns directly to it from Settings, and still names eligibility and governed approval as separate checks. Both apps' bearers are purpose-isolated, not rendered, and never trigger a governance request | `did-auth-live-http.spec.mjs` |
+| A first-time applicant follows the bundled Manual to issuer role requirements, then signs in against the real same-origin loopback DID API through Settings. A bad signature shows a recoverable error and no session; valid sign-in retains the chosen role and still names eligibility and governed approval as separate checks. The readiness entry is separately covered with mocked browser auth. Both apps' bearers are purpose-isolated, not rendered, and never trigger a governance request | `did-auth-live-http.spec.mjs`, `ui-layout.spec.mjs` |
 | A first-time maintainer follows the bundled Manual to the review inbox before signing in against the real same-origin loopback DID API. Opening the inbox and DID sign-in do not submit a governed action or establish voting authority | `did-auth-live-http.spec.mjs` |
 | Switch an editable development endpoint between two loopback fixture hosts without carrying reads to the old host or enabling cross-origin private actions | `ui-layout.spec.mjs` (both apps) |
 | Open a governed issuer request by keyboard with reduced motion and verify the three visible preparation phases; keep mobile task targets at least 44 px high | `ui-layout.spec.mjs` |
