@@ -60,6 +60,7 @@ type CommandName =
   | "publish-epoch"
   | "inspect-deployment"
   | "api-register"
+  | "api-reconcile"
   | "api-applications"
   | "help";
 
@@ -93,6 +94,7 @@ Commands:
   publish-epoch    Publish the current workspace registry epoch anchor
   inspect-deployment  Read a Trust Registry deployment at a pinned finalized network checkpoint
   api-register     Register an externally signed pending application via an applicant DID session on stdin
+  api-reconcile    Check the exact signed request after an unknown registration outcome
   api-applications List this DID session's pending applications via stdin
 
 Actor API commands require --api-base; the DID session on stdin carries its sign-in origin.
@@ -704,6 +706,8 @@ export const runCli = async (
         return await runInspectDeployment(rest, io);
       case "api-register":
         return await runActorApiCommand("api-register", rest, io);
+      case "api-reconcile":
+        return await runActorApiCommand("api-reconcile", rest, io);
       case "api-applications":
         return await runActorApiCommand("api-applications", rest, io);
       case "help":

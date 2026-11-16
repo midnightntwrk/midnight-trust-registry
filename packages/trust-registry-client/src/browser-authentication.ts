@@ -2,6 +2,7 @@ import {
   ActorAuthenticationChallengeSchema,
   ActorAuthenticationSignatureSchema,
   actorAuthenticationDigestBytes,
+  computeSignedPendingApplicationCommitment,
   PendingApplicationListResponseSchema,
   PendingApplicationRecordSchema,
   SignedPendingApplicationSchema,
@@ -212,10 +213,69 @@ export async function registerApplicantApplication(input: {
     || parsed.data.binding.role !== request.scope.role
     || parsed.data.binding.scopeCommitment !== request.intent.scopeCommitment
     || parsed.data.binding.governedResource.type !== request.governedResource.type
-    || parsed.data.binding.governedResource.id !== request.governedResource.id) {
+    || parsed.data.binding.governedResource.id !== request.governedResource.id
+    || (parsed.data.requestCommitment !== undefined
+      && parsed.data.requestCommitment !== computeSignedPendingApplicationCommitment(request))) {
     throw new Error("Pending application registration returned a mismatched record. Do not resubmit the signed request; reconcile it by exact request identity.");
   }
   return parsed.data;
+}
+
+export type ApplicantApplicationReconciliation =
+  | { status: "observed"; record: PendingApplicationRecord }
+  | { status: "unknown" };
+
+/** A matching committed request proves intake observation, not a finalized governance decision. */
+export async function reconcileApplicantApplication(input: {
+  apiBase: string;
+  pageOrigin: string;
+  session: ActorDidSession<"applicant-session">;
+  request: SignedPendingApplication;
+  fetchImpl?: typeof fetch;
+  clock?: () => number;
+}): Promise<ApplicantApplicationReconciliation> {
+  const base = sameOriginApi(input.apiBase, input.pageOrigin);
+  if (input.session.origin !== input.pageOrigin) throw new Error("Applicant DID session origin does not match this page.");
+  currentApplicantSession(input.session, input.clock ?? Date.now);
+  const request = SignedPendingApplicationSchema.parse(input.request);
+  if (request.intent.actorDid !== input.session.actorDid
+    || request.intent.actorKeyId !== input.session.actorKeyId
+    || request.intent.registryId !== input.session.registryId) {
+    throw new Error("Signed application does not match the current applicant DID session.");
+  }
+  let response: Response;
+  try {
+    response = await (input.fetchImpl ?? fetch)(`${base}/v1/pending-applications/${encodeURIComponent(request.applicationId)}`, {
+      method: "GET", credentials: "omit", cache: "no-store", redirect: "error",
+      headers: { authorization: `Bearer ${input.session.accessToken}` },
+    });
+  } catch {
+    return { status: "unknown" };
+  }
+  if (response.status === 404 || response.status >= 500) return { status: "unknown" };
+  if (!response.ok) await responsePayload(response, "Pending application reconciliation");
+  let payload: unknown;
+  try {
+    payload = await response.json() as unknown;
+  } catch {
+    return { status: "unknown" };
+  }
+  const parsed = PendingApplicationRecordSchema.safeParse(payload);
+  if (!parsed.success) return { status: "unknown" };
+  const record = parsed.data;
+  if (record.requestCommitment === undefined) return { status: "unknown" };
+  if (record.requestCommitment !== computeSignedPendingApplicationCommitment(request)
+    || record.binding.applicationId !== request.applicationId
+    || record.authorizationId !== request.authorizationId
+    || record.binding.registryId !== input.session.registryId
+    || record.binding.subjectDid !== input.session.actorDid
+    || record.binding.role !== request.scope.role
+    || record.binding.scopeCommitment !== request.intent.scopeCommitment
+    || record.binding.governedResource.type !== request.governedResource.type
+    || record.binding.governedResource.id !== request.governedResource.id) {
+    throw new Error("Pending application reconciliation returned a mismatched record. Do not resubmit the signed request.");
+  }
+  return { status: "observed", record };
 }
 
 export async function listApplicantApplications(input: {

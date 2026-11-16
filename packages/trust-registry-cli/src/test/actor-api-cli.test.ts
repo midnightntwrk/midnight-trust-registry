@@ -3,6 +3,7 @@ import {
   SignedPendingApplicationSchema,
   computeAuthorizationScopeCommitment,
   computePendingApplicationPayloadCommitment,
+  computeSignedPendingApplicationCommitment,
 } from "@midnight-ntwrk/trust-registry-domain/browser";
 
 import { runCli } from "../cli.js";
@@ -88,6 +89,23 @@ describe("actor API CLI", () => {
       method: "GET", credentials: "omit", cache: "no-store", redirect: "error",
       headers: { authorization: `Bearer ${session.accessToken}` },
     });
+  });
+
+  it("reconciles a lost response by the original signed request without resubmitting", async () => {
+    const exactRecord = { ...record, requestCommitment: computeSignedPendingApplicationCommitment(request) };
+    const fetchMock = vi.fn(async () => Response.json(exactRecord));
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await capture("api-reconcile", { session, request });
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({ status: "observed", record: exactRecord });
+    expect(result.stdout).not.toContain(session.accessToken);
+    expect(fetchMock).toHaveBeenCalledWith(`${apiBase}/v1/pending-applications/${encodeURIComponent(applicationId)}`, {
+      method: "GET", credentials: "omit", cache: "no-store", redirect: "error",
+      headers: { authorization: `Bearer ${session.accessToken}` },
+    });
+    expect((await capture("api-reconcile", { session })).status).toBe(1);
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({}, { status: 404 })));
+    expect(JSON.parse((await capture("api-reconcile", { session, request })).stdout)).toEqual({ status: "unknown" });
   });
 
   it("keeps unavailable, invalid purpose, and cross-origin results distinct", async () => {

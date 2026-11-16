@@ -5,6 +5,7 @@ import {
   SignedPendingApplicationSchema,
   canonicalizeJson,
   computeAuthorizationScopeCommitment,
+  computeSignedPendingApplicationCommitment,
   pendingApplicationMutationPayload,
   type SignedPendingApplication,
   type PendingApplicationRecord,
@@ -63,6 +64,7 @@ export type PendingApplicationRegistrationState = {
 export interface PendingApplicationRegistrationPort {
   register(request: SignedPendingApplication, now: Date): Promise<PendingApplicationRecord>;
   listForSubjectDid?(subjectDid: string): Promise<readonly PendingApplicationScopedSummary[]>;
+  readForSubjectDid?(subjectDid: string, applicationId: string): Promise<PendingApplicationRecord | null>;
 }
 
 export class PendingApplicationRegistrationRejectedError extends Error {
@@ -166,6 +168,7 @@ export async function transitionPendingApplicationRegistration(
     workspace: state.workspace,
     applications: [...state.applications, {
       authorizationId: request.authorizationId, binding, status: "pending", createdAt: now.toISOString(),
+      requestCommitment: computeSignedPendingApplicationCommitment(request),
     }],
     consumedNonces: [...state.consumedNonces, nonceKey],
   };
@@ -223,5 +226,12 @@ export class InMemoryPendingApplicationRegistrationPort implements PendingApplic
     return this.state.applications.filter(
       (item) => item.binding.subjectDid === subjectDid,
     ).map(summarizePendingApplication);
+  }
+
+  async readForSubjectDid(subjectDid: string, applicationId: string): Promise<PendingApplicationRecord | null> {
+    await this.tail;
+    const record = this.state.applications.find((entry) => entry.binding.subjectDid === subjectDid
+      && entry.binding.applicationId === applicationId);
+    return record === undefined ? null : structuredClone(record);
   }
 }

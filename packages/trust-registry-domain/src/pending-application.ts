@@ -2,8 +2,8 @@ import { z } from "zod";
 
 import { GovernedResourceSchema } from "./application-evidence.js";
 import { ApplicationChallengeBindingSchema, governedResourceInScope } from "./application-challenge-binding.js";
-import { computeMutationPayloadCommitment } from "./canonical-json.js";
-import { ScopedIdentifierSchema } from "./ids.js";
+import { canonicalizeJson, computeMutationPayloadCommitment } from "./canonical-json.js";
+import { ScopedIdentifierSchema, sha256Hex } from "./ids.js";
 import { MutationIntentSchema, MutationIntentSignatureSchema } from "./mutation-intent.js";
 import { AuthorizationScopeSchema, canonicalizeAuthorizationScope, computeAuthorizationScopeCommitment } from "./scope.js";
 
@@ -44,6 +44,7 @@ export const PendingApplicationRecordSchema = z.strictObject({
   status: z.enum(["pending", "archived"]),
   createdAt: z.string().datetime({ offset: true }),
   archiveEventHash: z.string().regex(/^0x[0-9a-f]{64}$/u).optional(),
+  requestCommitment: z.string().regex(/^0x[0-9a-f]{64}$/u).optional(),
 }).superRefine((record, context) => {
   if ((record.status === "archived") !== (record.archiveEventHash !== undefined)) {
     context.addIssue({ code: "custom", path: ["archiveEventHash"], message: "Archive event is required only for archived applications" });
@@ -102,3 +103,10 @@ export const SignedPendingApplicationSchema = PendingApplicationPayloadSchema.sa
 });
 
 export type SignedPendingApplication = z.infer<typeof SignedPendingApplicationSchema>;
+
+export function computeSignedPendingApplicationCommitment(input: SignedPendingApplication): string {
+  return sha256Hex(JSON.stringify([
+    "tr:pending-application:signed-request:v1",
+    canonicalizeJson(SignedPendingApplicationSchema.parse(input)),
+  ]));
+}

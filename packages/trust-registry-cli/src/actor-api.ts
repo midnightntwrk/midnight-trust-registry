@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util";
 
-import { listApplicantApplications, registerApplicantApplication } from "@midnight-ntwrk/trust-registry-client/browser-authentication";
+import { listApplicantApplications, reconcileApplicantApplication, registerApplicantApplication } from "@midnight-ntwrk/trust-registry-client/browser-authentication";
 import { SignedPendingApplicationSchema } from "@midnight-ntwrk/trust-registry-domain/browser";
 import { z } from "zod";
 
@@ -49,7 +49,7 @@ async function readInput(io: ActorCliIo): Promise<string> {
 
 /** A caller supplies an ephemeral session and signed intent; the CLI never handles a private key. */
 export async function runActorApiCommand(
-  command: "api-register" | "api-applications",
+  command: "api-register" | "api-reconcile" | "api-applications",
   argv: readonly string[],
   io: ActorCliIo,
 ): Promise<number> {
@@ -72,6 +72,13 @@ export async function runActorApiCommand(
   if (command === "api-register") {
     if (input.data.request === undefined) throw new Error("api-register requires a signed request on stdin");
     io.stdout(serializeJson(await registerApplicantApplication({
+      apiBase, pageOrigin, session: input.data.session, request: input.data.request,
+    })));
+    return 0;
+  }
+  if (command === "api-reconcile") {
+    if (input.data.request === undefined) throw new Error("api-reconcile requires the original signed request on stdin");
+    io.stdout(serializeJson(await reconcileApplicantApplication({
       apiBase, pageOrigin, session: input.data.session, request: input.data.request,
     })));
     return 0;

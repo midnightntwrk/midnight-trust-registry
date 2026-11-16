@@ -520,6 +520,41 @@ paths:
       tags: [Private intake]
       summary: Register a DID-signed pending application
       responses: *governedResponses
+  /v1/pending-applications/{applicationId}:
+    parameters:
+      - name: applicationId
+        in: path
+        required: true
+        schema: { type: string, minLength: 3, maxLength: 256 }
+    get:
+      tags: [Private intake]
+      summary: Read one application for exact signed-request reconciliation
+      description: >-
+        Requires an applicant-purpose DID bearer session. Returns only a record
+        owned by that subject. A matching requestCommitment proves the exact
+        signed intake request was observed by this host, not a finalized
+        governance decision. Missing records and legacy records without a
+        commitment cannot establish that a lost submission was rejected.
+      responses:
+        '200':
+          description: Subject-scoped record; independently compare its request commitment
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [authorizationId, binding, status, createdAt]
+                properties:
+                  authorizationId: { type: string }
+                  binding: { type: object }
+                  status: { type: string, enum: [pending, archived] }
+                  createdAt: { type: string, format: date-time }
+                  archiveEventHash: { $ref: '#/components/schemas/Hex32' }
+                  requestCommitment: { $ref: '#/components/schemas/Hex32' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/PortUnavailable' }
   /v1/actor-authentication/challenges:
     post:
       tags: [Private intake]

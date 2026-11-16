@@ -5,9 +5,10 @@ import {
   SignedPendingApplicationSchema,
   computeAuthorizationScopeCommitment,
   computePendingApplicationPayloadCommitment,
+  computeSignedPendingApplicationCommitment,
 } from "@midnight-ntwrk/trust-registry-domain/browser";
 
-import { isActorDidSigner, isSameOriginPrivateApi, listApplicantApplications, registerApplicantApplication, signInActorDid, signOutActorDid } from "../browser-authentication.js";
+import { isActorDidSigner, isSameOriginPrivateApi, listApplicantApplications, reconcileApplicantApplication, registerApplicantApplication, signInActorDid, signOutActorDid } from "../browser-authentication.js";
 
 const NOW = Date.parse("2026-11-15T00:00:00.000Z");
 const origin = "http://127.0.0.1:4400";
@@ -236,6 +237,40 @@ describe("shared browser DID authentication", () => {
     await expect(listApplicantApplications({ ...input, session: { ...applicantSession, origin: "https://foreign.example" },
       fetchImpl: unavailable as unknown as typeof fetch })).rejects.toThrow("session origin");
     expect(unavailable.mock.calls).toHaveLength(1);
+  });
+
+  it("reconciles only the exact signed request, never a missing or legacy record", async () => {
+    const record = { ...pendingRecord,
+      requestCommitment: computeSignedPendingApplicationCommitment(signedApplication) };
+    const fetchMock = vi.fn(async () => Response.json(record));
+    const input = { apiBase: origin, pageOrigin: origin, session: applicantSession,
+      request: signedApplication, clock: () => NOW, fetchImpl: fetchMock as unknown as typeof fetch };
+    expect(await reconcileApplicantApplication(input)).toEqual({ status: "observed", record });
+    expect(fetchMock).toHaveBeenCalledWith(`${origin}/v1/pending-applications/${encodeURIComponent(applicationId)}`, {
+      method: "GET", credentials: "omit", cache: "no-store", redirect: "error",
+      headers: { authorization: `Bearer ${session.accessToken}` },
+    });
+    const response = (body: unknown, status = 200) => vi.fn(async () => Response.json(body, { status })) as unknown as typeof fetch;
+    expect(await reconcileApplicantApplication({ ...input, fetchImpl: response(pendingRecord) }))
+      .toEqual({ status: "unknown" });
+    expect(await reconcileApplicantApplication({ ...input, fetchImpl: response({}, 404) }))
+      .toEqual({ status: "unknown" });
+    expect(await reconcileApplicantApplication({ ...input, fetchImpl: response({}, 503) }))
+      .toEqual({ status: "unknown" });
+    expect(await reconcileApplicantApplication({ ...input,
+      fetchImpl: vi.fn(async () => { throw new Error("socket closed"); }) as unknown as typeof fetch }))
+      .toEqual({ status: "unknown" });
+    expect(await reconcileApplicantApplication({ ...input,
+      fetchImpl: vi.fn(async () => new Response("{", { status: 200 })) as unknown as typeof fetch }))
+      .toEqual({ status: "unknown" });
+    await expect(reconcileApplicantApplication({ ...input,
+      fetchImpl: response({ ...record, requestCommitment: `0x${"99".repeat(32)}` }) }))
+      .rejects.toThrow("mismatched record");
+    await expect(reconcileApplicantApplication({ ...input, fetchImpl: response({}, 403) }))
+      .rejects.toThrow("HTTP 403");
+    await expect(reconcileApplicantApplication({ ...input,
+      session: { ...applicantSession, purpose: "maintainer-session" } as unknown as typeof applicantSession }))
+      .rejects.toThrow("applicant DID session");
   });
 
   it("does not follow a challenge redirect or ask the external signer to sign", async () => {

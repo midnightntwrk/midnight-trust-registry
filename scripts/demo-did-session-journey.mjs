@@ -18,6 +18,7 @@ import {
   actorAuthenticationDigestBytes,
   computeAuthorizationScopeCommitment,
   computePendingApplicationPayloadCommitment,
+  computeSignedPendingApplicationCommitment,
   issuerGovernedResourceId,
   mutationIntentDigestBytes,
 } from "../packages/trust-registry-domain/dist/index.js";
@@ -105,6 +106,7 @@ try {
   }, actorDid, resolver);
   serverOptions.pendingApplicationRegistration = {
     register: (request, date) => registration.register(request, date),
+    readForSubjectDid: (subjectDid, applicationId) => registration.readForSubjectDid(subjectDid, applicationId),
     listForSubjectDid: async (subjectDid) => [
       ...(subjectDid === actorDid ? [{
         subjectDid: actorDid,
@@ -247,6 +249,11 @@ try {
   assert.equal(JSON.parse(afterLostResponse.stdout).entries.some(
     (entry) => entry.applicationId === lostPayload.applicationId,
   ), true);
+  const reconciled = await runActorCli("api-reconcile", origin, { session: cliSession, request: lostRequest });
+  assert.equal(reconciled.code, 0, reconciled.stderr);
+  assert.equal(JSON.parse(reconciled.stdout).status, "observed");
+  assert.equal(JSON.parse(reconciled.stdout).record.requestCommitment,
+    computeSignedPendingApplicationCommitment(lostRequest));
   await expectStatus(await fetch(`${origin}/v1/actor-authentication/session`, {
     method: "DELETE", headers: bearer,
   }), 204);
@@ -365,7 +372,7 @@ try {
   await expectStatus(await fetch(`${origin}/v1/actor-authentication/session`, { headers: expiringBearer }), 401);
   await assert.rejects(listApplicantApplications({ apiBase: origin, pageOrigin: origin,
     session: expiringSession, clock: () => now }), /current applicant DID session/u);
-  process.stdout.write("[did-auth-headless] Ledger and off-chain DID challenge sessions; executable CLI signed registration, applicant list, replay and origin denial; accepted write with lost response remains unknown; private-list isolation, expiry, and revocation passed. No role grant or deployed finality was inferred.\n");
+  process.stdout.write("[did-auth-headless] Ledger and off-chain DID challenge sessions; executable CLI signed registration, applicant list, replay and origin denial; a lost response remains unknown until exact signed-request reconciliation observes intake; private-list isolation, expiry, and revocation passed. No role grant or deployed finality was inferred.\n");
 } finally {
   server.closeAllConnections();
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
