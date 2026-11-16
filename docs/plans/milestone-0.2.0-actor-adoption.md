@@ -206,8 +206,10 @@ exercises the executable registration command with a real DID signature and
 in-memory registration port, then checks readback, actor/origin denial, and
 replay. The four role simulator journeys use the shared registration call
 with their fixed fixture clock. None of these runs uses a deployed local-ledger
-actor host. #297 remains open for complete actor review/vote, durable
-restart recovery, and independently verified decision reads; #219/#59 remain
+actor host. The file-backed reference admission store retains its exact intake
+record across host instances, but #297 remains open for complete actor
+review/vote, deployed restart recovery, and independently verified decision
+reads; #219/#59 remain
 the deployed acceptance gate. The local branch's 97 Playwright cases cover
 browser behavior and role/source-state UI, not deployed finality.
 The typed client and CLI now report a lost, unreadable, or server-failed
@@ -216,8 +218,9 @@ outcome and explicitly forbid blind resubmission. The private pending-list
 summary is not exact signed-request reconciliation. A private exact-record read
 now compares a canonical commitment of the original signed request and reports
 `observed` only on a match; missing, unavailable, or older uncommitted records
-remain `unknown`. This is process-local intake observation, not a durable
-restart audit or finalized governance decision, so #297 remains open.
+remain `unknown`. The file-backed reference store can read this record after
+restart, but this is not a deployed restart audit or finalized governance
+decision, so #297 remains open.
 The current-time loopback journey also accepts a distinct signed request at
 the server, drops its response at the client boundary, and observes the
 unknown outcome while the private list shows the pending application, then

@@ -51,8 +51,10 @@ with the original request and session. `observed` means the subject-scoped
 record contains the canonical commitment of the exact signed request. `unknown`
 means the record is missing, unavailable, unreadable, or predates commitments;
 it is not permission to retry. The private list is only a summary and cannot
-reconcile an exact request. This process-local reference is not durable
-restart recovery or finalized ledger evidence; those remain tracked in #297.
+reconcile an exact request. The file-backed reference store can retain the
+intake record across a host restart, while the in-memory store cannot. Neither
+read proves a finalized ledger decision; complete deployed recovery and
+independent decision verification remain tracked in #297.
 
 Registration means **pending intake only**. It does not grant a role, accept a
 VP, approve a proposal, or prove ledger finality. The older `submit` and
