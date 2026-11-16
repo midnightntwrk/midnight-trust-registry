@@ -519,6 +519,11 @@ paths:
     post:
       tags: [Private intake]
       summary: Register a DID-signed pending application
+      description: >-
+        When the host enables DID sessions, an applicant-purpose bearer is
+        required and its DID must equal the signed intent actor DID. The
+        registration port still verifies the signed intent and exact scope;
+        a DID session alone grants no registry role.
       responses: *governedResponses
   /v1/pending-applications/{applicationId}:
     parameters:

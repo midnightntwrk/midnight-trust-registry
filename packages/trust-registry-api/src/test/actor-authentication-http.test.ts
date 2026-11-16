@@ -9,7 +9,8 @@ import {
 } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import { createLongFormOffchainMidnightDIDString, CurveType, KeyType } from "@midnight-ntwrk/midnight-did-domain";
 import { createOperatorWorkspace } from "@midnight-ntwrk/trust-registry-cli";
-import { actorAuthenticationDigestBytes, computeAuthorizationScopeCommitment, type ActorAuthenticationChallenge } from "@midnight-ntwrk/trust-registry-domain";
+import { actorAuthenticationDigestBytes, computeAuthorizationScopeCommitment,
+  computePendingApplicationPayloadCommitment, type ActorAuthenticationChallenge } from "@midnight-ntwrk/trust-registry-domain";
 import {
   createMidnightDid,
   createMidnightDidLedgerFixture,
@@ -259,6 +260,55 @@ describe("phase-0 DID authentication HTTP", () => {
     expect((await fetch(`${base}/v1/pending-applications/%2F`, { headers })).status).toBe(400);
     const preflight = await fetch(route, { method: "OPTIONS", headers: { origin: "https://foreign.example" } });
     expect(preflight.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  it("requires the signed applicant DID to match the bearer when DID sessions are enabled", async () => {
+    const scope = { version: "tr-scope-v1" as const, role: "maintainer" as const, registryId: "tr:registry:local" };
+    const payload = {
+      applicationId: "application:maintainer:session-bound:v1",
+      authorizationId: "auth:maintainer:session-bound:v1",
+      scope, governedResource: { type: "registry" as const, id: scope.registryId },
+    };
+    const intent = {
+      version: "tr-mutation-intent-v1", registryId: scope.registryId,
+      actorDid, actorKeyId, actorRole: "applicant", action: "apply", target: "maintainer",
+      targetId: payload.applicationId,
+      scopeCommitment: computeAuthorizationScopeCommitment(scope),
+      payloadCommitment: computePendingApplicationPayloadCommitment(payload),
+      nonce: `0x${"33".repeat(32)}`, expectedWorkspaceCommitment: `0x${"44".repeat(32)}`,
+      expectedEpochId: null, issuedAt: new Date(START).toISOString(),
+      expiresAt: new Date(START + 60_000).toISOString(),
+    };
+    const signed = { ...payload, intent,
+      signature: { keyId: actorKeyId, algorithm: "jubjub-schnorr", value: `0x${"aa".repeat(96)}` } };
+    const record = {
+      authorizationId: payload.authorizationId,
+      binding: { registryId: scope.registryId, applicationId: payload.applicationId,
+        subjectDid: actorDid, evidenceVerifierDid: actorDid, role: "maintainer" as const,
+        policyId: "policy:membership:v1", policyVersion: "v1", scope,
+        scopeCommitment: intent.scopeCommitment, governedResource: payload.governedResource },
+      status: "pending" as const, createdAt: new Date(START).toISOString(),
+    };
+    const register = vi.fn(async () => record);
+    await start(true, undefined, { register });
+    const path = "/v1/pending-applications";
+    expect((await post(path, signed)).status).toBe(403);
+    const challenge = await (await post("/v1/actor-authentication/challenges", {
+      actorDid, actorKeyId, purpose: "applicant-session",
+    })).json() as ActorAuthenticationChallenge;
+    const session = await (await post("/v1/actor-authentication/sessions", {
+      challenge, signature: signatureFor(challenge),
+    })).json() as { accessToken: string };
+    const headers = { authorization: `Bearer ${session.accessToken}` };
+    const foreignDid = createMidnightDid("another-applicant");
+    const foreignKeyId = `${foreignDid}#auth-1`;
+    expect((await post(path, { ...signed,
+      intent: { ...intent, actorDid: foreignDid, actorKeyId: foreignKeyId },
+      signature: { ...signed.signature, keyId: foreignKeyId },
+    }, headers)).status).toBe(403);
+    expect(register).not.toHaveBeenCalled();
+    expect((await post(path, signed, headers)).status).toBe(201);
+    expect(register).toHaveBeenCalledOnce();
   });
 
   it("reports an oversized private application list as unavailable", async () => {

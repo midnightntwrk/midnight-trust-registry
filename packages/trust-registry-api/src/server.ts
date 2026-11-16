@@ -1402,6 +1402,12 @@ export const createTrustRegistryApiServer = (
         if (port === undefined) {
           throw jsonProblem(problemBaseUri, "pending-application-unavailable", 503, "pending application unavailable");
         }
+        const authenticatedSubjectDid = options.actorAuthentication?.sessions.authenticate(
+          request.headers.authorization, "applicant-session",
+        )?.actorDid;
+        if (options.actorAuthentication !== undefined && authenticatedSubjectDid === undefined) {
+          throw jsonProblem(problemBaseUri, "pending-application-forbidden", 403, "pending application forbidden");
+        }
         if (options.authorizePendingApplicationRegistration !== undefined) {
           try {
             await options.authorizePendingApplicationRegistration(request);
@@ -1410,6 +1416,9 @@ export const createTrustRegistryApiServer = (
           }
         }
         const requestBody = await parseJsonBody(request, (value) => SignedPendingApplicationSchema.parse(value), problemBaseUri);
+        if (authenticatedSubjectDid !== undefined && requestBody.intent.actorDid !== authenticatedSubjectDid) {
+          throw jsonProblem(problemBaseUri, "pending-application-forbidden", 403, "pending application forbidden");
+        }
         try {
           const record = await port.register(requestBody, new Date(options.clock?.() ?? new Date().toISOString()));
           writeJson(response, 201, record, false);
