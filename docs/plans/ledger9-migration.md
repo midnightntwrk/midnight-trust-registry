@@ -21,6 +21,12 @@ qualification claim. The historical Ledger 8 source is the `ledger8` branch at
 | Midnight DID | exact 1.0.0-rc1 cohort | Published and installed locally under four dated, exact-version age exceptions |
 | VC Compact and DID binding | PR #755 source, 0.4.0 artifacts | Built from exact PR head locally; not merged or published to npm |
 
+The installed-identity guard now accepts those local `file:` tarballs only when
+their bytes match the SHA-512 integrity in the frozen pnpm lockfile and their
+paths remain inside this checkout. Its 23 unit tests and installed-package
+check pass for six identity packages at Compact runtime 0.21.0. This is a local
+trial, not a portable dependency or a substitute for publishing VC 0.4.0.
+
 The official [Ledger 9 upgrade guide](https://docs.midnight.network/relnotes/ledger-9)
 is the compatibility source. The
 [Midnight.js 5 notes](https://docs.midnight.network/relnotes/midnight-js/midnight-js-5-0-0)
@@ -55,6 +61,24 @@ typecheck is red because generated `initialState` and impure circuits are
 asynchronous and the simulator still uses synchronous `CircuitResults`; this
 is a source migration, not a missing package or a qualification pass. No new
 proving/verifier keys or deployed transactions have been generated.
+
+The next TypeScript pass must also remove `@midnight-ntwrk/midnight-js-network-id`
+imports: Midnight.js 5 carries `{ networkId, ttlSeconds }` in each provider
+set's `config`, not a process-global setter/getter. Deployment, proposal and
+maintenance paths must compare that config with the pinned network/receipt,
+while readback-only paths must use their explicit network and finalized
+checkpoint. `@midnight-ntwrk/midnight-js-protocol/ledger` and `/compact-runtime`
+deep imports are no longer available. Runtime `signatureVerifyingKey` returns
+a tagged `{ tag, value }` object, so old string operations on the result need
+an explicit Schnorr-key encoding and comparison. A direct integration package
+typecheck currently reports these API breaks as well as unresolved local
+contract/client exports because those packages have not yet built under the
+new asynchronous Compact surface.
+
+Docker Desktop did not answer `docker info` during this local pass. No Ledger 9
+container, live RPC, indexer, or proof-server claim follows from the Compose
+render and image pins; the hanging CLI call was stopped without modifying
+containers or volumes.
 
 ## Execution order
 
