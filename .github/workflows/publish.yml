@@ -169,6 +169,8 @@ jobs:
     environment:
       name: npm-publish
       url: https://www.npmjs.com/
+    permissions:
+      id-token: write # npm Trusted Publishing (OIDC) + provenance attestation
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -281,7 +283,8 @@ jobs:
 
       - name: Publish packages to npm
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.MIDNIGHTCI_NPMJS_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"
           NPM_TAG: next
           REGISTRY: https://registry.npmjs.org
           VERSION: ${{ needs.prepare.outputs.version }}
