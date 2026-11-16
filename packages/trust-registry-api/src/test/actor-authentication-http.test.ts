@@ -19,6 +19,7 @@ import { createActorAuthenticationService, type ActorAuthenticationChallengeStor
 import { createActorSessionService } from "../actor-sessions.js";
 import { InMemoryApplicationChallengeStore } from "../application-challenges.js";
 import type { ApplicationVpHttpPort } from "../application-vp-http.js";
+import { MAX_PENDING_APPLICATION_LIST_ITEMS } from "../browser-schemas.js";
 import type { PendingApplicationRegistrationPort } from "../pending-application-registration.js";
 import { createTrustRegistryApiServer } from "../server.js";
 import { createInMemorySource } from "../source.js";
@@ -180,6 +181,30 @@ describe("phase-0 DID authentication HTTP", () => {
       authorization: `Bearer ${maintainerSession.accessToken}`,
     } })).status).toBe(403);
     expect(listForSubjectDid).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports an oversized private application list as unavailable", async () => {
+    await start(true, undefined, {
+      register: async () => { throw new Error("not used"); },
+      listForSubjectDid: async (subjectDid) => Array.from({ length: MAX_PENDING_APPLICATION_LIST_ITEMS + 1 }, () => ({
+        subjectDid,
+        summary: { applicationId: "application:issuer:mine:v1", authorizationId: "auth:issuer:mine:v1",
+          role: "issuer" as const, status: "pending" as const, createdAt: "2026-11-14T00:00:00.000Z" },
+      })),
+    });
+    const challenge = await (await post("/v1/actor-authentication/challenges", {
+      actorDid, actorKeyId, purpose: "applicant-session",
+    })).json() as ActorAuthenticationChallenge;
+    const session = await (await post("/v1/actor-authentication/sessions", {
+      challenge, signature: signatureFor(challenge),
+    })).json() as { accessToken: string };
+    const response = await fetch(`${base}/v1/pending-applications`, {
+      headers: { authorization: `Bearer ${session.accessToken}` },
+    });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      type: expect.stringContaining("pending-application-list-unavailable"),
+    });
   });
 
   it("does not report an empty inbox when a signed-in host has no private list port", async () => {
