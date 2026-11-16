@@ -6,6 +6,10 @@ packages:
 
 preferWorkspacePackages: true
 
+blockExoticSubdeps: true
+minimumReleaseAge: 10080
+trustPolicy: no-downgrade
+
 overrides:
   "@effect/platform": 0.97.1
   "@midnight-ntwrk/credential-compact": 0.2.0
