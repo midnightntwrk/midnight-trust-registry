@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@10.34.5",
+  "packageManager": "pnpm@10.34.9",
   "engines": {
     "node": ">=24",
     "pnpm": ">=10.34.5"
@@ -100,9 +100,9 @@
     "refresh:identity-dependencies": "node scripts/refresh-identity-dependencies.mjs"
   },
   "dependencies": {
-    "@midnight-ntwrk/compact-runtime": "0.16.0",
-    "@midnight-ntwrk/credential-compact": "0.2.0",
-    "@midnight-ntwrk/credential-did-midnight": "0.2.0",
+    "@midnight-ntwrk/compact-runtime": "0.21.0",
+    "@midnight-ntwrk/credential-compact": "0.3.0",
+    "@midnight-ntwrk/credential-did-midnight": "0.3.0",
     "@midnight-ntwrk/midnight-did": "0.7.0",
     "@midnight-ntwrk/midnight-did-contract": "0.7.0",
     "@midnight-ntwrk/midnight-did-domain": "0.7.0",
@@ -110,8 +110,8 @@
     "@midnight-ntwrk/midnight-js-network-id": "4.1.1"
   },
   "devDependencies": {
-    "@axe-core/playwright": "4.12.1",
-    "@eslint/js": "^9.29.0",
+    "@axe-core/playwright": "4.14.0",
+    "@eslint/js": "^9.39.4",
     "@midnight-ntwrk/midnight-js-http-client-proof-provider": "4.1.1",
     "@midnight-ntwrk/midnight-js-indexer-public-data-provider": "4.1.1",
     "@midnight-ntwrk/midnight-js-node-zk-config-provider": "4.1.1",
@@ -127,19 +127,19 @@
     "@midnight-ntwrk/trust-registry-integration": "workspace:*",
     "@midnight-ntwrk/trust-registry-openid-federation-adapter": "workspace:*",
     "@midnight-ntwrk/trust-registry-trqp-adapter": "workspace:*",
-    "@playwright/test": "1.64.1",
-    "@types/node": "^24.0.10",
-    "@typescript-eslint/eslint-plugin": "^8.35.1",
-    "@typescript-eslint/parser": "^8.35.1",
-    "esbuild": "0.25.12",
-    "eslint": "^9.29.0",
+    "@playwright/test": "1.65.1",
+    "@types/node": "^24.19.2",
+    "@typescript-eslint/eslint-plugin": "^8.60.0",
+    "@typescript-eslint/parser": "^8.60.0",
+    "esbuild": "0.28.2",
+    "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.1.5",
     "js-yaml": "4.3.2",
-    "pino": "10.3.1",
+    "pino": "10.4.0",
     "semver": "^7.8.1",
-    "turbo": "^2.10.13",
+    "turbo": "^2.11.7",
     "typescript": "^5.8.3",
     "vitest": "^4.1.12",
-    "ws": "8.21.0"
+    "ws": "8.23.0"
   }
 }
