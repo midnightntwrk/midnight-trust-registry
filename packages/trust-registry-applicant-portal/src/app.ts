@@ -1493,6 +1493,10 @@ export const createApplicantPortalApp = (
       const form = event.currentTarget as HTMLFormElement;
       const input = form.querySelector<HTMLTextAreaElement>("[name='presentation']");
       if (input === null) return;
+      if (form.querySelector<HTMLInputElement>("[data-vp-consent]")?.checked !== true) {
+        setState({ evidenceError: "Review the request and consent before sharing your presentation." });
+        return;
+      }
       const raw = input.value;
       input.value = "";
       void submitApplicationPresentation(raw);
@@ -1577,6 +1581,7 @@ export const createApplicantPortalApp = (
     const advancedOpen = root.querySelector<HTMLDetailsElement>(".advanced-tools")?.open ?? false;
     const previousVpForm = root.querySelector<HTMLFormElement>("[data-application-vp-form]");
     const previousVp = previousVpForm?.querySelector<HTMLTextAreaElement>("[name='presentation']")?.value;
+    const previousVpConsent = previousVpForm?.querySelector<HTMLInputElement>("[data-vp-consent]")?.checked ?? false;
     const previousChallengeHash = previousVpForm?.dataset.challengeHash;
     const cards = state.inspection === undefined ? [] : toInspectionCards(state.inspection);
     const issuerCards = cards.filter((card) => card.target === "issuer");
@@ -2136,10 +2141,12 @@ export const createApplicantPortalApp = (
                   <p>Nonce: <span class="mono">${escapeHtml(pending.challenge.nonce)}</span></p>
                   <p>Challenge hash: <span class="mono">${escapeHtml(pending.challenge.challengeHash)}</span></p>
                   <form data-application-vp-form data-challenge-hash="${escapeHtml(pending.challenge.challengeHash)}">
+                    <p class="step-hint">Review the role, policy, resource, and scope above before presenting. The verifier sees the VP to check eligibility; the registry retains only redacted signed evidence. This does not grant the requested role.</p>
                     <label class="label">Presentation JSON
                       <textarea class="input mono" name="presentation" rows="6" required></textarea>
                     </label>
-                    <button class="button" type="submit"${state.evidenceBusy ? " disabled" : ""}>Submit VP evidence</button>
+                    <label class="vp-consent"><input type="checkbox" data-vp-consent required /><span>I consent to share this presentation for this request and one-use challenge.</span></label>
+                    <button class="button" type="submit"${state.evidenceBusy ? " disabled" : ""}>Verify eligibility evidence</button>
                   </form>
                 </div>
               `}
@@ -2233,6 +2240,8 @@ export const createApplicantPortalApp = (
     if (previousVp !== undefined && previousChallengeHash === state.pendingApplication?.challenge?.challengeHash) {
       const currentVp = root.querySelector<HTMLTextAreaElement>("[data-application-vp-form] [name='presentation']");
       if (currentVp !== null) currentVp.value = previousVp;
+      const currentConsent = root.querySelector<HTMLInputElement>("[data-application-vp-form] [data-vp-consent]");
+      if (currentConsent !== null) currentConsent.checked = previousVpConsent;
     }
     if (previousSignedEnvelope !== undefined) {
       const currentEnvelope = root.querySelector<HTMLTextAreaElement>("[data-signed-submit] [name='signedEnvelope']");

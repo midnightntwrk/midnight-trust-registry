@@ -94,6 +94,11 @@ for (const applicant of cases) {
       const presentation = await presentationForNonce(challenge.nonce, applicant.scope);
       await page.locator("[data-application-vp-form] [name='presentation']").fill(JSON.stringify(presentation));
       await page.locator("[data-application-vp-form] button[type='submit']").click();
+      expect(await page.locator("[data-application-vp-form] [data-vp-consent]")
+        .evaluate((input) => input.validity.valueMissing)).toBe(true);
+      expect(host.receipts.size).toBe(0);
+      await page.locator("[data-application-vp-form] [data-vp-consent]").check();
+      await page.locator("[data-application-vp-form] button[type='submit']").click();
       await expect(page.locator("[data-accepted-evidence]")).toBeVisible();
       await expect(page.locator("body")).toContainText(`${applicant.role} evidence accepted`);
       await expect(page.locator('.alert.success[role="status"]')).toContainText(`${applicant.role} evidence accepted`);

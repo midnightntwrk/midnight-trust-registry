@@ -470,6 +470,13 @@ describe("trust registry applicant portal app", () => {
     vpForm = root.querySelector<HTMLFormElement>("[data-application-vp-form]")!;
     vpForm.querySelector<HTMLTextAreaElement>("[name='presentation']")!.value = '{"privateClaim":"never-render-me"';
     vpForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await vi.waitFor(() => expect(root.textContent).toContain("consent before sharing"));
+    expect(calls.some((call) => call.path.endsWith("/submissions"))).toBe(false);
+    expect(root.querySelector<HTMLTextAreaElement>("[data-application-vp-form] [name='presentation']")?.value)
+      .toBe('{"privateClaim":"never-render-me"');
+    vpForm = root.querySelector<HTMLFormElement>("[data-application-vp-form]")!;
+    vpForm.querySelector<HTMLInputElement>("[data-vp-consent]")!.checked = true;
+    vpForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     await vi.waitFor(() => expect(root.textContent).toContain("Presentation must be valid JSON."));
     expect(root.innerHTML).not.toContain("never-render-me");
     expect(calls.some((call) => call.path.endsWith("/submissions"))).toBe(false);
@@ -477,6 +484,8 @@ describe("trust registry applicant portal app", () => {
     await vi.waitFor(() => expect(root.querySelector("[data-application-vp-form]")).not.toBeNull());
     vpForm = root.querySelector<HTMLFormElement>("[data-application-vp-form]")!;
     vpForm.querySelector<HTMLTextAreaElement>("[name='presentation']")!.value = JSON.stringify({ privateClaim: "never-render-me" });
+    expect(vpForm.querySelector<HTMLInputElement>("[data-vp-consent]")!.checked).toBe(false);
+    vpForm.querySelector<HTMLInputElement>("[data-vp-consent]")!.checked = true;
     vpForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     await vi.waitFor(() => expect(root.textContent).toContain("auditor evidence accepted"));
     expect(root.innerHTML).not.toContain("never-render-me");
@@ -698,6 +707,7 @@ describe("trust registry applicant portal app", () => {
       await vi.waitFor(() => expect(root.querySelector("[data-application-vp-form]")).not.toBeNull());
       const form = root.querySelector<HTMLFormElement>("[data-application-vp-form]")!;
       form.querySelector<HTMLTextAreaElement>("[name='presentation']")!.value = '{"privateClaim":"never-render-me"}';
+      form.querySelector<HTMLInputElement>("[data-vp-consent]")!.checked = true;
       form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
       await vi.waitFor(() => expect(root.textContent).toContain(`${role} evidence accepted`));
       expect(root.innerHTML).not.toContain("never-render-me");

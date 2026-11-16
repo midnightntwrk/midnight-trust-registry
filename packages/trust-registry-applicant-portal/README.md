@@ -80,6 +80,13 @@ single-process and non-durable. A production host must provide atomic pending
 persistence, a live policy view, and an authorized evidence verifier before
 exposing this flow.
 
+Before submitting a VP, the applicant sees the request's DID, role, policy,
+resource, and scope and must explicitly consent to share the presentation for
+that one-use challenge. Refusing consent sends no VP request. A new challenge
+requires a fresh consent decision. The verifier may inspect the VP to decide
+eligibility, but the registry stores only redacted signed evidence. Neither
+consent nor a verified VP is itself a registry role grant.
+
 DID sign-in requires a trusted same-origin host to inject
 `window.midnightTrustRegistryDidSigner`; see the
 [client signer contract](../trust-registry-client/README.md#browser-identity-session).

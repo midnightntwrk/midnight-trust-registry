@@ -99,6 +99,7 @@ describe("auditor applicant form with the live admission host", () => {
       const presentation = await demo.presentationForNonce(challengeNonce!);
       const vpForm = root.querySelector<HTMLFormElement>("[data-application-vp-form]")!;
       vpForm.querySelector<HTMLTextAreaElement>("[name='presentation']")!.value = JSON.stringify(presentation);
+      vpForm.querySelector<HTMLInputElement>("[data-vp-consent]")!.checked = true;
       vpForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
       await vi.waitFor(() => expect(root.textContent).toContain("auditor evidence accepted"), { timeout: 5000 });
       expect(host.receipts.size).toBe(1);
