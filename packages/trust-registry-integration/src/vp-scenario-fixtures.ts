@@ -17,7 +17,7 @@ import {
   type IssuerStatusPolicyBinding,
 } from "@midnight-ntwrk/trust-registry-domain";
 
-import { type ApplicationVpMaterial, type QualifiedApplicationVpFamilyAdapter } from "./application-vp-verifier.js";
+import { type ApplicationVpMaterial, type QualifiedApplicationVpContext, type QualifiedApplicationVpFamilyAdapter } from "./application-vp-verifier.js";
 import { applicationStatusAttestationDigest, createAttestedApplicationStatusSource, type SignedApplicationStatusStatement } from "./application-status-attestation.js";
 import { decodeApplicationVpProof, encodeApplicationVpProof } from "./application-vp-proof-json.js";
 import { createMidnightDidLedgerFixture, createMidnightDidResolver } from "./did-resolution.js";
@@ -147,11 +147,15 @@ export async function createApplicationVpScenarioFixture(
     evidenceVerifierDid?: string;
     evidenceVerifierMethodId?: string;
     scope?: AuthorizationScope;
+    trustContext?: QualifiedApplicationVpContext;
+    policyId?: string;
+    policyVersion?: string;
     statusDecision?: Partial<FixtureStatusDecision>;
     presentationCredentialBodyRoot?: string;
     presentationContext?: Partial<Omit<FixturePresentationBody, "version" | "subjectDid" | "credentialBodyRoot" | "privatePayload">>;
   } = {},
 ) {
+  const trustContext = options.trustContext ?? VP_FIXTURE_TRUST_CONTEXT;
   const issuerDid = options.issuerDid ?? createMidnightDid("vp-issuer");
   const subjectDid = options.subjectDid ?? createMidnightDid("vp-holder");
   const evidenceVerifierDid = options.evidenceVerifierDid ?? createMidnightDid("vp-evidence-verifier");
@@ -234,15 +238,15 @@ export async function createApplicationVpScenarioFixture(
     subjectDid,
     credentialBodyRoot: options.presentationCredentialBodyRoot ?? hex(credentialBodyRoot),
     privatePayload: "private-presentation-payload",
-    audience: VP_FIXTURE_TRUST_CONTEXT.origin,
-    registryId: VP_FIXTURE_TRUST_CONTEXT.registryId,
-    genesisHash: VP_FIXTURE_TRUST_CONTEXT.genesisHash,
-    contractAddress: VP_FIXTURE_TRUST_CONTEXT.contractAddress,
+    audience: trustContext.origin,
+    registryId: trustContext.registryId,
+    genesisHash: trustContext.genesisHash,
+    contractAddress: trustContext.contractAddress,
     nonce,
     role: scope.role,
     scopeCommitment: computeAuthorizationScopeCommitment(scope),
-    policyId: "policy:vp:v1",
-    policyVersion: "v1",
+    policyId: options.policyId ?? "policy:vp:v1",
+    policyVersion: options.policyVersion ?? "v1",
     ...options.presentationContext,
   };
   const rawPresentationBody = JSON.stringify(presentationBody);
@@ -323,7 +327,7 @@ export async function createApplicationVpScenarioFixture(
   };
   const fixtureStatusPolicyBinding: IssuerStatusPolicyBinding = options.statusPolicyBinding ?? {
     version: "tr-issuer-status-policy-v1",
-    trustRegistryId: "registry:vp-fixture",
+    trustRegistryId: trustContext.registryId,
     issuerAuthorizationId: "auth:issuer:vp-fixture",
     statusRegistryId: credentialBody.statusRegistryId,
     statusAuthorityVerificationMethod: credentialBody.statusAuthorityMethod,
