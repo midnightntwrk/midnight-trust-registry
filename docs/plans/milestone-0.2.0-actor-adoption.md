@@ -192,6 +192,22 @@ errors or the wrong session purpose. The packaged CLI smoke uses this client
 against the real loopback host; it does not substitute for a qualified
 registration port or finalized decision polling.
 
+The next local client/CLI increment moves the pending-registration response
+schema into the domain package and exposes a session-bound typed registration
+call. It checks the signed applicant DID, key, registry, intent expiry, exact
+same origin, and returned pending binding; the server still verifies the
+signature. The `api-register` and `api-applications` CLI commands take an
+ephemeral session on stdin, require the independently supplied sign-in origin,
+and never place the bearer in arguments or output. A current-time packaged
+loopback host confirms the list command distinguishes an unconfigured list
+from denied reuse after sign-out. The four role simulator journeys use the
+shared registration call with their fixed fixture clock. They do **not** run
+the executable registration command against a configured local-ledger actor
+host. #297 remains open for complete actor review/vote, ambiguous-write
+reconciliation, and independently verified decision reads; #219/#59 remain
+the deployed acceptance gate. The local branch's 97 Playwright cases cover
+browser behavior and role/source-state UI, not deployed finality.
+
 Non-critical-path follow-ups include public-network bootstrap (#200),
 historical TRQP (#39), Helm (#218), npm publishing (#271), mobile acceptance
 (#265), and docs-site family styling (#293).

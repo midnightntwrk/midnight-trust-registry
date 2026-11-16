@@ -3262,3 +3262,26 @@ disposable `./run.sh --light` gate with 198/198 adversarial parity. These are lo
 fixture/simulator results, not deployed finality. Issue #302 remains open until
 a host supplies a genuine VC/status adapter and authenticated finalized issuer
 authorization; DID sign-in and VP eligibility alone do not grant a role.
+
+## Shared applicant API and headless CLI, 2026-11-16
+
+The pending-application record schema now lives in the domain package so the
+API and shared client validate the same shape. The shared client registers a
+pre-signed request only with a current applicant-purpose DID session, exact
+origin, matching actor/key/registry, and matching pending response binding.
+It owns no signer key; the server remains responsible for signature and policy
+verification. The signed issuer, verifier, auditor, and maintainer simulator
+journeys use this client path and retain a fixed test clock.
+
+The operator CLI adds `api-register` and `api-applications` commands. Their
+bearer and signed input arrive on stdin, not as shell arguments. A separate
+trusted sign-in origin must match the selected API origin before a token is
+sent. The packaged current-time loopback test exercises the executable list
+command, an explicit unavailable result, and denied reuse after sign-out;
+registration has command-level tests but not a deployed host run. A pending
+registration is not VP eligibility or a finalized grant. At this local head,
+the fast headless suite, 326 API unit tests, CLI tests, lint, docs/OpenAPI,
+and all 97 offline Playwright tests passed. Complete typed actor vote/poll,
+ambiguous-write reconciliation, live status, and independently finalized
+ledger reads remain open under #297 and #219/#59. No release or production
+qualification follows from this evidence.
