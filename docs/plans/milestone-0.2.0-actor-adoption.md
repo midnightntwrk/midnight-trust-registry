@@ -21,9 +21,12 @@ This plan does not silently move unfinished 0.1.0 acceptance issues into
 
 ## Authentication and authorization
 
-1. **Identity:** an applicant or maintainer presents a `did:midnight` DID.
-   Resolve its current, non-deactivated document against an authenticated
-   ledger source. DID possession alone grants no registry role.
+1. **Identity:** phase 0 accepts a self-certifying long-form off-chain
+   `did:midnight` document for sign-in. Resolve and verify the encoded state
+   against its short-form DID; do not mistake a caller-supplied document for
+   ledger freshness or revocation. A later, explicit on-chain mode must resolve
+   the current, non-deactivated DID document against an authenticated ledger
+   source. DID possession alone grants no registry role in either mode.
 2. **Request authentication:** the host issues a random, one-use, short-lived
    challenge bound to origin, registry deployment, actor DID, intended
    audience, and operation. Verify the response against a current DID
@@ -90,9 +93,13 @@ checkpoint, and test result in one private candidate record. Existing
 
 ## Delivery order
 
-1. Specify and test the DID request-authentication adapter, challenge store,
-   session boundary, and fail-closed API integration. Reuse DID resolution and
-   signing libraries; do not implement DID CRUD here.
+1. Specify and test the off-chain DID request-authentication adapter, challenge
+   store, session boundary, and fail-closed API integration. Bind the exact
+   long-form state to a versioned challenge transcript, authenticate only a
+   verification method in the document's `authentication` relationship, and
+   keep its algorithm distinct from the ledger/Jubjub mutation-signature
+   format. Reuse DID resolution and signing libraries; do not implement DID
+   CRUD here. Keep on-chain resolution behind an explicit later mode.
 2. Add the typed API client and CLI commands, with protocol-level positive
    and negative tests. Reuse the existing signed-intent verifier.
 3. Supply the approved host ports, live VC status adapter, and independent
@@ -115,11 +122,55 @@ through a shared browser-only client and an external signer on a same-origin
 host. Applicant and maintainer sessions have distinct purposes; neither grants
 a registry role, VP eligibility, or governance authority. The fast headless
 journey tests that client against a real loopback HTTP host. Playwright covers
-both mocked source-state UI and a same-origin browser journey using the real
-loopback challenge/session API with a fixture DID resolver and external test
-signer. The applicant-only private request list is optional host admission
+both mocked source-state UI and same-origin browser journeys using the real
+loopback challenge/session API with external test signers: a fixture DID
+resolver for the ledger-backed path and a self-certifying long-form DID for
+the off-chain path. The applicant-only private request list is optional host admission
 metadata, not a ledger decision or VP eligibility proof. There is no qualified
 production resolver, live VC-owned status adapter, or deployed actor journey.
+The local challenge schema, verifier, and browser client now distinguish a
+self-certifying long-form off-chain DID with an Ed25519 authentication key from
+the ledger-backed Jubjub path. Focused API and browser-client tests plus
+`pnpm run demo:did-auth:smoke` exercise both sign-in paths through a real
+loopback HTTP host, including a path-based authentication method and explicit
+no-role/no-other-applicant-data checks. The packaged API CLI now has an
+explicit loopback workspace-only off-chain sign-in option with a private
+durable challenge store, synthetic workspace-instance binding, and an
+optional same-origin built-portal asset root. A
+process-level headless journey checks origin denial, one-use replay after
+restart, and session revocation on restart. The packaged-host journey also
+uses the shared typed client to sign in and sign out, independently derives
+the synthetic workspace binding, and rejects a mismatched binding before
+signing. Playwright also exercises off-chain sign-in and sign-out in both
+actual CLI-served portals while blocking external browser egress and checking
+that no governed write is sent. The packaged headless journey denies
+unauthenticated and maintainer-purpose private-list reads; an applicant
+session sees an explicit unavailable result until a registration adapter is
+configured. This is fixture authentication,
+not a reviewed local-ledger host configuration or deployed actor
+authorization. The VC method-binding helper still rejects off-chain DIDs and
+must remain separate from sign-in. Off-chain long-form state is immutable and
+has no live deactivation signal, so short session lifetime and explicit mode
+labeling matter. The signed local-ledger CLI remains read-only and cannot
+claim deployed actor authentication or authorization.
+
+The API health response now reports private application registration and list
+ports independently. The applicant portal explains and disables preparation
+and registration controls when registration is explicitly not configured, and
+omits its "My applications" route only when the host explicitly
+reports that the list port is absent; older hosts without these hints retain
+the existing paths. These are navigation hints, not authorization checks:
+private endpoints still require their own signed-intent or applicant-session
+checks and may return unavailable even when a port is configured.
+The packaged-host process smoke asserts both capabilities are absent, and that
+neither an applicant DID session nor a maintainer-purpose session enables
+registration or governance writes without their separate host ports. This is
+fixture denial evidence, not a deployed authorization or finality result.
+The shared typed client now distinguishes an unconfigured private applicant
+list from an available empty list, validates entries, and rejects other HTTP
+errors or the wrong session purpose. The packaged CLI smoke uses this client
+against the real loopback host; it does not substitute for a qualified
+registration port or finalized decision polling.
 
 Non-critical-path follow-ups include public-network bootstrap (#200),
 historical TRQP (#39), Helm (#218), npm publishing (#271), mobile acceptance

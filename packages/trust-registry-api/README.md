@@ -20,8 +20,7 @@ including read-only listeners. They are not a substitute for a finalized local
 ledger. The signed local-ledger mode is the only CLI mode that can request
 cluster binding; that capability alone does not qualify a release deployment.
 
-Phase-0 actor authentication is an opt-in embedding API, not enabled by the
-packaged CLI. A host can inject `actorAuthentication` into
+Phase-0 actor authentication is an opt-in embedding API. A host can inject `actorAuthentication` into
 `createTrustRegistryApiServer` with a deployment-bound DID challenge service,
 an atomic one-use challenge store, a resolver, and a process-local session
 service. The API exposes `POST /v1/actor-authentication/challenges`,
@@ -37,8 +36,28 @@ actor-authentication-rate-limited`, while full challenge storage returns
 authentication keys are rejected before storage. This is a bounded local
 guard, not distributed internet-facing abuse protection. The host must keep bearer tokens out of logs and
 must separately verify VP eligibility and governed registry authority. A DID
-signature or session never grants a role. There is no browser sign-in flow or
-production-ready authentication host yet.
+signature or session never grants a role. The browser apps offer sign-in only
+when an external signer is injected by a same-origin host; they do not hold
+wallet keys. The packaged CLI supports a narrow fixture-only loopback mode:
+
+```bash
+trust-registry-api serve --workspace /absolute/path/workspace.json \
+  --fixture-offchain-auth-store /absolute/private/path/challenges.json \
+  --fixture-portal-root /absolute/path/built-portals
+```
+
+This mode accepts only self-certifying long-form off-chain Midnight DIDs with
+an Ed25519 `authentication` method. It assigns a workspace instance ID if
+missing and binds challenges to a synthetic, domain-separated fixture identity
+and the exact loopback origin. The store must be a private regular file on a
+trusted filesystem; consumed challenges survive restart, sessions do not.
+The synthetic genesis/contract fields are **not** a ledger deployment or
+finality proof. This mode does not enable VP intake, private application lists,
+governed writes, or role grants. The signed local-ledger CLI mode does not
+enable actor authentication. The optional portal root must contain built
+`admin/` and `applicant/` asset directories; serving them from the API origin
+allows the external signer integration to use the same-origin challenge API.
+There is no production-ready authentication host.
 The wallet or signer must recompute the domain-separated digest from the exact
 challenge fields it displays; it must not blindly sign a digest supplied by a
 page, even if the page labels it as a DID challenge.
@@ -620,11 +639,16 @@ real authentication, durable atomic VP storage, and abuse controls.
 
 `createActorAuthenticationService` is a reusable DID-key-control primitive
 for that future host. It issues a two-minute, one-use transcript for the actor
-to sign, binding the
-registry, nonzero genesis and contract address, origin, purpose, actor DID,
-key, nonce, and time window. The caller supplies a current, independently
-authenticated DID resolver and an atomic challenge store shared across all
-serving processes. `FileActorAuthenticationChallengeStore` is a local durable
+to sign, binding the registry, nonzero genesis and contract address, origin,
+purpose, actor DID, key, nonce, and time window. Ledger-backed DIDs retain the
+v1 Jubjub transcript and require a current, independently authenticated DID
+resolver. Self-certifying long-form off-chain DIDs use a distinct versioned
+transcript and an Ed25519 `authentication` method from their encoded state;
+the state hash is verified by the Midnight DID library. Off-chain state is
+immutable and supplies no live deactivation signal. Neither signature format
+is a registry mutation authorization or a VP eligibility proof. Both modes
+require an atomic challenge store shared across all serving processes.
+`FileActorAuthenticationChallengeStore` is a local durable
 adapter: place its private state file in a trusted directory shared by the
 serving processes, outside web roots and backups exposed to applicants. It
 enforces global and per-actor two-minute issuance bounds, retains consumed
@@ -632,9 +656,9 @@ digest tombstones until expiry, and checks expiry under its write lock. A
 full quota refuses issuance; an internet-facing host still needs distributed
 request-level rate limiting and abuse monitoring. The service
 returns the verified DID and key, **not** a registry role, session, or grant.
-It is not enabled by the packaged CLI and is not a production login
-implementation. The embedding host must still supply an authenticated resolver and
-enforce session/CSRF rules, current
+It is enabled only in the packaged CLI's opt-in loopback fixture mode, not a
+production login implementation. Other hosts must select the intended DID mode,
+supply an authenticated resolver for ledger-backed DIDs, and enforce session/CSRF rules, current
 registry authorization, exact DID-signed mutation intents, and quorum.
 
 The file adapter's `<state-path>.lock` is deliberately not auto-reclaimed.

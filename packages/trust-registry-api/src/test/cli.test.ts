@@ -3,6 +3,28 @@ import { describe, expect, it } from "vitest";
 import { parseTrustRegistryApiCliArgs } from "../cli.js";
 
 describe("API CLI binding", () => {
+  it("restricts fixture off-chain sign-in to a loopback workspace and separate absolute store", () => {
+    const args = ["serve", "--workspace", "/tmp/fixture-workspace.json",
+      "--fixture-offchain-auth-store", "/tmp/fixture-challenges.json"];
+    expect(parseTrustRegistryApiCliArgs(args).fixtureOffchainAuthStorePath).toBe("/tmp/fixture-challenges.json");
+    expect(parseTrustRegistryApiCliArgs([...args, "--fixture-portal-root", "/tmp/portals"])
+      .fixturePortalRoot).toBe("/tmp/portals");
+    for (const invalid of [
+      ["serve", "--workspace", "/tmp/fixture-workspace.json", "--fixture-offchain-auth-store", "relative.json"],
+      ["serve", "--workspace", "/tmp/fixture-workspace.json", "--fixture-offchain-auth-store", "/tmp/fixture-workspace.json"],
+      ["serve", "--snapshot", "/tmp/fixture-snapshot.json", "--fixture-offchain-auth-store", "/tmp/fixture-challenges.json"],
+      ["serve", "--workspace", "/tmp/fixture-workspace.json", "--fixture-portal-root", "/tmp/portals"],
+      [...args, "--fixture-portal-root", "relative/portals"],
+      ["serve", "--workspace", "/tmp/fixture-workspace.json", "--fixture-offchain-auth-store", "/tmp/fixture-challenges.json",
+        "--unsafe-demo-mutations"],
+      ["serve", "--workspace", "/tmp/fixture-workspace.json", "--fixture-offchain-auth-store", "/tmp/fixture-challenges.json",
+        "--host", "0.0.0.0"],
+      ["serve", "--local-ledger-plan", "/tmp/plan.json", "--local-ledger-signature", "/tmp/plan.sig",
+        "--local-ledger-keyring", "/tmp/keyring", "--local-ledger-reviewer", "A".repeat(40),
+        "--fixture-offchain-auth-store", "/tmp/fixture-challenges.json"],
+    ]) expect(() => parseTrustRegistryApiCliArgs(invalid)).toThrow();
+  });
+
   it("documents the mandatory protected v3 anchor in help", () => {
     expect(() => parseTrustRegistryApiCliArgs(["--help"]))
       .toThrow(/All v3 local-ledger commands require TR_API_TRUST_ANCHOR_PATH/u);

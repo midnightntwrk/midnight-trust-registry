@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
+import { generateKeyPairSync, sign as signEd25519 } from "node:crypto";
 import { createServer } from "node:http";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -10,6 +11,7 @@ import {
   encodeJubjubSignature,
   signJubjubPayloadFromSeed,
 } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
+import { createLongFormOffchainMidnightDIDString, CurveType, KeyType } from "@midnight-ntwrk/midnight-did-domain";
 
 import { test, expect } from "./offline-browser-fixture.mjs";
 import { createStaticAssetHandler } from "../scripts/serve-static.mjs";
@@ -236,6 +238,102 @@ test("both browser apps use real same-origin DID HTTP sessions without a role gr
       { purpose: "maintainer-session", wrongPurposeAccepted: false },
     ]);
     assert.equal(requests.some((request) => request.startsWith("POST /v1/governed/")), false);
+  } finally {
+    server.closeAllConnections();
+    await new Promise((done, reject) => server.close((error) => error ? reject(error) : done()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("off-chain DID signs in to both portals without gaining a registry role", async ({ page, allowedLocalOrigins }) => {
+  const directory = await mkdtemp(join(tmpdir(), "tr-browser-offchain-auth-"));
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const publicJwk = publicKey.export({ format: "jwk" });
+  const actorDid = createLongFormOffchainMidnightDIDString({
+    version: 1,
+    alsoKnownAs: [],
+    verificationMethod: [{
+      id: "./keys#auth",
+      publicKeyJwk: { kty: KeyType.OKP, crv: CurveType.Ed25519, x: publicJwk.x },
+      relationships: { authentication: true, assertionMethod: false, keyAgreement: false,
+        capabilityInvocation: false, capabilityDelegation: false },
+    }],
+    service: [],
+  });
+  const actorKeyId = `${actorDid}/keys#auth`;
+  const workspace = createOperatorWorkspace({ label: "browser-offchain-auth" });
+  const options = { source: createInMemorySource(workspace.snapshot) };
+  const api = createTrustRegistryApiServer(options);
+  const staticHandlers = new Map([
+    ["applicant", createStaticAssetHandler({
+      distDir: resolve("packages/trust-registry-applicant-portal/dist"), name: "applicant-offchain-browser",
+    })],
+    ["admin", createStaticAssetHandler({
+      distDir: resolve("packages/trust-registry-admin-console/dist"), name: "admin-offchain-browser",
+    })],
+  ]);
+  const server = createServer((request, response) => {
+    const pathname = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+    if (pathname === "/health" || pathname.startsWith("/v1/")) {
+      api.emit("request", request, response);
+      return;
+    }
+    const surface = pathname.startsWith("/applicant/") ? "applicant"
+      : pathname.startsWith("/admin/") ? "admin" : undefined;
+    if (surface === undefined) {
+      response.writeHead(404).end();
+      return;
+    }
+    request.url = (request.url ?? "/").replace(/^\/(?:applicant|admin)\//u, "/");
+    void staticHandlers.get(surface)(request, response);
+  });
+  try {
+    await new Promise((done) => server.listen(0, "127.0.0.1", done));
+    const address = server.address();
+    assert(address !== null && typeof address !== "string");
+    const origin = `http://127.0.0.1:${address.port}`;
+    allowedLocalOrigins.add(origin);
+    options.actorAuthentication = {
+      challenges: createActorAuthenticationService({
+        context: {
+          registryId: workspace.snapshot.registry.registryId,
+          genesisHash: `0x${"11".repeat(32)}`,
+          contractAddress: `0x${"22".repeat(32)}`,
+          origin,
+        },
+        store: new FileActorAuthenticationChallengeStore(join(directory, "challenges.json"), Date.now),
+        clock: Date.now,
+      }),
+      sessions: createActorSessionService(Date.now),
+    };
+    await page.exposeFunction("signTrustRegistryDigest", (digest) => ({
+      keyId: actorKeyId,
+      algorithm: "ed25519",
+      value: `0x${signEd25519(null, Uint8Array.from(digest), privateKey).toString("hex")}`,
+    }));
+    await page.addInitScript(({ actorDid, actorKeyId }) => {
+      window.midnightTrustRegistryDidSigner = {
+        getIdentity: async () => ({ actorDid, actorKeyId }),
+        signDigest: async ({ digest }) => window.signTrustRegistryDigest(Array.from(digest)),
+      };
+    }, { actorDid, actorKeyId });
+
+    await page.goto(`${origin}/applicant/`);
+    await page.locator(".hero-sign-in").click();
+    await page.getByRole("button", { name: "Sign in with digital identity" }).click();
+    await expect(page.locator(".portal-profile-status")).toContainText(actorDid);
+    await expect(page.locator(".application-readiness")).toContainText("Requires governed approval");
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await expect(page.locator(".portal-profile-card")).toContainText("A digital identity signer is connected");
+
+    await page.goto(`${origin}/admin/`);
+    await page.getByRole("link", { name: "Workspace settings" }).first().click();
+    await page.getByRole("button", { name: "Sign in with digital identity" }).click();
+    await expect(page.locator(".portal-profile-status")).toContainText(actorDid);
+    await expect(page.locator(".portal-profile-card")).toContainText("maintainer authority is checked separately");
+    await expect(page.locator("body")).not.toContainText("trsa_");
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await expect(page.locator(".portal-profile-card")).toContainText("A digital identity signer is connected");
   } finally {
     server.closeAllConnections();
     await new Promise((done, reject) => server.close((error) => error ? reject(error) : done()));

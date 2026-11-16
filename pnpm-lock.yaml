@@ -255,6 +255,9 @@ importers:
         specifier: ^4.6.6
         version: 4.6.6
     devDependencies:
+      '@midnight-ntwrk/midnight-did-domain':
+        specifier: 0.7.0
+        version: 0.7.0
       '@midnight-ntwrk/midnight-js-contracts':
         specifier: 4.1.1
         version: 4.1.1

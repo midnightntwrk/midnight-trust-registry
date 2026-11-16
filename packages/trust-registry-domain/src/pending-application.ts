@@ -25,6 +25,19 @@ export const PendingApplicationPayloadSchema = z.strictObject({
 
 export type PendingApplicationPayload = z.infer<typeof PendingApplicationPayloadSchema>;
 
+export const PendingApplicationSummarySchema = z.strictObject({
+  applicationId: z.string().trim().min(1).max(256),
+  authorizationId: z.string().trim().min(1).max(256),
+  role: z.enum(["issuer", "verifier", "auditor", "maintainer"]),
+  status: z.enum(["pending", "archived"]),
+  createdAt: z.string().datetime({ offset: true }),
+});
+export const MAX_PENDING_APPLICATION_LIST_ITEMS = 10_000;
+export const PendingApplicationListResponseSchema = z.strictObject({
+  entries: z.array(PendingApplicationSummarySchema).max(MAX_PENDING_APPLICATION_LIST_ITEMS),
+});
+export type PendingApplicationSummary = z.infer<typeof PendingApplicationSummarySchema>;
+
 export function pendingApplicationMutationPayload(input: PendingApplicationPayload): {
   applicationId: string;
   authorizationId: string;

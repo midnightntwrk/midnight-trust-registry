@@ -26,6 +26,11 @@ definitions and explicitly separate identity from eligibility and authority.
 The applicant task rail links to both the authenticated personal list and the
 exact-ID pending-request continuation. The latter remains usable on hosts
 without the optional list port.
+At desktop width, role choice and the three-step readiness explanation occupy
+separate aligned panels, with the personal applications section beginning in
+the first viewport. At narrow widths they stack without horizontal overflow,
+including 200% text. The readiness panel reports identity, eligibility, and
+governed approval separately; it is not a VP verification result.
 
 Both static app bundles include an offline Registry Manual generated from the
 same Markdown source as the docs site. The sidebar links to that local copy;

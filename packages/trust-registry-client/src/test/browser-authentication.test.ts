@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { isActorDidSigner, signInActorDid, signOutActorDid } from "../browser-authentication.js";
+import { isActorDidSigner, listApplicantApplications, signInActorDid, signOutActorDid } from "../browser-authentication.js";
 
 const NOW = Date.parse("2026-11-15T00:00:00.000Z");
 const origin = "http://127.0.0.1:4400";
@@ -50,6 +50,30 @@ describe("shared browser DID authentication", () => {
     expect(fetchMock.mock.calls.every(([, init]) => init?.redirect === "error" && init.credentials === "omit")).toBe(true);
   });
 
+  it("accepts a matching off-chain DID challenge only with an Ed25519 authentication signature", async () => {
+    const offchainDid = `did:midnight:offchain:${"ab".repeat(32)}:YWJj`;
+    const offchainKeyId = `${offchainDid}#auth-1`;
+    const offchainChallenge = { ...challenge, version: "tr-actor-authentication-offchain-v1" as const,
+      actorDid: offchainDid, actorKeyId: offchainKeyId };
+    const offchainSession = { ...session, actorDid: offchainDid, actorKeyId: offchainKeyId };
+    const fetchMock = vi.fn(async (url: string) => Response.json(
+      url.endsWith("/challenges") ? offchainChallenge : offchainSession,
+    ));
+    const signer = { getIdentity: async () => ({ actorDid: offchainDid, actorKeyId: offchainKeyId }),
+      signDigest: vi.fn(async () => ({ keyId: offchainKeyId, algorithm: "ed25519" as const,
+        value: `0x${"aa".repeat(64)}` })) };
+    const input = { apiBase: origin, pageOrigin: origin, registryId: challenge.registryId,
+      purpose: "maintainer-session" as const, signer, fetchImpl: fetchMock as unknown as typeof fetch,
+      clock: () => NOW };
+    expect((await signInActorDid(input)).actorDid).toBe(offchainDid);
+    expect(signer.signDigest).toHaveBeenCalledOnce();
+    const wrongAlgorithm = { ...signer, signDigest: vi.fn(async () => ({
+      keyId: offchainKeyId, algorithm: "jubjub-schnorr" as const, value: `0x${"aa".repeat(96)}`,
+    })) };
+    await expect(signInActorDid({ ...input, signer: wrongAlgorithm })).rejects.toThrow("mismatched signature");
+    expect(fetchMock.mock.calls).toHaveLength(3);
+  });
+
   it("rejects an applicant-purpose challenge before external signing", async () => {
     const signDigest = vi.fn(async () => signature);
     await expect(signInActorDid({ apiBase: origin, pageOrigin: origin,
@@ -69,6 +93,52 @@ describe("shared browser DID authentication", () => {
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
       method: "DELETE", credentials: "omit", cache: "no-store", redirect: "error",
     });
+  });
+
+  it("returns a typed applicant list, not a role grant", async () => {
+    const applicantSession = { ...session, purpose: "applicant-session" as const,
+      registryId: challenge.registryId, genesisHash: challenge.genesisHash,
+      contractAddress: challenge.contractAddress };
+    const entries = [{ applicationId: "application:issuer:mine:v1", authorizationId: "auth:issuer:mine:v1",
+      role: "issuer", status: "pending", createdAt: new Date(NOW).toISOString() }];
+    const fetchMock = vi.fn(async () => Response.json({ entries }));
+    const result = await listApplicantApplications({ apiBase: origin, pageOrigin: origin,
+      session: applicantSession, fetchImpl: fetchMock as unknown as typeof fetch, clock: () => NOW });
+    expect(result).toEqual({ status: "available", entries });
+    expect(result).not.toHaveProperty("role");
+    expect(fetchMock.mock.calls).toHaveLength(1);
+  });
+
+  it("distinguishes an unconfigured private list from empty, denied, and malformed results", async () => {
+    const applicantSession = { ...session, purpose: "applicant-session" as const,
+      registryId: challenge.registryId, genesisHash: challenge.genesisHash,
+      contractAddress: challenge.contractAddress };
+    const input = { apiBase: origin, pageOrigin: origin, session: applicantSession, clock: () => NOW };
+    const unavailable = vi.fn(async () => Response.json({
+      type: "https://registry.example/problems/pending-application-list-unavailable", status: 503,
+    }, { status: 503 }));
+    expect(await listApplicantApplications({ ...input, fetchImpl: unavailable as unknown as typeof fetch }))
+      .toEqual({ status: "unavailable" });
+    expect(await listApplicantApplications({ ...input,
+      fetchImpl: vi.fn(async () => Response.json({ entries: [] })) as unknown as typeof fetch }))
+      .toEqual({ status: "available", entries: [] });
+    await expect(listApplicantApplications({ ...input, fetchImpl: vi.fn(async () => Response.json({
+      type: "https://registry.example/problems/source-unavailable", status: 503,
+    }, { status: 503 })) as unknown as typeof fetch })).rejects.toThrow("HTTP 503");
+    await expect(listApplicantApplications({ ...input, fetchImpl: vi.fn(async () => Response.json({
+      entries: [{ applicationId: "mine", authorizationId: "id", role: "maintainer",
+        status: "active", createdAt: new Date(NOW).toISOString() }],
+    })) as unknown as typeof fetch })).rejects.toThrow("invalid response");
+    await expect(listApplicantApplications({ ...input, fetchImpl: vi.fn(async () => Response.json({
+      type: "https://registry.example/problems/applicant-session-required", status: 403,
+    }, { status: 403 })) as unknown as typeof fetch })).rejects.toThrow("HTTP 403");
+    expect(unavailable.mock.calls).toHaveLength(1);
+    await expect(listApplicantApplications({ ...input,
+      session: { ...applicantSession, purpose: "maintainer-session" } as unknown as typeof applicantSession,
+      fetchImpl: unavailable as unknown as typeof fetch })).rejects.toThrow("applicant DID session");
+    await expect(listApplicantApplications({ ...input, pageOrigin: "https://foreign.example",
+      fetchImpl: unavailable as unknown as typeof fetch })).rejects.toThrow("same trusted API origin");
+    expect(unavailable.mock.calls).toHaveLength(1);
   });
 
   it("does not follow a challenge redirect or ask the external signer to sign", async () => {

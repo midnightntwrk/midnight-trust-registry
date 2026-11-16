@@ -1271,6 +1271,8 @@ export const createTrustRegistryApiServer = (
             status: "ok",
             sourceMode: options.source.mode,
             configuredGovernedProposalRoles,
+            pendingApplicationRegistrationConfigured: options.pendingApplicationRegistration !== undefined,
+            pendingApplicationListConfigured: options.pendingApplicationRegistration?.listForSubjectDid !== undefined,
             generatedAt: summary.generatedAt,
             registryId: summary.registryId,
             ...(workspaceInstanceId === undefined ? {} : { workspaceInstanceId }),
@@ -2952,11 +2954,15 @@ export const createTrustRegistryApiServer = (
         writeJson(response, problem.status, problem, false);
         return;
       }
-      if (error instanceof InvalidActorAuthenticationIdentityError || error instanceof ActorAuthenticationCapacityError) {
-        const problem = error instanceof InvalidActorAuthenticationIdentityError
-          ? jsonProblem(problemBaseUri, "actor-authentication-invalid-identity", 400, "actor identity invalid").problem
-          : jsonProblem(problemBaseUri, "actor-authentication-capacity-unavailable", 503,
-            "challenge capacity unavailable").problem;
+      if (error instanceof InvalidActorAuthenticationIdentityError) {
+        const problem = jsonProblem(problemBaseUri, "actor-authentication-invalid-identity", 400,
+          "actor authentication identity invalid").problem;
+        writeJson(response, problem.status, problem, false);
+        return;
+      }
+      if (error instanceof ActorAuthenticationCapacityError) {
+        const problem = jsonProblem(problemBaseUri, "actor-authentication-capacity-unavailable", 503,
+          "challenge capacity unavailable").problem;
         writeJson(response, problem.status, problem, false);
         return;
       }

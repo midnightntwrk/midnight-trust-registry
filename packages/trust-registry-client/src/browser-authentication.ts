@@ -1,10 +1,12 @@
 import {
   ActorAuthenticationChallengeSchema,
-  MutationIntentSignatureSchema,
+  ActorAuthenticationSignatureSchema,
   actorAuthenticationDigestBytes,
+  PendingApplicationListResponseSchema,
   type ActorAuthenticationChallenge,
   type ActorAuthenticationPurpose,
-  type MutationIntentSignature,
+  type ActorAuthenticationSignature,
+  type PendingApplicationSummary,
 } from "@midnight-ntwrk/trust-registry-domain/browser";
 
 const TOKEN_PATTERN = /^trsa_[A-Za-z0-9_-]{43}$/u;
@@ -12,7 +14,7 @@ const MAX_SESSION_AGE_MS = 15 * 60 * 1000;
 
 export interface ActorDidSigner {
   getIdentity(): Promise<{ actorDid: string; actorKeyId: string }>;
-  signDigest(input: { challenge: ActorAuthenticationChallenge; digest: Uint8Array }): Promise<MutationIntentSignature>;
+  signDigest(input: { challenge: ActorAuthenticationChallenge; digest: Uint8Array }): Promise<ActorAuthenticationSignature>;
 }
 
 export function isActorDidSigner(value: unknown): value is ActorDidSigner {
@@ -83,16 +85,21 @@ export async function signInActorDid<P extends ActorAuthenticationPurpose>(
   if (!parsed.success || parsed.data.actorDid !== actorDid || parsed.data.actorKeyId !== actorKeyId
     || parsed.data.registryId !== input.registryId || parsed.data.origin !== input.pageOrigin
     || parsed.data.purpose !== input.purpose
+    || (actorDid.startsWith("did:midnight:offchain:")
+      ? parsed.data.version !== "tr-actor-authentication-offchain-v1"
+      : parsed.data.version !== "tr-actor-authentication-v1")
     || (input.deploymentIdentity !== undefined && (parsed.data.genesisHash !== input.deploymentIdentity.expectedGenesisHash
       || parsed.data.contractAddress !== input.deploymentIdentity.contractAddress))) {
     throw new Error("DID challenge does not match this actor and registry.");
   }
   const challenge = parsed.data;
   if (Date.parse(challenge.expiresAt) <= clock()) throw new Error("DID challenge has expired.");
-  const signed = MutationIntentSignatureSchema.safeParse(await input.signer.signDigest({
+  const signed = ActorAuthenticationSignatureSchema.safeParse(await input.signer.signDigest({
     challenge, digest: actorAuthenticationDigestBytes(challenge),
   }));
-  if (!signed.success || signed.data.keyId !== actorKeyId) {
+  if (!signed.success || signed.data.keyId !== actorKeyId
+    || signed.data.algorithm !== (challenge.version === "tr-actor-authentication-v1"
+      ? "jubjub-schnorr" : "ed25519")) {
     throw new Error("DID signer returned a mismatched signature.");
   }
   const sessionResponse = await fetchImpl(`${base}/v1/actor-authentication/sessions`, {
@@ -128,4 +135,40 @@ export async function signOutActorDid(input: {
     headers: { authorization: `Bearer ${input.session.accessToken}` },
   });
   if (!response.ok) throw new Error(`DID sign-out failed (HTTP ${response.status.toString()}).`);
+}
+
+export type ApplicantApplicationList =
+  | { status: "available"; entries: readonly PendingApplicationSummary[] }
+  | { status: "unavailable" };
+
+export async function listApplicantApplications(input: {
+  apiBase: string;
+  pageOrigin: string;
+  session: ActorDidSession<"applicant-session">;
+  fetchImpl?: typeof fetch;
+  clock?: () => number;
+}): Promise<ApplicantApplicationList> {
+  const base = sameOriginApi(input.apiBase, input.pageOrigin);
+  const expiresAt = Date.parse(input.session.expiresAt);
+  if (input.session.purpose !== "applicant-session"
+    || !TOKEN_PATTERN.test(input.session.accessToken)
+    || !Number.isFinite(expiresAt) || expiresAt <= (input.clock ?? Date.now)()) {
+    throw new Error("A current applicant DID session is required.");
+  }
+  const response = await (input.fetchImpl ?? fetch)(`${base}/v1/pending-applications`, {
+    method: "GET", credentials: "omit", cache: "no-store", redirect: "error",
+    headers: { authorization: `Bearer ${input.session.accessToken}` },
+  });
+  if (response.status === 503) {
+    const problem: unknown = await response.json().catch(() => null);
+    if (problem !== null && typeof problem === "object" && "type" in problem
+      && typeof problem.type === "string"
+      && problem.type.endsWith("/pending-application-list-unavailable")) {
+      return { status: "unavailable" };
+    }
+  }
+  const payload = await responsePayload(response, "Pending application list");
+  const parsed = PendingApplicationListResponseSchema.safeParse(payload);
+  if (!parsed.success) throw new Error("Pending application list returned an invalid response.");
+  return { status: "available", entries: parsed.data.entries };
 }

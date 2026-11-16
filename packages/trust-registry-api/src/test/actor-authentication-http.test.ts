@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { generateKeyPairSync, sign as signEd25519 } from "node:crypto";
 import type { Server } from "node:http";
 
 import {
@@ -6,6 +7,7 @@ import {
   encodeJubjubSignature,
   signJubjubPayloadFromSeed,
 } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
+import { createLongFormOffchainMidnightDIDString, CurveType, KeyType } from "@midnight-ntwrk/midnight-did-domain";
 import { createOperatorWorkspace } from "@midnight-ntwrk/trust-registry-cli";
 import { actorAuthenticationDigestBytes, type ActorAuthenticationChallenge } from "@midnight-ntwrk/trust-registry-domain";
 import {
@@ -79,7 +81,7 @@ describe("phase-0 DID authentication HTTP", () => {
 
   async function start(configured = true, applicationVp?: ApplicationVpHttpPort,
     pendingApplicationRegistration?: PendingApplicationRegistrationPort,
-    store: ActorAuthenticationChallengeStore = challengeStore()) {
+    ledgerResolver = true, store: ActorAuthenticationChallengeStore = challengeStore()) {
     nowMs = START;
     const resolver = createMidnightDidResolver([
       createMidnightDidLedgerFixture(actorDid, {
@@ -94,7 +96,7 @@ describe("phase-0 DID authentication HTTP", () => {
         contractAddress: `0x${"22".repeat(32)}`,
         origin: expectedOrigin,
       },
-      resolver, store, clock: () => nowMs,
+      ...(ledgerResolver ? { resolver } : {}), store, clock: () => nowMs,
     });
     server = createTrustRegistryApiServer({
       source: createInMemorySource(createOperatorWorkspace({ label: "actor-auth-http" }).snapshot),
@@ -107,6 +109,36 @@ describe("phase-0 DID authentication HTTP", () => {
 
   const post = (path: string, body: unknown, headers: Record<string, string> = {}) => fetch(`${base}${path}`, {
     method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body),
+  });
+
+  it("signs in with a self-certifying off-chain DID without a ledger resolver", async () => {
+    await start(true, undefined, undefined, false);
+    const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+    const publicJwk = publicKey.export({ format: "jwk" });
+    const offchainDid = createLongFormOffchainMidnightDIDString({
+      version: 1, alsoKnownAs: [], service: [],
+      verificationMethod: [{ id: "#auth-1",
+        publicKeyJwk: { kty: KeyType.OKP, crv: CurveType.Ed25519, x: publicJwk.x! },
+        relationships: { authentication: true, assertionMethod: false, keyAgreement: false,
+          capabilityInvocation: false, capabilityDelegation: false } }],
+    });
+    const offchainKeyId = `${offchainDid}#auth-1`;
+    const issued = await post("/v1/actor-authentication/challenges", {
+      actorDid: offchainDid, actorKeyId: offchainKeyId, purpose: "applicant-session",
+    }, { origin: expectedOrigin });
+    expect(issued.status).toBe(201);
+    const challenge = await issued.json() as ActorAuthenticationChallenge;
+    expect(challenge.version).toBe("tr-actor-authentication-offchain-v1");
+    const signature = { keyId: offchainKeyId, algorithm: "ed25519",
+      value: `0x${signEd25519(null, actorAuthenticationDigestBytes(challenge), privateKey).toString("hex")}` };
+    const verified = await post("/v1/actor-authentication/sessions", { challenge, signature },
+      { origin: expectedOrigin });
+    expect(verified.status).toBe(201);
+    const session = await verified.json() as { accessToken: string; actorDid: string; purpose: string };
+    expect(session).toMatchObject({ actorDid: offchainDid, purpose: "applicant-session" });
+    expect(session).not.toHaveProperty("role");
+    expect((await post("/v1/actor-authentication/sessions", { challenge, signature },
+      { origin: expectedOrigin })).status).toBe(401);
   });
 
   it("signs in once, exposes identity without role, and revokes the bearer token", async () => {
@@ -152,6 +184,10 @@ describe("phase-0 DID authentication HTTP", () => {
     }] : []);
     await start(true, undefined, {
       register: async () => { throw new Error("not used"); }, listForSubjectDid,
+    });
+    expect(await (await fetch(`${base}/health`)).json()).toMatchObject({
+      pendingApplicationRegistrationConfigured: true,
+      pendingApplicationListConfigured: true,
     });
     const route = `${base}/v1/pending-applications`;
     expect((await fetch(route)).status).toBe(403);
@@ -209,6 +245,10 @@ describe("phase-0 DID authentication HTTP", () => {
 
   it("does not report an empty inbox when a signed-in host has no private list port", async () => {
     await start();
+    expect(await (await fetch(`${base}/health`)).json()).toMatchObject({
+      pendingApplicationRegistrationConfigured: false,
+      pendingApplicationListConfigured: false,
+    });
     const challenge = await (await post("/v1/actor-authentication/challenges", {
       actorDid, actorKeyId, purpose: "applicant-session",
     })).json() as ActorAuthenticationChallenge;
@@ -254,7 +294,7 @@ describe("phase-0 DID authentication HTTP", () => {
   });
 
   it("returns stable identity, capacity, and socket-client rate problems", async () => {
-    await start(true, undefined, undefined, { ...challengeStore(), insert: async () => false });
+    await start(true, undefined, undefined, true, { ...challengeStore(), insert: async () => false });
     const path = "/v1/actor-authentication/challenges";
     const body = { actorDid, actorKeyId, purpose: "applicant-session" };
     const invalid = await post(path, { ...body, actorKeyId: `${actorDid}#missing` });
@@ -311,6 +351,45 @@ describe("phase-0 DID authentication HTTP", () => {
     hostDid = actorDid;
     expect((await fetch(bindingPath, { headers: { authorization } })).status).toBe(404);
     expect(authorizeCalls).toBe(2);
+  });
+
+  it("does not treat off-chain DID sign-in as VP eligibility for another host subject", async () => {
+    const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+    const publicJwk = publicKey.export({ format: "jwk" });
+    const offchainDid = createLongFormOffchainMidnightDIDString({
+      version: 1, alsoKnownAs: [], service: [],
+      verificationMethod: [{ id: "#auth-1",
+        publicKeyJwk: { kty: KeyType.OKP, crv: CurveType.Ed25519, x: publicJwk.x! },
+        relationships: { authentication: true, assertionMethod: false, keyAgreement: false,
+          capabilityInvocation: false, capabilityDelegation: false } }],
+    });
+    const offchainKeyId = `${offchainDid}#auth-1`;
+    const verifyPresentation = vi.fn(async () => { throw new Error("VP must not be reached"); });
+    const applicationVp: ApplicationVpHttpPort = {
+      challengeStore: new InMemoryApplicationChallengeStore(),
+      authorizeRequest: async () => actorDid,
+      resolvePendingApplication: async () => null,
+      verifyPresentation,
+      signEvidence: async () => { throw new Error("VP must not be reached"); },
+      verifyEvidenceSignature: () => false,
+      persistRedactedEvidence: async () => { throw new Error("VP must not be reached"); },
+    };
+    await start(true, applicationVp, undefined, false);
+    const challenge = await (await post("/v1/actor-authentication/challenges", {
+      actorDid: offchainDid, actorKeyId: offchainKeyId, purpose: "applicant-session",
+    })).json() as ActorAuthenticationChallenge;
+    const signature = { keyId: offchainKeyId, algorithm: "ed25519",
+      value: `0x${signEd25519(null, actorAuthenticationDigestBytes(challenge), privateKey).toString("hex")}` };
+    const session = await (await post("/v1/actor-authentication/sessions", {
+      challenge, signature,
+    })).json() as { accessToken: string };
+    const authorization = `Bearer ${session.accessToken}`;
+    const path = `${base}/v1/application-evidence/application:issuer:one/challenges`;
+    const response = await fetch(path, { method: "POST", headers: {
+      authorization, "content-type": "application/json",
+    }, body: "{}" });
+    expect(response.status).toBe(403);
+    expect(verifyPresentation).not.toHaveBeenCalled();
   });
 
   it("bounds sessions per DID without denying a different actor and rejects expired revocation", () => {

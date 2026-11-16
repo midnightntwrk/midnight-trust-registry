@@ -485,7 +485,7 @@ textarea {
 }
 
 body {
-  background: radial-gradient(circle at 100% 0, #e8e9ff 0, transparent 26rem), var(--midnight-surface);
+  background: radial-gradient(circle at 100% 0, #dce9e4 0, transparent 26rem), var(--midnight-surface);
 }
 
 .shell { display: flex; flex-direction: column; width: min(1440px, calc(100vw - 2.5rem)); padding-top: 1rem; }

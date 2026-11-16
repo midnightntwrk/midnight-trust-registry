@@ -147,7 +147,7 @@ for (const target of ["issuer", "recognition"]) {
 
       await page.goto(`${base}/admin/?demo=1&apiBase=${encodeURIComponent(base)}`);
       await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
-      await expect(page.getByRole("heading", { name: "Decisions that need attention" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Review inbox" })).toBeVisible();
       await expect(page.locator(".card")).toContainText(label);
       await expect(page.locator(".card .status-chip")).toHaveText("Proposed");
       await expect(page.locator(".card .meta-row").first()).toHaveText("Requested trust level: approved");
@@ -172,7 +172,7 @@ for (const target of ["issuer", "recognition"]) {
         expect(message).toContain("This does not change the deployed ledger.");
       }
       await page.locator(".settings-back").click();
-      await expect(page.getByRole("heading", { name: "Registry review workspace" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Registry review" })).toBeVisible();
       await expect(page.locator(".column")).toHaveCount(1);
 
       await page.goto(`${base}/applicant/?demo=1&apiBase=${encodeURIComponent(base)}`);
