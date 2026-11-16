@@ -210,6 +210,9 @@ actor host. #297 remains open for complete actor review/vote, ambiguous-write
 reconciliation, and independently verified decision reads; #219/#59 remain
 the deployed acceptance gate. The local branch's 97 Playwright cases cover
 browser behavior and role/source-state UI, not deployed finality.
+The typed client and CLI now report a lost registration response as an unknown
+outcome and explicitly forbid blind resubmission. The private pending-list
+summary is not exact signed-request reconciliation, so #297 remains open.
 
 Non-critical-path follow-ups include public-network bootstrap (#200),
 historical TRQP (#39), Helm (#218), npm publishing (#271), mobile acceptance

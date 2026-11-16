@@ -114,4 +114,16 @@ describe("actor API CLI", () => {
     expect(badSession.stderr).not.toContain("private-leak");
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("does not suggest retrying a signed request when the response is lost", async () => {
+    const fetchMock = vi.fn(async () => { throw new Error("socket closed after acceptance"); });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await capture("api-register", { session, request });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("outcome is unknown");
+    expect(result.stderr).toContain("Do not resubmit");
+    expect(result.stderr).not.toContain(session.accessToken);
+    expect(result.stderr).not.toContain("socket closed");
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
 });

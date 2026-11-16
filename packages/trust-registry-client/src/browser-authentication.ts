@@ -184,11 +184,16 @@ export async function registerApplicantApplication(input: {
     || Date.parse(request.intent.expiresAt) <= clock()) {
     throw new Error("Signed application does not match the current applicant DID session.");
   }
-  const response = await (input.fetchImpl ?? fetch)(`${base}/v1/pending-applications`, {
-    method: "POST", credentials: "omit", cache: "no-store", redirect: "error",
-    headers: { "content-type": "application/json", authorization: `Bearer ${input.session.accessToken}` },
-    body: JSON.stringify(request),
-  });
+  let response: Response;
+  try {
+    response = await (input.fetchImpl ?? fetch)(`${base}/v1/pending-applications`, {
+      method: "POST", credentials: "omit", cache: "no-store", redirect: "error",
+      headers: { "content-type": "application/json", authorization: `Bearer ${input.session.accessToken}` },
+      body: JSON.stringify(request),
+    });
+  } catch {
+    throw new Error("Pending application outcome is unknown after transport failure. Do not resubmit the signed request; reconcile it by exact request identity.");
+  }
   const parsed = PendingApplicationRecordSchema.safeParse(await responsePayload(response, "Pending application registration"));
   if (!parsed.success || parsed.data.status !== "pending"
     || parsed.data.binding.applicationId !== request.applicationId
@@ -199,7 +204,7 @@ export async function registerApplicantApplication(input: {
     || parsed.data.binding.scopeCommitment !== request.intent.scopeCommitment
     || parsed.data.binding.governedResource.type !== request.governedResource.type
     || parsed.data.binding.governedResource.id !== request.governedResource.id) {
-    throw new Error("Pending application registration returned a mismatched record.");
+    throw new Error("Pending application registration returned a mismatched record. Do not resubmit the signed request; reconcile it by exact request identity.");
   }
   return parsed.data;
 }

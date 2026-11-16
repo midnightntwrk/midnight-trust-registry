@@ -190,6 +190,9 @@ describe("shared browser DID authentication", () => {
       fetchImpl: vi.fn(async () => Response.json({ ...pendingRecord,
         binding: { ...pendingRecord.binding, subjectDid: `did:midnight:undeployed:${"cd".repeat(32)}` },
       })) as unknown as typeof fetch })).rejects.toThrow("mismatched record");
+    await expect(registerApplicantApplication({ ...input,
+      fetchImpl: vi.fn(async () => { throw new Error("socket closed after acceptance"); }) as unknown as typeof fetch,
+    })).rejects.toThrow("outcome is unknown");
   });
 
   it("distinguishes an unconfigured private list from empty, denied, and malformed results", async () => {
