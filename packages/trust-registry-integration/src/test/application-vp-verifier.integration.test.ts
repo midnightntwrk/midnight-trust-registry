@@ -106,6 +106,19 @@ describe("published VC proof and DID application verifier port", () => {
     } as unknown as typeof scenario.family })).rejects.toMatchObject({ category: "invalid_presentation" });
   });
 
+  it("rejects issuer eligibility governed by another registry", async () => {
+    const baseline = await createApplicationVpScenarioFixture();
+    const otherRegistry = await createApplicationVpScenarioFixture(NONCE, {
+      statusPolicyBinding: { ...baseline.fixtureStatusPolicyBinding, trustRegistryId: "registry:other" },
+    });
+    await expect(verifyQualifiedApplicationVp({
+      ...otherRegistry.input,
+      trustContext: VP_FIXTURE_TRUST_CONTEXT,
+      expectedPolicyId: "policy:vp:v1",
+      expectedPolicyVersion: "v1",
+    })).rejects.toMatchObject({ category: "ineligible" });
+  });
+
   it("exposes qualified VP intake only with a host-pinned registry deployment", async () => {
     const scenario = await createApplicationVpScenarioFixture();
     const input = scenario.input;

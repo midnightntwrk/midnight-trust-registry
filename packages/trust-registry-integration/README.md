@@ -294,7 +294,8 @@ Current coverage:
   audience, deployment, nonce, role, scope, policy ID/version, and subject from the verified
   signed presentation body. A different host origin or deployment fails
   before an eligibility result can be returned; an unavailable binding source
-  fails closed. `createApplicationVpIntakePorts` remains the unqualified
+  fails closed. The issuer's returned status-policy authorization must also
+  name that same trust registry. `createApplicationVpIntakePorts` remains the unqualified
   fixture/reference path and must not be selected for a live host. The
   qualified factory does not provide a production VC/status adapter, trust
   the resolver, or independently prove ledger finality; the embedding host

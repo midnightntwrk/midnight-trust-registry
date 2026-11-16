@@ -215,6 +215,9 @@ async function verifyApplicationVpInternal<Submission>(input: ApplicationVpInput
     const binding = IssuerStatusPolicyBindingSchema.parse(
       await input.family.assertIssuerEligible(material, scope.data),
     );
+    if (trustContext !== undefined && binding.trustRegistryId !== trustContext.registryId) {
+      throw new ApplicationVpVerificationError("ineligible");
+    }
     if (`0x${Buffer.from(material.statusBinding.registryRef.registryId).toString("hex")}` !== binding.statusRegistryId) {
       throw new Error("Credential status registry differs from governed issuer policy");
     }
