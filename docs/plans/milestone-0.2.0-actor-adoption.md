@@ -158,7 +158,9 @@ The fast headless gate also runs the qualified VP application-intake fixtures
 for issuer, verifier, auditor, and maintainer after building the prebuilt
 runtime. Those tests bind the presentation to pinned deployment and policy
 context, check one-use challenge consumption, and deny mismatched contexts.
-They run against local adapters and a Compact simulator, not a deployed
+The auditor case also crosses a real loopback HTTP host, deriving its expected
+audience from the listening origin and its policy from the registered application.
+These cases run against local adapters and a Compact simulator, not a deployed
 VC/status authority or a finalized ledger host.
 
 The API health response now reports private application registration and list
