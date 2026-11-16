@@ -12,6 +12,7 @@ const ApplicantSessionSchema = z.strictObject({
   actorDid: z.string().startsWith("did:midnight:"),
   actorKeyId: z.string().min(1),
   purpose: z.literal("applicant-session"),
+  origin: z.string().url(),
   registryId: z.string().min(1),
   genesisHash: z.string().regex(/^0x[0-9a-f]{64}$/u),
   contractAddress: z.string().regex(/^0x[0-9a-f]{64}$/u),
@@ -54,14 +55,10 @@ export async function runActorApiCommand(
 ): Promise<number> {
   const parsed = parseArgs({
     args: [...argv], allowPositionals: false, strict: true,
-    options: { "api-base": { type: "string" }, "trusted-origin": { type: "string" } },
+    options: { "api-base": { type: "string" } },
   });
   const apiBase = parsed.values["api-base"];
-  const pageOrigin = parsed.values["trusted-origin"];
   if (typeof apiBase !== "string" || apiBase.length === 0) throw new Error("--api-base is required");
-  if (typeof pageOrigin !== "string" || pageOrigin.length === 0) {
-    throw new Error("--trusted-origin from the DID sign-in context is required");
-  }
   const stdin = await readInput(io);
   let raw: unknown;
   try {
@@ -71,6 +68,7 @@ export async function runActorApiCommand(
   }
   const input = ApplicantInputSchema.safeParse(raw);
   if (!input.success) throw new Error("actor API stdin contains an invalid applicant session or signed request");
+  const pageOrigin = input.data.session.origin;
   if (command === "api-register") {
     if (input.data.request === undefined) throw new Error("api-register requires a signed request on stdin");
     io.stdout(serializeJson(await registerApplicantApplication({

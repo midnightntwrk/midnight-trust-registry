@@ -28,6 +28,7 @@ const challenge = {
 };
 const signature = { keyId: actorKeyId, algorithm: "jubjub-schnorr" as const, value: `0x${"aa".repeat(96)}` };
 const session = { actorDid, actorKeyId, purpose: "maintainer-session" as const,
+  origin,
   accessToken: `trsa_${"a".repeat(43)}`, expiresAt: new Date(NOW + 900_000).toISOString() };
 const applicantSession = { ...session, purpose: "applicant-session" as const,
   registryId: challenge.registryId, genesisHash: challenge.genesisHash,
@@ -71,6 +72,7 @@ describe("shared browser DID authentication", () => {
       signer: { getIdentity: async () => ({ actorDid, actorKeyId }), signDigest: async () => signature },
       fetchImpl: fetchMock as unknown as typeof fetch, clock: () => NOW });
     expect(result.actorDid).toBe(actorDid);
+    expect(result.origin).toBe(ipv6Origin);
     expect(fetchMock.mock.calls).toHaveLength(2);
     expect(fetchMock.mock.calls[0]?.[0]).toBe(`${ipv6Origin}/v1/actor-authentication/challenges`);
   });
@@ -93,6 +95,7 @@ describe("shared browser DID authentication", () => {
       registryId: challenge.registryId, purpose: "maintainer-session", signer,
       fetchImpl: fetchMock as unknown as typeof fetch, clock: () => NOW });
     expect(result.purpose).toBe("maintainer-session");
+    expect(result.origin).toBe(origin);
     expect(result).not.toHaveProperty("role");
     expect(signer.signDigest).toHaveBeenCalledOnce();
     expect(fetchMock.mock.calls).toHaveLength(2);
@@ -142,6 +145,11 @@ describe("shared browser DID authentication", () => {
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
       method: "DELETE", credentials: "omit", cache: "no-store", redirect: "error",
     });
+    await expect(signOutActorDid({ apiBase: origin, pageOrigin: origin,
+      session: { ...session, origin: "https://foreign.example", registryId: challenge.registryId,
+        genesisHash: challenge.genesisHash, contractAddress: challenge.contractAddress },
+      fetchImpl: fetchMock as unknown as typeof fetch })).rejects.toThrow("session origin");
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it("returns a typed applicant list, not a role grant", async () => {
@@ -175,6 +183,8 @@ describe("shared browser DID authentication", () => {
       .rejects.toThrow("current applicant DID session");
     await expect(registerApplicantApplication({ ...input, pageOrigin: "https://foreign.example" }))
       .rejects.toThrow("same trusted API origin");
+    await expect(registerApplicantApplication({ ...input, session: { ...applicantSession, origin: "https://foreign.example" } }))
+      .rejects.toThrow("session origin");
     expect(fetchMock).toHaveBeenCalledOnce();
     await expect(registerApplicantApplication({ ...input,
       fetchImpl: vi.fn(async () => Response.json({ ...pendingRecord,
@@ -211,6 +221,8 @@ describe("shared browser DID authentication", () => {
       fetchImpl: unavailable as unknown as typeof fetch })).rejects.toThrow("applicant DID session");
     await expect(listApplicantApplications({ ...input, pageOrigin: "https://foreign.example",
       fetchImpl: unavailable as unknown as typeof fetch })).rejects.toThrow("same trusted API origin");
+    await expect(listApplicantApplications({ ...input, session: { ...applicantSession, origin: "https://foreign.example" },
+      fetchImpl: unavailable as unknown as typeof fetch })).rejects.toThrow("session origin");
     expect(unavailable.mock.calls).toHaveLength(1);
   });
 

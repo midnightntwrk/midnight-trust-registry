@@ -536,7 +536,7 @@ try {
   const pending = await registerApplicantApplication({
     apiBase: base, pageOrigin: base,
     session: {
-      ...actorSession, registryId: actorChallenge.registryId,
+      ...actorSession, origin: base, registryId: actorChallenge.registryId,
       genesisHash: actorChallenge.genesisHash, contractAddress: actorChallenge.contractAddress,
     },
     request: application, clock: () => VP_FIXTURE_TIME_MS,

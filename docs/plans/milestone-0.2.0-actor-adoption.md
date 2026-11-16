@@ -197,7 +197,8 @@ schema into the domain package and exposes a session-bound typed registration
 call. It checks the signed applicant DID, key, registry, intent expiry, exact
 same origin, and returned pending binding; the server still verifies the
 signature. The `api-register` and `api-applications` CLI commands take an
-ephemeral session on stdin, require the independently supplied sign-in origin,
+ephemeral session on stdin with its verified sign-in origin, require it to
+match the selected API origin,
 and never place the bearer in arguments or output. A current-time packaged
 loopback host confirms the list command distinguishes an unconfigured list
 from denied reuse after sign-out. A separate current-time loopback host now

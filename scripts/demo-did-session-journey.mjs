@@ -48,9 +48,9 @@ const serverOptions = {
 };
 const server = createTrustRegistryApiServer(serverOptions);
 
-async function runActorCli(command, apiBase, input, trustedOrigin = apiBase) {
+async function runActorCli(command, apiBase, input) {
   const child = spawn(process.execPath, ["packages/trust-registry-cli/bin/trust-registry.mjs",
-    command, "--api-base", apiBase, "--trusted-origin", trustedOrigin],
+    command, "--api-base", apiBase],
   { cwd: process.cwd(), stdio: ["pipe", "pipe", "pipe"] });
   let stdout = "";
   let stderr = "";
@@ -187,10 +187,10 @@ try {
       seed, mutationIntentDigestBytes(intent),
     ))).toString("hex")}`,
   } };
-  const cliSession = { ...session, registryId, genesisHash: challenge.genesisHash,
+  const cliSession = { ...session, origin, registryId, genesisHash: challenge.genesisHash,
     contractAddress: challenge.contractAddress };
   const wrongOrigin = await runActorCli("api-register", "https://foreign.example",
-    { session: cliSession, request: signedRequest }, origin);
+    { session: cliSession, request: signedRequest });
   assert.equal(wrongOrigin.code, 1);
   assert.match(wrongOrigin.stderr, /same trusted API origin/u);
   const wrongActor = await runActorCli("api-register", origin, {

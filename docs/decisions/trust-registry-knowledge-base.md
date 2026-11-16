@@ -3275,7 +3275,7 @@ journeys use this client path and retain a fixed test clock.
 
 The operator CLI adds `api-register` and `api-applications` commands. Their
 bearer and signed input arrive on stdin, not as shell arguments. A separate
-trusted sign-in origin must match the selected API origin before a token is
+sign-in origin carried by the session must match the selected API origin before a token is
 sent. The packaged current-time loopback test exercises the executable list
 command, an explicit unavailable result, and denied reuse after sign-out.
 A second current-time loopback host exercises executable CLI registration

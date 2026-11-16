@@ -95,7 +95,7 @@ Commands:
   api-register     Register an externally signed pending application via an applicant DID session on stdin
   api-applications List this DID session's pending applications via stdin
 
-Actor API commands require --api-base and --trusted-origin from the DID sign-in context.
+Actor API commands require --api-base; the DID session on stdin carries its sign-in origin.
 Pass the ephemeral session JSON through stdin; never put the bearer on a command line.
 
 Examples:

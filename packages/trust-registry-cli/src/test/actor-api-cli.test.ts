@@ -12,6 +12,7 @@ const session = {
   actorDid: `did:midnight:undeployed:${"ab".repeat(32)}`,
   actorKeyId: `did:midnight:undeployed:${"ab".repeat(32)}#auth-1`,
   purpose: "applicant-session",
+  origin: apiBase,
   registryId: "registry:local:trusted",
   genesisHash: `0x${"11".repeat(32)}`,
   contractAddress: `0x${"22".repeat(32)}`,
@@ -49,7 +50,7 @@ async function capture(command: string, input: unknown, base = apiBase): Promise
 }> {
   const stdout: string[] = [];
   const stderr: string[] = [];
-  const status = await runCli([command, "--api-base", base, "--trusted-origin", apiBase], {
+  const status = await runCli([command, "--api-base", base], {
     stdout: (value) => stdout.push(value),
     stderr: (value) => stderr.push(value),
     readStdin: async () => JSON.stringify(input),

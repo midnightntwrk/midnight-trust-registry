@@ -35,6 +35,7 @@ export type ActorDidSession<P extends ActorAuthenticationPurpose = ActorAuthenti
   actorDid: string;
   actorKeyId: string;
   purpose: P;
+  origin: string;
   registryId: string;
   genesisHash: string;
   contractAddress: string;
@@ -131,7 +132,7 @@ export async function signInActorDid<P extends ActorAuthenticationPurpose>(
     || !Number.isFinite(expiresAt) || expiresAt <= clock() || expiresAt - clock() > MAX_SESSION_AGE_MS) {
     throw new Error("DID sign-in returned a mismatched session.");
   }
-  return { actorDid, actorKeyId, purpose: input.purpose, registryId: input.registryId,
+  return { actorDid, actorKeyId, purpose: input.purpose, origin: input.pageOrigin, registryId: input.registryId,
     genesisHash: challenge.genesisHash, contractAddress: challenge.contractAddress,
     accessToken: value.accessToken, expiresAt: value.expiresAt as string };
 }
@@ -143,6 +144,7 @@ export async function signOutActorDid(input: {
   fetchImpl?: typeof fetch;
 }): Promise<void> {
   const base = sameOriginApi(input.apiBase, input.pageOrigin);
+  if (input.session.origin !== input.pageOrigin) throw new Error("DID session origin does not match this page.");
   const response = await (input.fetchImpl ?? fetch)(`${base}/v1/actor-authentication/session`, {
     method: "DELETE", credentials: "omit", cache: "no-store", redirect: "error",
     headers: { authorization: `Bearer ${input.session.accessToken}` },
@@ -172,6 +174,7 @@ export async function registerApplicantApplication(input: {
   clock?: () => number;
 }): Promise<PendingApplicationRecord> {
   const base = sameOriginApi(input.apiBase, input.pageOrigin);
+  if (input.session.origin !== input.pageOrigin) throw new Error("Applicant DID session origin does not match this page.");
   const clock = input.clock ?? Date.now;
   currentApplicantSession(input.session, clock);
   const request = SignedPendingApplicationSchema.parse(input.request);
@@ -209,6 +212,7 @@ export async function listApplicantApplications(input: {
   clock?: () => number;
 }): Promise<ApplicantApplicationList> {
   const base = sameOriginApi(input.apiBase, input.pageOrigin);
+  if (input.session.origin !== input.pageOrigin) throw new Error("Applicant DID session origin does not match this page.");
   currentApplicantSession(input.session, input.clock ?? Date.now);
   const response = await (input.fetchImpl ?? fetch)(`${base}/v1/pending-applications`, {
     method: "GET", credentials: "omit", cache: "no-store", redirect: "error",

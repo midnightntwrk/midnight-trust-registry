@@ -36,9 +36,9 @@ bundles and epoch commitments for temporal queries.
 where `session` is the short-lived applicant-purpose DID session and `request`
 is an externally signed pending-application intent. `api-applications` accepts
 `{ "session": ... }` and returns either an available list or an explicit
-unavailable state. Both commands require `--api-base` and `--trusted-origin`;
-the latter must come from the DID sign-in context, not from the API URL being
-called. They reject a different origin, redirects, expired sessions, invalid
+unavailable state. Both commands require `--api-base`; the session on stdin
+carries the verified DID sign-in origin rather than deriving it from the API
+URL being called. They reject a different origin, redirects, expired sessions, invalid
 requests, and malformed responses. Pipe this JSON from a trusted local signer
 or session process. Do not put bearer tokens in shell arguments, history,
 files, or logs. The CLI does not create or store keys or sessions.

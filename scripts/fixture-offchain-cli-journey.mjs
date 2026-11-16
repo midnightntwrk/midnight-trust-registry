@@ -29,7 +29,7 @@ const origin = `http://127.0.0.1:${port}`;
 
 async function runActorCli(command, input) {
   const child = spawn(process.execPath, ["packages/trust-registry-cli/bin/trust-registry.mjs",
-    command, "--api-base", origin, "--trusted-origin", origin],
+    command, "--api-base", origin],
   { cwd: process.cwd(), stdio: ["pipe", "pipe", "pipe"] });
   let stdout = "";
   let stderr = "";
@@ -239,7 +239,7 @@ try {
   assert.deepEqual(await expectStatus(await fetch(`${origin}/v1/actor-authentication/session`, {
     headers: { authorization: `Bearer ${renewed.accessToken}` },
   }), 200), { actorDid, actorKeyId, purpose: "applicant-session" });
-  await signOutActorDid({ apiBase: origin, pageOrigin: origin, session: renewed });
+  await signOutActorDid({ apiBase: origin, pageOrigin: origin, session: { ...renewed, origin } });
   process.stdout.write("[fixture-offchain-cli] Packaged same-origin portals, typed client, and loopback API accept off-chain DID sign-in, including fresh sign-in after host restart. Invalid signature, origin, ledger DID, replay, cross-purpose private read, sign-out reuse, and old-session revival denied. Registration and governance writes remain unavailable without their separate ports. No role, VP, or deployed binding inferred.\n");
 } finally {
   if (host !== undefined) await host.stop();
