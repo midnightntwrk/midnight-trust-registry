@@ -3277,8 +3277,11 @@ The operator CLI adds `api-register` and `api-applications` commands. Their
 bearer and signed input arrive on stdin, not as shell arguments. A separate
 trusted sign-in origin must match the selected API origin before a token is
 sent. The packaged current-time loopback test exercises the executable list
-command, an explicit unavailable result, and denied reuse after sign-out;
-registration has command-level tests but not a deployed host run. A pending
+command, an explicit unavailable result, and denied reuse after sign-out.
+A second current-time loopback host exercises executable CLI registration
+with a real DID-signed intent and in-memory registration port, then checks
+same-applicant readback, wrong actor/origin rejection, and replay denial.
+This is a controlled HTTP host, not a deployed registry. A pending
 registration is not VP eligibility or a finalized grant. At this local head,
 the fast headless suite, 326 API unit tests, CLI tests, lint, docs/OpenAPI,
 and all 97 offline Playwright tests passed. Complete typed actor vote/poll,

@@ -200,10 +200,12 @@ signature. The `api-register` and `api-applications` CLI commands take an
 ephemeral session on stdin, require the independently supplied sign-in origin,
 and never place the bearer in arguments or output. A current-time packaged
 loopback host confirms the list command distinguishes an unconfigured list
-from denied reuse after sign-out. The four role simulator journeys use the
-shared registration call with their fixed fixture clock. They do **not** run
-the executable registration command against a configured local-ledger actor
-host. #297 remains open for complete actor review/vote, ambiguous-write
+from denied reuse after sign-out. A separate current-time loopback host now
+exercises the executable registration command with a real DID signature and
+in-memory registration port, then checks readback, actor/origin denial, and
+replay. The four role simulator journeys use the shared registration call
+with their fixed fixture clock. None of these runs uses a deployed local-ledger
+actor host. #297 remains open for complete actor review/vote, ambiguous-write
 reconciliation, and independently verified decision reads; #219/#59 remain
 the deployed acceptance gate. The local branch's 97 Playwright cases cover
 browser behavior and role/source-state UI, not deployed finality.
