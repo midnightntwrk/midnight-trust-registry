@@ -18,6 +18,8 @@ Current scope:
   saved operator workspace
 - inspect read-only Compact ledger state at an operator-pinned finalized
   network block for a deployed Trust Registry address
+- submit a pre-signed pending application or list an applicant's own pending
+  requests through the same-origin actor API, without fixture-workspace edits
 
 The package also exports `publishSimulatorSnapshot(harness, fixtures, previousSnapshot?)` for
 local integration scenarios. It publishes a simulator registry epoch and
@@ -27,6 +29,25 @@ production ledger indexer or a substitute for externally accepted finality;
 call it explicitly after governance transitions rather than on each read.
 Pass the preceding snapshot on each re-projection to retain prior evidence
 bundles and epoch commitments for temporal queries.
+
+## Actor API commands
+
+`api-register` accepts one stdin JSON object with `{ "session": ..., "request": ... }`,
+where `session` is the short-lived applicant-purpose DID session and `request`
+is an externally signed pending-application intent. `api-applications` accepts
+`{ "session": ... }` and returns either an available list or an explicit
+unavailable state. Both commands require `--api-base` and `--trusted-origin`;
+the latter must come from the DID sign-in context, not from the API URL being
+called. They reject a different origin, redirects, expired sessions, invalid
+requests, and malformed responses. Pipe this JSON from a trusted local signer
+or session process. Do not put bearer tokens in shell arguments, history,
+files, or logs. The CLI does not create or store keys or sessions.
+
+Registration means **pending intake only**. It does not grant a role, accept a
+VP, approve a proposal, or prove ledger finality. The older `submit` and
+`approve` commands above remain explicitly fixture-workspace operations, not
+equivalent actor API writes. The current headless role journeys exercise a
+simulator host; deployed-ledger qualification is separate.
 
 Build the workspace first from the repo root:
 

@@ -27,6 +27,24 @@ const reservePort = async () => {
 const port = await reservePort();
 const origin = `http://127.0.0.1:${port}`;
 
+async function runActorCli(command, input) {
+  const child = spawn(process.execPath, ["packages/trust-registry-cli/bin/trust-registry.mjs",
+    command, "--api-base", origin, "--trusted-origin", origin],
+  { cwd: process.cwd(), stdio: ["pipe", "pipe", "pipe"] });
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
+  child.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
+  const exited = new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", (code) => resolve(code));
+  });
+  child.stdin.end(JSON.stringify(input));
+  const code = await exited;
+  assert.equal(stderr.includes(input.session.accessToken), false);
+  return { code, stdout, stderr };
+}
+
 async function startHost() {
   const child = spawn(process.execPath, ["packages/trust-registry-api/bin/trust-registry-api.mjs",
     "serve", "--workspace", workspacePath, "--port", String(port),
@@ -169,6 +187,10 @@ try {
   }), 503);
   assert.deepEqual(await listApplicantApplications({ apiBase: origin, pageOrigin: origin,
     session: clientSession }), { status: "unavailable" });
+  const cliList = await runActorCli("api-applications", { session: clientSession });
+  assert.equal(cliList.code, 0, cliList.stderr);
+  assert.deepEqual(JSON.parse(cliList.stdout), { status: "unavailable" });
+  assert.equal(cliList.stdout.includes(clientSession.accessToken), false);
   const maintainerSession = await signInActorDid({
     ...clientInput, purpose: "maintainer-session",
     deploymentIdentity: { expectedGenesisHash, contractAddress },
@@ -185,6 +207,9 @@ try {
   }), 403);
   await signOutActorDid({ apiBase: origin, pageOrigin: origin, session: clientSession });
   await signOutActorDid({ apiBase: origin, pageOrigin: origin, session: maintainerSession });
+  const revokedCliList = await runActorCli("api-applications", { session: clientSession });
+  assert.equal(revokedCliList.code, 1);
+  assert.match(revokedCliList.stderr, /HTTP 403/u);
   await expectStatus(await fetch(`${origin}/v1/actor-authentication/session`, {
     headers: { authorization: `Bearer ${clientSession.accessToken}` },
   }), 401);
