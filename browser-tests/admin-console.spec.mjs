@@ -239,8 +239,8 @@ test("fixture admin review advances an issuer through approval, activation, risk
     await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
     await expect(page.locator(".card")).toContainText("UI review issuer");
     await expect(page.locator(".review-filters")).toContainText("Requests awaiting action");
-    await expect(page.locator(".review-checks")).toContainText("Digital identity sign-in is not a vote");
-    await expect(page.locator(".review-checks")).toContainText("This board does not verify a verifiable presentation (VP)");
+    await expect(page.locator(".review-checks")).toContainText("Sign-in is not a vote");
+    await expect(page.locator(".review-checks")).toContainText("this view does not verify the presentation");
     await page.locator("[data-review-query]").fill("missing record");
     await expect(page.getByText("No records match these filters.")).toBeVisible();
     await expect(page.locator(".card")).toHaveCount(0);

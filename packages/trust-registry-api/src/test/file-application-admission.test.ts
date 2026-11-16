@@ -17,6 +17,7 @@ import {
 import {
   createIssuerAuthorizationScopeFixture,
   createIssuerScenarioFixture,
+  createMidnightDid,
   createMidnightDidLedgerFixture,
   createMidnightDidResolver,
   LocalTrustRegistryIntegrationHarness,
@@ -103,6 +104,14 @@ describe("file application admission store", () => {
     const first = store(path);
     const second = store(path);
     const pending = await first.register(signedApplication(), now);
+    expect(await second.listForSubjectDid(issuer.subjectDid)).toEqual([{
+      subjectDid: issuer.subjectDid,
+      summary: {
+        applicationId, authorizationId: issuer.authorizationId, role: "issuer",
+        status: "pending", createdAt: now.toISOString(),
+      },
+    }]);
+    expect(await second.listForSubjectDid(createMidnightDid("other-applicant"))).toEqual([]);
     const archiveHarness = new LocalTrustRegistryIntegrationHarness(label);
     archiveHarness.proposeIssuer(issuer);
     const eventHash = archiveHarness.archiveIssuer(issuer);
@@ -127,6 +136,7 @@ describe("file application admission store", () => {
     expect(await second.readPending(applicationId)).not.toBeNull();
     const archived = await first.recordArchived(observation, verify);
     expect(archived.status).toBe("archived");
+    expect((await second.listForSubjectDid(issuer.subjectDid))[0]?.summary.status).toBe("archived");
     expect(await second.readPending(applicationId)).toBeNull();
     await expect(second.acceptEvidence(applicationId, evidence(), now))
       .rejects.toMatchObject({ reason: "unknown-application" });

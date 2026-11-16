@@ -17,8 +17,10 @@ import type {
   ApplicationVpHttpSubmissionResult,
   ApplicationChallengeBinding,
   PendingApplicationRecord,
+  PendingApplicationSummary,
   RecognitionAdmissionReceipt,
 } from "@midnight-ntwrk/trust-registry-api";
+import { PendingApplicationListResponseSchema } from "@midnight-ntwrk/trust-registry-api/browser-schemas";
 import type { PortalSubmissionTarget, PublicInspection } from "./model.js";
 
 type FetchLike = typeof fetch;
@@ -444,6 +446,15 @@ export class TrustRegistryApplicantPortalClient {
       body: JSON.stringify(request),
     });
     return parsePrivateResponse<PendingApplicationRecord>(response);
+  }
+
+  async listMyApplications(): Promise<readonly PendingApplicationSummary[]> {
+    if (this.applicantSession === undefined) throw new Error("Applicant DID sign-in is required.");
+    const response = await this.fetchImpl(`${this.baseUrl}/v1/pending-applications`, {
+      method: "GET", credentials: "omit", cache: "no-store", redirect: "error",
+      headers: this.privateSessionHeaders(),
+    });
+    return PendingApplicationListResponseSchema.parse(await parsePrivateResponse<unknown>(response)).entries;
   }
 
   /** Use only with an authenticated same-origin host; no presentation is stored by this client. */

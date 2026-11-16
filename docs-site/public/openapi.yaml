@@ -487,6 +487,35 @@ paths:
       description: Fixture-mode history only; local-ledger 0.1.0 returns 501 historical-decisions-out-of-scope.
       responses: *historicalResponses
   /v1/pending-applications:
+    get:
+      tags: [Private intake]
+      summary: List minimal application metadata for the signed-in applicant
+      description: Requires an applicant-purpose DID bearer session. Never returns a VP, scope, or another applicant's requests. This is a private local admission view, not finalized ledger state.
+      responses:
+        '200':
+          description: Request metadata for this applicant only
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [entries]
+                properties:
+                  entries:
+                    type: array
+                    maxItems: 10000
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [applicationId, authorizationId, role, status, createdAt]
+                      properties:
+                        applicationId: { type: string }
+                        authorizationId: { type: string }
+                        role: { type: string, enum: [issuer, verifier, auditor, maintainer] }
+                        status: { type: string, enum: [pending, archived] }
+                        createdAt: { type: string, format: date-time }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '503': { $ref: '#/components/responses/PortUnavailable' }
     post:
       tags: [Private intake]
       summary: Register a DID-signed pending application

@@ -104,10 +104,19 @@ for (const app of ["applicant-portal", "admin-console"]) {
     try {
       allowedLocalOrigins.add(server.base);
       await page.goto(`${server.base}${server.packagedPath}?apiBase=${encodeURIComponent(server.base)}`);
+      if (app === "applicant-portal") {
+        await page.locator('.task-nav a[data-open-workflow="pending-evidence"]').click();
+        await expect(page.locator(".advanced-tools")).toHaveAttribute("open", "");
+        await expect(page.locator("#pending-evidence")).toHaveAttribute("open", "");
+        await expect(page.locator("#pending-evidence [name='applicationId']")).toBeVisible();
+        expect(server.requests.filter((request) => request.startsWith("POST "))).toEqual([]);
+      }
       await page.locator('.task-nav a[href="./registry-manual.html"]').click();
       await expect(page).toHaveURL(`${server.base}${server.packagedPath}registry-manual.html`);
       await expect(page.locator("main h1")).toContainText("Registry Manual");
-      await expect(page.getByText("Phase-0 DID sign-in requires an external signer and same-origin host", { exact: false })).toBeVisible();
+      await expect(page.getByText("Digital identity sign-in needs a connected signer and an app served by the same host as its registry API", { exact: false })).toBeVisible();
+      await expect(page.locator("main")).toContainText("Local practice sign-in uses sample identity services");
+      await expect(page.locator("main")).toContainText("a general user-facing eligibility check is still planned");
       await page.setViewportSize({ width: 390, height: 844 });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       await expectNoWcagViolations(page, `${app} bundled Manual at 390px`);
@@ -122,6 +131,12 @@ for (const app of ["applicant-portal", "admin-console"]) {
       await page.getByRole("link", { name: "Digital identity settings" }).click();
       await expect(page).toHaveURL(`${server.base}${server.packagedPath}${app === "applicant-portal" ? "#connection-details" : "#workspace-settings"}`);
       await expect(page.locator(".app-shell")).toHaveAttribute("data-settings-active", "true");
+      if (app === "applicant-portal") {
+        await page.goto(`${server.base}${server.packagedPath}registry-manual.html`);
+        await page.getByRole("link", { name: "Continue pending request" }).click();
+        await expect(page).toHaveURL(`${server.base}${server.packagedPath}#pending-evidence`);
+        await expect(page.locator("#pending-evidence [name='applicationId']")).toBeVisible();
+      }
     } finally {
       await page.waitForLoadState("networkidle");
       await page.close();
@@ -388,7 +403,7 @@ test("applicant Settings signs in with DID without showing a registry role", asy
     await expect(page.locator(".application-readiness")).toContainText("Requires governed approval");
     await expect(page.locator(".hero-sign-in")).toHaveText("Sign in with digital identity →");
     await page.locator(".hero-sign-in").click();
-    await page.getByRole("button", { name: "Sign in with DID" }).click();
+    await page.getByRole("button", { name: "Sign in with digital identity" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
     await expect(page.locator(".application-readiness")).toContainText("Signed in for this session");
     await expect(page.locator(".portal-profile-card")).toContainText("Eligibility proof and registry permission are checked separately");
@@ -396,15 +411,25 @@ test("applicant Settings signs in with DID without showing a registry role", asy
     await expect(page.locator(".journey-prerequisite")).toContainText("Proof of eligibility and governed approval are still required");
     await expect(page.locator(".content [data-did-sign-in]")).toHaveCount(0);
     await page.getByRole("button", { name: "Sign out" }).click();
-    await expect(page.locator(".portal-profile-card")).toContainText("A DID signer is available");
+    await expect(page.locator(".portal-profile-card")).toContainText("A digital identity signer is connected");
     await expect(page.locator(".application-readiness")).toContainText("Not signed in");
     await expect(page.locator(".journey-prerequisite")).toContainText("sign in with your digital identity in Workspace settings");
     expect(revokeCalls).toBe(1);
-    await page.getByRole("button", { name: "Sign in with DID" }).click();
+    await page.getByRole("button", { name: "Sign in with digital identity" }).click();
+    await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
+    const releaseApplicantHealth = server.pauseHealth();
+    try {
+      await page.getByRole("button", { name: "Recheck connection" }).click();
+      await expect(page.locator(".portal-profile-card")).toContainText("Checking the source; sign-in is paused until it matches.");
+      await expect(page.locator(".application-readiness")).toContainText("Paused while checking source");
+      await expect(page.getByRole("button", { name: "Sign in with digital identity" })).toBeDisabled();
+    } finally {
+      releaseApplicantHealth();
+    }
     await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
     server.setSourceMode("snapshot");
     await page.getByRole("button", { name: "Recheck connection" }).click();
-    await expect(page.locator(".portal-profile-card")).toContainText("A DID signer is available");
+    await expect(page.locator(".portal-profile-card")).toContainText("A digital identity signer is connected");
     await expect(page.locator(".portal-profile-card [data-did-sign-out]")).toHaveCount(0);
   } finally {
     await page.close();
@@ -418,14 +443,95 @@ test("applicant role guidance explains a missing DID signer", async ({ page, all
     allowedLocalOrigins.add(server.base);
     await page.goto(`${server.base}${server.packagedPath}`);
     await expect(page.locator(".journey-prerequisite")).toContainText("ask your host to connect a digital identity signer");
-    await page.locator(".journey-prerequisite a").click();
-    await expect(page.locator(".portal-profile-card")).toContainText("No DID signer is connected");
+    await expect(page.locator(".hero-sign-in")).toHaveText("Sign-in requirements →");
+    await page.locator(".hero-sign-in").click();
+    await expect(page.locator(".portal-profile-card")).toContainText("No digital identity signer is connected");
     await expect(page.locator("[data-did-sign-in]")).toBeDisabled();
   } finally {
     await page.close();
     await server.close();
   }
 });
+
+for (const appName of ["applicant-portal", "admin-console"]) {
+  test(`${appName} does not offer sign-in for a malformed host signer`, async ({ page, allowedLocalOrigins }) => {
+    const server = await serveApp(appName);
+    try {
+      allowedLocalOrigins.add(server.base);
+      await page.addInitScript(() => {
+        window.midnightTrustRegistryDidSigner = { getIdentity: async () => ({ actorDid: "did:example:broken" }) };
+      });
+      await page.goto(`${server.base}${server.packagedPath}`);
+      await expect(page.locator(".portal-profile-card")).toContainText("No digital identity signer is connected");
+      await expect(page.locator("[data-did-sign-in]")).toBeDisabled();
+    } finally {
+      await page.close();
+      await server.close();
+    }
+  });
+}
+
+for (const appName of ["applicant-portal", "admin-console"]) {
+  test(`${appName} clears an expired DID session without a page refresh`, async ({ page, allowedLocalOrigins }) => {
+    const server = await serveApp(appName);
+    const actorDid = `did:midnight:undeployed:${"ab".repeat(32)}`;
+    const actorKeyId = `${actorDid}#auth-1`;
+    try {
+      allowedLocalOrigins.add(server.base);
+      await page.addInitScript(({ actorDid, actorKeyId }) => {
+        window.midnightTrustRegistryDidSigner = {
+          getIdentity: async () => ({ actorDid, actorKeyId }),
+          signDigest: async () => ({ keyId: actorKeyId, algorithm: "jubjub-schnorr", value: `0x${"aa".repeat(96)}` }),
+        };
+      }, { actorDid, actorKeyId });
+      await page.route(`${server.base}/v1/actor-authentication/**`, async (route) => {
+        const path = new URL(route.request().url()).pathname;
+        if (path.endsWith("/challenges")) {
+          const now = Date.now();
+          await route.fulfill({ status: 201, json: {
+            version: "tr-actor-authentication-v1", registryId: summary.registryId,
+            genesisHash: `0x${"11".repeat(32)}`, contractAddress: `0x${"22".repeat(32)}`,
+            origin: server.base, purpose: appName === "admin-console" ? "maintainer-session" : "applicant-session",
+            actorDid, actorKeyId, nonce: `0x${"33".repeat(32)}`,
+            issuedAt: new Date(now).toISOString(), expiresAt: new Date(now + 120_000).toISOString(),
+          } });
+        } else {
+          await route.fulfill({ status: 201, json: {
+            actorDid, actorKeyId, purpose: appName === "admin-console" ? "maintainer-session" : "applicant-session",
+            accessToken: `trsa_${"a".repeat(43)}`, expiresAt: new Date(Date.now() + 5_000).toISOString(),
+          } });
+        }
+      });
+      if (appName === "applicant-portal") {
+        await page.route(`${server.base}/v1/pending-applications`, async (route) => {
+          await route.fulfill({ status: 200, json: { entries: [{
+            applicationId: "application:issuer:expires:v1", authorizationId: "auth:issuer:expires:v1",
+            role: "issuer", status: "pending", createdAt: new Date().toISOString(),
+          }] } });
+        });
+      }
+      await page.goto(`${server.base}${server.packagedPath}`);
+      await page.getByRole("link", { name: "Workspace settings" }).first().click();
+      await page.getByRole("button", { name: "Sign in with digital identity" }).click();
+      await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
+      if (appName === "applicant-portal") {
+        await page.locator('.task-nav a[href="#my-applications"]').click();
+        await page.getByRole("button", { name: "Load my applications" }).click();
+        await expect(page.locator("#my-applications .application-item")).toHaveCount(1);
+        await expect(page.locator("#my-applications")).toContainText("Sign in with your digital identity", { timeout: 10_000 });
+        await expect(page.locator("#my-applications .application-item")).toHaveCount(0);
+        await expect(page.locator("#my-applications")).not.toContainText("application:issuer:expires:v1");
+        await page.getByRole("link", { name: "Workspace settings" }).first().click();
+      }
+      await expect(page.locator(".portal-profile-card")).toContainText("Your digital identity session expired. Sign in again.", { timeout: 10_000 });
+      await expect(page.getByRole("button", { name: "Sign in with digital identity" })).toBeEnabled();
+      await expect(page.locator(".portal-profile-card [data-did-sign-out]")).toHaveCount(0);
+    } finally {
+      await page.close();
+      await server.close();
+    }
+  });
+}
 
 test("admin Settings signs in with DID without granting maintainer authority", async ({ page, allowedLocalOrigins }) => {
   const server = await serveApp("admin-console");
@@ -463,18 +569,33 @@ test("admin Settings signs in with DID without granting maintainer authority", a
     });
     await page.goto(`${server.base}${server.packagedPath}`);
     await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
+    await expect(page.locator("#selected-record-detail")).toBeVisible();
     await page.getByRole("link", { name: "Workspace settings" }).first().click();
-    await page.getByRole("button", { name: "Sign in with DID" }).click();
+    await page.getByRole("button", { name: "Sign in with digital identity" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
     await expect(page.locator(".portal-profile-card")).toContainText("Your maintainer authority is checked separately");
     await expect(page.locator("body")).not.toContainText(accessToken);
+    await page.getByRole("link", { name: "Back to selected record" }).click();
+    await expect(page.locator(".app-shell")).toHaveAttribute("data-settings-active", "false");
+    await expect(page.locator("#selected-record-detail")).toBeVisible();
+    await page.getByRole("link", { name: "Workspace settings" }).first().click();
     await page.getByRole("button", { name: "Sign out" }).click();
-    await expect(page.locator(".portal-profile-card")).toContainText("A DID signer is available");
+    await expect(page.locator(".portal-profile-card")).toContainText("A digital identity signer is connected");
     expect(revokeCalls).toBe(1);
-    await page.getByRole("button", { name: "Sign in with DID" }).click();
+    await page.getByRole("button", { name: "Sign in with digital identity" }).click();
+    await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
+    const releaseAdminHealth = server.pauseHealth();
+    try {
+      await page.getByRole("button", { name: "Recheck connection" }).click();
+      await expect(page.locator(".portal-profile-card")).toContainText("Checking the source; sign-in is paused until it matches.");
+      await expect(page.getByRole("button", { name: "Sign in with digital identity" })).toBeDisabled();
+    } finally {
+      releaseAdminHealth();
+    }
+    await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
     server.setSourceMode("snapshot");
     await page.getByRole("button", { name: "Recheck connection" }).click();
-    await expect(page.locator(".portal-profile-card")).toContainText("A DID signer is available");
+    await expect(page.locator(".portal-profile-card")).toContainText("A digital identity signer is connected");
   } finally {
     await page.close();
     await server.close();
@@ -926,8 +1047,16 @@ test("admin review board precedes advanced governance in keyboard order", async 
     allowedLocalOrigins.add(server.base);
     await page.goto(`${server.base}/?apiBase=${encodeURIComponent(server.base)}`);
     await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
+    await expect(page.locator(".task-nav a")).toHaveText([
+      "Review records", "Advanced governance", "Registry Manual", "Workspace settings",
+    ]);
     expect(await page.evaluate(() => Boolean(document.querySelector("#review-board")
       ?.compareDocumentPosition(document.querySelector("#advanced-governance")) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+    await page.locator('.task-nav a[href="#advanced-governance"]').click();
+    await expect(page.locator(".advanced-workflows")).toHaveAttribute("open", "");
+    await page.reload();
+    await expect(page.locator(".advanced-workflows")).toHaveAttribute("open", "");
+    await expect(page.locator(".governance-task[open]")).toHaveCount(0);
   } finally {
     await page.close();
     await server.close();
@@ -1017,7 +1146,7 @@ for (const [app, title] of [
           expect(headerRows).toBeLessThan(5);
         }
         if (app === "applicant-portal") await expect(page.locator(".hero-intro > .eyebrow")).toHaveText("Applicant workspace");
-        await expect(page.locator(".metrics")).toContainText("Midnight Trust Registry");
+        if (app === "admin-console") await expect(page.locator(".metrics")).toContainText("Midnight Trust Registry");
         await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
         await expect(page.locator(".source-panel")).toContainText("not deployed ledger evidence");
         const initialLayout = await page.evaluate(() => {
@@ -1036,32 +1165,27 @@ for (const [app, title] of [
           expect(initialLayout.nav - initialLayout.hero).toBeLessThan(180);
         }
         if (app === "admin-console" && width === 1440) {
+          await expect(page.locator(".hero-copy .button")).toHaveCount(0);
           const heroLayout = await page.evaluate(() => {
             const intro = document.querySelector(".hero > .hero-copy").getBoundingClientRect();
             const metrics = document.querySelector(".hero > .metrics").getBoundingClientRect();
             const cards = [...document.querySelectorAll(".hero > .metrics .metric")];
             return { introTop: intro.top, metricsTop: metrics.top, introRight: intro.right,
-              metricsLeft: metrics.left, cardWidths: cards.map((card) => card.getBoundingClientRect().width) };
+              metricsLeft: metrics.left, cardCount: cards.length,
+              reviewTop: document.querySelector("#review-board").getBoundingClientRect().top };
           });
           expect(Math.abs(heroLayout.introTop - heroLayout.metricsTop)).toBeLessThan(2);
           expect(heroLayout.introRight).toBeLessThan(heroLayout.metricsLeft);
-          expect(heroLayout.cardWidths).toHaveLength(3);
-          expect(Math.min(...heroLayout.cardWidths)).toBeGreaterThan(150);
+          expect(heroLayout.cardCount).toBe(0);
+          expect(heroLayout.reviewTop).toBeLessThan(350);
         }
         if (app === "applicant-portal") {
-          await expect(page.locator(".hero-actions a").first()).toHaveAttribute("href", "#governed-requests");
+          await expect(page.locator(".hero-overview, .hero-actions .button")).toHaveCount(0);
           if (width === 768) {
             const tabletLayout = await page.evaluate(() => ({
-              overviewHeight: document.querySelector(".hero-overview").getBoundingClientRect().height,
               rolesTop: document.querySelector("#governed-requests").getBoundingClientRect().top,
-              metricRows: [...document.querySelectorAll(".hero-overview .metric")]
-                .map((metric) => Math.round(metric.getBoundingClientRect().top)),
             }));
-            expect(tabletLayout.overviewHeight, JSON.stringify(tabletLayout)).toBeLessThan(180);
-            expect(tabletLayout.rolesTop, JSON.stringify(tabletLayout)).toBeLessThan(830);
-            expect(tabletLayout.metricRows).toHaveLength(4);
-            expect(new Set(tabletLayout.metricRows).size).toBe(2);
-            expect(new Set(tabletLayout.metricRows.slice(1)).size).toBe(1);
+            expect(tabletLayout.rolesTop, JSON.stringify(tabletLayout)).toBeLessThan(650);
           }
           if (width === 390) {
             const journeyLayout = await page.evaluate(() => ({

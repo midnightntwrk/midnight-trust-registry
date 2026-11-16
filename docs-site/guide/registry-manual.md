@@ -6,8 +6,10 @@ use the applicant portal or maintainer console to take an action.
 
 This is a living product manual, not a legal Terms of Use or a ratified
 constitution. The [current capability and limitation record](./status.md)
-governs what the 0.1.0 implementation actually supports. The V2 sign-in and
-eligibility steps below are a 0.2.0 design, not an available login in 0.1.0.
+governs what the 0.1.0 implementation actually supports. The V2 work adds
+optional phase-0 digital identity sign-in when a same-origin host supplies a
+signer and resolver; it is not an available login in packaged 0.1.0. Eligibility
+and registry permission remain separate checks.
 
 ## Choose your task
 
@@ -36,12 +38,14 @@ These are three different checks. Passing one never silently passes the next.
    signer and same-origin host can enable this in **Workspace settings**;
    the purposes are distinct and admin sign-in is not voting authority. The short-lived
    session remains in browser memory and is cleared on sign-out or source
-   change. A local fixture or packaged 0.1.0 app is not a qualified sign-in host.
+   change. Packaged 0.1.0 has no such sign-in. Local practice sign-in uses
+   sample identity services and is not independent DID or role verification.
 2. **Show eligibility:** after reviewing the requester, purpose, and exact
    claims, the actor may provide a verifiable presentation (VP). The verifier
    must check holder binding, issuer trust, status, audience, freshness, and
-   the requested role and scope. This is planned 0.2.0 work, not a default
-   requirement to disclose a passport, ID, or driver's license at sign-in.
+   the requested role and scope. Private VP intake needs a trusted host; a
+   general user-facing eligibility check is still planned. A passport, ID,
+   or driver's license is not a default requirement at sign-in.
 3. **Receive permission:** current registry policy, a governed decision,
    maintainer authority, and any required quorum control the role grant and
    later actions. A valid DID signature or VP alone is not a grant.
@@ -58,7 +62,11 @@ missing result as a denial by the registry or as a successful authorization.
 2. Review the exact role, resource, scope, intended action, and evidence
    requested before signing or sharing a proof.
 3. Submit only through an authenticated host. Keep the redacted receipt and
-   its request identifier. An accepted receipt is not an active grant.
+   its request identifier. With applicant-purpose DID sign-in and a host that
+   offers a private list, **My applications** shows only your request IDs,
+   role, admission status, and creation time. Otherwise **Continue pending
+   request** retrieves an exact ID. Neither view exposes a VP or proves a
+   ledger decision. An accepted receipt is not an active grant.
 4. A maintainer checks the evidence and current policy. Required signatures
    and quorum are separate from the applicant's sign-in or VP.
 5. Read back the current result from a qualified source. Distinguish

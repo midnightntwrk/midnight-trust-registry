@@ -114,8 +114,11 @@ this adapter. Both browser apps offer opt-in DID sign-in in Workspace settings
 through a shared browser-only client and an external signer on a same-origin
 host. Applicant and maintainer sessions have distinct purposes; neither grants
 a registry role, VP eligibility, or governance authority. The fast headless
-journey tests that client against a real loopback HTTP host, while Playwright
-tests the browser surfaces with mocked auth endpoints. There is no qualified
+journey tests that client against a real loopback HTTP host. Playwright covers
+both mocked source-state UI and a same-origin browser journey using the real
+loopback challenge/session API with a fixture DID resolver and external test
+signer. The applicant-only private request list is optional host admission
+metadata, not a ledger decision or VP eligibility proof. There is no qualified
 production resolver, live VC-owned status adapter, or deployed actor journey.
 
 Non-critical-path follow-ups include public-network bootstrap (#200),

@@ -10,6 +10,8 @@ import {
 import { z } from "zod";
 
 import { preflightMutationIntentActor } from "./mutation-intent-actor-binding.js";
+import { PendingApplicationSummarySchema } from "./browser-schemas.js";
+export { MAX_PENDING_APPLICATION_LIST_ITEMS, PendingApplicationListResponseSchema } from "./browser-schemas.js";
 import type { MutationIntentActorFailure } from "./mutation-intent-actor-binding.js";
 import { verifyMutationIntentDidSignature } from "./mutation-intent-verifier.js";
 
@@ -39,6 +41,26 @@ export type VerifyArchivedApplicationObservation = (
 
 export type PendingApplicationRecord = z.infer<typeof PendingApplicationRecordSchema>;
 
+export type PendingApplicationSummary = z.infer<typeof PendingApplicationSummarySchema>;
+
+export type PendingApplicationScopedSummary = {
+  subjectDid: string;
+  summary: PendingApplicationSummary;
+};
+
+export function summarizePendingApplication(record: PendingApplicationRecord): PendingApplicationScopedSummary {
+  return {
+    subjectDid: record.binding.subjectDid,
+    summary: {
+      applicationId: record.binding.applicationId,
+      authorizationId: record.authorizationId,
+      role: record.binding.role,
+      status: record.status,
+      createdAt: record.createdAt,
+    },
+  };
+}
+
 export type PendingApplicationRegistrationState = {
   workspace: TrustRegistryOperatorWorkspace;
   applications: readonly PendingApplicationRecord[];
@@ -48,6 +70,7 @@ export type PendingApplicationRegistrationState = {
 /** The host owns atomic persistence and must use the same pending records for VP intake. */
 export interface PendingApplicationRegistrationPort {
   register(request: SignedPendingApplication, now: Date): Promise<PendingApplicationRecord>;
+  listForSubjectDid?(subjectDid: string): Promise<readonly PendingApplicationScopedSummary[]>;
 }
 
 export class PendingApplicationRegistrationRejectedError extends Error {
@@ -201,5 +224,12 @@ export class InMemoryPendingApplicationRegistrationPort implements PendingApplic
       (item) => item.binding.applicationId === applicationId && item.status === "pending",
     );
     return record === undefined ? null : structuredClone(record);
+  }
+
+  async listForSubjectDid(subjectDid: string): Promise<readonly PendingApplicationScopedSummary[]> {
+    await this.tail;
+    return this.state.applications.filter(
+      (item) => item.binding.subjectDid === subjectDid,
+    ).map(summarizePendingApplication);
   }
 }

@@ -14,6 +14,26 @@ Current scope:
 
 This package is the consumer-facing layer on top of the Compact contract.
 
+## Browser identity session
+
+The `/browser-authentication` subpath exports `signInActorDid`,
+`signOutActorDid`, and the `ActorDidSigner` interface for phase-0 DID
+challenge-response. The embedding host supplies an external signer that owns
+the private key. The client requests a purpose-bound challenge, checks the
+actor, registry, origin, expiry, and optional deployment identity before
+asking that signer to sign the challenge digest. Challenge, session, and
+sign-out requests do not follow redirects. It accepts only a matching,
+short-lived session response from the same-origin API. Loopback HTTP is for
+local development; non-loopback sign-in requires HTTPS.
+
+The returned bearer is an **identity session only**. Keep it in memory, use it
+only with the intended same-origin private route, and clear it on sign-out,
+expiry, or source change. Do not persist it in browser storage or attach a
+maintainer-purpose bearer to a governance mutation. A valid DID session does
+not establish VP eligibility, a registry role, quorum, or finalized ledger
+state; those remain separate authorization checks. The UI and headless tests
+use a fixture DID resolver and test signer, not a production DID provider.
+
 For challenge-backed application proposals, `scopeCommitment` means the
 canonical `tr-scope-v1` authorization-scope digest, not a hash of the governed
 resource ID. The resource ID remains a separate proposal input. The

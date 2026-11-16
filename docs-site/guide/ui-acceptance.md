@@ -15,28 +15,39 @@ The [V2 canvas](https://uxpilot.ai/a/ui-design?page=rkHJ3LsTIYP0TaOZYr2k)
 is the current direction for the calmer applicant, maintainer, sign-in, and
 Registry Manual experiences. The shared left rail, palette, and concise
 applicant role choices and Settings-based phase-0 DID sign-in are implemented
-locally. VP readiness and a dedicated application inbox remain concepts, not
-shipped behavior. DID sign-in requires an external signer and same-origin host.
+locally. A minimal **My applications** list is available only to an applicant
+with a same-origin DID session and a host-provided pending-application store;
+it shows private admission metadata, not VP readiness or a finalized ledger
+decision. VP readiness remains a concept, not shipped behavior. DID sign-in
+requires an external signer and same-origin host.
+The primary sign-in controls and maintainer checklist use plain-language
+identity and credential terms; Settings and the Manual retain the protocol
+definitions and explicitly separate identity from eligibility and authority.
+The applicant task rail links to both the authenticated personal list and the
+exact-ID pending-request continuation. The latter remains usable on hosts
+without the optional list port.
 
 Both static app bundles include an offline Registry Manual generated from the
 same Markdown source as the docs site. The sidebar links to that local copy;
 its rail links directly to role choice or review inbox and to the current
-app's digital identity settings. These links navigate only; they do not sign
+app's digital identity settings. The applicant rail also links to exact-ID
+pending-request continuation. These links navigate only; they do not sign
 in or grant authority. Links to other chapters are plain text in the embedded
 copy because those chapters are not bundled.
 The full docs site remains the source for linked chapters and updates.
 
 | Design intent | Local implementation and acceptance |
 | --- | --- |
-| Lead with the next task, not a protocol field | The portal leads to governed role preparation and a visible path to DID sign-in. On loopback, `demo=1` exposes the label-only fixture application only in Workspace settings, never ahead of the governed path. Admin headings distinguish pending decisions from a quiet review workspace. API editing also lives in Settings. `ui-layout.spec.mjs` and `demo-application-handoff.spec.mjs` check this hierarchy. |
-| Make the maintainer inbox truthful | The admin review heading names source-reported requests awaiting action when proposed or authorized records exist, and otherwise invites browsing. Selected actionable records show a compact identity, eligibility, and authority checklist without claiming the browser verified DID control, VP status, or quorum. DID sign-in is never presented as a vote. `admin-console-app.test.ts` covers both queue states. |
-| Show one advanced governance task at a time | Opening Advanced governance reveals proposal/recovery and policy revision as separate native disclosures, not two signing forms at once. Opening one closes the other; prepared context stays visible across board refreshes. `admin-console.spec.mjs`, `governed-proposal-recovery.spec.mjs`, and `ui-layout.spec.mjs` cover action, recovery, keyboard and zoom paths. |
-| Explain first-use roles and terms | The applicant role picker links directly to the Manual's plain-language role comparison. Primary path copy says digital identity, eligibility proof, and registry approval; Settings defines DID and VP without suggesting either grants permission. The visible **Practice workspace** cue explains that sample records are not deployed ledger evidence. `ui-layout.spec.mjs` checks the route and source states. |
+| Lead with the next task, not a protocol field | The portal leads to governed role preparation and a visible path to digital identity sign-in. It omits a duplicate registry snapshot and fixture hero buttons so role choice begins sooner; local-ledger exact lookup and unavailable-source recovery links remain. Registry identity is available in Settings. On loopback, `demo=1` exposes the label-only fixture application only in Workspace settings, never ahead of the governed path. Admin headings distinguish pending decisions from a quiet review workspace. The admin header keeps registry and source context but omits duplicate lifecycle metric cards and a second fixture navigation button, bringing the review board into the first desktop viewport. API editing also lives in Settings. `ui-layout.spec.mjs` and `demo-application-handoff.spec.mjs` check this hierarchy. |
+| Make the maintainer inbox truthful | The admin review heading names source-reported requests awaiting action when proposed or authorized records exist, and otherwise invites browsing. The task rail keeps Advanced governance beside review, with Manual and Settings after task links. Selected actionable records show a compact identity, eligibility, and authority checklist without claiming the browser verified DID control, VP status, or quorum. DID sign-in is never presented as a vote. `admin-console-app.test.ts` and `ui-layout.spec.mjs` cover these states. |
+| Show one advanced governance task at a time | The rail's Advanced governance link opens its disclosure, including after direct-link reload. It reveals proposal/recovery and policy revision as separate native disclosures, not two signing forms at once. Opening one closes the other; prepared context stays visible across board refreshes. `admin-console.spec.mjs`, `governed-proposal-recovery.spec.mjs`, and `ui-layout.spec.mjs` cover action, recovery, keyboard and zoom paths. |
+| Explain first-use roles and terms | The applicant role picker links directly to the Manual's plain-language role comparison. Primary path copy says digital identity, eligibility proof, and registry approval; Settings defines DID and VP without suggesting either grants permission. When no external DID signer is present, the hero links to sign-in requirements rather than promising a setup control the app cannot provide. The visible **Practice workspace** cue explains that sample records are not deployed ledger evidence. `ui-layout.spec.mjs` checks the route and source states. |
+| Show only the applicant's requests | **My applications** requires an applicant-purpose DID bearer on the same origin. The private API re-filters host results by the authenticated DID and returns only application ID, authorization ID, role, admission status, and creation time; it never returns the subject DID, scope, or VP payload. Compact cards lead with role, admission state, and readable creation time; exact IDs stay behind a disclosure, while a pending entry opens exact-ID evidence continuation. A failed refresh clears prior entries: an unavailable host points to receipt-based continuation, and lost access points to sign-out then sign-in, never to an empty-registry or granted-role claim. Session expiry, replacement, or connection recheck discards the private list from browser state; a late response from before recheck cannot restore it. The file and in-memory stores, HTTP route, client, and real-browser host journey test filtering, purpose denial, navigation, expanded-card zoom, expiry cleanup, and delayed-response rejection. |
 | Explain the applicant path before exposing forms | Four compact role choices lead to a role-specific disclosure. Choosing another card closes the previous role form and keeps the chosen card visibly selected; the selected form can also be collapsed. On a 390 px viewport each role stays under 95 px high and the full introductory section stays under 1050 px. A compact check summary distinguishes current DID session state from eligibility not verified in this view and a registry role requiring governed approval; it is not a progress indicator. The Registry Manual holds the longer submission guidance, with a direct link beside role choice. The prerequisite message names the source or host restriction. Each role form explains the two IDs and DID key before the fields, and an in-form reason accompanies disabled preparation on a cross-origin connection. A receipt is not approval, and opening a role does not submit it. |
 | One Midnight visual language | Both apps use the approved logo, Outfit, muted teal/mist tokens, and shared navigation/status components. On desktop the Midnight lockup and task links occupy one continuous left rail; on mobile the same lockup precedes the native Menu. |
 | Compact discovery and a bounded review detail | The fixture portal searches visible active records by name, role, scope, or DID without changing registry state. Empty lifecycle lanes are omitted from the admin view; selected detail stays beside the list on desktop and below it on mobile. The detail explains its source and lifecycle before the decision summary. Proposed and authorized records label their trust-level field as requested or authorized rather than displaying a bare value that could be mistaken for an approval decision. Exact IDs and external-signature preparation are separate disclosures. |
-| Truthful source and certainty | A visible source strip identifies fixture, API claim, or unavailable state and offers Recheck. Navigation follows the source: optional practice tools in Settings, browsing for fixture data, exact lookup for local-ledger API claims, and connection recovery when unavailable. Local-ledger exact lookups precede membership preparation in DOM and visual order; unsupported broad lists are explained once, not shown as four failures or empty trust. The admin hero does not present counts of fetched exact results as registry-wide lifecycle totals; the applicant hero omits unavailable list totals and labels its epoch as API-reported. Actual failed fixture lists still show unavailable warnings. Empty fixture record categories are summarized instead of rendered as large cards; evidence/recovery tools are grouped under Advanced. Epoch and technical identity stay in details. No fixture record is called final. |
-| Mobile and tablet task access | The desktop sidebar becomes a native keyboard-operable Menu at narrow widths. At 768 px, the portal keeps the full registry name on a separate line above compact metrics so governed requests begin in the first viewport; on small phones it omits the nonessential snapshot card so the role path appears sooner. Source status and Recheck remain visible. |
+| Truthful source and certainty | A visible source strip identifies fixture, API claim, or unavailable state and offers Recheck. Navigation follows the source: optional practice tools in Settings, browsing for fixture data, exact lookup for local-ledger API claims, and connection recovery when unavailable. Local-ledger exact lookups precede membership preparation in DOM and visual order; unsupported broad lists are explained once, not shown as four failures or empty trust. The admin hero does not present counts of fetched exact results as registry-wide lifecycle totals; the applicant hero presents no registry-wide totals or epoch claim. Actual failed fixture lists still show unavailable warnings. Empty fixture record categories are summarized instead of rendered as large cards; evidence/recovery tools are grouped under Advanced. Epoch and technical identity stay in Settings. No fixture record is called final. |
+| Mobile and tablet task access | The desktop sidebar becomes a native keyboard-operable Menu at narrow widths. At 768 px, the portal omits the nonessential snapshot card so governed role choice begins in the first viewport. Source status and Recheck remain visible. |
 
 The canvas is a visual reference, not a complete behavior specification. Its
 illustrative active issuer is not a real on-chain grant. A full assistive-technology
@@ -97,12 +108,29 @@ private application-evidence routes. The UI must describe it as identity only:
 VP eligibility and governed role authority remain separate checks. The
 headless DID session journey exercises the real local HTTP challenge,
 bad-signature and deployment-context denial, replay denial, identity-only
-token, and revocation; it is not a deployed-ledger test.
+token, exact-boundary challenge and bearer expiry, and revocation; it is not a deployed-ledger test.
+The embedding host supplies an `ActorDidSigner` through the app option or
+`window.midnightTrustRegistryDidSigner` before boot. It must implement both
+`getIdentity()` and `signDigest({ challenge, digest })`; an absent or malformed
+integration leaves sign-in disabled rather than presenting a broken action.
+The signer keeps its private key outside the page and signs only the exact
+challenge digest after showing the actor, origin, registry, purpose, and
+deployment context to the key holder. Do not add a browser-stored demo key as
+a fallback. Both apps need a same-origin API with actor authentication and a
+trusted DID resolver configured; a cross-origin fixture API is prepare-only.
+See `packages/trust-registry-client/src/browser-authentication.ts` for the
+typed contract and `browser-tests/did-auth-live-http.spec.mjs` for a loopback
+host example. That test signer is not a deployable wallet or DID provider.
 The admin console uses the same ephemeral browser client with a distinct
 `maintainer-session` purpose in Workspace settings. Its DID token is never
 attached to governance requests: external signatures, maintainer membership,
 VP eligibility, policy, and quorum remain independent authorization checks.
-Changing the API source or losing a healthy board clears the browser session.
+While a source recheck is pending, both apps pause use and display of the
+in-memory DID session. A matching source restores it; a changed or unavailable
+source clears it. Clearing a browser session is not proof that an unreachable
+server revoked its short-lived bearer.
+An idle page also clears the visible in-memory session at bearer expiry and
+asks for sign-in again; that local timer is not an authorization decision.
 The per-view browser tests use mocked auth endpoints. A separate browser test
 serves both built apps beside the real loopback challenge/session API with a
 fixture DID resolver and external test signer; the headless journey also
@@ -160,7 +188,7 @@ repeatable UI acceptance evidence:
 | Edit either historical evidence query, discard its stale download, keep the new draft through a source refresh, and restore submit-button focus after a response or rejected exact tuple | `recognition-evidence.spec.mjs`, applicant unit tests |
 | Choose one local-ledger applicant task at a time: current authorization or external recognition. Keep the selected form and its prior result when switching tasks or returning from settings; never issue a lookup merely by switching. Resolve exact scopes, reject a substituted recognition tuple, preserve a malformed-context draft and keyboard focus, announce errors/results, and copy the exact returned claim with an unverified-source warning | `local-lookup.spec.mjs` (admin and applicant) |
 | Keep registry-wide lifecycle counters off the local-ledger admin hero before and after an exact lookup; a fetched record is not a complete registry count | `local-lookup.spec.mjs` |
-| Show only registry identity and an API-reported epoch in the local-ledger applicant overview, not unavailable issuer/verifier list totals | `local-lookup.spec.mjs` |
+| Keep registry-wide counters and an API-reported epoch out of the local-ledger applicant hero; show approved identity in Workspace settings without suggesting authenticated finality | `local-lookup.spec.mjs` |
 | Discard a previously visible API claim while Recheck is pending, remove exact lookup when the source becomes a fixture, and never reuse the old result when local-ledger mode returns; a denied follow-up lookup clears the prior success and announces the denial | `local-lookup.spec.mjs` (admin and applicant, controlled source switch and 403) |
 | Show approved local-plan network and deployment identity only as API-reported values in Workspace settings; remove them when the source becomes a fixture or the API omits identity. Keep long genesis and contract hashes behind an accessible technical disclosure and both settings views within 320 px at 200% root text size, including when expanded | `local-lookup.spec.mjs` (both apps); API and client unit tests reject malformed or unapproved identity |
 | Inspect settings/source provenance, expose an offline error as an alert, retry after an unavailable response, retain keyboard focus, and avoid overflow at 320/390/768/1440 px | `ui-layout.spec.mjs` |
@@ -174,8 +202,11 @@ repeatable UI acceptance evidence:
 | The applicant role picker distinguishes signer unavailable, sign-in needed, signed-in identity, and cross-origin prepare-only states. It continues to name VP eligibility and governed approval as separate later steps after sign-in | `ui-layout.spec.mjs` |
 | A compact check summary near the role choices reflects only current DID sign-in state; it labels eligibility as unverified in this view and registry permission as requiring governed approval, never as completed because a user signed in | `ui-layout.spec.mjs` |
 | A selected admin record visibly offers “Next: review available actions” after evidence and decision detail; opening it explains external maintainer signing and does not submit a vote | `ui-layout.spec.mjs` |
-| Admin Settings offers a distinct maintainer-purpose DID sign-in and sign-out without presenting it as voting authority or exposing the bearer. Source change clears the visible session. Browser auth is mocked here; the shared client also runs against the real loopback API in the headless journey | `ui-layout.spec.mjs`, `demo-did-session-journey.mjs` |
-| Both built browser apps complete DID sign-in and sign-out against the real same-origin loopback HTTP API with a fixture resolver and external test signer. A bad applicant signature shows a recoverable error and no session; the issued valid bearer is purpose-isolated, not rendered, and never triggers a governance request | `did-auth-live-http.spec.mjs` |
+| Applicant task navigation and the bundled Manual open the exact-ID pending-request form, including its Advanced disclosure, without submitting a request. The separate **My applications** list requires an applicant-purpose DID session and an enabled private host port; it does not imply a grant or ledger decision | `ui-layout.spec.mjs`, `did-auth-live-http.spec.mjs` |
+| Admin Settings offers a distinct maintainer-purpose DID sign-in and sign-out without presenting it as voting authority or exposing the bearer. A visible selected record remains the return destination after sign-in; empty or filtered views return to the review board. Both apps pause the visible session during a source recheck, restore it only on a matching result, and clear it on source change. Browser auth is mocked here; the shared client also runs against the real loopback API in the headless journey | `ui-layout.spec.mjs`, `demo-did-session-journey.mjs` |
+| An idle applicant or admin page clears a locally expired DID session without navigation, tells the user to sign in again, and offers sign-in without implying a role grant or server revocation | `ui-layout.spec.mjs` (both apps, short-lived mocked bearer) |
+| A first-time applicant follows the bundled Manual to issuer role requirements, then signs in against the real same-origin loopback DID API. A bad signature shows a recoverable error and no session; valid sign-in retains the chosen role, returns directly to it from Settings, and still names eligibility and governed approval as separate checks. Both apps' bearers are purpose-isolated, not rendered, and never trigger a governance request | `did-auth-live-http.spec.mjs` |
+| A first-time maintainer follows the bundled Manual to the review inbox before signing in against the real same-origin loopback DID API. Opening the inbox and DID sign-in do not submit a governed action or establish voting authority | `did-auth-live-http.spec.mjs` |
 | Switch an editable development endpoint between two loopback fixture hosts without carrying reads to the old host or enabling cross-origin private actions | `ui-layout.spec.mjs` (both apps) |
 | Open a governed issuer request by keyboard with reduced motion and verify the three visible preparation phases; keep mobile task targets at least 44 px high | `ui-layout.spec.mjs` |
 | Keep the 390 px applicant introduction compact without hiding role requirements or implying that submission is approval | `ui-layout.spec.mjs` (role-row and section-height assertions, visible prerequisite text) |
@@ -191,6 +222,22 @@ repeatable UI acceptance evidence:
 
 ### Visual review record
 
+On 2026-11-15, the 1440 px fixture admin capture was compared with the V2
+maintainer inbox mock. Three lifecycle cards and a duplicate Browse action
+made the header taller than the task area. The compact header now keeps the
+registry/epoch context and practice-source warning while the review board
+starts within the first 350 px of the desktop viewport. Counts remain in the
+review board and its lifecycle lanes; suspended/revoked warnings remain in the
+header. This is a visual fixture comparison, not an independent usability
+study or a finalized-ledger review.
+
+The same capture was rechecked against the V2 maintainer mock after moving
+Advanced governance next to Review records in the rail. The selected-record
+checklist now uses three shorter rows; it still says key control and the
+presentation are not verified by this view, and sign-in is not a vote. The
+decision summary begins higher in the detail panel. Playwright checks task
+order and the safety wording. This remains fixture visual evidence.
+
 On 2026-11-14, an agent reviewed fresh 1440 px admin and applicant full-page
 fixture captures, including an issuer proposal awaiting a demo decision. The
 admin's selected detail stayed separate from the review list, the applicant's
@@ -203,9 +250,9 @@ agent-run visual and automated accessibility evidence, not an independent
 assistive-technology trial, a full clean Compact build, or deployed E2E.
 
 A subsequent computed-style check found the blue keyboard outline on the
-black sidebar at only 2.29:1 contrast. The shared dark-navigation outline now
-uses white while the blue outline remains on light surfaces. The 3:1 desktop
-sidebar contrast regression passes in both apps; this sampled indicator check
+black sidebar at only 2.29:1 contrast. The dark mobile navigation uses a
+white outline; the light V2 desktop rail uses a blue outline. The 3:1 desktop
+rail contrast regression passes in both apps; this sampled indicator check
 does not replace the independent screen-reader and keyboard-usability trial.
 
 On 2026-11-06, an agent inspected the 1440 px admin capture after an auditor
@@ -216,11 +263,19 @@ the old card and action, and directs the user to Recheck. Playwright verifies
 focus, error announcement, automated A/AA checks, and recovery. This is a
 controlled fixture review, not an independent assistive-technology trial.
 
+On 2026-11-15, the applicant portal removed the duplicate registry snapshot
+from its practice and local-ledger heroes. Role choice now follows the source
+cue on the practice page, while exact lookup remains the first local-ledger
+task. Registry identity and the API-reported epoch remain available in
+Workspace settings. Playwright checks these source-specific hierarchies; the
+capture is fixture evidence, not a deployed-ledger trial.
+
 On 2026-11-05, the applicant portal's 768 px capture was re-reviewed with the
 long `Midnight Trust Registry` fixture label. Four equal tiles made that name a
 three-line card beside three tall empty-looking metric cards. The tablet
-snapshot now puts the full registry name on its own line and balances epoch,
-issuer, and verifier metrics below it; the governed-request heading remains in
+snapshot then put the full registry name on its own line and balanced epoch,
+issuer, and verifier metrics below it; that snapshot has since been removed to
+put governed role choice sooner in view. The governed-request heading remained in
 the first viewport. The 390 px portal and admin, 768 px admin, and 1440 px
 desktop views were also inspected. This is visual fixture evidence, not a
 deployed-ledger walkthrough or independent user trial.

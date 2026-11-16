@@ -357,8 +357,13 @@ const baseUrl = `http://127.0.0.1:${port}`;
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ target: "issuer", label: "must-not-enter-snapshot" }),
   });
-  if (deniedSnapshotMutation.status !== 403) {
-    throw new Error(`read-only snapshot allowed fixture mutation (HTTP ${deniedSnapshotMutation.status})`);
+  const snapshotProblem = await deniedSnapshotMutation.json();
+  if (deniedSnapshotMutation.status !== 403 || !snapshotProblem.type?.endsWith("/signed-mutation-required")) {
+    throw new Error(`read-only snapshot did not reject fixture mutation as signed-mutation-required (HTTP ${deniedSnapshotMutation.status})`);
+  }
+  const snapshotProposed = await requestJson(`${snapshotBase}/v1/authorizations/issuer?status=proposed`);
+  if (snapshotProposed.total !== 0 || snapshotProposed.entries.length !== 0) {
+    throw new Error("read-only snapshot retained a denied fixture application");
   }
 
   let issuerId;
@@ -397,17 +402,18 @@ const baseUrl = `http://127.0.0.1:${port}`;
     }
   }
 
-  for (const body of [
-    { target: "issuer", label: "smoke-issuer" },
-    { target: "maintainer", label: "unsupported-fixture-maintainer" },
+  for (const [body, expectedStatus, expectedProblem] of [
+    [{ target: "issuer", label: "smoke-issuer" }, 409, "duplicate-application"],
+    [{ target: "maintainer", label: "unsupported-fixture-maintainer" }, 400, "invalid-request"],
   ]) {
     const denied = await fetch(`${baseUrl}/v1/applications`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
-    if (denied.status < 400 || denied.status >= 500) {
-      throw new Error(`${body.target} negative fixture submission returned ${denied.status}`);
+    const problem = await denied.json();
+    if (denied.status !== expectedStatus || !problem.type?.endsWith(`/${expectedProblem}`)) {
+      throw new Error(`${body.target} negative fixture submission returned HTTP ${denied.status} with ${problem.type ?? "no problem type"}`);
     }
   }
 

@@ -27,7 +27,7 @@ import {
   FileActorAuthenticationChallengeStore,
 } from "../packages/trust-registry-api/dist/index.js";
 
-test("both browser apps use real same-origin DID HTTP sessions without a role grant", async ({ page, allowedLocalOrigins }) => {
+test("both browser apps use real same-origin DID HTTP sessions without a role grant", async ({ page, allowedLocalOrigins }, testInfo) => {
   const directory = await mkdtemp(join(tmpdir(), "tr-browser-did-auth-"));
   const seed = new Uint8Array(32).fill(86);
   const actorDid = createMidnightDid("browser-did-authentication");
@@ -45,6 +45,9 @@ test("both browser apps use real same-origin DID HTTP sessions without a role gr
     })],
   ]);
   const requests = [];
+  const listedFor = [];
+  let heldList;
+  let notifyHeldListStarted;
   const revokedPurposes = [];
   const server = createServer((request, response) => {
     const pathname = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
@@ -96,6 +99,21 @@ test("both browser apps use real same-origin DID HTTP sessions without a role gr
       }),
       sessions,
     };
+    options.pendingApplicationRegistration = {
+      register: async () => { throw new Error("Not used in this browser journey"); },
+      listForSubjectDid: async (subjectDid) => {
+        listedFor.push(subjectDid);
+        if (heldList !== undefined) {
+          notifyHeldListStarted();
+          await heldList;
+        }
+        return subjectDid === actorDid ? [{
+          subjectDid: actorDid,
+          summary: { applicationId: "application:issuer:mine:v1", authorizationId: "auth:issuer:mine:v1",
+            role: "issuer", status: "pending", createdAt: "2026-11-14T00:00:00.000Z" },
+        }] : [];
+      },
+    };
     await page.exposeFunction("signTrustRegistryDigest", (digest, useWrongKey) => ({
       keyId: actorKeyId,
       algorithm: "jubjub-schnorr",
@@ -114,28 +132,102 @@ test("both browser apps use real same-origin DID HTTP sessions without a role gr
 
     await page.goto(`${origin}/applicant/`);
     await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
+    await page.locator('.task-nav a[href="./registry-manual.html"]').click();
+    await expect(page.locator("main h1")).toContainText("Registry Manual");
+    await page.getByRole("link", { name: "Choose a role" }).click();
+    await expect(page.locator("#governed-requests")).toBeVisible();
+    await page.locator('.journey-cards a[href="#issuer-request"]').click();
+    await expect(page.locator("#issuer-request")).toHaveAttribute("open", "");
+    await expect(page.locator(".journey-prerequisite")).toContainText("sign in with your digital identity");
+    assert.equal(requests.some((request) => request.startsWith("POST /v1/governed/")), false);
     await page.locator(".hero-sign-in").click();
     await page.evaluate(() => { window.trDidSignerUseWrongKey = true; });
-    await page.getByRole("button", { name: "Sign in with DID" }).click();
+    await page.getByRole("button", { name: "Sign in with digital identity" }).click();
     await expect(page.locator(".portal-profile-card [role='alert']")).toContainText("HTTP 401");
     await expect(page.locator(".application-readiness")).toContainText("Not signed in");
     await page.evaluate(() => { window.trDidSignerUseWrongKey = false; });
-    await page.getByRole("button", { name: "Sign in with DID" }).click();
+    await page.getByRole("button", { name: "Sign in with digital identity" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
     await expect(page.locator(".portal-profile-card [role='alert']")).toHaveCount(0);
     await expect(page.locator(".application-readiness")).toContainText("Requires governed approval");
+    await expect(page.locator(".journey-prerequisite")).toContainText("Proof of eligibility and governed approval are still required");
+    await expect(page.locator("#issuer-request")).toHaveAttribute("open", "");
     await expect(page.locator("body")).not.toContainText("trsa_");
+    await page.getByRole("link", { name: "Back to issuer request" }).click();
+    await expect(page.locator(".app-shell")).toHaveAttribute("data-settings-active", "false");
+    await expect(page.locator("#issuer-request")).toBeVisible();
+    await page.locator('.task-nav a[href="#my-applications"]').click();
+    await page.getByRole("button", { name: "Load my applications" }).click();
+    const applicationCard = page.locator("#my-applications .application-item");
+    await expect(applicationCard).toContainText("Request registered");
+    await expect(applicationCard.locator("time")).not.toContainText("2026-11-14T00:00:00.000Z");
+    const applicationId = applicationCard.getByText("application:issuer:mine:v1");
+    await expect(applicationId).toBeHidden();
+    await applicationCard.getByText("Request identifiers").click();
+    await expect(applicationId).toBeVisible();
+    if (process.env.TR_UI_CAPTURE === "1") {
+      await page.locator("#my-applications").screenshot({ path: testInfo.outputPath("applicant-my-applications.png") });
+    }
+    const viewport = page.viewportSize();
+    await page.setViewportSize({ width: 320, height: 900 });
+    await page.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
+    const width = await page.evaluate(() => document.documentElement.scrollWidth);
+    assert.ok(width <= 320, `expanded application identifiers overflow at 320px: ${width}`);
+    await page.evaluate(() => { document.documentElement.style.removeProperty("font-size"); });
+    if (viewport !== null) await page.setViewportSize(viewport);
+    await page.getByRole("link", { name: "Continue private evidence" }).click();
+    await expect(page.locator("#pending-evidence")).toHaveAttribute("open", "");
+    await expect(page.locator("[data-application-binding-form] [name='applicationId']"))
+      .toHaveValue("application:issuer:mine:v1");
+    assert.deepEqual(listedFor, [actorDid]);
+    assert.equal(requests.filter((request) => request === "GET /v1/pending-applications").length, 1);
+    let releaseHeldList;
+    heldList = new Promise((resolve) => { releaseHeldList = resolve; });
+    const heldListStarted = new Promise((resolve) => { notifyHeldListStarted = resolve; });
+    await page.getByRole("button", { name: "Refresh my applications" }).click();
+    await heldListStarted;
+    const staleResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === "/v1/pending-applications" && response.request().method() === "GET");
+    await page.getByRole("button", { name: "Recheck", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Load my applications" })).toBeVisible();
+    releaseHeldList();
+    await staleResponse;
+    await expect(page.locator("#my-applications .application-item")).toHaveCount(0);
+    heldList = undefined;
+    await page.getByRole("button", { name: "Load my applications" }).click();
+    await expect(page.locator("#my-applications .application-item")).toHaveCount(1);
+    options.pendingApplicationRegistration = undefined;
+    await page.getByRole("button", { name: "Refresh my applications" }).click();
+    await expect(page.locator("#my-applications [role='alert']"))
+      .toContainText("Use Continue pending request with the ID from your receipt");
+    await expect(page.locator("#my-applications .application-item")).toHaveCount(0);
+    await expect(page.locator("#my-applications")).not.toContainText("No registered requests");
+    const actorAuthentication = options.actorAuthentication;
+    options.actorAuthentication = undefined;
+    await page.getByRole("button", { name: "Load my applications" }).click();
+    await expect(page.locator("#my-applications [role='alert']"))
+      .toContainText("Sign out, then sign in again in Workspace settings");
+    await expect(page.locator("#my-applications .application-item")).toHaveCount(0);
+    options.actorAuthentication = actorAuthentication;
+    await page.getByRole("link", { name: "Workspace settings" }).first().click();
     await page.getByRole("button", { name: "Sign out" }).click();
-    await expect(page.locator(".portal-profile-card")).toContainText("A DID signer is available");
+    await expect(page.locator(".portal-profile-card")).toContainText("A digital identity signer is connected");
+    await expect(page.locator("#my-applications")).toContainText("Sign in with your digital identity");
+    await expect(page.locator("#my-applications")).not.toContainText("application:issuer:mine:v1");
 
     await page.goto(`${origin}/admin/`);
+    await page.locator('.task-nav a[href="./registry-manual.html"]').click();
+    await expect(page.locator("main h1")).toContainText("Registry Manual");
+    await page.getByRole("link", { name: "Open review inbox" }).click();
+    await expect(page.locator("#review-board")).toBeVisible();
+    assert.equal(requests.some((request) => request.startsWith("POST /v1/governed/")), false);
     await page.getByRole("link", { name: "Workspace settings" }).first().click();
-    await page.getByRole("button", { name: "Sign in with DID" }).click();
+    await page.getByRole("button", { name: "Sign in with digital identity" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
     await expect(page.locator(".portal-profile-card")).toContainText("Your maintainer authority is checked separately");
     await expect(page.locator("body")).not.toContainText("trsa_");
     await page.getByRole("button", { name: "Sign out" }).click();
-    await expect(page.locator(".portal-profile-card")).toContainText("A DID signer is available");
+    await expect(page.locator(".portal-profile-card")).toContainText("A digital identity signer is connected");
     assert.equal(requests.filter((request) => request === "POST /v1/actor-authentication/challenges").length, 3);
     assert.equal(requests.filter((request) => request === "POST /v1/actor-authentication/sessions").length, 3);
     assert.equal(requests.filter((request) => request === "DELETE /v1/actor-authentication/session").length, 2);

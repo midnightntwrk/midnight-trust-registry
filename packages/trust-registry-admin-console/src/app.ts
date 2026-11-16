@@ -11,6 +11,7 @@ import type {
 import {
   signInActorDid,
   signOutActorDid,
+  isActorDidSigner,
   type ActorDidSession,
   type ActorDidSigner,
 } from "@midnight-ntwrk/trust-registry-client/browser-authentication";
@@ -194,9 +195,12 @@ export const createAdminConsoleApp = (
   const fetchImpl = options.fetchImpl ?? window.fetch.bind(window);
   const confirm = options.confirm ?? window.confirm.bind(window);
   const clock = options.clock ?? Date.now;
-  const didSigner = () => options.didSigner ?? (window as Window & {
-    midnightTrustRegistryDidSigner?: ActorDidSigner;
-  }).midnightTrustRegistryDidSigner;
+  const didSigner = (): ActorDidSigner | undefined => {
+    const candidate: unknown = options.didSigner ?? (window as Window & {
+      midnightTrustRegistryDidSigner?: unknown;
+    }).midnightTrustRegistryDidSigner;
+    return isActorDidSigner(candidate) ? candidate : undefined;
+  };
   const sameOriginApi = initialUrl.pathname.startsWith("/admin/");
   const queryBase = initialUrl.searchParams.get("apiBase");
   const rememberedBase = storage.getItem(STORAGE_KEY);
@@ -246,6 +250,7 @@ export const createAdminConsoleApp = (
   let signedContextRequestId = 0;
   let hostRevision = 0;
   let boardRequestId = 0;
+  let didExpiryTimer: ReturnType<typeof setTimeout> | undefined;
 
   const currentHost = () => ({ apiBase: state.apiBase, revision: hostRevision });
   const isCurrentHost = (host: ReturnType<typeof currentHost>) =>
@@ -253,6 +258,19 @@ export const createAdminConsoleApp = (
 
   const setState = (next: Partial<AppState>) => {
     Object.assign(state, next);
+    if (Object.hasOwn(next, "didSession")) {
+      if (didExpiryTimer !== undefined) clearTimeout(didExpiryTimer);
+      didExpiryTimer = undefined;
+      if (state.didSession !== undefined) {
+        const session = state.didSession;
+        didExpiryTimer = setTimeout(() => {
+          if (state.didSession?.accessToken === session.accessToken) {
+            setState({ didSession: undefined, didSourceMode: undefined,
+              didError: "Your digital identity session expired. Sign in again." });
+          }
+        }, Math.max(0, Date.parse(session.expiresAt) - clock()));
+      }
+    }
     render();
   };
 
@@ -264,13 +282,23 @@ export const createAdminConsoleApp = (
     return api.origin === initialUrl.origin && api.username === "" && api.password === ""
       && (api.protocol === "https:" || ["localhost", "127.0.0.1", "[::1]"].includes(api.hostname));
   };
-  const liveDidSession = () => state.didSession !== undefined && Date.parse(state.didSession.expiresAt) > clock()
-    ? state.didSession : undefined;
+  const liveDidSession = () => {
+    const session = state.didSession;
+    const board = state.board;
+    return !state.loading && session !== undefined && board !== undefined
+      && Date.parse(session.expiresAt) > clock()
+      && state.didSourceMode === board.sourceMode
+      && session.registryId === board.summary.registryId
+      && (board.deploymentIdentity === undefined
+        || session.genesisHash === board.deploymentIdentity.expectedGenesisHash
+          && session.contractAddress === board.deploymentIdentity.contractAddress)
+      ? session : undefined;
+  };
 
   const signInDid = async () => {
     const signer = didSigner();
     const board = state.board;
-    if (state.didBusy || signer === undefined || board === undefined || !canUseDidHost()) return;
+    if (state.didBusy || state.loading || signer === undefined || board === undefined || !canUseDidHost()) return;
     const host = currentHost();
     setState({ didBusy: true, didError: undefined, didSession: undefined, didSourceMode: undefined });
     try {
@@ -1000,11 +1028,7 @@ export const createAdminConsoleApp = (
   const renderMetrics = (board: ReviewBoard): string => `
     <div class="metrics">
       <div class="registry-context"><span>Registry</span><strong>${escapeHtml(board.summary.registryLabel)}</strong><small>${board.summary.epochCount === undefined ? "Epoch unavailable" : `Epoch #${board.summary.epochCount.toString()}`}</small></div>
-      ${board.sourceMode === "local-ledger" ? "" : `
-        <div class="metric"><span>Proposed</span><strong>${countCards(board, "proposed").toString()}</strong></div>
-        <div class="metric"><span>Authorized</span><strong>${countCards(board, "authorized").toString()}</strong></div>
-        <div class="metric"><span>Active</span><strong>${countCards(board, "active").toString()}</strong></div>
-        ${countCards(board, "suspended") + countCards(board, "revoked") === 0 ? "" : `<p class="risk-summary">${(countCards(board, "suspended") + countCards(board, "revoked")).toString()} suspended or revoked record(s) need inspection.</p>`}`}
+      ${board.sourceMode === "local-ledger" || countCards(board, "suspended") + countCards(board, "revoked") === 0 ? "" : `<p class="risk-summary">${(countCards(board, "suspended") + countCards(board, "revoked")).toString()} suspended or revoked record(s) need inspection.</p>`}
     </div>
   `;
 
@@ -1084,9 +1108,9 @@ export const createAdminConsoleApp = (
         ${getReviewActions(card.status).length === 0 ? "" : `<section class="review-checks" aria-labelledby="review-checks-heading">
           <h3 id="review-checks-heading">Check before acting</h3>
           <ul>
-            <li><strong>Identity</strong><span>This record names a DID; this list does not prove current key control.</span></li>
-            <li><strong>Eligibility</strong><span>Check the redacted proof and its trusted status source. This board does not verify a verifiable presentation (VP).</span></li>
-            <li><strong>Authority</strong><span>Current maintainer membership, exact signatures, policy, and quorum are checked separately. Digital identity sign-in is not a vote.</span></li>
+            <li><strong>Identity</strong><span>The applicant's digital identity is listed, but key control is not verified here.</span></li>
+            <li><strong>Eligibility</strong><span>Inspect proof and status source; this view does not verify the presentation.</span></li>
+            <li><strong>Authority</strong><span>Check membership, signatures, policy, and quorum separately. Sign-in is not a vote.</span></li>
           </ul>
         </section>`}
         <div class="decision-summary"><h3>Decision summary</h3><dl>
@@ -1142,7 +1166,7 @@ export const createAdminConsoleApp = (
       ? document.activeElement?.getAttribute("data-focus-key") : null;
     pendingFocusKey = focusKey ?? (root.contains(document.activeElement) ? null : pendingFocusKey);
     const advancedOpen = root.querySelector<HTMLDetailsElement>(".advanced-workflows")?.open
-      ?? ["#task-proposal", "#task-policy"].includes(window.location.hash);
+      ?? ["#advanced-governance", "#task-proposal", "#task-policy"].includes(window.location.hash);
     const proposalTaskOpen = root.querySelector<HTMLDetailsElement>("#task-proposal")?.open
       ?? window.location.hash === "#task-proposal";
     const policyTaskOpen = root.querySelector<HTMLDetailsElement>("#task-policy")?.open
@@ -1158,6 +1182,8 @@ export const createAdminConsoleApp = (
         ...card.detailRows.map((row) => row.value)].some((value) => value.toLocaleLowerCase().includes(normalizedQuery))));
     const groupedCards = groupReviewCards(visibleCards);
     const visibleKeys = new Set(visibleCards.map((card) => card.key));
+    const selectedDetailVisible = state.board?.sourceMode !== "local-ledger"
+      && state.selectedKey !== undefined && visibleKeys.has(state.selectedKey);
     const pendingReviewCount = state.board === undefined ? 0
       : countCards(state.board, "proposed") + countCards(state.board, "authorized");
     const needsReview = pendingReviewCount > 0;
@@ -1173,8 +1199,7 @@ export const createAdminConsoleApp = (
           : "No requests need a decision right now. Browse active records or prepare a governed action.";
     const reviewAction = state.board === undefined ? { href: "#workspace-settings", label: "Check connection" }
       : state.board.sourceMode === "local-ledger" ? { href: "#exact-lookup", label: "Look up a record" }
-        : needsReview ? { href: "#review-board", label: "Open review queue" }
-          : { href: "#review-board", label: "Browse records" };
+        : undefined;
     const sourceMessage = state.loading
       ? state.board === undefined
         ? "Checking this source. No current records are available yet."
@@ -1188,9 +1213,9 @@ export const createAdminConsoleApp = (
           : "This practice workspace shows sample records, not deployed ledger evidence.";
     const taskLinks = `
       <a href="#review-board">Review records</a>
+      <a href="#advanced-governance">Advanced governance</a>
       <a href="./registry-manual.html">Registry Manual</a>
       <a href="#workspace-settings">Workspace settings</a>
-      <a href="#advanced-governance">Advanced governance</a>
     `;
     const deploymentIdentity = state.board?.sourceMode === "local-ledger" ? state.board.deploymentIdentity : undefined;
     const activeDidSession = liveDidSession();
@@ -1220,7 +1245,7 @@ export const createAdminConsoleApp = (
               <p class="eyebrow">Review operations</p>
               <h1>${reviewTitle}</h1>
               <p>${reviewDescription}</p>
-              <a class="button" href="${reviewAction.href}">${reviewAction.label}</a>
+              ${reviewAction === undefined ? "" : `<a class="button" href="${reviewAction.href}">${reviewAction.label}</a>`}
             </div>
           </div>
           ${state.board === undefined ? "" : renderMetrics(state.board)}
@@ -1237,7 +1262,7 @@ export const createAdminConsoleApp = (
         </section>
         <section class="settings-view" id="workspace-settings" aria-labelledby="settings-heading">
           <div class="settings-heading">
-            <a class="settings-back" href="#review-board">&larr; Back to review workspace</a>
+            <a class="settings-back" href="${selectedDetailVisible ? "#selected-record-detail" : "#review-board"}">&larr; ${selectedDetailVisible ? "Back to selected record" : "Back to review workspace"}</a>
             <p class="eyebrow">Configuration</p>
             <h1 id="settings-heading">Workspace settings</h1>
             <p>Check the source this browser is using and the deployment identity reported by the API. These details do not change registry governance.</p>
@@ -1248,8 +1273,8 @@ export const createAdminConsoleApp = (
               <h2 id="admin-did-heading">Digital identity sign-in</h2>
               <p>Use your decentralized identifier (DID) to identify yourself. Sign-in does not grant a maintainer role, voting authority, or eligibility proof. Governed actions still require separate external signatures and policy checks.</p>
               ${activeDidSession === undefined
-                ? `<p class="portal-profile-status">${didSignerAvailable ? "A DID signer is available." : "No DID signer is connected to this browser. Ask your host to provide one before signing in."}</p>
-                  <button class="button" type="button" data-did-sign-in data-focus-key="did-sign-in"${state.didBusy || !didSignerAvailable || !didHostAvailable || state.board === undefined ? " disabled" : ""}>${state.didBusy ? "Signing in…" : "Sign in with DID"}</button>
+                ? `<p class="portal-profile-status">${state.loading && state.didSession !== undefined ? "Checking the source; sign-in is paused until it matches." : didSignerAvailable ? "A digital identity signer is connected." : "No digital identity signer is connected to this browser. Ask your host to provide one before signing in."}</p>
+                  <button class="button" type="button" data-did-sign-in data-focus-key="did-sign-in"${state.didBusy || state.loading || !didSignerAvailable || !didHostAvailable || state.board === undefined ? " disabled" : ""}>${state.didBusy ? "Signing in…" : "Sign in with digital identity"}</button>
                   ${didHostAvailable ? "" : '<p class="step-hint">Sign-in requires the same-origin API host.</p>'}`
                 : `<p class="portal-profile-status">Signed in as <strong class="technical-id">${escapeHtml(activeDidSession.actorDid)}</strong></p>
                   <p class="step-hint">Identity only. Your maintainer authority is checked separately.</p>
@@ -1344,7 +1369,7 @@ export const createAdminConsoleApp = (
               </details>
             </section>` : ""}
           </div>
-          <div class="settings-footer"><strong>Identity is not authority</strong><p>The DID session is temporary and stays in browser memory. Maintainer authorization, external signing, and governance policy are separate.</p></div>
+          <div class="settings-footer"><strong>Identity is not authority</strong><p>Your sign-in session is temporary and stays in browser memory. Maintainer authorization, external signing, and governance policy are separate.</p></div>
         </section>
         ${state.board?.sourceMode === "local-ledger" ? `
           <section class="proposal-panel governed-panel" id="exact-lookup">
@@ -1493,12 +1518,14 @@ export const createAdminConsoleApp = (
     const shell = root.querySelector<HTMLElement>(".app-shell");
     if (shell !== null) shell.dataset.settingsActive = String(window.location.hash === "#workspace-settings");
     const target = window.location.hash.slice(1);
-    if (target === "task-proposal" || target === "task-policy") {
+    if (target === "advanced-governance" || target === "task-proposal" || target === "task-policy") {
       const advanced = root.querySelector<HTMLDetailsElement>(".advanced-workflows");
       if (advanced !== null) advanced.open = true;
-      root.querySelectorAll<HTMLDetailsElement>(".governance-task").forEach((task) => {
-        task.open = task.id === target;
-      });
+      if (target !== "advanced-governance") {
+        root.querySelectorAll<HTMLDetailsElement>(".governance-task").forEach((task) => {
+          task.open = task.id === target;
+        });
+      }
     }
   });
   void refreshBoard();

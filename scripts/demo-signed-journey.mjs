@@ -20,9 +20,13 @@ import {
   mutationIntentDigestBytes,
 } from "../packages/trust-registry-domain/dist/index.js";
 import {
+  createAuditorAuthorizationScopeFixture,
+  createAuditorScenarioFixture,
   createIssuerScenarioFixture,
   createMidnightDidLedgerFixture,
   createMidnightDidResolver,
+  createVerifierAuthorizationScopeFixture,
+  createVerifierScenarioFixture,
 } from "../packages/trust-registry-integration/dist/index.js";
 import {
   createTrustRegistryApiServer,
@@ -33,6 +37,16 @@ import { TrustRegistryAdminConsoleClient } from "../packages/trust-registry-admi
 import { withOtherProcessHoldingWorkspace } from "./workspace-lock-fixture.mjs";
 
 const fixture = createIssuerScenarioFixture("signed-demo-issuer");
+const verifierFixture = createVerifierScenarioFixture("signed-demo-verifier");
+const auditorFixture = createAuditorScenarioFixture("signed-demo-auditor");
+const additionalRoles = [
+  { role: "verifier", label: "signed-demo-verifier", scenario: verifierFixture,
+    authorizationScope: createVerifierAuthorizationScopeFixture(verifierFixture),
+    resourceId: verifierFixture.scopeResourceId },
+  { role: "auditor", label: "signed-demo-auditor", scenario: auditorFixture,
+    authorizationScope: createAuditorAuthorizationScopeFixture(auditorFixture),
+    resourceId: auditorFixture.scopeResourceId },
+];
 const applicantSeed = new Uint8Array(32).fill(47);
 const maintainerSeed = new Uint8Array(32).fill(61);
 const now = "2026-10-10T00:01:00.000Z";
@@ -54,7 +68,8 @@ const operationPayload = (operation) => {
     : { target: operation.target, id: operation.id };
 };
 
-const intentFor = (context, operation, actorDid, actorRole, nonceByte) => ({
+const intentFor = (context, operation, actorDid, actorRole, nonceByte,
+  record = { authorizationId: fixture.authorizationId, authorizationScope: fixture.authorizationScope }) => ({
   version: "tr-mutation-intent-v1",
   registryId: context.registryId,
   actorDid,
@@ -63,12 +78,12 @@ const intentFor = (context, operation, actorDid, actorRole, nonceByte) => ({
   action: operation.operation,
   target: operation.operation === "publish-epoch" ? "epoch" : operation.target,
   targetId: operation.operation === "publish-epoch"
-    ? context.expectedEpochId : fixture.authorizationId,
+    ? context.expectedEpochId : record.authorizationId,
   scopeCommitment: operation.operation === "publish-epoch"
     ? computeAuthorizationScopeCommitment({
       version: "tr-scope-v1", role: "maintainer", registryId: context.registryId,
     })
-    : computeAuthorizationScopeCommitment(fixture.authorizationScope),
+    : computeAuthorizationScopeCommitment(record.authorizationScope),
   payloadCommitment: computeMutationPayloadCommitment(operationPayload(operation)),
   nonce: `0x${nonceByte.repeat(32)}`,
   expectedWorkspaceCommitment: context.expectedWorkspaceCommitment,
@@ -98,6 +113,10 @@ try {
       verificationMethodId: "assertion-1",
       schnorrJubjubPublicKey: deriveJubjubPublicKeyFromSeed(applicantSeed),
     }),
+    ...additionalRoles.map(({ scenario }) => createMidnightDidLedgerFixture(scenario.subjectDid, {
+      verificationMethodId: "assertion-1",
+      schnorrJubjubPublicKey: deriveJubjubPublicKeyFromSeed(applicantSeed),
+    })),
     createMidnightDidLedgerFixture(maintainerDid, {
       verificationMethodId: "assertion-1",
       schnorrJubjubPublicKey: deriveJubjubPublicKeyFromSeed(maintainerSeed),
@@ -167,6 +186,35 @@ try {
   }), (error) => error.problem?.status === 403
     && error.problem?.type?.endsWith("/signed-operation-mismatch"));
 
+  for (const [index, roleCase] of additionalRoles.entries()) {
+    const record = { authorizationId: roleCase.scenario.authorizationId,
+      authorizationScope: roleCase.authorizationScope };
+    const roleSubmit = { operation: "submit", target: roleCase.role, label: roleCase.label };
+    const context = await applicant.loadMutationContext();
+    const intent = intentFor(context, roleSubmit, roleCase.scenario.subjectDid,
+      "applicant", (41 + index * 3).toString(16), record);
+    const wrongScope = { ...intent, scopeCommitment: `0x${"aa".repeat(32)}` };
+    await assert.rejects(applicant.submitSignedMutation({
+      intent: wrongScope, signature: signatureFor(wrongScope, applicantSeed), operation: roleSubmit,
+    }), (error) => error.problem?.status === 403);
+    const submittedRole = await applicant.submitSignedMutation({
+      intent, signature: signatureFor(intent, applicantSeed), operation: roleSubmit,
+    });
+    assert.equal(submittedRole.recordKind, "authorization");
+    operations.push(`${roleCase.role}:submit`);
+    for (const [actionIndex, action] of ["approve", "activate"].entries()) {
+      const actionContext = await admin.loadMutationContext();
+      const operation = { operation: action, target: roleCase.role, id: record.authorizationId };
+      const actionIntent = intentFor(actionContext, operation, maintainerDid, "maintainer",
+        (42 + index * 3 + actionIndex).toString(16), record);
+      const result = await admin.submitSignedMutation({
+        intent: actionIntent, signature: signatureFor(actionIntent, maintainerSeed), operation,
+      });
+      assert.equal(result.recordKind, "authorization");
+      operations.push(`${roleCase.role}:${action}`);
+    }
+  }
+
   const beforeEpoch = await admin.loadMutationContext();
   const publish = { operation: "publish-epoch", label: "signed-demo-epoch" };
   const epochIntent = intentFor(beforeEpoch, publish, maintainerDid, "maintainer", "36");
@@ -185,6 +233,25 @@ try {
   await expectStatus(wrongScope, 404);
   if (entry.authorization.status !== "active" || evidence.authorization?.authorizationId !== fixture.authorizationId) {
     throw new Error("signed demo did not produce matching active issuer evidence");
+  }
+  const otherRoleReadback = [];
+  for (const roleCase of additionalRoles) {
+    const authorizationId = roleCase.scenario.authorizationId;
+    const roleEntry = await expectStatus(await fetch(`${baseUrl}/v1/authorizations/${roleCase.role}/${authorizationId}`), 200);
+    const roleEvidence = await expectStatus(await fetch(`${baseUrl}/v1/authorizations/${roleCase.role}/${authorizationId}/evidence`), 200);
+    if (roleEntry.authorization.status !== "active" || roleEvidence.authorization?.authorizationId !== authorizationId) {
+      throw new Error(`signed demo did not produce matching active ${roleCase.role} evidence`);
+    }
+    const roleDecision = await expectStatus(await post("/v1/authorizations/evaluate", {
+      role: roleCase.role, subjectDid: roleCase.scenario.subjectDid,
+      resourceId: roleCase.resourceId, at: roleEvidence.epoch.validFrom,
+    }), 200);
+    assert.equal(roleDecision.trustedAtTime, true);
+    await expectStatus(await post("/v1/authorizations/resolve", {
+      role: roleCase.role, subjectDid: fixture.subjectDid, resourceId: roleCase.resourceId,
+    }), 404);
+    otherRoleReadback.push({ role: roleCase.role, authorizationId, status: roleEntry.authorization.status,
+      trustedAtTime: roleDecision.trustedAtTime });
   }
   const evaluatedAt = evidence.epoch.validFrom;
   const publicDecision = await expectStatus(await post("/v1/authorizations/evaluate", {
@@ -253,6 +320,7 @@ try {
     activeStateRoot: evidence.epoch.stateRoot,
     suspendedEpochId: publishedSuspension.epoch.epochId,
     operations,
+    otherRoleReadback,
     publicAndTrqpAgree: trqpDecision.authorized === publicDecision.trustedAtTime,
     trqpEvidenceCommitment: trqpEvidence.bundle.inclusionProof.leafHash,
     lifecycle: {
@@ -260,7 +328,7 @@ try {
       publicAndTrqpDenyAfterSuspension: !suspendedPublicDecision.trustedAtTime && !suspendedTrqpDecision.authorized,
       historicalActiveDecisionRetained: stillActiveAtPriorTime.trustedAtTime,
     },
-    expectedRejections: ["unsigned:403", "invalid-signature:401", "replay:409", "stale-context:409", "cross-process-lock:409", "invalid-transition:403", "wrong-query-scope:404"],
+    expectedRejections: ["unsigned:403", "invalid-signature:401", "replay:409", "stale-context:409", "cross-process-lock:409", "invalid-transition:403", "wrong-query-scope:404", "verifier-auditor-wrong-scope:403", "cross-role-query:404"],
   }, null, 2)}\n`);
 } finally {
   if (server !== undefined) await new Promise((resolve) => server.close(resolve));
