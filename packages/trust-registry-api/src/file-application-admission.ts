@@ -154,6 +154,13 @@ export class FileApplicationAdmissionStore implements PendingApplicationRegistra
     ).map(summarizePendingApplication);
   }
 
+  async readForSubjectDid(subjectDid: string, applicationId: string): Promise<PendingApplicationRecord | null> {
+    const record = (await this.readState()).applications.find(
+      (entry) => entry.binding.subjectDid === subjectDid && entry.binding.applicationId === applicationId,
+    );
+    return record === undefined ? null : structuredClone(record);
+  }
+
   async resolvePendingApplication(applicationId: string): Promise<PendingApplicationRecord | null> {
     return this.readPending(applicationId);
   }

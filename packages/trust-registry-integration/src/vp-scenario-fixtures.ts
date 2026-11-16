@@ -17,7 +17,7 @@ import {
   type IssuerStatusPolicyBinding,
 } from "@midnight-ntwrk/trust-registry-domain";
 
-import { type ApplicationVpFamilyAdapter, type ApplicationVpMaterial } from "./application-vp-verifier.js";
+import { type ApplicationVpMaterial, type QualifiedApplicationVpContext, type QualifiedApplicationVpFamilyAdapter } from "./application-vp-verifier.js";
 import { applicationStatusAttestationDigest, createAttestedApplicationStatusSource, type SignedApplicationStatusStatement } from "./application-status-attestation.js";
 import { decodeApplicationVpProof, encodeApplicationVpProof } from "./application-vp-proof-json.js";
 import { createMidnightDidLedgerFixture, createMidnightDidResolver } from "./did-resolution.js";
@@ -25,6 +25,12 @@ import { createIssuerAuthorizationScopeFixture, createIssuerScenarioFixture, cre
 
 export const VP_FIXTURE_TIME_MS = Date.parse("2026-05-20T00:01:00.000Z");
 export const VP_FIXTURE_NONCE = `0x${"11".repeat(32)}`;
+export const VP_FIXTURE_TRUST_CONTEXT = {
+  registryId: "registry:vp-fixture",
+  genesisHash: `0x${"12".repeat(32)}`,
+  contractAddress: `0x${"13".repeat(32)}`,
+  origin: "http://127.0.0.1:4400",
+};
 
 const bytes32 = (value: string): Uint8Array => Buffer.from(sha256Hex(value).slice(2), "hex");
 const hex = (value: Uint8Array): string => `0x${Buffer.from(value).toString("hex")}`;
@@ -48,6 +54,15 @@ type FixturePresentationBody = {
   subjectDid: string;
   credentialBodyRoot: string;
   privatePayload: string;
+  audience: string;
+  registryId: string;
+  genesisHash: string;
+  contractAddress: string;
+  nonce: string;
+  role: AuthorizationScope["role"];
+  scopeCommitment: string;
+  policyId: string;
+  policyVersion: string;
 };
 
 const parseFixtureCredentialBody = (raw: string): FixtureCredentialBody => {
@@ -93,12 +108,21 @@ const parseFixturePresentationBody = (raw: string): FixturePresentationBody => {
   }
   const body = value as Record<string, unknown>;
   if (
-    Object.keys(body).length !== 4
-    || !["version", "subjectDid", "credentialBodyRoot", "privatePayload"].every((key) => Object.hasOwn(body, key))
+    Object.keys(body).length !== 13
+    || !["version", "subjectDid", "credentialBodyRoot", "privatePayload", "audience", "registryId",
+      "genesisHash", "contractAddress", "nonce", "role", "scopeCommitment", "policyId", "policyVersion"]
+      .every((key) => Object.hasOwn(body, key))
     || body.version !== "tr-vp-presentation-fixture-v1"
     || typeof body.subjectDid !== "string"
     || typeof body.credentialBodyRoot !== "string" || !/^0x[0-9a-f]{64}$/u.test(body.credentialBodyRoot)
     || typeof body.privatePayload !== "string" || body.privatePayload.length === 0
+    || typeof body.audience !== "string" || typeof body.registryId !== "string"
+    || typeof body.genesisHash !== "string" || !/^0x[0-9a-f]{64}$/u.test(body.genesisHash)
+    || typeof body.contractAddress !== "string" || !/^0x[0-9a-f]{64}$/u.test(body.contractAddress)
+    || typeof body.nonce !== "string" || !/^0x[0-9a-f]{64}$/u.test(body.nonce)
+    || !["issuer", "verifier", "auditor", "maintainer"].includes(String(body.role))
+    || typeof body.scopeCommitment !== "string" || !/^0x[0-9a-f]{64}$/u.test(body.scopeCommitment)
+    || typeof body.policyId !== "string" || typeof body.policyVersion !== "string"
   ) throw new TypeError("Application VP fixture presentation body is invalid");
   return body as FixturePresentationBody;
 };
@@ -123,10 +147,15 @@ export async function createApplicationVpScenarioFixture(
     evidenceVerifierDid?: string;
     evidenceVerifierMethodId?: string;
     scope?: AuthorizationScope;
+    trustContext?: QualifiedApplicationVpContext;
+    policyId?: string;
+    policyVersion?: string;
     statusDecision?: Partial<FixtureStatusDecision>;
     presentationCredentialBodyRoot?: string;
+    presentationContext?: Partial<Omit<FixturePresentationBody, "version" | "subjectDid" | "credentialBodyRoot" | "privatePayload">>;
   } = {},
 ) {
+  const trustContext = options.trustContext ?? VP_FIXTURE_TRUST_CONTEXT;
   const issuerDid = options.issuerDid ?? createMidnightDid("vp-issuer");
   const subjectDid = options.subjectDid ?? createMidnightDid("vp-holder");
   const evidenceVerifierDid = options.evidenceVerifierDid ?? createMidnightDid("vp-evidence-verifier");
@@ -209,6 +238,16 @@ export async function createApplicationVpScenarioFixture(
     subjectDid,
     credentialBodyRoot: options.presentationCredentialBodyRoot ?? hex(credentialBodyRoot),
     privatePayload: "private-presentation-payload",
+    audience: trustContext.origin,
+    registryId: trustContext.registryId,
+    genesisHash: trustContext.genesisHash,
+    contractAddress: trustContext.contractAddress,
+    nonce,
+    role: scope.role,
+    scopeCommitment: computeAuthorizationScopeCommitment(scope),
+    policyId: options.policyId ?? "policy:vp:v1",
+    policyVersion: options.policyVersion ?? "v1",
+    ...options.presentationContext,
   };
   const rawPresentationBody = JSON.stringify(presentationBody);
   const presentationBodyRoot = bytes32(rawPresentationBody);
@@ -288,7 +327,7 @@ export async function createApplicationVpScenarioFixture(
   };
   const fixtureStatusPolicyBinding: IssuerStatusPolicyBinding = options.statusPolicyBinding ?? {
     version: "tr-issuer-status-policy-v1",
-    trustRegistryId: "registry:vp-fixture",
+    trustRegistryId: trustContext.registryId,
     issuerAuthorizationId: "auth:issuer:vp-fixture",
     statusRegistryId: credentialBody.statusRegistryId,
     statusAuthorityVerificationMethod: credentialBody.statusAuthorityMethod,
@@ -320,7 +359,7 @@ export async function createApplicationVpScenarioFixture(
       return witness;
     },
   });
-  const family: ApplicationVpFamilyAdapter<typeof submission> = {
+  const family: QualifiedApplicationVpFamilyAdapter<typeof submission> = {
     prepare: async (submitted) => {
       if (
         submitted === null || typeof submitted !== "object" || Array.isArray(submitted)
@@ -399,6 +438,23 @@ export async function createApplicationVpScenarioFixture(
         claimsCommitment: body.claimsCommitment,
         scopeCommitment: computeAuthorizationScopeCommitment(body.scope),
       };
+    },
+    assertPresentationBinding: async (prepared, expected) => {
+      const presentation = submittedPresentations.get(hex(prepared.presentationBodyRoot));
+      if (!presentation
+        || presentation.subjectDid !== expected.subjectDid
+        || presentation.audience !== expected.origin
+        || presentation.registryId !== expected.registryId
+        || presentation.genesisHash !== expected.genesisHash
+        || presentation.contractAddress !== expected.contractAddress
+        || presentation.nonce !== expected.nonce
+        || presentation.role !== expected.role
+        || presentation.scopeCommitment !== expected.scopeCommitment
+        || presentation.policyId !== expected.policyId
+        || presentation.policyVersion !== expected.policyVersion) {
+        throw new TypeError("Application VP fixture presentation context is invalid");
+      }
+      return true as const;
     },
   };
   const verifierSeed = new Uint8Array(32).fill(41);

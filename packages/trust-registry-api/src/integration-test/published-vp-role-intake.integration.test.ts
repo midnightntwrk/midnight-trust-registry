@@ -17,7 +17,7 @@ import {
   type ApplicationEvidenceSubmission,
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
-  createApplicationVpIntakePorts,
+  createQualifiedApplicationVpIntakePorts,
   createApplicationVpScenarioFixture,
   ApplicationVpVerificationError,
   createAuditorAuthorizationScopeFixture,
@@ -29,6 +29,7 @@ import {
   LocalTrustRegistryIntegrationHarness,
   type MaintainerScenarioFixture,
   VP_FIXTURE_TIME_MS,
+  VP_FIXTURE_TRUST_CONTEXT,
 } from "@midnight-ntwrk/trust-registry-integration";
 
 import { ApplicationChallengeService, InMemoryApplicationChallengeStore } from "../application-challenges.js";
@@ -105,6 +106,7 @@ describe("published VP proof for non-issuer application roles", () => {
     harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
     harness.advanceEvidenceTimeBy(60_000);
     const applicant = scenario(role, harness);
+    const trustContext = { ...VP_FIXTURE_TRUST_CONTEXT, registryId: harness.registryId };
     const binding = ApplicationChallengeBindingSchema.parse({
       registryId: harness.registryId,
       applicationId: createScopedIdentifier("application", role, applicant.applicationId),
@@ -121,18 +123,23 @@ describe("published VP proof for non-issuer application roles", () => {
       new InMemoryApplicationChallengeStore(), () => VP_FIXTURE_TIME_MS,
     );
     const issued = await challengeService.issue(binding);
-    const proof = await createApplicationVpScenarioFixture(issued.nonce, {
+    const proofOptions = {
       subjectDid: applicant.subjectDid,
       evidenceVerifierDid: harness.evidenceVerifier.did,
       evidenceVerifierMethodId: harness.evidenceVerifier.keyIds[0]!.split("#")[1]!,
       scope: applicant.scope,
-    });
+      trustContext,
+      policyId: binding.policyId,
+      policyVersion: binding.policyVersion,
+    };
+    const proof = await createApplicationVpScenarioFixture(issued.nonce, proofOptions);
     const preparedClaims = await proof.input.family.prepare(proof.input.submission);
     expect((await proof.input.family.assertRoleClaims(preparedClaims)).scopeCommitment).toBe(binding.scopeCommitment);
-    const ports = await createApplicationVpIntakePorts({
+    const ports = await createQualifiedApplicationVpIntakePorts({
       resolver: proof.input.resolver,
       family: proof.input.family,
       signer: proof.signer,
+      trustContext,
     });
     const beforeProposal = harness.simulator.getLedger().governanceActionCount;
     const propose = vi.fn(async ({ evidence }: { evidence: ApplicationEvidenceSubmission }) => {
@@ -190,7 +197,30 @@ describe("published VP proof for non-issuer application roles", () => {
       propose,
     };
 
-    const wrongRoleClaims = await createApplicationVpIntakePorts({
+    for (const presentationContext of [
+      { registryId: "registry:other" },
+      { policyVersion: "v9" },
+    ]) {
+      const mismatched = await createApplicationVpScenarioFixture(issued.nonce, {
+        ...proofOptions,
+        presentationContext,
+      });
+      const mismatchedPorts = await createQualifiedApplicationVpIntakePorts({
+        resolver: mismatched.input.resolver,
+        family: mismatched.input.family,
+        signer: mismatched.signer,
+        trustContext,
+      });
+      await expect(consumeChallengeAndSubmitApplication({
+        ...input,
+        presentation: mismatched.input.submission,
+        ...mismatchedPorts,
+      })).rejects.toMatchObject({ category: "invalid_presentation" });
+      expect(await challengeService.isLive({ binding, nonce: issued.nonce, challengeHash: issued.challengeHash })).toBe(true);
+      expect(propose).not.toHaveBeenCalled();
+    }
+
+    const wrongRoleClaims = await createQualifiedApplicationVpIntakePorts({
       resolver: proof.input.resolver,
       family: {
         ...proof.input.family,
@@ -200,6 +230,7 @@ describe("published VP proof for non-issuer application roles", () => {
         }),
       },
       signer: proof.signer,
+      trustContext,
     });
     await expect(consumeChallengeAndSubmitApplication({
       ...input, ...wrongRoleClaims,
@@ -226,10 +257,11 @@ describe("published VP proof for non-issuer application roles", () => {
         prepare: async () => ({ ...proof.material, credentialExpiresAtMs: VP_FIXTURE_TIME_MS }),
       },
     ]) {
-      const rejectedPorts = await createApplicationVpIntakePorts({
+      const rejectedPorts = await createQualifiedApplicationVpIntakePorts({
         resolver: proof.input.resolver,
         family,
         signer: proof.signer,
+        trustContext,
       });
       await expect(consumeChallengeAndSubmitApplication({
         ...input, ...rejectedPorts,

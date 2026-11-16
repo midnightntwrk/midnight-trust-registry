@@ -2,14 +2,17 @@ import { Buffer } from "node:buffer";
 
 import { type MidnightDIDResolverInterface } from "@midnight-ntwrk/midnight-did";
 import {
+  ActorAuthenticationContextSchema,
   ApplicationChallengeBindingSchema,
   ApplicationEvidenceEvaluationTimeSchema,
   AuthorizationScopeSchema,
   HashHexSchema,
   IssuerStatusPolicyBindingSchema,
+  ScopedIdentifierSchema,
   computeAuthorizationScopeCommitment,
   sha256Hex,
   type ApplicationChallengeBinding,
+  type ActorAuthenticationContext,
   type AuthorizationScope,
   type IssuerStatusPolicyBinding,
 } from "@midnight-ntwrk/trust-registry-domain";
@@ -55,6 +58,20 @@ export type ApplicationVpFamilyAdapter<Submission> = {
   }>;
 };
 
+export type QualifiedApplicationVpContext = ActorAuthenticationContext;
+
+export type QualifiedApplicationVpFamilyAdapter<Submission> = ApplicationVpFamilyAdapter<Submission> & {
+  /** Derive these values from the signed presentation body, not caller-supplied metadata. */
+  assertPresentationBinding(material: ApplicationVpMaterial, expected: QualifiedApplicationVpContext & {
+    subjectDid: string;
+    nonce: string;
+    role: AuthorizationScope["role"];
+    scopeCommitment: string;
+    policyId: string;
+    policyVersion: string;
+  }): Promise<true>;
+};
+
 export class ApplicationVpVerificationError extends Error {
   constructor(readonly category: "invalid_presentation" | "ineligible" | "expired" | "unavailable") {
     super(`Application VP ${category}`);
@@ -68,7 +85,7 @@ export class ApplicationVpDependencyUnavailableError extends Error {
   }
 }
 
-export async function verifyApplicationVp<Submission>(input: {
+type ApplicationVpInput<Submission> = {
   submission: Submission;
   nonce: string;
   expectedSubjectDid: string;
@@ -76,7 +93,33 @@ export async function verifyApplicationVp<Submission>(input: {
   evaluatedAtMs: number;
   resolver: Pick<MidnightDIDResolverInterface, "resolveResult">;
   family: ApplicationVpFamilyAdapter<Submission>;
+};
+
+export function verifyApplicationVp<Submission>(input: ApplicationVpInput<Submission>): Promise<ApplicationVpVerifierResult> {
+  return verifyApplicationVpInternal(input);
+}
+
+export function verifyQualifiedApplicationVp<Submission>(input: ApplicationVpInput<Submission> & {
+  family: QualifiedApplicationVpFamilyAdapter<Submission>;
+  trustContext: QualifiedApplicationVpContext;
+  expectedPolicyId: string;
+  expectedPolicyVersion: string;
 }): Promise<ApplicationVpVerifierResult> {
+  const trusted = ActorAuthenticationContextSchema.safeParse(input.trustContext);
+  const policyId = ScopedIdentifierSchema.safeParse(input.expectedPolicyId);
+  if (!trusted.success || !policyId.success || policyId.data !== policyId.data.toLowerCase()
+    || typeof input.expectedPolicyVersion !== "string" || !/^v[1-9][0-9]*$/u.test(input.expectedPolicyVersion)) {
+    throw new ApplicationVpVerificationError("invalid_presentation");
+  }
+  return verifyApplicationVpInternal(input, trusted.data, {
+    policyId: policyId.data,
+    policyVersion: input.expectedPolicyVersion,
+  });
+}
+
+async function verifyApplicationVpInternal<Submission>(input: ApplicationVpInput<Submission>,
+  trustContext?: QualifiedApplicationVpContext,
+  expectedPolicy?: { policyId: string; policyVersion: string }): Promise<ApplicationVpVerifierResult> {
   const scope = AuthorizationScopeSchema.safeParse(input.scope);
   if (!NONCE_PATTERN.test(input.nonce) || !validTime(input.evaluatedAtMs) || !scope.success) {
     throw new ApplicationVpVerificationError("invalid_presentation");
@@ -140,6 +183,23 @@ export async function verifyApplicationVp<Submission>(input: {
     if (await input.family.assertCredentialBodyBinding(material) !== true) {
       throw new Error("Credential body binding failed");
     }
+    if (trustContext !== undefined) {
+      if (expectedPolicy === undefined) throw new Error("Qualified VP policy is missing");
+      const parsed = ActorAuthenticationContextSchema.parse(trustContext);
+      const qualifiedFamily = input.family as QualifiedApplicationVpFamilyAdapter<Submission>;
+      if (typeof qualifiedFamily.assertPresentationBinding !== "function"
+        || await qualifiedFamily.assertPresentationBinding(material, {
+          ...parsed,
+          subjectDid: input.expectedSubjectDid,
+          nonce: input.nonce,
+          role: scope.data.role,
+          scopeCommitment: computeAuthorizationScopeCommitment(scope.data),
+          policyId: expectedPolicy.policyId,
+          policyVersion: expectedPolicy.policyVersion,
+        }) !== true) {
+        throw new Error("Presentation is not bound to the trusted registry context");
+      }
+    }
     presentationHash = verified.presentationHash;
   } catch (error) {
     if (error instanceof ApplicationVpDependencyUnavailableError) {
@@ -155,6 +215,9 @@ export async function verifyApplicationVp<Submission>(input: {
     const binding = IssuerStatusPolicyBindingSchema.parse(
       await input.family.assertIssuerEligible(material, scope.data),
     );
+    if (trustContext !== undefined && binding.trustRegistryId !== trustContext.registryId) {
+      throw new ApplicationVpVerificationError("ineligible");
+    }
     if (`0x${Buffer.from(material.statusBinding.registryRef.registryId).toString("hex")}` !== binding.statusRegistryId) {
       throw new Error("Credential status registry differs from governed issuer policy");
     }
@@ -214,6 +277,41 @@ export function createApplicationVpIntakeVerifier<Submission>(config: {
     }
     return verifyApplicationVp({
       ...config,
+      submission: presentation as Submission,
+      nonce: context.nonce,
+      expectedSubjectDid: binding.subjectDid,
+      scope: binding.scope,
+      evaluatedAtMs: Date.parse(context.evaluatedAt),
+    });
+  };
+}
+
+/** The qualified host pins its own audience and deployment before accepting any VP. */
+export function createQualifiedApplicationVpIntakeVerifier<Submission>(config: {
+  resolver: Pick<MidnightDIDResolverInterface, "resolveResult">;
+  family: QualifiedApplicationVpFamilyAdapter<Submission>;
+  trustContext: QualifiedApplicationVpContext;
+}): (presentation: unknown, context: {
+  nonce: string;
+  binding: ApplicationChallengeBinding;
+  evaluatedAt: string;
+}) => Promise<ApplicationVpVerifierResult> {
+  const trusted = ActorAuthenticationContextSchema.parse(config.trustContext);
+  return async (presentation, context) => {
+    let binding: ApplicationChallengeBinding;
+    try {
+      binding = ApplicationChallengeBindingSchema.parse(context.binding);
+      ApplicationEvidenceEvaluationTimeSchema.parse(context.evaluatedAt);
+      if (binding.registryId !== trusted.registryId) throw new Error("Registry differs from trusted deployment");
+    } catch {
+      throw new ApplicationVpVerificationError("invalid_presentation");
+    }
+    return verifyQualifiedApplicationVp({
+      resolver: config.resolver,
+      family: config.family,
+      trustContext: trusted,
+      expectedPolicyId: binding.policyId,
+      expectedPolicyVersion: binding.policyVersion,
       submission: presentation as Submission,
       nonce: context.nonce,
       expectedSubjectDid: binding.subjectDid,

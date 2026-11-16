@@ -247,8 +247,10 @@ Current coverage:
   The scenario fixture serializes both proofs into canonical JSON and derives
   body roots from the submitted credential and presentation body strings;
   changing either submitted body or a proof signature fails verification.
-  The signed fixture presentation body names the credential body root and
-  subject DID; a validly signed presentation naming a different credential is
+  The signed fixture presentation body names the credential body root,
+  subject DID, audience, registry, deployment tuple, nonce, role, scope,
+  policy ID, and policy version
+  commitment; a validly signed presentation naming a different credential is
   rejected before eligibility checks.
   The fixture's role scope, expiry, holder, status registry, handle, and
   authority method are read from
@@ -286,6 +288,18 @@ Current coverage:
   construction, and proposal submission. The family adapter must authenticate
   credential claims and status; these ports do not make the resolver trusted,
   establish governed key membership, or create a public route.
+- `createQualifiedApplicationVpIntakePorts` additionally requires an
+  independently pinned registry ID, API origin, genesis hash, and contract
+  address. Its family adapter must derive and compare the corresponding
+  audience, deployment, nonce, role, scope, policy ID/version, and subject from the verified
+  signed presentation body. A different host origin or deployment fails
+  before an eligibility result can be returned; an unavailable binding source
+  fails closed. The issuer's returned status-policy authorization must also
+  name that same trust registry. `createApplicationVpIntakePorts` remains the unqualified
+  fixture/reference path and must not be selected for a live host. The
+  qualified factory does not provide a production VC/status adapter, trust
+  the resolver, or independently prove ledger finality; the embedding host
+  must supply those sources and keep its pinned context current.
 
 The repository pins the compiler in `.compact-version` and Nix, and pins the
 runtime in `contracts/trust-registry/package.json`. The probe
