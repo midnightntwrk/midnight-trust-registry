@@ -17,13 +17,14 @@ import {
   ApplicationVpDependencyUnavailableError,
   createApplicationVpIntakeVerifier,
   verifyApplicationVp,
+  verifyQualifiedApplicationVp,
 } from "../application-vp-verifier.js";
 import { verifyApplicationStatusDecisionWitness } from "../application-status-attestation.js";
 import { decodeApplicationVpProof, encodeApplicationVpProof } from "../application-vp-proof-json.js";
 import { createMidnightDidLedgerFixture, createMidnightDidResolver } from "../did-resolution.js";
 import { createMidnightDid } from "../fixtures.js";
-import { createApplicationVpIntakePorts } from "../vp-evidence-attestation.js";
-import { createApplicationVpScenarioFixture, VP_FIXTURE_NONCE, VP_FIXTURE_TIME_MS } from "../vp-scenario-fixtures.js";
+import { createApplicationVpIntakePorts, createQualifiedApplicationVpIntakePorts } from "../vp-evidence-attestation.js";
+import { createApplicationVpScenarioFixture, VP_FIXTURE_NONCE, VP_FIXTURE_TIME_MS, VP_FIXTURE_TRUST_CONTEXT } from "../vp-scenario-fixtures.js";
 
 const NOW = VP_FIXTURE_TIME_MS;
 const NONCE = VP_FIXTURE_NONCE;
@@ -48,6 +49,76 @@ async function fixture() {
 }
 
 describe("published VC proof and DID application verifier port", () => {
+  it("binds a qualified VP to the host-pinned audience and deployment", async () => {
+    const scenario = await createApplicationVpScenarioFixture();
+    const qualified = { ...scenario.input, trustContext: VP_FIXTURE_TRUST_CONTEXT };
+    await expect(verifyQualifiedApplicationVp(qualified)).resolves.toMatchObject({
+      subjectDid: scenario.input.expectedSubjectDid,
+      scopeCommitment: computeAuthorizationScopeCommitment(scenario.input.scope),
+    });
+    for (const changed of [
+      { origin: "https://other.example" },
+      { genesisHash: `0x${"44".repeat(32)}` },
+      { contractAddress: `0x${"55".repeat(32)}` },
+      { registryId: "registry:other" },
+    ]) {
+      await expect(verifyQualifiedApplicationVp({ ...qualified,
+        trustContext: { ...VP_FIXTURE_TRUST_CONTEXT, ...changed },
+      })).rejects.toMatchObject({ category: "invalid_presentation" });
+    }
+    for (const presentationContext of [
+      { audience: "https://other.example" },
+      { genesisHash: `0x${"44".repeat(32)}` },
+      { contractAddress: `0x${"55".repeat(32)}` },
+      { role: "verifier" as const },
+      { scopeCommitment: `0x${"66".repeat(32)}` },
+    ]) {
+      const other = await createApplicationVpScenarioFixture(NONCE, { presentationContext });
+      await expect(verifyQualifiedApplicationVp({ ...other.input, trustContext: VP_FIXTURE_TRUST_CONTEXT }))
+        .rejects.toMatchObject({ category: "invalid_presentation" });
+    }
+  });
+
+  it("fails closed when qualified presentation binding or its source is unavailable", async () => {
+    const scenario = await createApplicationVpScenarioFixture();
+    const qualified = { ...scenario.input, trustContext: VP_FIXTURE_TRUST_CONTEXT };
+    await expect(verifyQualifiedApplicationVp({ ...qualified, family: {
+      ...scenario.family, assertPresentationBinding: async () => { throw new ApplicationVpDependencyUnavailableError(); },
+    } })).rejects.toMatchObject({ category: "unavailable" });
+    await expect(verifyQualifiedApplicationVp({ ...qualified, family: {
+      ...scenario.family, assertPresentationBinding: undefined,
+    } as unknown as typeof scenario.family })).rejects.toMatchObject({ category: "invalid_presentation" });
+  });
+
+  it("exposes qualified VP intake only with a host-pinned registry deployment", async () => {
+    const scenario = await createApplicationVpScenarioFixture();
+    const input = scenario.input;
+    if (input.scope.role !== "issuer") throw new Error("Expected issuer VP scenario");
+    const binding = ApplicationChallengeBindingSchema.parse({
+      registryId: VP_FIXTURE_TRUST_CONTEXT.registryId,
+      applicationId: "application:issuer:qualified:v1",
+      subjectDid: input.expectedSubjectDid,
+      evidenceVerifierDid: scenario.signer.did,
+      role: "issuer",
+      policyId: "policy:vp:v1",
+      policyVersion: "v1",
+      scope: input.scope,
+      scopeCommitment: computeAuthorizationScopeCommitment(input.scope),
+      governedResource: { type: "credentialFamily", id: issuerGovernedResourceId(input.scope, "credentialFamily") },
+    });
+    const ports = await createQualifiedApplicationVpIntakePorts({
+      resolver: input.resolver, family: input.family, signer: scenario.signer,
+      trustContext: VP_FIXTURE_TRUST_CONTEXT,
+    });
+    const context = { binding, nonce: input.nonce, evaluatedAt: new Date(NOW).toISOString() };
+    await expect(ports.verifyPresentation(input.submission, context)).resolves.toMatchObject({
+      subjectDid: input.expectedSubjectDid,
+    });
+    await expect(ports.verifyPresentation(input.submission, {
+      ...context, binding: { ...binding, registryId: "registry:other" },
+    })).rejects.toMatchObject({ category: "invalid_presentation" });
+  });
+
   it("retains the exact private status witness used to create redacted VP evidence", async () => {
     const scenario = await createApplicationVpScenarioFixture();
     const result = await verifyApplicationVp(scenario.input);

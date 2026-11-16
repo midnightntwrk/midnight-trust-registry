@@ -15,7 +15,13 @@ import type {
   ApplicationEvidenceSignatureVerifier,
 } from "@midnight-ntwrk/trust-registry-domain";
 
-import { createApplicationVpIntakeVerifier, type ApplicationVpFamilyAdapter } from "./application-vp-verifier.js";
+import {
+  createApplicationVpIntakeVerifier,
+  createQualifiedApplicationVpIntakeVerifier,
+  type ApplicationVpFamilyAdapter,
+  type QualifiedApplicationVpContext,
+  type QualifiedApplicationVpFamilyAdapter,
+} from "./application-vp-verifier.js";
 
 export type ApplicationVpEvidenceSigner = {
   did: string;
@@ -102,5 +108,23 @@ export async function createApplicationVpIntakePorts<Submission>(config: {
       return signature;
     },
     verifyEvidenceSignature,
+  };
+}
+
+/** Use this factory for a host with independently pinned origin and deployment identity. */
+export async function createQualifiedApplicationVpIntakePorts<Submission>(config: {
+  resolver: Pick<MidnightDIDResolverInterface, "resolveResult">;
+  family: QualifiedApplicationVpFamilyAdapter<Submission>;
+  signer: ApplicationVpEvidenceSigner;
+  trustContext: QualifiedApplicationVpContext;
+}) {
+  const ports = await createApplicationVpIntakePorts(config);
+  return {
+    ...ports,
+    verifyPresentation: createQualifiedApplicationVpIntakeVerifier({
+      resolver: config.resolver,
+      family: config.family,
+      trustContext: config.trustContext,
+    }),
   };
 }
