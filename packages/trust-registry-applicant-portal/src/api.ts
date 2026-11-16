@@ -239,8 +239,13 @@ export class TrustRegistryApplicantPortalClient {
     };
   }
 
-  private privateCredentials(): RequestCredentials {
-    return this.applicantSession === undefined ? "same-origin" : "omit";
+  private privateRequestOptions(): RequestInit {
+    return this.applicantSession === undefined
+      ? { credentials: "same-origin" }
+      : {
+          credentials: "omit", cache: "no-store", redirect: "error",
+          headers: this.privateSessionHeaders(),
+        };
   }
 
   async loadHistoricalAuthorizationEvidence(
@@ -457,8 +462,8 @@ export class TrustRegistryApplicantPortalClient {
   async registerPendingApplication(request: unknown): Promise<PendingApplicationRecord> {
     const response = await this.fetchImpl(`${this.baseUrl}/v1/pending-applications`, {
       method: "POST",
-      credentials: "same-origin",
-      headers: { "content-type": "application/json" },
+      ...this.privateRequestOptions(),
+      headers: { "content-type": "application/json", ...this.privateSessionHeaders() },
       body: JSON.stringify(request),
     });
     return parsePrivateResponse<PendingApplicationRecord>(response);
@@ -477,8 +482,7 @@ export class TrustRegistryApplicantPortalClient {
   async loadPendingApplicationBinding(applicationId: string): Promise<ApplicationChallengeBinding> {
     const response = await this.fetchImpl(`${this.baseUrl}${privateApplicationPath(applicationId, "binding")}`, {
       method: "GET",
-      credentials: this.privateCredentials(),
-      ...(this.applicantSession === undefined ? {} : { headers: this.privateSessionHeaders() }),
+      ...this.privateRequestOptions(),
     });
     return parsePrivateResponse<ApplicationChallengeBinding>(response);
   }
@@ -487,7 +491,7 @@ export class TrustRegistryApplicantPortalClient {
   async issueApplicationChallenge(applicationId: string): Promise<ApplicationVpHttpIssueResult> {
     const response = await this.fetchImpl(`${this.baseUrl}${privateApplicationPath(applicationId, "challenges")}`, {
       method: "POST",
-      credentials: this.privateCredentials(),
+      ...this.privateRequestOptions(),
       headers: { "content-type": "application/json", ...this.privateSessionHeaders() },
       body: "{}",
     });
@@ -502,7 +506,7 @@ export class TrustRegistryApplicantPortalClient {
   ): Promise<ApplicationVpHttpSubmissionResult> {
     const response = await this.fetchImpl(`${this.baseUrl}${privateApplicationPath(applicationId, "submissions")}`, {
       method: "POST",
-      credentials: this.privateCredentials(),
+      ...this.privateRequestOptions(),
       headers: { "content-type": "application/json", ...this.privateSessionHeaders() },
       body: JSON.stringify({
         nonce: challenge.nonce,
@@ -517,8 +521,7 @@ export class TrustRegistryApplicantPortalClient {
   async loadAcceptedApplicationEvidence(applicationId: string): Promise<ApplicationVpHttpSubmissionResult> {
     const response = await this.fetchImpl(`${this.baseUrl}${privateApplicationPath(applicationId, "receipt")}`, {
       method: "GET",
-      credentials: this.privateCredentials(),
-      ...(this.applicantSession === undefined ? {} : { headers: this.privateSessionHeaders() }),
+      ...this.privateRequestOptions(),
     });
     return parsePrivateResponse<ApplicationVpHttpSubmissionResult>(response);
   }
