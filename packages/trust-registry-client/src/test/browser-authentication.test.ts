@@ -193,6 +193,15 @@ describe("shared browser DID authentication", () => {
     await expect(registerApplicantApplication({ ...input,
       fetchImpl: vi.fn(async () => { throw new Error("socket closed after acceptance"); }) as unknown as typeof fetch,
     })).rejects.toThrow("outcome is unknown");
+    await expect(registerApplicantApplication({ ...input,
+      fetchImpl: vi.fn(async () => new Response("{", { status: 201 })) as unknown as typeof fetch,
+    })).rejects.toThrow("outcome is unknown");
+    await expect(registerApplicantApplication({ ...input,
+      fetchImpl: vi.fn(async () => new Response(null, { status: 503 })) as unknown as typeof fetch,
+    })).rejects.toThrow("outcome is unknown");
+    await expect(registerApplicantApplication({ ...input,
+      fetchImpl: vi.fn(async () => new Response(null, { status: 403 })) as unknown as typeof fetch,
+    })).rejects.toThrow("HTTP 403");
   });
 
   it("distinguishes an unconfigured private list from empty, denied, and malformed results", async () => {

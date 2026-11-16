@@ -3281,7 +3281,8 @@ command, an explicit unavailable result, and denied reuse after sign-out.
 A second current-time loopback host exercises executable CLI registration
 with a real DID-signed intent and in-memory registration port, then checks
 same-applicant readback, wrong actor/origin rejection, and replay denial.
-When registration transport fails, the client and CLI report an unknown
+When registration transport fails or its post-send response is unreadable or
+server-failed, the client and CLI report an unknown
 outcome rather than suggesting a blind retry; a pending-list summary cannot
 prove the identity of the accepted signed request.
 This is a controlled HTTP host, not a deployed registry. A pending

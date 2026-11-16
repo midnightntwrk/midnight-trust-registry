@@ -173,6 +173,7 @@ export async function registerApplicantApplication(input: {
   fetchImpl?: typeof fetch;
   clock?: () => number;
 }): Promise<PendingApplicationRecord> {
+  const unknownOutcome = () => new Error("Pending application outcome is unknown after submission. Do not resubmit the signed request; reconcile it by exact request identity.");
   const base = sameOriginApi(input.apiBase, input.pageOrigin);
   if (input.session.origin !== input.pageOrigin) throw new Error("Applicant DID session origin does not match this page.");
   const clock = input.clock ?? Date.now;
@@ -192,9 +193,17 @@ export async function registerApplicantApplication(input: {
       body: JSON.stringify(request),
     });
   } catch {
-    throw new Error("Pending application outcome is unknown after transport failure. Do not resubmit the signed request; reconcile it by exact request identity.");
+    throw unknownOutcome();
   }
-  const parsed = PendingApplicationRecordSchema.safeParse(await responsePayload(response, "Pending application registration"));
+  if (!response.ok && (response.status < 400 || response.status >= 500)) throw unknownOutcome();
+  let payload: unknown;
+  try {
+    payload = await responsePayload(response, "Pending application registration");
+  } catch (error) {
+    if (response.ok) throw unknownOutcome();
+    throw error;
+  }
+  const parsed = PendingApplicationRecordSchema.safeParse(payload);
   if (!parsed.success || parsed.data.status !== "pending"
     || parsed.data.binding.applicationId !== request.applicationId
     || parsed.data.authorizationId !== request.authorizationId

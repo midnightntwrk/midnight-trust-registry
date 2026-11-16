@@ -42,7 +42,8 @@ URL being called. They reject a different origin, redirects, expired sessions, i
 requests, and malformed responses. Pipe this JSON from a trusted local signer
 or session process. Do not put bearer tokens in shell arguments, history,
 files, or logs. The CLI does not create or store keys or sessions.
-If the registration response is lost or mismatched, the outcome is unknown:
+If the registration response is lost, unreadable, server-failed, or mismatched,
+the outcome is unknown:
 do not resubmit the signed request. The pending list is a summary, not proof
 that the exact signed intent was accepted; a separate request-identity
 reconciliation path remains tracked in #297.

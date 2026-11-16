@@ -126,4 +126,15 @@ describe("actor API CLI", () => {
     expect(result.stderr).not.toContain("socket closed");
     expect(fetchMock).toHaveBeenCalledOnce();
   });
+
+  it.each([503, 201])("keeps an ambiguous HTTP %i registration outcome unknown", async (status) => {
+    const fetchMock = vi.fn(async () => new Response(status === 201 ? "{" : null, { status }));
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await capture("api-register", { session, request });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("outcome is unknown");
+    expect(result.stderr).toContain("Do not resubmit");
+    expect(result.stderr).not.toContain(session.accessToken);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
 });
