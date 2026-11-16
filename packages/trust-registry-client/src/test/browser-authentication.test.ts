@@ -205,6 +205,27 @@ describe("shared browser DID authentication", () => {
     })).rejects.toThrow("HTTP 403");
   });
 
+  it.each([408, 429])("reconciles a committed application after an ambiguous HTTP %i", async (status) => {
+    let committed = false;
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        committed = true;
+        return new Response(null, { status });
+      }
+      return Response.json({ ...pendingRecord,
+        requestCommitment: computeSignedPendingApplicationCommitment(signedApplication),
+      });
+    });
+    const input = { apiBase: origin, pageOrigin: origin, session: applicantSession,
+      request: signedApplication, fetchImpl: fetchMock as unknown as typeof fetch, clock: () => NOW };
+    await expect(registerApplicantApplication(input)).rejects.toThrow("outcome is unknown");
+    expect(committed).toBe(true);
+    expect(await reconcileApplicantApplication(input)).toEqual({ status: "observed", record: {
+      ...pendingRecord, requestCommitment: computeSignedPendingApplicationCommitment(signedApplication),
+    } });
+    expect(fetchMock.mock.calls.map(([, init]) => init?.method)).toEqual(["POST", "GET"]);
+  });
+
   it("distinguishes an unconfigured private list from empty, denied, and malformed results", async () => {
     const applicantSession = { ...session, purpose: "applicant-session" as const,
       registryId: challenge.registryId, genesisHash: challenge.genesisHash,

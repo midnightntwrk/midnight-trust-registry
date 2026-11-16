@@ -196,7 +196,8 @@ export async function registerApplicantApplication(input: {
   } catch {
     throw unknownOutcome();
   }
-  if (!response.ok && (response.status < 400 || response.status >= 500)) throw unknownOutcome();
+  if (!response.ok && (response.status < 400 || response.status === 408
+    || response.status === 429 || response.status >= 500)) throw unknownOutcome();
   let payload: unknown;
   try {
     payload = await responsePayload(response, "Pending application registration");
