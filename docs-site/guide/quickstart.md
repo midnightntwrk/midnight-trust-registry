@@ -121,14 +121,14 @@ Open the [admin console](http://127.0.0.1:4173) to review records and the
 show **Local fixture** when connected to this demo API. The applicant portal
 can explain and prepare governed requests, but this local host cannot submit
 private governed evidence: that step needs an authenticated same-origin host
-and an external signer. On loopback, add `?demo=1` to the portal URL to reveal
-the separate label-only demo application; submitting it does not grant
-on-chain authority. Use **Workspace settings** to inspect the current source
+and an external signer. On loopback, add `?demo=1` to the portal URL, then open
+**Workspace settings** to reveal the separate label-only demo application;
+submitting it does not grant on-chain authority. Use Settings to inspect the current source
 or retry a failed connection, not to choose a ledger or genesis in the browser.
 
 To try the complete **fixture-only UI handoff** after starting all three servers:
 
-1. Open the [portal demo](http://127.0.0.1:4175/?demo=1), choose **Issuer** or **Recognition** under **Try a local application**, enter a recognizable name, and send it. The receipt should say **proposed**, not approved.
+1. Open the [portal demo](http://127.0.0.1:4175/?demo=1), open **Workspace settings**, choose **Issuer** or **Recognition** under **Try a local application**, enter a recognizable name, and send it. The receipt should say **proposed**, not approved.
 2. Open the [admin demo](http://127.0.0.1:4173/?demo=1), find that name under **Decisions that need attention**, and inspect its requested trust level. Use **Approve in demo**, then **Activate in demo**, reading the exact-record confirmation each time. The record should move through **Proposed**, **Authorized**, and **Active**.
 3. Return to the portal and recheck the source. The active entry should appear in the fixture records. **Local fixture** still means this is not a deployed ledger decision.
 

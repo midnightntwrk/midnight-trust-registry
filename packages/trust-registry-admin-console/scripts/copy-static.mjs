@@ -14,6 +14,6 @@ await cp(publicDir, distDir, { recursive: true });
 await cp(resolve(packageDir, "../trust-registry-ui/brand.css"), resolve(distDir, "brand.css"));
 await cp(resolve(packageDir, "../trust-registry-ui/midnight-logo.svg"), resolve(distDir, "midnight-logo.svg"));
 await cp(resolve(packageDir, "../trust-registry-ui/midnight-mark.svg"), resolve(distDir, "midnight-mark.svg"));
-await buildEmbeddedManual(resolve(distDir, "registry-manual.html"));
+await buildEmbeddedManual(resolve(distDir, "registry-manual.html"), "admin");
 await mkdir(resolve(distDir, "fonts"), { recursive: true });
 await cp(resolve(packageDir, "../trust-registry-ui/fonts/outfit-latin.woff2"), resolve(distDir, "fonts/outfit-latin.woff2"));

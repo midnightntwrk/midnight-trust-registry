@@ -8,6 +8,23 @@ const localHealth = { status: "ok", sourceMode: "local-ledger", registryId: "reg
   generatedAt: "2026-10-25T00:00:00Z" };
 
 describe("trust registry applicant portal app", () => {
+  it("keeps DID sign-in in Settings and does not imply a role when signed out", async () => {
+    const root = document.createElement("div");
+    document.body.replaceChildren(root);
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/health") return Response.json({ status: "ok", sourceMode: "workspace", registryId: "registry:local" });
+      if (path === "/v1/registry/summary") return Response.json({ registryLabel: "local", registryId: "registry:local" });
+      return Response.json({ entries: [] });
+    });
+    createApplicantPortalApp(root, { initialUrl: new URL("http://127.0.0.1:4175/"),
+      storage: { getItem: () => null, setItem: () => {} } as unknown as Storage,
+      fetchImpl: fetchImpl as typeof fetch });
+    await vi.waitFor(() => expect(root.querySelector("#portal-profile-heading")).not.toBeNull());
+    expect(root.querySelector("[data-did-sign-in]")?.hasAttribute("disabled")).toBe(true);
+    expect(root.querySelector("#connection-details")?.textContent).toContain("Sign-in does not grant a registry role");
+    expect(root.querySelector(".content [data-did-sign-in]")).toBeNull();
+  });
   it("keeps fixture shortcuts opt-in and collapses empty record categories", async () => {
     const root = document.createElement("div");
     document.body.replaceChildren(root);
@@ -26,10 +43,12 @@ describe("trust registry applicant portal app", () => {
     expect(root.querySelector("#demo-application")).toBeNull();
     expect(root.textContent).not.toContain("credentialFamily");
     expect(root.querySelectorAll("#trust-records .lane")).toHaveLength(0);
-    expect(root.textContent).toContain("No active records in this fixture yet.");
+    expect(root.textContent).toContain("No active sample records yet.");
     expect(root.querySelector(".advanced-tools")).not.toBeNull();
     await renderAt("http://127.0.0.1:4175/?demo=1&apiBase=http://127.0.0.1:4400");
     expect(root.querySelector("#demo-application")).not.toBeNull();
+    expect(root.querySelector(".settings-view #demo-application")).not.toBeNull();
+    expect(root.querySelector(".content #demo-application")).toBeNull();
     await renderAt("https://registry.example/?demo=1&apiBase=http://127.0.0.1:4400");
     expect(root.querySelector("#demo-application")).toBeNull();
   });

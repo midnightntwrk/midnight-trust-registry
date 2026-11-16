@@ -473,7 +473,7 @@ for (const app of ["admin-console", "applicant-portal"]) {
       await expect(refresh).toBeDisabled();
       await expect(page.getByText("Unverified current API claim", { exact: false })).toHaveCount(0);
       releaseHealth();
-      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
       await expect(refresh).toBeFocused();
       await expect(page.locator("#exact-lookup, #current-authorization-lookup")).toHaveCount(0);
       await expect(page.getByText("Unverified current API claim", { exact: false })).toHaveCount(0);

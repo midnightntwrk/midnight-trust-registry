@@ -13,6 +13,11 @@
   --font-mono: "IBM Plex Mono", "SFMono-Regular", monospace;
 }
 
+.practice-card { grid-column: 1 / -1; }
+.practice-control-content { display: grid; gap: 1rem; padding-top: 1rem; }
+.practice-control-content > section,
+.practice-control-content > form { min-width: 0; margin: 0; }
+
 * {
   box-sizing: border-box;
 }
@@ -368,6 +373,12 @@ textarea {
   flex-wrap: wrap;
   gap: 0.6rem;
 }
+.review-checks { min-width: 0; padding: 0.9rem 1rem; border: 1px solid var(--midnight-border); border-radius: 12px; background: var(--midnight-white); }
+.review-checks h3 { margin: 0 0 0.65rem; font-size: 0.92rem; }
+.review-checks ul { display: grid; gap: 0.65rem; margin: 0; padding: 0; list-style: none; }
+.review-checks li { display: grid; gap: 0.15rem; min-width: 0; padding-left: 0.7rem; border-left: 2px solid var(--midnight-border); }
+.review-checks strong { font-size: 0.78rem; }
+.review-checks span { color: var(--midnight-muted); font-size: 0.76rem; line-height: 1.4; }
 
 .governed-panel {
   display: grid;
@@ -569,17 +580,19 @@ body {
 .technical-details summary { cursor: pointer; color: var(--midnight-blue); font-weight: 700; }
 .technical-details dl { margin-top: 0.9rem; }
 .governed-actions { min-width: 0; border-top: 1px solid var(--midnight-border); padding-top: 0.8rem; }
-.governed-actions > summary { cursor: pointer; color: var(--midnight-blue); font-size: 0.85rem; font-weight: 700; }
+.governed-actions > summary { width: fit-content; max-width: 100%; min-height: 2.75rem; padding: 0.7rem 0.85rem; border: 1px solid var(--midnight-border); border-radius: 9px; background: var(--midnight-blue-soft); color: var(--midnight-blue); cursor: pointer; font-size: 0.85rem; font-weight: 700; overflow-wrap: anywhere; }
+.governed-actions > summary:hover, .governed-actions > summary:focus-visible { border-color: var(--midnight-blue); }
 .governed-actions > .governed-panel { margin-top: 0.75rem; }
 .governed-panel { background: var(--midnight-white); }
 .proposal-panel { margin-top: 1.2rem; }
 .advanced-workflows { margin-top: 1.5rem; }
 .advanced-workflows > summary { cursor: pointer; padding: 1rem 1.25rem; border: 1px solid var(--midnight-border); border-radius: 12px; background: var(--midnight-white); font-weight: 700; }
 .advanced-workflows[open] > summary { border-color: var(--midnight-blue); }
-.governance-task-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem; margin-top: 0.75rem; }
-.governance-task-grid a { display: grid; gap: 0.3rem; min-width: 0; padding: 0.9rem 1rem; border: 1px solid var(--midnight-border); border-radius: 10px; background: var(--midnight-white); color: var(--midnight-black); text-decoration: none; }
-.governance-task-grid a:hover, .governance-task-grid a:focus-visible { border-color: var(--midnight-blue); }
-.governance-task-grid span { color: var(--midnight-muted); font-size: 0.78rem; }
+.governance-task { min-width: 0; margin-top: 0.75rem; }
+.governance-task > summary { min-height: 3.5rem; padding: 0.9rem 1rem; border: 1px solid var(--midnight-border); border-radius: 10px; background: var(--midnight-white); color: var(--midnight-black); cursor: pointer; }
+.governance-task > summary:hover, .governance-task > summary:focus-visible, .governance-task[open] > summary { border-color: var(--midnight-blue); }
+.governance-task > summary strong { font-weight: 700; }
+.governance-task > summary span { display: block; margin-top: 0.3rem; color: var(--midnight-muted); font-size: 0.78rem; }
 .advanced-workflows .proposal-panel { margin-bottom: 0; }
 .advanced-workflows .epoch-panel { display: grid; gap: 0.75rem; margin-top: 1rem; padding: 1rem; }
 .empty-state { background: var(--midnight-white); }
@@ -598,7 +611,6 @@ body {
 @media (max-width: 760px) {
   .shell { width: calc(100vw - 1rem); }
   .hero { padding: 1rem; }
-  .governance-task-grid { grid-template-columns: minmax(0, 1fr); }
   .board { grid-template-columns: minmax(0, 1fr); }
   .card-top { align-items: start; }
   .hero > .metrics { grid-template-columns: repeat(auto-fit, minmax(min(8rem, 100%), 1fr)); }

@@ -105,8 +105,8 @@ test("applicant inspects and downloads bounded historical recognition and author
   try {
     allowedLocalOrigins.add(base);
     await page.goto(`${base}/?apiBase=${encodeURIComponent(base)}`);
-    await expect(page.locator(".source-badge")).toHaveText("Local fixture");
-    await expect(page.locator(".journey-prerequisite")).toContainText("host must authenticate your session");
+    await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
+    await expect(page.locator(".journey-prerequisite")).toContainText("ask your host to connect a digital identity signer");
     await page.locator(".advanced-tools > summary").click();
     await page.locator('[data-workflow="Recover external recognition"] > summary').click();
     const recovery = page.locator("[data-recognition-recovery-form]");

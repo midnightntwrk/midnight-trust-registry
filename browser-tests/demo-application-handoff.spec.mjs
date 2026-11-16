@@ -125,7 +125,11 @@ for (const target of ["issuer", "recognition"]) {
         return dialog.accept();
       });
       await page.goto(`${base}/applicant/?demo=1&apiBase=${encodeURIComponent(base)}`);
-      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
+      await expect(page.locator("#demo-application")).toBeHidden();
+      await expect(page.locator(".content #demo-application")).toHaveCount(0);
+      await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
+      await expect(page.locator(".settings-view #demo-application")).toBeVisible();
       await expect(page.locator("#demo-application .demo-target-option")).toHaveCount(3);
       await expect(page.locator("#demo-application")).not.toContainText("credential families");
       if (target === "issuer") {
@@ -142,12 +146,14 @@ for (const target of ["issuer", "recognition"]) {
       await expect(page.locator("#demo-application [name='label']")).toBeEmpty();
 
       await page.goto(`${base}/admin/?demo=1&apiBase=${encodeURIComponent(base)}`);
-      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
       await expect(page.getByRole("heading", { name: "Decisions that need attention" })).toBeVisible();
       await expect(page.locator(".card")).toContainText(label);
       await expect(page.locator(".card .status-chip")).toHaveText("Proposed");
       await expect(page.locator(".card .meta-row").first()).toHaveText("Requested trust level: approved");
-      await expect(page.locator('[data-action="approve"]')).toHaveText("Approve in demo");
+      await page.locator(".task-nav a").filter({ hasText: "Workspace settings" }).click();
+      await page.locator(".practice-controls > summary").click();
+      await expect(page.locator('[data-action="approve"]')).toHaveText("Approve sample record");
       await expectNoWcagViolations(page, `${target} proposed review`);
       if (process.env.TR_UI_CAPTURE === "1") {
         await page.screenshot({ path: testInfo.outputPath(`${target}-proposed-review.png`), fullPage: true });
@@ -155,7 +161,7 @@ for (const target of ["issuer", "recognition"]) {
       await page.locator('[data-action="approve"]').click();
       await expect(page.locator(".card .status-chip")).toHaveText("Authorized");
       await expect(page.locator(".card .meta-row").first()).toHaveText("Authorized trust level: approved");
-      await expect(page.locator('[data-action="activate"]')).toHaveText("Activate in demo");
+      await expect(page.locator('[data-action="activate"]')).toHaveText("Activate sample record");
       await page.locator('[data-action="activate"]').click();
       await expect(page.locator(".card .status-chip")).toHaveText("Active");
       await expect(page.locator(".card .meta-row").first()).toHaveText("Trust level: approved");
@@ -165,11 +171,12 @@ for (const target of ["issuer", "recognition"]) {
         expect(message).toContain("Exact record:");
         expect(message).toContain("This does not change the deployed ledger.");
       }
+      await page.locator(".settings-back").click();
       await expect(page.getByRole("heading", { name: "Registry review workspace" })).toBeVisible();
       await expect(page.locator(".column")).toHaveCount(1);
 
       await page.goto(`${base}/applicant/?demo=1&apiBase=${encodeURIComponent(base)}`);
-      await expect(page.locator(".source-badge")).toHaveText("Local fixture");
+      await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
       await expect(page.locator("#trust-records article")).toContainText(label);
       await expect(page.locator(".source-panel")).toContainText("not deployed ledger evidence");
       await expectNoWcagViolations(page, `${target} active applicant record`);

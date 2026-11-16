@@ -34,12 +34,58 @@ const auditor = {
 };
 
 describe("admin console browser handlers", () => {
+  it("keeps DID sign-in in Settings as identity, not governance authority", async () => {
+    const root = document.createElement("div");
+    document.body.replaceChildren(root);
+    const now = Date.parse("2026-11-15T00:00:00.000Z");
+    const origin = "http://127.0.0.1:4173";
+    const actorDid = `did:midnight:undeployed:${"ab".repeat(32)}`;
+    const actorKeyId = `${actorDid}#auth-1`;
+    const challenge = { version: "tr-actor-authentication-v1", registryId: "registry:local",
+      genesisHash: `0x${"11".repeat(32)}`, contractAddress: `0x${"22".repeat(32)}`,
+      origin, purpose: "maintainer-session", actorDid, actorKeyId,
+      nonce: `0x${"33".repeat(32)}`, issuedAt: new Date(now).toISOString(),
+      expiresAt: new Date(now + 120_000).toISOString() };
+    const token = `trsa_${"a".repeat(43)}`;
+    const requests: string[] = [];
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const path = new URL(String(input)).pathname;
+      requests.push(`${init?.method ?? "GET"} ${path}`);
+      if (path === "/health") return Response.json({ status: "ok", sourceMode: "workspace", registryId: "registry:local" });
+      if (path === "/v1/registry/summary") return Response.json({ registryId: "registry:local",
+        registryLabel: "local", currentEpochId: "epoch:1", issuerCounts: counts(),
+        verifierCounts: counts(), auditorCounts: counts(), recognitionCounts: counts() });
+      if (path.endsWith("/challenges")) return Response.json(challenge);
+      if (path.endsWith("/sessions")) return Response.json({ actorDid, actorKeyId,
+        purpose: "maintainer-session", accessToken: token, expiresAt: new Date(now + 900_000).toISOString() });
+      if (path.endsWith("/session") && init?.method === "DELETE") return new Response(null, { status: 204 });
+      return Response.json({ entries: [] });
+    });
+    createAdminConsoleApp(root, { initialUrl: new URL(`${origin}/admin/`),
+      storage: window.localStorage, fetchImpl: fetchImpl as typeof fetch, clock: () => now,
+      confirm: () => false,
+      didSigner: { getIdentity: async () => ({ actorDid, actorKeyId }),
+        signDigest: async () => ({ keyId: actorKeyId, algorithm: "jubjub-schnorr", value: `0x${"aa".repeat(96)}` }) } });
+    await vi.waitFor(() => expect(root.querySelector<HTMLButtonElement>("[data-did-sign-in]")?.disabled).toBe(false));
+    expect(root.querySelector("#workspace-settings")?.textContent).toContain("does not grant a maintainer role");
+    root.querySelector<HTMLButtonElement>("[data-did-sign-in]")!.click();
+    await vi.waitFor(() => expect(root.querySelector("[data-did-sign-out]")).not.toBeNull());
+    expect(root.querySelector("#workspace-settings")?.textContent).toContain(actorDid);
+    expect(root.innerHTML).not.toContain(token);
+    expect(requests).toContain("POST /v1/actor-authentication/challenges");
+    expect(requests).toContain("POST /v1/actor-authentication/sessions");
+    root.querySelector<HTMLButtonElement>("[data-did-sign-out]")!.click();
+    await vi.waitFor(() => expect(root.querySelector("[data-did-sign-in]")).not.toBeNull());
+    expect(requests).toContain("DELETE /v1/actor-authentication/session");
+  });
+
   it("hides fixture shortcut actions unless local demo mode is explicit", async () => {
     const root = document.createElement("div");
     document.body.replaceChildren(root);
+    let sourceMode = "workspace";
     const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
       const path = new URL(String(input)).pathname;
-      if (path === "/health") return Response.json({ status: "ok", sourceMode: "workspace", registryId: "registry:local" });
+      if (path === "/health") return Response.json({ status: "ok", sourceMode, registryId: "registry:local" });
       if (path === "/v1/registry/summary") return Response.json({ registryLabel: "local", currentEpochId: "epoch:1",
         issuerCounts: counts(), verifierCounts: counts(), auditorCounts: { ...counts(), active: 1 }, recognitionCounts: counts() });
       return Response.json({ entries: path === "/v1/authorizations/auditor" ? [auditor] : [] });
@@ -53,9 +99,20 @@ describe("admin console browser handlers", () => {
     expect(root.querySelector("[data-action]")).toBeNull();
     expect(root.querySelector("#task-epoch")).toBeNull();
     expect(root.textContent).toContain("1 of 1 record shown");
+    expect(root.querySelector(".review-filters")?.textContent).toContain("Browse registry records");
+    expect(root.querySelector(".review-checks")?.textContent).toContain("this list does not prove current key control");
+    expect(root.querySelector(".review-checks")?.textContent).toContain("Digital identity sign-in is not a vote");
     expect(root.querySelector(".column-header")?.textContent).toContain("1 item");
     await renderAt("http://127.0.0.1:4173/?demo=1&apiBase=http://127.0.0.1:4400");
     expect(root.querySelector("[data-action]")).not.toBeNull();
+    expect(root.querySelector("#workspace-settings [data-action]")).not.toBeNull();
+    expect(root.querySelector("#selected-record-detail [data-action]")).toBeNull();
+    expect(root.querySelector("#workspace-settings #task-epoch")).not.toBeNull();
+    expect(root.querySelector(".advanced-workflows #task-epoch")).toBeNull();
+    sourceMode = "snapshot";
+    await renderAt("http://127.0.0.1:4173/?demo=1&apiBase=http://127.0.0.1:4400");
+    expect(root.querySelector("[data-action], #task-epoch, #task-signed-intent")).toBeNull();
+    sourceMode = "workspace";
     await renderAt("https://registry.example/?demo=1&apiBase=http://127.0.0.1:4400");
     expect(root.querySelector("[data-action]")).toBeNull();
   });
@@ -371,6 +428,8 @@ describe("admin console browser handlers", () => {
     });
 
     await vi.waitFor(() => expect(root.querySelector("[data-governed-prepare]")).not.toBeNull());
+    expect(root.querySelector(".review-filters")?.textContent).toContain("Requests awaiting action");
+    expect(root.querySelector(".review-filters")?.textContent).toContain("1 source-reported request needs action");
     root.querySelector<HTMLButtonElement>("[data-governed-prepare]")!.click();
     await vi.waitFor(() => expect(root.querySelector("[data-governed-submit]")).not.toBeNull());
     expect(root.textContent).toContain(prepared.policyCommitment);

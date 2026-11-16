@@ -231,6 +231,18 @@ describe("local list projection gate", () => {
 });
 
 describe("private application VP exchange", () => {
+  it("sends a DID bearer token only to the matching private API origin", async () => {
+    const fetchImpl = vi.fn(async () => Response.json({ applicationId: "application:issuer:one" })) as typeof fetch;
+    const session = { accessToken: `trsa_${"a".repeat(43)}`, pageOrigin: "https://registry.example" };
+    const client = new TrustRegistryApplicantPortalClient("https://registry.example", fetchImpl, session);
+    await client.loadPendingApplicationBinding("application:issuer:one");
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://registry.example/v1/application-evidence/application%3Aissuer%3Aone/binding",
+      { method: "GET", credentials: "omit", headers: { authorization: `Bearer ${session.accessToken}` } },
+    );
+    expect(() => new TrustRegistryApplicantPortalClient("https://other.example", fetchImpl, session))
+      .toThrow("different API origin");
+  });
   it("uses same-origin private routes for recognition challenge, accreditation, and receipt recovery", async () => {
     const calls: { url: string; init: RequestInit }[] = [];
     const receipt = { receiptId: `0x${"11".repeat(32)}`, evidenceCommitment: `0x${"22".repeat(32)}` };

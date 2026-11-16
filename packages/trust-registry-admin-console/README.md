@@ -10,6 +10,11 @@ its browser-local 3-of-5 exercise is not a real committee signature.
 
 Current scope:
 
+- optional same-origin DID challenge-response sign-in in Workspace settings,
+  with an external signer and a short-lived in-memory `maintainer-session`
+  token; it identifies the actor only and never grants maintainer authority,
+  VP eligibility, or quorum participation. The console does not attach this
+  token to governance requests
 - inspect registry summary and epoch metadata from the API
 - in current-only local-ledger mode, show the summary and require an exact
   issuer/verifier/auditor authorization or recognition ID for a current record;
@@ -95,7 +100,9 @@ Notes:
   fields across reload or host changes. Simulator observation is not network
   finality
 - fixture shortcut actions, epoch publication, and workspace-intent controls
-  are hidden by default. Add `demo=1` to a loopback console URL to show them.
+  are hidden by default. Add `demo=1` to a loopback console URL and open
+  **Workspace settings > Practice controls** to show them on a mutable fixture
+  source. Read-only snapshots and local-ledger sources never show these tools.
   This presentation switch grants no API permissions: the fixture API also
   requires `--unsafe-demo-mutations` on loopback. Omit both for ordinary use
 - auditor cards show the exact composite request-resource ID, policy, epoch,

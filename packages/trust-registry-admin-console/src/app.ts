@@ -8,6 +8,12 @@ import type {
   PreparedGovernedPolicyAction,
   TrustRegistryApiApplicationAction,
 } from "@midnight-ntwrk/trust-registry-api";
+import {
+  signInActorDid,
+  signOutActorDid,
+  type ActorDidSession,
+  type ActorDidSigner,
+} from "@midnight-ntwrk/trust-registry-client/browser-authentication";
 
 import {
   TrustRegistryAdminConsoleApiError,
@@ -68,6 +74,10 @@ type AppState = {
   policySignersJson: string;
   policyRegistrationPending: boolean;
   selectedKey: string | undefined;
+  didSession: ActorDidSession<"maintainer-session"> | undefined;
+  didSourceMode: string | undefined;
+  didBusy: boolean;
+  didError: string | undefined;
 };
 
 const escapeHtml = (value: string): string =>
@@ -171,14 +181,22 @@ export const createAdminConsoleApp = (
     storage?: Storage;
     confirm?: (message: string) => boolean | Promise<boolean>;
     demoMode?: boolean;
+    didSigner?: ActorDidSigner;
+    clock?: () => number;
   } = {},
 ): void => {
   const initialUrl = options.initialUrl ?? new URL(window.location.href);
   const demoMode = (options.demoMode ?? initialUrl.searchParams.get("demo") === "1")
     && ["localhost", "127.0.0.1", "[::1]"].includes(initialUrl.hostname);
+  const hasMutablePracticeSource = () => demoMode
+    && (state.board?.sourceMode === "workspace" || state.board?.sourceMode === "memory");
   const storage = options.storage ?? window.localStorage;
   const fetchImpl = options.fetchImpl ?? window.fetch.bind(window);
   const confirm = options.confirm ?? window.confirm.bind(window);
+  const clock = options.clock ?? Date.now;
+  const didSigner = () => options.didSigner ?? (window as Window & {
+    midnightTrustRegistryDidSigner?: ActorDidSigner;
+  }).midnightTrustRegistryDidSigner;
   const sameOriginApi = initialUrl.pathname.startsWith("/admin/");
   const queryBase = initialUrl.searchParams.get("apiBase");
   const rememberedBase = storage.getItem(STORAGE_KEY);
@@ -220,6 +238,10 @@ export const createAdminConsoleApp = (
     policySignersJson: "",
     policyRegistrationPending: false,
     selectedKey: undefined,
+    didSession: undefined,
+    didSourceMode: undefined,
+    didBusy: false,
+    didError: undefined,
   };
   let signedContextRequestId = 0;
   let hostRevision = 0;
@@ -237,8 +259,57 @@ export const createAdminConsoleApp = (
   const getClient = (): TrustRegistryAdminConsoleClient =>
     new TrustRegistryAdminConsoleClient(state.apiBase, fetchImpl);
 
+  const canUseDidHost = () => {
+    const api = new URL(state.apiBase);
+    return api.origin === initialUrl.origin && api.username === "" && api.password === ""
+      && (api.protocol === "https:" || ["localhost", "127.0.0.1", "[::1]"].includes(api.hostname));
+  };
+  const liveDidSession = () => state.didSession !== undefined && Date.parse(state.didSession.expiresAt) > clock()
+    ? state.didSession : undefined;
+
+  const signInDid = async () => {
+    const signer = didSigner();
+    const board = state.board;
+    if (state.didBusy || signer === undefined || board === undefined || !canUseDidHost()) return;
+    const host = currentHost();
+    setState({ didBusy: true, didError: undefined, didSession: undefined, didSourceMode: undefined });
+    try {
+      const session = await signInActorDid({
+        apiBase: host.apiBase, pageOrigin: initialUrl.origin, registryId: board.summary.registryId,
+        purpose: "maintainer-session",
+        ...(board.sourceMode === "local-ledger" && board.deploymentIdentity !== undefined
+          ? { deploymentIdentity: board.deploymentIdentity } : {}),
+        signer, fetchImpl, clock,
+      });
+      if (!isCurrentHost(host) || state.board?.summary.registryId !== board.summary.registryId
+        || state.board?.sourceMode !== board.sourceMode
+        || state.board?.deploymentIdentity?.expectedGenesisHash !== board.deploymentIdentity?.expectedGenesisHash
+        || state.board?.deploymentIdentity?.contractAddress !== board.deploymentIdentity?.contractAddress) {
+        void signOutActorDid({ apiBase: host.apiBase, pageOrigin: initialUrl.origin, session, fetchImpl }).catch(() => undefined);
+        return;
+      }
+      setState({ didSession: session, didSourceMode: board.sourceMode, didBusy: false });
+    } catch (error) {
+      if (isCurrentHost(host)) setState({ didBusy: false, didError: formatApiError(error) });
+    }
+  };
+
+  const signOutDid = async () => {
+    const session = state.didSession;
+    if (session === undefined) return;
+    const host = currentHost();
+    setState({ didSession: undefined, didSourceMode: undefined, didError: undefined });
+    try {
+      await signOutActorDid({ apiBase: host.apiBase, pageOrigin: initialUrl.origin, session, fetchImpl });
+    } catch {
+      if (isCurrentHost(host)) {
+        setState({ didError: "The local session is cleared. Server revocation was not confirmed; the token expires within 15 minutes." });
+      }
+    }
+  };
+
   const loadSignedContext = async () => {
-    if (state.signedBusy || state.board === undefined || state.board.sourceMode === "local-ledger") return;
+    if (state.signedBusy || !hasMutablePracticeSource()) return;
     const requestId = ++signedContextRequestId;
     setState({ signedBusy: true, signedContext: undefined, error: undefined, flash: undefined });
     try {
@@ -252,8 +323,7 @@ export const createAdminConsoleApp = (
   };
 
   const submitSignedAction = async (raw: string) => {
-    if (state.signedBusy || state.signedContext === undefined
-      || state.board === undefined || state.board.sourceMode === "local-ledger") return;
+    if (state.signedBusy || state.signedContext === undefined || !hasMutablePracticeSource()) return;
     const host = currentHost();
     let candidate: unknown;
     try {
@@ -322,9 +392,19 @@ export const createAdminConsoleApp = (
         && cards.some((card) => card.key === state.selectedKey)
         ? state.selectedKey
         : cards[0]?.key;
+      const currentSession = state.didSession;
+      const sessionMatchesSource = currentSession !== undefined
+        && state.didSourceMode === board.sourceMode
+        && currentSession.registryId === board.summary.registryId
+        && (board.deploymentIdentity === undefined
+          || currentSession.genesisHash === board.deploymentIdentity.expectedGenesisHash
+            && currentSession.contractAddress === board.deploymentIdentity.contractAddress);
       setState({
         board,
         cards,
+        didSession: sessionMatchesSource ? currentSession : undefined,
+        didSourceMode: sessionMatchesSource ? state.didSourceMode : undefined,
+        didBusy: false,
         governedKey: undefined,
         governedAction: undefined,
         governedPrepared: undefined,
@@ -343,6 +423,9 @@ export const createAdminConsoleApp = (
       setState({
         board: undefined,
         cards: [],
+        didSession: undefined,
+        didSourceMode: undefined,
+        didBusy: false,
         error: formatApiError(error),
         flash: undefined,
         governedKey: undefined,
@@ -387,8 +470,7 @@ export const createAdminConsoleApp = (
   const runAction = async (
     action: TrustRegistryApiApplicationAction,
   ) => {
-    if (!demoMode || state.loading || state.publishing || state.governedBusy
-      || state.board === undefined || state.board.sourceMode === "local-ledger") return;
+    if (!hasMutablePracticeSource() || state.loading || state.publishing || state.governedBusy) return;
     const host = currentHost();
     const card = selectedCard();
     if (card === undefined) {
@@ -418,8 +500,7 @@ export const createAdminConsoleApp = (
   };
 
   const publishEpoch = async (label: string) => {
-    if (!demoMode || state.loading || state.publishing || state.governedBusy
-      || state.board === undefined || state.board.sourceMode === "local-ledger") return;
+    if (!hasMutablePracticeSource() || state.loading || state.publishing || state.governedBusy) return;
     const host = currentHost();
     setState({ publishing: true, error: undefined, flash: undefined });
     try {
@@ -704,6 +785,16 @@ export const createAdminConsoleApp = (
   };
 
   const bindEvents = () => {
+    root.querySelectorAll<HTMLDetailsElement>(".governance-task").forEach((task) => {
+      task.addEventListener("toggle", () => {
+        if (!task.open || !root.contains(task)) return;
+        root.querySelectorAll<HTMLDetailsElement>(".governance-task").forEach((other) => {
+          if (other !== task) other.open = false;
+        });
+      });
+    });
+    root.querySelector<HTMLButtonElement>("[data-did-sign-in]")?.addEventListener("click", () => { void signInDid(); });
+    root.querySelector<HTMLButtonElement>("[data-did-sign-out]")?.addEventListener("click", () => { void signOutDid(); });
     root.querySelectorAll<HTMLAnchorElement>(".mobile-task-menu nav a").forEach((link) => {
       link.addEventListener("click", () => {
         const menu = link.closest<HTMLDetailsElement>(".mobile-task-menu");
@@ -726,6 +817,12 @@ export const createAdminConsoleApp = (
         void refreshBoard();
         return;
       }
+      const priorSession = state.didSession;
+      const priorApiBase = state.apiBase;
+      if (priorSession !== undefined) {
+        void signOutActorDid({ apiBase: priorApiBase, pageOrigin: initialUrl.origin,
+          session: priorSession, fetchImpl }).catch(() => undefined);
+      }
       storage.setItem(STORAGE_KEY, apiBase);
       hostRevision += 1;
       boardRequestId += 1;
@@ -741,7 +838,8 @@ export const createAdminConsoleApp = (
         proposalPrepared: undefined, proposalSignersJson: "", proposalVerifierSignature: "",
         policyPhase: undefined, policyPrepared: undefined, policyPreparedThresholds: undefined,
         policySignersJson: "", policyThresholds: { default: "2", emergency: "2", archival: "2" },
-        policyRegistrationPending: false, error: undefined, flash: undefined });
+        policyRegistrationPending: false, error: undefined, flash: undefined,
+        didSession: undefined, didSourceMode: undefined, didBusy: false, didError: undefined });
       void refreshBoard();
     });
 
@@ -968,7 +1066,7 @@ export const createAdminConsoleApp = (
       ? state.governedPrepared : undefined;
     const sourceDescription = state.board?.sourceMode === "local-ledger"
       ? "This is a current API claim, not independently verified ledger finality."
-      : "This is a local fixture record, not deployed ledger evidence.";
+      : "This is a sample record in a practice workspace, not deployed ledger evidence.";
     const lifecycleDescription = card.status === "active"
       ? "This record is active in the displayed registry view."
       : card.status === "proposed" || card.status === "authorized"
@@ -983,6 +1081,14 @@ export const createAdminConsoleApp = (
           <p>${escapeHtml(card.target)} · <span class="status-chip ${escapeHtml(card.status)}">${escapeHtml(REVIEW_STATUS_LABELS[card.status])}</span></p>
         </div>
         <div class="record-meaning"><p class="eyebrow">What this means</p><p>${lifecycleDescription} ${sourceDescription}</p></div>
+        ${getReviewActions(card.status).length === 0 ? "" : `<section class="review-checks" aria-labelledby="review-checks-heading">
+          <h3 id="review-checks-heading">Check before acting</h3>
+          <ul>
+            <li><strong>Identity</strong><span>This record names a DID; this list does not prove current key control.</span></li>
+            <li><strong>Eligibility</strong><span>Check the redacted proof and its trusted status source. This board does not verify a verifiable presentation (VP).</span></li>
+            <li><strong>Authority</strong><span>Current maintainer membership, exact signatures, policy, and quorum are checked separately. Digital identity sign-in is not a vote.</span></li>
+          </ul>
+        </section>`}
         <div class="decision-summary"><h3>Decision summary</h3><dl>
           <div><dt>Role</dt><dd>${escapeHtml(card.target)}</dd></div>
           <div><dt>${trustLevelLabel(card.status)}</dt><dd>${escapeHtml(card.trustLevel)}</dd></div>
@@ -1000,11 +1106,11 @@ export const createAdminConsoleApp = (
         </dl></details>
         ${getReviewActions(card.status).length === 0 ? "" : `
           <details class="governed-actions" data-record-key="${escapeHtml(card.key)}"${prepared !== undefined || (governedActionsOpen && governedActionsKey === card.key) ? " open" : ""}>
-            <summary>Prepare a governed action</summary>
+            <summary>Next: review available actions</summary>
           <section class="governed-panel">
             <p class="eyebrow">Compact quorum</p>
-            <h3>External maintainer signatures</h3>
-            <p>Prepare the current ledger-bound action, have existing maintainers sign its policy-bound digest outside this browser, then submit their public keys and signatures. This console never handles private keys.</p>
+            <h3>Prepare an action for maintainer signing</h3>
+            <p>Opening this section does not cast a vote. Review the identifiers and evidence first, then prepare the current ledger-bound action. Existing maintainers sign its policy-bound digest outside this browser; this console never handles private keys.</p>
             ${getReviewActions(card.status).map((action) => `<button class="button secondary" type="button" data-governed-prepare="${escapeHtml(action)}"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Prepare ${escapeHtml(action)}</button>`).join("")}
             ${prepared === undefined ? "" : `
               <p>Sign this exact context. A changed sequence or policy requires a fresh preparation.</p>
@@ -1019,16 +1125,8 @@ export const createAdminConsoleApp = (
           </section>
           </details>
         `}
-        ${!demoMode || state.board?.sourceMode === "local-ledger" ? "" : `
-          <p class="eyebrow">Local fixture controls</p>
-          <div class="actions">
-            ${getReviewActions(card.status).map((action) => `
-              <button class="button${action === "archive" ? " ghost" : ""}" type="button" data-action="${escapeHtml(action)}"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>
-                ${escapeHtml(action.charAt(0).toUpperCase() + action.slice(1))} in demo
-              </button>
-            `).join("") || "<p>No maintainer actions available for this lifecycle state.</p>"}
-          </div>
-        `}
+        ${hasMutablePracticeSource() && getReviewActions(card.status).length > 0
+          ? '<p class="step-hint">Exploring sample data? Practice controls are in <a href="#workspace-settings">Workspace settings</a>.</p>' : ""}
       </aside>
     `;
   };
@@ -1043,7 +1141,13 @@ export const createAdminConsoleApp = (
     const focusKey = root.contains(document.activeElement)
       ? document.activeElement?.getAttribute("data-focus-key") : null;
     pendingFocusKey = focusKey ?? (root.contains(document.activeElement) ? null : pendingFocusKey);
-    const advancedOpen = root.querySelector<HTMLDetailsElement>(".advanced-workflows")?.open ?? false;
+    const advancedOpen = root.querySelector<HTMLDetailsElement>(".advanced-workflows")?.open
+      ?? ["#task-proposal", "#task-policy"].includes(window.location.hash);
+    const proposalTaskOpen = root.querySelector<HTMLDetailsElement>("#task-proposal")?.open
+      ?? window.location.hash === "#task-proposal";
+    const policyTaskOpen = root.querySelector<HTMLDetailsElement>("#task-policy")?.open
+      ?? window.location.hash === "#task-policy";
+    const practiceOpen = root.querySelector<HTMLDetailsElement>(".practice-controls")?.open ?? false;
     const previousGovernedActions = root.querySelector<HTMLDetailsElement>(".governed-actions");
     governedActionsOpen = previousGovernedActions?.open ?? false;
     governedActionsKey = previousGovernedActions?.dataset.recordKey;
@@ -1054,8 +1158,9 @@ export const createAdminConsoleApp = (
         ...card.detailRows.map((row) => row.value)].some((value) => value.toLocaleLowerCase().includes(normalizedQuery))));
     const groupedCards = groupReviewCards(visibleCards);
     const visibleKeys = new Set(visibleCards.map((card) => card.key));
-    const needsReview = state.board !== undefined && (
-      countCards(state.board, "proposed") + countCards(state.board, "authorized") > 0);
+    const pendingReviewCount = state.board === undefined ? 0
+      : countCards(state.board, "proposed") + countCards(state.board, "authorized");
+    const needsReview = pendingReviewCount > 0;
     const reviewTitle = state.board === undefined ? "Connect to review records"
       : state.board.sourceMode === "local-ledger" ? "Inspect current records"
         : needsReview ? "Decisions that need attention" : "Registry review workspace";
@@ -1080,7 +1185,7 @@ export const createAdminConsoleApp = (
           ? "Connect or retry to inspect this source. No trust decision is available."
           : state.board.sourceMode === "snapshot"
             ? "This read-only snapshot is not authenticated ledger finality or authorization evidence."
-          : "Fixture records are for exploration, not deployed ledger evidence.";
+          : "This practice workspace shows sample records, not deployed ledger evidence.";
     const taskLinks = `
       <a href="#review-board">Review records</a>
       <a href="./registry-manual.html">Registry Manual</a>
@@ -1088,6 +1193,11 @@ export const createAdminConsoleApp = (
       <a href="#advanced-governance">Advanced governance</a>
     `;
     const deploymentIdentity = state.board?.sourceMode === "local-ledger" ? state.board.deploymentIdentity : undefined;
+    const activeDidSession = liveDidSession();
+    const didSignerAvailable = didSigner() !== undefined;
+    const didHostAvailable = canUseDidHost();
+    const practiceSource = hasMutablePracticeSource();
+    const practiceCard = selectedCard();
     const deploymentNotice = state.loading && state.board !== undefined
       ? "Rechecking this source. The identity below is from the last completed browser check and may be stale; do not rely on it until the check finishes."
       : state.board === undefined
@@ -1117,8 +1227,8 @@ export const createAdminConsoleApp = (
           ${state.error === undefined ? "" : `<div class="alert error" role="alert">${escapeHtml(state.error)}</div>`}
           ${state.flash === undefined ? "" : `<div class="alert success" role="status">${escapeHtml(state.flash)}</div>`}
           <div class="source-panel" data-source-state="${state.loading ? "loading" : state.board?.sourceMode === "local-ledger" ? "local-ledger" : state.board === undefined ? "unavailable" : state.board.sourceMode === "snapshot" ? "snapshot" : "fixture"}" role="status" aria-live="polite">
-            <span class="source-badge">${state.loading ? "Checking" : state.board === undefined ? "Unavailable" : state.board.sourceMode === "local-ledger" ? "API claim" : state.board.sourceMode === "snapshot" ? "Snapshot" : "Local fixture"}</span>
-            <div class="source-copy"><strong>${state.loading ? "Loading registry data" : state.board === undefined ? "No current registry data" : state.board.sourceMode === "local-ledger" ? "Current local-ledger API response" : state.board.sourceMode === "snapshot" ? "Read-only registry snapshot" : "Demo workspace data"}</strong>
+            <span class="source-badge">${state.loading ? "Checking" : state.board === undefined ? "Unavailable" : state.board.sourceMode === "local-ledger" ? "API claim" : state.board.sourceMode === "snapshot" ? "Snapshot" : "Practice workspace"}</span>
+            <div class="source-copy"><strong>${state.loading ? "Loading registry data" : state.board === undefined ? "No current registry data" : state.board.sourceMode === "local-ledger" ? "Current local-ledger API response" : state.board.sourceMode === "snapshot" ? "Read-only registry snapshot" : "Sample workspace data"}</strong>
               <span>${sourceMessage}</span>
             </div>
             ${state.observedAt === undefined || state.loading ? "" : `<span class="source-time">Checked <time datetime="${escapeHtml(state.observedAt)}">${escapeHtml(formatReviewTime(state.observedAt))}</time> (browser clock)</span>`}
@@ -1133,6 +1243,19 @@ export const createAdminConsoleApp = (
             <p>Check the source this browser is using and the deployment identity reported by the API. These details do not change registry governance.</p>
           </div>
           <div class="settings-cards">
+            <section class="settings-card portal-profile-card" aria-labelledby="admin-did-heading">
+              <p class="eyebrow">Identity</p>
+              <h2 id="admin-did-heading">Digital identity sign-in</h2>
+              <p>Use your decentralized identifier (DID) to identify yourself. Sign-in does not grant a maintainer role, voting authority, or eligibility proof. Governed actions still require separate external signatures and policy checks.</p>
+              ${activeDidSession === undefined
+                ? `<p class="portal-profile-status">${didSignerAvailable ? "A DID signer is available." : "No DID signer is connected to this browser. Ask your host to provide one before signing in."}</p>
+                  <button class="button" type="button" data-did-sign-in data-focus-key="did-sign-in"${state.didBusy || !didSignerAvailable || !didHostAvailable || state.board === undefined ? " disabled" : ""}>${state.didBusy ? "Signing in…" : "Sign in with DID"}</button>
+                  ${didHostAvailable ? "" : '<p class="step-hint">Sign-in requires the same-origin API host.</p>'}`
+                : `<p class="portal-profile-status">Signed in as <strong class="technical-id">${escapeHtml(activeDidSession.actorDid)}</strong></p>
+                  <p class="step-hint">Identity only. Your maintainer authority is checked separately.</p>
+                  <button class="button secondary" type="button" data-did-sign-out data-focus-key="did-sign-out">Sign out</button>`}
+              ${state.didError === undefined ? "" : `<p class="alert error" role="alert">${escapeHtml(state.didError)}</p>`}
+            </section>
             <section class="settings-card" aria-labelledby="admin-connection-heading">
               <p class="eyebrow">Connection</p>
               <h2 id="admin-connection-heading">API and source</h2>
@@ -1185,8 +1308,43 @@ export const createAdminConsoleApp = (
               <h2 id="admin-signing-heading">External signing</h2>
               <p>Governed actions require an external signer. This browser prepares exact context but does not hold private keys or establish actor authority.</p>
             </section>
+            ${practiceSource ? `<section class="settings-card practice-card" aria-labelledby="practice-heading">
+              <p class="eyebrow">Local practice</p>
+              <h2 id="practice-heading">Practice controls</h2>
+              <p>These actions change only this local workspace. They do not grant ledger authority or prove finality.</p>
+              <details class="settings-technical practice-controls"${practiceOpen ? " open" : ""}>
+                <summary>Open practice controls</summary>
+                <div class="practice-control-content">
+                  <section aria-labelledby="practice-record-heading">
+                    <h3 id="practice-record-heading">Selected record</h3>
+                    <p>${practiceCard === undefined ? "Select a record in the review workspace first." : escapeHtml(practiceCard.label)}</p>
+                    ${practiceCard === undefined ? "" : `<div class="actions">
+                      ${getReviewActions(practiceCard.status).map((action) => `<button class="button${action === "archive" ? " ghost" : ""}" type="button" data-action="${escapeHtml(action)}"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>${escapeHtml(action.charAt(0).toUpperCase() + action.slice(1))} sample record</button>`).join("") || "<p>No practice actions for this lifecycle state.</p>"}
+                    </div>`}
+                  </section>
+                  <form class="epoch-panel governed-panel" id="task-epoch" data-epoch-form>
+                    <label>Workspace checkpoint label
+                      <input class="input" data-epoch-label type="text" value="${escapeHtml(state.epochLabel)}" placeholder="optional operator label" />
+                    </label>
+                    <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Publish practice checkpoint</button>
+                  </form>
+                  <section class="proposal-panel governed-panel" id="task-signed-intent">
+                    <h3>Signed workspace intent</h3>
+                    <p>Load the current workspace context, sign a maintainer action outside this browser, and paste only the signed envelope. This is separate from Compact quorum governance and never handles private keys.</p>
+                    <button class="button secondary" type="button" data-signed-context${state.signedBusy ? " disabled" : ""}>Load signing context</button>
+                    ${state.signedContext === undefined ? "" : `<pre class="governed-context mono">${escapeHtml(JSON.stringify(state.signedContext, null, 2))}</pre>`}
+                    <form data-signed-submit>
+                      <label>Externally signed envelope
+                        <textarea class="input mono governed-signers" name="signedEnvelope" spellcheck="false" autocomplete="off" required></textarea>
+                      </label>
+                      <button class="button" type="submit"${state.signedBusy || state.signedContext === undefined ? " disabled" : ""}>Submit signed action</button>
+                    </form>
+                  </section>
+                </div>
+              </details>
+            </section>` : ""}
           </div>
-          <div class="settings-footer"><strong>No account profile in this browser</strong><p>The authenticated host and external signer establish who may act. Deployment identity and governance cannot be changed here.</p></div>
+          <div class="settings-footer"><strong>Identity is not authority</strong><p>The DID session is temporary and stays in browser memory. Maintainer authorization, external signing, and governance policy are separate.</p></div>
         </section>
         ${state.board?.sourceMode === "local-ledger" ? `
           <section class="proposal-panel governed-panel" id="exact-lookup">
@@ -1209,34 +1367,9 @@ export const createAdminConsoleApp = (
           </section>
         ` : ""}
         <details class="advanced-workflows" id="advanced-governance"${advancedOpen ? " open" : ""}><summary>Advanced governance and signing actions</summary>
-        ${state.board === undefined ? `<p class="settings-note">Connect to a registry source before preparing governance work.</p>` : `<nav class="governance-task-grid" aria-label="Governance tasks">
-          ${state.board.sourceMode === "local-ledger" || !demoMode ? "" : `<a href="#task-epoch"><strong>Publish an epoch</strong><span>Fixture workspace checkpoint, not ledger finality</span></a>
-          <a href="#task-signed-intent"><strong>Submit a signed workspace intent</strong><span>External maintainer signature; local workspace only</span></a>`}
-          <a href="#task-proposal"><strong>Prepare or recover a proposal</strong><span>Exact applicant evidence and external quorum</span></a>
-          <a href="#task-policy"><strong>Revise quorum and register verifier</strong><span>Separate policy-bound steps</span></a>
-        </nav>`}
-        ${demoMode && state.board !== undefined && state.board.sourceMode !== "local-ledger" ? `<form class="epoch-panel governed-panel" id="task-epoch" data-epoch-form>
-          <label>Publish epoch label
-            <input class="input" data-epoch-label type="text" value="${escapeHtml(state.epochLabel)}" placeholder="optional operator label" />
-          </label>
-          <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Publish epoch</button>
-        </form>` : ""}
-        ${demoMode && state.board !== undefined && state.board.sourceMode !== "local-ledger" ? `<section class="proposal-panel governed-panel" id="task-signed-intent">
-          <div>
-            <p class="eyebrow">Signed workspace action</p>
-            <h2>Submit an external maintainer intent</h2>
-            <p>Load the current workspace context, sign a maintainer action outside this browser, and paste only the signed envelope. This local workspace path is separate from Compact quorum governance and never handles private keys.</p>
-          </div>
-          <button class="button secondary" type="button" data-signed-context${state.signedBusy ? " disabled" : ""}>Load signing context</button>
-          ${state.signedContext === undefined ? "" : `<pre class="governed-context mono">${escapeHtml(JSON.stringify(state.signedContext, null, 2))}</pre>`}
-          <form data-signed-submit>
-            <label>Externally signed envelope
-              <textarea class="input mono governed-signers" name="signedEnvelope" spellcheck="false" autocomplete="off" required></textarea>
-            </label>
-            <button class="button" type="submit"${state.signedBusy || state.signedContext === undefined ? " disabled" : ""}>Submit signed action</button>
-          </form>
-        </section>` : ""}
-        ${state.board === undefined ? "" : `<section class="proposal-panel governed-panel" id="task-proposal">
+        ${state.board === undefined ? `<p class="settings-note">Connect to a registry source before preparing governance work.</p>` : ""}
+        ${state.board === undefined ? "" : `<details class="governance-task" id="task-proposal"${proposalTaskOpen ? " open" : ""}><summary><strong>Prepare or recover a proposal</strong><span>Exact applicant evidence and external quorum</span></summary>
+        <section class="proposal-panel governed-panel">
           <div>
             <p class="eyebrow">Membership application</p>
             <h2>Submit a governed proposal</h2>
@@ -1271,8 +1404,9 @@ export const createAdminConsoleApp = (
               <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Submit signed proposal</button>
             </form>
           `}
-        </section>`}
-        ${state.board === undefined ? "" : `<section class="proposal-panel governed-panel" id="task-policy">
+        </section></details>`}
+        ${state.board === undefined ? "" : `<details class="governance-task" id="task-policy"${policyTaskOpen ? " open" : ""}><summary><strong>Revise quorum and register verifier</strong><span>Separate policy-bound steps</span></summary>
+        <section class="proposal-panel governed-panel">
           <div>
             <p class="eyebrow">Governance policy</p>
             <h2>Revise maintainer quorum</h2>
@@ -1300,11 +1434,11 @@ export const createAdminConsoleApp = (
               <button class="button" type="submit"${state.loading || state.publishing || state.governedBusy ? " disabled" : ""}>Submit signed ${state.policyPhase === "thresholds" ? "revision" : "registration"}</button>
             </form>
           `}
-        </section>`}
+        </section></details>`}
         </details>
         <section class="workspace" id="review-board">
           ${state.board === undefined || state.board.sourceMode === "local-ledger" ? "" : `<div class="review-filters">
-            <div><p class="eyebrow">Review queue</p><h2>Find a trust record</h2><p>${visibleCards.length.toString()} of ${state.cards.length.toString()} ${state.cards.length === 1 ? "record" : "records"} shown</p></div>
+            <div><p class="eyebrow">Review inbox</p><h2>${needsReview ? "Requests awaiting action" : "Browse registry records"}</h2><p>${needsReview ? `${pendingReviewCount.toString()} source-reported ${pendingReviewCount === 1 ? "request needs" : "requests need"} action · ` : ""}${visibleCards.length.toString()} of ${state.cards.length.toString()} ${state.cards.length === 1 ? "record" : "records"} shown</p></div>
             <label>Search label, role, or exact identifier
               <input class="input" type="search" data-review-query data-focus-key="review-query" value="${escapeHtml(state.reviewQuery)}" autocomplete="off" />
             </label>
@@ -1358,6 +1492,14 @@ export const createAdminConsoleApp = (
   window.addEventListener("hashchange", () => {
     const shell = root.querySelector<HTMLElement>(".app-shell");
     if (shell !== null) shell.dataset.settingsActive = String(window.location.hash === "#workspace-settings");
+    const target = window.location.hash.slice(1);
+    if (target === "task-proposal" || target === "task-policy") {
+      const advanced = root.querySelector<HTMLDetailsElement>(".advanced-workflows");
+      if (advanced !== null) advanced.open = true;
+      root.querySelectorAll<HTMLDetailsElement>(".governance-task").forEach((task) => {
+        task.open = task.id === target;
+      });
+    }
   });
   void refreshBoard();
 };
