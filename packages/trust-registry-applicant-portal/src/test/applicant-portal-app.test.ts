@@ -333,6 +333,8 @@ describe("trust registry applicant portal app", () => {
   it("permits private evidence only on the same secure or loopback origin", () => {
     expect(canUsePrivateEvidenceHost("https://registry.example", new URL("https://registry.example/app"))).toBe(true);
     expect(canUsePrivateEvidenceHost("http://127.0.0.1:4400", new URL("http://127.0.0.1:4400/app"))).toBe(true);
+    expect(canUsePrivateEvidenceHost("http://[::1]:4400", new URL("http://[::1]:4400/app"))).toBe(true);
+    expect(canUsePrivateEvidenceHost("http://[::1]:4400", new URL("http://127.0.0.1:4400/app"))).toBe(false);
     expect(canUsePrivateEvidenceHost("http://127.0.0.1:4400", new URL("http://127.0.0.1:4175/app"))).toBe(false);
     expect(canUsePrivateEvidenceHost("http://registry.example", new URL("http://registry.example/app"))).toBe(false);
     expect(canUsePrivateEvidenceHost("https://user:secret@registry.example", new URL("https://registry.example/app"))).toBe(false);

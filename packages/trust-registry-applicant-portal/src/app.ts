@@ -6,7 +6,7 @@ import { canonicalizeAuthorizationScope, computeAuthorizationScopeCommitment, ty
 import { prepareAuditorApplication, signPreparedAuditorApplication, type AuditorApplicationDraft, type PreparedAuditorApplication } from "./auditor-application.js";
 import { prepareIssuerApplication, prepareMaintainerApplication, prepareVerifierApplication, signPreparedMembershipApplication, type IssuerApplicationDraft, type MaintainerApplicationDraft, type PreparedMembershipApplication, type VerifierApplicationDraft } from "./membership-application.js";
 import { signInApplicantDid, signOutApplicantDid, type ApplicantDidSession, type ApplicantDidSigner } from "./did-session.js";
-import { isActorDidSigner } from "@midnight-ntwrk/trust-registry-client/browser-authentication";
+import { isActorDidSigner, isSameOriginPrivateApi } from "@midnight-ntwrk/trust-registry-client/browser-authentication";
 
 const STORAGE_KEY = "trust-registry.portal.api-base";
 
@@ -177,13 +177,7 @@ const auditorScopeMatches = (value: unknown, expected: AuditorScopeInput): boole
 };
 
 export const canUsePrivateEvidenceHost = (apiBase: string, pageUrl: URL): boolean => {
-  try {
-    const api = new URL(apiBase);
-    return api.username === "" && api.password === "" && api.origin === pageUrl.origin
-      && (api.protocol === "https:" || api.hostname === "localhost" || api.hostname === "127.0.0.1");
-  } catch {
-    return false;
-  }
+  return isSameOriginPrivateApi(apiBase, pageUrl.origin);
 };
 
 export const escapeHtml = (value: string): string =>
