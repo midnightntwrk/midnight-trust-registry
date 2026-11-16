@@ -448,11 +448,9 @@ try {
   assert.equal((await postAuthentication("/v1/actor-authentication/sessions", {
     challenge: actorChallenge, signature: actorSignature,
   })).status, 401);
-  const applicantAuthenticatedFetch = (input, init = {}) => fetch(input, {
-    ...init,
-    headers: { ...init.headers, authorization: `Bearer ${actorSession.accessToken}` },
+  const applicantClient = new TrustRegistryApplicantPortalClient(base, fetch, {
+    accessToken: actorSession.accessToken, pageOrigin: base,
   });
-  const applicantClient = new TrustRegistryApplicantPortalClient(base, applicantAuthenticatedFetch);
   const adminClient = new TrustRegistryAdminConsoleClient(base);
   const publishedEpochIds = [];
   const trustedEpochsByPhase = new Map();

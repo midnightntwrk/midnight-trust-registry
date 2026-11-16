@@ -254,7 +254,8 @@ describe("private application VP exchange", () => {
     await client.loadPendingApplicationBinding("application:issuer:one");
     expect(fetchImpl).toHaveBeenCalledWith(
       "https://registry.example/v1/application-evidence/application%3Aissuer%3Aone/binding",
-      { method: "GET", credentials: "omit", headers: { authorization: `Bearer ${session.accessToken}` } },
+      { method: "GET", credentials: "omit", cache: "no-store", redirect: "error",
+        headers: { authorization: `Bearer ${session.accessToken}` } },
     );
     expect(() => new TrustRegistryApplicantPortalClient("https://other.example", fetchImpl, session))
       .toThrow("different API origin");
@@ -309,6 +310,21 @@ describe("private application VP exchange", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(request),
     });
+  });
+
+  it("sends a DID applicant session on private registration without forwarding browser credentials", async () => {
+    const request = { applicationId: "application:auditor:one" };
+    const fetchImpl = vi.fn(async () => Response.json({ binding: request, status: "pending" })) as typeof fetch;
+    const client = new TrustRegistryApplicantPortalClient("https://registry.example", fetchImpl,
+      { accessToken: "private-token", pageOrigin: "https://registry.example" });
+    await client.registerPendingApplication(request);
+    expect(fetchImpl).toHaveBeenCalledWith("https://registry.example/v1/pending-applications", {
+      method: "POST", credentials: "omit", cache: "no-store", redirect: "error",
+      headers: { "content-type": "application/json", authorization: "Bearer private-token" },
+      body: JSON.stringify(request),
+    });
+    expect(() => new TrustRegistryApplicantPortalClient("https://elsewhere.example", fetchImpl,
+      { accessToken: "private-token", pageOrigin: "https://registry.example" })).toThrow(/different API origin/u);
   });
 
   it("sends only the challenge nonce, hash, and VP, then returns redacted evidence", async () => {
