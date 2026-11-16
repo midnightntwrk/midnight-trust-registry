@@ -103,7 +103,7 @@ test("release bytes are prepared before the protected publish approval", () => {
   const publish = parsed.jobs.publish;
   assert.equal(prepare.environment, undefined);
   assert.equal(publish.needs, "prepare");
-  assert.equal(publish.environment.name, "npm-publish");
+  assert.equal(publish.environment.name, "npm-publish-stable");
   assert.match(prepare.outputs.manifest_sha256, /steps\.manifest\.outputs\.sha256/u);
   const preparedSteps = prepare.steps.map((step) => step.name);
   assert.ok(preparedSteps.indexOf("Record manifest digest for release review")
