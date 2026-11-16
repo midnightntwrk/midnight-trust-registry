@@ -51,18 +51,17 @@
     "build:light": "pnpm run build"
   },
   "dependencies": {
-    "@midnight-ntwrk/compact-js": "2.5.1",
-    "@midnight-ntwrk/credential-compact": "0.2.0",
-    "@midnight-ntwrk/credential-did-midnight": "0.2.0",
-    "@midnight-ntwrk/midnight-did": "0.7.0",
-    "@midnight-ntwrk/midnight-did-contract": "0.7.0",
-    "@midnight-ntwrk/midnight-did-domain": "0.7.0",
-    "@midnight-ntwrk/midnight-did-jubjub-schnorr": "0.7.0",
-    "@midnight-ntwrk/midnight-js-contracts": "4.1.1",
-    "@midnight-ntwrk/midnight-js-indexer-public-data-provider": "4.1.1",
-    "@midnight-ntwrk/midnight-js-network-id": "4.1.1",
-    "@midnight-ntwrk/midnight-js-protocol": "4.1.1",
-    "@midnight-ntwrk/midnight-js-types": "4.1.1",
+    "@midnight-ntwrk/compact-js": "3.0.0",
+    "@midnight-ntwrk/credential-compact": "0.4.0",
+    "@midnight-ntwrk/credential-did-midnight": "0.4.0",
+    "@midnight-ntwrk/midnight-did": "1.0.0-rc1",
+    "@midnight-ntwrk/midnight-did-contract": "1.0.0-rc1",
+    "@midnight-ntwrk/midnight-did-domain": "1.0.0-rc1",
+    "@midnight-ntwrk/midnight-did-jubjub-schnorr": "1.0.0-rc1",
+    "@midnight-ntwrk/midnight-js-contracts": "5.0.0",
+    "@midnight-ntwrk/midnight-js-indexer-public-data-provider": "5.0.0",
+    "@midnight-ntwrk/midnight-js-protocol": "5.0.0",
+    "@midnight-ntwrk/midnight-js-types": "5.0.0",
     "@polkadot/api": "16.5.6",
     "@midnight-ntwrk/trust-registry-client": "workspace:0.1.0",
     "@midnight-ntwrk/trust-registry-contract": "workspace:0.1.0",
@@ -70,6 +69,6 @@
     "zod": "^4.6.6"
   },
   "devDependencies": {
-    "@midnight-ntwrk/compact-runtime": "0.16.0"
+    "@midnight-ntwrk/compact-runtime": "0.21.0"
   }
 }

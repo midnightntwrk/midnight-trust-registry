@@ -12,14 +12,14 @@ qualification claim. The historical Ledger 8 source is the `ledger8` branch at
 | Ledger | 9.1.0.1 | Expected node runtime; live RPC not yet checked |
 | Indexer standalone | 4.4.101 | Default Compose image pinned by digest; render checked |
 | Proof server | 9.0.0 | Default Compose image pinned by digest; render checked |
-| Compact compiler | 0.36.0 | Not yet installed or used to rebuild this contract |
-| Compact runtime | 0.21.0 | Awaiting compatible DID and VC package graph |
-| Midnight.js / testkit-js | 5.0.0 | API migration not yet validated |
-| Compact.js | 3.0.0 | Required with the Midnight.js 5 cohort |
+| Compact compiler | 0.36.0 | Pinned Nix toolchain builds; contract compiles with `--skip-zk` after source type fixes |
+| Compact runtime | 0.21.0 | Locally installed with exact DID RC1 and VC PR #755 artifacts; runtime validation incomplete |
+| Midnight.js / testkit-js | 5.0.0 | Locally installed; provider and async circuit API migration incomplete |
+| Compact.js | 3.0.0 | Locally installed; simulator still assumes synchronous circuits |
 | `@midnightntwrk/ledger-v9` | 1.0.0 | Required for new Ledger 9 transactions |
 | `@midnightntwrk/onchain-runtime-v4` | 4.0.0 | Required where directly consumed |
-| Midnight DID | exact 1.0.0-rc1 cohort | Published; not yet installed in this branch |
-| VC Compact and DID binding | pending Ledger 9 release | VP evidence journeys only; VC 0.3.0 still uses runtime 0.16.0 |
+| Midnight DID | exact 1.0.0-rc1 cohort | Published and installed locally under four dated, exact-version age exceptions |
+| VC Compact and DID binding | PR #755 source, 0.4.0 artifacts | Built from exact PR head locally; not merged or published to npm |
 
 The official [Ledger 9 upgrade guide](https://docs.midnight.network/relnotes/ledger-9)
 is the compatibility source. The
@@ -36,6 +36,25 @@ application evidence does. The current API also imports the VC package's
 intents; that is a removable implementation coupling, not a registry
 protocol requirement. Core DID authentication should use DID-owned resolution
 before the VC release gate is applied only to VP evidence journeys.
+
+The local VC trial source is [PR #755](https://github.com/midnightntwrk/midnight-verifiable-credentials/pull/755)
+at `dad8b2cae38c9971adb43d124ead1281b021416b`. Its Nix `npm-artifacts`
+target built three tarballs. This worktree has private, ignored copies under
+`artifacts/ledger9-vc-pr755/`; the temporary `file:` overrides intentionally
+make frozen installs depend on those exact local inputs. They must be replaced
+with published `0.4.0` pins and a regenerated lockfile before a portable PR.
+
+| Trial tarball | SHA-256 |
+| --- | --- |
+| `midnight-ntwrk-credential-compact-0.4.0.tgz` | `10ded7cf431103f0031873e5b489eb5dc1853365694e1cbf2d15b384c8f563c7` |
+| `midnight-ntwrk-credential-did-midnight-0.4.0.tgz` | `4fa92d305a152e8d1239c0997fa86bcfd189eb952e08763a82dcaf407b143400` |
+| `midnight-ntwrk-credential-model-0.4.0.tgz` | `cc12db936817281e9c41b64c70b45131f6610c6634a7353bd9ad398f20610866` |
+
+Current compile evidence is limited to `compact:light`. Contract TypeScript
+typecheck is red because generated `initialState` and impure circuits are
+asynchronous and the simulator still uses synchronous `CircuitResults`; this
+is a source migration, not a missing package or a qualification pass. No new
+proving/verifier keys or deployed transactions have been generated.
 
 ## Execution order
 
@@ -54,7 +73,7 @@ before the VC release gate is applied only to VP evidence journeys.
    qualify before the VC migration. VP evidence journeys wait for a tested
    Ledger 9 VC core and DID binding from
    [VC #754](https://github.com/midnightntwrk/midnight-verifiable-credentials/issues/754)
-   and its draft PR #755. Do not combine VC 0.3.0/runtime 0.16.0 with
+   and PR #755. Do not combine VC 0.3.0/runtime 0.16.0 with
    runtime 0.21.0 or weaken the installed-runtime guard.
 4. Move all core dependencies, workspace overrides, compiler/runtime pins,
    Nix hashes and lockfile together. Replace Midnight.js 4 provider and global
