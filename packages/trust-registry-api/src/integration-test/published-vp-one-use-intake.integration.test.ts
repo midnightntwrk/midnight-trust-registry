@@ -7,6 +7,7 @@ import {
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
   createApplicationVpIntakePorts,
+  createQualifiedApplicationVpIntakePorts,
   createApplicationVpScenarioFixture,
   createIssuerAuthorizationScopeFixture,
   createIssuerScenarioFixture,
@@ -14,6 +15,7 @@ import {
   createMidnightDidResolver,
   createMidnightDid,
   VP_FIXTURE_TIME_MS,
+  VP_FIXTURE_TRUST_CONTEXT,
 } from "@midnight-ntwrk/trust-registry-integration";
 
 import { ApplicationChallengeService, InMemoryApplicationChallengeStore } from "../application-challenges.js";
@@ -24,7 +26,7 @@ describe("published VP proof through one-use application intake", () => {
     const scope = createIssuerAuthorizationScopeFixture(createIssuerScenarioFixture("vp"));
     const verifierDid = createMidnightDid("vp-evidence-verifier");
     const binding = ApplicationChallengeBindingSchema.parse({
-      registryId: "registry:vp:test",
+      registryId: VP_FIXTURE_TRUST_CONTEXT.registryId,
       applicationId: "application:vp:one-use",
       subjectDid: createMidnightDid("vp-holder"),
       evidenceVerifierDid: verifierDid,
@@ -39,10 +41,11 @@ describe("published VP proof through one-use application intake", () => {
     const issued = await service.issue(binding);
     const fixture = await createApplicationVpScenarioFixture(issued.nonce);
     const signer = fixture.signer;
-    const ports = await createApplicationVpIntakePorts({
+    const ports = await createQualifiedApplicationVpIntakePorts({
       resolver: fixture.input.resolver,
       family: fixture.input.family,
       signer,
+      trustContext: VP_FIXTURE_TRUST_CONTEXT,
     });
     const propose = vi.fn(async ({ evidence }: { evidence: { envelope: { presentationHash: string }; signature: { value: string } } }) => evidence);
     const input = {
@@ -62,6 +65,23 @@ describe("published VP proof through one-use application intake", () => {
       ...input,
       authorizedVerifiers: [],
     })).rejects.toThrow(/not authorized by policy/u);
+    expect(await service.isLive({ binding, nonce: issued.nonce, challengeHash: issued.challengeHash })).toBe(true);
+    expect(propose).not.toHaveBeenCalled();
+
+    const wrongAudience = await createApplicationVpScenarioFixture(issued.nonce, {
+      presentationContext: { audience: "https://other.example" },
+    });
+    const wrongPorts = await createQualifiedApplicationVpIntakePorts({
+      resolver: wrongAudience.input.resolver,
+      family: wrongAudience.input.family,
+      signer: wrongAudience.signer,
+      trustContext: VP_FIXTURE_TRUST_CONTEXT,
+    });
+    await expect(consumeChallengeAndSubmitApplication({
+      ...input,
+      presentation: wrongAudience.input.submission,
+      ...wrongPorts,
+    })).rejects.toThrow(/Application VP invalid_presentation/u);
     expect(await service.isLive({ binding, nonce: issued.nonce, challengeHash: issued.challengeHash })).toBe(true);
     expect(propose).not.toHaveBeenCalled();
 

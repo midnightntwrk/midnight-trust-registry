@@ -154,6 +154,26 @@ has no live deactivation signal, so short session lifetime and explicit mode
 labeling matter. The signed local-ledger CLI remains read-only and cannot
 claim deployed actor authentication or authorization.
 
+The fast headless gate also runs the qualified VP application-intake fixtures
+for issuer, verifier, auditor, and maintainer after building the prebuilt
+runtime. Those tests bind the presentation to pinned deployment and policy
+context, check one-use challenge consumption, and deny mismatched contexts.
+The auditor case also crosses a real loopback HTTP host, deriving its expected
+audience from the listening origin and its policy from the registered application.
+That case signs into a phase-0 DID applicant session before private VP intake;
+an applicant header alone and a signed-out session are denied. Sign-in returns
+no role or VP-eligibility claim. The separately verified presentation remains
+necessary before redacted evidence is accepted, and governance is still separate.
+These cases run against local adapters and a Compact simulator, not a deployed
+VC/status authority or a finalized ledger host.
+The signed issuer, verifier, auditor, and maintainer CLI journeys also obtain a
+phase-0 applicant DID session from a one-use challenge before private
+registration and VP intake. A missing session is denied, and sign-in returns
+neither a role nor VP eligibility. Each loopback host separately denies a wrong
+VP audience and changed application-policy version before accepting the valid
+presentation. Maintainer quorum signatures remain a distinct governed action;
+these fixture and simulator journeys do not establish deployed actor authority.
+
 The API health response now reports private application registration and list
 ports independently. The applicant portal explains and disables preparation
 and registration controls when registration is explicitly not configured, and
