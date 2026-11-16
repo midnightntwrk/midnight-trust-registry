@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import { execFile } from "node:child_process";
-import { randomBytes, timingSafeEqual } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -28,6 +27,7 @@ import {
 import { publishSimulatorSnapshot, TrustRegistryOperatorWorkspaceSchema } from "@midnight-ntwrk/trust-registry-cli";
 import {
   computeAuthorizationScopeCommitment,
+  actorAuthenticationDigestBytes,
   computePendingApplicationPayloadCommitment,
   createScopedIdentifier,
   mutationIntentDigestBytes,
@@ -54,6 +54,8 @@ import {
 } from "@midnight-ntwrk/trust-registry-integration";
 import {
   computeOperatorWorkspaceCommitment,
+  createActorAuthenticationService,
+  createActorSessionService,
   createWorkspaceFileSource,
   createTrustRegistryApiServer,
   GovernedAuditorProposalRejectedError,
@@ -64,6 +66,7 @@ import {
   GovernedVerifierProposalRejectedError,
   FileApplicationAdmissionStore,
   FileApplicationChallengeStore,
+  FileActorAuthenticationChallengeStore,
 } from "@midnight-ntwrk/trust-registry-api";
 import { TrustRegistryAdminConsoleClient } from "@midnight-ntwrk/trust-registry-admin-console/api";
 import { TrustRegistryApplicantPortalClient } from "@midnight-ntwrk/trust-registry-applicant-portal/api";
@@ -204,12 +207,6 @@ const registration = new FileApplicationAdmissionStore(
   () => workspaceSource.loadWorkspace(),
 );
 let withholdAcceptedReceipt = false;
-const token = randomBytes(32).toString("hex");
-const authorized = (request) => {
-  const supplied = request.headers.authorization?.replace(/^Bearer /u, "");
-  return typeof supplied === "string" && supplied.length === token.length
-    && timingSafeEqual(Buffer.from(supplied), Buffer.from(token));
-};
 const admission = {
   resolvePendingApplication: (id) => registration.resolvePendingApplication(id),
   resolveAcceptedEvidence: (id) => withholdAcceptedReceipt
@@ -236,12 +233,13 @@ const signAction = (maintainer, prepared) => {
 const quorumSignatures = (prepared) => maintainers.map((maintainer) => signAction(maintainer, prepared));
 let currentProof;
 let trustedVpOrigin;
+const actorSessions = createActorSessionService(() => VP_FIXTURE_TIME_MS);
 let acceptedChallengeHash;
 const expectedEvidence = () => {
   if (acceptedChallengeHash === undefined) throw new Error("No accepted application challenge");
   return { scope, challengeHash: acceptedChallengeHash, governedResource };
 };
-const server = createTrustRegistryApiServer({
+const serverOptions = {
   source: workspaceSource,
   clock: () => now.toISOString(),
   pendingApplicationRegistration: registration,
@@ -319,13 +317,16 @@ const server = createTrustRegistryApiServer({
     },
   },
   authorizePendingApplicationRegistration: async (request) => {
-    if (!authorized(request)) throw new Error("Applicant bearer token required");
+    if (actorSessions.authenticate(request.headers.authorization, "applicant-session")?.actorDid !== participant.subjectDid) {
+      throw new Error("Applicant DID session required");
+    }
   },
   applicationVp: {
     challengeStore: new FileApplicationChallengeStore(join(stateDirectory, "challenges.json")),
     authorizeRequest: async (id, request) => {
-      if (!authorized(request) || (await registration.readPending(id))?.binding.subjectDid !== participant.subjectDid) {
-        throw new Error("Applicant bearer token denied");
+      if (actorSessions.authenticate(request.headers.authorization, "applicant-session")?.actorDid !== participant.subjectDid
+        || (await registration.readPending(id))?.binding.subjectDid !== participant.subjectDid) {
+        throw new Error("Applicant DID session denied");
       }
       return participant.subjectDid;
     },
@@ -351,7 +352,8 @@ const server = createTrustRegistryApiServer({
     persistRedactedEvidence: (id, evidence) => registration.acceptEvidence(id, evidence, now),
     resolveAcceptedEvidence: (id) => registration.resolveAcceptedEvidence(id),
   },
-});
+};
+const server = createTrustRegistryApiServer(serverOptions);
 
 const signedApplication = () => {
   const intent = {
@@ -408,12 +410,50 @@ try {
   if (address === null || typeof address === "string") throw new Error("TCP address unavailable");
   const base = `http://127.0.0.1:${address.port}`;
   trustedVpOrigin = base;
-  const authenticatedFetch = (input, init = {}) => fetch(input, {
-    ...init,
-    headers: { ...init.headers, authorization: `Bearer ${token}` },
+  serverOptions.actorAuthentication = {
+    challenges: createActorAuthenticationService({
+      context: { ...fixtureOptions.trustContext, origin: base },
+      resolver: resolverFixture.input.resolver,
+      store: new FileActorAuthenticationChallengeStore(
+        join(stateDirectory, "actor-challenges.json"), () => VP_FIXTURE_TIME_MS,
+      ),
+      clock: () => VP_FIXTURE_TIME_MS,
+    }),
+    sessions: actorSessions,
+  };
+  const postAuthentication = (path, body) => fetch(`${base}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: base },
+    body: JSON.stringify(body),
   });
-  const applicantClient = new TrustRegistryApplicantPortalClient(base, authenticatedFetch);
-  const adminClient = new TrustRegistryAdminConsoleClient(base, authenticatedFetch);
+  const actorDid = participant.subjectDid;
+  const actorKeyId = `${actorDid}#auth-1`;
+  const actorChallenge = await expectHttp(await postAuthentication("/v1/actor-authentication/challenges", {
+    actorDid, actorKeyId, purpose: "applicant-session",
+  }), 201);
+  const actorSignature = {
+    keyId: actorKeyId,
+    algorithm: "jubjub-schnorr",
+    value: asHex(encodeJubjubSignature(signJubjubDigest(
+      23n, payloadToJubjubDigest(actorAuthenticationDigestBytes(actorChallenge)),
+    ))),
+  };
+  const actorSession = await expectHttp(await postAuthentication("/v1/actor-authentication/sessions", {
+    challenge: actorChallenge, signature: actorSignature,
+  }), 201);
+  assert.equal(actorSession.actorDid, actorDid);
+  assert.equal(actorSession.purpose, "applicant-session");
+  assert.equal(Object.hasOwn(actorSession, "role"), false);
+  assert.equal(Object.hasOwn(actorSession, "vpEligible"), false);
+  assert.equal((await postAuthentication("/v1/actor-authentication/sessions", {
+    challenge: actorChallenge, signature: actorSignature,
+  })).status, 401);
+  const applicantAuthenticatedFetch = (input, init = {}) => fetch(input, {
+    ...init,
+    headers: { ...init.headers, authorization: `Bearer ${actorSession.accessToken}` },
+  });
+  const applicantClient = new TrustRegistryApplicantPortalClient(base, applicantAuthenticatedFetch);
+  const adminClient = new TrustRegistryAdminConsoleClient(base);
   const publishedEpochIds = [];
   const trustedEpochsByPhase = new Map();
   const publishGovernedEpoch = async (phase) => {
@@ -469,31 +509,36 @@ try {
       });
     }
   };
-  const post = (path, body, withToken = true) => fetch(`${base}${path}`, {
+  const post = (path, body) => fetch(`${base}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const postApplicant = (path, body, withSession = true) => fetch(`${base}${path}`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      ...(withToken ? { authorization: `Bearer ${token}` } : {}),
+      ...(withSession ? { authorization: `Bearer ${actorSession.accessToken}` } : {}),
     },
     body: JSON.stringify(body),
   });
-  const getPrivate = (path, withToken = true) => fetch(`${base}${path}`, {
-    headers: withToken ? { authorization: `Bearer ${token}` } : {},
+  const getPrivate = (path, withSession = true) => fetch(`${base}${path}`, {
+    headers: withSession ? { authorization: `Bearer ${actorSession.accessToken}` } : {},
   });
 
   assert.equal((await post("/v1/epochs/publish", {})).status, 403);
   assert.equal((await post("/v1/applications", {})).status, 403);
   assert.equal((await workspaceSource.loadWorkspace()).snapshot.currentEpoch.epochId, snapshot.currentEpoch.epochId);
   const application = signedApplication();
-  assert.equal((await post("/v1/pending-applications", application, false)).status, 403);
-  assert.equal((await post("/v1/pending-applications", {
+  assert.equal((await postApplicant("/v1/pending-applications", application, false)).status, 403);
+  assert.equal((await postApplicant("/v1/pending-applications", {
     ...application, authorizationId: `auth:${role}:substituted:v1`,
   })).status, 400);
   const pending = await applicantClient.registerPendingApplication(application);
   assert.equal(pending.authorizationId, profile.id);
   assert.equal(pending.binding.applicationId, applicationId);
   assert.equal(pending.binding.scopeCommitment, computeAuthorizationScopeCommitment(scope));
-  assert.equal((await post("/v1/pending-applications", application)).status, 409);
+  assert.equal((await postApplicant("/v1/pending-applications", application)).status, 409);
 
   const evidencePath = `/v1/application-evidence/${applicationId}`;
   const binding = await applicantClient.loadPendingApplicationBinding(applicationId);
@@ -508,7 +553,7 @@ try {
     policyId: binding.policyId,
     policyVersion: binding.policyVersion,
   };
-  assert.equal((await post(`${evidencePath}/challenges`, {}, false)).status, 403);
+  assert.equal((await postApplicant(`${evidencePath}/challenges`, {}, false)).status, 403);
   const challenge = await applicantClient.issueApplicationChallenge(applicationId);
   assert.equal((await getPrivate(`${evidencePath}/receipt`, false)).status, 403);
   assert.equal((await getPrivate(`${evidencePath}/receipt`)).status, 404);
@@ -527,7 +572,7 @@ try {
     currentProof = await createApplicationVpScenarioFixture(challenge.nonce, {
       ...presentationFixtureOptions, presentationContext,
     });
-    await expectProblem(await post(`${evidencePath}/submissions`, {
+    await expectProblem(await postApplicant(`${evidencePath}/submissions`, {
       ...submission, presentation: currentProof.input.submission,
     }), 403, "application-vp-rejected");
     assert.equal((await getPrivate(`${evidencePath}/receipt`)).status, 404);
@@ -536,7 +581,7 @@ try {
   if (role === "issuer") {
     const submitRejectedPresentation = async (proof, presentation) => {
       currentProof = proof;
-      await expectProblem(await post(`${evidencePath}/submissions`, {
+      await expectProblem(await postApplicant(`${evidencePath}/submissions`, {
         ...submission, presentation,
       }), 403, "application-vp-rejected");
       assert.equal((await getPrivate(`${evidencePath}/receipt`)).status, 404);
@@ -572,8 +617,8 @@ try {
   );
   assert.deepEqual(await reopened.resolveAcceptedEvidence(applicationId), submitted);
   assert.equal((await readFile(admissionPath, "utf8")).includes(currentProof.input.submission.rawCredentialBody), false);
-  assert.equal((await post(`${evidencePath}/submissions`, submission)).status, 404);
-  assert.equal((await post(`${evidencePath}/challenges`, {})).status, 404);
+  assert.equal((await postApplicant(`${evidencePath}/submissions`, submission)).status, 404);
+  assert.equal((await postApplicant(`${evidencePath}/challenges`, {})).status, 404);
 
   harness.advanceEvidenceTimeBy(60_000);
   const proposalPath = `/v1/governed/${role}/${profile.id}/proposal`;

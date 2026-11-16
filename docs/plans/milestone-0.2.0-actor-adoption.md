@@ -166,9 +166,13 @@ no role or VP-eligibility claim. The separately verified presentation remains
 necessary before redacted evidence is accepted, and governance is still separate.
 These cases run against local adapters and a Compact simulator, not a deployed
 VC/status authority or a finalized ledger host.
-The signed issuer, verifier, auditor, and maintainer CLI journeys also use the
-qualified verifier against their loopback HTTP hosts; each denies a wrong
-audience and changed application-policy version before accepting the valid VP.
+The signed issuer, verifier, auditor, and maintainer CLI journeys also obtain a
+phase-0 applicant DID session from a one-use challenge before private
+registration and VP intake. A missing session is denied, and sign-in returns
+neither a role nor VP eligibility. Each loopback host separately denies a wrong
+VP audience and changed application-policy version before accepting the valid
+presentation. Maintainer quorum signatures remain a distinct governed action;
+these fixture and simulator journeys do not establish deployed actor authority.
 
 The API health response now reports private application registration and list
 ports independently. The applicant portal explains and disables preparation
