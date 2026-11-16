@@ -24,6 +24,7 @@ import {
   verifyHistoricalAuthorizationEvidenceFromApi,
   verifyHistoricalAuthorizationEvidenceResponse,
 } from "@midnight-ntwrk/trust-registry-client";
+import { registerApplicantApplication } from "@midnight-ntwrk/trust-registry-client/browser-authentication";
 import { publishSimulatorSnapshot, TrustRegistryOperatorWorkspaceSchema } from "@midnight-ntwrk/trust-registry-cli";
 import {
   computeAuthorizationScopeCommitment,
@@ -532,7 +533,14 @@ try {
   assert.equal((await postApplicant("/v1/pending-applications", {
     ...application, authorizationId: `auth:${role}:substituted:v1`,
   })).status, 400);
-  const pending = await applicantClient.registerPendingApplication(application);
+  const pending = await registerApplicantApplication({
+    apiBase: base, pageOrigin: base,
+    session: {
+      ...actorSession, registryId: actorChallenge.registryId,
+      genesisHash: actorChallenge.genesisHash, contractAddress: actorChallenge.contractAddress,
+    },
+    request: application, clock: () => VP_FIXTURE_TIME_MS,
+  });
   assert.equal(pending.authorizationId, profile.id);
   assert.equal(pending.binding.applicationId, applicationId);
   assert.equal(pending.binding.scopeCommitment, computeAuthorizationScopeCommitment(scope));

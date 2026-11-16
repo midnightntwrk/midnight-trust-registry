@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { GovernedResourceSchema } from "./application-evidence.js";
-import { governedResourceInScope } from "./application-challenge-binding.js";
+import { ApplicationChallengeBindingSchema, governedResourceInScope } from "./application-challenge-binding.js";
 import { computeMutationPayloadCommitment } from "./canonical-json.js";
 import { ScopedIdentifierSchema } from "./ids.js";
 import { MutationIntentSchema, MutationIntentSignatureSchema } from "./mutation-intent.js";
@@ -37,6 +37,20 @@ export const PendingApplicationListResponseSchema = z.strictObject({
   entries: z.array(PendingApplicationSummarySchema).max(MAX_PENDING_APPLICATION_LIST_ITEMS),
 });
 export type PendingApplicationSummary = z.infer<typeof PendingApplicationSummarySchema>;
+
+export const PendingApplicationRecordSchema = z.strictObject({
+  authorizationId: z.string().trim().min(1).max(256),
+  binding: ApplicationChallengeBindingSchema,
+  status: z.enum(["pending", "archived"]),
+  createdAt: z.string().datetime({ offset: true }),
+  archiveEventHash: z.string().regex(/^0x[0-9a-f]{64}$/u).optional(),
+}).superRefine((record, context) => {
+  if ((record.status === "archived") !== (record.archiveEventHash !== undefined)) {
+    context.addIssue({ code: "custom", path: ["archiveEventHash"], message: "Archive event is required only for archived applications" });
+  }
+});
+
+export type PendingApplicationRecord = z.infer<typeof PendingApplicationRecordSchema>;
 
 export function pendingApplicationMutationPayload(input: PendingApplicationPayload): {
   applicationId: string;

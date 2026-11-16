@@ -3,10 +3,14 @@ import {
   ActorAuthenticationSignatureSchema,
   actorAuthenticationDigestBytes,
   PendingApplicationListResponseSchema,
+  PendingApplicationRecordSchema,
+  SignedPendingApplicationSchema,
   type ActorAuthenticationChallenge,
   type ActorAuthenticationPurpose,
   type ActorAuthenticationSignature,
   type PendingApplicationSummary,
+  type PendingApplicationRecord,
+  type SignedPendingApplication,
 } from "@midnight-ntwrk/trust-registry-domain/browser";
 
 const TOKEN_PATTERN = /^trsa_[A-Za-z0-9_-]{43}$/u;
@@ -150,6 +154,53 @@ export type ApplicantApplicationList =
   | { status: "available"; entries: readonly PendingApplicationSummary[] }
   | { status: "unavailable" };
 
+function currentApplicantSession(session: ActorDidSession<"applicant-session">, clock: () => number): void {
+  const expiresAt = Date.parse(session.expiresAt);
+  if (session.purpose !== "applicant-session" || !TOKEN_PATTERN.test(session.accessToken)
+    || !Number.isFinite(expiresAt) || expiresAt <= clock()) {
+    throw new Error("A current applicant DID session is required.");
+  }
+}
+
+/** Register a signed applicant intent without placing signer key material in this client. */
+export async function registerApplicantApplication(input: {
+  apiBase: string;
+  pageOrigin: string;
+  session: ActorDidSession<"applicant-session">;
+  request: SignedPendingApplication;
+  fetchImpl?: typeof fetch;
+  clock?: () => number;
+}): Promise<PendingApplicationRecord> {
+  const base = sameOriginApi(input.apiBase, input.pageOrigin);
+  const clock = input.clock ?? Date.now;
+  currentApplicantSession(input.session, clock);
+  const request = SignedPendingApplicationSchema.parse(input.request);
+  if (request.intent.actorDid !== input.session.actorDid
+    || request.intent.actorKeyId !== input.session.actorKeyId
+    || request.intent.registryId !== input.session.registryId
+    || Date.parse(request.intent.expiresAt) <= clock()) {
+    throw new Error("Signed application does not match the current applicant DID session.");
+  }
+  const response = await (input.fetchImpl ?? fetch)(`${base}/v1/pending-applications`, {
+    method: "POST", credentials: "omit", cache: "no-store", redirect: "error",
+    headers: { "content-type": "application/json", authorization: `Bearer ${input.session.accessToken}` },
+    body: JSON.stringify(request),
+  });
+  const parsed = PendingApplicationRecordSchema.safeParse(await responsePayload(response, "Pending application registration"));
+  if (!parsed.success || parsed.data.status !== "pending"
+    || parsed.data.binding.applicationId !== request.applicationId
+    || parsed.data.authorizationId !== request.authorizationId
+    || parsed.data.binding.registryId !== input.session.registryId
+    || parsed.data.binding.subjectDid !== input.session.actorDid
+    || parsed.data.binding.role !== request.scope.role
+    || parsed.data.binding.scopeCommitment !== request.intent.scopeCommitment
+    || parsed.data.binding.governedResource.type !== request.governedResource.type
+    || parsed.data.binding.governedResource.id !== request.governedResource.id) {
+    throw new Error("Pending application registration returned a mismatched record.");
+  }
+  return parsed.data;
+}
+
 export async function listApplicantApplications(input: {
   apiBase: string;
   pageOrigin: string;
@@ -158,12 +209,7 @@ export async function listApplicantApplications(input: {
   clock?: () => number;
 }): Promise<ApplicantApplicationList> {
   const base = sameOriginApi(input.apiBase, input.pageOrigin);
-  const expiresAt = Date.parse(input.session.expiresAt);
-  if (input.session.purpose !== "applicant-session"
-    || !TOKEN_PATTERN.test(input.session.accessToken)
-    || !Number.isFinite(expiresAt) || expiresAt <= (input.clock ?? Date.now)()) {
-    throw new Error("A current applicant DID session is required.");
-  }
+  currentApplicantSession(input.session, input.clock ?? Date.now);
   const response = await (input.fetchImpl ?? fetch)(`${base}/v1/pending-applications`, {
     method: "GET", credentials: "omit", cache: "no-store", redirect: "error",
     headers: { authorization: `Bearer ${input.session.accessToken}` },
