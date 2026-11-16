@@ -214,6 +214,9 @@ The typed client and CLI now report a lost, unreadable, or server-failed
 registration response as an unknown
 outcome and explicitly forbid blind resubmission. The private pending-list
 summary is not exact signed-request reconciliation, so #297 remains open.
+The current-time loopback journey also accepts a distinct signed request at
+the server, drops its response at the client boundary, and observes the
+unknown outcome while the private list shows the pending application.
 
 Non-critical-path follow-ups include public-network bootstrap (#200),
 historical TRQP (#39), Helm (#218), npm publishing (#271), mobile acceptance

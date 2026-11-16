@@ -18,6 +18,7 @@ import {
   actorAuthenticationDigestBytes,
   computeAuthorizationScopeCommitment,
   computePendingApplicationPayloadCommitment,
+  issuerGovernedResourceId,
   mutationIntentDigestBytes,
 } from "../packages/trust-registry-domain/dist/index.js";
 import {
@@ -34,7 +35,7 @@ import {
   InMemoryPendingApplicationRegistrationPort,
   computeOperatorWorkspaceCommitment,
 } from "../packages/trust-registry-api/dist/index.js";
-import { listApplicantApplications, signInActorDid, signOutActorDid } from "../packages/trust-registry-client/dist/browser-authentication.js";
+import { listApplicantApplications, registerApplicantApplication, signInActorDid, signOutActorDid } from "../packages/trust-registry-client/dist/browser-authentication.js";
 
 const seed = new Uint8Array(32).fill(86);
 const actorDid = createMidnightDid("headless-did-authentication");
@@ -212,6 +213,40 @@ try {
   assert.equal(listCli.code, 0, listCli.stderr);
   assert.deepEqual(JSON.parse(listCli.stdout).entries.map((entry) => entry.applicationId).sort(),
     ["application:issuer:headless:v1", applicationId].sort());
+  const lostScope = { version: "tr-scope-v1", role: "issuer",
+    credentialFamilyId: "headless-lost-response", schemaId: "headless-schema",
+    schemaVersion: "1.0.0", credentialDefinitionId: "headless-definition",
+    statusMethod: "headless-status" };
+  const lostPayload = {
+    applicationId: "application:issuer:cli-lost-response:v1",
+    authorizationId: "auth:issuer:cli-lost-response:v1", scope: lostScope,
+    governedResource: { type: "credentialFamily", id: issuerGovernedResourceId(lostScope, "credentialFamily") },
+  };
+  const lostIntent = { ...intent, target: "issuer", targetId: lostPayload.applicationId,
+    scopeCommitment: computeAuthorizationScopeCommitment(lostScope),
+    payloadCommitment: computePendingApplicationPayloadCommitment(lostPayload),
+    nonce: `0x${"44".repeat(32)}` };
+  const lostRequest = { ...lostPayload, intent: lostIntent, signature: {
+    keyId: actorKeyId, algorithm: "jubjub-schnorr",
+    value: `0x${Buffer.from(encodeJubjubSignature(signJubjubPayloadFromSeed(
+      seed, mutationIntentDigestBytes(lostIntent),
+    ))).toString("hex")}`,
+  } };
+  let acceptedStatus;
+  await assert.rejects(registerApplicantApplication({
+    apiBase: origin, pageOrigin: origin, session: cliSession, request: lostRequest,
+    fetchImpl: async (...args) => {
+      const accepted = await fetch(...args);
+      acceptedStatus = accepted.status;
+      throw new Error("response lost after server acceptance");
+    },
+  }), /outcome is unknown.*Do not resubmit/u);
+  assert.equal(acceptedStatus, 201);
+  const afterLostResponse = await runActorCli("api-applications", origin, { session: cliSession });
+  assert.equal(afterLostResponse.code, 0, afterLostResponse.stderr);
+  assert.equal(JSON.parse(afterLostResponse.stdout).entries.some(
+    (entry) => entry.applicationId === lostPayload.applicationId,
+  ), true);
   await expectStatus(await fetch(`${origin}/v1/actor-authentication/session`, {
     method: "DELETE", headers: bearer,
   }), 204);
@@ -310,7 +345,7 @@ try {
     session: expiringSession, clock: () => now });
   assert.equal(expiringList.status, "available");
   assert.deepEqual(expiringList.entries.map((entry) => entry.applicationId).sort(),
-    ["application:issuer:headless:v1", applicationId].sort());
+    ["application:issuer:headless:v1", applicationId, lostPayload.applicationId].sort());
   const expiringChallenge = await expectStatus(await post(challengeRoute, {
     actorDid, actorKeyId, purpose: "applicant-session",
   }), 201);
@@ -330,7 +365,7 @@ try {
   await expectStatus(await fetch(`${origin}/v1/actor-authentication/session`, { headers: expiringBearer }), 401);
   await assert.rejects(listApplicantApplications({ apiBase: origin, pageOrigin: origin,
     session: expiringSession, clock: () => now }), /current applicant DID session/u);
-  process.stdout.write("[did-auth-headless] Ledger and off-chain DID challenge sessions; executable CLI signed registration, applicant list, replay and origin denial; private-list isolation, expiry, and revocation passed. No role grant or deployed finality was inferred.\n");
+  process.stdout.write("[did-auth-headless] Ledger and off-chain DID challenge sessions; executable CLI signed registration, applicant list, replay and origin denial; accepted write with lost response remains unknown; private-list isolation, expiry, and revocation passed. No role grant or deployed finality was inferred.\n");
 } finally {
   server.closeAllConnections();
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
