@@ -108,6 +108,19 @@ select {
   font-size: 0.86rem;
 }
 
+.vp-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.9rem;
+  border: 1px solid var(--midnight-border);
+  border-radius: 12px;
+  background: var(--midnight-white);
+  color: var(--ink);
+}
+.vp-consent input { flex: none; width: 1.1rem; height: 1.1rem; margin: 0.1rem 0 0; accent-color: var(--midnight-blue); }
+.vp-consent:focus-within { outline: 2px solid var(--midnight-blue); outline-offset: 2px; }
+
 .input,
 .select,
 .button {

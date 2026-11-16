@@ -135,6 +135,7 @@ describe("membership forms with the live admission host", () => {
         const presentation = await demo.presentationForNonce(challengeNonce!, applicant.scope);
         const vpForm = root.querySelector<HTMLFormElement>("[data-application-vp-form]")!;
         vpForm.querySelector<HTMLTextAreaElement>("[name='presentation']")!.value = JSON.stringify(presentation);
+        vpForm.querySelector<HTMLInputElement>("[data-vp-consent]")!.checked = true;
         vpForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
         await vi.waitFor(() => expect(root.textContent).toContain(`${applicant.role} evidence accepted`), { timeout: 5000 });
         expect(host.receipts.size).toBe(1);

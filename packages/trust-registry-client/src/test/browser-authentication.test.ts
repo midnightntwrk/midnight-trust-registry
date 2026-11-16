@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { isActorDidSigner, listApplicantApplications, signInActorDid, signOutActorDid } from "../browser-authentication.js";
+import { isActorDidSigner, isSameOriginPrivateApi, listApplicantApplications, signInActorDid, signOutActorDid } from "../browser-authentication.js";
 
 const NOW = Date.parse("2026-11-15T00:00:00.000Z");
 const origin = "http://127.0.0.1:4400";
@@ -26,6 +26,22 @@ const session = { actorDid, actorKeyId, purpose: "maintainer-session" as const,
   accessToken: `trsa_${"a".repeat(43)}`, expiresAt: new Date(NOW + 900_000).toISOString() };
 
 describe("shared browser DID authentication", () => {
+  it("accepts IPv6 loopback sign-in on an exact origin and rejects a different origin", async () => {
+    const ipv6Origin = "http://[::1]:4400";
+    expect(isSameOriginPrivateApi(ipv6Origin, ipv6Origin)).toBe(true);
+    expect(isSameOriginPrivateApi(ipv6Origin, origin)).toBe(false);
+    expect(isSameOriginPrivateApi("http://registry.example", "http://registry.example")).toBe(false);
+    const fetchMock = vi.fn(async (url: string) => Response.json(url.endsWith("/challenges")
+      ? { ...challenge, origin: ipv6Origin } : session));
+    const result = await signInActorDid({ apiBase: ipv6Origin, pageOrigin: ipv6Origin,
+      registryId: challenge.registryId, purpose: "maintainer-session",
+      signer: { getIdentity: async () => ({ actorDid, actorKeyId }), signDigest: async () => signature },
+      fetchImpl: fetchMock as unknown as typeof fetch, clock: () => NOW });
+    expect(result.actorDid).toBe(actorDid);
+    expect(fetchMock.mock.calls).toHaveLength(2);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`${ipv6Origin}/v1/actor-authentication/challenges`);
+  });
+
   it("offers sign-in only for a host signer with both required methods", () => {
     expect(isActorDidSigner(null)).toBe(false);
     expect(isActorDidSigner({ getIdentity: async () => ({ actorDid, actorKeyId }) })).toBe(false);
