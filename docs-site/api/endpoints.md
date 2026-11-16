@@ -39,6 +39,7 @@ Timestamped evidence export uses the same selector and snapshot as the temporal 
 | `POST /v1/actor-authentication/challenges`, `/sessions` | Opt-in DID-key challenge and one-use verification; returns a short-lived bearer session, not a registry role |
 | `GET`, `DELETE /v1/actor-authentication/session` | Read DID identity and purpose, or revoke the process-local bearer session |
 | `POST /v1/pending-applications` | Signed pending registration via injected trusted port |
+| `GET /v1/pending-applications/{applicationId}` | Private applicant-scoped record read for exact signed-request reconciliation; not finalized governance evidence |
 | `POST /v1/application-evidence/{id}/challenges`, `/submissions` | Authenticated, one-use VP challenge/intake via `applicationVp` port |
 | `GET /v1/application-evidence/{id}/binding`, `/receipt` | Applicant-authorized binding and accepted redacted receipt |
 | `POST /v1/recognition-evidence/{id}/challenges`, `/submissions` | Private accreditation and authority assertion intake |

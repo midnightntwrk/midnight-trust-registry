@@ -55,6 +55,15 @@ problem. Other HTTP failures, malformed data, and maintainer-purpose sessions
 fail rather than appearing as an empty inbox. This read does not confer a role
 or authorize any application or governance write.
 
+`registerApplicantApplication` is the shared headless/browser path for a
+pre-signed pending request. It requires an unexpired applicant DID session on
+the exact API origin, matches the signed actor, key, and registry to that
+session, and checks the pending record returned by the API. The external signer
+still owns the key; the server, not this client, verifies the signature and
+authorizes the write. Successful registration means pending intake, not VP
+eligibility, maintainer approval, or finalized on-chain authority. The signed
+role journeys exercise this path against the local simulator host.
+
 For challenge-backed application proposals, `scopeCommitment` means the
 canonical `tr-scope-v1` authorization-scope digest, not a hash of the governed
 resource ID. The resource ID remains a separate proposal input. The

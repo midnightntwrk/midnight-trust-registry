@@ -361,7 +361,7 @@ test("applicant explains why private signing is unavailable across origins", asy
   }
 });
 
-test("applicant Settings signs in with DID without showing a registry role", async ({ page, allowedLocalOrigins }) => {
+test("applicant readiness signs in with DID without granting a registry role", async ({ page, allowedLocalOrigins }) => {
   const server = await serveApp("applicant-portal");
   const actorDid = `did:midnight:undeployed:${"ab".repeat(32)}`;
   const actorKeyId = `${actorDid}#auth-1`;
@@ -398,13 +398,14 @@ test("applicant Settings signs in with DID without showing a registry role", asy
     });
     await page.goto(`${server.base}${server.packagedPath}`);
     await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
-    await expect(page.locator(".journey-prerequisite")).toContainText("sign in with your digital identity in Workspace settings");
+    await expect(page.locator(".journey-prerequisite")).toContainText("Sign in to send private evidence");
     await expect(page.locator(".application-readiness")).toContainText("Not signed in");
     await expect(page.locator(".application-readiness")).toContainText("Not verified in this view");
     await expect(page.locator(".application-readiness")).toContainText("Requires governed approval");
     await expect(page.locator(".hero-sign-in")).toHaveText("Sign in with digital identity →");
-    await page.locator(".hero-sign-in").click();
-    await page.getByRole("button", { name: "Sign in with digital identity" }).click();
+    await page.getByRole("button", { name: "Sign in to continue" }).click();
+    await expect(page.locator("#identity-step strong")).toBeFocused();
+    await page.locator('.task-nav a[href="#connection-details"]').click();
     await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
     await expect(page.locator(".application-readiness")).toContainText("Signed in for this session");
     await expect(page.locator(".portal-profile-card")).toContainText("Eligibility proof and registry permission are checked separately");
@@ -414,7 +415,7 @@ test("applicant Settings signs in with DID without showing a registry role", asy
     await page.getByRole("button", { name: "Sign out" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText("A digital identity signer is connected");
     await expect(page.locator(".application-readiness")).toContainText("Not signed in");
-    await expect(page.locator(".journey-prerequisite")).toContainText("sign in with your digital identity in Workspace settings");
+    await expect(page.locator(".journey-prerequisite")).toContainText("Sign in to send private evidence");
     expect(revokeCalls).toBe(1);
     await page.getByRole("button", { name: "Sign in with digital identity" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText(`Signed in as ${actorDid}`);
@@ -432,6 +433,35 @@ test("applicant Settings signs in with DID without showing a registry role", asy
     await page.getByRole("button", { name: "Recheck connection" }).click();
     await expect(page.locator(".portal-profile-card")).toContainText("A digital identity signer is connected");
     await expect(page.locator(".portal-profile-card [data-did-sign-out]")).toHaveCount(0);
+  } finally {
+    await page.close();
+    await server.close();
+  }
+});
+
+test("applicant readiness keeps a failed DID sign-in visible without opening Settings", async ({ page, allowedLocalOrigins }) => {
+  const server = await serveApp("applicant-portal");
+  try {
+    allowedLocalOrigins.add(server.base);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.addInitScript(() => {
+      window.midnightTrustRegistryDidSigner = {
+        getIdentity: async () => ({ actorDid: `did:midnight:undeployed:${"ab".repeat(32)}`, actorKeyId: "#auth-1" }),
+        signDigest: async () => { throw new Error("Signer should not run after challenge denial"); },
+      };
+    });
+    await page.route(`${server.base}/v1/actor-authentication/challenges`, (route) => route.fulfill({
+      status: 401, json: { title: "Identity unavailable" },
+    }));
+    await page.goto(`${server.base}${server.packagedPath}`);
+    await page.getByRole("button", { name: "Sign in to continue" }).click();
+    await expect(page.locator("#identity-step [role='alert']")).toContainText("HTTP 401");
+    await expect(page.getByRole("button", { name: "Sign in to continue" })).toBeFocused();
+    await expect(page.locator(".settings-view")).toBeHidden();
+    await expect(page.locator(".application-readiness")).toContainText("Not signed in");
+    await expect(page.locator(".application-readiness")).toContainText("Requires governed approval");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await expectNoWcagViolations(page, "applicant readiness failed sign-in");
   } finally {
     await page.close();
     await server.close();
