@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
+import { createHash } from "node:crypto";
 import { globSync, readFileSync, realpathSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import semver from "semver";
 import yaml from "js-yaml";
@@ -50,6 +51,21 @@ export function checkInstalledIdentityRuntime(directory = root) {
   }
 
   const overrides = yaml.load(readFileSync(join(directory, "pnpm-workspace.yaml"), "utf8"))?.overrides ?? {};
+  const lockfile = yaml.load(readFileSync(join(directory, "pnpm-lock.yaml"), "utf8"));
+  const verifiedOverride = (name, value, pinnedVersion) => {
+    if (value === pinnedVersion) return true;
+    if (!value.startsWith("file:") || !value.endsWith(".tgz")) return false;
+    const path = realpathSync(resolve(directory, value.slice("file:".length)));
+    const checkout = realpathSync(directory);
+    if (!path.startsWith(`${checkout}${sep}`)) throw new Error(`${name} tarball must be inside the checkout`);
+    const resolution = lockfile.packages?.[`${name}@${value}`]?.resolution;
+    if (resolution?.tarball !== value || !/^sha512-[A-Za-z0-9+/]+={0,2}$/u.test(resolution.integrity ?? "")) {
+      throw new Error(`${name} tarball is not pinned by the lockfile`);
+    }
+    const digest = createHash("sha512").update(readFileSync(path)).digest("base64");
+    if (`sha512-${digest}` !== resolution.integrity) throw new Error(`${name} tarball differs from the lockfile`);
+    return true;
+  };
   const identities = new Map();
   const addIdentities = (manifest, manifestPath) => {
     for (const [name, pin] of Object.entries(manifest.dependencies ?? {})) {
@@ -78,7 +94,7 @@ export function checkInstalledIdentityRuntime(directory = root) {
 
   for (const [name, { pin: pinnedVersion, sources }] of identities) {
     const values = overrideValues(overrides, name);
-    if (values.length === 0 || values.some((value) => value !== pinnedVersion)) {
+    if (values.length === 0 || values.some((value) => !verifiedOverride(name, value, pinnedVersion))) {
       throw new Error(`${name} override ${values.join(", ") || "missing"} does not match ${pinnedVersion}`);
     }
     const resolved = [];
