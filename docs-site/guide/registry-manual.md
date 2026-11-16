@@ -80,6 +80,10 @@ missing result as a denial by the registry or as a successful authorization.
 
 For the current implementation and its exact APIs, see the [use cases](./use-cases.md),
 [API reference](../api/), and [end-to-end qualification](./end-to-end-testing.md).
+Advanced operators can run the headless DID and signed-intake fixture from the
+[end-to-end guide](./end-to-end-testing.md). Its pending list is not a
+finalized decision or exact signed-request reconciliation. Keep the ephemeral
+session and signed request out of shell arguments, logs, and saved examples.
 
 ## Know your source
 
