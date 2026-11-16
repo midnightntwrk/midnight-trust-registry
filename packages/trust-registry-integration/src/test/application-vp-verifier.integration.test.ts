@@ -52,7 +52,10 @@ async function fixture() {
 describe("published VC proof and DID application verifier port", () => {
   it("binds a qualified VP to the host-pinned audience and deployment", async () => {
     const scenario = await createApplicationVpScenarioFixture();
-    const qualified = { ...scenario.input, trustContext: VP_FIXTURE_TRUST_CONTEXT };
+    const qualified = {
+      ...scenario.input, trustContext: VP_FIXTURE_TRUST_CONTEXT,
+      expectedPolicyId: "policy:vp:v1", expectedPolicyVersion: "v1",
+    };
     await expect(verifyQualifiedApplicationVp(qualified)).resolves.toMatchObject({
       subjectDid: scenario.input.expectedSubjectDid,
       scopeCommitment: computeAuthorizationScopeCommitment(scenario.input.scope),
@@ -73,16 +76,26 @@ describe("published VC proof and DID application verifier port", () => {
       { contractAddress: `0x${"55".repeat(32)}` },
       { role: "verifier" as const },
       { scopeCommitment: `0x${"66".repeat(32)}` },
+      { policyId: "policy:vp:other" },
+      { policyVersion: "v2" },
     ]) {
       const other = await createApplicationVpScenarioFixture(NONCE, { presentationContext });
-      await expect(verifyQualifiedApplicationVp({ ...other.input, trustContext: VP_FIXTURE_TRUST_CONTEXT }))
+      await expect(verifyQualifiedApplicationVp({ ...other.input,
+        trustContext: VP_FIXTURE_TRUST_CONTEXT,
+        expectedPolicyId: "policy:vp:v1", expectedPolicyVersion: "v1",
+      }))
         .rejects.toMatchObject({ category: "invalid_presentation" });
     }
+    await expect(verifyQualifiedApplicationVp({ ...qualified, expectedPolicyVersion: "v2" }))
+      .rejects.toMatchObject({ category: "invalid_presentation" });
   });
 
   it("fails closed when qualified presentation binding or its source is unavailable", async () => {
     const scenario = await createApplicationVpScenarioFixture();
-    const qualified = { ...scenario.input, trustContext: VP_FIXTURE_TRUST_CONTEXT };
+    const qualified = {
+      ...scenario.input, trustContext: VP_FIXTURE_TRUST_CONTEXT,
+      expectedPolicyId: "policy:vp:v1", expectedPolicyVersion: "v1",
+    };
     expect(() => verifyQualifiedApplicationVp({ ...qualified, trustContext: undefined } as unknown as typeof qualified))
       .toThrowError(ApplicationVpVerificationError);
     await expect(verifyQualifiedApplicationVp({ ...qualified, family: {

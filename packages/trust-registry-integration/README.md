@@ -248,7 +248,8 @@ Current coverage:
   body roots from the submitted credential and presentation body strings;
   changing either submitted body or a proof signature fails verification.
   The signed fixture presentation body names the credential body root,
-  subject DID, audience, registry, deployment tuple, nonce, role, and scope
+  subject DID, audience, registry, deployment tuple, nonce, role, scope,
+  policy ID, and policy version
   commitment; a validly signed presentation naming a different credential is
   rejected before eligibility checks.
   The fixture's role scope, expiry, holder, status registry, handle, and
@@ -290,7 +291,7 @@ Current coverage:
 - `createQualifiedApplicationVpIntakePorts` additionally requires an
   independently pinned registry ID, API origin, genesis hash, and contract
   address. Its family adapter must derive and compare the corresponding
-  audience, deployment, nonce, role, scope, and subject from the verified
+  audience, deployment, nonce, role, scope, policy ID/version, and subject from the verified
   signed presentation body. A different host origin or deployment fails
   before an eligibility result can be returned; an unavailable binding source
   fails closed. `createApplicationVpIntakePorts` remains the unqualified

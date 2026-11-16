@@ -61,6 +61,8 @@ type FixturePresentationBody = {
   nonce: string;
   role: AuthorizationScope["role"];
   scopeCommitment: string;
+  policyId: string;
+  policyVersion: string;
 };
 
 const parseFixtureCredentialBody = (raw: string): FixtureCredentialBody => {
@@ -106,9 +108,10 @@ const parseFixturePresentationBody = (raw: string): FixturePresentationBody => {
   }
   const body = value as Record<string, unknown>;
   if (
-    Object.keys(body).length !== 11
+    Object.keys(body).length !== 13
     || !["version", "subjectDid", "credentialBodyRoot", "privatePayload", "audience", "registryId",
-      "genesisHash", "contractAddress", "nonce", "role", "scopeCommitment"].every((key) => Object.hasOwn(body, key))
+      "genesisHash", "contractAddress", "nonce", "role", "scopeCommitment", "policyId", "policyVersion"]
+      .every((key) => Object.hasOwn(body, key))
     || body.version !== "tr-vp-presentation-fixture-v1"
     || typeof body.subjectDid !== "string"
     || typeof body.credentialBodyRoot !== "string" || !/^0x[0-9a-f]{64}$/u.test(body.credentialBodyRoot)
@@ -119,6 +122,7 @@ const parseFixturePresentationBody = (raw: string): FixturePresentationBody => {
     || typeof body.nonce !== "string" || !/^0x[0-9a-f]{64}$/u.test(body.nonce)
     || !["issuer", "verifier", "auditor", "maintainer"].includes(String(body.role))
     || typeof body.scopeCommitment !== "string" || !/^0x[0-9a-f]{64}$/u.test(body.scopeCommitment)
+    || typeof body.policyId !== "string" || typeof body.policyVersion !== "string"
   ) throw new TypeError("Application VP fixture presentation body is invalid");
   return body as FixturePresentationBody;
 };
@@ -237,6 +241,8 @@ export async function createApplicationVpScenarioFixture(
     nonce,
     role: scope.role,
     scopeCommitment: computeAuthorizationScopeCommitment(scope),
+    policyId: "policy:vp:v1",
+    policyVersion: "v1",
     ...options.presentationContext,
   };
   const rawPresentationBody = JSON.stringify(presentationBody);
@@ -439,7 +445,9 @@ export async function createApplicationVpScenarioFixture(
         || presentation.contractAddress !== expected.contractAddress
         || presentation.nonce !== expected.nonce
         || presentation.role !== expected.role
-        || presentation.scopeCommitment !== expected.scopeCommitment) {
+        || presentation.scopeCommitment !== expected.scopeCommitment
+        || presentation.policyId !== expected.policyId
+        || presentation.policyVersion !== expected.policyVersion) {
         throw new TypeError("Application VP fixture presentation context is invalid");
       }
       return true as const;

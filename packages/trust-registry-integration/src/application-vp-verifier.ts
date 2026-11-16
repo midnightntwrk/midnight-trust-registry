@@ -8,6 +8,7 @@ import {
   AuthorizationScopeSchema,
   HashHexSchema,
   IssuerStatusPolicyBindingSchema,
+  ScopedIdentifierSchema,
   computeAuthorizationScopeCommitment,
   sha256Hex,
   type ApplicationChallengeBinding,
@@ -66,6 +67,8 @@ export type QualifiedApplicationVpFamilyAdapter<Submission> = ApplicationVpFamil
     nonce: string;
     role: AuthorizationScope["role"];
     scopeCommitment: string;
+    policyId: string;
+    policyVersion: string;
   }): Promise<true>;
 };
 
@@ -99,14 +102,24 @@ export function verifyApplicationVp<Submission>(input: ApplicationVpInput<Submis
 export function verifyQualifiedApplicationVp<Submission>(input: ApplicationVpInput<Submission> & {
   family: QualifiedApplicationVpFamilyAdapter<Submission>;
   trustContext: QualifiedApplicationVpContext;
+  expectedPolicyId: string;
+  expectedPolicyVersion: string;
 }): Promise<ApplicationVpVerifierResult> {
   const trusted = ActorAuthenticationContextSchema.safeParse(input.trustContext);
-  if (!trusted.success) throw new ApplicationVpVerificationError("invalid_presentation");
-  return verifyApplicationVpInternal(input, trusted.data);
+  const policyId = ScopedIdentifierSchema.safeParse(input.expectedPolicyId);
+  if (!trusted.success || !policyId.success || policyId.data !== policyId.data.toLowerCase()
+    || typeof input.expectedPolicyVersion !== "string" || !/^v[1-9][0-9]*$/u.test(input.expectedPolicyVersion)) {
+    throw new ApplicationVpVerificationError("invalid_presentation");
+  }
+  return verifyApplicationVpInternal(input, trusted.data, {
+    policyId: policyId.data,
+    policyVersion: input.expectedPolicyVersion,
+  });
 }
 
 async function verifyApplicationVpInternal<Submission>(input: ApplicationVpInput<Submission>,
-  trustContext?: QualifiedApplicationVpContext): Promise<ApplicationVpVerifierResult> {
+  trustContext?: QualifiedApplicationVpContext,
+  expectedPolicy?: { policyId: string; policyVersion: string }): Promise<ApplicationVpVerifierResult> {
   const scope = AuthorizationScopeSchema.safeParse(input.scope);
   if (!NONCE_PATTERN.test(input.nonce) || !validTime(input.evaluatedAtMs) || !scope.success) {
     throw new ApplicationVpVerificationError("invalid_presentation");
@@ -171,6 +184,7 @@ async function verifyApplicationVpInternal<Submission>(input: ApplicationVpInput
       throw new Error("Credential body binding failed");
     }
     if (trustContext !== undefined) {
+      if (expectedPolicy === undefined) throw new Error("Qualified VP policy is missing");
       const parsed = ActorAuthenticationContextSchema.parse(trustContext);
       const qualifiedFamily = input.family as QualifiedApplicationVpFamilyAdapter<Submission>;
       if (typeof qualifiedFamily.assertPresentationBinding !== "function"
@@ -180,6 +194,8 @@ async function verifyApplicationVpInternal<Submission>(input: ApplicationVpInput
           nonce: input.nonce,
           role: scope.data.role,
           scopeCommitment: computeAuthorizationScopeCommitment(scope.data),
+          policyId: expectedPolicy.policyId,
+          policyVersion: expectedPolicy.policyVersion,
         }) !== true) {
         throw new Error("Presentation is not bound to the trusted registry context");
       }
@@ -291,6 +307,8 @@ export function createQualifiedApplicationVpIntakeVerifier<Submission>(config: {
       resolver: config.resolver,
       family: config.family,
       trustContext: trusted,
+      expectedPolicyId: binding.policyId,
+      expectedPolicyVersion: binding.policyVersion,
       submission: presentation as Submission,
       nonce: context.nonce,
       expectedSubjectDid: binding.subjectDid,
