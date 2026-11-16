@@ -1,5 +1,6 @@
 import { RecognitionRecordSchema } from "@midnight-ntwrk/trust-registry-domain/browser";
-export { PendingApplicationListResponseSchema, PendingApplicationSummarySchema } from "@midnight-ntwrk/trust-registry-domain/browser";
+export { MAX_PENDING_APPLICATION_LIST_ITEMS, PendingApplicationListResponseSchema,
+  PendingApplicationSummarySchema } from "@midnight-ntwrk/trust-registry-domain/browser";
 import { z } from "zod";
 
 const NonEmptyStringSchema = z.string().trim().min(1);

@@ -166,6 +166,7 @@ import {
   type RecognitionAccreditationHttpPort,
 } from "./recognition-accreditation-http.js";
 import {
+  MAX_PENDING_APPLICATION_LIST_ITEMS,
   PendingApplicationListResponseSchema,
   PendingApplicationRegistrationRejectedError,
   type PendingApplicationRegistrationPort,
@@ -1447,6 +1448,10 @@ export const createTrustRegistryApiServer = (
         const entries = (await list.call(options.pendingApplicationRegistration, subjectDid))
           .filter((entry) => entry.subjectDid === subjectDid)
           .map((entry) => entry.summary);
+        if (entries.length > MAX_PENDING_APPLICATION_LIST_ITEMS) {
+          throw jsonProblem(problemBaseUri, "pending-application-list-unavailable", 503,
+            "pending application list unavailable");
+        }
         writeJson(response, 200, PendingApplicationListResponseSchema.parse({
           entries,
         }), false);

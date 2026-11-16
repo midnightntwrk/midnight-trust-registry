@@ -32,8 +32,9 @@ export const PendingApplicationSummarySchema = z.strictObject({
   status: z.enum(["pending", "archived"]),
   createdAt: z.string().datetime({ offset: true }),
 });
+export const MAX_PENDING_APPLICATION_LIST_ITEMS = 10_000;
 export const PendingApplicationListResponseSchema = z.strictObject({
-  entries: z.array(PendingApplicationSummarySchema),
+  entries: z.array(PendingApplicationSummarySchema).max(MAX_PENDING_APPLICATION_LIST_ITEMS),
 });
 export type PendingApplicationSummary = z.infer<typeof PendingApplicationSummarySchema>;
 

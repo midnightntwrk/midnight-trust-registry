@@ -11,7 +11,7 @@ import { z } from "zod";
 
 import { preflightMutationIntentActor } from "./mutation-intent-actor-binding.js";
 import { PendingApplicationSummarySchema } from "./browser-schemas.js";
-export { PendingApplicationListResponseSchema } from "./browser-schemas.js";
+export { MAX_PENDING_APPLICATION_LIST_ITEMS, PendingApplicationListResponseSchema } from "./browser-schemas.js";
 import type { MutationIntentActorFailure } from "./mutation-intent-actor-binding.js";
 import { verifyMutationIntentDidSignature } from "./mutation-intent-verifier.js";
 
