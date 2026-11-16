@@ -4,6 +4,8 @@ import type { Server } from "node:http";
 import { createOperatorWorkspace } from "@midnight-ntwrk/trust-registry-cli";
 import { encodeJubjubSignature, payloadToJubjubDigest, signJubjubDigest } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import {
+  ActorAuthenticationChallengeSchema,
+  actorAuthenticationDigestBytes,
   computeAuthorizationScopeCommitment,
   computePendingApplicationPayloadCommitment,
   mutationIntentDigestBytes,
@@ -20,10 +22,12 @@ import {
 } from "@midnight-ntwrk/trust-registry-integration";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { createActorAuthenticationService } from "../actor-authentication.js";
+import { createActorSessionService } from "../actor-sessions.js";
 import { InMemoryApplicationChallengeStore } from "../application-challenges.js";
 import type { ApplicationVpHttpPort } from "../application-vp-http.js";
 import { InMemoryPendingApplicationRegistrationPort } from "../pending-application-registration.js";
-import { createTrustRegistryApiServer } from "../server.js";
+import { createTrustRegistryApiServer, type TrustRegistryApiServerOptions } from "../server.js";
 import { createInMemorySource } from "../source.js";
 import { computeOperatorWorkspaceCommitment } from "../workspace-commitment.js";
 
@@ -120,13 +124,59 @@ describe("auditor signed apply through published DID/VC/VP HTTP intake", () => {
         };
       },
     };
-    server = createTrustRegistryApiServer({
+    const serverOptions: TrustRegistryApiServerOptions = {
       source: createInMemorySource(workspace.snapshot),
       clock: () => NOW,
       pendingApplicationRegistration: registration,
       applicationVp,
-    });
+    };
+    server = createTrustRegistryApiServer(serverOptions);
     const base = await listen(server);
+    const authChallenges = new Map<string, number>();
+    serverOptions.actorAuthentication = {
+      challenges: createActorAuthenticationService({
+        context: { ...fixtureContext, origin: base },
+        resolver: fixture.input.resolver,
+        store: {
+          async insert(digest, _actorHash, expiresAtMs, nowMs) {
+            for (const [key, expiry] of authChallenges) if (expiry <= nowMs) authChallenges.delete(key);
+            if (authChallenges.has(digest)) return false;
+            authChallenges.set(digest, expiresAtMs);
+            return true;
+          },
+          async consume(digest, nowMs) {
+            const expiry = authChallenges.get(digest);
+            if (expiry === undefined || expiry <= nowMs) return false;
+            authChallenges.delete(digest);
+            return true;
+          },
+        },
+        clock: () => VP_FIXTURE_TIME_MS,
+      }),
+      sessions: createActorSessionService(() => VP_FIXTURE_TIME_MS),
+    };
+    const authenticationChallenge = await fetch(`${base}/v1/actor-authentication/challenges`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: base },
+      body: JSON.stringify({ actorDid: subjectDid, actorKeyId: `${subjectDid}#auth-1`, purpose: "applicant-session" }),
+    });
+    expect(authenticationChallenge.status).toBe(201);
+    const authChallenge = ActorAuthenticationChallengeSchema.parse(await authenticationChallenge.json());
+    const authenticationSession = await fetch(`${base}/v1/actor-authentication/sessions`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: base },
+      body: JSON.stringify({ challenge: authChallenge, signature: {
+        keyId: `${subjectDid}#auth-1`,
+        algorithm: "jubjub-schnorr",
+        value: `0x${Buffer.from(encodeJubjubSignature(signJubjubDigest(
+          23n, payloadToJubjubDigest(actorAuthenticationDigestBytes(authChallenge)),
+        ))).toString("hex")}`,
+      } }),
+    });
+    expect(authenticationSession.status).toBe(201);
+    const session = await authenticationSession.json() as { accessToken: string; role?: string; vpEligible?: boolean };
+    expect(session.role).toBeUndefined();
+    expect(session.vpEligible).toBeUndefined();
     const intent: MutationIntent = {
       version: "tr-mutation-intent-v1",
       registryId: workspace.snapshot.registry.registryId,
@@ -162,7 +212,8 @@ describe("auditor signed apply through published DID/VC/VP HTTP intake", () => {
     };
     const post = (path: string, body: unknown) => fetch(`${base}${path}`, {
       method: "POST",
-      headers: { "content-type": "application/json", "x-applicant-did": subjectDid },
+      headers: { "content-type": "application/json", "x-applicant-did": subjectDid,
+        authorization: `Bearer ${session.accessToken}` },
       body: JSON.stringify(body),
     });
     const registered = await post("/v1/pending-applications", signed);
@@ -177,6 +228,12 @@ describe("auditor signed apply through published DID/VC/VP HTTP intake", () => {
       policyVersion: pending.binding.policyVersion,
     };
     const path = `/v1/application-evidence/${applicationId}`;
+    const unauthenticatedChallenge = await fetch(`${base}${path}/challenges`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-applicant-did": subjectDid },
+      body: "{}",
+    });
+    expect(unauthenticatedChallenge.status).toBe(403);
     const challengeResponse = await post(`${path}/challenges`, {});
     expect(challengeResponse.status).toBe(201);
     const challenge = await challengeResponse.json() as { nonce: string; challengeHash: string };
@@ -223,5 +280,11 @@ describe("auditor signed apply through published DID/VC/VP HTTP intake", () => {
     expect(JSON.stringify(body)).not.toContain("private-presentation-payload");
     expect(JSON.stringify(storedEvidence)).not.toContain("private-presentation-payload");
     expect((await post(`${path}/submissions`, submission(validVp.input.submission))).status).toBe(409);
+    const signedOut = await fetch(`${base}/v1/actor-authentication/session`, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${session.accessToken}` },
+    });
+    expect(signedOut.status).toBe(204);
+    expect((await post(`${path}/challenges`, {})).status).toBe(403);
   });
 });

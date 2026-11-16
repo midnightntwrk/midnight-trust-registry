@@ -160,6 +160,10 @@ runtime. Those tests bind the presentation to pinned deployment and policy
 context, check one-use challenge consumption, and deny mismatched contexts.
 The auditor case also crosses a real loopback HTTP host, deriving its expected
 audience from the listening origin and its policy from the registered application.
+That case signs into a phase-0 DID applicant session before private VP intake;
+an applicant header alone and a signed-out session are denied. Sign-in returns
+no role or VP-eligibility claim. The separately verified presentation remains
+necessary before redacted evidence is accepted, and governance is still separate.
 These cases run against local adapters and a Compact simulator, not a deployed
 VC/status authority or a finalized ledger host.
 The signed issuer, verifier, auditor, and maintainer CLI journeys also use the
