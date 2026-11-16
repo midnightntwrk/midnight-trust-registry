@@ -35,6 +35,7 @@ import {
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
   createApplicationVpIntakePorts,
+  createQualifiedApplicationVpIntakePorts,
   createApplicationVpScenarioFixture,
   createAuditorAuthorizationScopeFixture,
   createAuditorScenarioFixture,
@@ -49,6 +50,7 @@ import {
   resolveCompactHistoricalEpochAnchor,
   VP_FIXTURE_NONCE,
   VP_FIXTURE_TIME_MS,
+  VP_FIXTURE_TRUST_CONTEXT,
 } from "@midnight-ntwrk/trust-registry-integration";
 import {
   computeOperatorWorkspaceCommitment,
@@ -184,6 +186,7 @@ const fixtureOptions = {
   evidenceVerifierDid: harness.evidenceVerifier.did,
   evidenceVerifierMethodId: harness.evidenceVerifier.keyIds[0].split("#")[1],
   scope,
+  trustContext: { ...VP_FIXTURE_TRUST_CONTEXT, registryId: harness.registryId },
 };
 const resolverFixture = await createApplicationVpScenarioFixture(VP_FIXTURE_NONCE, fixtureOptions);
 const signingPorts = await createApplicationVpIntakePorts({
@@ -232,6 +235,7 @@ const signAction = (maintainer, prepared) => {
 };
 const quorumSignatures = (prepared) => maintainers.map((maintainer) => signAction(maintainer, prepared));
 let currentProof;
+let trustedVpOrigin;
 let acceptedChallengeHash;
 const expectedEvidence = () => {
   if (acceptedChallengeHash === undefined) throw new Error("No accepted application challenge");
@@ -333,11 +337,12 @@ const server = createTrustRegistryApiServer({
       };
     },
     verifyPresentation: async (presentation, context) => {
-      if (currentProof === undefined) throw new Error("VP proof not supplied");
-      const ports = await createApplicationVpIntakePorts({
+      if (currentProof === undefined || trustedVpOrigin === undefined) throw new Error("VP proof or host origin not supplied");
+      const ports = await createQualifiedApplicationVpIntakePorts({
         resolver: currentProof.input.resolver,
         family: currentProof.input.family,
         signer: currentProof.signer,
+        trustContext: { ...fixtureOptions.trustContext, origin: trustedVpOrigin },
       });
       return ports.verifyPresentation(presentation, context);
     },
@@ -402,6 +407,7 @@ try {
   const address = server.address();
   if (address === null || typeof address === "string") throw new Error("TCP address unavailable");
   const base = `http://127.0.0.1:${address.port}`;
+  trustedVpOrigin = base;
   const authenticatedFetch = (input, init = {}) => fetch(input, {
     ...init,
     headers: { ...init.headers, authorization: `Bearer ${token}` },
@@ -496,19 +502,38 @@ try {
   assert.deepEqual(binding.scope, scope);
   assert.equal(binding.scopeCommitment, computeAuthorizationScopeCommitment(scope));
   assert.deepEqual(binding.governedResource, governedResource);
+  const presentationFixtureOptions = {
+    ...fixtureOptions,
+    trustContext: { ...fixtureOptions.trustContext, origin: base },
+    policyId: binding.policyId,
+    policyVersion: binding.policyVersion,
+  };
   assert.equal((await post(`${evidencePath}/challenges`, {}, false)).status, 403);
   const challenge = await applicantClient.issueApplicationChallenge(applicationId);
   assert.equal((await getPrivate(`${evidencePath}/receipt`, false)).status, 403);
   assert.equal((await getPrivate(`${evidencePath}/receipt`)).status, 404);
   acceptedChallengeHash = challenge.challengeHash;
-  currentProof = await createApplicationVpScenarioFixture(challenge.nonce, fixtureOptions);
+  currentProof = await createApplicationVpScenarioFixture(challenge.nonce, presentationFixtureOptions);
   const submission = {
     nonce: challenge.nonce,
     challengeHash: challenge.challengeHash,
     presentation: currentProof.input.submission,
   };
+  const validProof = currentProof;
+  for (const presentationContext of [
+    { audience: `${base}/other` },
+    { policyVersion: binding.policyVersion === "v1" ? "v2" : "v1" },
+  ]) {
+    currentProof = await createApplicationVpScenarioFixture(challenge.nonce, {
+      ...presentationFixtureOptions, presentationContext,
+    });
+    await expectProblem(await post(`${evidencePath}/submissions`, {
+      ...submission, presentation: currentProof.input.submission,
+    }), 403, "application-vp-rejected");
+    assert.equal((await getPrivate(`${evidencePath}/receipt`)).status, 404);
+  }
+  currentProof = validProof;
   if (role === "issuer") {
-    const validProof = currentProof;
     const submitRejectedPresentation = async (proof, presentation) => {
       currentProof = proof;
       await expectProblem(await post(`${evidencePath}/submissions`, {
@@ -522,16 +547,16 @@ try {
     ).toString();
     await submitRejectedPresentation(currentProof, invalidSignature);
     const wrongScopeProof = await createApplicationVpScenarioFixture(challenge.nonce, {
-      ...fixtureOptions,
+      ...presentationFixtureOptions,
       scope: { ...scope, credentialFamilyId: `${scope.credentialFamilyId}:other` },
     });
     await submitRejectedPresentation(wrongScopeProof, wrongScopeProof.input.submission);
     const revokedStatusProof = await createApplicationVpScenarioFixture(challenge.nonce, {
-      ...fixtureOptions, statusDecision: { active: false },
+      ...presentationFixtureOptions, statusDecision: { active: false },
     });
     await submitRejectedPresentation(revokedStatusProof, revokedStatusProof.input.submission);
     const expiredStatusProof = await createApplicationVpScenarioFixture(challenge.nonce, {
-      ...fixtureOptions, statusDecision: { validUntilMs: VP_FIXTURE_TIME_MS - 1 },
+      ...presentationFixtureOptions, statusDecision: { validUntilMs: VP_FIXTURE_TIME_MS - 1 },
     });
     await submitRejectedPresentation(expiredStatusProof, expiredStatusProof.input.submission);
     currentProof = validProof;
@@ -868,7 +893,8 @@ try {
     lifecycle: lifecycleResult,
     ...trustResult,
     expectedRejections: ["fixture-mutation-disabled:403", "unauthorized-apply:403", "wrong-signed-target:400", "apply-replay:409",
-      "unauthorized-vp:403", "vp-replay:404", "lost-vp-response-recovered:200",
+      "unauthorized-vp:403", "wrong-vp-audience:403", "wrong-vp-policy:403",
+      "vp-replay:404", "lost-vp-response-recovered:200",
       "wrong-proposal-target:403",
       "missing-proposal-receipt:403", "single-maintainer:403",
       "duplicate-maintainer:403", ...(role === "maintainer" ? ["candidate-self-vote:403"] : []),

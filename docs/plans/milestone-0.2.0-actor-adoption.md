@@ -162,6 +162,9 @@ The auditor case also crosses a real loopback HTTP host, deriving its expected
 audience from the listening origin and its policy from the registered application.
 These cases run against local adapters and a Compact simulator, not a deployed
 VC/status authority or a finalized ledger host.
+The signed issuer, verifier, auditor, and maintainer CLI journeys also use the
+qualified verifier against their loopback HTTP hosts; each denies a wrong
+audience and changed application-policy version before accepting the valid VP.
 
 The API health response now reports private application registration and list
 ports independently. The applicant portal explains and disables preparation
