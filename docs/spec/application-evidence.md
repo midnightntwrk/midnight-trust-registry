@@ -33,9 +33,12 @@ operator journals, public API responses, or epoch evidence bundles.
 
 V1 applicants MUST use a `did:midnight` subject DID and a Midnight VC/VP flow.
 The VP MUST prove control of the applicant DID and bind to an application
-challenge supplied by the evidence verifier. The verifier checks credential
-status, issuer authorization where required, expiry, and the policy-specific
-claims below.
+challenge supplied by the evidence verifier. Qualified intake additionally
+binds the signed presentation body to the host-pinned audience, registry ID,
+genesis hash, contract address, nonce, applicant DID, requested role, canonical
+scope commitment, and application policy ID/version. The verifier checks
+credential status, issuer authorization where required, expiry, and the
+policy-specific claims below.
 
 | Applicant role | Minimum policy claim | Minimum scope binding |
 | --- | --- | --- |
@@ -448,6 +451,17 @@ The simulator composition test additionally binds a signed fixture VC/VP to
 an independently verified active issuer decision and a challenge-bound status
 attestation; it rejects a current grant reported as suspended. This proves the
 reference wiring locally, not production finality or live revocation.
+
+`createQualifiedApplicationVpIntakePorts` requires an
+independently pinned host origin and deployment tuple and a family adapter
+that reads the corresponding fields from the verified signed presentation
+body. It rejects a missing context, mismatched audience, deployment, policy,
+role, or scope, and an issuer eligibility binding governed by another trust
+registry. `createApplicationVpIntakePorts` remains an unqualified reference
+path; a live host MUST NOT select it. The qualified factory does not itself
+authenticate ledger finality, provide a production VC/status adapter, or grant
+a registry role. The API one-use intake still verifies eligibility before
+consuming the challenge and proposing only redacted signed evidence.
 
 The reference API package exposes an in-memory store for local tests and a
 bounded file-backed store for a single local deployment. The in-memory store
