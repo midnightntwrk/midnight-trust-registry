@@ -15,6 +15,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   ApplicationVpDependencyUnavailableError,
+  ApplicationVpVerificationError,
   createApplicationVpIntakeVerifier,
   verifyApplicationVp,
   verifyQualifiedApplicationVp,
@@ -82,6 +83,8 @@ describe("published VC proof and DID application verifier port", () => {
   it("fails closed when qualified presentation binding or its source is unavailable", async () => {
     const scenario = await createApplicationVpScenarioFixture();
     const qualified = { ...scenario.input, trustContext: VP_FIXTURE_TRUST_CONTEXT };
+    expect(() => verifyQualifiedApplicationVp({ ...qualified, trustContext: undefined } as unknown as typeof qualified))
+      .toThrowError(ApplicationVpVerificationError);
     await expect(verifyQualifiedApplicationVp({ ...qualified, family: {
       ...scenario.family, assertPresentationBinding: async () => { throw new ApplicationVpDependencyUnavailableError(); },
     } })).rejects.toMatchObject({ category: "unavailable" });

@@ -100,7 +100,9 @@ export function verifyQualifiedApplicationVp<Submission>(input: ApplicationVpInp
   family: QualifiedApplicationVpFamilyAdapter<Submission>;
   trustContext: QualifiedApplicationVpContext;
 }): Promise<ApplicationVpVerifierResult> {
-  return verifyApplicationVpInternal(input, input.trustContext);
+  const trusted = ActorAuthenticationContextSchema.safeParse(input.trustContext);
+  if (!trusted.success) throw new ApplicationVpVerificationError("invalid_presentation");
+  return verifyApplicationVpInternal(input, trusted.data);
 }
 
 async function verifyApplicationVpInternal<Submission>(input: ApplicationVpInput<Submission>,
