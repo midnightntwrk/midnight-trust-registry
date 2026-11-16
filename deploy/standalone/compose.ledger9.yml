@@ -1,0 +1,77 @@
+# Ledger 9 development stack. Never reuse Ledger 8 project volumes.
+# Versions: node 2.1.101, indexer 4.4.101, proof server 9.0.0.
+name: ${TR_LEDGER9_STACK_NAME:-tr-standalone-ledger9-local}
+
+services:
+  node:
+    image: midnightntwrk/midnight-node@sha256:0c1ad548d523c1109aa1f16daab1bf72dcb78c7e17b8a8c6d97424ad0eba7b8a
+    platform: linux/arm64
+    ports:
+      - "127.0.0.1:${TR_LEDGER9_NODE_PORT:-39944}:9944"
+    networks: [ledger]
+    volumes:
+      - ledger9-node-data:/node/chain
+    environment:
+      CFG_PRESET: dev
+      SIDECHAIN_BLOCK_BENEFICIARY: 04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          curl -sf -H 'Content-Type: application/json'
+          -d '{"jsonrpc":"2.0","id":1,"method":"chain_getBlockHash","params":[1]}'
+          http://localhost:9944 | grep -q '"result":"0x'
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  indexer:
+    image: midnightntwrk/indexer-standalone@sha256:119f35db548ba1c390845f215bb1e928e73038bef7c315825aee0461bd54499d
+    platform: linux/arm64
+    restart: on-failure
+    ports:
+      - "127.0.0.1:${TR_LEDGER9_INDEXER_PORT:-38088}:8088"
+    networks: [ledger]
+    volumes:
+      - ledger9-indexer-data:/data
+    environment:
+      RUST_LOG: indexer=info,chain_indexer=info,indexer_api=info,wallet_indexer=info,indexer_common=info,fastrace_opentelemetry=off,info
+      APP__INFRA__NODE__URL: ws://node:9944 # nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket -- Docker internal ledger bridge; no external route
+      APP__APPLICATION__NETWORK_ID: ${TR_NETWORK_ID:?standalone network profile required}
+      APP__INFRA__STORAGE__PASSWORD: ${TR_INDEXER_PASSWORD:?private indexer password required}
+      APP__INFRA__PUB_SUB__PASSWORD: ${TR_INDEXER_PASSWORD:?private indexer password required}
+      APP__INFRA__LEDGER_STATE_STORAGE__PASSWORD: ${TR_INDEXER_PASSWORD:?private indexer password required}
+      APP__INFRA__SECRET: ${TR_INDEXER_SECRET:?private indexer secret required}
+      APP__INFRA__SPO_NODE__URL: ws://node:9944 # nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket -- Docker internal ledger bridge; no external route
+      APP__INFRA__SPO_NODE__BLOCKFROST_ID: e2e-test-dummy-id
+    healthcheck:
+      test: [CMD-SHELL, "cat /var/run/indexer-standalone/running"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    depends_on:
+      node:
+        condition: service_healthy
+
+  proof-server:
+    image: midnightntwrk/proof-server@sha256:5617e26aa76d06c44f4bee667c37eb71ccf02fefe0e5848100fa84001282d515
+    platform: linux/arm64
+    command: [midnight-proof-server, -v]
+    ports:
+      - "127.0.0.1:${TR_LEDGER9_PROOF_PORT:-36300}:6300"
+    networks: [ledger]
+    volumes:
+      - ${TR_LEDGER9_PROOF_PARAMS_DIR:?absolute path to Ledger 9 proof parameters required}:/.cache/midnight/zk-params:ro
+    environment:
+      RUST_BACKTRACE: full
+      MIDNIGHT_PROOF_SERVER_NO_FETCH_PARAMS: "true"
+
+networks:
+  ledger:
+    internal: true
+
+volumes:
+  ledger9-node-data:
+  ledger9-indexer-data:
