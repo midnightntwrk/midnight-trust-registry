@@ -1,17 +1,17 @@
 # Ledger 9 migration plan
 
 Status: local migration in progress. This document is not a deployed or release
-qualification claim. The immutable Ledger 8 line is the `ledger8` branch at
+qualification claim. The historical Ledger 8 source is the `ledger8` branch at
 `5abc1575922d3f0cc7234f5f1d4c0a77e045fcfd`.
 
 ## Selected official matrix
 
 | Component | Selected version | Current migration state |
 | --- | --- | --- |
-| Node | 2.1.101 | Isolated Compose image pinned by digest; render checked |
+| Node | 2.1.101 | Default Compose image pinned by digest; render checked |
 | Ledger | 9.1.0.1 | Expected node runtime; live RPC not yet checked |
-| Indexer standalone | 4.4.101 | Isolated Compose image pinned by digest; render checked |
-| Proof server | 9.0.0 | Isolated Compose image pinned by digest; render checked |
+| Indexer standalone | 4.4.101 | Default Compose image pinned by digest; render checked |
+| Proof server | 9.0.0 | Default Compose image pinned by digest; render checked |
 | Compact compiler | 0.36.0 | Not yet installed or used to rebuild this contract |
 | Compact runtime | 0.21.0 | Awaiting compatible DID and VC package graph |
 | Midnight.js / testkit-js | 5.0.0 | API migration not yet validated |
@@ -26,9 +26,9 @@ is the compatibility source. The
 [Midnight.js 5 notes](https://docs.midnight.network/relnotes/midnight-js/midnight-js-5-0-0)
 cover ESM, provider `config`, era-aware types and removal of `setNetworkId()`.
 The [indexer 4.4.101 notes](https://docs.midnight.network/relnotes/midnight-indexer/midnight-indexer-4-4-101)
-require a new index for older 4.3 data. Exact Docker index digests are in
-`deploy/standalone/compose.ledger9.yml`; `node scripts/check-ledger9-compose.mjs`
-validates the merged configuration without starting containers.
+require a new index for older 4.3 data. Exact Docker image digests are in
+`deploy/standalone/compose.yml`; `node scripts/check-standalone-compose-render.mjs`
+validates the base and offline configurations without starting containers.
 
 The registry contract and trust-state model do not require VC. VP-based
 application evidence does. The current API also imports the VC package's
@@ -39,11 +39,12 @@ before the VC release gate is applied only to VP evidence journeys.
 
 ## Execution order
 
-1. Preserve the Ledger 8 branch, install bundles, generated keys, and local
-   node/indexer volumes. Do not run `docker compose down -v` on the Ledger 8
-   project. Never reuse its node or indexer database for this profile.
-2. Qualify the three official images in the separate Ledger 9 Compose file.
-   Use distinct ports and proof parameters. Confirm `system_version` starts
+1. Keep the `ledger8` source branch only as a historical reference. Ledger 9
+   replaces the default standalone Compose stack; there is no parallel Ledger 8
+   runtime profile. Remove old node/indexer volumes only after confirming they
+   belong to this project and no active container uses them. Never reuse an
+   older database with indexer 4.4.101.
+2. Qualify the three official images in the default Compose file. Confirm `system_version` starts
    with `2.1.101`, `state_getRuntimeVersion.specVersion` is `2001100`, and
    `midnight_ledgerVersion` names `crate-ledger-9.1.0.1`. Confirm indexer
    genesis, progress and contract-state decoding before application calls.

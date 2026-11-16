@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { checkRenderedStandaloneCompose, syntheticRenderEnvironment } from "./check-standalone-compose-render.mjs";
+import { checkRenderedStandaloneCompose, ledger9Images, syntheticRenderEnvironment } from "./check-standalone-compose-render.mjs";
 
 const base = () => ({
   name: "tr-standalone-local-rendercheck",
@@ -19,6 +19,16 @@ const base = () => ({
 
 test("render policy accepts the isolated offline topology", () => {
   checkRenderedStandaloneCompose(base(), true);
+});
+
+test("base stack uses the pinned Ledger 9 image cohort", () => {
+  const config = base();
+  for (const [service, image] of Object.entries(ledger9Images)) {
+    config.services[service].image = image;
+  }
+  checkRenderedStandaloneCompose(config, false);
+  config.services.node.image = "midnightntwrk/midnight-node@sha256:" + "a".repeat(64);
+  assert.throws(() => checkRenderedStandaloneCompose(config, false));
 });
 
 test("synthetic render inputs ignore inherited project and ports", () => {
