@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 
+import { runActorApiCommand } from "./actor-api.js";
 import { createDemoSnapshot } from "./demo-snapshot.js";
 import { serializeJson } from "./model.js";
 import { renderAuditReport, type AuditReportKind } from "./report.js";
@@ -58,11 +59,15 @@ type CommandName =
   | "archive"
   | "publish-epoch"
   | "inspect-deployment"
+  | "api-register"
+  | "api-reconcile"
+  | "api-applications"
   | "help";
 
 type CliIo = {
   stderr: (value: string) => void;
   stdout: (value: string) => void;
+  readStdin?: () => Promise<string>;
 };
 
 const defaultIo: CliIo = {
@@ -88,6 +93,12 @@ Commands:
   archive          Archive a revoked or historical workspace record
   publish-epoch    Publish the current workspace registry epoch anchor
   inspect-deployment  Read a Trust Registry deployment at a pinned finalized network checkpoint
+  api-register     Register an externally signed pending application via an applicant DID session on stdin
+  api-reconcile    Check the exact signed request after an unknown registration outcome
+  api-applications List this DID session's pending applications via stdin
+
+Actor API commands require --api-base; the DID session on stdin carries its sign-in origin.
+Pass the ephemeral session JSON through stdin; never put the bearer on a command line.
 
 Examples:
   trust-registry init-demo --output ./artifacts/trust-registry/demo.json
@@ -693,6 +704,12 @@ export const runCli = async (
         return await runPublishEpoch(rest, io);
       case "inspect-deployment":
         return await runInspectDeployment(rest, io);
+      case "api-register":
+        return await runActorApiCommand("api-register", rest, io);
+      case "api-reconcile":
+        return await runActorApiCommand("api-reconcile", rest, io);
+      case "api-applications":
+        return await runActorApiCommand("api-applications", rest, io);
       case "help":
         io.stdout(HELP_TEXT);
         return 0;

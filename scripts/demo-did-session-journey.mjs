@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
+import { spawn } from "node:child_process";
 import { generateKeyPairSync, sign as signEd25519 } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -13,7 +14,14 @@ import {
 import { createLongFormOffchainMidnightDIDString, CurveType, KeyType } from "@midnight-ntwrk/midnight-did-domain";
 
 import { createOperatorWorkspace } from "../packages/trust-registry-cli/dist/index.js";
-import { actorAuthenticationDigestBytes } from "../packages/trust-registry-domain/dist/index.js";
+import {
+  actorAuthenticationDigestBytes,
+  computeAuthorizationScopeCommitment,
+  computePendingApplicationPayloadCommitment,
+  computeSignedPendingApplicationCommitment,
+  issuerGovernedResourceId,
+  mutationIntentDigestBytes,
+} from "../packages/trust-registry-domain/dist/index.js";
 import {
   createMidnightDid,
   createMidnightDidLedgerFixture,
@@ -25,18 +33,41 @@ import {
   createInMemorySource,
   createTrustRegistryApiServer,
   FileActorAuthenticationChallengeStore,
+  InMemoryPendingApplicationRegistrationPort,
+  computeOperatorWorkspaceCommitment,
 } from "../packages/trust-registry-api/dist/index.js";
-import { listApplicantApplications, signInActorDid, signOutActorDid } from "../packages/trust-registry-client/dist/browser-authentication.js";
+import { listApplicantApplications, registerApplicantApplication, signInActorDid, signOutActorDid } from "../packages/trust-registry-client/dist/browser-authentication.js";
 
 const seed = new Uint8Array(32).fill(86);
 const actorDid = createMidnightDid("headless-did-authentication");
 const actorKeyId = `${actorDid}#auth-1`;
-let now = Date.parse("2026-11-15T00:00:00.000Z");
+let now = Date.now();
 const directory = await mkdtemp(join(tmpdir(), "tr-headless-did-auth-"));
+const workspace = createOperatorWorkspace({ label: "did-auth-headless" });
+const registryId = workspace.snapshot.registry.registryId;
 const serverOptions = {
-  source: createInMemorySource(createOperatorWorkspace({ label: "did-auth-headless" }).snapshot),
+  source: createInMemorySource(workspace.snapshot),
 };
 const server = createTrustRegistryApiServer(serverOptions);
+
+async function runActorCli(command, apiBase, input) {
+  const child = spawn(process.execPath, ["packages/trust-registry-cli/bin/trust-registry.mjs",
+    command, "--api-base", apiBase],
+  { cwd: process.cwd(), stdio: ["pipe", "pipe", "pipe"] });
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
+  child.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
+  const exit = new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", resolve);
+  });
+  child.stdin.end(JSON.stringify(input));
+  const code = await exit;
+  assert.equal(stdout.includes(input.session.accessToken), false);
+  assert.equal(stderr.includes(input.session.accessToken), false);
+  return { code, stdout, stderr };
+}
 
 async function expectStatus(response, expected) {
   const body = response.status === 204 ? undefined : await response.json();
@@ -59,7 +90,7 @@ try {
   serverOptions.actorAuthentication = {
     challenges: createActorAuthenticationService({
       context: {
-        registryId: "tr:registry:headless",
+        registryId,
         genesisHash: `0x${"11".repeat(32)}`,
         contractAddress: `0x${"22".repeat(32)}`,
         origin,
@@ -70,13 +101,25 @@ try {
     }),
     sessions,
   };
+  const registration = new InMemoryPendingApplicationRegistrationPort({
+    workspace, applications: [], consumedNonces: [],
+  }, actorDid, resolver);
   serverOptions.pendingApplicationRegistration = {
-    register: async () => { throw new Error("Not used by the private-list journey"); },
-    listForSubjectDid: async (subjectDid) => subjectDid === actorDid ? [{
-      subjectDid: actorDid,
-      summary: { applicationId: "application:issuer:headless:v1", authorizationId: "auth:issuer:headless:v1",
-        role: "issuer", status: "pending", createdAt: new Date(now).toISOString() },
-    }] : [],
+    register: (request, date) => registration.register(request, date),
+    readForSubjectDid: (subjectDid, applicationId) => registration.readForSubjectDid(subjectDid, applicationId),
+    listForSubjectDid: async (subjectDid) => [
+      ...(subjectDid === actorDid ? [{
+        subjectDid: actorDid,
+        summary: { applicationId: "application:issuer:headless:v1", authorizationId: "auth:issuer:headless:v1",
+          role: "issuer", status: "pending", createdAt: new Date(now).toISOString() },
+      }] : []),
+      ...await registration.listForSubjectDid(subjectDid),
+    ],
+  };
+  serverOptions.authorizePendingApplicationRegistration = async (request) => {
+    if (sessions.authenticate(request.headers.authorization, "applicant-session")?.actorDid !== actorDid) {
+      throw new Error("Applicant session required");
+    }
   };
   const post = (route, body, requestOrigin = origin) => fetch(`${origin}${route}`, {
     method: "POST",
@@ -125,6 +168,92 @@ try {
     createdAt: new Date(now).toISOString() }] });
   const identity = await expectStatus(await fetch(`${origin}/v1/actor-authentication/session`, { headers: bearer }), 200);
   assert.deepEqual(identity, { actorDid, actorKeyId, purpose: "applicant-session" });
+  const applicationId = "application:maintainer:cli-headless:v1";
+  const authorizationId = "auth:maintainer:cli-headless:v1";
+  const scope = { version: "tr-scope-v1", role: "maintainer", registryId };
+  const governedResource = { type: "registry", id: registryId };
+  const payload = { applicationId, authorizationId, scope, governedResource };
+  const intent = {
+    version: "tr-mutation-intent-v1", registryId, actorDid, actorKeyId,
+    actorRole: "applicant", action: "apply", target: "maintainer", targetId: applicationId,
+    scopeCommitment: computeAuthorizationScopeCommitment(scope),
+    payloadCommitment: computePendingApplicationPayloadCommitment(payload),
+    nonce: `0x${"33".repeat(32)}`,
+    expectedWorkspaceCommitment: computeOperatorWorkspaceCommitment(workspace),
+    expectedEpochId: workspace.snapshot.currentEpoch.epochId,
+    issuedAt: new Date(now - 10_000).toISOString(),
+    expiresAt: new Date(now + 60_000).toISOString(),
+  };
+  const signedRequest = { ...payload, intent, signature: {
+    keyId: actorKeyId, algorithm: "jubjub-schnorr",
+    value: `0x${Buffer.from(encodeJubjubSignature(signJubjubPayloadFromSeed(
+      seed, mutationIntentDigestBytes(intent),
+    ))).toString("hex")}`,
+  } };
+  const cliSession = { ...session, origin, registryId, genesisHash: challenge.genesisHash,
+    contractAddress: challenge.contractAddress };
+  const wrongOrigin = await runActorCli("api-register", "https://foreign.example",
+    { session: cliSession, request: signedRequest });
+  assert.equal(wrongOrigin.code, 1);
+  assert.match(wrongOrigin.stderr, /same trusted API origin/u);
+  const wrongActor = await runActorCli("api-register", origin, {
+    session: { ...cliSession, actorDid: `did:midnight:undeployed:${"cc".repeat(32)}` },
+    request: signedRequest,
+  });
+  assert.equal(wrongActor.code, 1);
+  assert.match(wrongActor.stderr, /does not match/u);
+  const acceptedCli = await runActorCli("api-register", origin, { session: cliSession, request: signedRequest });
+  assert.equal(acceptedCli.code, 0, acceptedCli.stderr);
+  const registered = JSON.parse(acceptedCli.stdout);
+  assert.equal(registered.status, "pending");
+  assert.equal(registered.binding.applicationId, applicationId);
+  assert.equal(registered.binding.subjectDid, actorDid);
+  const replayCli = await runActorCli("api-register", origin, { session: cliSession, request: signedRequest });
+  assert.equal(replayCli.code, 1);
+  assert.match(replayCli.stderr, /HTTP 409/u);
+  const listCli = await runActorCli("api-applications", origin, { session: cliSession });
+  assert.equal(listCli.code, 0, listCli.stderr);
+  assert.deepEqual(JSON.parse(listCli.stdout).entries.map((entry) => entry.applicationId).sort(),
+    ["application:issuer:headless:v1", applicationId].sort());
+  const lostScope = { version: "tr-scope-v1", role: "issuer",
+    credentialFamilyId: "headless-lost-response", schemaId: "headless-schema",
+    schemaVersion: "1.0.0", credentialDefinitionId: "headless-definition",
+    statusMethod: "headless-status" };
+  const lostPayload = {
+    applicationId: "application:issuer:cli-lost-response:v1",
+    authorizationId: "auth:issuer:cli-lost-response:v1", scope: lostScope,
+    governedResource: { type: "credentialFamily", id: issuerGovernedResourceId(lostScope, "credentialFamily") },
+  };
+  const lostIntent = { ...intent, target: "issuer", targetId: lostPayload.applicationId,
+    scopeCommitment: computeAuthorizationScopeCommitment(lostScope),
+    payloadCommitment: computePendingApplicationPayloadCommitment(lostPayload),
+    nonce: `0x${"44".repeat(32)}` };
+  const lostRequest = { ...lostPayload, intent: lostIntent, signature: {
+    keyId: actorKeyId, algorithm: "jubjub-schnorr",
+    value: `0x${Buffer.from(encodeJubjubSignature(signJubjubPayloadFromSeed(
+      seed, mutationIntentDigestBytes(lostIntent),
+    ))).toString("hex")}`,
+  } };
+  let acceptedStatus;
+  await assert.rejects(registerApplicantApplication({
+    apiBase: origin, pageOrigin: origin, session: cliSession, request: lostRequest,
+    fetchImpl: async (...args) => {
+      const accepted = await fetch(...args);
+      acceptedStatus = accepted.status;
+      throw new Error("response lost after server acceptance");
+    },
+  }), /outcome is unknown.*Do not resubmit/u);
+  assert.equal(acceptedStatus, 201);
+  const afterLostResponse = await runActorCli("api-applications", origin, { session: cliSession });
+  assert.equal(afterLostResponse.code, 0, afterLostResponse.stderr);
+  assert.equal(JSON.parse(afterLostResponse.stdout).entries.some(
+    (entry) => entry.applicationId === lostPayload.applicationId,
+  ), true);
+  const reconciled = await runActorCli("api-reconcile", origin, { session: cliSession, request: lostRequest });
+  assert.equal(reconciled.code, 0, reconciled.stderr);
+  assert.equal(JSON.parse(reconciled.stdout).status, "observed");
+  assert.equal(JSON.parse(reconciled.stdout).record.requestCommitment,
+    computeSignedPendingApplicationCommitment(lostRequest));
   await expectStatus(await fetch(`${origin}/v1/actor-authentication/session`, {
     method: "DELETE", headers: bearer,
   }), 204);
@@ -162,7 +291,7 @@ try {
     headers: maintainerBearer,
   }), 401);
   const clientSession = await signInActorDid({
-    apiBase: origin, pageOrigin: origin, registryId: "tr:registry:headless",
+    apiBase: origin, pageOrigin: origin, registryId,
     purpose: "maintainer-session", clock: () => now,
     signer: {
       getIdentity: async () => ({ actorDid, actorKeyId }),
@@ -194,7 +323,7 @@ try {
   });
   const offchainKeyId = `${offchainDid}/keys#auth`;
   const offchainSession = await signInActorDid({
-    apiBase: origin, pageOrigin: origin, registryId: "tr:registry:headless",
+    apiBase: origin, pageOrigin: origin, registryId,
     purpose: "applicant-session", clock: () => now,
     signer: {
       getIdentity: async () => ({ actorDid: offchainDid, actorKeyId: offchainKeyId }),
@@ -211,7 +340,7 @@ try {
   assert.equal(sessions.authenticate(`Bearer ${offchainSession.accessToken}`, "applicant-session"), null);
 
   const expiringSession = await signInActorDid({
-    apiBase: origin, pageOrigin: origin, registryId: "tr:registry:headless",
+    apiBase: origin, pageOrigin: origin, registryId,
     purpose: "applicant-session", clock: () => now,
     signer: {
       getIdentity: async () => ({ actorDid, actorKeyId }),
@@ -219,12 +348,11 @@ try {
         value: `0x${Buffer.from(encodeJubjubSignature(signJubjubPayloadFromSeed(seed, digest))).toString("hex")}` }),
     },
   });
-  assert.deepEqual(await listApplicantApplications({ apiBase: origin, pageOrigin: origin,
-    session: expiringSession, clock: () => now }), {
-    status: "available", entries: [{ applicationId: "application:issuer:headless:v1",
-      authorizationId: "auth:issuer:headless:v1", role: "issuer", status: "pending",
-      createdAt: new Date(now).toISOString() }],
-  });
+  const expiringList = await listApplicantApplications({ apiBase: origin, pageOrigin: origin,
+    session: expiringSession, clock: () => now });
+  assert.equal(expiringList.status, "available");
+  assert.deepEqual(expiringList.entries.map((entry) => entry.applicationId).sort(),
+    ["application:issuer:headless:v1", applicationId, lostPayload.applicationId].sort());
   const expiringChallenge = await expectStatus(await post(challengeRoute, {
     actorDid, actorKeyId, purpose: "applicant-session",
   }), 201);
@@ -244,7 +372,7 @@ try {
   await expectStatus(await fetch(`${origin}/v1/actor-authentication/session`, { headers: expiringBearer }), 401);
   await assert.rejects(listApplicantApplications({ apiBase: origin, pageOrigin: origin,
     session: expiringSession, clock: () => now }), /current applicant DID session/u);
-  process.stdout.write("[did-auth-headless] Ledger and off-chain DID challenge sessions, shared-client applicant-only populated and empty request lists, bad-signature and deployment-context denial, one-use replay, origin denial, purpose isolation, identity-only claims, exact-boundary challenge/session expiry, and revocation passed. No role grant or deployed finality was inferred.\n");
+  process.stdout.write("[did-auth-headless] Ledger and off-chain DID challenge sessions; executable CLI signed registration, applicant list, replay and origin denial; a lost response remains unknown until exact signed-request reconciliation observes intake; private-list isolation, expiry, and revocation passed. No role grant or deployed finality was inferred.\n");
 } finally {
   server.closeAllConnections();
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

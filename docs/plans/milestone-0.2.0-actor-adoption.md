@@ -192,6 +192,40 @@ errors or the wrong session purpose. The packaged CLI smoke uses this client
 against the real loopback host; it does not substitute for a qualified
 registration port or finalized decision polling.
 
+The next local client/CLI increment moves the pending-registration response
+schema into the domain package and exposes a session-bound typed registration
+call. It checks the signed applicant DID, key, registry, intent expiry, exact
+same origin, and returned pending binding; the server still verifies the
+signature. The `api-register` and `api-applications` CLI commands take an
+ephemeral session on stdin with its verified sign-in origin, require it to
+match the selected API origin,
+and never place the bearer in arguments or output. A current-time packaged
+loopback host confirms the list command distinguishes an unconfigured list
+from denied reuse after sign-out. A separate current-time loopback host now
+exercises the executable registration command with a real DID signature and
+in-memory registration port, then checks readback, actor/origin denial, and
+replay. The four role simulator journeys use the shared registration call
+with their fixed fixture clock. None of these runs uses a deployed local-ledger
+actor host. The file-backed reference admission store retains its exact intake
+record across host instances, but #297 remains open for complete actor
+review/vote, deployed restart recovery, and independently verified decision
+reads; #219/#59 remain
+the deployed acceptance gate. The local branch's 97 Playwright cases cover
+browser behavior and role/source-state UI, not deployed finality.
+The typed client and CLI now report a lost, unreadable, or server-failed
+registration response as an unknown
+outcome and explicitly forbid blind resubmission. The private pending-list
+summary is not exact signed-request reconciliation. A private exact-record read
+now compares a canonical commitment of the original signed request and reports
+`observed` only on a match; missing, unavailable, or older uncommitted records
+remain `unknown`. The file-backed reference store can read this record after
+restart, but this is not a deployed restart audit or finalized governance
+decision, so #297 remains open.
+The current-time loopback journey also accepts a distinct signed request at
+the server, drops its response at the client boundary, and observes the
+unknown outcome while the private list shows the pending application, then
+uses `api-reconcile` to confirm the exact signed intake request without retry.
+
 Non-critical-path follow-ups include public-network bootstrap (#200),
 historical TRQP (#39), Helm (#218), npm publishing (#271), mobile acceptance
 (#265), and docs-site family styling (#293).
