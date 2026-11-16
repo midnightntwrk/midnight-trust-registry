@@ -43,9 +43,14 @@ These are three different checks. Passing one never silently passes the next.
 2. **Show eligibility:** after reviewing the requester, purpose, and exact
    claims, the actor may provide a verifiable presentation (VP). The verifier
    must check holder binding, issuer trust, status, audience, freshness, and
-   the requested role and scope. Private VP intake needs a trusted host; a
-   general user-facing eligibility check is still planned. A passport, ID,
-   or driver's license is not a default requirement at sign-in.
+   the requested role and scope. The advanced pending-request flow shows the
+   request's DID, role, policy, resource, and scope before a one-use VP
+   challenge. Choose whether to share the VP for that request; declining sends
+   nothing, and a new challenge requires a new consent decision. Private VP
+   intake needs a trusted host with a policy-authorized verifier and status
+   source; the local practice host is fixture evidence, not a live eligibility
+   decision. A passport, ID, or driver's license is not a default requirement
+   at sign-in.
 3. **Receive permission:** current registry policy, a governed decision,
    maintainer authority, and any required quorum control the role grant and
    later actions. A valid DID signature or VP alone is not a grant.

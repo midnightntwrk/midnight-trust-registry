@@ -49,13 +49,22 @@ export type SignInActorDidInput<P extends ActorAuthenticationPurpose> = {
   clock?: () => number;
 };
 
+export function isSameOriginPrivateApi(apiBase: string, pageOrigin: string): boolean {
+  try {
+    const url = new URL(apiBase);
+    return url.origin === pageOrigin && url.username === "" && url.password === ""
+      && (url.protocol === "https:" || (url.protocol === "http:"
+        && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)));
+  } catch {
+    return false;
+  }
+}
+
 function sameOriginApi(apiBase: string, pageOrigin: string): string {
-  const url = new URL(apiBase);
-  if (url.origin !== pageOrigin || url.username !== "" || url.password !== ""
-    || (url.protocol !== "https:" && !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))) {
+  if (!isSameOriginPrivateApi(apiBase, pageOrigin)) {
     throw new Error("DID sign-in requires the same trusted API origin as this page.");
   }
-  return url.href.replace(/\/$/u, "");
+  return new URL(apiBase).href.replace(/\/$/u, "");
 }
 
 async function responsePayload(response: Response, action: string): Promise<unknown> {

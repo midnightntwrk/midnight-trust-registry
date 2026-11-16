@@ -116,7 +116,8 @@ for (const app of ["applicant-portal", "admin-console"]) {
       await expect(page.locator("main h1")).toContainText("Registry Manual");
       await expect(page.getByText("Digital identity sign-in needs a connected signer and an app served by the same host as its registry API", { exact: false })).toBeVisible();
       await expect(page.locator("main")).toContainText("Local practice sign-in uses sample identity services");
-      await expect(page.locator("main")).toContainText("a general user-facing eligibility check is still planned");
+      await expect(page.locator("main")).toContainText("declining sends nothing");
+      await expect(page.locator("main")).toContainText("not a live eligibility decision");
       await page.setViewportSize({ width: 390, height: 844 });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       await expectNoWcagViolations(page, `${app} bundled Manual at 390px`);
