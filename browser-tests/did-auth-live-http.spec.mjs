@@ -140,7 +140,7 @@ test("both browser apps use real same-origin DID HTTP sessions without a role gr
     await expect(page.locator("#governed-requests")).toBeVisible();
     await page.locator('.journey-cards a[href="#issuer-request"]').click();
     await expect(page.locator("#issuer-request")).toHaveAttribute("open", "");
-    await expect(page.locator(".journey-prerequisite")).toContainText("sign in with your digital identity");
+    await expect(page.locator(".journey-prerequisite")).toContainText("Sign in to send private evidence");
     assert.equal(requests.some((request) => request.startsWith("POST /v1/governed/")), false);
     await page.locator(".hero-sign-in").click();
     await page.evaluate(() => { window.trDidSignerUseWrongKey = true; });

@@ -35,7 +35,8 @@ These are three different checks. Passing one never silently passes the next.
    decentralized identifier (DID) authentication key. This is the phase-0
    0.2.0 MVP. It does not assign a registry role and is not a claim of SIOP
    protocol conformance. In the V2 applicant and admin apps, an external DID
-   signer and same-origin host can enable this in **Workspace settings**;
+   signer and same-origin host can enable this from **Application readiness**
+   in the applicant portal or **Workspace settings** in either app;
    the purposes are distinct and admin sign-in is not voting authority. The short-lived
    session remains in browser memory and is cleared on sign-out or source
    change. Packaged 0.1.0 has no such sign-in. Local practice sign-in uses

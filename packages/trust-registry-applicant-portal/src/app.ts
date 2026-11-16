@@ -1115,6 +1115,9 @@ export const createApplicantPortalApp = (
     root.querySelector<HTMLButtonElement>("[data-did-sign-in]")?.addEventListener("click", () => {
       void signInDid();
     });
+    root.querySelector<HTMLButtonElement>("[data-did-sign-in-primary]")?.addEventListener("click", () => {
+      void signInDid();
+    });
     root.querySelector<HTMLButtonElement>("[data-did-sign-out]")?.addEventListener("click", () => {
       void signOutDid();
     });
@@ -1694,7 +1697,7 @@ export const createApplicantPortalApp = (
                   ? "This host can accept signed applications but cannot list them. Keep your receipt ID to continue. Sign-in never grants a role."
                 : activeDidSession === undefined
                   ? didSignerAvailable
-                    ? 'Before sending private evidence, <a href="#connection-details">sign in with your digital identity in Workspace settings</a>. You can prepare a request now; sign-in does not grant a role.'
+                    ? 'Sign in to send private evidence. You can prepare a request now; sign-in does not grant a role.'
                     : 'You can prepare a request here. To send private evidence, ask your host to connect a digital identity signer, then <a href="#connection-details">sign in in Workspace settings</a>.'
                   : "Identity confirmed for this session. Proof of eligibility and governed approval are still required before a role becomes active."}</p>
             <div class="journey-cards">
@@ -1707,7 +1710,11 @@ export const createApplicantPortalApp = (
             <section class="application-readiness" aria-labelledby="application-readiness-heading">
               <div class="readiness-heading"><p class="eyebrow">Application readiness</p><h3 id="application-readiness-heading">What happens next</h3></div>
               <ul>
-                <li><span class="readiness-step">Identity</span><strong>${activeDidSession !== undefined ? "Signed in for this session" : state.loading && state.didSession !== undefined ? "Paused while checking source" : "Not signed in"}</strong></li>
+                <li id="identity-step"><span class="readiness-step">Identity</span><strong${activeDidSession !== undefined ? ' data-focus-key="did-sign-in-primary" tabindex="-1"' : ""}>${activeDidSession !== undefined ? "Signed in for this session" : state.loading && state.didSession !== undefined ? "Paused while checking source" : "Not signed in"}</strong>
+                  ${activeDidSession === undefined && didSignerAvailable && privateHost && state.inspection !== undefined
+                    ? `<button class="readiness-action" type="button" data-did-sign-in-primary data-focus-key="did-sign-in-primary"${state.didBusy || state.loading ? " disabled" : ""}>${state.didBusy ? "Signing in…" : "Sign in to continue"}</button>` : ""}
+                  ${state.didError === undefined || !didSignerAvailable ? "" : `<span class="readiness-error" role="alert">${escapeHtml(state.didError)}</span>`}
+                </li>
                 <li><span class="readiness-step">Eligibility</span><strong>Not verified in this view</strong></li>
                 <li><span class="readiness-step">Registry role</span><strong>Requires governed approval</strong></li>
               </ul>
