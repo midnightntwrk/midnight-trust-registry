@@ -87,6 +87,14 @@ maintenance image. Its focused suite passes six tests, including the wrong-era
 case. Two image tests remain skipped without an exact-source verifier-key file;
 the passing read tests do not qualify verifier-key image readback.
 
+The local pinned submission adapter now requires a finalized Midnight.js 5
+handle, rejects a non-v9 era, decodes the Ledger 9 transaction ID, and declares
+only `v9` support. The issuer proposal's guarded provider wrapper preserves
+that declared era. Their focused suites pass 31 tests for guard ordering,
+transport failure, finality, and ambiguity. Successful submissions in these
+tests use mocked valid handles, not a proven and bound Ledger 9 transaction;
+real submission and finalized readback remain unqualified.
+
 Docker Desktop did not answer `docker info` during this local pass. No Ledger 9
 container, live RPC, indexer, or proof-server claim follows from the Compose
 render and image pins; the hanging CLI call was stopped without modifying

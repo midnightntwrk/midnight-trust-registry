@@ -1,9 +1,10 @@
 import { Buffer } from "node:buffer";
 
 import type { ApiPromise } from "@polkadot/api";
+import { Transaction } from "@midnightntwrk/ledger-v9";
 import type { ContractProviders } from "@midnight-ntwrk/midnight-js-contracts";
 import { indexerPublicDataProvider } from "@midnight-ntwrk/midnight-js-indexer-public-data-provider";
-import type { MidnightProvider } from "@midnight-ntwrk/midnight-js-types";
+import { LedgerTransaction, type MidnightProvider } from "@midnight-ntwrk/midnight-js-types";
 import type { TrustRegistryContract, TrustRegistryPrivateState } from "@midnight-ntwrk/trust-registry-contract";
 
 import { localNetworkEndpoint } from "./local-network-endpoints.js";
@@ -240,9 +241,11 @@ export function createPinnedLocalSubmissionProvider(config: PinnedLocalSubmissio
     tx: Parameters<MidnightProvider["submitTx"]>[0], guard?: () => Promise<void>,
   ): ReturnType<MidnightProvider["submitTx"]> => {
     assertUsable();
-    const txId = tx.identifiers()[0];
+    const finalized = LedgerTransaction.require(tx, "Finalized", "submitTx");
+    if (finalized.era !== "v9") throw new Error("Local submission requires a Ledger 9 transaction");
+    const txId = finalized.deserialize({ v9: Transaction }).identifiers()[0];
     if (!txId) throw new Error("Finalized Midnight transaction has no identifier");
-    const serialized = `0x${Buffer.from(tx.serialize()).toString("hex")}`;
+    const serialized = `0x${Buffer.from(finalized.serialize()).toString("hex")}`;
     let attemptedBroadcast = false;
     let reservedTarget = false;
     try {
@@ -276,6 +279,7 @@ export function createPinnedLocalSubmissionProvider(config: PinnedLocalSubmissio
     }
   };
   const midnightProvider = {
+    supportedEras: ["v9"] as const,
     submitTx: (tx: Parameters<MidnightProvider["submitTx"]>[0]) => submitTransaction(tx),
     submitTxWithBroadcastGuard: (
       tx: Parameters<MidnightProvider["submitTx"]>[0], guard: () => Promise<void>,

@@ -310,6 +310,7 @@ const submitPreparedLocalIssuerProposal = async (
   const providers = assertReadyBeforeBroadcast === undefined ? input.providers : {
     ...input.providers,
     midnightProvider: {
+      supportedEras: guardedProvider.supportedEras,
       submitTx: async (tx: Parameters<typeof input.providers.midnightProvider.submitTx>[0]) => {
         return guardedProvider.submitTxWithBroadcastGuard!(tx, assertReadyBeforeBroadcast);
       },

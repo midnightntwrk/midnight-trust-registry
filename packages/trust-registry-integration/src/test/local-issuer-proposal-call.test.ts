@@ -2,7 +2,6 @@ import { Buffer } from "node:buffer";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import { bytes32Commitment } from "@midnight-ntwrk/trust-registry-client";
 import {
   computeCreateIssuerAuthorizationPayloadHash,
@@ -120,7 +119,6 @@ const fixture = (): { call: LocalIssuerProposalCall; ledger: TrustRegistryContra
 };
 
 beforeEach(() => {
-  setNetworkId("undeployed");
   vi.clearAllMocks();
 });
 
@@ -180,13 +178,14 @@ describe("local issuer proposal circuit call", () => {
     });
     mocks.submitCallTx.mockImplementationOnce(async (providers) => {
       expect(assertReadyBeforeBroadcast).not.toHaveBeenCalled();
+      expect(providers.midnightProvider.supportedEras).toEqual(["v9"]);
       await Promise.resolve(); // The SDK may spend time proving and balancing first.
       return providers.midnightProvider.submitTx({} as never);
     });
     await expect(executeLocalIssuerProposalAfterReservation({
       call, expectedGenesisHash: genesisHash,
       readFinalizedLedger: async (address) => ({ contractAddress: address, genesisHash, ledger }),
-      providers: { midnightProvider: { submitTx, submitTxWithBroadcastGuard } } as unknown as
+      providers: { midnightProvider: { supportedEras: ["v9"], submitTx, submitTxWithBroadcastGuard } } as unknown as
         Parameters<typeof executeLocalIssuerProposalAfterReservation>[0]["providers"],
       readSubmissionProviderIdentity,
     }, assertReadyBeforeBroadcast)).rejects.toThrow(/evidence expired/u);
@@ -208,13 +207,14 @@ describe("local issuer proposal circuit call", () => {
     const input = {
       call, expectedGenesisHash: genesisHash,
       readFinalizedLedger: async (address: string) => ({ contractAddress: address, genesisHash, ledger }),
-      providers: { midnightProvider: { submitTx, submitTxWithBroadcastGuard } } as unknown as
+      providers: { midnightProvider: { supportedEras: ["v9"], submitTx, submitTxWithBroadcastGuard } } as unknown as
         Parameters<typeof executeLocalIssuerProposalAfterReservation>[0]["providers"],
       readSubmissionProviderIdentity,
     };
     const { prepared } = await preflightLocalIssuerProposalSubmission(input);
     mocks.submitCallTx.mockImplementationOnce(async (providers) => {
       expect(assertReadyBeforeBroadcast).not.toHaveBeenCalled();
+      expect(providers.midnightProvider.supportedEras).toEqual(["v9"]);
       await providers.midnightProvider.submitTx(tx as never);
       return { private: { result: prepared.expectedEventHash }, public: { txId: "tx-broadcast" } };
     });
