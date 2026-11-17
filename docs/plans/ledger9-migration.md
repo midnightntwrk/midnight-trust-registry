@@ -652,6 +652,18 @@ and 1 for invalid or conflicting evidence. Its `recordedTxId` is copied from
 the private submission receipt, not independently proven by the ledger reader.
 It never submits a transaction.
 
+The pinned read-only Registry command now reports the selected issuer's
+`lifecycleEventRoot` and whether the selected (or latest) epoch's `eventRoot`
+matches it. This is only one necessary decision-reader condition, not a
+qualification verdict: DID state, scope, inclusion, policy, and status must
+still be independently authenticated. At indexed height 3601, the live
+source-matched 66-key read reported `epochEventRootMatchesLifecycle: false`
+for `issuer:local-development-fixture:v1`, as expected for the registry
+snapshot epoch. A frozen offline install, installed identity-runtime gate,
+full 66-circuit workspace typecheck, strict security-script typecheck, and
+full-artifact inventory passed at local head `a660d816` before this read-only
+diagnostic change. No new chain action or actor qualification occurred.
+
 ## Execution order
 
 1. Keep the `ledger8` source branch only as a historical reference. Ledger 9

@@ -58,6 +58,7 @@ test("registry read summarizes finalized state and a selected issuer without lea
     proposedAtSequence: 3n,
     authorizedAtSequence: 4n,
     activeFromSequence: 5n,
+    lifecycleEventHash: new Uint8Array(32).fill(2),
   };
   const image = {
     networkId: "undeployed", finalizedBlockHash: `0x${"d".repeat(64)}`,
@@ -83,7 +84,8 @@ test("registry read summarizes finalized state and a selected issuer without lea
   assert.equal(summary.currentEpoch, null);
   assert.equal(summary.requiredEpochPublishSigners, "2");
   assert.deepEqual(summary.issuer, { label: issuerLabel, found: true, status: "active",
-    proposedAtSequence: "3", authorizedAtSequence: "4", activeFromSequence: "5" });
+    proposedAtSequence: "3", authorizedAtSequence: "4", activeFromSequence: "5",
+    lifecycleEventRoot: `0x${"02".repeat(32)}`, epochEventRootMatchesLifecycle: false });
   assert.deepEqual(summarizeFinalizedRegistry(image, attached, address,
     { label: "issuer:unknown", id: new Uint8Array(32).fill(2), statusNames }).issuer,
     { label: "issuer:unknown", found: false });
@@ -114,6 +116,16 @@ test("registry read summarizes finalized state and a selected issuer without lea
   assert.deepEqual(summarizeFinalizedRegistry(withEpoch, attached, address, undefined,
     `0x${"09".repeat(32)}`).selectedEpoch,
   summarizeFinalizedRegistry(withEpoch, attached, address).currentEpoch);
+  assert.equal(summarizeFinalizedRegistry(withEpoch, attached, address,
+    { label: issuerLabel, id: issuerId, statusNames }).issuer.epochEventRootMatchesLifecycle, true);
+  assert.equal(summarizeFinalizedRegistry({ ...withEpoch, ledger: { ...withEpoch.ledger,
+    issuerAuthorizationRecords: { ...withEpoch.ledger.issuerAuthorizationRecords,
+      lookup: () => ({ ...record, lifecycleEventHash: new Uint8Array(32).fill(7) }) },
+  } }, attached, address, { label: issuerLabel, id: issuerId, statusNames }).issuer
+    .epochEventRootMatchesLifecycle, false);
+  assert.equal(summarizeFinalizedRegistry(withEpoch, attached, address,
+    { label: issuerLabel, id: issuerId, statusNames }, `0x${"08".repeat(32)}`).issuer
+    .epochEventRootMatchesLifecycle, false);
   assert.equal(summarizeFinalizedRegistry(withEpoch, attached, address, undefined,
     `0x${"08".repeat(32)}`).selectedEpoch, null);
   assert.throws(() => summarizeFinalizedRegistry({ ...withEpoch, ledger: {

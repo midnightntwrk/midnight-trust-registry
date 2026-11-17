@@ -115,6 +115,10 @@ export function summarizeFinalizedRegistry(image, attached, contractAddress, iss
     }
     currentEpoch = summarizeEpoch(ledger, id);
   }
+  const selectedEpoch = epochId === undefined ? undefined
+    : summarizeEpoch(ledger, Buffer.from(epochId.slice(2), "hex"));
+  const issuerLifecycleEventRoot = issuer === null ? null : hex32(issuer.lifecycleEventHash);
+  const decisionEpoch = selectedEpoch === undefined ? currentEpoch : selectedEpoch;
   return {
     network: "undeployed",
     nodeVersion: attached.nodeVersion,
@@ -128,7 +132,7 @@ export function summarizeFinalizedRegistry(image, attached, contractAddress, iss
     governanceActionCount: ledger.governanceActionCount.toString(),
     publishedEpochCount: ledger.epochCommitmentCount.toString(),
     currentEpoch,
-    ...(epochId === undefined ? {} : { selectedEpoch: summarizeEpoch(ledger, Buffer.from(epochId.slice(2), "hex")) }),
+    ...(epochId === undefined ? {} : { selectedEpoch }),
     activeMaintainers: ledger.activeMaintainerCount.toString(),
     requiredEpochPublishSigners: ledger.maintainerThreshold.toString(),
     evidenceVerifierKeys: ledger.evidenceVerifierKeyCount.toString(),
@@ -141,7 +145,10 @@ export function summarizeFinalizedRegistry(image, attached, contractAddress, iss
       : { label: issuerSelection.label, found: true, status: issuerStatus,
         proposedAtSequence: issuer.proposedAtSequence.toString(),
         authorizedAtSequence: issuer.authorizedAtSequence.toString(),
-        activeFromSequence: issuer.activeFromSequence.toString() } }),
+        activeFromSequence: issuer.activeFromSequence.toString(),
+        lifecycleEventRoot: issuerLifecycleEventRoot,
+        epochEventRootMatchesLifecycle: decisionEpoch !== null
+          && decisionEpoch.eventRoot === issuerLifecycleEventRoot } }),
   };
 }
 
