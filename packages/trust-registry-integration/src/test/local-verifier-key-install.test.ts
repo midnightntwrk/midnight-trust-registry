@@ -94,6 +94,7 @@ const input = () => ({
 const providers = () => {
   let stored: typeof signingKey | null = null;
   return {
+    config: { networkId: "undeployed" },
     privateStateProvider: {
       getSigningKey: vi.fn(async () => stored),
       setSigningKey: vi.fn(async (_address: string, key: typeof signingKey) => { stored = key; }),
@@ -343,6 +344,7 @@ describe("local verifier-key insertion", () => {
 
     const unreadable = await journal();
     const badProviders = {
+      config: { networkId: "undeployed" },
       privateStateProvider: {
         getSigningKey: async () => null,
         setSigningKey: async () => {},
@@ -353,6 +355,17 @@ describe("local verifier-key insertion", () => {
       ...input(), journal: unreadable, providers: badProviders as never,
     })).rejects.toThrow(/cannot read back/u);
     expect(await unreadable.inspect()).toBeNull();
+    expect(mocks.submitInsert).not.toHaveBeenCalled();
+  });
+
+  it("rejects a verifier-key provider configured for another network", async () => {
+    const file = await journal();
+    await expect(submitLocalVerifierKeyInsertion({
+      ...input(), journal: file,
+      providers: { ...providers(), config: { networkId: "preview" } } as never,
+    })).rejects.toThrow(/approved network/u);
+    expect(await file.inspect()).toBeNull();
+    expect(mocks.readImage).not.toHaveBeenCalled();
     expect(mocks.submitInsert).not.toHaveBeenCalled();
   });
 

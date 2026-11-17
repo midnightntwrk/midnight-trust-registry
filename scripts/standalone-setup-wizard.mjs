@@ -15,7 +15,6 @@ import {
   getLocalNetworkProfile,
   VerifierKeyInsertionOutcomeUnknownError,
 } from "@midnight-ntwrk/trust-registry-integration";
-import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { pinnedKeylessApiImageTag, selectPinnedKeylessApiImageId } from "./standalone-keyless-api-image.mjs";
@@ -1609,7 +1608,6 @@ async function approvedStandaloneCommitteeTransition(root, record, requestPath, 
     );
     await requireCurrentApprovedAccess(root, record, verified,
       { network: approval.network }, dependencies);
-    setNetworkId(STANDALONE_PROFILE.networkId);
     const prepared = await (dependencies.prepareTransition ?? prepareLocalNetworkCommitteeTransition)(approval);
     await requireCurrentApprovedAccess(root, record, verified,
       { network: approval.network }, dependencies);
@@ -1824,7 +1822,6 @@ export async function reconcileStandaloneCommitteeTransition(
       await requireCurrentApprovedAccess(root, record, verified,
         { network: approval.network }, dependencies);
     }
-    setNetworkId(STANDALONE_PROFILE.networkId);
     const result = await (dependencies.reconcile ?? reconcileLocalNetworkCommitteeTransition)({
       approval,
       journal: new FileMaintenanceTransitionJournal(attempt.journalPath),
@@ -1932,7 +1929,6 @@ export async function approveStandaloneCommitteeRecovery(
     }
     await requireCurrentApprovedAccess(root, record, verified,
       { network: approval.network }, dependencies);
-    setNetworkId(STANDALONE_PROFILE.networkId);
     const freshApproval = { ...approval, expiresAt: new Date(now + 5 * 60_000) };
     const fresh = await (dependencies.prepareTransition ?? prepareLocalNetworkCommitteeTransition)(freshApproval);
     await requireCurrentApprovedAccess(root, record, verified,

@@ -73,10 +73,12 @@ instead of the removed process-global network ID for the pinned deploy path.
 Readback-only paths use their explicit network and receipt. A strict helper
 encodes the tagged Compact runtime Schnorr verifying key into the policy's
 canonical `0x`-prefixed hex; its focused tests and integration lint pass.
-This is only a partial migration: production integration source no longer
-imports the removed global network-ID package, but standalone scripts and
-several test fixtures still do, and other SDK 5 transaction and state-read
-APIs still require changes. The simulator client now awaits
+This is only a partial migration: production integration source and standalone
+operator scripts no longer import the removed global network-ID package.
+Verifier-key insertion rejects a provider configured for a different approved
+network before reading the deployment or mutating its journal. Several test
+fixtures still use the global setter, and other SDK 5 transaction and
+state-read APIs still require changes. The simulator client now awaits
 ledger reads and bundle context; its source-only build, focused async tests,
 and lint pass. Existing client tests and the integration harness still assume
 synchronous results. The full client and integration package typechecks remain

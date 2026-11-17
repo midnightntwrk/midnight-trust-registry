@@ -387,6 +387,9 @@ export async function submitLocalVerifierKeyInsertion(input: {
   providers: ContractProviders<RegistryContract>;
   contractMaintenanceSigningKey: SigningKey;
 }): Promise<{ receipt: LocalVerifierKeyInsertionReceipt; readback: "verified" | "pending" | "absent" | "mismatch" }> {
+  if (input.providers.config.networkId !== input.network.networkId) {
+    throw new Error("Verifier-key providers do not match the approved network");
+  }
   const reader = await createLocalNetworkDeploymentActionReader(input.network);
   const before = await reader.readCurrentFinalizedDeploymentImage(
     input.receipt.contractAddress, input.bootstrap.maintainerKeyId,
