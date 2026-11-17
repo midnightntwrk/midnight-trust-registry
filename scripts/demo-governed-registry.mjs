@@ -136,7 +136,7 @@ await runMaintainerSafetyScenarios(adversarialMatrix, signCompact);
 const { denialEventHash, deniedIssuer, deniedBundle, replacementIssuer, replacementProposalEventHash } =
   runDenialSafetyScenario(adversarialMatrix, signCompact);
 
-runApplicationEvidenceSafetyScenarios(adversarialMatrix);
+await runApplicationEvidenceSafetyScenarios(adversarialMatrix);
 
 const policyHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-policy-replay");
 const policySecond = createMaintainerScenarioFixture("governed-demo-policy-second");

@@ -4,9 +4,9 @@ import { test } from "node:test";
 import { AdversarialMatrix } from "./adversarial-matrix.mjs";
 import { runApplicationEvidenceSafetyScenarios } from "./governed-demo-application-evidence-safety.mjs";
 
-test("runs signed application-evidence safety cases independently of the governed demo", () => {
+test("runs signed application-evidence safety cases independently of the governed demo", async () => {
   const matrix = new AdversarialMatrix();
-  runApplicationEvidenceSafetyScenarios(matrix);
+  await runApplicationEvidenceSafetyScenarios(matrix);
   assert.deepEqual(matrix.report().summary, { total: 2, passed: 2, failed: 0 });
   assert.deepEqual(matrix.report().cases.map(({ id }) => id), [
     "issuer-signed-wrong-policy-id",
