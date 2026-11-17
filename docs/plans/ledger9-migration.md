@@ -45,11 +45,13 @@ projection. Its full suite passes five files and 32 tests. Epoch preparation
 waits for the harness's asynchronous evidence-verifier bootstrap, preventing
 a first-epoch signature from racing a governance-sequence change. The full
 integration suite still passes 52 files and 376 tests, with two skipped.
-The API production build now awaits workspace mutations and signed-intent
-preflight. Its focused mutation-intent-preflight and signed-mutation-state
-suites pass 15 tests. The full API typecheck remains red because many
-historical test callers still expect synchronous CLI operations. No API or
-deployed actor qualification is claimed from these focused results.
+The API production build awaits workspace mutations and signed-intent
+preflight. At local head `03091abf`, API build, lint, and full typecheck pass.
+The full API suite passes 43 unit files (332 tests) and 17 integration files
+(111 tests). The migration updated historical test callers for asynchronous
+Ledger 9 simulator and CLI operations, tagged runtime verifying keys, and a
+finalized v9 transaction fixture. These remain fixture and mocked-provider
+checks, not deployed actor qualification.
 
 The official [Ledger 9 upgrade guide](https://docs.midnight.network/relnotes/ledger-9)
 is the compatibility source. The
@@ -231,6 +233,12 @@ also enforce a particular local chain; ports can be overridden with
 `TR_NODE_PORT`, `TR_INDEXER_PORT`, and `TR_PROOF_PORT`. The command does not sign
 or approve genesis, exercise a proof, deploy a contract, or establish
 transaction finality. It is intentionally not part of offline CI.
+The most recent live recheck after the API migration timed out: the local
+node's loopback RPC returned no bytes within five seconds, and Docker CLI
+queries did not complete. The three stack-check unit tests still pass, but
+the live stack is not currently verified healthy. Do not infer a source
+regression from this timeout or claim deployed qualification; inspect Docker
+Desktop and the dedicated project containers before the next runtime phase.
 
 ## Execution order
 
