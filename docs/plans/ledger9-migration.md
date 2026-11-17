@@ -250,11 +250,12 @@ the currently unresponsive live stack or a deployed actor journey.
 The separate `test:demo-smoke-scripts` gate is still red. Its historical
 adversarial/demo cases call asynchronous Ledger 9 harness and simulator
 operations as if they were synchronous, producing failed assertions and
-unhandled rejections. At `85007b34`, the isolated policy-replay case and the
-first ten Compact adversarial safety cases pass after awaiting setup, circuit
-results, and expected rejections. The remaining adversarial matrix and
-governed-demo cases must be migrated and rerun before claiming this gate;
-no failed case has been skipped or reclassified as a pass.
+unhandled rejections. All 40 `scripts/adversarial-compact.test.mjs` cases now
+pass after awaiting setup, circuit results, client verification, and expected
+rejections. The five isolated maintainer-safety demo tests also pass. Other
+adversarial API, application-evidence, and governed-demo cases still require
+async migration and a complete gate rerun; no failed case has been skipped or
+reclassified as a pass.
 
 ## Execution order
 

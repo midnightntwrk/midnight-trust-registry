@@ -131,7 +131,7 @@ const expectHttp = async (response, status) => {
 const adversarialMatrix = new AdversarialMatrix({ collectFailures: true });
 const expectedAdversarialCaseCount = 198;
 
-runMaintainerSafetyScenarios(adversarialMatrix, signCompact);
+await runMaintainerSafetyScenarios(adversarialMatrix, signCompact);
 
 const { denialEventHash, deniedIssuer, deniedBundle, replacementIssuer, replacementProposalEventHash } =
   runDenialSafetyScenario(adversarialMatrix, signCompact);

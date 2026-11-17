@@ -13,8 +13,8 @@ import {
   runMaintainerSafetyScenarios,
 } from "./governed-demo-maintainer-safety.mjs";
 
-function signCompact(maintainer, prepared, harness) {
-  const ledger = harness.simulator.getLedger();
+async function signCompact(maintainer, prepared, harness) {
+  const ledger = await harness.simulator.getLedger();
   return {
     keyId: maintainer.keyId,
     publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
@@ -32,17 +32,17 @@ function signCompact(maintainer, prepared, harness) {
 }
 
 for (const id of maintainerSafetyCaseIds) {
-  test(`isolated maintainer safety case: ${id}`, () => {
+  test(`isolated maintainer safety case: ${id}`, async () => {
     const matrix = new AdversarialMatrix();
-    runMaintainerSafetyCase(id, matrix, signCompact);
+    await runMaintainerSafetyCase(id, matrix, signCompact);
     assert.deepEqual(matrix.report().summary, { total: 1, passed: 1, failed: 0 });
     assert.equal(matrix.report().cases[0].id, id);
   });
 }
 
-test("a failed maintainer signature case does not suppress the next case", () => {
+test("a failed maintainer signature case does not suppress the next case", async () => {
   const matrix = new AdversarialMatrix({ collectFailures: true });
-  runMaintainerSafetyScenarios(matrix, () => { throw new Error("deliberately bad test signer"); });
+  await runMaintainerSafetyScenarios(matrix, () => { throw new Error("deliberately bad test signer"); });
   assert.deepEqual(matrix.report().cases.map(({ id, status }) => [id, status]), [
     ["compact-self-voted-maintainer-suspension", "passed"],
     ["compact-self-voted-maintainer-revocation", "passed"],

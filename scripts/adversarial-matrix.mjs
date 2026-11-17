@@ -96,7 +96,7 @@ export class AdversarialMatrix {
 
   async expectRejected(operation, { id, invariant, boundary, messagePattern, category }) {
     try {
-      assert.ok(["integration", "client", "adapter"].includes(boundary));
+      assert.ok(["compact", "integration", "client", "adapter"].includes(boundary));
       assert.ok(messagePattern instanceof RegExp);
       assert.match(category, /^[a-z][a-z0-9-]+$/u);
       let failure;
