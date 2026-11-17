@@ -30,10 +30,10 @@ import { createTrustRegistryApiServer } from "../server.js";
 
 const hex = (value: Uint8Array): string => `0x${Buffer.from(value).toString("hex")}`;
 
-const setup = () => {
+const setup = async () => {
   const harness = new LocalTrustRegistryIntegrationHarness("did-guarded-policy");
   const label = "replacement";
-  const prepared = harness.prepareEvidenceVerifierRotationAction(label);
+  const prepared = await harness.prepareEvidenceVerifierRotationAction(label);
   const newAuthorizationId = prepared.newAuthorizationId!;
   const newKeyIdCommitment = prepared.newKeyIdCommitment!;
   const newPublicKey = prepared.newPublicKey!;
@@ -61,12 +61,12 @@ const setup = () => {
     async prepareEvidenceVerifier() { throw new GovernedPolicyActionRejectedError(); },
     async executeEvidenceVerifier() { throw new GovernedPolicyActionRejectedError(); },
     async prepareEvidenceVerifierTransition() {
-      const context = harness.prepareEvidenceVerifierRotationAction(label);
+      const context = await harness.prepareEvidenceVerifierRotationAction(label);
       return payloadOverride === undefined ? context : { ...context, actionPayloadHash: payloadOverride };
     },
     async executeEvidenceVerifierTransition(_input, signers) {
       executions += 1;
-      return { eventHash: hex(harness.executeEvidenceVerifierRotationWithSignatures(label, signers)) };
+      return { eventHash: hex(await harness.executeEvidenceVerifierRotationWithSignatures(label, signers)) };
     },
   };
   const authority: EvidenceVerifierDidAuthoritySource = {
@@ -93,7 +93,7 @@ const setup = () => {
           keyIdCommitment: bytes32Commitment(methodId),
           publicKey: newPublicKey,
         },
-        oldRecord: harness.simulator.getEvidenceVerifierKey(prepared.authorizationId),
+        oldRecord: await harness.simulator.getEvidenceVerifierKey(prepared.authorizationId),
       };
     },
   };
@@ -119,18 +119,18 @@ const setup = () => {
 
 describe("DID-bound governed evidence-verifier policy port", () => {
   it("resolves the assertion method again before executing a Compact rotation", async () => {
-    const state = setup();
+    const state = await setup();
     await expect(state.port.prepareEvidenceVerifierTransition!(state.input)).resolves.toBeDefined();
     await expect(state.port.executeEvidenceVerifierTransition!(state.input, [state.signer]))
       .resolves.toHaveProperty("eventHash");
     expect(state.reads()).toBe(2);
     expect(state.executions()).toBe(1);
-    expect(state.harness.simulator.getEvidenceVerifierKey(state.newAuthorizationId).status)
+    expect((await state.harness.simulator.getEvidenceVerifierKey(state.newAuthorizationId)).status)
       .toBe(EvidenceVerifierKeyStatus.active);
   });
 
   it("rejects a DID method rotated away after prepare without executing", async () => {
-    const state = setup();
+    const state = await setup();
     await state.port.prepareEvidenceVerifierTransition!(state.input);
     state.setCurrentKey(deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(43)));
     await expect(state.port.executeEvidenceVerifierTransition!(state.input, [state.signer]))
@@ -139,7 +139,7 @@ describe("DID-bound governed evidence-verifier policy port", () => {
   });
 
   it("rejects a replacement request that differs from the exact Compact action", async () => {
-    const state = setup();
+    const state = await setup();
     if (state.input.action !== "rotate") throw new Error("rotation fixture required");
     await expect(state.port.prepareEvidenceVerifierTransition!({
       ...state.input, newKeyIdCommitment: hex(bytes32Commitment("unrelated-key")),
@@ -148,7 +148,7 @@ describe("DID-bound governed evidence-verifier policy port", () => {
   });
 
   it("rejects a valid DID key when the prepared Compact payload is substituted", async () => {
-    const state = setup();
+    const state = await setup();
     state.setPayloadOverride(bytes32Commitment("substituted-rotation-payload"));
     await expect(state.port.prepareEvidenceVerifierTransition!(state.input))
       .rejects.toBeInstanceOf(GovernedPolicyActionRejectedError);
@@ -157,7 +157,7 @@ describe("DID-bound governed evidence-verifier policy port", () => {
 
   it("binds registration preparation to the candidate assertion method and payload", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("did-guarded-registration");
-    const prepared = harness.prepareEvidenceVerifierRegistrationAction();
+    const prepared = await harness.prepareEvidenceVerifierRegistrationAction();
     const did = harness.evidenceVerifier.did;
     let candidateKey = deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(41));
     const base: GovernedPolicyActionPort = {
@@ -189,9 +189,9 @@ describe("DID-bound governed evidence-verifier policy port", () => {
   });
 
   it("maps DID authority failures at the governed HTTP boundary and still executes a valid rotation", async () => {
-    const state = setup();
+    const state = await setup();
     const server = createTrustRegistryApiServer({
-      source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(state.harness, {
+      source: { mode: "memory", loadSnapshot: async () => await publishSimulatorSnapshot(state.harness, {
         label: "did-guarded-policy-http",
       }) },
       governedPolicyActions: state.port,
@@ -238,7 +238,7 @@ describe("DID-bound governed evidence-verifier policy port", () => {
       const rotated = await post("submit", { ...rotation, prepared, signers: [signer] });
       expect(rotated.status).toBe(202);
       expect(state.executions()).toBe(1);
-      expect(state.harness.simulator.getEvidenceVerifierKey(state.newAuthorizationId).status)
+      expect((await state.harness.simulator.getEvidenceVerifierKey(state.newAuthorizationId)).status)
         .toBe(EvidenceVerifierKeyStatus.active);
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => {
