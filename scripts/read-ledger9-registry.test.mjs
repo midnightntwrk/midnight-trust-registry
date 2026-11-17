@@ -12,7 +12,8 @@ const env = {
 
 test("registry read requires an exact address and non-genesis chain pin", () => {
   assert.deepEqual(parseRegistryReadArgs(["--address", address, "--issuer-label", "issuer:example"], env), {
-    contractAddress: address, issuerLabel: "issuer:example", verifierLabel: undefined, auditorLabel: undefined,
+    contractAddress: address, issuerLabel: "issuer:example", issuerResourceId: undefined,
+    verifierLabel: undefined, auditorLabel: undefined,
     recognitionLabel: undefined,
     manifestPath: undefined, epochId: undefined,
   });
@@ -22,6 +23,9 @@ test("registry read requires an exact address and non-genesis chain pin", () => 
     .auditorLabel, "auditor:example");
   assert.equal(parseRegistryReadArgs(["--address", address, "--recognition-label", "recognition:example"], env)
     .recognitionLabel, "recognition:example");
+  const canonicalResourceId = `tr:issuer-resource:v1:${"d".repeat(64)}`;
+  assert.equal(parseRegistryReadArgs(["--address", address, "--issuer-label", "issuer:example",
+    "--issuer-resource-id", canonicalResourceId], env).issuerResourceId, canonicalResourceId);
   assert.equal(parseRegistryReadArgs(["--address", address, "--manifest", "release.json"], env).manifestPath,
     "release.json");
   assert.equal(parseRegistryReadArgs(["--address", address, "--epoch-id", address], env).epochId, address);
@@ -33,6 +37,10 @@ test("registry read requires an exact address and non-genesis chain pin", () => 
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--verifier-label", "x\0y"], env), /invalid/u);
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--auditor-label", "x\0y"], env), /invalid/u);
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--recognition-label", "x\0y"], env), /invalid/u);
+  assert.throws(() => parseRegistryReadArgs(["--address", address, "--issuer-resource-id", canonicalResourceId], env),
+    /canonical composite/u);
+  assert.throws(() => parseRegistryReadArgs(["--address", address, "--issuer-label", "issuer:example",
+    "--issuer-resource-id", "schema:local-development-fixture:v1"], env), /canonical composite/u);
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--epoch-id", "0xA"], env), /Epoch id/u);
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--epoch-id", address,
     "--epoch-id", address], env), /Duplicate/u);
@@ -72,6 +80,8 @@ test("registry read summarizes finalized state and selected actors without leaki
     proposedAtSequence: 3n,
     authorizedAtSequence: 4n,
     activeFromSequence: 5n,
+    resourceId: new Uint8Array(32).fill(3),
+    statusPolicyBindingCommitment: new Uint8Array(32).fill(4),
     lifecycleEventHash: new Uint8Array(32).fill(2),
   };
   const image = {
@@ -111,7 +121,14 @@ test("registry read summarizes finalized state and selected actors without leaki
   assert.equal(summary.requiredEpochPublishSigners, "2");
   assert.deepEqual(summary.issuer, { label: issuerLabel, found: true, status: "active",
     proposedAtSequence: "3", authorizedAtSequence: "4", activeFromSequence: "5",
+    statusPolicyBindingCommitment: `0x${"04".repeat(32)}`,
     lifecycleEventRoot: `0x${"02".repeat(32)}`, epochEventRootMatchesLifecycle: false });
+  assert.equal(summarizeFinalizedRegistry(image, attached, address,
+    { label: issuerLabel, id: issuerId, statusNames,
+      resourceIdCommitment: new Uint8Array(32).fill(3) }).issuer.canonicalResourceIdCommitmentMatches, true);
+  assert.equal(summarizeFinalizedRegistry(image, attached, address,
+    { label: issuerLabel, id: issuerId, statusNames,
+      resourceIdCommitment: new Uint8Array(32).fill(9) }).issuer.canonicalResourceIdCommitmentMatches, false);
   assert.deepEqual(summarizeFinalizedRegistry(image, attached, address,
     { label: "issuer:unknown", id: new Uint8Array(32).fill(2), statusNames }).issuer,
     { label: "issuer:unknown", found: false });

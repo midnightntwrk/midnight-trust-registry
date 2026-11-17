@@ -62,7 +62,11 @@ node --env-file=artifacts/ledger9-current-chain.env scripts/read-ledger9-registr
   --manifest artifacts/ledger9-current-chain-pack/release-manifest.json
 ```
 
-The output reports the observed chain identity, finalized block hash, verifier
+The optional `--issuer-resource-id` takes a canonical
+`tr:issuer-resource:v1:<64 lowercase hex>` ID together with `--issuer-label`.
+It compares that ID's commitment with the finalized issuer record and reports
+`canonicalResourceIdCommitmentMatches`. This is a read-only preflight, not a
+decision verdict. The output reports the observed chain identity, finalized block hash, verifier
 key count, governance counters, active maintainer count, required epoch-publish
 signer count, and selected issuer lifecycle. The signer count is a policy
 threshold, not proof that those signers or their private keys are available. It does not
@@ -75,6 +79,8 @@ independent signature or release approval check. The output includes the
 finalized `publishedEpochCount` and current epoch roots. An active fixture
 issuer does not satisfy the governed VP decision-evidence path merely because
 a registry snapshot epoch has been published.
+The command also exposes the finalized issuer status-policy binding commitment;
+the caller must independently match it to a governed VC-owned status binding.
 
 Run any shared-stack development workload through
 `pnpm localnet:run -- <command> [args...]`. This wrapper performs the same
@@ -724,6 +730,21 @@ tests development-chain proof, submission, and finalized state for a fixture
 external authority; it does not authenticate a real external registry,
 qualify a live DID/VP journey, or provide release evidence. The ignored
 one-shot journals and proof logs remain private and must not be replayed.
+
+Before publishing an actor-specific decision epoch, the original fixture
+issuer requires replacement rather than retroactive reinterpretation. Its
+proposal committed the label `schema:local-development-fixture:v1` as the
+resource ID, but the domain decision schema requires an ID produced by
+`issuerGovernedResourceId` from an exact issuer scope. A valid canonical
+candidate checked against the finalized record returned
+`canonicalResourceIdCommitmentMatches: false` at indexed height 4276.
+The fixture also committed `status:local-development-fixture:v1`, not a
+`computeIssuerStatusPolicyBindingCommitment` result backed by a VC-owned
+status authority. A new issuer proposal must bind the canonical scope ID,
+governed status policy, authenticated DID session and accepted VP receipt
+before its active lifecycle can be used for an actor-specific epoch and
+decision bundle. The old fixture remains a useful contract-lifecycle smoke,
+but cannot qualify that decision path.
 
 ## Execution order
 

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { checkLedger9LocalStack, localnetInputFromEnvironment } from "./check-ledger9-local-stack.mjs";
 
 const ADDRESS = /^0x[0-9a-f]{64}$/u;
+const CANONICAL_ISSUER_RESOURCE_ID = /^tr:issuer-resource:v1:[0-9a-f]{64}$/u;
 const hex32 = (value) => {
   if (!(value instanceof Uint8Array) || value.length !== 32) {
     throw new Error("Finalized epoch contains a non-bytes32 commitment");
@@ -14,6 +15,7 @@ const hex32 = (value) => {
 export function parseRegistryReadArgs(args, env = process.env) {
   let contractAddress;
   let issuerLabel;
+  let issuerResourceId;
   let verifierLabel;
   let auditorLabel;
   let recognitionLabel;
@@ -22,11 +24,12 @@ export function parseRegistryReadArgs(args, env = process.env) {
   for (let index = 0; index < args.length; index += 2) {
     const flag = args[index];
     const value = args[index + 1];
-    if (!value || !["--address", "--issuer-label", "--verifier-label", "--auditor-label", "--recognition-label", "--manifest", "--epoch-id"].includes(flag)) {
-      throw new Error("Usage: read-ledger9-registry.mjs --address 0x... [--issuer-label label] [--verifier-label label] [--auditor-label label] [--recognition-label label] [--manifest path] [--epoch-id 0x...]");
+    if (!value || !["--address", "--issuer-label", "--issuer-resource-id", "--verifier-label", "--auditor-label", "--recognition-label", "--manifest", "--epoch-id"].includes(flag)) {
+      throw new Error("Usage: read-ledger9-registry.mjs --address 0x... [--issuer-label label --issuer-resource-id canonical-id] [--verifier-label label] [--auditor-label label] [--recognition-label label] [--manifest path] [--epoch-id 0x...]");
     }
     if (flag === "--address" && contractAddress === undefined) contractAddress = value;
     else if (flag === "--issuer-label" && issuerLabel === undefined) issuerLabel = value;
+    else if (flag === "--issuer-resource-id" && issuerResourceId === undefined) issuerResourceId = value;
     else if (flag === "--verifier-label" && verifierLabel === undefined) verifierLabel = value;
     else if (flag === "--auditor-label" && auditorLabel === undefined) auditorLabel = value;
     else if (flag === "--recognition-label" && recognitionLabel === undefined) recognitionLabel = value;
@@ -40,6 +43,10 @@ export function parseRegistryReadArgs(args, env = process.env) {
   if (issuerLabel !== undefined && (issuerLabel.length === 0 || issuerLabel.length > 256
     || issuerLabel.trim() !== issuerLabel || issuerLabel.includes("\0"))) {
     throw new Error("Issuer label is invalid");
+  }
+  if (issuerResourceId !== undefined && (issuerLabel === undefined
+    || !CANONICAL_ISSUER_RESOURCE_ID.test(issuerResourceId))) {
+    throw new Error("Issuer resource id requires an issuer label and canonical composite id");
   }
   if (verifierLabel !== undefined && (verifierLabel.length === 0 || verifierLabel.length > 256
     || verifierLabel.trim() !== verifierLabel || verifierLabel.includes("\0"))) {
@@ -62,7 +69,8 @@ export function parseRegistryReadArgs(args, env = process.env) {
     || Number(env.TR_EXPECTED_CHECKPOINT_HEIGHT) < 1) {
     throw new Error("Pin TR_EXPECTED_GENESIS_HASH and a non-genesis checkpoint height/hash before reading registry state");
   }
-  return { contractAddress, issuerLabel, verifierLabel, auditorLabel, recognitionLabel, manifestPath, epochId };
+  return { contractAddress, issuerLabel, issuerResourceId, verifierLabel, auditorLabel, recognitionLabel,
+    manifestPath, epochId };
 }
 
 export function assertFinalizedVerifierKeyCatalog(image, manifest, circuitNames) {
@@ -186,6 +194,10 @@ export function summarizeFinalizedRegistry(image, attached, contractAddress, iss
         proposedAtSequence: issuer.proposedAtSequence.toString(),
         authorizedAtSequence: issuer.authorizedAtSequence.toString(),
         activeFromSequence: issuer.activeFromSequence.toString(),
+        statusPolicyBindingCommitment: hex32(issuer.statusPolicyBindingCommitment),
+        ...(issuerSelection.resourceIdCommitment === undefined ? {}
+          : { canonicalResourceIdCommitmentMatches: Buffer.from(issuer.resourceId)
+            .equals(Buffer.from(issuerSelection.resourceIdCommitment)) }),
         lifecycleEventRoot: issuerLifecycleEventRoot,
         epochEventRootMatchesLifecycle: decisionEpoch !== null
           && decisionEpoch.eventRoot === issuerLifecycleEventRoot } }),
@@ -220,7 +232,8 @@ export function summarizeFinalizedRegistry(image, attached, contractAddress, iss
 }
 
 export async function readLedger9Registry(args = process.argv.slice(2), env = process.env) {
-  const { contractAddress, issuerLabel, verifierLabel, auditorLabel, recognitionLabel, manifestPath, epochId } = parseRegistryReadArgs(args, env);
+  const { contractAddress, issuerLabel, issuerResourceId, verifierLabel, auditorLabel, recognitionLabel,
+    manifestPath, epochId } = parseRegistryReadArgs(args, env);
   const attached = await checkLedger9LocalStack(localnetInputFromEnvironment(env));
   const [{ bytes32Commitment }, { AuthorizationStatus, TrustRegistryContract, trustRegistryWitnesses },
     { createLocalNetworkDeploymentActionReader }] =
@@ -241,6 +254,7 @@ export async function readLedger9Registry(args = process.argv.slice(2), env = pr
   const image = await reader.readCurrentFinalizedLedger(contractAddress);
   const issuerSelection = issuerLabel === undefined ? undefined : {
     label: issuerLabel, id: bytes32Commitment(issuerLabel), statusNames: AuthorizationStatus,
+    resourceIdCommitment: issuerResourceId === undefined ? undefined : bytes32Commitment(issuerResourceId),
   };
   const verifierSelection = verifierLabel === undefined ? undefined : {
     label: verifierLabel, id: bytes32Commitment(verifierLabel), statusNames: AuthorizationStatus,
