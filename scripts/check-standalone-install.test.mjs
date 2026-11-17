@@ -8,7 +8,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { KEYLESS_KEYGEN_PARAMETER_PATHS, PROTOCOL_KEY_PATHS, STANDALONE_PROOF_PARAMETER_PATHS,
-  verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
+  verifyStandaloneInstallBundle, installedImageIdFromArchive } from "./check-standalone-install.mjs";
 import { approvedRuntimeHealthcheck } from "./runtime-healthcheck.mjs";
 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -21,7 +21,8 @@ const manifestBytes = JSON.stringify({ schemaVersion: 2,
 const manifestDigest = sha(manifestBytes);
 const reference = (role) => `example.test/${role}@sha256:${manifestDigest}`;
 
-async function imageArchive(root, role, digest = manifestDigest, repoTags = null, imageName = null) {
+async function imageArchive(root, role, digest = manifestDigest, repoTags = null, imageName = null,
+  extraAnnotations = {}) {
   const source = join(root, `source-${role}`);
   await mkdir(join(source, "blobs/sha256"), { recursive: true });
   await writeFile(join(source, "blobs/sha256", digest), manifestBytes);
@@ -29,8 +30,9 @@ async function imageArchive(root, role, digest = manifestDigest, repoTags = null
   await writeFile(join(source, "index.json"), JSON.stringify({
     schemaVersion: 2, manifests: [{ digest: `sha256:${digest}`,
       ...(imageName ? { annotations: imageName === reference(role).split("@")[0]
-        ? { "containerd.io/distribution.source.docker.io": imageName }
-        : { "io.containerd.image.name": imageName } } : {}) }],
+        ? { "containerd.io/distribution.source.docker.io": imageName, ...extraAnnotations }
+        : { "io.containerd.image.name": imageName } }
+        : Object.keys(extraAnnotations).length ? { annotations: extraAnnotations } : {}) }],
   }));
   await writeFile(join(source, "manifest.json"), JSON.stringify([{
     Config: `blobs/sha256/${configDigest}`, RepoTags: repoTags, Layers: [],
@@ -698,6 +700,58 @@ test("accepts only the pinned repository as a ledger distribution-source annotat
       reference("node").split("@")[0]);
     await writeFile(join(root, "install-inventory.json"), JSON.stringify(inventory));
     await verifyStandaloneInstallBundle(root, () => {});
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("accepts only the exact Docker Hub and GHCR source pair", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-image-source-pair-"));
+  try {
+    await mkdir(join(root, "images"));
+    const source = "midnightntwrk/node";
+    const mirror = "midnight-ntwrk/node";
+    const approved = { "containerd.io/distribution.source.docker.io": source,
+      "containerd.io/distribution.source.ghcr.io": mirror };
+    await imageArchive(root, "node", manifestDigest, null, null, approved);
+    assert.ok(installedImageIdFromArchive(join(root, "images/node.tar"),
+      `${source}@sha256:${manifestDigest}`));
+    await imageArchive(root, "node", manifestDigest, null, null,
+      { ...approved, "containerd.io/distribution.source.ghcr.io": "other/node" });
+    assert.throws(() => installedImageIdFromArchive(join(root, "images/node.tar"),
+      `${source}@sha256:${manifestDigest}`), /OCI manifest digest disagrees/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("selects one hash-bound Linux/arm64 manifest from a pinned platform index", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tr-platform-index-"));
+  try {
+    const source = join(root, "source");
+    const archive = join(root, "image.tar");
+    await mkdir(join(source, "blobs/sha256"), { recursive: true });
+    await writeFile(join(source, "blobs/sha256", manifestDigest), manifestBytes);
+    await writeFile(join(source, "blobs/sha256", configDigest), configBytes);
+    await writeFile(join(source, "manifest.json"), JSON.stringify([{
+      Config: `blobs/sha256/${configDigest}`, RepoTags: null, Layers: [],
+    }]));
+    const descriptor = { mediaType: "application/vnd.docker.distribution.manifest.v2+json",
+      digest: `sha256:${manifestDigest}`, platform: { os: "linux", architecture: "arm64" } };
+    const pack = async (descriptors) => {
+      const indexBytes = JSON.stringify({ schemaVersion: 2, manifests: descriptors });
+      const indexDigest = sha(indexBytes);
+      await writeFile(join(source, "blobs/sha256", indexDigest), indexBytes);
+      await writeFile(join(source, "index.json"), JSON.stringify({ schemaVersion: 2,
+        manifests: [{ digest: `sha256:${indexDigest}` }] }));
+      execFileSync("tar", ["-cf", archive, "-C", source, "index.json", "manifest.json", "blobs"]);
+      return `example.test/node@sha256:${indexDigest}`;
+    };
+    const reference = await pack([descriptor]);
+    assert.equal(installedImageIdFromArchive(archive, reference), `sha256:${configDigest}`);
+    const ambiguous = await pack([descriptor, descriptor]);
+    assert.throws(() => installedImageIdFromArchive(archive, ambiguous),
+      /unique Linux\/arm64 image manifest/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
