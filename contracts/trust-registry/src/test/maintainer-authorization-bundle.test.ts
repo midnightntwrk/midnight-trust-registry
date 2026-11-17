@@ -4,6 +4,7 @@ import { pureCircuits } from "../contract.js";
 import {
   buildCanonicalMaintainerAuthorizationBundle,
   compareMaintainerKeyIds,
+  isPrimeOrderJubjubPoint,
 } from "../signing.js";
 
 const signer = (keyId: Uint8Array) => ({
@@ -29,6 +30,11 @@ describe("canonical maintainer authorization bundles", () => {
     expect(bundle.signer3.keyId).toEqual(new Uint8Array(32));
     expect(bundle.signer4.keyId).toEqual(new Uint8Array(32));
     expect(bundle.signer5.keyId).toEqual(new Uint8Array(32));
+    for (const unused of [bundle.signer3, bundle.signer4, bundle.signer5]) {
+      expect(isPrimeOrderJubjubPoint(unused.publicKey)).toBe(true);
+      expect(isPrimeOrderJubjubPoint(unused.signature.announcement)).toBe(true);
+      expect(unused.signature.response).toBe(0n);
+    }
     expect(pureCircuits.maintainerSignerSetHash(
       bundle.signerCount,
       bundle.signer1.keyId,
