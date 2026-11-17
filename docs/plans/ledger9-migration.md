@@ -11,10 +11,10 @@ qualification claim. The historical Ledger 8 source is the `ledger8` branch at
 | Node | 2.1.101 | Live loopback check passes with `system_version` `2.1.101-86774edf` and runtime `specVersion` `2001100` |
 | Ledger | 9.1.0.1 | Official image cohort and protocol-version evidence; no independent crate-version attestation from RPC |
 | Indexer standalone | 4.4.101 | Live indexed block and matching genesis check passes |
-| Proof server | 9.0.2 observed | Live loopback/version check passes, but the first deployed Registry call fails in `proveTx` when `/check` returns HTTP 400; proving remains unqualified |
+| Proof server | 9.0.2 observed | Live loopback/version check passes; corrected Registry governance and issuer fixture calls proved, submitted, and finalized on the shared chain |
 | Compact compiler | 0.36.0 | Full source-matched compile generates all 66 circuits and prover/verifier keys |
-| Compact runtime | 0.21.0 | Locally installed with exact DID RC1 and VC PR #755 artifacts; simulator/integration tests pass, deployed runtime unqualified |
-| Midnight.js / testkit-js | 5.0.0 | Locally installed; simulator/integration tests pass, deployed provider journey unqualified |
+| Compact runtime | 0.21.0 | Installed with exact DID RC1 and VC RC1 artifacts; simulator and deployed fixture issuer lifecycle pass, live VP journey unqualified |
+| Midnight.js / testkit-js | 5.0.0 | Installed; deployed fixture governance and issuer calls finalize, broader actor journey unqualified |
 | Compact.js | 3.0.0 | Locally installed; simulator, client, harness, and integration tests use awaited circuit/read APIs |
 | `@midnightntwrk/ledger-v9` | 1.0.0 | Required for new Ledger 9 transactions |
 | `@midnightntwrk/onchain-runtime-v4` | 4.0.0 | Required where directly consumed |
@@ -48,6 +48,23 @@ The shared chain is a multi-user development network. Sessions must preserve
 separate wallets and journals, pin a non-genesis checkpoint before relying on
 prior deployment records, and treat unrelated transactions or changing head
 height as normal. Never reset or restart it to make a Registry test pass.
+
+After attaching, the read-only actor-state command accepts a contract address
+and an optional issuer label. It requires the expected genesis and non-genesis
+checkpoint pin; unlike the fixture demo it reads the finalized deployed
+ledger. With this checkout's ignored private pin, the development smoke
+registry can be inspected without starting a wallet or submitting a call:
+
+```sh
+node --env-file=artifacts/ledger9-current-chain.env scripts/read-ledger9-registry.mjs \
+  --address 0xf80638c64dcf63138b222426549bedb122673391b414658854f2a04a92b5be09 \
+  --issuer-label issuer:local-development-fixture:v1
+```
+
+The output reports the observed chain identity, finalized block hash, verifier
+key count, governance counters, and selected issuer lifecycle. It does not
+verify that an issuer supplied live DID/VP evidence, and its numeric counts do
+not replace a source-matched key-inventory check.
 
 Run any shared-stack development workload through
 `pnpm localnet:run -- <command> [args...]`. This wrapper performs the same
@@ -92,21 +109,20 @@ The `@midnight-ntwrk/trust-registry-integration` `test:light` check also
 passes with the exact native Compact 0.36.0 compiler installed: it compiles
 the VC composition fixture and checks the credential/presentation envelope
 relation, including claim-root, issuer-method, and schema mismatches. It does
-not exercise a deployed Ledger 9 registry or a VP actor journey. At local head
-`6b53aac0`, the integration package typecheck has zero diagnostics and the full
-Vitest integration suite passes 52 files, 376 tests with two skipped. This is
-simulator/fixture validation, not a deployed or finalized end-to-end result.
-The two skipped cases remain unqualified.
+not exercise a deployed Ledger 9 registry or a VP actor journey. At this local
+migration head, integration package typecheck has zero diagnostics and the full
+Vitest integration suite passes 52 files and 378 tests. This is simulator and
+fixture validation, not a deployed live DID/VP end-to-end result.
 The client package also typechecks and its full Vitest suite passes eight files
 and 65 tests with asynchronous simulator reads and bundle verification. The
 contract package now typechecks and its full Vitest suite passes eight files
-and 97 tests. These are simulator and fixture checks, not a deployed Ledger 9
+and 99 tests. These are simulator and fixture checks, not a deployed Ledger 9
 flow.
 The CLI workspace now awaits replayed governance operations and snapshot
 projection. Its full suite passes five files and 32 tests. Epoch preparation
 waits for the harness's asynchronous evidence-verifier bootstrap, preventing
 a first-epoch signature from racing a governance-sequence change. The full
-integration suite still passes 52 files and 376 tests, with two skipped.
+integration suite passes 52 files and 378 tests at this local head.
 The API production build awaits workspace mutations and signed-intent
 preflight. At local head `03091abf`, API build, lint, and full typecheck pass.
 The full API suite passes 43 unit files (332 tests) and 17 integration files
