@@ -33,8 +33,8 @@ import {
   LocalTrustRegistryIntegrationHarness,
 } from "../packages/trust-registry-integration/dist/index.js";
 
-const signAction = (harness, maintainer, prepared) => {
-  const ledger = harness.simulator.getLedger();
+const signAction = async (harness, maintainer, prepared) => {
+  const ledger = await harness.simulator.getLedger();
   return {
     keyId: maintainer.keyId,
     publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
@@ -51,24 +51,24 @@ const signAction = (harness, maintainer, prepared) => {
   };
 };
 
-const issuerProposal = (label) => {
+const issuerProposal = async (label) => {
   const harness = new LocalTrustRegistryIntegrationHarness(label);
   const second = createMaintainerScenarioFixture(`${label}-second`);
   const third = createMaintainerScenarioFixture(`${label}-third`);
   const issuer = createIssuerScenarioFixture(`${label}-issuer`);
-  harness.authorizeMaintainer(second);
-  harness.authorizeMaintainer(third);
-  harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
-  const evidence = harness.createApplicationEvidence({
+  await harness.authorizeMaintainer(second);
+  await harness.authorizeMaintainer(third);
+  await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+  const evidence = await harness.createApplicationEvidence({
     applicationId: issuer.authorizationId,
     subjectDid: issuer.subjectDid,
     role: "issuer",
     scope: createIssuerAuthorizationScopeFixture(issuer),
     governedResource: { type: "credentialFamily", id: issuer.resourceId },
   });
-  const prepared = harness.prepareIssuerProposalAction(issuer, evidence);
-  const verifierSignature = harness.signIssuerProposalEvidence(prepared);
-  const signatures = [signAction(harness, second, prepared), signAction(harness, third, prepared)];
+  const prepared = await harness.prepareIssuerProposalAction(issuer, evidence);
+  const verifierSignature = await harness.signIssuerProposalEvidence(prepared);
+  const signatures = [await signAction(harness, second, prepared), await signAction(harness, third, prepared)];
   return { harness, issuer, evidence, prepared, verifierSignature, signatures };
 };
 
@@ -87,31 +87,31 @@ const submitRawIssuerProposal = (harness, issuer, prepared, verifierSignature, s
   );
 };
 
-test("compact-issuer-proposal-insufficient-quorum", () => {
+test("compact-issuer-proposal-insufficient-quorum", async () => {
   const { harness, issuer, evidence, verifierSignature, signatures } =
-    issuerProposal("isolated-issuer-proposal-quorum");
-  const before = harness.simulator.getLedger().governanceActionCount;
-  assert.throws(() => harness.executeIssuerProposalWithSignatures(
+    await issuerProposal("isolated-issuer-proposal-quorum");
+  const before = (await harness.simulator.getLedger()).governanceActionCount;
+  await assert.rejects(harness.executeIssuerProposalWithSignatures(
     issuer, evidence, signatures.slice(0, 1), verifierSignature,
   ), /Maintainer signer count must satisfy the action threshold/u);
-  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
-  harness.executeIssuerProposalWithSignatures(issuer, evidence, signatures, verifierSignature);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
+  await harness.executeIssuerProposalWithSignatures(issuer, evidence, signatures, verifierSignature);
 });
 
-test("client-issuer-proposal-duplicate-signer", () => {
+test("client-issuer-proposal-duplicate-signer", async () => {
   const { harness, issuer, evidence, verifierSignature, signatures } =
-    issuerProposal("isolated-issuer-proposal-duplicate");
-  const before = harness.simulator.getLedger().governanceActionCount;
-  assert.throws(() => harness.executeIssuerProposalWithSignatures(
+    await issuerProposal("isolated-issuer-proposal-duplicate");
+  const before = (await harness.simulator.getLedger()).governanceActionCount;
+  await assert.rejects(harness.executeIssuerProposalWithSignatures(
     issuer, evidence, [signatures[0], signatures[0]], verifierSignature,
   ), /Maintainer authorization bundle contains a duplicate key ID/u);
-  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
-  harness.executeIssuerProposalWithSignatures(issuer, evidence, signatures, verifierSignature);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
+  await harness.executeIssuerProposalWithSignatures(issuer, evidence, signatures, verifierSignature);
 });
 
-test("compact-issuer-proposal-altered-evidence-hash", () => {
+test("compact-issuer-proposal-altered-evidence-hash", async () => {
   const { harness, issuer, evidence, prepared, verifierSignature, signatures } =
-    issuerProposal("isolated-issuer-proposal-evidence-substitution");
+    await issuerProposal("isolated-issuer-proposal-evidence-substitution");
   const alteredHash = Uint8Array.from(prepared.evidenceHash);
   alteredHash[0] ^= 1;
   const baseHash = computeCreateIssuerAuthorizationPayloadHash(
@@ -129,8 +129,8 @@ test("compact-issuer-proposal-altered-evidence-hash", () => {
       prepared.policyCommitment, prepared.policyVersion,
     ),
   };
-  const alteredVerifierSignature = harness.signIssuerProposalEvidence(altered);
-  const verifierKey = harness.simulator.getEvidenceVerifierKey(altered.evidenceVerifierAuthorizationId);
+  const alteredVerifierSignature = await harness.signIssuerProposalEvidence(altered);
+  const verifierKey = await harness.simulator.getEvidenceVerifierKey(altered.evidenceVerifierAuthorizationId);
   assert.equal(verifyIssuerProposalEvidenceSignature(
     verifierKey.publicKey, altered.registryId, altered.networkIdCommitment, altered.contractAddress,
     altered.evidenceVerifierKeyIdCommitment,
@@ -138,27 +138,27 @@ test("compact-issuer-proposal-altered-evidence-hash", () => {
   ), true);
   const second = createMaintainerScenarioFixture("isolated-issuer-proposal-evidence-substitution-second");
   const third = createMaintainerScenarioFixture("isolated-issuer-proposal-evidence-substitution-third");
-  const before = harness.simulator.getLedger().governanceActionCount;
+  const before = (await harness.simulator.getLedger()).governanceActionCount;
   const originalContext = harness.simulator.circuitContext;
   try {
-    submitRawIssuerProposal(harness, issuer, altered, alteredVerifierSignature, [
-      signAction(harness, second, altered), signAction(harness, third, altered),
+    await submitRawIssuerProposal(harness, issuer, altered, alteredVerifierSignature, [
+      await signAction(harness, second, altered), await signAction(harness, third, altered),
     ]);
-    assert.equal(harness.simulator.getLedger().governanceActionCount, before + 1n);
+    assert.equal((await harness.simulator.getLedger()).governanceActionCount, before + 1n);
   } finally {
     harness.simulator.circuitContext = originalContext;
   }
-  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
-  assert.throws(() => submitRawIssuerProposal(
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
+  await assert.rejects(submitRawIssuerProposal(
     harness, issuer, altered, alteredVerifierSignature, signatures,
   ), /Invalid Jubjub Schnorr signature/u);
-  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
-  harness.executeIssuerProposalWithSignatures(issuer, evidence, signatures, verifierSignature);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
+  await harness.executeIssuerProposalWithSignatures(issuer, evidence, signatures, verifierSignature);
 });
 
-test("compact-issuer-proposal-scope-substitution", () => {
+test("compact-issuer-proposal-scope-substitution", async () => {
   const { harness, issuer, evidence, prepared, signatures, verifierSignature } =
-    issuerProposal("isolated-issuer-proposal-scope-substitution");
+    await issuerProposal("isolated-issuer-proposal-scope-substitution");
   const changed = { ...issuer, resourceIdCommitment: bytes32Commitment("credential-family:substituted:v1") };
   const baseHash = computeCreateIssuerAuthorizationPayloadHash(
     changed.authorizationIdCommitment, changed.subjectDidCommitment,
@@ -173,66 +173,66 @@ test("compact-issuer-proposal-scope-substitution", () => {
       prepared.evidenceVerifierKeyIdCommitment, prepared.policyCommitment, prepared.policyVersion,
     ),
   };
-  const changedVerifierSignature = harness.signIssuerProposalEvidence(altered);
+  const changedVerifierSignature = await harness.signIssuerProposalEvidence(altered);
   const second = createMaintainerScenarioFixture("isolated-issuer-proposal-scope-substitution-second");
   const third = createMaintainerScenarioFixture("isolated-issuer-proposal-scope-substitution-third");
-  const before = harness.simulator.getLedger().governanceActionCount;
+  const before = (await harness.simulator.getLedger()).governanceActionCount;
   const originalContext = harness.simulator.circuitContext;
   try {
-    submitRawIssuerProposal(harness, changed, altered, changedVerifierSignature, [
-      signAction(harness, second, altered), signAction(harness, third, altered),
+    await submitRawIssuerProposal(harness, changed, altered, changedVerifierSignature, [
+      await signAction(harness, second, altered), await signAction(harness, third, altered),
     ]);
-    assert.equal(harness.simulator.getLedger().governanceActionCount, before + 1n);
+    assert.equal((await harness.simulator.getLedger()).governanceActionCount, before + 1n);
   } finally {
     harness.simulator.circuitContext = originalContext;
   }
-  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
-  assert.throws(() => submitRawIssuerProposal(
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
+  await assert.rejects(submitRawIssuerProposal(
     harness, changed, altered, changedVerifierSignature, signatures,
   ), /Invalid Jubjub Schnorr signature/u);
-  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
-  harness.executeIssuerProposalWithSignatures(issuer, evidence, signatures, verifierSignature);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
+  await harness.executeIssuerProposalWithSignatures(issuer, evidence, signatures, verifierSignature);
 });
 
-test("issuer-unauthorized-evidence-verifier-compact", () => {
+test("issuer-unauthorized-evidence-verifier-compact", async () => {
   const { harness, issuer, evidence, prepared, verifierSignature, signatures } =
-    issuerProposal("isolated-issuer-unauthorized-verifier");
+    await issuerProposal("isolated-issuer-unauthorized-verifier");
   const outsider = createMaintainerScenarioFixture("isolated-unauthorized-verifier-key");
   const wrongSignature = signIssuerProposalEvidenceFromSeed(
     outsider.seed, prepared.registryId, prepared.networkIdCommitment, prepared.contractAddress,
     prepared.evidenceVerifierKeyIdCommitment,
     prepared.actionPayloadHash,
   );
-  const before = harness.simulator.getLedger().governanceActionCount;
-  assert.throws(() => harness.executeIssuerProposalWithSignatures(
+  const before = (await harness.simulator.getLedger()).governanceActionCount;
+  await assert.rejects(harness.executeIssuerProposalWithSignatures(
     issuer, evidence, signatures, wrongSignature,
   ), /signature|verifier|assert|authorized/iu);
-  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
-  harness.executeIssuerProposalWithSignatures(issuer, evidence, signatures, verifierSignature);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
+  await harness.executeIssuerProposalWithSignatures(issuer, evidence, signatures, verifierSignature);
 });
 
-const pendingIssuerApproval = (label) => {
-  const setup = issuerProposal(label);
-  setup.harness.executeIssuerProposalWithSignatures(
+const pendingIssuerApproval = async (label) => {
+  const setup = await issuerProposal(label);
+  await setup.harness.executeIssuerProposalWithSignatures(
     setup.issuer, setup.evidence, setup.signatures, setup.verifierSignature,
   );
-  const prepared = setup.harness.prepareIssuerDecisionAction(setup.issuer, "approve");
+  const prepared = await setup.harness.prepareIssuerDecisionAction(setup.issuer, "approve");
   const second = createMaintainerScenarioFixture(`${label}-second`);
   const third = createMaintainerScenarioFixture(`${label}-third`);
   const signatures = [
-    signAction(setup.harness, second, prepared),
-    signAction(setup.harness, third, prepared),
+    await signAction(setup.harness, second, prepared),
+    await signAction(setup.harness, third, prepared),
   ];
   return { ...setup, prepared, approvalSignatures: signatures };
 };
 
-test("compact-issuer-altered-evidence-hash", () => {
+test("compact-issuer-altered-evidence-hash", async () => {
   const { harness, issuer, prepared, approvalSignatures } =
-    pendingIssuerApproval("isolated-issuer-approval-evidence");
+    await pendingIssuerApproval("isolated-issuer-approval-evidence");
   const altered = Uint8Array.from(prepared.evidenceHash);
   altered[0] ^= 1;
-  const before = harness.simulator.getLedger().governanceActionCount;
-  assert.throws(() => harness.simulator.authorizeIssuerAuthorization(
+  const before = (await harness.simulator.getLedger()).governanceActionCount;
+  await assert.rejects(harness.simulator.authorizeIssuerAuthorization(
     approvalSignatures[0].keyId,
     approvalSignatures[0].publicKey,
     approvalSignatures[0].signature,
@@ -240,42 +240,42 @@ test("compact-issuer-altered-evidence-hash", () => {
     altered,
     approvalSignatures.slice(1),
   ), /evidence|match/iu);
-  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
-  harness.executeIssuerDecisionWithSignatures(issuer, "approve", approvalSignatures);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
+  await harness.executeIssuerDecisionWithSignatures(issuer, "approve", approvalSignatures);
 });
 
-test("compact-issuer-insufficient-quorum", () => {
+test("compact-issuer-insufficient-quorum", async () => {
   const { harness, issuer, approvalSignatures } =
-    pendingIssuerApproval("isolated-issuer-approval-quorum");
-  const before = harness.simulator.getLedger().governanceActionCount;
-  assert.throws(() => harness.executeIssuerDecisionWithSignatures(
+    await pendingIssuerApproval("isolated-issuer-approval-quorum");
+  const before = (await harness.simulator.getLedger()).governanceActionCount;
+  await assert.rejects(harness.executeIssuerDecisionWithSignatures(
     issuer, "approve", approvalSignatures.slice(0, 1),
   ), /quorum|threshold|assert|signature|maintainer/iu);
-  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
-  harness.executeIssuerDecisionWithSignatures(issuer, "approve", approvalSignatures);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
+  await harness.executeIssuerDecisionWithSignatures(issuer, "approve", approvalSignatures);
 });
 
-test("client-issuer-duplicate-signer", () => {
+test("client-issuer-duplicate-signer", async () => {
   const { harness, issuer, approvalSignatures } =
-    pendingIssuerApproval("isolated-issuer-approval-duplicate");
-  const before = harness.simulator.getLedger().governanceActionCount;
-  assert.throws(() => harness.executeIssuerDecisionWithSignatures(
+    await pendingIssuerApproval("isolated-issuer-approval-duplicate");
+  const before = (await harness.simulator.getLedger()).governanceActionCount;
+  await assert.rejects(harness.executeIssuerDecisionWithSignatures(
     issuer, "approve", [approvalSignatures[0], approvalSignatures[0]],
   ), /Maintainer authorization bundle contains a duplicate key ID/u);
-  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
-  harness.executeIssuerDecisionWithSignatures(issuer, "approve", approvalSignatures);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
+  await harness.executeIssuerDecisionWithSignatures(issuer, "approve", approvalSignatures);
 });
 
-test("compact-issuer-unknown-signer", () => {
+test("compact-issuer-unknown-signer", async () => {
   const { harness, issuer, prepared, approvalSignatures } =
-    pendingIssuerApproval("isolated-issuer-approval-outsider");
+    await pendingIssuerApproval("isolated-issuer-approval-outsider");
   const outsider = createMaintainerScenarioFixture("isolated-issuer-outsider");
-  const before = harness.simulator.getLedger().governanceActionCount;
-  assert.throws(() => harness.executeIssuerDecisionWithSignatures(
-    issuer, "approve", [approvalSignatures[0], signAction(harness, outsider, prepared)],
+  const before = (await harness.simulator.getLedger()).governanceActionCount;
+  await assert.rejects(harness.executeIssuerDecisionWithSignatures(
+    issuer, "approve", [approvalSignatures[0], await signAction(harness, outsider, prepared)],
   ), /assert|signature|maintainer|authorized|registered/iu);
-  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
-  harness.executeIssuerDecisionWithSignatures(issuer, "approve", approvalSignatures);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
+  await harness.executeIssuerDecisionWithSignatures(issuer, "approve", approvalSignatures);
 });
 
 for (const role of [
@@ -322,24 +322,24 @@ for (const role of [
     raw: "proposeMaintainerMembership",
   },
 ]) {
-  const proposal = (label) => {
+  const proposal = async (label) => {
     const harness = new LocalTrustRegistryIntegrationHarness(label);
     const second = createMaintainerScenarioFixture(`${label}-second`);
     const third = createMaintainerScenarioFixture(`${label}-third`);
     const fixture = role.fixture(`${label}-${role.name}`);
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(third);
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
-    const evidence = harness.createApplicationEvidence({
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(third);
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    const evidence = await harness.createApplicationEvidence({
       applicationId: role.id(fixture),
       subjectDid: fixture.subjectDid,
       role: role.name,
       scope: role.scope(harness, fixture),
       governedResource: role.resource(harness, fixture),
     });
-    const prepared = harness[role.prepare](fixture, evidence);
-    const verifierSignature = harness[role.sign](prepared);
-    const signatures = [signAction(harness, second, prepared), signAction(harness, third, prepared)];
+    const prepared = await harness[role.prepare](fixture, evidence);
+    const verifierSignature = await harness[role.sign](prepared);
+    const signatures = [await signAction(harness, second, prepared), await signAction(harness, third, prepared)];
     return { harness, fixture, evidence, prepared, verifierSignature, signatures, second, third };
   };
 
@@ -366,31 +366,31 @@ for (const role of [
     );
   };
 
-  test(`compact-${role.name}-proposal-insufficient-quorum`, () => {
+  test(`compact-${role.name}-proposal-insufficient-quorum`, async () => {
     const { harness, fixture, evidence, verifierSignature, signatures } =
-      proposal(`isolated-${role.name}-proposal-quorum`);
-    const before = harness.simulator.getLedger().governanceActionCount;
-    assert.throws(() => harness[role.execute](
+      await proposal(`isolated-${role.name}-proposal-quorum`);
+    const before = (await harness.simulator.getLedger()).governanceActionCount;
+    await assert.rejects(harness[role.execute](
       fixture, evidence, signatures.slice(0, 1), verifierSignature,
     ), /Maintainer signer count must satisfy the action threshold/u);
-    assert.equal(harness.simulator.getLedger().governanceActionCount, before);
-    harness[role.execute](fixture, evidence, signatures, verifierSignature);
+    assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
+    await harness[role.execute](fixture, evidence, signatures, verifierSignature);
   });
 
-  test(`client-${role.name}-proposal-duplicate-signer`, () => {
+  test(`client-${role.name}-proposal-duplicate-signer`, async () => {
     const { harness, fixture, evidence, verifierSignature, signatures } =
-      proposal(`isolated-${role.name}-proposal-duplicate`);
-    const before = harness.simulator.getLedger().governanceActionCount;
-    assert.throws(() => harness[role.execute](
+      await proposal(`isolated-${role.name}-proposal-duplicate`);
+    const before = (await harness.simulator.getLedger()).governanceActionCount;
+    await assert.rejects(harness[role.execute](
       fixture, evidence, [signatures[0], signatures[0]], verifierSignature,
     ), /Maintainer authorization bundle contains a duplicate key ID/u);
-    assert.equal(harness.simulator.getLedger().governanceActionCount, before);
-    harness[role.execute](fixture, evidence, signatures, verifierSignature);
+    assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
+    await harness[role.execute](fixture, evidence, signatures, verifierSignature);
   });
 
-  test(`compact-${role.name}-proposal-altered-evidence-hash`, () => {
+  test(`compact-${role.name}-proposal-altered-evidence-hash`, async () => {
     const { harness, fixture, evidence, prepared, verifierSignature, signatures, second, third } =
-      proposal(`isolated-${role.name}-proposal-evidence-substitution`);
+      await proposal(`isolated-${role.name}-proposal-evidence-substitution`);
     const alteredHash = Uint8Array.from(prepared.evidenceHash);
     alteredHash[0] ^= 1;
     const baseHash = role.name === "maintainer"
@@ -414,35 +414,35 @@ for (const role of [
         prepared.policyCommitment, prepared.policyVersion,
       ),
     };
-    const alteredVerifierSignature = harness[role.sign](altered);
-    const verifierKey = harness.simulator.getEvidenceVerifierKey(altered.evidenceVerifierAuthorizationId);
+    const alteredVerifierSignature = await harness[role.sign](altered);
+    const verifierKey = await harness.simulator.getEvidenceVerifierKey(altered.evidenceVerifierAuthorizationId);
     assert.equal(role.verifySignature(
       verifierKey.publicKey, altered.registryId, altered.networkIdCommitment, altered.contractAddress,
       altered.evidenceVerifierKeyIdCommitment,
       altered.actionPayloadHash, alteredVerifierSignature,
     ), true);
-    const before = harness.simulator.getLedger().governanceActionCount;
+    const before = (await harness.simulator.getLedger()).governanceActionCount;
     const originalContext = harness.simulator.circuitContext;
     try {
-      submitRaw(harness, fixture, altered, alteredVerifierSignature, [
-        signAction(harness, second, altered), signAction(harness, third, altered),
+      await submitRaw(harness, fixture, altered, alteredVerifierSignature, [
+        await signAction(harness, second, altered), await signAction(harness, third, altered),
       ]);
-      assert.equal(harness.simulator.getLedger().governanceActionCount, before + 1n);
+      assert.equal((await harness.simulator.getLedger()).governanceActionCount, before + 1n);
     } finally {
       harness.simulator.circuitContext = originalContext;
     }
-    assert.equal(harness.simulator.getLedger().governanceActionCount, before);
-    assert.throws(() => submitRaw(
+    assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
+    await assert.rejects(submitRaw(
       harness, fixture, altered, alteredVerifierSignature, signatures,
     ), /Invalid Jubjub Schnorr signature/u);
-    assert.equal(harness.simulator.getLedger().governanceActionCount, before);
-    harness[role.execute](fixture, evidence, signatures, verifierSignature);
+    assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
+    await harness[role.execute](fixture, evidence, signatures, verifierSignature);
   });
 
   if (role.name === "verifier" || role.name === "auditor") {
-    test(`compact-${role.name}-proposal-scope-substitution`, () => {
+    test(`compact-${role.name}-proposal-scope-substitution`, async () => {
       const label = `isolated-${role.name}-proposal-scope-substitution`;
-      const { harness, fixture, evidence, prepared, verifierSignature, signatures, second, third } = proposal(label);
+      const { harness, fixture, evidence, prepared, verifierSignature, signatures, second, third } = await proposal(label);
       const changed = role.name === "verifier"
         ? { ...fixture, allowedAttributeSetCommitment: bytes32Commitment("verifier:substituted-attributes") }
         : { ...fixture, requestResourceIdCommitment: bytes32Commitment("auditor:substituted-request") };
@@ -459,23 +459,23 @@ for (const role of [
           prepared.evidenceVerifierKeyIdCommitment, prepared.policyCommitment, prepared.policyVersion,
         ),
       };
-      const changedVerifierSignature = harness[role.sign](altered);
-      const before = harness.simulator.getLedger().governanceActionCount;
+      const changedVerifierSignature = await harness[role.sign](altered);
+      const before = (await harness.simulator.getLedger()).governanceActionCount;
       const originalContext = harness.simulator.circuitContext;
       try {
-        submitRaw(harness, changed, altered, changedVerifierSignature, [
-          signAction(harness, second, altered), signAction(harness, third, altered),
+        await submitRaw(harness, changed, altered, changedVerifierSignature, [
+          await signAction(harness, second, altered), await signAction(harness, third, altered),
         ]);
-        assert.equal(harness.simulator.getLedger().governanceActionCount, before + 1n);
+        assert.equal((await harness.simulator.getLedger()).governanceActionCount, before + 1n);
       } finally {
         harness.simulator.circuitContext = originalContext;
       }
-      assert.equal(harness.simulator.getLedger().governanceActionCount, before);
-      assert.throws(() => submitRaw(
+      assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
+      await assert.rejects(submitRaw(
         harness, changed, altered, changedVerifierSignature, signatures,
       ), /Invalid Jubjub Schnorr signature/u);
-      assert.equal(harness.simulator.getLedger().governanceActionCount, before);
-      harness[role.execute](fixture, evidence, signatures, verifierSignature);
+      assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
+      await harness[role.execute](fixture, evidence, signatures, verifierSignature);
     });
   }
 }
@@ -492,17 +492,17 @@ for (const substitution of [
     value: "credential-family:substituted:v1",
   },
 ]) {
-  test(substitution.id, () => {
+  test(substitution.id, async () => {
     const harness = new LocalTrustRegistryIntegrationHarness(`isolated-${substitution.id}`);
     const second = createMaintainerScenarioFixture(`isolated-${substitution.id}-second`);
     const third = createMaintainerScenarioFixture(`isolated-${substitution.id}-third`);
     const recognition = createRecognitionScenarioFixture(`isolated-${substitution.id}-recognition`);
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(third);
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
-    const prepared = harness.prepareRecognitionProposalAction(recognition);
-    const verifierSignature = harness.signRecognitionProposalEvidence(prepared);
-    const signers = [signAction(harness, second, prepared), signAction(harness, third, prepared)];
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(third);
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    const prepared = await harness.prepareRecognitionProposalAction(recognition);
+    const verifierSignature = await harness.signRecognitionProposalEvidence(prepared);
+    const signers = [await signAction(harness, second, prepared), await signAction(harness, third, prepared)];
     const propose = (overrides = {}) => harness.simulator.proposeRecognition(
       signers[0].keyId, signers[0].publicKey, signers[0].signature,
       recognition.recognitionIdCommitment,
@@ -514,11 +514,11 @@ for (const substitution of [
       prepared.evidenceHash, prepared.evidenceVerifierAuthorizationId,
       prepared.evidenceVerifierKeyIdCommitment, verifierSignature, signers.slice(1),
     );
-    const before = harness.simulator.getLedger().governanceActionCount;
-    assert.throws(() => propose({ [substitution.field]: bytes32Commitment(substitution.value) }),
+    const before = (await harness.simulator.getLedger()).governanceActionCount;
+    await assert.rejects(propose({ [substitution.field]: bytes32Commitment(substitution.value) }),
       /signature|payload/iu);
-    assert.equal(harness.simulator.getLedger().governanceActionCount, before);
-    propose();
-    assert.equal(harness.simulator.getLedger().governanceActionCount, before + 1n);
+    assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
+    await propose();
+    assert.equal((await harness.simulator.getLedger()).governanceActionCount, before + 1n);
   });
 }
