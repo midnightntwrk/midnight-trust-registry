@@ -25,9 +25,10 @@ function fixture(overrides = {}) {
     const result = {
       system_version: "2.1.101-test",
       state_getRuntimeVersion: { specVersion: overrides.nodeProtocol ?? 2001100 },
-      chain_getBlockHash: params[0] === 23
-        ? `0x${(overrides.nodeIndexedHash ?? "b".repeat(64))}`
-        : params[0] === 12 ? `0x${(overrides.checkpointHash ?? "d".repeat(64))}` : genesis,
+      chain_getBlockHash: params[0] === 0 ? genesis
+        : params[0] === 12 ? `0x${(overrides.checkpointHash ?? "d".repeat(64))}`
+          : params[0] === (overrides.indexedHeight ?? 23)
+            ? `0x${(overrides.nodeIndexedHash ?? "b".repeat(64))}` : genesis,
     }[method];
     return Response.json({ jsonrpc: "2.0", id: 1, result });
   };
@@ -77,6 +78,19 @@ test("pins a non-genesis checkpoint to distinguish replaced local chains", async
     expectedCheckpointHeight: 24, expectedCheckpointHash: approved }), /not reached/u);
   await assert.rejects(checkLedger9LocalStack({ fetchImpl,
     expectedCheckpointHeight: 12 }), /requires a positive height/u);
+});
+
+test("accepts unrelated shared-chain head advancement with the same pinned checkpoint", async () => {
+  for (const indexedHeight of [23, 24]) {
+    const result = await checkLedger9LocalStack({
+      fetchImpl: fixture({ indexedHeight }).fetchImpl,
+      expectedGenesisHash: genesis,
+      expectedCheckpointHeight: 12,
+      expectedCheckpointHash: `0x${"d".repeat(64)}`,
+    });
+    assert.equal(result.indexedHeight, indexedHeight);
+    assert.equal(result.indexedBlockHash, `0x${"b".repeat(64)}`);
+  }
 });
 
 test("rejects wrong protocol, unavailable proof server, and invalid ports", async () => {
