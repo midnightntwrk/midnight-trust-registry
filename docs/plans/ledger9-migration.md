@@ -477,6 +477,13 @@ pinned `localnet:run` wrapper; it never submits a transaction. The ignored
 `artifacts/ledger9-current-chain-smoke-state` journal and
 `artifacts/ledger9-current-chain-pack` manifest must be preserved; never replay
 this deployment. No additional shared-chain write was approved in this step.
+The next-key planner subsequently read the current finalized image without
+reserving or submitting anything. It found one installed key of 66, selected
+`activateAuditorAuthorization` as the first missing release-catalog key, and
+confirmed maintenance authority counter zero. A private insertion plan is
+saved beside the deployment journal, but its per-circuit journal does not
+exist. Installing that key or the remaining 64 would be additional
+shared-chain writes, not covered by the one-deployment approval.
 
 ## Execution order
 
