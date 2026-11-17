@@ -333,6 +333,10 @@ passed the compiled VC consumer plus issuer, verifier, auditor, maintainer,
 and recognition actor journeys. It used skip-ZK output and local VC trial
 tarballs, not full proving artifacts, deployed transactions, or published
 VC packages.
+At `9e75d8fd`, the non-destructive workspace `test:light` and `typecheck`
+Turbo gates passed all ten runnable package tasks each, without cache hits.
+The contract suite reported 97 tests, the CLI 32, and the API 387. These
+source and fixture checks do not qualify local-node finality or deployment.
 
 ## Execution order
 
