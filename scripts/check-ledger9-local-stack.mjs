@@ -21,6 +21,8 @@ export function localnetInputFromEnvironment(env = process.env) {
     indexerPort: env.TR_INDEXER_PORT,
     proofPort: env.TR_PROOF_PORT,
     expectedGenesisHash: env.TR_EXPECTED_GENESIS_HASH,
+    expectedCheckpointHeight: env.TR_EXPECTED_CHECKPOINT_HEIGHT,
+    expectedCheckpointHash: env.TR_EXPECTED_CHECKPOINT_HASH,
     expectedProofVersion: env.TR_EXPECTED_PROOF_VERSION,
   };
 }
@@ -94,6 +96,18 @@ export async function checkLedger9LocalStack(input = {}) {
   assert.match(latest.hash, /^[0-9a-f]{64}$/u, "Indexer current block hash is malformed");
   const nodeIndexedHash = await request("chain_getBlockHash", [latest.height]);
   assert.equal(nodeIndexedHash, `0x${latest.hash}`, "Node and indexer disagree at the indexed height");
+  if (input.expectedCheckpointHeight !== undefined || input.expectedCheckpointHash !== undefined) {
+    const height = Number(input.expectedCheckpointHeight);
+    if (!Number.isSafeInteger(height) || height < 1
+      || typeof input.expectedCheckpointHash !== "string"
+      || !genesisPattern.test(input.expectedCheckpointHash)) {
+      throw new Error("Local chain checkpoint requires a positive height and 0x-prefixed block hash");
+    }
+    assert.ok(latest.height >= height, "Local chain has not reached the approved checkpoint");
+    const checkpointHash = await request("chain_getBlockHash", [height]);
+    assert.equal(checkpointHash, input.expectedCheckpointHash,
+      "Local chain differs from the approved checkpoint");
+  }
   const proof = await fetchLocal(fetchImpl, proofUrl, {}, "Proof server");
   if (!proof.ok) throw new Error(`Proof server is unavailable: HTTP ${proof.status}`);
   const proofVersion = (await proof.text()).trim();

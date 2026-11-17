@@ -51,7 +51,17 @@ read-only discovery before spawning the command; on failure it reports the
 diagnostic and does not spawn anything. Its own code never starts
 `midnight-network`; do not pass a lifecycle command as the workload. The
 wrapper honors the same `TR_NODE_PORT`, `TR_INDEXER_PORT`, `TR_PROOF_PORT`,
-genesis, and proof-version overrides as discovery.
+genesis, proof-version, and optional checkpoint overrides as discovery. For
+this checkout, source the ignored, private `artifacts/ledger9-current-chain.env`
+before discovery or `localnet:run` (for example,
+`source artifacts/ledger9-current-chain.env` in a shell from the repo root).
+It pins the owner's default ports, the
+node-observed genesis, and an observed non-genesis block height/hash. A shared
+stack replacement must fail this check even if the new chain uses the same
+genesis. Re-observe and explicitly update the private pin only after confirming
+the replacement with the stack owner; do not carry over deployment journals.
+This local development pin is not a signed release approval or standalone
+deployment plan.
 
 `pnpm localnet:discover` and `pnpm check:ledger9-local-stack` are the current
 shared-stack root targets. Fixture demos and simulator integration do not use

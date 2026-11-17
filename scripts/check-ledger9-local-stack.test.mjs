@@ -26,7 +26,8 @@ function fixture(overrides = {}) {
       system_version: "2.1.101-test",
       state_getRuntimeVersion: { specVersion: overrides.nodeProtocol ?? 2001100 },
       chain_getBlockHash: params[0] === 23
-        ? `0x${(overrides.nodeIndexedHash ?? "b".repeat(64))}` : genesis,
+        ? `0x${(overrides.nodeIndexedHash ?? "b".repeat(64))}`
+        : params[0] === 12 ? `0x${(overrides.checkpointHash ?? "d".repeat(64))}` : genesis,
     }[method];
     return Response.json({ jsonrpc: "2.0", id: 1, result });
   };
@@ -62,6 +63,20 @@ test("rejects node/indexer divergence beyond genesis", async () => {
   await assert.rejects(checkLedger9LocalStack({
     fetchImpl: fixture({ nodeIndexedHash: "c".repeat(64) }).fetchImpl,
   }), /disagree at the indexed height/u);
+});
+
+test("pins a non-genesis checkpoint to distinguish replaced local chains", async () => {
+  const approved = `0x${"d".repeat(64)}`;
+  const { fetchImpl, calls } = fixture();
+  await checkLedger9LocalStack({ fetchImpl, expectedCheckpointHeight: 12,
+    expectedCheckpointHash: approved });
+  assert.ok(calls.some(({ init }) => init.body?.includes('"chain_getBlockHash","params":[12]')));
+  await assert.rejects(checkLedger9LocalStack({ fetchImpl: fixture({ checkpointHash: "e".repeat(64) }).fetchImpl,
+    expectedCheckpointHeight: 12, expectedCheckpointHash: approved }), /approved checkpoint/u);
+  await assert.rejects(checkLedger9LocalStack({ fetchImpl,
+    expectedCheckpointHeight: 24, expectedCheckpointHash: approved }), /not reached/u);
+  await assert.rejects(checkLedger9LocalStack({ fetchImpl,
+    expectedCheckpointHeight: 12 }), /requires a positive height/u);
 });
 
 test("rejects wrong protocol, unavailable proof server, and invalid ports", async () => {
@@ -113,8 +128,10 @@ test("failed attach directs ownership handoff, never a shared-stack restart", ()
 
 test("CLI and workload wrapper share the selected localnet endpoints", () => {
   assert.deepEqual(localnetInputFromEnvironment({ TR_NODE_PORT: "1", TR_INDEXER_PORT: "2",
-    TR_PROOF_PORT: "3", TR_EXPECTED_GENESIS_HASH: "pin", TR_EXPECTED_PROOF_VERSION: "9.0.0" }), {
+    TR_PROOF_PORT: "3", TR_EXPECTED_GENESIS_HASH: "pin", TR_EXPECTED_CHECKPOINT_HEIGHT: "12",
+    TR_EXPECTED_CHECKPOINT_HASH: "hash", TR_EXPECTED_PROOF_VERSION: "9.0.0" }), {
     nodePort: "1", indexerPort: "2", proofPort: "3",
-    expectedGenesisHash: "pin", expectedProofVersion: "9.0.0",
+    expectedGenesisHash: "pin", expectedCheckpointHeight: "12", expectedCheckpointHash: "hash",
+    expectedProofVersion: "9.0.0",
   });
 });
