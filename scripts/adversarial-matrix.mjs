@@ -125,6 +125,18 @@ export class AdversarialMatrix {
     }
   }
 
+  async expectVerifiedAsync(operation, { id, invariant, boundary }) {
+    try {
+      assert.ok(["integration", "client", "adapter"].includes(boundary));
+      const value = await operation();
+      assert.ok(value, "Expected a verified result");
+      this.#record({ id, invariant, boundary, expected: "accepted", observed: "accepted", status: "passed" });
+      return value;
+    } catch (error) {
+      return this.#failure({ id, invariant, boundary }, "accepted", "verification-assertion-failed", error);
+    }
+  }
+
   report() {
     const failed = this.#cases.filter(({ status }) => status === "failed").length;
     return {

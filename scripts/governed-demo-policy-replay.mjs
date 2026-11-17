@@ -8,13 +8,13 @@ import {
   createVerifierScenarioFixture,
 } from "../packages/trust-registry-integration/dist/index.js";
 
-export function runOldPolicyIssuerReplay(matrix, harness, issuer, second, third,
+export async function runOldPolicyIssuerReplay(matrix, harness, issuer, second, third,
   formerPolicyCommitment, signCompact) {
-  const action = harness.prepareIssuerDecisionAction(issuer, "approve");
-  const oldSignature = signCompact(second, action, harness, formerPolicyCommitment);
-  const oldCoSignature = signCompact(third, action, harness, formerPolicyCommitment);
-  const before = harness.simulator.getLedger().governanceActionCount;
-  matrix.expectThrown(() => harness.simulator.authorizeIssuerAuthorization(
+  const action = await harness.prepareIssuerDecisionAction(issuer, "approve");
+  const oldSignature = await signCompact(second, action, harness, formerPolicyCommitment);
+  const oldCoSignature = await signCompact(third, action, harness, formerPolicyCommitment);
+  const before = (await harness.simulator.getLedger()).governanceActionCount;
+  await matrix.expectRejected(() => harness.simulator.authorizeIssuerAuthorization(
     oldSignature.keyId,
     oldSignature.publicKey,
     oldSignature.signature,
@@ -28,10 +28,10 @@ export function runOldPolicyIssuerReplay(matrix, harness, issuer, second, third,
     messagePattern: /Invalid Jubjub Schnorr signature/u,
     category: "old-policy-signature-rejected",
   });
-  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
-  const signature = signCompact(second, action, harness);
-  const coSignature = signCompact(third, action, harness);
-  harness.simulator.authorizeIssuerAuthorization(
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
+  const signature = await signCompact(second, action, harness);
+  const coSignature = await signCompact(third, action, harness);
+  await harness.simulator.authorizeIssuerAuthorization(
     signature.keyId,
     signature.publicKey,
     signature.signature,
@@ -39,21 +39,21 @@ export function runOldPolicyIssuerReplay(matrix, harness, issuer, second, third,
     action.evidenceHash,
     [coSignature],
   );
-  assert.equal(harness.simulator.getLedger().governanceActionCount, before + 1n);
-  harness.activateIssuer(issuer, [second]);
-  return harness.evaluateCurrentIssuerDecision(issuer);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, before + 1n);
+  await harness.activateIssuer(issuer, [second]);
+  return await harness.evaluateCurrentIssuerDecision(issuer);
 }
 
-export function runOldPolicyRecognitionReplay(matrix, harness, second, third,
+export async function runOldPolicyRecognitionReplay(matrix, harness, second, third,
   formerPolicyCommitment, signCompact) {
   const recognition = createRecognitionScenarioFixture("governed-demo-recognition-policy-replay");
-  const proposal = harness.prepareRecognitionProposalAction(recognition);
-  const evidence = harness.signRecognitionProposalEvidence(proposal);
-  const proposalCount = harness.simulator.getLedger().governanceActionCount;
-  matrix.expectThrown(() => harness.executeRecognitionProposalWithSignatures(
+  const proposal = await harness.prepareRecognitionProposalAction(recognition);
+  const evidence = await harness.signRecognitionProposalEvidence(proposal);
+  const proposalCount = (await harness.simulator.getLedger()).governanceActionCount;
+  await matrix.expectRejected(async () => harness.executeRecognitionProposalWithSignatures(
     recognition,
-    [signCompact(second, proposal, harness, formerPolicyCommitment),
-      signCompact(third, proposal, harness, formerPolicyCommitment)],
+    [await signCompact(second, proposal, harness, formerPolicyCommitment),
+      await signCompact(third, proposal, harness, formerPolicyCommitment)],
     evidence,
     proposal,
   ), {
@@ -62,41 +62,41 @@ export function runOldPolicyRecognitionReplay(matrix, harness, second, third,
     boundary: "compact", messagePattern: /Invalid Jubjub Schnorr signature/u,
     category: "old-policy-signature-rejected",
   });
-  assert.equal(harness.simulator.getLedger().governanceActionCount, proposalCount);
-  harness.executeRecognitionProposalWithSignatures(
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, proposalCount);
+  await harness.executeRecognitionProposalWithSignatures(
     recognition,
-    [signCompact(second, proposal, harness), signCompact(third, proposal, harness)],
+    [await signCompact(second, proposal, harness), await signCompact(third, proposal, harness)],
     evidence,
     proposal,
   );
-  const approval = harness.prepareRecognitionDecisionAction(recognition, "approve");
-  const approvalCount = harness.simulator.getLedger().governanceActionCount;
-  matrix.expectThrown(() => harness.executeRecognitionDecisionWithSignatures(
+  const approval = await harness.prepareRecognitionDecisionAction(recognition, "approve");
+  const approvalCount = (await harness.simulator.getLedger()).governanceActionCount;
+  await matrix.expectRejected(async () => harness.executeRecognitionDecisionWithSignatures(
     recognition, "approve",
-    [signCompact(second, approval, harness, formerPolicyCommitment),
-      signCompact(third, approval, harness, formerPolicyCommitment)],
+    [await signCompact(second, approval, harness, formerPolicyCommitment),
+      await signCompact(third, approval, harness, formerPolicyCommitment)],
   ), {
     id: "compact-recognition-approval-old-policy-signature-replay",
     invariant: "A recognition approval with a current payload cannot reuse former-policy maintainer signatures",
     boundary: "compact", messagePattern: /Invalid Jubjub Schnorr signature/u,
     category: "old-policy-signature-rejected",
   });
-  assert.equal(harness.simulator.getLedger().governanceActionCount, approvalCount);
-  harness.executeRecognitionDecisionWithSignatures(recognition, "approve", [
-    signCompact(second, approval, harness), signCompact(third, approval, harness),
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, approvalCount);
+  await harness.executeRecognitionDecisionWithSignatures(recognition, "approve", [
+    await signCompact(second, approval, harness), await signCompact(third, approval, harness),
   ]);
 }
 
-export function runRevisedPolicyRoleReplays(matrix, harness, client, second, third,
+export async function runRevisedPolicyRoleReplays(matrix, harness, client, second, third,
   formerPolicyCommitment, signCompact) {
   const verifier = createVerifierScenarioFixture("governed-demo-policy-verifier");
-  harness.proposeVerifier(verifier);
-  const verifierApproval = harness.prepareVerifierDecisionAction(verifier, "approve");
-  const beforeVerifier = harness.simulator.getLedger().governanceActionCount;
-  matrix.expectThrown(() => harness.executeVerifierDecisionWithSignatures(
+  await harness.proposeVerifier(verifier);
+  const verifierApproval = await harness.prepareVerifierDecisionAction(verifier, "approve");
+  const beforeVerifier = (await harness.simulator.getLedger()).governanceActionCount;
+  await matrix.expectRejected(async () => harness.executeVerifierDecisionWithSignatures(
     verifier, "approve", [
-      signCompact(second, verifierApproval, harness, formerPolicyCommitment),
-      signCompact(third, verifierApproval, harness, formerPolicyCommitment),
+      await signCompact(second, verifierApproval, harness, formerPolicyCommitment),
+      await signCompact(third, verifierApproval, harness, formerPolicyCommitment),
     ],
   ), {
     id: "compact-verifier-old-policy-signature-replay",
@@ -104,9 +104,9 @@ export function runRevisedPolicyRoleReplays(matrix, harness, client, second, thi
     boundary: "compact", messagePattern: /Invalid Jubjub Schnorr signature/u,
     category: "old-policy-signature-rejected",
   });
-  assert.equal(harness.simulator.getLedger().governanceActionCount, beforeVerifier);
-  matrix.expectThrown(() => harness.executeVerifierDecisionWithSignatures(
-    verifier, "approve", [signCompact(second, verifierApproval, harness)],
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, beforeVerifier);
+  await matrix.expectRejected(async () => harness.executeVerifierDecisionWithSignatures(
+    verifier, "approve", [await signCompact(second, verifierApproval, harness)],
   ), {
     id: "verifier-revised-policy-insufficient-quorum",
     invariant: "A verifier approval under the revised policy requires the new maintainer quorum",
@@ -114,16 +114,16 @@ export function runRevisedPolicyRoleReplays(matrix, harness, client, second, thi
     messagePattern: /Maintainer signer count must satisfy the action threshold/u,
     category: "revised-policy-insufficient-quorum",
   });
-  assert.equal(harness.simulator.getLedger().governanceActionCount, beforeVerifier);
-  harness.approveVerifier(verifier);
-  harness.activateVerifier(verifier);
-  const verifierBundle = harness.evaluateCurrentVerifierDecision(verifier);
-  matrix.expectVerified(() => client.verifyVerifierAuthorizationBundle(verifierBundle, {}), {
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, beforeVerifier);
+  await harness.approveVerifier(verifier);
+  await harness.activateVerifier(verifier);
+  const verifierBundle = await harness.evaluateCurrentVerifierDecision(verifier);
+  await matrix.expectVerifiedAsync(() => client.verifyVerifierAuthorizationBundle(verifierBundle, {}), {
     id: "verifier-current-policy-after-threshold-change",
     invariant: "The verifier can be activated under the revised maintainer quorum",
     boundary: "client",
   });
-  matrix.expectThrown(() => client.verifyVerifierAuthorizationBundle(
+  await matrix.expectRejected(() => client.verifyVerifierAuthorizationBundle(
     { ...verifierBundle, policy: { ...verifierBundle.policy, version: "v9" } }, {},
   ), {
     id: "verifier-uncommitted-policy-version",
@@ -133,13 +133,13 @@ export function runRevisedPolicyRoleReplays(matrix, harness, client, second, thi
   });
 
   const auditor = createAuditorScenarioFixture("governed-demo-policy-auditor");
-  harness.proposeAuditor(auditor);
-  const auditorApproval = harness.prepareAuditorDecisionAction(auditor, "approve");
-  const beforeAuditor = harness.simulator.getLedger().governanceActionCount;
-  matrix.expectThrown(() => harness.executeAuditorDecisionWithSignatures(
+  await harness.proposeAuditor(auditor);
+  const auditorApproval = await harness.prepareAuditorDecisionAction(auditor, "approve");
+  const beforeAuditor = (await harness.simulator.getLedger()).governanceActionCount;
+  await matrix.expectRejected(async () => harness.executeAuditorDecisionWithSignatures(
     auditor, "approve", [
-      signCompact(second, auditorApproval, harness, formerPolicyCommitment),
-      signCompact(third, auditorApproval, harness, formerPolicyCommitment),
+      await signCompact(second, auditorApproval, harness, formerPolicyCommitment),
+      await signCompact(third, auditorApproval, harness, formerPolicyCommitment),
     ],
   ), {
     id: "compact-auditor-old-policy-signature-replay",
@@ -147,9 +147,9 @@ export function runRevisedPolicyRoleReplays(matrix, harness, client, second, thi
     boundary: "compact", messagePattern: /Invalid Jubjub Schnorr signature/u,
     category: "old-policy-signature-rejected",
   });
-  assert.equal(harness.simulator.getLedger().governanceActionCount, beforeAuditor);
-  matrix.expectThrown(() => harness.executeAuditorDecisionWithSignatures(
-    auditor, "approve", [signCompact(second, auditorApproval, harness)],
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, beforeAuditor);
+  await matrix.expectRejected(async () => harness.executeAuditorDecisionWithSignatures(
+    auditor, "approve", [await signCompact(second, auditorApproval, harness)],
   ), {
     id: "auditor-revised-policy-insufficient-quorum",
     invariant: "An auditor approval under the revised policy requires the new maintainer quorum",
@@ -157,11 +157,11 @@ export function runRevisedPolicyRoleReplays(matrix, harness, client, second, thi
     messagePattern: /Maintainer signer count must satisfy the action threshold/u,
     category: "revised-policy-insufficient-quorum",
   });
-  assert.equal(harness.simulator.getLedger().governanceActionCount, beforeAuditor);
-  harness.approveAuditor(auditor);
-  harness.activateAuditor(auditor);
-  matrix.expectVerified(() => client.verifyAuditorAuthorizationBundle(
-    harness.evaluateCurrentAuditorDecision(auditor), {},
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, beforeAuditor);
+  await harness.approveAuditor(auditor);
+  await harness.activateAuditor(auditor);
+  await matrix.expectVerifiedAsync(async () => client.verifyAuditorAuthorizationBundle(
+    await harness.evaluateCurrentAuditorDecision(auditor), {},
   ), {
     id: "auditor-current-policy-after-threshold-change",
     invariant: "The auditor can be activated under the revised maintainer quorum",
@@ -169,13 +169,13 @@ export function runRevisedPolicyRoleReplays(matrix, harness, client, second, thi
   });
 
   const maintainer = createMaintainerScenarioFixture("governed-demo-policy-maintainer");
-  harness.proposeMaintainer(maintainer);
-  const maintainerApproval = harness.prepareMaintainerDecisionAction(maintainer, "approve");
-  const beforeMaintainer = harness.simulator.getLedger().governanceActionCount;
-  matrix.expectThrown(() => harness.executeMaintainerDecisionWithSignatures(
+  await harness.proposeMaintainer(maintainer);
+  const maintainerApproval = await harness.prepareMaintainerDecisionAction(maintainer, "approve");
+  const beforeMaintainer = (await harness.simulator.getLedger()).governanceActionCount;
+  await matrix.expectRejected(async () => harness.executeMaintainerDecisionWithSignatures(
     maintainer, "approve", [
-      signCompact(second, maintainerApproval, harness, formerPolicyCommitment),
-      signCompact(third, maintainerApproval, harness, formerPolicyCommitment),
+      await signCompact(second, maintainerApproval, harness, formerPolicyCommitment),
+      await signCompact(third, maintainerApproval, harness, formerPolicyCommitment),
     ],
   ), {
     id: "compact-maintainer-old-policy-signature-replay",
@@ -183,9 +183,9 @@ export function runRevisedPolicyRoleReplays(matrix, harness, client, second, thi
     boundary: "compact", messagePattern: /Invalid Jubjub Schnorr signature/u,
     category: "old-policy-signature-rejected",
   });
-  assert.equal(harness.simulator.getLedger().governanceActionCount, beforeMaintainer);
-  matrix.expectThrown(() => harness.executeMaintainerDecisionWithSignatures(
-    maintainer, "approve", [signCompact(second, maintainerApproval, harness)],
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, beforeMaintainer);
+  await matrix.expectRejected(async () => harness.executeMaintainerDecisionWithSignatures(
+    maintainer, "approve", [await signCompact(second, maintainerApproval, harness)],
   ), {
     id: "maintainer-revised-policy-insufficient-quorum",
     invariant: "A maintainer approval under the revised policy requires the new maintainer quorum",
@@ -193,11 +193,11 @@ export function runRevisedPolicyRoleReplays(matrix, harness, client, second, thi
     messagePattern: /Maintainer signer count must satisfy the action threshold/u,
     category: "revised-policy-insufficient-quorum",
   });
-  assert.equal(harness.simulator.getLedger().governanceActionCount, beforeMaintainer);
-  harness.approveMaintainer(maintainer);
-  harness.activateMaintainer(maintainer);
-  matrix.expectVerified(() => {
-    const membership = harness.simulator.getMaintainerMembership(maintainer.maintainerIdCommitment);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, beforeMaintainer);
+  await harness.approveMaintainer(maintainer);
+  await harness.activateMaintainer(maintainer);
+  await matrix.expectVerifiedAsync(async () => {
+    const membership = await harness.simulator.getMaintainerMembership(maintainer.maintainerIdCommitment);
     assert.equal(membership.status, AuthorizationStatus.active);
     return membership;
   }, {
@@ -207,31 +207,31 @@ export function runRevisedPolicyRoleReplays(matrix, harness, client, second, thi
   });
 }
 
-export function runHistoricalPolicyClientChecks(matrix, client, {
+export async function runHistoricalPolicyClientChecks(matrix, client, {
   historicalPolicyBundle, originalVerifierBundle, originalAuditorBundle,
   originalRecognitionBundle, currentPolicyBundle,
 }, changeLastHexNibble) {
-  matrix.expectVerified(() => client.verifyIssuerAuthorizationBundle(historicalPolicyBundle, {}), {
+  await matrix.expectVerifiedAsync(() => client.verifyIssuerAuthorizationBundle(historicalPolicyBundle, {}), {
     id: "issuer-history-survives-threshold-change",
     invariant: "Old issuer authorization remains verifiable under its original policy snapshot",
     boundary: "client",
   });
-  matrix.expectVerified(() => client.verifyVerifierAuthorizationBundle(originalVerifierBundle, {}), {
+  await matrix.expectVerifiedAsync(() => client.verifyVerifierAuthorizationBundle(originalVerifierBundle, {}), {
     id: "verifier-history-survives-threshold-change",
     invariant: "Old verifier authorization remains verifiable under its original policy snapshot",
     boundary: "client",
   });
-  matrix.expectVerified(() => client.verifyAuditorAuthorizationBundle(originalAuditorBundle, {}), {
+  await matrix.expectVerifiedAsync(() => client.verifyAuditorAuthorizationBundle(originalAuditorBundle, {}), {
     id: "auditor-history-survives-threshold-change",
     invariant: "Old auditor authorization remains verifiable under its original policy snapshot",
     boundary: "client",
   });
-  matrix.expectVerified(() => client.verifyRecognitionBundle(originalRecognitionBundle, {}), {
+  await matrix.expectVerifiedAsync(() => client.verifyRecognitionBundle(originalRecognitionBundle, {}), {
     id: "recognition-history-survives-threshold-change",
     invariant: "Old recognition remains verifiable under its original policy snapshot",
     boundary: "client",
   });
-  matrix.expectThrown(() => client.verifyAuditorAuthorizationBundle(
+  await matrix.expectRejected(() => client.verifyAuditorAuthorizationBundle(
     { ...originalAuditorBundle, policy: { ...originalAuditorBundle.policy, version: "v9" } }, {},
   ), {
     id: "auditor-uncommitted-policy-version",
@@ -239,7 +239,7 @@ export function runHistoricalPolicyClientChecks(matrix, client, {
     boundary: "client", messagePattern: /not committed to the ledger/iu,
     category: "uncommitted-policy-version-rejected",
   });
-  matrix.expectThrown(() => client.verifyRecognitionBundle(
+  await matrix.expectRejected(() => client.verifyRecognitionBundle(
     { ...originalRecognitionBundle, policy: { ...originalRecognitionBundle.policy, version: "v9" } }, {},
   ), {
     id: "recognition-uncommitted-policy-version",
@@ -247,12 +247,12 @@ export function runHistoricalPolicyClientChecks(matrix, client, {
     boundary: "client", messagePattern: /not committed to the ledger/iu,
     category: "uncommitted-policy-version-rejected",
   });
-  matrix.expectVerified(() => client.verifyIssuerAuthorizationBundle(currentPolicyBundle, {}), {
+  await matrix.expectVerifiedAsync(() => client.verifyIssuerAuthorizationBundle(currentPolicyBundle, {}), {
     id: "issuer-current-policy-after-threshold-change",
     invariant: "New issuer authorization verifies under the revised policy snapshot",
     boundary: "client",
   });
-  matrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(
+  await matrix.expectRejected(() => client.verifyIssuerAuthorizationBundle(
     historicalPolicyBundle, { evaluationTime: currentPolicyBundle.policy.effectiveFrom },
   ), {
     id: "issuer-old-policy-current-time-replay",
@@ -261,7 +261,7 @@ export function runHistoricalPolicyClientChecks(matrix, client, {
     messagePattern: /policy snapshot is superseded/iu,
     category: "superseded-policy-rejected",
   });
-  matrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(
+  await matrix.expectRejected(() => client.verifyIssuerAuthorizationBundle(
     { ...historicalPolicyBundle, policy: { ...historicalPolicyBundle.policy, version: "v9" } }, {},
   ), {
     id: "issuer-uncommitted-policy-version",
@@ -270,7 +270,7 @@ export function runHistoricalPolicyClientChecks(matrix, client, {
     messagePattern: /not committed to the ledger/iu,
     category: "uncommitted-policy-version-rejected",
   });
-  matrix.expectThrown(() => client.verifyIssuerAuthorizationBundle({
+  await matrix.expectRejected(() => client.verifyIssuerAuthorizationBundle({
     ...historicalPolicyBundle,
     inclusionProof: {
       ...historicalPolicyBundle.inclusionProof,
@@ -286,7 +286,7 @@ export function runHistoricalPolicyClientChecks(matrix, client, {
   const historicalEpochSignature = historicalPolicyBundle.epoch.maintainerSignatures[0];
   assert.ok(historicalEpochSignature);
   const alteredEpochSignature = `0x${historicalEpochSignature.signature[2] === "0" ? "1" : "0"}${historicalEpochSignature.signature.slice(3)}`;
-  matrix.expectThrown(() => client.verifyIssuerAuthorizationBundle({
+  await matrix.expectRejected(() => client.verifyIssuerAuthorizationBundle({
     ...historicalPolicyBundle,
     epoch: {
       ...historicalPolicyBundle.epoch,

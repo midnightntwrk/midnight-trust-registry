@@ -194,6 +194,20 @@ test("does not record a rejected historical verification", () => {
   assert.deepEqual(matrix.report().cases, []);
 });
 
+test("awaits historical verification before recording success", async () => {
+  const matrix = new AdversarialMatrix({ collectFailures: true });
+  await matrix.expectVerifiedAsync(async () => { throw new Error("private proof failure"); }, {
+    id: "rejected-history", invariant: "Historical proof must verify", boundary: "client",
+  });
+  await matrix.expectVerifiedAsync(async () => true, {
+    id: "verified-history", invariant: "A valid historical proof remains accepted", boundary: "client",
+  });
+  assert.deepEqual(matrix.report().cases.map(({ id, status }) => [id, status]), [
+    ["rejected-history", "failed"], ["verified-history", "passed"],
+  ]);
+  assert.equal(JSON.stringify(matrix.report()).includes("private"), false);
+});
+
 test("records API and TRQP temporal decisions only when outcomes agree", () => {
   const matrix = new AdversarialMatrix();
   matrix.expectDecision({ trustedAtTime: false, statusAtTime: "suspended" }, {

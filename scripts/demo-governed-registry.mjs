@@ -148,28 +148,28 @@ const historicalRecognition = createRecognitionScenarioFixture("governed-demo-hi
 const pendingPolicyIssuer = createIssuerScenarioFixture("governed-demo-pending-policy-issuer");
 const currentPolicyIssuer = createIssuerScenarioFixture("governed-demo-current-policy-issuer");
 const policyClient = new TrustRegistrySimulatorClient(policyHarness.simulator);
-policyHarness.authorizeIssuer(historicalIssuer);
-policyHarness.authorizeVerifier(historicalVerifier);
-policyHarness.authorizeAuditor(historicalAuditor);
-policyHarness.authorizeRecognition(historicalRecognition);
-const originalPolicyBundle = policyHarness.evaluateCurrentIssuerDecision(historicalIssuer);
-const originalVerifierBundle = policyHarness.evaluateCurrentVerifierDecision(historicalVerifier);
-const originalAuditorBundle = policyHarness.evaluateCurrentAuditorDecision(historicalAuditor);
-const originalRecognitionBundle = policyHarness.evaluateCurrentRecognitionDecision(historicalRecognition);
-const originalPolicySnapshot = publishSimulatorSnapshot(policyHarness, {
+await policyHarness.authorizeIssuer(historicalIssuer);
+await policyHarness.authorizeVerifier(historicalVerifier);
+await policyHarness.authorizeAuditor(historicalAuditor);
+await policyHarness.authorizeRecognition(historicalRecognition);
+const originalPolicyBundle = await policyHarness.evaluateCurrentIssuerDecision(historicalIssuer);
+const originalVerifierBundle = await policyHarness.evaluateCurrentVerifierDecision(historicalVerifier);
+const originalAuditorBundle = await policyHarness.evaluateCurrentAuditorDecision(historicalAuditor);
+const originalRecognitionBundle = await policyHarness.evaluateCurrentRecognitionDecision(historicalRecognition);
+const originalPolicySnapshot = await publishSimulatorSnapshot(policyHarness, {
   label: "governed-demo-policy-replay",
   issuers: [{ fixture: historicalIssuer, label: "historical-issuer" }],
   verifiers: [{ fixture: historicalVerifier, label: "historical-verifier" }],
   auditors: [{ fixture: historicalAuditor, label: "historical-auditor" }],
   recognitions: [{ fixture: historicalRecognition, label: "historical-recognition" }],
 });
-policyHarness.authorizeMaintainer(policySecond);
-policyHarness.authorizeMaintainer(policyThird);
-policyHarness.proposeIssuer(pendingPolicyIssuer);
-const formerPolicyCommitment = Buffer.from(policyHarness.simulator.getLedger().governancePolicyCommitment);
-policyHarness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
-const policyActionCountBeforeReplay = policyHarness.simulator.getLedger().governanceActionCount;
-adversarialMatrix.expectThrown(() => policyHarness.prepareIssuerDecisionAction(
+await policyHarness.authorizeMaintainer(policySecond);
+await policyHarness.authorizeMaintainer(policyThird);
+await policyHarness.proposeIssuer(pendingPolicyIssuer);
+const formerPolicyCommitment = Buffer.from((await policyHarness.simulator.getLedger()).governancePolicyCommitment);
+await policyHarness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+const policyActionCountBeforeReplay = (await policyHarness.simulator.getLedger()).governanceActionCount;
+await adversarialMatrix.expectRejected(() => policyHarness.prepareIssuerDecisionAction(
   pendingPolicyIssuer, "approve",
 ), {
   id: "integration-old-policy-application-preflight",
@@ -178,21 +178,21 @@ adversarialMatrix.expectThrown(() => policyHarness.prepareIssuerDecisionAction(
   messagePattern: /policyVersion does not match/iu,
   category: "old-policy-application-rejected",
 });
-assert.equal(policyHarness.simulator.getLedger().governanceActionCount, policyActionCountBeforeReplay);
-policyHarness.proposeIssuer(currentPolicyIssuer, [policySecond]);
-const currentPolicyBundle = runOldPolicyIssuerReplay(adversarialMatrix, policyHarness,
+assert.equal((await policyHarness.simulator.getLedger()).governanceActionCount, policyActionCountBeforeReplay);
+await policyHarness.proposeIssuer(currentPolicyIssuer, [policySecond]);
+const currentPolicyBundle = await runOldPolicyIssuerReplay(adversarialMatrix, policyHarness,
   currentPolicyIssuer, policySecond, policyThird, formerPolicyCommitment, signCompact);
-runOldPolicyRecognitionReplay(adversarialMatrix, policyHarness,
+await runOldPolicyRecognitionReplay(adversarialMatrix, policyHarness,
   policySecond, policyThird, formerPolicyCommitment, signCompact);
-const historicalPolicyBundle = policyHarness.buildIssuerHistoricalEvidence(historicalIssuer);
+const historicalPolicyBundle = await policyHarness.buildIssuerHistoricalEvidence(historicalIssuer);
 assert.equal(originalPolicyBundle.policy.version, historicalPolicyBundle.policy.version);
 assert.notEqual(historicalPolicyBundle.policy.version, currentPolicyBundle.policy.version);
 assert.notEqual(originalVerifierBundle.policy.version, currentPolicyBundle.policy.version);
-policyHarness.revokeIssuer(historicalIssuer, [policySecond]);
-policyHarness.revokeVerifier(historicalVerifier, [policySecond]);
-policyHarness.revokeAuditor(historicalAuditor, [policySecond]);
-policyHarness.revokeRecognition(historicalRecognition, [policySecond]);
-const revisedPolicySnapshot = publishSimulatorSnapshot(policyHarness, {
+await policyHarness.revokeIssuer(historicalIssuer, [policySecond]);
+await policyHarness.revokeVerifier(historicalVerifier, [policySecond]);
+await policyHarness.revokeAuditor(historicalAuditor, [policySecond]);
+await policyHarness.revokeRecognition(historicalRecognition, [policySecond]);
+const revisedPolicySnapshot = await publishSimulatorSnapshot(policyHarness, {
   label: "governed-demo-policy-replay",
   issuers: [
     { fixture: historicalIssuer, label: "historical-issuer" },
@@ -208,11 +208,11 @@ await runHistoricalPolicyHttpChecks(adversarialMatrix, {
   historicalAuditor, historicalRecognition, originalAuditorBundle,
   originalRecognitionBundle, registryDid: policyHarness.registryDid,
 });
-runHistoricalPolicyClientChecks(adversarialMatrix, policyClient, {
+await runHistoricalPolicyClientChecks(adversarialMatrix, policyClient, {
   historicalPolicyBundle, originalVerifierBundle, originalAuditorBundle,
   originalRecognitionBundle, currentPolicyBundle,
 }, changeLastHexNibble);
-runRevisedPolicyRoleReplays(adversarialMatrix, policyHarness, policyClient,
+await runRevisedPolicyRoleReplays(adversarialMatrix, policyHarness, policyClient,
   policySecond, policyThird, formerPolicyCommitment, signCompact);
 
 const harness = new LocalTrustRegistryIntegrationHarness("governed-registry-demo");
@@ -229,9 +229,9 @@ const recognition = {
   recognizedAuthorityDid: recognitionAuthorityDid,
   recognizedAuthorityDidCommitment: bytes32Commitment(recognitionAuthorityDid),
 };
-harness.authorizeMaintainer(second);
-harness.authorizeMaintainer(third);
-harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+await harness.authorizeMaintainer(second);
+await harness.authorizeMaintainer(third);
+await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
 const vcAuthoritySeed = new Uint8Array(32).fill(77);
 const vcAuthorityDid = createMidnightDid("governed-demo-vc-authority");
 const vcAuthorityAnchor = {
