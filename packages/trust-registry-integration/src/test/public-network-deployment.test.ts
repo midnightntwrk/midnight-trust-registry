@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 
-import { ContractState, createConstructorContext, sampleSigningKey, signatureVerifyingKey } from "@midnight-ntwrk/compact-runtime";
+import { ContractMaintenanceAuthority, ContractState, createConstructorContext,
+  sampleRawTokenType, sampleSigningKey, signatureVerifyingKey } from "@midnight-ntwrk/compact-runtime";
 import { bytes32Commitment, bytes32Hex } from "@midnight-ntwrk/trust-registry-client";
 import { deriveJubjubPublicKeyFromSeed, TrustRegistryContract, trustRegistryWitnesses } from "@midnight-ntwrk/trust-registry-contract";
 import { TrustRegistrySimulator } from "@midnight-ntwrk/trust-registry-contract/testing";
@@ -12,6 +13,7 @@ import {
   deployPublicTrustRegistry,
   readPostDeploymentLocalTrustRegistry,
   readPostDeploymentPublicTrustRegistry,
+  selectStagedInitialOperation,
   stagedBootstrapContract,
 } from "../public-network-deployment.js";
 import { maintenanceVerifyingKeyHex } from "../maintenance-verifying-key.js";
@@ -210,6 +212,17 @@ describe("isolated local Trust Registry deployment", () => {
       .toEqual(fullInitial.currentContractState.maintenanceAuthority.serialize());
     expect(stagedInitial.currentContractState.balance)
       .toEqual(fullInitial.currentContractState.balance);
+    const nonDefaultState = ContractState.deserialize(fullInitial.currentContractState.serialize());
+    nonDefaultState.maintenanceAuthority = new ContractMaintenanceAuthority(
+      [signatureVerifyingKey(sampleSigningKey())], 1,
+    );
+    nonDefaultState.balance = new Map([[{ tag: "unshielded", raw: sampleRawTokenType() }, 7n]]);
+    const retained = ContractState.deserialize(
+      selectStagedInitialOperation(nonDefaultState, initialVerifierKeyName).serialize(),
+    );
+    expect(retained.operations()).toEqual([initialVerifierKeyName]);
+    expect(retained.maintenanceAuthority.serialize()).toEqual(nonDefaultState.maintenanceAuthority.serialize());
+    expect(retained.balance).toEqual(nonDefaultState.balance);
     const result = await deployLocalTrustRegistryStaged({
       network: localNetwork,
       bootstrap: {

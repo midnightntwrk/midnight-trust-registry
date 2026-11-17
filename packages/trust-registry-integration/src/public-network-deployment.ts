@@ -246,6 +246,20 @@ export async function deployLocalTrustRegistryStaged(input: {
   });
 }
 
+export function selectStagedInitialOperation(state: ContractState, initialVerifierKeyName: string): ContractState {
+  const initialOperation = state.operation(initialVerifierKeyName);
+  if (initialOperation === undefined) {
+    throw new Error("Initial staged operation is absent from the compiled contract state");
+  }
+  // Compact emits blank slots for every circuit; Ledger 9 rejects any slot without a verifier key.
+  const stagedState = new ContractState();
+  stagedState.data = state.data;
+  stagedState.maintenanceAuthority = state.maintenanceAuthority;
+  stagedState.balance = state.balance;
+  stagedState.setOperation(initialVerifierKeyName, initialOperation);
+  return stagedState;
+}
+
 export function stagedBootstrapContract(initialVerifierKeyName: string):
   new (witnesses: typeof trustRegistryWitnesses) => TrustRegistryContract.Contract<TrustRegistryPrivateState> {
   const full = new TrustRegistryContract.Contract(trustRegistryWitnesses).provableCircuits;
@@ -264,17 +278,8 @@ export function stagedBootstrapContract(initialVerifierKeyName: string):
       ...args: Parameters<TrustRegistryContract.Contract<TrustRegistryPrivateState>["initialState"]>
     ) {
       const initialized = await super.initialState(...args);
-      const initialOperation = initialized.currentContractState.operation(initialVerifierKeyName);
-      if (initialOperation === undefined) {
-        throw new Error("Initial staged operation is absent from the compiled contract state");
-      }
-      // Compact emits blank slots for every circuit; Ledger 9 rejects any slot without a verifier key.
-      const stagedState = new ContractState();
-      stagedState.data = initialized.currentContractState.data;
-      stagedState.maintenanceAuthority = initialized.currentContractState.maintenanceAuthority;
-      stagedState.balance = initialized.currentContractState.balance;
-      stagedState.setOperation(initialVerifierKeyName, initialOperation);
-      return { ...initialized, currentContractState: stagedState };
+      return { ...initialized, currentContractState: selectStagedInitialOperation(
+        initialized.currentContractState, initialVerifierKeyName) };
     }
   };
 }
