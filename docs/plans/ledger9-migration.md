@@ -784,8 +784,7 @@ The expected selected issuer is active with lifecycle sequences 15/16/17,
 `epochEventRootMatchesLifecycle: false`. The last value is an explicit
 qualification gap, not a transient indexer failure.
 
-The current development contract still has one **active** maintainer and a
-threshold of one. On 2026-11-17, a second, distinct fixture maintainer
+On 2026-11-17, a second, distinct fixture maintainer
 (`participant:maintainer:ledger9-development-maintainer-2:v1`) passed a
 full-contract proof with broadcast blocked, then its proposal was submitted
 once to the pinned shared chain under a separate private journal. An
@@ -793,11 +792,19 @@ independent finalized-ledger read found governance action count 19 and the
 candidate in `proposed` state; the proposal's finalized Compact event hash
 `0x5956d1bb10932ea3e2ede29e28304e3533e43feb66be88aece0a97c5b74346b4`
 matched the receipt. The journal was separately reconciled from that
-finalized proposal record to `observed`. Do not rerun the one-shot submission.
-This fixture proposal is not an accepted VP, an active maintainer, independent
-operator approval, or release evidence. The shared chain may advance from
-unrelated users without invalidating this observation; a changed chain identity
-or contract is a stop condition.
+finalized proposal record to `observed`. Authorization and activation each
+passed a proof-only run with broadcast blocked before separate one-shot
+submissions. Their finalized transaction receipts were
+`0061cfe9dc7704b6dae4ec28431b71e027729e14b554497df2c2e2c5979f846422`
+and `006cf1a3a4815a812150f771488d93cefeaca993dab223d32e985dd7d38be2a95d`.
+A separate read-only process on the pinned chain found governance action count
+21, two active maintainers, threshold one, the candidate's active membership,
+and all 66 verifier-key hashes matching the source manifest. The private
+one-shot journals and fixture runner are ignored; never replay these calls.
+This fixture onboarding is not an accepted VP, independent operator approval,
+or release evidence. The shared chain may advance from unrelated users without
+invalidating this observation; a changed chain identity or contract is a stop
+condition.
 
 The approved local-ledger API plan requires at least three distinct
 maintainers and a threshold of at least two, so this deployment cannot yet
@@ -810,15 +817,14 @@ signature and current distinct maintainer signatures. The separate
 journal and a guarded transport, and rechecks the reserved action before
 broadcast. These helpers do not themselves verify an accepted application VP;
 the caller must supply that admission evidence through the governed intake.
-Before using this contract for API qualification, authorize and activate the
-second candidate, onboard and activate a third distinct maintainer, update
-and finalize the threshold policy, then execute
+Before using this contract for API qualification, onboard and activate a third
+distinct maintainer, update and finalize the threshold policy, then execute
 the separately approved maintenance-authority transition. Recheck the full
 verifier-key catalog and governance history after each step. Keep each attempt
-in a separate one-shot journal with independent finalized readback; the
-proposal helper does not yet provide guarded journaled authorization and
-activation calls. Do not substitute fixture signatures for the future accepted
-VP or independent plan approval.
+in a separate one-shot journal with independent finalized readback. The
+development-only decision runner is not a production guarded membership API.
+Do not substitute fixture signatures for the future accepted VP or independent
+plan approval.
 
 ## Execution order
 
