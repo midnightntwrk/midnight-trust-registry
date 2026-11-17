@@ -404,6 +404,7 @@ const contractStatusName = (
 
 export class LocalTrustRegistryIntegrationHarness {
   readonly simulator: TrustRegistrySimulator;
+  readonly ready: Promise<void>;
   readonly registryId: string;
   readonly registryDid: string;
   readonly registryIdCommitment: Uint8Array;
@@ -536,21 +537,21 @@ export class LocalTrustRegistryIntegrationHarness {
       maintainerPublicKey: this.bootstrapPublicKey,
       maintainerThreshold: 1n,
     });
-    this.authorizeEvidenceVerifierForCurrentPolicy();
+    this.ready = this.authorizeEvidenceVerifierForCurrentPolicy();
   }
 
-  private authorizeEvidenceVerifierForCurrentPolicy(): void {
-    const prepared = this.prepareEvidenceVerifierRegistrationAction();
-    this.executeEvidenceVerifierRegistrationWithSignatures([
+  private async authorizeEvidenceVerifierForCurrentPolicy(): Promise<void> {
+    const prepared = await this.prepareEvidenceVerifierRegistrationActionInternal();
+    await this.registerEvidenceVerifierKeyWithSignatures([
       {
         keyId: this.bootstrapMaintainer.keyId,
         publicKey: this.bootstrapPublicKey,
-        signature: this.bootstrapActionSignature(
+        signature: await this.bootstrapActionSignature(
           prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
         ),
       },
-      ...this.maintainerCoAuthorizers(
-        this.activeDefaultQuorumCoMaintainers(),
+      ...await this.maintainerCoAuthorizers(
+        await this.activeDefaultQuorumCoMaintainers(),
         prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
       ),
     ]);
@@ -560,7 +561,8 @@ export class LocalTrustRegistryIntegrationHarness {
     resolver: Pick<MidnightDIDResolverInterface, "resolveResult">,
     expectedNetwork: MidnightNetwork,
   ): Promise<{ didStateVersion: bigint }> {
-    const record = this.simulator.getEvidenceVerifierKey(this.currentEvidenceVerifierAuthorizationId);
+    await this.ready;
+    const record = await this.simulator.getEvidenceVerifierKey(this.currentEvidenceVerifierAuthorizationId);
     if (record.status !== EvidenceVerifierKeyStatus.active) {
       throw new Error("Evidence verifier key is not active");
     }
@@ -572,8 +574,14 @@ export class LocalTrustRegistryIntegrationHarness {
     });
   }
 
-  prepareEvidenceVerifierRegistrationAction(): PreparedEvidenceVerifierRegistrationAction {
-    const version = this.simulator.getLedger().governancePolicyVersion;
+  async prepareEvidenceVerifierRegistrationAction(): Promise<PreparedEvidenceVerifierRegistrationAction> {
+    await this.ready;
+    return this.prepareEvidenceVerifierRegistrationActionInternal();
+  }
+
+  private async prepareEvidenceVerifierRegistrationActionInternal(): Promise<PreparedEvidenceVerifierRegistrationAction> {
+    const ledger = await this.simulator.getLedger();
+    const version = ledger.governancePolicyVersion;
     const keyId = `${this.evidenceVerifier.did}#assertion-${version.toString()}`;
     const authorizationId = bytes32Commitment(
       createScopedIdentifier("evidence-verifier-key", this.registryId, `v${version.toString()}`),
@@ -589,10 +597,10 @@ export class LocalTrustRegistryIntegrationHarness {
       this.governancePolicyCommitment,
       version,
     );
-    const actionSequence = this.simulator.getLedger().governanceActionCount;
+    const actionSequence = ledger.governanceActionCount;
     return {
       registryId: Uint8Array.from(this.registryIdCommitment),
-      networkIdCommitment: Uint8Array.from(this.simulator.getLedger().deploymentNetworkIdCommitment),
+      networkIdCommitment: Uint8Array.from(ledger.deploymentNetworkIdCommitment),
       contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
       policyCommitment: Uint8Array.from(this.governancePolicyCommitment),
       actionKind: Uint8Array.from(REGISTER_EVIDENCE_VERIFIER_ACTION_KIND),
@@ -605,14 +613,21 @@ export class LocalTrustRegistryIntegrationHarness {
   }
 
   /** Registration is a distinct governance action after a policy revision. */
-  executeEvidenceVerifierRegistrationWithSignatures(
+  async executeEvidenceVerifierRegistrationWithSignatures(
     signers: readonly MaintainerCoAuthorizer[],
-  ): Uint8Array {
+  ): Promise<Uint8Array> {
+    await this.ready;
+    return this.registerEvidenceVerifierKeyWithSignatures(signers);
+  }
+
+  private async registerEvidenceVerifierKeyWithSignatures(
+    signers: readonly MaintainerCoAuthorizer[],
+  ): Promise<Uint8Array> {
     const primary = signers[0];
     if (primary === undefined) throw new Error("Evidence-verifier registration requires a maintainer signature");
-    const prepared = this.prepareEvidenceVerifierRegistrationAction();
+    const prepared = await this.prepareEvidenceVerifierRegistrationActionInternal();
     const keyId = `${this.evidenceVerifier.did}#assertion-${prepared.policyVersion.toString()}`;
-    const eventHash = this.simulator.registerEvidenceVerifierKey(
+    const eventHash = await this.simulator.registerEvidenceVerifierKey(
       primary.keyId,
       primary.publicKey,
       primary.signature,
@@ -631,7 +646,8 @@ export class LocalTrustRegistryIntegrationHarness {
     return eventHash;
   }
 
-  prepareEvidenceVerifierRotationAction(label: string): PreparedEvidenceVerifierTransitionAction {
+  async prepareEvidenceVerifierRotationAction(label: string): Promise<PreparedEvidenceVerifierTransitionAction> {
+    await this.ready;
     if (!/^[a-z][a-z0-9-]*$/.test(label)) {
       throw new Error("Evidence-verifier rotation label must be lowercase ASCII");
     }
@@ -645,11 +661,11 @@ export class LocalTrustRegistryIntegrationHarness {
       "evidence-verifier-key", this.registryId, `rotation-${nextRotation}`,
     ));
     const oldAuthorizationId = this.currentEvidenceVerifierAuthorizationId;
-    const oldRecord = this.simulator.getEvidenceVerifierKey(oldAuthorizationId);
+    const oldRecord = await this.simulator.getEvidenceVerifierKey(oldAuthorizationId);
     if (oldRecord.status !== EvidenceVerifierKeyStatus.active) {
       throw new Error("Evidence verifier key must be active to rotate");
     }
-    const ledger = this.simulator.getLedger();
+    const ledger = await this.simulator.getLedger();
     const newPayloadHash = computeCreateEvidenceVerifierKeyPayloadHash(
       authorizationId,
       oldRecord.verifierDidCommitment,
@@ -681,16 +697,16 @@ export class LocalTrustRegistryIntegrationHarness {
     };
   }
 
-  executeEvidenceVerifierRotationWithSignatures(
+  async executeEvidenceVerifierRotationWithSignatures(
     label: string,
     signers: readonly MaintainerCoAuthorizer[],
-  ): Uint8Array {
+  ): Promise<Uint8Array> {
     const primary = signers[0];
     if (primary === undefined) throw new Error("Evidence-verifier rotation requires a maintainer signature");
-    const prepared = this.prepareEvidenceVerifierRotationAction(label);
+    const prepared = await this.prepareEvidenceVerifierRotationAction(label);
     const nextRotation = this.evidenceVerifierRotationCount + 1;
     const replacement = createMaintainerFixture(`evidence-verifier-${label}`, 41 + nextRotation);
-    const eventHash = this.simulator.rotateEvidenceVerifierKey(
+    const eventHash = await this.simulator.rotateEvidenceVerifierKey(
       primary.keyId, primary.publicKey, primary.signature,
       prepared.authorizationId, prepared.newAuthorizationId!, prepared.newKeyIdCommitment!,
       prepared.newPublicKey!, prepared.reasonHash, signers.slice(1),
@@ -704,31 +720,32 @@ export class LocalTrustRegistryIntegrationHarness {
     return eventHash;
   }
 
-  rotateEvidenceVerifierKey(label: string): Uint8Array {
-    const prepared = this.prepareEvidenceVerifierRotationAction(label);
+  async rotateEvidenceVerifierKey(label: string): Promise<Uint8Array> {
+    const prepared = await this.prepareEvidenceVerifierRotationAction(label);
     return this.executeEvidenceVerifierRotationWithSignatures(label, [
       {
         keyId: this.bootstrapMaintainer.keyId,
         publicKey: this.bootstrapPublicKey,
-        signature: this.bootstrapActionSignature(
+        signature: await this.bootstrapActionSignature(
           prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
         ),
       },
-      ...this.maintainerCoAuthorizers(
-        this.activeDefaultQuorumCoMaintainers(),
+      ...await this.maintainerCoAuthorizers(
+        await this.activeDefaultQuorumCoMaintainers(),
         prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
       ),
     ]);
   }
 
-  prepareEvidenceVerifierStatusAction(
+  async prepareEvidenceVerifierStatusAction(
     action: "suspend" | "revoke", label: string,
-  ): PreparedEvidenceVerifierTransitionAction {
+  ): Promise<PreparedEvidenceVerifierTransitionAction> {
+    await this.ready;
     if (!/^[a-z][a-z0-9-]*$/.test(label)) {
       throw new Error("Evidence-verifier status reason must be lowercase ASCII");
     }
     const authorizationId = this.currentEvidenceVerifierAuthorizationId;
-    const record = this.simulator.getEvidenceVerifierKey(authorizationId);
+    const record = await this.simulator.getEvidenceVerifierKey(authorizationId);
     if (action === "suspend" && record.status !== EvidenceVerifierKeyStatus.active) {
       throw new Error("Evidence verifier key must be active to suspend");
     }
@@ -742,7 +759,7 @@ export class LocalTrustRegistryIntegrationHarness {
     );
     const actionKind = action === "suspend"
       ? SUSPEND_EVIDENCE_VERIFIER_ACTION_KIND : REVOKE_EVIDENCE_VERIFIER_ACTION_KIND;
-    const ledger = this.simulator.getLedger();
+    const ledger = await this.simulator.getLedger();
     return {
       registryId: Uint8Array.from(this.registryIdCommitment),
       networkIdCommitment: Uint8Array.from(ledger.deploymentNetworkIdCommitment),
@@ -757,13 +774,13 @@ export class LocalTrustRegistryIntegrationHarness {
     };
   }
 
-  executeEvidenceVerifierStatusWithSignatures(
+  async executeEvidenceVerifierStatusWithSignatures(
     action: "suspend" | "revoke", label: string,
     signers: readonly MaintainerCoAuthorizer[],
-  ): Uint8Array {
+  ): Promise<Uint8Array> {
     const primary = signers[0];
     if (primary === undefined) throw new Error("Evidence-verifier status change requires a maintainer signature");
-    const prepared = this.prepareEvidenceVerifierStatusAction(action, label);
+    const prepared = await this.prepareEvidenceVerifierStatusAction(action, label);
     const circuit = action === "suspend"
       ? this.simulator.suspendEvidenceVerifierKey.bind(this.simulator)
       : this.simulator.revokeEvidenceVerifierKey.bind(this.simulator);
@@ -773,28 +790,28 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  private changeEvidenceVerifierKeyStatus(action: "suspend" | "revoke", label: string): Uint8Array {
-    const prepared = this.prepareEvidenceVerifierStatusAction(action, label);
+  private async changeEvidenceVerifierKeyStatus(action: "suspend" | "revoke", label: string): Promise<Uint8Array> {
+    const prepared = await this.prepareEvidenceVerifierStatusAction(action, label);
     return this.executeEvidenceVerifierStatusWithSignatures(action, label, [
       {
         keyId: this.bootstrapMaintainer.keyId,
         publicKey: this.bootstrapPublicKey,
-        signature: this.bootstrapActionSignature(
+        signature: await this.bootstrapActionSignature(
           prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
         ),
       },
-      ...this.maintainerCoAuthorizers(
-        this.activeDefaultQuorumCoMaintainers(),
+      ...await this.maintainerCoAuthorizers(
+        await this.activeDefaultQuorumCoMaintainers(),
         prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
       ),
     ]);
   }
 
-  suspendEvidenceVerifierKey(label: string): Uint8Array {
+  suspendEvidenceVerifierKey(label: string): Promise<Uint8Array> {
     return this.changeEvidenceVerifierKeyStatus("suspend", label);
   }
 
-  revokeEvidenceVerifierKey(label: string): Uint8Array {
+  revokeEvidenceVerifierKey(label: string): Promise<Uint8Array> {
     return this.changeEvidenceVerifierKeyStatus("revoke", label);
   }
 
@@ -1193,7 +1210,7 @@ export class LocalTrustRegistryIntegrationHarness {
     });
   }
 
-  private bootstrapActionSignature(
+  private async bootstrapActionSignature(
     actionKind: Uint8Array,
     actionPayloadHash: Uint8Array,
     actionSequence: bigint,
@@ -1207,69 +1224,69 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  private signMaintainerActionFromSeed(
+  private async signMaintainerActionFromSeed(
     seed: Uint8Array,
     registryId: Uint8Array,
     actionKind: Uint8Array,
     actionPayloadHash: Uint8Array,
     actionSequence: bigint,
   ) {
+    const ledger = await this.simulator.getLedger();
     return signDeploymentBoundMaintainerActionFromSeed(
       seed,
       registryId,
-      this.simulator.getLedger().deploymentNetworkIdCommitment,
+      ledger.deploymentNetworkIdCommitment,
       Buffer.from(this.simulator.contractAddress, "hex"),
-      this.simulator.getLedger().governancePolicyCommitment,
+      ledger.governancePolicyCommitment,
       actionKind,
       actionPayloadHash,
       actionSequence,
     );
   }
 
-  private maintainerCoAuthorizers(
+  private async maintainerCoAuthorizers(
     maintainers: readonly MaintainerScenarioFixture[],
     actionKind: Uint8Array,
     actionPayloadHash: Uint8Array,
     actionSequence: bigint,
-  ): MaintainerCoAuthorizer[] {
-    return maintainers.map((maintainer) => ({
+  ): Promise<MaintainerCoAuthorizer[]> {
+    return Promise.all(maintainers.map(async (maintainer) => ({
       keyId: maintainer.keyId,
       publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
-      signature: this.signMaintainerActionFromSeed(
+      signature: await this.signMaintainerActionFromSeed(
         maintainer.seed,
         this.registryIdCommitment,
         actionKind,
         actionPayloadHash,
         actionSequence,
       ),
-    }));
+    })));
   }
 
-  private activeDefaultQuorumCoMaintainers(): MaintainerScenarioFixture[] {
+  private async activeDefaultQuorumCoMaintainers(): Promise<MaintainerScenarioFixture[]> {
+    const ledger = await this.simulator.getLedger();
     const requiredCoMaintainers = Number(
-      this.simulator.getLedger().maintainerThreshold - 1n,
+      ledger.maintainerThreshold - 1n,
     );
     if (requiredCoMaintainers <= 0) {
       return [];
     }
 
-    const activeCoMaintainers = [...this.knownMaintainers.values()].filter(
-      (maintainer) => {
+    const activeCoMaintainers = (await Promise.all([...this.knownMaintainers.values()].map(
+      async (maintainer) => {
         if (
           sameBytes(
             maintainer.maintainerIdCommitment,
             this.maintainerIdCommitment,
           )
         ) {
-          return false;
+          return undefined;
         }
 
-        return (
-          this.simulator.getMaintainerMembership(maintainer.maintainerIdCommitment)
-            .status === ContractAuthorizationStatus.active
-        );
+        const membership = await this.simulator.getMaintainerMembership(maintainer.maintainerIdCommitment);
+        return membership.status === ContractAuthorizationStatus.active ? maintainer : undefined;
       },
-    );
+    ))).filter((maintainer): maintainer is MaintainerScenarioFixture => maintainer !== undefined);
     activeCoMaintainers.sort((left, right) =>
       bytes32Hex(left.keyId).localeCompare(bytes32Hex(right.keyId)),
     );

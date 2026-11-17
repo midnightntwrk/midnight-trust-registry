@@ -78,6 +78,12 @@ proving/verifier keys or deployed transactions have been generated.
 
 The integration source now uses the deployment provider's `config.networkId`
 instead of the removed process-global network ID for the pinned deploy path.
+The simulator harness now exposes an awaited bootstrap promise for its
+evidence-verifier registration and awaits the Ledger 9 evidence-verifier key
+rotation/status circuits. The focused DID-key lifecycle suite passes all five
+cases. Other harness methods and integration tests still use synchronous
+simulator assumptions; the integration package typecheck remains red and this
+focused result is not a full harness qualification.
 Readback-only paths use their explicit network and receipt. A strict helper
 encodes the tagged Compact runtime Schnorr verifying key into the policy's
 canonical `0x`-prefixed hex; its focused tests and integration lint pass.
