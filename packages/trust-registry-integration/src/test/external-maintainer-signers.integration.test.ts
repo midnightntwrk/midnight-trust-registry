@@ -25,14 +25,14 @@ const signPrepared = (
   harness: LocalTrustRegistryIntegrationHarness,
   maintainer: MaintainerScenarioFixture,
   action: Pick<PreparedMaintainerAction,
-    "registryId" | "policyCommitment" | "actionKind" | "actionPayloadHash" | "actionSequence">,
+    "registryId" | "networkIdCommitment" | "policyCommitment" | "actionKind" | "actionPayloadHash" | "actionSequence">,
 ): MaintainerCoAuthorizer => ({
   keyId: maintainer.keyId,
   publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
   signature: signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
     action.registryId,
-    harness.simulator.getLedger().deploymentNetworkIdCommitment,
+    action.networkIdCommitment,
     Buffer.from(harness.simulator.contractAddress, "hex"),
     action.policyCommitment,
     action.actionKind,
@@ -42,107 +42,107 @@ const signPrepared = (
 });
 
 describe("externally signed Compact maintainer onboarding", () => {
-  it("rejects candidate self-voting and requires two existing maintainers at every transition", () => {
+  it("rejects candidate self-voting and requires two existing maintainers at every transition", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("external-maintainer");
     const second = createMaintainerScenarioFixture("maintainer-second");
     const third = createMaintainerScenarioFixture("maintainer-third");
     const candidate = createMaintainerScenarioFixture("maintainer-candidate");
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(third);
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
-    const evidence = harness.createApplicationEvidence({
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(third);
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    const evidence = await harness.createApplicationEvidence({
       applicationId: candidate.maintainerId,
       subjectDid: candidate.subjectDid,
       role: "maintainer",
       scope: createMaintainerAuthorizationScopeFixture(harness.registryId),
     });
-    const proposal = harness.prepareMaintainerProposalAction(candidate, evidence);
+    const proposal = await harness.prepareMaintainerProposalAction(candidate, evidence);
     const verifierSignature = harness.signMaintainerProposalEvidence(proposal);
-    const beforeProposal = harness.simulator.getLedger().governanceActionCount;
-    expect(() => harness.prepareMaintainerProposalAction(candidate, evidence, {
+    const beforeProposal = (await harness.simulator.getLedger()).governanceActionCount;
+    await expect(harness.prepareMaintainerProposalAction(candidate, evidence, {
       scope: createMaintainerAuthorizationScopeFixture(harness.registryId),
       challengeHash: evidence.envelope.challengeHash,
       governedResource: { type: "registry", id: "another-registry" },
-    })).toThrow(/scope does not match/u);
-    expect(() => harness.executeMaintainerProposalWithSignatures(candidate, evidence, [
+    })).rejects.toThrow(/scope does not match/u);
+    await expect(harness.executeMaintainerProposalWithSignatures(candidate, evidence, [
       signPrepared(harness, second, proposal),
-    ], verifierSignature)).toThrow();
-    expect(() => harness.executeMaintainerProposalWithSignatures(candidate, evidence, [
+    ], verifierSignature)).rejects.toThrow();
+    await expect(harness.executeMaintainerProposalWithSignatures(candidate, evidence, [
       signPrepared(harness, second, proposal), signPrepared(harness, second, proposal),
-    ], verifierSignature)).toThrow();
-    expect(() => harness.executeMaintainerProposalWithSignatures(candidate, evidence, [
+    ], verifierSignature)).rejects.toThrow();
+    await expect(harness.executeMaintainerProposalWithSignatures(candidate, evidence, [
       signPrepared(harness, second, proposal), signPrepared(harness, candidate, proposal),
-    ], verifierSignature)).toThrow();
-    expect(() => harness.executeMaintainerProposalWithSignatures(candidate, evidence, [
+    ], verifierSignature)).rejects.toThrow();
+    await expect(harness.executeMaintainerProposalWithSignatures(candidate, evidence, [
       signPrepared(harness, second, proposal), signPrepared(harness, third, proposal),
     ], signMaintainerProposalEvidenceFromSeed(
       candidate.seed, proposal.registryId,
       proposal.networkIdCommitment, proposal.contractAddress,
       proposal.evidenceVerifierKeyIdCommitment, proposal.actionPayloadHash,
-    ))).toThrow();
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeProposal);
-    harness.executeMaintainerProposalWithSignatures(candidate, evidence, [
+    ))).rejects.toThrow();
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(beforeProposal);
+    await harness.executeMaintainerProposalWithSignatures(candidate, evidence, [
       signPrepared(harness, second, proposal), signPrepared(harness, third, proposal),
     ], verifierSignature);
-    const proposalEvidence = harness.simulator.getMaintainerProposalEvidence(candidate.maintainerIdCommitment);
+    const proposalEvidence = await harness.simulator.getMaintainerProposalEvidence(candidate.maintainerIdCommitment);
     expect(proposalEvidence.evidenceCommitment).toEqual(proposal.evidenceHash);
     expect(proposalEvidence.activePolicyVersion).toBe(proposal.policyVersion);
 
-    const approval = harness.prepareMaintainerDecisionAction(candidate, "approve");
-    expect(() => harness.prepareMaintainerDecisionAction(candidate, "unsupported" as "approve"))
-      .toThrow(/Unsupported maintainer decision action/u);
-    const beforeApproval = harness.simulator.getLedger().governanceActionCount;
-    expect(() => harness.executeMaintainerDecisionWithSignatures(candidate, "approve", [
+    const approval = await harness.prepareMaintainerDecisionAction(candidate, "approve");
+    await expect(harness.prepareMaintainerDecisionAction(candidate, "unsupported" as "approve"))
+      .rejects.toThrow(/Unsupported maintainer decision action/u);
+    const beforeApproval = (await harness.simulator.getLedger()).governanceActionCount;
+    await expect(harness.executeMaintainerDecisionWithSignatures(candidate, "approve", [
       signPrepared(harness, second, approval), signPrepared(harness, candidate, approval),
-    ])).toThrow();
-    expect(() => harness.executeMaintainerDecisionWithSignatures(candidate, "approve", [
-      signPrepared(harness, second, { ...approval, policyCommitment: new Uint8Array(32) }),
+    ])).rejects.toThrow();
+    await expect(harness.executeMaintainerDecisionWithSignatures(candidate, "approve", [
+      signPrepared(harness, second, { ...approval, policyCommitment: new Uint8Array(32).fill(1) }),
       signPrepared(harness, third, approval),
-    ])).toThrow();
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeApproval);
-    harness.executeMaintainerDecisionWithSignatures(candidate, "approve", [
+    ])).rejects.toThrow();
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(beforeApproval);
+    await harness.executeMaintainerDecisionWithSignatures(candidate, "approve", [
       signPrepared(harness, second, approval), signPrepared(harness, third, approval),
     ]);
 
-    const activation = harness.prepareMaintainerDecisionAction(candidate, "activate");
-    const beforeActivation = harness.simulator.getLedger().governanceActionCount;
-    expect(() => harness.executeMaintainerDecisionWithSignatures(candidate, "activate", [
+    const activation = await harness.prepareMaintainerDecisionAction(candidate, "activate");
+    const beforeActivation = (await harness.simulator.getLedger()).governanceActionCount;
+    await expect(harness.executeMaintainerDecisionWithSignatures(candidate, "activate", [
       signPrepared(harness, second, approval), signPrepared(harness, third, approval),
-    ])).toThrow();
-    expect(() => harness.executeMaintainerDecisionWithSignatures(candidate, "activate", [
+    ])).rejects.toThrow();
+    await expect(harness.executeMaintainerDecisionWithSignatures(candidate, "activate", [
       signPrepared(harness, second, activation), signPrepared(harness, candidate, activation),
-    ])).toThrow();
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeActivation);
-    harness.executeMaintainerDecisionWithSignatures(candidate, "activate", [
+    ])).rejects.toThrow();
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(beforeActivation);
+    await harness.executeMaintainerDecisionWithSignatures(candidate, "activate", [
       signPrepared(harness, second, activation), signPrepared(harness, third, activation),
     ]);
-    expect(harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment).status)
+    expect((await harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment)).status)
       .toBe(AuthorizationStatus.active);
 
     const issuer = createIssuerScenarioFixture("candidate-coauthorizer-issuer");
-    expect(() => harness.proposeIssuer(issuer, [candidate])).not.toThrow();
+    await expect(harness.proposeIssuer(issuer, [candidate])).resolves.toBeDefined();
 
-    const priorPolicyVersion = harness.simulator.getLedger().governancePolicyVersion;
-    harness.updateMaintainerThresholdPolicy(3n, 1n, 2n, [second]);
-    expect(harness.simulator.getLedger().governancePolicyVersion).toBe(priorPolicyVersion + 1n);
+    const priorPolicyVersion = (await harness.simulator.getLedger()).governancePolicyVersion;
+    await harness.updateMaintainerThresholdPolicy(3n, 1n, 2n, [second]);
+    expect((await harness.simulator.getLedger()).governancePolicyVersion).toBe(priorPolicyVersion + 1n);
     const afterRevision = createIssuerScenarioFixture("three-of-four-issuer");
-    const beforeRejectedProposal = harness.simulator.getLedger().governanceActionCount;
-    expect(() => harness.proposeIssuer(afterRevision, [second])).toThrow(/action threshold/i);
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeRejectedProposal);
-    expect(() => harness.proposeIssuer(afterRevision, [second, third])).not.toThrow();
+    const beforeRejectedProposal = (await harness.simulator.getLedger()).governanceActionCount;
+    await expect(harness.proposeIssuer(afterRevision, [second])).rejects.toThrow(/action threshold/i);
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(beforeRejectedProposal);
+    await expect(harness.proposeIssuer(afterRevision, [second, third])).resolves.toBeDefined();
 
     // Lower the ordinary threshold before removal so the remaining three
     // maintainers retain a quorum that can exclude a future target.
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n, [second, third]);
-    harness.suspendMaintainer(candidate);
-    expect(harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment).status)
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n, [second, third]);
+    await harness.suspendMaintainer(candidate);
+    expect((await harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment)).status)
       .toBe(AuthorizationStatus.suspended);
-    expect(harness.simulator.getLedger().activeMaintainerCount).toBe(3n);
+    expect((await harness.simulator.getLedger()).activeMaintainerCount).toBe(3n);
     const afterSuspension = createIssuerScenarioFixture("suspended-maintainer-issuer");
-    const beforeSuspendedVote = harness.simulator.getLedger().governanceActionCount;
-    expect(() => harness.proposeIssuer(afterSuspension, [candidate, second]))
-      .toThrow(/Maintainer must be active/i);
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeSuspendedVote);
-    expect(() => harness.proposeIssuer(afterSuspension, [second, third])).not.toThrow();
+    const beforeSuspendedVote = (await harness.simulator.getLedger()).governanceActionCount;
+    await expect(harness.proposeIssuer(afterSuspension, [candidate, second]))
+      .rejects.toThrow(/Maintainer must be active/i);
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(beforeSuspendedVote);
+    await expect(harness.proposeIssuer(afterSuspension, [second, third])).resolves.toBeDefined();
   }, 15_000);
 });
