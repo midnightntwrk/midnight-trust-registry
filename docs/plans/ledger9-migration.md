@@ -709,6 +709,22 @@ application, accepted decision epoch, or release evidence. The private
 journals and proof logs must not be replayed; the shared stack was not managed
 or restarted.
 
+An external-recognition fixture then exercised the deployed recognition
+lifecycle on the same pinned development contract. Each step passed a
+proof-only run with broadcast blocked before a separately journaled one-shot
+submission. Proposal, authorization, and activation receipts were
+`0004fba8cfbfb881d57b5b2c63a513a66667615a62ac2f725a55b20b13b56a7734`,
+`005f5fb0f763cde5b906e59e3e1bc812c1476af9dbd487da8058fc37514808c35c`,
+and `0003e797a3446d1aa6fffec8315cf99a4b6838cdb9b6040a35bf63ca291086df07`.
+The pinned read-only command at indexed height 4224 independently reported
+governance action count 15, one active recognition, lifecycle sequences
+12/13/14, and all 66 verifier keys matching the source manifest. The earlier
+snapshot epoch does not match this recognition's lifecycle event root. This
+tests development-chain proof, submission, and finalized state for a fixture
+external authority; it does not authenticate a real external registry,
+qualify a live DID/VP journey, or provide release evidence. The ignored
+one-shot journals and proof logs remain private and must not be replayed.
+
 ## Execution order
 
 1. Keep the `ledger8` source branch only as a historical reference. Ledger 9
