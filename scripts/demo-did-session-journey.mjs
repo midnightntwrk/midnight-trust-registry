@@ -43,7 +43,7 @@ const actorDid = createMidnightDid("headless-did-authentication");
 const actorKeyId = `${actorDid}#auth-1`;
 let now = Date.now();
 const directory = await mkdtemp(join(tmpdir(), "tr-headless-did-auth-"));
-const workspace = createOperatorWorkspace({ label: "did-auth-headless" });
+const workspace = await createOperatorWorkspace({ label: "did-auth-headless" });
 const registryId = workspace.snapshot.registry.registryId;
 const serverOptions = {
   source: createInMemorySource(workspace.snapshot),

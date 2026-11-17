@@ -336,7 +336,7 @@ export async function presentationForNonce(nonce, applicationScope = scope) {
 if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   if (command === "application") {
     const role = requestedRole(process.argv[3] ?? "auditor");
-    process.stdout.write(`${JSON.stringify(signedApplication(createOperatorWorkspace({ label: "auditor-admission-demo" }), role))}\n`);
+    process.stdout.write(`${JSON.stringify(signedApplication(await createOperatorWorkspace({ label: "auditor-admission-demo" }), role))}\n`);
   } else if (command === "sign-digest") {
     process.stdout.write(`${signDigest(process.argv[3])}\n`);
   } else if (command === "vp") {

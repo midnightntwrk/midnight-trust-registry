@@ -296,6 +296,14 @@ egress controls. It is browser/fixture evidence only: no proof, deployed
 contract, finalized transaction, or live actor journey was observed. The
 active migration checkout still preserves its partial generated output; the
 isolated validation checkout and browser cache are disposable.
+The standalone headless entrypoints also now await CLI workspace creation.
+`demo-auditor-admission` application and smoke commands, the signed local
+journey, the packaged off-chain DID CLI journey, and the DID session journey
+all pass against the built Ledger 9 simulator packages. A CLI nonce-schema
+test now first proves its baseline workspace is valid; previously it spread
+an unresolved Promise, making its negative cases vacuous. Its focused suite
+passes 18 tests. These commands use fixtures and simulated finality, not a
+deployed contract or live-chain receipt.
 
 ## Execution order
 

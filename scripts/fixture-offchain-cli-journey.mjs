@@ -98,7 +98,7 @@ async function post(path, body, requestOrigin = origin) {
 
 let host;
 try {
-  await writeWorkspaceToFile(workspacePath, createOperatorWorkspace({ label: "fixture-offchain-cli" }));
+  await writeWorkspaceToFile(workspacePath, await createOperatorWorkspace({ label: "fixture-offchain-cli" }));
   await mkdir(portalRoot);
   for (const role of ["admin", "applicant"]) {
     await cp(join("packages", `trust-registry-${role === "admin" ? "admin-console" : "applicant-portal"}`, "dist"),

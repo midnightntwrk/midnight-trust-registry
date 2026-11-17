@@ -35,8 +35,9 @@ const captureCli = async (argv: readonly string[]) => {
 };
 
 describe("trust registry operator CLI", () => {
-  it("validates bounded version-3 actor nonce history and clock", () => {
-    const workspace = createOperatorWorkspace({ label: "nonce-schema" });
+  it("validates bounded version-3 actor nonce history and clock", async () => {
+    const workspace = await createOperatorWorkspace({ label: "nonce-schema" });
+    expect(TrustRegistryOperatorWorkspaceSchema.safeParse(workspace).success).toBe(true);
     const expiry = "2026-10-10T00:05:00.000Z";
     const actorKey = `0x${"11".repeat(32)}`;
     const entry = { actorKey, expiresAt: expiry };
