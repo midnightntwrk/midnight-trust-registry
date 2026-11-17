@@ -40,12 +40,13 @@ describe("audited proposal reservation abandonment", () => {
         stdio: ["pipe", "pipe", "pipe"],
       });
       const harness = new LocalTrustRegistryIntegrationHarness("abandonment-fixture");
+      await harness.ready;
       const contractAddress = `0x${harness.simulator.contractAddress}`;
       const genesisHash = hash("e");
       const journalPath = join(root, "proposal-journal.json");
       const journal = new FileProposalSubmissionJournal(journalPath);
       await journal.bindDeployment(harness.registryId, contractAddress, genesisHash);
-      const sequence = harness.simulator.getLedger().governanceActionCount;
+      const sequence = (await harness.simulator.getLedger()).governanceActionCount;
       const context: ProposalReservationContext = {
         actionSequence: sequence.toString(),
         actionKind: `0x${Buffer.from(encodeCompactActionKind("tr:issuer:propose")).toString("hex")}`,
@@ -61,9 +62,9 @@ describe("audited proposal reservation abandonment", () => {
       const signaturePath = join(root, "decision.sig");
       const evidence = Buffer.from('{"testOnly":"injected finalized view"}\n');
       await writeFile(finalityEvidencePath, evidence);
-      const view = () => ({
+      const view = async (): Promise<FinalizedRegistryLedgerView> => ({
         networkId: "undeployed", finalizedBlockHash: hash("d"), contractAddress,
-        ledger: harness.simulator.getLedger(),
+        ledger: await harness.simulator.getLedger(),
       }) as unknown as FinalizedRegistryLedgerView;
       const input = {
         registryId: harness.registryId, contractAddress, expectedGenesisHash: genesisHash,
@@ -75,18 +76,18 @@ describe("audited proposal reservation abandonment", () => {
           evidenceSha256: digest(bytes), genesisHash,
           planSourceRevision: "f".repeat(40), approvedPlanSha256: "7".repeat(64),
           verifiedPlanReviewerFingerprint: "A".repeat(40),
-          view: view(), originalActionRejected: true as const,
+          view: await view(), originalActionRejected: true as const,
         }),
       };
       await expect(journal.abandonInvalidatedReservation(input))
         .rejects.toThrow();
       expect((await journal.read("issuer", authorizationId))?.state).toBe("reserved");
 
-      harness.proposeMaintainer(createMaintainerScenarioFixture("abandonment-sequence-advancer"));
+      await harness.proposeMaintainer(createMaintainerScenarioFixture("abandonment-sequence-advancer"));
       const bound = await journal.readBoundAttempt(harness.registryId, contractAddress,
         genesisHash, "issuer", authorizationId);
       const candidate = await assessProposalRecoveryCandidate({
-        attempt: bound.attempt!, view: view(), registryId: harness.registryId,
+        attempt: bound.attempt!, view: await view(), registryId: harness.registryId,
         contractAddress, planExpectedGenesisHash: genesisHash,
         planSourceRevision: input.planSourceRevision, approvedPlanSha256: input.approvedPlanSha256,
         journalBindingDigest: bound.bindingDigest,
@@ -106,7 +107,7 @@ describe("audited proposal reservation abandonment", () => {
         authenticateFinality: async () => ({ evidenceSha256: "0".repeat(64), genesisHash,
           planSourceRevision: input.planSourceRevision, approvedPlanSha256: input.approvedPlanSha256,
           verifiedPlanReviewerFingerprint: "A".repeat(40),
-          view: view(), originalActionRejected: true as const }),
+          view: await view(), originalActionRejected: true as const }),
       })).rejects.toThrow();
       await expect(journal.abandonInvalidatedReservation({ ...input,
         authenticateFinality: async () => { throw new Error("finality reader unavailable"); },
@@ -116,19 +117,19 @@ describe("audited proposal reservation abandonment", () => {
           genesisHash, planSourceRevision: input.planSourceRevision,
           approvedPlanSha256: input.approvedPlanSha256,
           verifiedPlanReviewerFingerprint: "A".repeat(40),
-          view: view(), originalActionRejected: false as unknown as true }),
+          view: await view(), originalActionRejected: false as unknown as true }),
       })).rejects.toThrow();
       await expect(journal.abandonInvalidatedReservation({ ...input,
         authenticateFinality: async (bytes: Buffer) => ({ evidenceSha256: digest(bytes),
           genesisHash, planSourceRevision: input.planSourceRevision,
           approvedPlanSha256: input.approvedPlanSha256,
           verifiedPlanReviewerFingerprint: fingerprint!,
-          view: view(), originalActionRejected: true as const }),
+          view: await view(), originalActionRejected: true as const }),
       })).rejects.toThrow(/distinct from the API-plan reviewer/u);
       await expect(journal.abandonInvalidatedReservation({ ...input,
         authenticateFinality: async (bytes: Buffer) => ({
           ...await input.authenticateFinality(bytes),
-          view: { ...view(), finalizedBlockHash: hash("b") },
+          view: { ...await view(), finalizedBlockHash: hash("b") },
         }),
       })).rejects.toThrow(/Signed recovery decision does not match/u);
       expect((await journal.read("issuer", authorizationId))?.state).toBe("reserved");
@@ -209,7 +210,7 @@ describe("audited proposal reservation abandonment", () => {
         .rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
       await expect(reopened.executeOnce("issuer", "issuer:new-intent", evidenceCommitment,
         async () => ({ eventHash: hash("f") }), {
-          ...context, actionSequence: harness.simulator.getLedger().governanceActionCount.toString(),
+          ...context, actionSequence: (await harness.simulator.getLedger()).governanceActionCount.toString(),
         })).resolves.toEqual({ eventHash: hash("f") });
       await expect(reopened.reconcile("issuer", "issuer:new-intent",
         async () => ({ eventHash: hash("f"), evidenceCommitment })))
@@ -231,7 +232,7 @@ describe("audited proposal reservation abandonment", () => {
       await legacy.bindDeployment(harness.registryId, contractAddress, genesisHash);
       const legacyId = "issuer:legacy-near-capacity";
       const legacyContext = { ...context,
-        actionSequence: harness.simulator.getLedger().governanceActionCount.toString() };
+        actionSequence: (await harness.simulator.getLedger()).governanceActionCount.toString() };
       await expect(legacy.executeOnce("issuer", legacyId, evidenceCommitment,
         async () => { throw new Error("legacy response lost"); }, legacyContext))
         .rejects.toBeInstanceOf(ProposalSubmissionOutcomeUnknownError);
@@ -252,11 +253,11 @@ describe("audited proposal reservation abandonment", () => {
       }
       expect(size).toBeGreaterThan(4 * 1024 * 1024 - 1_200);
       await writeFile(legacyPath, JSON.stringify(legacyState), { mode: 0o600 });
-      harness.proposeMaintainer(createMaintainerScenarioFixture("abandonment-legacy-advancer"));
+      await harness.proposeMaintainer(createMaintainerScenarioFixture("abandonment-legacy-advancer"));
       const legacyBound = await legacy.readBoundAttempt(harness.registryId, contractAddress,
         genesisHash, "issuer", legacyId);
       const legacyCandidate = await assessProposalRecoveryCandidate({
-        attempt: legacyBound.attempt!, view: view(), registryId: harness.registryId,
+        attempt: legacyBound.attempt!, view: await view(), registryId: harness.registryId,
         contractAddress, planExpectedGenesisHash: genesisHash,
         planSourceRevision: input.planSourceRevision, approvedPlanSha256: input.approvedPlanSha256,
         journalBindingDigest: legacyBound.bindingDigest,
@@ -283,7 +284,7 @@ describe("audited proposal reservation abandonment", () => {
         .rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
       await expect(reopenedLegacy.executeOnce("issuer", "issuer:capacity-headroom", evidenceCommitment,
         async () => { throw new Error("must reject before execution"); }, {
-          ...legacyContext, actionSequence: harness.simulator.getLedger().governanceActionCount.toString(),
+          ...legacyContext, actionSequence: (await harness.simulator.getLedger()).governanceActionCount.toString(),
         })).rejects.toBeInstanceOf(ProposalSubmissionCapacityError);
       expect(await reopenedLegacy.read("issuer", "issuer:capacity-headroom")).toBeNull();
     } finally {
