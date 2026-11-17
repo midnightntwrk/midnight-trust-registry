@@ -523,7 +523,10 @@ active maintainer, zero registered evidence-verifier keys, and zero active
 issuer, verifier, auditor, or recognition entries. Therefore the deployed
 issuer path cannot begin with a proposal: a governed evidence-verifier-key
 registration and its finalized readback must precede any evidence-bound
-issuer proposal. That registration, live DID/VC evidence, and the actor
+issuer proposal. The contract also excludes the authorized maintainer's DID
+from being the registered evidence-verifier DID, so the development journey
+needs a separate verifier identity and key. That registration, live DID/VC
+evidence, and the actor
 submissions have not yet run on this chain. The ignored private readback
 helper retains the exact-plan, journal, and manifest checks; this observation
 does not approve or submit a shared-chain mutation.
