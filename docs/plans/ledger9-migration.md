@@ -247,17 +247,14 @@ has a project-private host-access bridge for loopback forwarding; the stricter
 offline topology observer still rejects that extra attachment, rather than
 misreporting it as an internal-only runtime. These source checks do not prove
 the currently unresponsive live stack or a deployed actor journey.
-The separate `test:demo-smoke-scripts` gate is still red. Its historical
-adversarial/demo cases call asynchronous Ledger 9 harness and simulator
-operations as if they were synchronous, producing failed assertions and
-unhandled rejections. All 40 `scripts/adversarial-compact.test.mjs` cases now
-pass after awaiting setup, circuit results, client verification, and expected
-rejections. The five isolated maintainer-safety demo tests, 22 governed-action
-API cases, 23 proposal-admission API cases, 16 public API/TRQP cases, eight
-matrix cases, five governed-policy API cases, eight proposal-signature API
-cases, and 22 proposal adversarial cases also pass. Other adversarial API and governed-demo cases
-still require async migration and a complete gate rerun; no failed case has
-been skipped or reclassified as a pass.
+The separate `test:demo-smoke-scripts` gate now passes 251/251 cases after
+migrating its historical adversarial and demo fixtures to awaited Ledger 9
+harness, simulator, snapshot, and client operations. This includes the 40
+Compact adversarial cases, six recognition-intake negatives, recognition and
+role lifecycle cases, and governed API/signature cases. The gate is source and
+simulator evidence only. The full governed-demo execution, proof-artifact
+checks, and deployed Ledger 9 actor journeys require separate validation; no
+failed case was skipped or reclassified as a pass.
 
 ## Execution order
 

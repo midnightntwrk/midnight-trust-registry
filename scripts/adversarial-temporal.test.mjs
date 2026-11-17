@@ -39,13 +39,13 @@ const roles = [
 const startTemporalCase = async (context, role, label) => {
   const harness = new LocalTrustRegistryIntegrationHarness(label);
   const fixture = role.fixture(`${label}-${role.name}`);
-  harness[role.authorize](fixture);
+  await harness[role.authorize](fixture);
   const client = new TrustRegistrySimulatorClient(harness.simulator);
-  const active = harness[role.active](fixture);
+  const active = await harness[role.active](fixture);
   const activeAt = active.authorization.activeFrom;
-  assert.ok(client[role.verify](active, { expectedRegistryId: harness.registryId, evaluationTime: activeAt }));
+  assert.ok(await client[role.verify](active, { expectedRegistryId: harness.registryId, evaluationTime: activeAt }));
   const fixtures = { label, [role.fixtureKey]: [{ fixture, label: role.name }] };
-  let snapshot = publishSimulatorSnapshot(harness, fixtures);
+  let snapshot = await publishSimulatorSnapshot(harness, fixtures);
   const server = createTrustRegistryApiServer({
     source: { mode: "memory", loadSnapshot: async () => snapshot },
   });
@@ -80,10 +80,10 @@ const startTemporalCase = async (context, role, label) => {
     resource: fixture.scopeResourceId,
     context: { time: at },
   }) : undefined;
-  const change = (action) => {
-    harness[action](fixture);
-    snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
-    return harness[role.historical](fixture);
+  const change = async (action) => {
+    await harness[action](fixture);
+    snapshot = await publishSimulatorSnapshot(harness, fixtures, snapshot);
+    return await harness[role.historical](fixture);
   };
   return { harness, fixture, client, active, activeAt, evaluate, queryTrqp, change };
 };
@@ -97,48 +97,48 @@ for (const role of roles) {
   test(`${role.name}-suspended-api`, async (context) => {
     const { activeAt, evaluate, change } = await startTemporalCase(context, role, `isolated-${role.name}-suspended-api`);
     assert.equal((await evaluate(activeAt)).trustedAtTime, true);
-    const suspended = change(role.suspend);
+    const suspended = await change(role.suspend);
     assert.equal(suspended.authorization.status, "suspended");
     assert.equal((await evaluate(suspended.authorization.suspendedAt)).trustedAtTime, false);
   });
 
   test(`${role.name}-historical-api-after-suspension`, async (context) => {
     const { activeAt, evaluate, change } = await startTemporalCase(context, role, `isolated-${role.name}-history-suspend-api`);
-    change(role.suspend);
+    await change(role.suspend);
     assert.equal((await evaluate(activeAt)).trustedAtTime, true);
   });
 
   test(`${role.name}-historical-after-suspension`, async (context) => {
     const { harness, client, active, activeAt, change } =
       await startTemporalCase(context, role, `isolated-${role.name}-history-suspend-client`);
-    const suspended = change(role.suspend);
-    assert.throws(() => client[role.verify](suspended, { expectedRegistryId: harness.registryId }), /not active/iu);
-    assert.ok(client[role.verify](active, { expectedRegistryId: harness.registryId, evaluationTime: activeAt }));
+    const suspended = await change(role.suspend);
+    await assert.rejects(client[role.verify](suspended, { expectedRegistryId: harness.registryId }), /not active/iu);
+    assert.ok(await client[role.verify](active, { expectedRegistryId: harness.registryId, evaluationTime: activeAt }));
   });
 
   test(`${role.name}-revoked-api`, async (context) => {
     const { activeAt, evaluate, change } = await startTemporalCase(context, role, `isolated-${role.name}-revoked-api`);
     assert.equal((await evaluate(activeAt)).trustedAtTime, true);
-    change(role.suspend);
-    const revoked = change(role.revoke);
+    await change(role.suspend);
+    const revoked = await change(role.revoke);
     assert.equal(revoked.authorization.status, "revoked");
     assert.equal((await evaluate(revoked.authorization.revokedAt)).trustedAtTime, false);
   });
 
   test(`${role.name}-historical-api-after-revocation`, async (context) => {
     const { activeAt, evaluate, change } = await startTemporalCase(context, role, `isolated-${role.name}-history-revoke-api`);
-    change(role.suspend);
-    change(role.revoke);
+    await change(role.suspend);
+    await change(role.revoke);
     assert.equal((await evaluate(activeAt)).trustedAtTime, true);
   });
 
   test(`${role.name}-historical-after-revocation`, async (context) => {
     const { harness, client, active, activeAt, change } =
       await startTemporalCase(context, role, `isolated-${role.name}-history-revoke-client`);
-    change(role.suspend);
-    const revoked = change(role.revoke);
-    assert.throws(() => client[role.verify](revoked, { expectedRegistryId: harness.registryId }), /not active/iu);
-    assert.ok(client[role.verify](active, { expectedRegistryId: harness.registryId, evaluationTime: activeAt }));
+    await change(role.suspend);
+    const revoked = await change(role.revoke);
+    await assert.rejects(client[role.verify](revoked, { expectedRegistryId: harness.registryId }), /not active/iu);
+    assert.ok(await client[role.verify](active, { expectedRegistryId: harness.registryId, evaluationTime: activeAt }));
   });
 
   if (role.trqpAction) {
@@ -155,8 +155,8 @@ for (const role of roles) {
         const { activeAt, evaluate, queryTrqp, change } =
           await startTemporalCase(context, role, `isolated-verifier-${stage.name}-trqp`);
         assert.equal((await queryTrqp(activeAt)).authorized, true);
-        if (stage.name === "revoked") change(role.suspend);
-        const changed = change(stage.action);
+        if (stage.name === "revoked") await change(role.suspend);
+        const changed = await change(stage.action);
         const at = changed.authorization[stage.at];
         assert.equal((await queryTrqp(at)).authorized, (await evaluate(at)).trustedAtTime);
         assert.equal((await queryTrqp(at)).authorized, false);
@@ -165,8 +165,8 @@ for (const role of roles) {
       test(`${role.name}-historical-after-${stage.name === "suspended" ? "suspension" : "revocation"}-trqp`, async (context) => {
         const { activeAt, evaluate, queryTrqp, change } =
           await startTemporalCase(context, role, `isolated-verifier-history-${stage.name}-trqp`);
-        if (stage.name === "revoked") change(role.suspend);
-        change(stage.action);
+        if (stage.name === "revoked") await change(role.suspend);
+        await change(stage.action);
         assert.equal((await queryTrqp(activeAt)).authorized, (await evaluate(activeAt)).trustedAtTime);
         assert.equal((await queryTrqp(activeAt)).authorized, true);
       });

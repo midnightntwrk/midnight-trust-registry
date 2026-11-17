@@ -29,9 +29,9 @@ const startIntake = async (label) => {
   const harness = new LocalTrustRegistryIntegrationHarness(label);
   const second = createMaintainerScenarioFixture(`${label}-second`);
   const third = createMaintainerScenarioFixture(`${label}-third`);
-  harness.authorizeMaintainer(second);
-  harness.authorizeMaintainer(third);
-  harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+  await harness.authorizeMaintainer(second);
+  await harness.authorizeMaintainer(third);
+  await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
   const authoritySeed = new Uint8Array(32).fill(116);
   const authorityDid = createMidnightDid(`${label}-authority`);
   const recognition = createRecognitionScenarioFixture(`${label}-recognition`);
@@ -39,12 +39,12 @@ const startIntake = async (label) => {
     ...RECOGNITION_VP_FIXTURE_ANCHOR,
     targetRegistryId: harness.registryId,
     policyId: harness.policyId,
-    policyVersion: `v${(harness.simulator.getLedger().governancePolicyVersion + 1n).toString()}`,
+    policyVersion: `v${((await harness.simulator.getLedger()).governancePolicyVersion + 1n).toString()}`,
     recognizedRegistryId: recognition.recognizedRegistryId,
     scopeResourceType: recognition.scopeResourceType,
     scopeResourceId: recognition.scopeResourceId,
   };
-  harness.governRecognitionAccreditorAnchor(anchor, [second]);
+  await harness.governRecognitionAccreditorAnchor(anchor, [second]);
   harness.advanceEvidenceTimeBy(60_000);
   const evaluatedAtMs = Math.max(VP_FIXTURE_TIME_MS, Date.parse(harness.policyRecord.effectiveFrom) + 60_000);
   const binding = {
@@ -59,7 +59,7 @@ const startIntake = async (label) => {
     new InMemoryApplicationChallengeStore(), () => evaluatedAtMs,
   );
   const challenge = await service.issue(binding);
-  const governedAnchor = harness.resolveCurrentRecognitionAccreditorAnchor({
+  const governedAnchor = await harness.resolveCurrentRecognitionAccreditorAnchor({
     recognizedRegistryId: binding.recognizedRegistryId,
     scopeResourceType: binding.scopeResourceType,
     scopeResourceId: binding.scopeResourceId,
@@ -98,7 +98,7 @@ const startIntake = async (label) => {
     accreditation: accreditation.input.submission,
     readCurrentGovernance: async () => ({
       governancePolicy: harness.policyRecord,
-      activePolicyCommitment: hex(harness.simulator.getLedger().governancePolicyCommitment),
+      activePolicyCommitment: hex((await harness.simulator.getLedger()).governancePolicyCommitment),
     }),
     resolver: accreditation.input.resolver,
     statusSource: accreditation.input.statusSource,
@@ -176,9 +176,9 @@ const cases = [
 for (const scenario of cases) {
   test(scenario.id, async () => {
     const fixture = await startIntake(`isolated-${scenario.id}`);
-    const actionsBefore = fixture.harness.simulator.getLedger().governanceActionCount;
+    const actionsBefore = (await fixture.harness.simulator.getLedger()).governanceActionCount;
     await assert.rejects(scenario.reject(fixture), scenario.message);
-    assert.equal(fixture.harness.simulator.getLedger().governanceActionCount, actionsBefore);
+    assert.equal((await fixture.harness.simulator.getLedger()).governanceActionCount, actionsBefore);
     const accepted = await fixture.verify();
     assert.match(accepted.evidenceCommitment, /^0x[0-9a-f]{64}$/u);
     await assert.rejects(fixture.verify(), /already consumed/u);

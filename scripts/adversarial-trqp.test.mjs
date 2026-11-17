@@ -7,11 +7,11 @@ import {
   LocalTrustRegistryIntegrationHarness,
 } from "../packages/trust-registry-integration/dist/index.js";
 
-const activeIssuerAdapter = (label) => {
+const activeIssuerAdapter = async (label) => {
   const harness = new LocalTrustRegistryIntegrationHarness(label);
   const issuer = createIssuerScenarioFixture(`${label}-issuer`);
-  harness.authorizeIssuer(issuer);
-  const activeAt = harness.evaluateCurrentIssuerDecision(issuer).authorization.activeFrom;
+  await harness.authorizeIssuer(issuer);
+  const activeAt = (await harness.evaluateCurrentIssuerDecision(issuer)).authorization.activeFrom;
   const request = {
     entity_id: issuer.subjectDid,
     authority_id: harness.registryRecord.registryDid,
@@ -36,7 +36,7 @@ const assertProblem = (result, status, slug) => {
 };
 
 test("trqp-unknown-issuer-scope", async () => {
-  const { request, ports, activeAt } = activeIssuerAdapter("isolated-trqp-unknown");
+  const { request, ports, activeAt } = await activeIssuerAdapter("isolated-trqp-unknown");
   const adapter = new TrustRegistryTrqpAdapter(ports, { clock: () => activeAt });
   const valid = await adapter.queryAuthorization(request);
   assert.equal(valid.ok, true);
@@ -47,14 +47,14 @@ test("trqp-unknown-issuer-scope", async () => {
 });
 
 test("trqp-missing-epoch-evidence", async () => {
-  const { request, ports, activeAt } = activeIssuerAdapter("isolated-trqp-missing-evidence");
+  const { request, ports, activeAt } = await activeIssuerAdapter("isolated-trqp-missing-evidence");
   const adapter = new TrustRegistryTrqpAdapter(ports, { clock: () => activeAt });
   assert.equal((await adapter.queryAuthorization(request)).ok, true);
   assertProblem(await adapter.getAuthorizationEvidence(request), 424, "epoch-evidence-unavailable");
 });
 
 test("trqp-contradictory-source", async () => {
-  const { harness, request, ports, activeAt } = activeIssuerAdapter("isolated-trqp-contradiction");
+  const { harness, request, ports, activeAt } = await activeIssuerAdapter("isolated-trqp-contradiction");
   const valid = new TrustRegistryTrqpAdapter(ports, { clock: () => activeAt });
   assert.equal((await valid.queryAuthorization(request)).ok, true);
   const inconsistent = new TrustRegistryTrqpAdapter({
