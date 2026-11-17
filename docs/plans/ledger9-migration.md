@@ -81,6 +81,12 @@ and lint pass. Existing client tests and the integration harness still assume
 synchronous results. The full client and integration package typechecks remain
 red; these source edits are not deployment evidence.
 
+The finalized deployment reader now rejects non-v9 serialized contract state
+and decodes v9 bytes through Compact runtime 0.21 before reading the ledger or
+maintenance image. Its focused suite passes six tests, including the wrong-era
+case. Two image tests remain skipped without an exact-source verifier-key file;
+the passing read tests do not qualify verifier-key image readback.
+
 Docker Desktop did not answer `docker info` during this local pass. No Ledger 9
 container, live RPC, indexer, or proof-server claim follows from the Compose
 render and image pins; the hanging CLI call was stopped without modifying
