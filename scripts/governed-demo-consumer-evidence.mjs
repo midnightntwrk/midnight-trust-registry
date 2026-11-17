@@ -14,7 +14,7 @@ export async function runGovernedConsumerEvidence(matrix, {
   const issuerBundle = await expectHttp(await fetch(
     `${base}/v1/authorizations/issuer/${issuer.authorizationId}/evidence`,
   ), 200);
-  client.verifyIssuerAuthorizationBundle(issuerBundle, {
+  await client.verifyIssuerAuthorizationBundle(issuerBundle, {
     expectedRegistryId: harness.registryId,
     expectedSubjectDid: issuer.subjectDid,
     expectedResourceId: issuer.resourceId,
@@ -34,7 +34,7 @@ export async function runGovernedConsumerEvidence(matrix, {
   await expectHttp(await fetch(
     `${base}/v1/decision-evidence/verifier/${encodeURIComponent(issuer.authorizationId)}`,
   ), 404);
-  matrix.expectThrown(() => client.verifyIssuerAuthorizationBundle({
+  await matrix.expectRejected(() => client.verifyIssuerAuthorizationBundle({
     ...issuerBundle,
     inclusionProof: {
       ...issuerBundle.inclusionProof,
@@ -46,7 +46,7 @@ export async function runGovernedConsumerEvidence(matrix, {
     boundary: "client", messagePattern: /event sibling/iu,
     category: "tampered-merkle-path",
   });
-  matrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
+  await matrix.expectRejected(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
     expectedResourceId: "credential-family:unknown",
   }), {
     id: "issuer-wrong-credential-family",
@@ -70,7 +70,7 @@ export async function runGovernedConsumerEvidence(matrix, {
   ), 200);
   assert.equal(verifierDecision.verification, "client-required");
   assert.equal(verifierDecision.evidence.grant.authorizationId, verifier.authorizationId);
-  matrix.expectThrown(() => client.verifyVerifierAuthorizationBundle(verifierBundle, {
+  await matrix.expectRejected(() => client.verifyVerifierAuthorizationBundle(verifierBundle, {
     expectedResourceId: "request-profile:unknown",
   }), {
     id: "verifier-wrong-request-profile",
@@ -81,14 +81,14 @@ export async function runGovernedConsumerEvidence(matrix, {
   const recognitionBundle = await expectHttp(await fetch(
     `${base}/v1/recognitions/${recognition.recognitionId}/evidence`,
   ), 200);
-  const locallyVerifiedRecognition = harness.evaluateCurrentRecognitionDecision(recognition);
+  const locallyVerifiedRecognition = await harness.evaluateCurrentRecognitionDecision(recognition);
   const trustedRecognitionEpoch = {
     epochId: locallyVerifiedRecognition.epoch.epochId,
     policyVersion: locallyVerifiedRecognition.policy.version,
   };
   assert.equal(recognitionBundle.epoch.epochId, trustedRecognitionEpoch.epochId);
   assert.equal(recognitionBundle.recognition.evidenceHash, verifiedRecognition.evidenceCommitment);
-  matrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(recognitionBundle, {}), {
+  await matrix.expectRejected(() => client.verifyIssuerAuthorizationBundle(recognitionBundle, {}), {
     id: "recognition-not-issuer-authorization",
     invariant: "External registry recognition cannot authorize local VC issuance",
     boundary: "client", messagePattern: /does not contain issuer authorization/iu,

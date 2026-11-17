@@ -71,17 +71,17 @@ async function prepareGovernedSignerAuthorization(input) {
   } = input;
   assert.ok(role === "issuer" || role === "verifier");
   assert.equal(applicantVp.input.expectedSubjectDid, subject.subjectDid);
-  const bundle = inactiveState === undefined
+  const bundle = await (inactiveState === undefined
     ? role === "issuer" ? harness.evaluateCurrentIssuerDecision(subject) : harness.evaluateCurrentVerifierDecision(subject)
-    : role === "issuer" ? harness.buildIssuerHistoricalEvidence(subject) : harness.buildVerifierHistoricalEvidence(subject);
+    : role === "issuer" ? harness.buildIssuerHistoricalEvidence(subject) : harness.buildVerifierHistoricalEvidence(subject));
   assert.equal(bundle.epoch.epochId, apiBundle.epoch.epochId);
   assert.equal(bundle.epoch.stateRoot, apiBundle.epoch.stateRoot);
   assert.equal(bundle.authorization?.status, inactiveState ?? "active");
   assert.ok(bundle.authorization);
   if (role === "issuer") assert.ok(bundle.statusPolicyBinding);
-  const epochRecord = harness.simulator.getEpochCommitment(bytes32Commitment(bundle.epoch.epochId));
-  const witness = harness.getEpochPublicationWitness(bundle.epoch.epochId);
-  const ledger = harness.simulator.getLedger();
+  const epochRecord = await harness.simulator.getEpochCommitment(bytes32Commitment(bundle.epoch.epochId));
+  const witness = await harness.getEpochPublicationWitness(bundle.epoch.epochId);
+  const ledger = await harness.simulator.getLedger();
   const networkId = authorityAnchor.domain.networkId;
   const contractAddress = authorityAnchor.domain.registryContractAddress;
   const epochTransaction = sha256Hex("simulator:governed-demo:epoch-transaction");
@@ -154,7 +154,7 @@ async function prepareGovernedSignerAuthorization(input) {
       subject.allowedAttributeSetCommitment, subject.allowedPredicateSetCommitment,
       subject.disclosureLevelCommitment,
     );
-  const currentGrant = readCurrentGrant();
+  const currentGrant = await readCurrentGrant();
   assert.ok(currentGrant);
   assert.equal(AuthorizationStatus[currentGrant.status], inactiveState ?? "active");
   const selection = {
@@ -192,7 +192,7 @@ async function prepareGovernedSignerAuthorization(input) {
   };
   const readers = createCompactLedgerDecisionReaders({
     readFinalizedView: async () => ({
-      ledger: harness.simulator.getLedger(),
+      ledger: await harness.simulator.getLedger(),
       acceptedEpoch,
       publication: {
         registryIdCommitment: harness.registryIdCommitment,
@@ -215,12 +215,12 @@ async function prepareGovernedSignerAuthorization(input) {
   });
   const authorityKeyReader = {
     readCurrentFinalizedVcAuthorityState: async () => {
-      const current = harness.simulator.getLedger();
+      const current = await harness.simulator.getLedger();
       return {
         registryIdCommitment: current.registryId,
         currentPolicyCommitment: current.governancePolicyCommitment,
         currentPolicyVersion: current.governancePolicyVersion,
-        currentKey: harness.simulator.getCurrentVcAuthorityKey(
+        currentKey: await harness.simulator.getCurrentVcAuthorityKey(
           vcAuthorityDomainFields(authorityAnchor.domain).consumerContractAddress,
         ),
       };
@@ -304,18 +304,19 @@ async function loadCompiledConsumer() {
 async function withCompiledConsumer(authorityAnchor, execute) {
   const compiled = await loadCompiledConsumer();
   const consumer = new compiled.Contract({});
-  const initial = consumer.initialState(
+  const initial = await consumer.initialState(
     createConstructorContext({}, "0".repeat(64)),
     pinnedVcAuthority(authorityAnchor),
     vcAuthorityDomainFields(authorityAnchor.domain),
   );
   const consumerContractAddress = authorityAnchor.domain.consumerContractAddress.slice(2);
-  const circuitContext = createCircuitContext(
-    consumerContractAddress,
-    initial.currentZswapLocalState,
-    initial.currentContractState,
-    initial.currentPrivateState,
-  );
+  const circuitContext = createCircuitContext({
+    circuitId: "installSignerAuthorization",
+    contractAddress: consumerContractAddress,
+    coinPublicKeyOrZswapState: initial.currentZswapLocalState,
+    contractState: initial.currentContractState,
+    privateState: initial.currentPrivateState,
+  });
   return execute({ compiled, consumer, circuitContext, consumerContractAddress });
 }
 
@@ -325,16 +326,17 @@ export async function verifyGovernedIssuerCredential(input) {
   const signed = await prepareGovernedSignerAuthorization({
     ...input, subject: issuer, role: "issuer", scope: issuer.authorizationScope,
   });
-  return withCompiledConsumer(authorityAnchor, ({ compiled, consumer, circuitContext: initialContext, consumerContractAddress }) => {
-    const installed = consumer.circuits.installSignerAuthorization(
+  return withCompiledConsumer(authorityAnchor, async ({ compiled, consumer, circuitContext: initialContext, consumerContractAddress }) => {
+    const installed = await consumer.circuits.installSignerAuthorization(
       initialContext, signed.descriptor, signed.proof,
     );
-    const circuitContext = createCircuitContext(
-      consumerContractAddress,
-      installed.context.currentZswapLocalState,
-      installed.context.currentQueryContext.state,
-      installed.context.currentPrivateState,
-    );
+    const circuitContext = createCircuitContext({
+      circuitId: "assertIssuerCredentialSchemaSignerProof",
+      contractAddress: consumerContractAddress,
+      coinPublicKeyOrZswapState: installed.context.callContext.currentZswapLocalState,
+      contractState: installed.context.callContext.currentQueryContext.state,
+      privateState: installed.context.callContext.currentPrivateState,
+    });
     const credential = {
       version: 1n,
       schema: issuerSchemaRefFromRegistryScope(issuer.authorizationScope),
@@ -359,16 +361,16 @@ export async function verifyGovernedIssuerCredential(input) {
       createdAt: 1n,
       challengeHash: randomBytes(32),
     });
-    consumer.circuits.assertIssuerCredentialSchemaSignerProof(
+    await consumer.circuits.assertIssuerCredentialSchemaSignerProof(
       circuitContext, credential, credentialProof, signed.descriptor.authorizationId,
     );
-    assert.throws(() => consumer.circuits.assertIssuerCredentialSchemaSignerProof(
+    await assert.rejects(() => consumer.circuits.assertIssuerCredentialSchemaSignerProof(
       circuitContext,
       { ...credential, schema: { ...credential.schema, schemaId: bytes32Commitment("wrong-demo-schema") } },
       credentialProof,
       signed.descriptor.authorizationId,
     ));
-    assert.throws(() => consumer.circuits.assertIssuerCredentialSchemaSignerProof(
+    await assert.rejects(() => consumer.circuits.assertIssuerCredentialSchemaSignerProof(
       circuitContext,
       credential,
       { ...credentialProof, signature: { ...credentialProof.signature, s: credentialProof.signature.s + 1n } },
@@ -403,31 +405,32 @@ async function verifyGovernedStatusUpdate(input, role, subject, scope) {
     ...input, subject, role, scope,
     inactiveState: state, previous,
   });
-  return withCompiledConsumer(authorityAnchor, ({ consumer, circuitContext: initialContext, consumerContractAddress }) => {
+  return withCompiledConsumer(authorityAnchor, async ({ consumer, circuitContext: initialContext, consumerContractAddress }) => {
     let circuitContext = initialContext;
     for (const accepted of [...previousJourney.signedHistory, signed]) {
-      const installed = consumer.circuits.installSignerAuthorization(
+      const installed = await consumer.circuits.installSignerAuthorization(
         circuitContext, accepted.descriptor, accepted.proof,
       );
-      circuitContext = createCircuitContext(
-        consumerContractAddress,
-        installed.context.currentZswapLocalState,
-        installed.context.currentQueryContext.state,
-        installed.context.currentPrivateState,
-      );
+      circuitContext = createCircuitContext({
+        circuitId: "installSignerAuthorization",
+        contractAddress: consumerContractAddress,
+        coinPublicKeyOrZswapState: installed.context.callContext.currentZswapLocalState,
+        contractState: installed.context.callContext.currentQueryContext.state,
+        privateState: installed.context.callContext.currentPrivateState,
+      });
     }
     if (role === "issuer") {
-      assert.throws(() => consumer.circuits.assertIssuerCredentialSchemaSignerProof(
+      await assert.rejects(() => consumer.circuits.assertIssuerCredentialSchemaSignerProof(
         circuitContext, previousJourney.credential, previousJourney.credentialProof,
         signed.descriptor.authorizationId,
       ), /must be active/u);
     } else {
-      assert.throws(() => consumer.circuits.assertVerifierRequestAuthorized(
+      await assert.rejects(() => consumer.circuits.assertVerifierRequestAuthorized(
         circuitContext, previousJourney.requestScopeCommitment, previousJourney.requestProof,
         signed.descriptor.authorizationId,
       ), /must be active/u);
     }
-    assert.throws(() => consumer.circuits.installSignerAuthorization(
+    await assert.rejects(() => consumer.circuits.installSignerAuthorization(
       circuitContext, previousJourney.signedHistory[0].descriptor,
       previousJourney.signedHistory[0].proof,
     ), /sequence must increase/u);
@@ -444,7 +447,7 @@ async function verifyGovernedStatusUpdate(input, role, subject, scope) {
       const resurrectionProof = fixtureProof(
         input.authoritySeed, authority, resurrectionRoot, resurrected.decisionSequence,
       );
-      assert.throws(() => consumer.circuits.installSignerAuthorization(
+      await assert.rejects(() => consumer.circuits.installSignerAuthorization(
         circuitContext, resurrected, resurrectionProof,
       ), /must remain revoked/u);
     }
@@ -478,16 +481,17 @@ export async function verifyGovernedVerifierRequest(input) {
   const signed = await prepareGovernedSignerAuthorization({
     ...input, subject: verifier, role: "verifier", scope,
   });
-  return withCompiledConsumer(authorityAnchor, ({ consumer, circuitContext: initialContext, consumerContractAddress }) => {
-    const installed = consumer.circuits.installSignerAuthorization(
+  return withCompiledConsumer(authorityAnchor, async ({ consumer, circuitContext: initialContext, consumerContractAddress }) => {
+    const installed = await consumer.circuits.installSignerAuthorization(
       initialContext, signed.descriptor, signed.proof,
     );
-    const circuitContext = createCircuitContext(
-      consumerContractAddress,
-      installed.context.currentZswapLocalState,
-      installed.context.currentQueryContext.state,
-      installed.context.currentPrivateState,
-    );
+    const circuitContext = createCircuitContext({
+      circuitId: "assertVerifierRequestAuthorized",
+      contractAddress: consumerContractAddress,
+      coinPublicKeyOrZswapState: installed.context.callContext.currentZswapLocalState,
+      contractState: installed.context.callContext.currentQueryContext.state,
+      privateState: installed.context.callContext.currentPrivateState,
+    });
     const requestScopeCommitment = vcScopeCommitmentFromRegistryScope(scope);
     const requestProof = methodProof(
       applicantVp.subjectAuthentication.secretScalar,
@@ -496,7 +500,7 @@ export async function verifyGovernedVerifierRequest(input) {
       2n,
       pureCircuits.verifierRequestProofChallenge,
     );
-    consumer.circuits.assertVerifierRequestAuthorized(
+    await consumer.circuits.assertVerifierRequestAuthorized(
       circuitContext, requestScopeCommitment, requestProof, signed.descriptor.authorizationId,
     );
     const changedProfiles = {
@@ -515,15 +519,15 @@ export async function verifyGovernedVerifierRequest(input) {
         2n,
         pureCircuits.verifierRequestProofChallenge,
       );
-      assert.throws(() => consumer.circuits.assertVerifierRequestAuthorized(
+      await assert.rejects(() => consumer.circuits.assertVerifierRequestAuthorized(
         circuitContext, changedCommitment, changedProof, signed.descriptor.authorizationId,
       ), /scope does not match request/u);
     }
-    assert.throws(() => consumer.circuits.assertVerifierRequestAuthorized(
+    await assert.rejects(() => consumer.circuits.assertVerifierRequestAuthorized(
       circuitContext, bytes32Commitment("wrong-verifier-request-profile"), requestProof,
       signed.descriptor.authorizationId,
     ));
-    assert.throws(() => consumer.circuits.assertVerifierRequestAuthorized(
+    await assert.rejects(() => consumer.circuits.assertVerifierRequestAuthorized(
       circuitContext, requestScopeCommitment,
       { ...requestProof, signature: { ...requestProof.signature, s: requestProof.signature.s + 1n } },
       signed.descriptor.authorizationId,

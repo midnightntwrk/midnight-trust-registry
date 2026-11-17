@@ -17,11 +17,11 @@ export async function runOtherGovernedProposals(matrix, {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ evidence }),
     }), 200);
-    const compactPrepared = target.prepare(evidence);
-    const signature = target.signEvidence(compactPrepared);
+    const compactPrepared = await target.prepare(evidence);
+    const signature = await target.signEvidence(compactPrepared);
     const body = {
       evidence, prepared,
-      signers: [sign(second, prepared), sign(third, prepared)],
+      signers: [await sign(second, prepared), await sign(third, prepared)],
       evidenceVerifierSignature: asHex(encodeJubjubSignature(signature)),
     };
     const submit = (payload) => fetch(`${endpoint}/submit`, {
@@ -37,78 +37,79 @@ export async function runOtherGovernedProposals(matrix, {
       invariant: `One maintainer cannot provide both signatures for a ${role} proposal quorum`,
       boundary: "api", status: 403, problemType: "invalid-governed-signature",
     });
-    const compactSigner = signCompact(second, compactPrepared);
-    const beforeCompactQuorumRejections = harness.simulator.getLedger().governanceActionCount;
-    matrix.expectThrown(() => target.execute(evidence, [compactSigner], signature), {
+    const compactSigner = await signCompact(second, compactPrepared);
+    const compactCoSigner = await signCompact(third, compactPrepared);
+    const beforeCompactQuorumRejections = (await harness.simulator.getLedger()).governanceActionCount;
+    await matrix.expectRejected(() => target.execute(evidence, [compactSigner], signature), {
       id: `compact-${role}-proposal-insufficient-quorum`,
       invariant: `Compact requires the active maintainer quorum for a ${role} proposal`,
       boundary: "compact", messagePattern: /Maintainer signer count must satisfy the action threshold/u,
       category: "proposal-quorum-rejected",
     });
-    matrix.expectThrown(() => target.execute(evidence, [compactSigner, compactSigner], signature), {
+    await matrix.expectRejected(() => target.execute(evidence, [compactSigner, compactSigner], signature), {
       id: `client-${role}-proposal-duplicate-signer`,
       invariant: `The canonical bundle builder rejects a repeated ${role} proposal signer before Compact execution`,
       boundary: "client", messagePattern: /Maintainer authorization bundle contains a duplicate key ID/u,
       category: "proposal-duplicate-signer-rejected",
     });
-    assert.equal(harness.simulator.getLedger().governanceActionCount, beforeCompactQuorumRejections);
+    assert.equal((await harness.simulator.getLedger()).governanceActionCount, beforeCompactQuorumRejections);
     if (role === "verifier" || role === "auditor") {
       const fixture = role === "verifier" ? verifier : auditor;
       const alteredEvidenceHash = Uint8Array.from(compactPrepared.evidenceHash);
       alteredEvidenceHash[0] ^= 1;
-      const beforeSubstitution = harness.simulator.getLedger().governanceActionCount;
+      const beforeSubstitution = (await harness.simulator.getLedger()).governanceActionCount;
       const alteredPrepared = withAlteredProposalEvidence(role, fixture, compactPrepared, alteredEvidenceHash);
-      const alteredVerifierSignature = target.signEvidence(alteredPrepared);
-      assertValidProposalVerifierSignature(role, alteredPrepared, alteredVerifierSignature);
-      assertFreshProposalCanExecute(role, fixture, alteredPrepared, alteredVerifierSignature);
-      matrix.expectThrown(() => submitRawProposal(
+      const alteredVerifierSignature = await target.signEvidence(alteredPrepared);
+      await assertValidProposalVerifierSignature(role, alteredPrepared, alteredVerifierSignature);
+      await assertFreshProposalCanExecute(role, fixture, alteredPrepared, alteredVerifierSignature);
+      await matrix.expectRejected(() => submitRawProposal(
         role, fixture, alteredPrepared, alteredVerifierSignature,
-        [compactSigner, signCompact(third, compactPrepared)],
+        [compactSigner, compactCoSigner],
       ), {
         id: `compact-${role}-proposal-altered-evidence-hash`,
         invariant: `A valid quorum cannot reuse its signed ${role} proposal with a substituted evidence commitment`,
         boundary: "compact", messagePattern: /Invalid Jubjub Schnorr signature/u,
         category: "proposal-evidence-substitution-rejected",
       });
-      assert.equal(harness.simulator.getLedger().governanceActionCount, beforeSubstitution);
+      assert.equal((await harness.simulator.getLedger()).governanceActionCount, beforeSubstitution);
       const changedScope = role === "verifier"
         ? { ...fixture, allowedAttributeSetCommitment: bytes32Commitment("verifier:substituted-attributes") }
         : { ...fixture, requestResourceIdCommitment: bytes32Commitment("auditor:substituted-request") };
       const changedPrepared = withAlteredProposalEvidence(
         role, changedScope, compactPrepared, compactPrepared.evidenceHash,
       );
-      const changedVerifierSignature = target.signEvidence(changedPrepared);
-      assertValidProposalVerifierSignature(role, changedPrepared, changedVerifierSignature);
-      assertFreshProposalCanExecute(role, changedScope, changedPrepared, changedVerifierSignature);
-      matrix.expectThrown(() => submitRawProposal(
+      const changedVerifierSignature = await target.signEvidence(changedPrepared);
+      await assertValidProposalVerifierSignature(role, changedPrepared, changedVerifierSignature);
+      await assertFreshProposalCanExecute(role, changedScope, changedPrepared, changedVerifierSignature);
+      await matrix.expectRejected(() => submitRawProposal(
         role, changedScope, changedPrepared, changedVerifierSignature,
-        [compactSigner, signCompact(third, compactPrepared)],
+        [compactSigner, compactCoSigner],
       ), {
         id: `compact-${role}-proposal-scope-substitution`,
         invariant: `A ${role} proposal quorum cannot be reused for a changed request scope`,
         boundary: "compact", messagePattern: /Invalid Jubjub Schnorr signature/u,
         category: "proposal-scope-substitution-rejected",
       });
-      assert.equal(harness.simulator.getLedger().governanceActionCount, beforeSubstitution);
+      assert.equal((await harness.simulator.getLedger()).governanceActionCount, beforeSubstitution);
     }
     if (role === "maintainer") {
       const alteredEvidenceHash = Uint8Array.from(compactPrepared.evidenceHash);
       alteredEvidenceHash[0] ^= 1;
-      const beforeSubstitution = harness.simulator.getLedger().governanceActionCount;
+      const beforeSubstitution = (await harness.simulator.getLedger()).governanceActionCount;
       const alteredPrepared = withAlteredProposalEvidence(role, candidate, compactPrepared, alteredEvidenceHash);
-      const alteredVerifierSignature = target.signEvidence(alteredPrepared);
-      assertValidProposalVerifierSignature(role, alteredPrepared, alteredVerifierSignature);
-      assertFreshProposalCanExecute(role, candidate, alteredPrepared, alteredVerifierSignature);
-      matrix.expectThrown(() => submitRawProposal(
+      const alteredVerifierSignature = await target.signEvidence(alteredPrepared);
+      await assertValidProposalVerifierSignature(role, alteredPrepared, alteredVerifierSignature);
+      await assertFreshProposalCanExecute(role, candidate, alteredPrepared, alteredVerifierSignature);
+      await matrix.expectRejected(() => submitRawProposal(
         role, candidate, alteredPrepared, alteredVerifierSignature,
-        [compactSigner, signCompact(third, compactPrepared)],
+        [compactSigner, compactCoSigner],
       ), {
         id: "compact-maintainer-proposal-altered-evidence-hash",
         invariant: "A valid quorum cannot reuse its signed maintainer proposal with a substituted evidence commitment",
         boundary: "compact", messagePattern: /Invalid Jubjub Schnorr signature/u,
         category: "proposal-evidence-substitution-rejected",
       });
-      assert.equal(harness.simulator.getLedger().governanceActionCount, beforeSubstitution);
+      assert.equal((await harness.simulator.getLedger()).governanceActionCount, beforeSubstitution);
     }
     assert.equal((await submit(body)).status, 202);
     const accepted = await expectHttp(await fetch(`${endpoint}/resolve`, {

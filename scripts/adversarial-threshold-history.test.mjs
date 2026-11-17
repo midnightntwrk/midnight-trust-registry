@@ -15,21 +15,21 @@ const startThresholdHistory = async (context, label) => {
   const harness = new LocalTrustRegistryIntegrationHarness(label);
   const auditor = createAuditorScenarioFixture(`${label}-auditor`);
   const recognition = createRecognitionScenarioFixture(`${label}-recognition`);
-  harness.authorizeAuditor(auditor);
-  harness.authorizeRecognition(recognition);
-  const oldAuditor = harness.evaluateCurrentAuditorDecision(auditor);
-  const oldRecognition = harness.evaluateCurrentRecognitionDecision(recognition);
+  await harness.authorizeAuditor(auditor);
+  await harness.authorizeRecognition(recognition);
+  const oldAuditor = await harness.evaluateCurrentAuditorDecision(auditor);
+  const oldRecognition = await harness.evaluateCurrentRecognitionDecision(recognition);
   const fixtures = { label, auditors: [{ fixture: auditor, label: "auditor" }],
     recognitions: [{ fixture: recognition, label: "recognition" }] };
-  const oldSnapshot = publishSimulatorSnapshot(harness, fixtures);
+  const oldSnapshot = await publishSimulatorSnapshot(harness, fixtures);
   const second = createMaintainerScenarioFixture(`${label}-second`);
   const third = createMaintainerScenarioFixture(`${label}-third`);
-  harness.authorizeMaintainer(second);
-  harness.authorizeMaintainer(third);
-  harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
-  harness.revokeAuditor(auditor, [second]);
-  harness.revokeRecognition(recognition, [second]);
-  const snapshot = publishSimulatorSnapshot(harness, fixtures, oldSnapshot);
+  await harness.authorizeMaintainer(second);
+  await harness.authorizeMaintainer(third);
+  await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+  await harness.revokeAuditor(auditor, [second]);
+  await harness.revokeRecognition(recognition, [second]);
+  const snapshot = await publishSimulatorSnapshot(harness, fixtures, oldSnapshot);
   const server = createTrustRegistryApiServer({
     source: { mode: "memory", loadSnapshot: async () => snapshot },
   });
@@ -71,14 +71,14 @@ const startThresholdHistory = async (context, label) => {
 test("auditor-history-survives-threshold-change", async (context) => {
   const { harness, oldAuditor } = await startThresholdHistory(context, "isolated-auditor-threshold-client");
   assert.notEqual(oldAuditor.policy.version, harness.policyRecord.version);
-  assert.ok(new TrustRegistrySimulatorClient(harness.simulator)
+  assert.ok(await new TrustRegistrySimulatorClient(harness.simulator)
     .verifyAuditorAuthorizationBundle(oldAuditor, {}));
 });
 
 test("recognition-history-survives-threshold-change", async (context) => {
   const { harness, oldRecognition } = await startThresholdHistory(context, "isolated-recognition-threshold-client");
   assert.notEqual(oldRecognition.policy.version, harness.policyRecord.version);
-  assert.ok(new TrustRegistrySimulatorClient(harness.simulator)
+  assert.ok(await new TrustRegistrySimulatorClient(harness.simulator)
     .verifyRecognitionBundle(oldRecognition, {}));
 });
 
@@ -86,8 +86,8 @@ test("auditor-uncommitted-policy-version", async (context) => {
   const { harness, oldAuditor } =
     await startThresholdHistory(context, "isolated-auditor-uncommitted-policy");
   const client = new TrustRegistrySimulatorClient(harness.simulator);
-  assert.ok(client.verifyAuditorAuthorizationBundle(oldAuditor, {}));
-  assert.throws(() => client.verifyAuditorAuthorizationBundle(
+  assert.ok(await client.verifyAuditorAuthorizationBundle(oldAuditor, {}));
+  await assert.rejects(() => client.verifyAuditorAuthorizationBundle(
     { ...oldAuditor, policy: { ...oldAuditor.policy, version: "v9" } }, {},
   ), /not committed to the ledger/iu);
 });
@@ -96,8 +96,8 @@ test("recognition-uncommitted-policy-version", async (context) => {
   const { harness, oldRecognition } =
     await startThresholdHistory(context, "isolated-recognition-uncommitted-policy");
   const client = new TrustRegistrySimulatorClient(harness.simulator);
-  assert.ok(client.verifyRecognitionBundle(oldRecognition, {}));
-  assert.throws(() => client.verifyRecognitionBundle(
+  assert.ok(await client.verifyRecognitionBundle(oldRecognition, {}));
+  await assert.rejects(() => client.verifyRecognitionBundle(
     { ...oldRecognition, policy: { ...oldRecognition.policy, version: "v9" } }, {},
   ), /not committed to the ledger/iu);
 });

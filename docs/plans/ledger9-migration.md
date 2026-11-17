@@ -255,11 +255,15 @@ role lifecycle cases, and governed API/signature cases. The denial helper
 covers live-scope reuse, archive quorum, and archived-proposal trust rejection.
 These are source and simulator evidence only. An isolated policy-replay matrix
 now awaits and verifies its old-policy rejection, historical evidence, and
-revised-policy role cases. The full governed-demo check still stops later in
-the main script's synchronous applicant/proposal flow. Proof-artifact checks
-and deployed Ledger 9 actor journeys
-require separate validation; no failed case was skipped or reclassified as a
-pass.
+revised-policy role cases. The full governed demo now passes with awaited
+proposal, membership, VC consumer, temporal, and policy-recovery operations.
+The strict adversarial parity check reports 198 demo cases, 198 isolated
+cases, and no missing cases or issues. Its seven threshold-history failures
+were traced to an isolated fixture that read asynchronous Ledger 9 state
+before setup completed; all seven pass after awaiting the fixture and client
+checks. `pnpm ci:lint` also passes at this local tree. These remain simulator
+and source checks, not proof-artifact, finalized deployment, or actor-journey
+evidence. No failed case was skipped or reclassified as a pass.
 
 ## Execution order
 

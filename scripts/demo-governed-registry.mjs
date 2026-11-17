@@ -86,9 +86,9 @@ import { TrustRegistryTrqpAdapter } from "../adapters/trqp/dist/index.js";
 const asHex = (value) => `0x${Buffer.from(value).toString("hex")}`;
 const fromHex = (value) => Buffer.from(value.slice(2), "hex");
 const changeLastHexNibble = (value) => `${value.slice(0, -1)}${value.endsWith("0") ? "1" : "0"}`;
-const sign = (maintainer, prepared, sourceHarness = harness) => {
+const sign = async (maintainer, prepared, sourceHarness = harness) => {
   const publicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
-  const ledger = sourceHarness.simulator.getLedger();
+  const ledger = await sourceHarness.simulator.getLedger();
   const signature = signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
     ledger.registryId,
@@ -332,12 +332,12 @@ const fixtures = {
   recognitions: [{ label: "recognition", fixture: recognition }],
 };
 const projectedRoles = new Set();
-let snapshot = publishSimulatorSnapshot(harness, {
+let snapshot = await publishSimulatorSnapshot(harness, {
   label: fixtures.label,
   recognitions: fixtures.recognitions,
 });
-const publishCurrentSnapshot = () => {
-  snapshot = publishSimulatorSnapshot(harness, {
+const publishCurrentSnapshot = async () => {
+  snapshot = await publishSimulatorSnapshot(harness, {
     label: fixtures.label,
     issuers: projectedRoles.has("issuer") ? fixtures.issuers : [],
     verifiers: projectedRoles.has("verifier") ? fixtures.verifiers : [],
@@ -512,21 +512,21 @@ const submitRawProposal = (role, fixture, prepared, verifierSignature, signers) 
     ...verifier,
   );
 };
-const assertFreshProposalCanExecute = (role, fixture, prepared, verifierSignature) => {
+const assertFreshProposalCanExecute = async (role, fixture, prepared, verifierSignature) => {
   const originalContext = harness.simulator.circuitContext;
-  const originalCount = harness.simulator.getLedger().governanceActionCount;
+  const originalCount = (await harness.simulator.getLedger()).governanceActionCount;
   try {
-    submitRawProposal(role, fixture, prepared, verifierSignature, [
-      signCompact(second, prepared), signCompact(third, prepared),
+    await submitRawProposal(role, fixture, prepared, verifierSignature, [
+      await signCompact(second, prepared), await signCompact(third, prepared),
     ]);
-    assert.equal(harness.simulator.getLedger().governanceActionCount, originalCount + 1n);
+    assert.equal((await harness.simulator.getLedger()).governanceActionCount, originalCount + 1n);
   } finally {
     harness.simulator.circuitContext = originalContext;
   }
-  assert.equal(harness.simulator.getLedger().governanceActionCount, originalCount);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, originalCount);
 };
-const assertValidProposalVerifierSignature = (role, prepared, signature) => {
-  const verifierKey = harness.simulator.getEvidenceVerifierKey(prepared.evidenceVerifierAuthorizationId);
+const assertValidProposalVerifierSignature = async (role, prepared, signature) => {
+  const verifierKey = await harness.simulator.getEvidenceVerifierKey(prepared.evidenceVerifierAuthorizationId);
   const verify = {
     issuer: verifyIssuerProposalEvidenceSignature,
     verifier: verifyVerifierProposalEvidenceSignature,
@@ -544,7 +544,7 @@ const proposalPort = (role, target) => ({
   async prepare(id, evidence) {
     if (id !== target.id) throw new target.rejected(target.missing);
     try {
-      return target.prepare(evidence);
+      return await target.prepare(evidence);
     } catch {
       throw new target.rejected("invalid-evidence");
     }
@@ -553,17 +553,17 @@ const proposalPort = (role, target) => ({
     if (id !== target.id) throw new target.rejected(target.missing);
     let eventHash;
     try {
-      eventHash = target.execute(evidence, signers, verifierSignature);
+      eventHash = await target.execute(evidence, signers, verifierSignature);
     } catch {
       throw new target.rejected("invalid-signers");
     }
     projectedRoles.add(role);
-    publishCurrentSnapshot();
+    await publishCurrentSnapshot();
     return { eventHash: asHex(eventHash) };
   },
   async resolve(id) {
     if (id !== target.id) throw new target.rejected(target.missing);
-    const record = target.resolve();
+    const record = await target.resolve();
     return {
       eventHash: asHex(record.proposalGovernanceEventHash),
       evidenceCommitment: asHex(record.evidenceCommitment),
@@ -647,7 +647,7 @@ const server = createTrustRegistryApiServer({
         throw new GovernedIssuerProposalRejectedError("unknown-authorization");
       }
       try {
-        return harness.prepareIssuerProposalAction(
+        return await harness.prepareIssuerProposalAction(
           issuer, evidence, expectedEvidenceByRole.get("issuer"),
         );
       } catch {
@@ -660,21 +660,21 @@ const server = createTrustRegistryApiServer({
       }
       let eventHash;
       try {
-        eventHash = harness.executeIssuerProposalWithSignatures(
+        eventHash = await harness.executeIssuerProposalWithSignatures(
           issuer, evidence, signers, verifierSignature, expectedEvidenceByRole.get("issuer"),
         );
       } catch {
         throw new GovernedIssuerProposalRejectedError("invalid-signers");
       }
       projectedRoles.add("issuer");
-      publishCurrentSnapshot();
+      await publishCurrentSnapshot();
       return { eventHash: asHex(eventHash) };
     },
     async resolve(authorizationId) {
       if (authorizationId !== issuer.authorizationId) {
         throw new GovernedIssuerProposalRejectedError("unknown-authorization");
       }
-      const record = harness.simulator.getIssuerProposalEvidence(issuer.authorizationIdCommitment);
+      const record = await harness.simulator.getIssuerProposalEvidence(issuer.authorizationIdCommitment);
       return {
         eventHash: asHex(record.proposalGovernanceEventHash),
         evidenceCommitment: asHex(record.evidenceCommitment),
@@ -692,11 +692,11 @@ const server = createTrustRegistryApiServer({
       const target = findTarget(role, authorizationId);
       let eventHash;
       try {
-        eventHash = target.execute(action, signers);
+        eventHash = await target.execute(action, signers);
       } catch {
         throw new GovernedMembershipActionRejectedError("invalid-signers");
       }
-      snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
+      snapshot = await publishSimulatorSnapshot(harness, fixtures, snapshot);
       return { eventHash: asHex(eventHash) };
     },
   },
@@ -706,7 +706,7 @@ const server = createTrustRegistryApiServer({
         throw new GovernedPolicyActionRejectedError();
       }
       try {
-        return harness.prepareAtomicMaintainerRecoveryAction(
+        return await harness.prepareAtomicMaintainerRecoveryAction(
           candidate, fromHex(evidenceHash), BigInt(value.default), BigInt(value.emergency), BigInt(value.archival),
         );
       } catch (error) {
@@ -721,7 +721,7 @@ const server = createTrustRegistryApiServer({
         throw new GovernedPolicyActionRejectedError();
       }
       try {
-        const eventHash = harness.executeAtomicMaintainerRecoveryWithSignatures(
+        const eventHash = await harness.executeAtomicMaintainerRecoveryWithSignatures(
           candidate, fromHex(evidenceHash), BigInt(value.default), BigInt(value.emergency), BigInt(value.archival), signers,
         );
         return { eventHash: asHex(eventHash) };
@@ -731,7 +731,7 @@ const server = createTrustRegistryApiServer({
     },
     async prepareThresholds(value) {
       try {
-        return harness.prepareThresholdPolicyRevisionAction(
+        return await harness.prepareThresholdPolicyRevisionAction(
           BigInt(value.default), BigInt(value.emergency), BigInt(value.archival),
         );
       } catch (error) {
@@ -741,7 +741,7 @@ const server = createTrustRegistryApiServer({
     },
     async executeThresholds(value, signers) {
       try {
-        const eventHash = harness.executeThresholdPolicyRevisionWithSignatures(
+        const eventHash = await harness.executeThresholdPolicyRevisionWithSignatures(
           BigInt(value.default), BigInt(value.emergency), BigInt(value.archival), signers,
         );
         return { eventHash: asHex(eventHash) };
@@ -750,12 +750,12 @@ const server = createTrustRegistryApiServer({
       }
     },
     async prepareEvidenceVerifier() {
-      return harness.prepareEvidenceVerifierRegistrationAction();
+      return await harness.prepareEvidenceVerifierRegistrationAction();
     },
     async executeEvidenceVerifier(signers) {
       try {
-        const eventHash = harness.executeEvidenceVerifierRegistrationWithSignatures(signers);
-        publishCurrentSnapshot();
+        const eventHash = await harness.executeEvidenceVerifierRegistrationWithSignatures(signers);
+        await publishCurrentSnapshot();
         return { eventHash: asHex(eventHash) };
       } catch {
         throw new GovernedPolicyActionRejectedError();
@@ -941,7 +941,7 @@ try {
     status: 403,
     problemType: "unadmitted-proposal",
   });
-  adversarialMatrix.expectThrown(() => harness.prepareIssuerProposalAction(
+  await adversarialMatrix.expectRejected(() => harness.prepareIssuerProposalAction(
     issuer, alteredIssuerEvidence, expectedIssuerEvidence,
   ), {
     id: "issuer-altered-evidence-commitment-integration-preflight",
@@ -965,12 +965,12 @@ try {
     commitment: expiredCommitment,
     signature: harness.signApplicationEvidenceCommitment(expiredCommitment),
   };
-  assert.equal(harness.verifyApplicationEvidenceSignature(
+  assert.equal(await harness.verifyApplicationEvidenceSignature(
     expiredCommitment, expiredIssuerEvidence.signature, harness.evidenceVerifier,
   ), true);
   assert.ok(Date.parse(issuerEvidence.envelope.expiresAt) > Date.parse(expiredEnvelope.expiresAt) + 1000);
   harness.advanceEvidenceTimeBy(1000);
-  adversarialMatrix.expectThrown(() => harness.prepareIssuerProposalAction(
+  await adversarialMatrix.expectRejected(() => harness.prepareIssuerProposalAction(
     issuer, expiredIssuerEvidence, expectedIssuerEvidence,
   ), {
     id: "issuer-expired-evidence-api-preflight",
@@ -1018,10 +1018,10 @@ try {
         commitment,
         signature: harness.signApplicationEvidenceCommitment(commitment),
       };
-      assert.equal(harness.verifyApplicationEvidenceSignature(
+      assert.equal(await harness.verifyApplicationEvidenceSignature(
         commitment, shortLivedEvidence.signature, harness.evidenceVerifier,
       ), true);
-      adversarialMatrix.expectThrown(() => target.prepare(shortLivedEvidence), {
+      await adversarialMatrix.expectRejected(() => target.prepare(shortLivedEvidence), {
         id: `${spec.role}-expired-evidence-api-preflight`,
         invariant: `Accepted signed evidence cannot authorize a ${spec.role} proposal after expiry`,
         boundary: "integration",
@@ -1086,13 +1086,13 @@ try {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ evidence: issuerEvidence }),
   }), 200);
-  const verifierSignature = harness.signIssuerProposalEvidence(
-    harness.prepareIssuerProposalAction(issuer, issuerEvidence, expectedIssuerEvidence),
+  const verifierSignature = await harness.signIssuerProposalEvidence(
+    await harness.prepareIssuerProposalAction(issuer, issuerEvidence, expectedIssuerEvidence),
   );
   const proposalBody = {
     evidence: issuerEvidence,
     prepared: proposalPrepared,
-    signers: [sign(second, proposalPrepared), sign(third, proposalPrepared)],
+    signers: [await sign(second, proposalPrepared), await sign(third, proposalPrepared)],
     evidenceVerifierSignature: asHex(encodeJubjubSignature(verifierSignature)),
   };
   const wrongVerifierSignature = signIssuerProposalEvidenceFromSeed(
@@ -1121,21 +1121,21 @@ try {
     status: 403,
     problemType: "governed-proposal-rejected",
   });
-  const compactIssuerProposal = harness.prepareIssuerProposalAction(
+  const compactIssuerProposal = await harness.prepareIssuerProposalAction(
     issuer, issuerEvidence, expectedIssuerEvidence,
   );
-  const actionCountBeforeWrongVerifier = harness.simulator.getLedger().governanceActionCount;
+  const actionCountBeforeWrongVerifier = (await harness.simulator.getLedger()).governanceActionCount;
   const alteredProposalEvidenceHash = Uint8Array.from(compactIssuerProposal.evidenceHash);
   alteredProposalEvidenceHash[0] ^= 1;
   const alteredIssuerProposal = withAlteredProposalEvidence(
     "issuer", issuer, compactIssuerProposal, alteredProposalEvidenceHash,
   );
-  const alteredIssuerVerifierSignature = harness.signIssuerProposalEvidence(alteredIssuerProposal);
-  assertValidProposalVerifierSignature("issuer", alteredIssuerProposal, alteredIssuerVerifierSignature);
-  const proposalPrimary = signCompact(second, compactIssuerProposal);
-  const proposalCoSigner = signCompact(third, compactIssuerProposal);
-  assertFreshProposalCanExecute("issuer", issuer, alteredIssuerProposal, alteredIssuerVerifierSignature);
-  adversarialMatrix.expectThrown(() => submitRawProposal(
+  const alteredIssuerVerifierSignature = await harness.signIssuerProposalEvidence(alteredIssuerProposal);
+  await assertValidProposalVerifierSignature("issuer", alteredIssuerProposal, alteredIssuerVerifierSignature);
+  const proposalPrimary = await signCompact(second, compactIssuerProposal);
+  const proposalCoSigner = await signCompact(third, compactIssuerProposal);
+  await assertFreshProposalCanExecute("issuer", issuer, alteredIssuerProposal, alteredIssuerVerifierSignature);
+  await adversarialMatrix.expectRejected(() => submitRawProposal(
     "issuer", issuer, alteredIssuerProposal, alteredIssuerVerifierSignature,
     [proposalPrimary, proposalCoSigner],
   ), {
@@ -1145,18 +1145,18 @@ try {
     messagePattern: /Invalid Jubjub Schnorr signature/u,
     category: "proposal-evidence-substitution-rejected",
   });
-  assert.equal(harness.simulator.getLedger().governanceActionCount, actionCountBeforeWrongVerifier);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, actionCountBeforeWrongVerifier);
   const changedIssuerScope = {
     ...issuer, resourceIdCommitment: bytes32Commitment("credential-family:substituted:v1"),
   };
   const changedIssuerPrepared = withAlteredProposalEvidence(
     "issuer", changedIssuerScope, compactIssuerProposal, compactIssuerProposal.evidenceHash,
   );
-  const changedIssuerVerifierSignature = harness.signIssuerProposalEvidence(changedIssuerPrepared);
-  assertValidProposalVerifierSignature("issuer", changedIssuerPrepared, changedIssuerVerifierSignature);
-  assertFreshProposalCanExecute("issuer", changedIssuerScope, changedIssuerPrepared,
+  const changedIssuerVerifierSignature = await harness.signIssuerProposalEvidence(changedIssuerPrepared);
+  await assertValidProposalVerifierSignature("issuer", changedIssuerPrepared, changedIssuerVerifierSignature);
+  await assertFreshProposalCanExecute("issuer", changedIssuerScope, changedIssuerPrepared,
     changedIssuerVerifierSignature);
-  adversarialMatrix.expectThrown(() => submitRawProposal(
+  await adversarialMatrix.expectRejected(() => submitRawProposal(
     "issuer", changedIssuerScope, changedIssuerPrepared, changedIssuerVerifierSignature,
     [proposalPrimary, proposalCoSigner],
   ), {
@@ -1165,8 +1165,8 @@ try {
     boundary: "compact", messagePattern: /Invalid Jubjub Schnorr signature/u,
     category: "proposal-scope-substitution-rejected",
   });
-  assert.equal(harness.simulator.getLedger().governanceActionCount, actionCountBeforeWrongVerifier);
-  adversarialMatrix.expectThrown(() => harness.executeIssuerProposalWithSignatures(
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, actionCountBeforeWrongVerifier);
+  await adversarialMatrix.expectRejected(() => harness.executeIssuerProposalWithSignatures(
     issuer, issuerEvidence, [proposalPrimary], verifierSignature, expectedIssuerEvidence,
   ), {
     id: "compact-issuer-proposal-insufficient-quorum",
@@ -1175,7 +1175,7 @@ try {
     messagePattern: /Maintainer signer count must satisfy the action threshold/u,
     category: "proposal-quorum-rejected",
   });
-  adversarialMatrix.expectThrown(() => harness.executeIssuerProposalWithSignatures(
+  await adversarialMatrix.expectRejected(() => harness.executeIssuerProposalWithSignatures(
     issuer, issuerEvidence, [proposalPrimary, proposalPrimary], verifierSignature, expectedIssuerEvidence,
   ), {
     id: "client-issuer-proposal-duplicate-signer",
@@ -1184,8 +1184,8 @@ try {
     messagePattern: /Maintainer authorization bundle contains a duplicate key ID/u,
     category: "proposal-duplicate-signer-rejected",
   });
-  assert.equal(harness.simulator.getLedger().governanceActionCount, actionCountBeforeWrongVerifier);
-  adversarialMatrix.expectThrown(() => harness.executeIssuerProposalWithSignatures(
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, actionCountBeforeWrongVerifier);
+  await adversarialMatrix.expectRejected(() => harness.executeIssuerProposalWithSignatures(
     issuer,
     issuerEvidence,
     [proposalPrimary, proposalCoSigner],
@@ -1198,7 +1198,7 @@ try {
     messagePattern: /signature|verifier|assert|authorized/iu,
     category: "unauthorized-verifier-rejected",
   });
-  assert.equal(harness.simulator.getLedger().governanceActionCount, actionCountBeforeWrongVerifier);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, actionCountBeforeWrongVerifier);
   await adversarialMatrix.expectHttp(
     await submitProposal({ ...proposalBody, signers: proposalBody.signers.slice(0, 1) }),
     {
@@ -1226,14 +1226,17 @@ try {
   }), 200);
   assert.equal(issuerProposal.state, "observed");
   await expectHttp(await submitProposal(proposalBody), 409);
-  assert.equal(harness.simulator.getLedger().issuerAuthorizationCount, 1n);
-  const compactApproval = harness.prepareIssuerDecisionAction(issuer, "approve");
-  const compactSigner = signCompact(second, compactApproval);
-  const compactCoSigner = signCompact(third, compactApproval);
-  const governanceActionsBeforeRejections = harness.simulator.getLedger().governanceActionCount;
+  assert.equal((await harness.simulator.getLedger()).issuerAuthorizationCount, 1n);
+  const compactApproval = await harness.prepareIssuerDecisionAction(issuer, "approve");
+  const compactSigner = await signCompact(second, compactApproval);
+  const compactCoSigner = await signCompact(third, compactApproval);
+  const outsiderSigner = await signCompact(
+    createMaintainerScenarioFixture("governed-demo-outsider"), compactApproval,
+  );
+  const governanceActionsBeforeRejections = (await harness.simulator.getLedger()).governanceActionCount;
   const alteredEvidenceHash = Uint8Array.from(compactApproval.evidenceHash);
   alteredEvidenceHash[0] ^= 1;
-  adversarialMatrix.expectThrown(() => harness.simulator.authorizeIssuerAuthorization(
+  await adversarialMatrix.expectRejected(() => harness.simulator.authorizeIssuerAuthorization(
     compactSigner.keyId,
     compactSigner.publicKey,
     compactSigner.signature,
@@ -1247,7 +1250,7 @@ try {
     messagePattern: /evidence|match/iu,
     category: "evidence-hash-mismatch",
   });
-  adversarialMatrix.expectThrown(() => harness.executeIssuerDecisionWithSignatures(
+  await adversarialMatrix.expectRejected(() => harness.executeIssuerDecisionWithSignatures(
     issuer, "approve", [compactSigner],
   ), {
     id: "compact-issuer-insufficient-quorum",
@@ -1256,7 +1259,7 @@ try {
     messagePattern: /quorum|threshold|assert|signature|maintainer/iu,
     category: "quorum-rejected",
   });
-  adversarialMatrix.expectThrown(() => harness.executeIssuerDecisionWithSignatures(
+  await adversarialMatrix.expectRejected(() => harness.executeIssuerDecisionWithSignatures(
     issuer, "approve", [compactSigner, compactSigner],
   ), {
     id: "client-issuer-duplicate-signer",
@@ -1265,10 +1268,8 @@ try {
     messagePattern: /Maintainer authorization bundle contains a duplicate key ID/u,
     category: "duplicate-signer-rejected",
   });
-  adversarialMatrix.expectThrown(() => harness.executeIssuerDecisionWithSignatures(
-    issuer, "approve", [compactSigner, signCompact(
-      createMaintainerScenarioFixture("governed-demo-outsider"), compactApproval,
-    )],
+  await adversarialMatrix.expectRejected(() => harness.executeIssuerDecisionWithSignatures(
+    issuer, "approve", [compactSigner, outsiderSigner],
   ), {
     id: "compact-issuer-unknown-signer",
     invariant: "An unregistered JubJub key cannot substitute for an active maintainer",
@@ -1276,7 +1277,7 @@ try {
     messagePattern: /assert|signature|maintainer|authorized|registered/iu,
     category: "unknown-signer-rejected",
   });
-  assert.equal(harness.simulator.getLedger().governanceActionCount, governanceActionsBeforeRejections);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, governanceActionsBeforeRejections);
   const otherProposals = await runOtherGovernedProposals(adversarialMatrix, {
     proposalTargets, base, harness, second, third, verifier, auditor, candidate,
     sign, signCompact, withAlteredProposalEvidence, assertValidProposalVerifierSignature,
@@ -1295,7 +1296,7 @@ try {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ prepared: preparedAction, signers }),
       });
-      const signers = [sign(second, prepared), sign(third, prepared)];
+      const signers = [await sign(second, prepared), await sign(third, prepared)];
       await adversarialMatrix.expectHttp(await submit(prepared, signers.slice(0, 1)), {
         id: `${role}-${action}-insufficient-quorum`,
         invariant: "Governed membership transition requires the active maintainer quorum",
@@ -1311,7 +1312,7 @@ try {
         problemType: "invalid-governed-signature",
       });
       if (role === "maintainer") {
-        await adversarialMatrix.expectHttp(await submit(prepared, [signers[0], sign(candidate, prepared)]), {
+        await adversarialMatrix.expectHttp(await submit(prepared, [signers[0], await sign(candidate, prepared)]), {
           id: `maintainer-${action}-candidate-self-vote`,
           invariant: "A candidate maintainer cannot approve its own membership",
           boundary: "api",
@@ -1345,25 +1346,25 @@ try {
     if (role === "recognition") {
       assert.equal(bundle.recognition.status, "active");
       assert.equal(bundle.authorization, undefined);
-      client.verifyRecognitionBundle(bundle, {});
-      assert.throws(() => client.verifyIssuerAuthorizationBundle(bundle, {}),
+      await client.verifyRecognitionBundle(bundle, {});
+      await assert.rejects(() => client.verifyIssuerAuthorizationBundle(bundle, {}),
         /does not contain issuer authorization/u);
-      assert.throws(() => client.getCurrentMaintainerMembership(recognition.recognizedAuthorityDid),
+      await assert.rejects(() => client.getCurrentMaintainerMembership(recognition.recognizedAuthorityDid),
         /not registered/u);
     } else {
       assert.equal(bundle.authorization.status, "active");
-      if (role === "issuer") client.verifyIssuerAuthorizationBundle(bundle, {});
-      if (role === "verifier") client.verifyVerifierAuthorizationBundle(bundle, {});
+      if (role === "issuer") await client.verifyIssuerAuthorizationBundle(bundle, {});
+      if (role === "verifier") await client.verifyVerifierAuthorizationBundle(bundle, {});
       if (role === "auditor") {
-        client.verifyAuditorAuthorizationBundle(bundle, {});
+        await client.verifyAuditorAuthorizationBundle(bundle, {});
         const scope = createAuditorAuthorizationScopeFixture(auditor);
         const options = {
           expectedRegistryId: harness.registryId,
           expectedSubjectDid: auditor.subjectDid,
           evaluationTime: bundle.generatedAt,
         };
-        auditorMandate = client.verifyAuditorRequestMandate(bundle, scope, options);
-        assert.throws(() => client.verifyAuditorRequestMandate(
+        auditorMandate = await client.verifyAuditorRequestMandate(bundle, scope, options);
+        await assert.rejects(() => client.verifyAuditorRequestMandate(
           bundle, { ...scope, purpose: "unapproved-audit-purpose" }, options,
         ), /resource mismatch/u);
       }
@@ -1379,7 +1380,7 @@ try {
       observedResult: role === "recognition" ? bundle.recognition.status : bundle.authorization.status,
     });
   }
-  const maintainerRecord = harness.simulator.getCurrentMaintainerMembership(candidate.subjectDidCommitment);
+  const maintainerRecord = await harness.simulator.getCurrentMaintainerMembership(candidate.subjectDidCommitment);
   assert.equal(maintainerRecord.status, AuthorizationStatus.active);
   assert.ok(maintainerObservationEpochId);
   assert.ok(snapshot.epochs.some((epoch) => epoch.epochId === maintainerObservationEpochId));
@@ -1505,7 +1506,7 @@ try {
     status: 404,
     problemType: "not-found",
   });
-  adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
+  await adversarialMatrix.expectRejected(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
     expectedRegistryId: "registry:wrong",
   }), {
     id: "issuer-wrong-registry",
@@ -1515,7 +1516,7 @@ try {
     category: "registry-mismatch",
   });
   const afterEpochExpiry = new Date(Date.parse(issuerBundle.epoch.validUntil) + 1).toISOString();
-  adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
+  await adversarialMatrix.expectRejected(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
     expectedRegistryId: harness.registryId,
     evaluationTime: afterEpochExpiry,
   }), {
@@ -1528,7 +1529,7 @@ try {
 
   const issuerTemporal = await runIssuerTemporalLifecycle(adversarialMatrix, {
     base, harness, issuer, candidate, client, issuerVpFixture,
-    publishSnapshot: () => { snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot); },
+    publishSnapshot: async () => { snapshot = await publishSimulatorSnapshot(harness, fixtures, snapshot); },
     vcAuthorityAnchor, vcAuthoritySeed, vcAuthorityKeyIdCommitment, vcConsumer,
     issuerBundle, activeAt, evaluateIssuerAt, queryTrqpIssuerAt, expectHttp,
   });
@@ -1540,7 +1541,7 @@ try {
     base, harness, verifier, auditor, recognition, client, expectHttp,
     trustedRecognitionEpoch, verifierVpFixture, vcAuthorityAnchor,
     vcAuthoritySeed, vcAuthorityKeyIdCommitment, verifierConsumer,
-    publishSnapshot: () => { snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot); },
+    publishSnapshot: async () => { snapshot = await publishSimulatorSnapshot(harness, fixtures, snapshot); },
   });
 
   const { policyVersionBeforeRevision, revisionReceipt, registrationReceipt, recoveryReceipt,
@@ -1582,7 +1583,7 @@ try {
       authorityDidStateVersionId: verifiedRecognition.authority.didStateVersionId,
       accreditorDidStateVersionId: verifiedRecognition.accreditation.accreditorDidStateVersionId,
       anchorCommitment: verifiedRecognition.accreditation.anchorCommitment,
-      governedPolicyCommitment: asHex(harness.simulator.getLedger().governancePolicyCommitment),
+      governedPolicyCommitment: asHex((await harness.simulator.getLedger()).governancePolicyCommitment),
       governedPolicyVersion: harness.policyRecord.version,
       statusDecisionCommitment: verifiedRecognition.accreditation.statusDecisionCommitment,
       oneUseChallengeConsumed: true,
@@ -1617,13 +1618,13 @@ try {
     candidateCoSignedProposalEventHash: asHex(candidateCoSignedProposal),
     maintainerLifecycle: {
       policyVersionBeforeRevision: policyVersionBeforeRevision.toString(),
-      policyVersionAfterRevision: harness.simulator.getLedger().governancePolicyVersion.toString(),
+      policyVersionAfterRevision: (await harness.simulator.getLedger()).governancePolicyVersion.toString(),
       thresholdRevisionEventHash: revisionReceipt.eventHash,
       atomicRecoveryEventHash: recoveryReceipt.eventHash,
       recoveryEvidenceVerifierRegistrationEventHash: recoveryRegistrationReceipt.eventHash,
       evidenceVerifierRegistrationEventHash: registrationReceipt.eventHash,
       suspendedMaintainerEventHash,
-      remainingActiveMaintainers: harness.simulator.getLedger().activeMaintainerCount.toString(),
+      remainingActiveMaintainers: (await harness.simulator.getLedger()).activeMaintainerCount.toString(),
       remainingQuorumEventHash: asHex(remainingQuorumEventHash),
     },
     expectedRejections: [
