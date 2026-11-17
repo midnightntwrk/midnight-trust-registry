@@ -35,6 +35,11 @@ not exercise a deployed Ledger 9 registry or a VP actor journey. At local head
 Vitest integration suite passes 52 files, 376 tests with two skipped. This is
 simulator/fixture validation, not a deployed or finalized end-to-end result.
 The two skipped cases remain unqualified.
+The client package also typechecks and its full Vitest suite passes eight files
+and 65 tests with asynchronous simulator reads and bundle verification. The
+contract package typecheck is still red: its large historical test file has
+hundreds of synchronous simulator callers. Passing client and integration
+packages does not qualify the contract package or a deployed Ledger 9 flow.
 
 The official [Ledger 9 upgrade guide](https://docs.midnight.network/relnotes/ledger-9)
 is the compatibility source. The
