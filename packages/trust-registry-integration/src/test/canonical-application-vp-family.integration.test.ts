@@ -15,6 +15,7 @@ import { verifyQualifiedApplicationVp } from "../application-vp-verifier.js";
 import { encodeApplicationVpProof } from "../application-vp-proof-json.js";
 import { applicationStatusAttestationDigest, createAttestedApplicationStatusSource } from "../application-status-attestation.js";
 import { createCanonicalApplicationVpFamilyAdapter, createGovernedCanonicalApplicationVpFamilyAdapter } from "../canonical-application-vp-family.js";
+import { createQualifiedApplicationVpIntakePorts } from "../vp-evidence-attestation.js";
 import {
   createApplicationVpScenarioFixture,
   VP_FIXTURE_TRUST_CONTEXT,
@@ -104,10 +105,50 @@ async function signedSubmission(credentialChanges: Record<string, unknown> = {})
     expectedPolicyId: "policy:vp:v1",
     expectedPolicyVersion: "v1",
   };
-  return { input, issuerEligibility, statusSource };
+  return { input, issuerEligibility, statusSource, signer: fixture.signer };
 }
 
 describe("canonical application VP family", () => {
+  it("plugs signed canonical bodies into the qualified intake and evidence ports", async () => {
+    const { input, signer } = await signedSubmission();
+    if (input.scope.role !== "issuer") throw new Error("Expected issuer scope");
+    const ports = await createQualifiedApplicationVpIntakePorts({
+      resolver: input.resolver,
+      family: input.family,
+      signer,
+      trustContext: input.trustContext,
+    });
+    const binding = {
+      registryId: input.trustContext.registryId,
+      applicationId: "application:issuer:canonical-vp",
+      subjectDid: input.expectedSubjectDid,
+      evidenceVerifierDid: signer.did,
+      role: "issuer" as const,
+      policyId: input.expectedPolicyId,
+      policyVersion: input.expectedPolicyVersion,
+      scope: input.scope,
+      scopeCommitment: computeAuthorizationScopeCommitment(input.scope),
+      governedResource: { type: "schema" as const, id: issuerGovernedResourceId(input.scope, "schema") },
+    };
+    const context = { nonce: input.nonce, binding, evaluatedAt: new Date(input.evaluatedAtMs).toISOString() };
+    const verified = await ports.verifyPresentation(input.submission, context);
+    expect(verified).toMatchObject({
+      subjectDid: input.expectedSubjectDid,
+      scopeCommitment: binding.scopeCommitment,
+    });
+    const commitment = sha256Hex("canonical-application-vp-intake-evidence");
+    const signature = await ports.signEvidence(commitment);
+    expect(ports.verifyEvidenceSignature(commitment, signature, {
+      did: signer.did,
+      keyIds: [signer.keyId],
+      algorithms: ["jubjub-schnorr"],
+    })).toBe(true);
+    await expect(ports.verifyPresentation(input.submission, {
+      ...context,
+      binding: { ...binding, registryId: "registry:other" },
+    })).rejects.toMatchObject({ category: "invalid_presentation" });
+  });
+
   it("verifies published VC proofs over exact canonical bodies and host trust context", async () => {
     const { input, issuerEligibility, statusSource } = await signedSubmission();
     await expect(verifyQualifiedApplicationVp(input)).resolves.toMatchObject({

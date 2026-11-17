@@ -619,6 +619,9 @@ evidence, and supply a live VC-owned
 status authority. The shared chain's zero published epochs currently prevent
 that governed issuer decision reader from accepting a live VP. Do not treat
 the adapter or its fixture tests as deployed actor evidence.
+The canonical body also passes the qualified API intake callback and produces
+a verifiable evidence signature in a local fixture test. This verifies the
+adapter-to-intake boundary, not a live API deployment or chain submission.
 
 ## Execution order
 
