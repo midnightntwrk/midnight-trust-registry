@@ -86,6 +86,11 @@ export async function loadOrCreateSmokeMaintenanceKey(directory) {
   return key;
 }
 
+export function smokeMaintenanceSigningKey(hex) {
+  if (!KEY.test(hex)) throw new Error("Smoke maintenance signing key is malformed");
+  return { tag: "schnorr", value: hex };
+}
+
 export async function connectSmokeWallet(logger, environment, built, withWallet = MidnightWalletProvider.withWallet) {
   return withWallet(logger, environment, built.wallet, built.seeds, built.keystore);
 }
@@ -163,6 +168,6 @@ export async function createLocalDeploymentMaterial(input, env = process.env) {
       maintainerPublicKey: deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(19)),
       maintainerThreshold: 1n,
     },
-    contractMaintenanceSigningKey: maintenanceKey,
+    contractMaintenanceSigningKey: smokeMaintenanceSigningKey(maintenanceKey),
   };
 }

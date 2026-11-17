@@ -247,9 +247,9 @@ Offline source validation at `e7e02633` now passes the repository lint gate,
 127 standalone-topology cases, 244 local-ledger preflight cases, and strict
 security-script typecheck. The standalone install policy is tested against
 the checked-in Ledger 9 Compose project name. The Ledger 9 development stack
-has a project-private host-access bridge for loopback forwarding; the stricter
-offline topology observer still rejects that extra attachment, rather than
-misreporting it as an internal-only runtime. These source checks do not prove
+has a project-private host-access bridge for loopback forwarding. The topology
+observer now verifies both named bridges and reports `internalNetworkOnly: false`;
+offline qualification still rejects that development topology. These source checks do not prove
 the currently unresponsive live stack or a deployed actor journey.
 The separate `test:demo-smoke-scripts` gate now passes 254/254 cases after
 migrating its historical adversarial and demo fixtures to awaited Ledger 9

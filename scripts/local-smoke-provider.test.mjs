@@ -8,9 +8,11 @@ import {
   connectSmokeWallet,
   localSmokeMidnightConfig,
   loadOrCreateSmokeMaintenanceKey,
+  smokeMaintenanceSigningKey,
   PUBLIC_LOCAL_SMOKE_SEED,
   validateLocalSmokeEnvironment,
 } from "./local-smoke-provider.mjs";
+import { signatureVerifyingKey } from "@midnight-ntwrk/compact-runtime";
 
 test("Ledger 9 smoke provider passes WalletSeeds to testkit-js v5", async () => {
   const logger = { marker: "logger" };
@@ -26,6 +28,13 @@ test("Ledger 9 smoke provider passes WalletSeeds to testkit-js v5", async () => 
 
 test("Ledger 9 smoke provider pins the local network and transaction TTL", () => {
   assert.deepEqual(localSmokeMidnightConfig(network), { networkId: "undeployed", ttlSeconds: 3600 });
+});
+
+test("Ledger 9 smoke maintenance key uses the tagged Compact signing-key shape", () => {
+  const key = smokeMaintenanceSigningKey("1".repeat(64));
+  assert.deepEqual(key, { tag: "schnorr", value: "1".repeat(64) });
+  assert.equal(signatureVerifyingKey(key).tag, "schnorr");
+  assert.throws(() => smokeMaintenanceSigningKey("not-hex"), /malformed/u);
 });
 
 const network = {

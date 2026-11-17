@@ -1548,8 +1548,10 @@ decision. Stop and remove the relay after collecting the observation.
 Run `node scripts/check-standalone-topology.mjs` against the selected
 `TR_STACK_NAME` project (the current Compose default is
 `tr-standalone-ledger9-local`) after an offline cold start. The strict topology
-observer requires internal-only service attachments; it intentionally does not
-qualify the development Compose stack's host-access bridge. It reads
+observer verifies the named internal ledger bridge and, when present, the
+development Compose stack's dedicated host-access bridge. It reports
+`internalNetworkOnly: false` for the latter, so that observation does not
+qualify as an internal-only offline runtime. It reads
 Docker metadata without changing containers or volumes and fails on extra
 network attachments, missing persistence mounts, a writable proof cache,
 fetch-enabled proof server, non-loopback or unexpected published ports, or

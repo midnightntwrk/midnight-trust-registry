@@ -45,7 +45,8 @@ const PORTS = {
  *   indexerPassword?: string, indexerSecret?: string, installRelayId?: string,
  *   allowUnpublishedHostPorts?: boolean, allowOffline?: boolean,
  *   composeFiles?: string[]}} ExpectedTopology
- * @typedef {{project: string, network: string, ports: Record<string, string>}} StackConfig
+ * @typedef {{project: string, network: string, hostNetwork: string,
+ *   ports: Record<string, string>}} StackConfig
  */
 
 /** @param {NodeJS.ProcessEnv} env */
@@ -71,7 +72,7 @@ export function standaloneStackConfig(env = process.env) {
   if (new Set(Object.values(ports)).size !== SERVICES.length) {
     throw new Error("Local stack loopback ports must be distinct");
   }
-  return { project, network: `${project}_ledger`, ports };
+  return { project, network: `${project}_ledger`, hostNetwork: `${project}_host-access`, ports };
 }
 
 /** @param {DockerContainer} container @param {string} destination
@@ -121,8 +122,10 @@ function requireLoopbackBinding(container, service, port, allowUnpublished = fal
 
 /** A read-only topology observation, not a packet-level proof of denied egress.
  * @param {DockerNetwork | null} network @param {DockerContainer[]} containers
- * @param {StackConfig} config @param {ExpectedTopology} [expected] */
-export function checkStandaloneTopology(network, containers, config = standaloneStackConfig({}), expected) {
+ * @param {StackConfig} config @param {ExpectedTopology} [expected]
+ * @param {DockerNetwork | null} [hostNetwork] */
+export function checkStandaloneTopology(network, containers, config = standaloneStackConfig({}), expected,
+  hostNetwork = null) {
   const privateInputs = expected?.requirePrivateInputs === true || (expected
     && [expected.proofParamsDir, expected.indexerPassword,
       expected.indexerSecret].some((value) => value !== undefined));
@@ -154,6 +157,18 @@ export function checkStandaloneTopology(network, containers, config = standalone
   if (attachedIds.length !== serviceIds.length
     || attachedIds.some((id, index) => id !== serviceIds[index])) {
     throw new Error("Dedicated ledger network has a missing or extra container attachment");
+  }
+  if (hostNetwork !== null) {
+    const hostIds = Object.keys(hostNetwork.Containers ?? {}).sort();
+    const runningIds = containers.map((container) => container.Id).sort();
+    if (hostNetwork.Name !== config.hostNetwork || !hostNetwork.Id
+      || hostNetwork.Internal !== false || hostNetwork.Driver !== "bridge"
+      || hostNetwork.EnableIPv6 !== false
+      || hostNetwork.Labels?.["com.docker.compose.project"] !== config.project
+      || hostIds.length !== runningIds.length
+      || hostIds.some((id, index) => id !== runningIds[index])) {
+      throw new Error("Dedicated host-access network differs from the development Compose bridge");
+    }
   }
   /** @type {string[]} */
   const observed = [];
@@ -201,9 +216,12 @@ export function checkStandaloneTopology(network, containers, config = standalone
       throw new Error("Dedicated service has an unexpected mount");
     }
     const networks = Object.keys(container.NetworkSettings?.Networks ?? {});
-    if (networks.length !== 1 || networks[0] !== config.network
-      || container.NetworkSettings?.Networks?.[config.network]?.NetworkID !== network.Id) {
-      throw new Error("Dedicated service has a non-internal network attachment");
+    const requiredNetworks = hostNetwork === null ? [config.network] : [config.network, config.hostNetwork];
+    if (!exactStringSet(networks, requiredNetworks)
+      || container.NetworkSettings?.Networks?.[config.network]?.NetworkID !== network.Id
+      || (hostNetwork !== null
+        && container.NetworkSettings?.Networks?.[config.hostNetwork]?.NetworkID !== hostNetwork.Id)) {
+      throw new Error("Dedicated service has a non-internal or unexpected network attachment");
     }
     portAccess.add(requireLoopbackBinding(container, service, config.ports[service],
       expected?.allowUnpublishedHostPorts === true));
@@ -250,7 +268,8 @@ export function checkStandaloneTopology(network, containers, config = standalone
     network: config.network,
     networkId: network.Id,
     services: observed,
-    internalNetworkOnly: true,
+    internalNetworkOnly: hostNetwork === null,
+    ...(hostNetwork === null ? {} : { hostAccessBridge: config.hostNetwork }),
     ...(portAccess.has("unpublished") ? { hostPortAccess: "unpublished-install-access-required" } : {}),
     proofParameterCacheReadOnly: true,
     ...(privateInputs ? { preparedInputsMatched: true } : {}),
@@ -275,10 +294,11 @@ export async function observeStandaloneTopology(config = standaloneStackConfig()
     throw new Error("Dedicated Compose project is absent or has an unexpected service count");
   }
   /** @type {DockerNetwork[]} */
-  const [network] = JSON.parse(await docker(["network", "inspect", config.network]));
+  const [network, hostNetwork] = JSON.parse(await docker(["network", "inspect",
+    config.network, config.hostNetwork]));
   /** @type {DockerContainer[]} */
   const containers = JSON.parse(await docker(["inspect", ...ids]));
-  return checkStandaloneTopology(network, containers, config, expected);
+  return checkStandaloneTopology(network, containers, config, expected, hostNetwork);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
