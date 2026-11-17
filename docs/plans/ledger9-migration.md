@@ -833,8 +833,14 @@ signature and current distinct maintainer signatures. The separate
 journal and a guarded transport, and rechecks the reserved action before
 broadcast. These helpers do not themselves verify an accepted application VP;
 the caller must supply that admission evidence through the governed intake.
-Before using this contract for API qualification, prepare an exact next
-governance-policy snapshot, update and finalize the threshold policy, then execute
+Read-only verification also confirms that its version-1 policy commitment is
+the bootstrap's `bytes32Commitment("policy:local-development-smoke")`, not a
+canonical `GovernancePolicySnapshot` commitment. Therefore, even a successful
+threshold-update circuit on this contract would not retroactively establish a
+canonical version-1 policy record or satisfy domain policy-revision continuity.
+Before using a contract for API qualification, establish an independently
+reviewable initial policy snapshot and exact next snapshot, update and finalize
+the threshold policy, then execute
 the separately approved maintenance-authority transition. Recheck the full
 verifier-key catalog and governance history after each step. Keep each attempt
 in a separate one-shot journal with independent finalized readback. The
