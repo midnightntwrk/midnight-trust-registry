@@ -471,11 +471,12 @@ The repo currently exposes two manual GitHub Actions workflows:
 
 The publish workflow only runs from the `develop` branch and pauses at the
 protected `npm-publish-stable` environment, whose required reviewers are
-managed in `midnightntwrk/midnight-iac`. Publishing authenticates with npm
-Trusted Publishing (OIDC) and emits provenance. The org `MIDNIGHTCI_NPMJS_TOKEN`
-is used only for the bootstrap publish that creates the packages, and is
-removed once a Trusted Publisher is configured for each package (see
-midnightntwrk/midnight-iac#541).
+managed in `midnightntwrk/midnight-iac`. The publish job authenticates with the
+org `MIDNIGHTCI_NPMJS_TOKEN` secret (passed as `NODE_AUTH_TOKEN`) and emits
+provenance through the job's OIDC token. `scripts/publish-npm-packages.sh`
+requires that token, so keep it in place. Moving to tokenless npm Trusted
+Publishing needs a script change first and is tracked in
+midnightntwrk/midnight-iac#541.
 
 `Published Package Smoke` reruns only the final published-package import smoke
 for a specified version.
