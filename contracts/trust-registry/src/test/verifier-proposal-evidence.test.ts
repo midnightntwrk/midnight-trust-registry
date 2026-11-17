@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 
-import { createCircuitContext, encodeContractAddress, type CircuitResults } from "@midnight-ntwrk/compact-runtime";
+import { encodeContractAddress } from "@midnight-ntwrk/compact-runtime";
 import { signJubjubDigestFromSeed, type JubjubDigest } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import { describe, expect, it } from "vitest";
 
@@ -20,7 +20,6 @@ import {
   pureCircuits,
   type MaintainerAuthorizationBundle,
 } from "../managed/trust-registry/contract/index.js";
-import { type TrustRegistryPrivateState } from "../witnesses.js";
 
 const bytesEqual = (actual: Uint8Array, expected: Uint8Array) =>
   expect(Buffer.from(actual)).toEqual(Buffer.from(expected));
@@ -38,7 +37,7 @@ const proposal = (label = "first") => ({
   evidenceHash: labelToBytes32(`evidence:${label}`),
 });
 
-const setup = () => {
+const setup = async () => {
   const registryId = labelToBytes32("registry:verifier-proposal-evidence");
   const registryDidCommitment = labelToBytes32("did:midnight:verifier-proposal-registry");
   const policy = labelToBytes32("policy:verifier-evidence:first");
@@ -63,42 +62,36 @@ const setup = () => {
     maintainerPublicKey,
     maintainerThreshold: 1n,
   });
-  const sign = (kind: string, payloadHash: Uint8Array) => signDeploymentBoundMaintainerActionFromSeed(
-    maintainer.seed, registryId, FIXTURE_NETWORK_ID_COMMITMENT, encodeContractAddress(simulator.contractAddress),
-    simulator.getLedger().governancePolicyCommitment,
-    encodeCompactActionKind(kind), payloadHash, simulator.getLedger().governanceActionCount,
-  );
+  const sign = async (kind: string, payloadHash: Uint8Array) => {
+    const state = await simulator.getLedger();
+    return signDeploymentBoundMaintainerActionFromSeed(
+      maintainer.seed, registryId, FIXTURE_NETWORK_ID_COMMITMENT, encodeContractAddress(simulator.contractAddress),
+      state.governancePolicyCommitment,
+      encodeCompactActionKind(kind), payloadHash, state.governanceActionCount,
+    );
+  };
   const keyPayload = computeCreateEvidenceVerifierKeyPayloadHash(
     evidenceVerifier.authorizationId, evidenceVerifier.didCommitment,
     evidenceVerifier.keyIdCommitment, evidenceVerifier.publicKey, evidenceVerifier.suite,
     policy, 1n,
   );
-  simulator.registerEvidenceVerifierKey(
+  await simulator.registerEvidenceVerifierKey(
     maintainer.keyId, maintainerPublicKey,
-    sign("tr:evidence-verifier:register", keyPayload),
+    await sign("tr:evidence-verifier:register", keyPayload),
     evidenceVerifier.authorizationId, evidenceVerifier.didCommitment,
     evidenceVerifier.keyIdCommitment, evidenceVerifier.publicKey, evidenceVerifier.suite,
     policy, 1n,
   );
-  const bundle = (kind: string, payloadHash: Uint8Array): MaintainerAuthorizationBundle => {
+  const bundle = async (kind: string, payloadHash: Uint8Array): Promise<MaintainerAuthorizationBundle> => {
     const blank = {
       keyId: new Uint8Array(32), publicKey: { x: 0n, y: 0n },
       signature: { announcement: { x: 0n, y: 0n }, response: 0n },
     };
     return {
       signerCount: 1n,
-      signer1: { keyId: maintainer.keyId, publicKey: maintainerPublicKey, signature: sign(kind, payloadHash) },
+      signer1: { keyId: maintainer.keyId, publicKey: maintainerPublicKey, signature: await sign(kind, payloadHash) },
       signer2: blank, signer3: blank, signer4: blank, signer5: blank,
     };
-  };
-  const commit = <T>(result: CircuitResults<TrustRegistryPrivateState, T>): T => {
-    simulator.circuitContext = createCircuitContext(
-      simulator.contractAddress,
-      result.context.currentZswapLocalState,
-      result.context.currentQueryContext.state,
-      result.context.currentPrivateState,
-    );
-    return result.result;
   };
   const call = (
     fields: ReturnType<typeof proposal>,
@@ -106,14 +99,16 @@ const setup = () => {
     authorizationId = evidenceVerifier.authorizationId,
     keyIdCommitment = evidenceVerifier.keyIdCommitment,
     evidenceSignature = { announcement: { x: 0n, y: 0n }, response: 0n },
-  ) => simulator.contract.impureCircuits.proposeVerifierAuthorization(
-    simulator.circuitContext, signerBundle,
-    fields.authorizationId, fields.subjectDidCommitment, fields.requestResourceId,
-    fields.allowedAttributeSetCommitment, fields.allowedPredicateSetCommitment,
-    fields.disclosureLevelCommitment, fields.policyId, fields.trustLevel, fields.evidenceHash,
-    authorizationId, keyIdCommitment, evidenceSignature,
-  );
-  const proof = (fields: ReturnType<typeof proposal>) => {
+  ) => simulator.runCircuit("proposeVerifierAuthorization", (context) =>
+    simulator.contract.impureCircuits.proposeVerifierAuthorization(
+      context, signerBundle,
+      fields.authorizationId, fields.subjectDidCommitment, fields.requestResourceId,
+      fields.allowedAttributeSetCommitment, fields.allowedPredicateSetCommitment,
+      fields.disclosureLevelCommitment, fields.policyId, fields.trustLevel, fields.evidenceHash,
+      authorizationId, keyIdCommitment, evidenceSignature,
+    ));
+  const proof = async (fields: ReturnType<typeof proposal>) => {
+    const state = await simulator.getLedger();
     const baseHash = computeCreateVerifierAuthorizationPayloadHash(
       fields.authorizationId, fields.subjectDidCommitment, fields.requestResourceId,
       fields.allowedAttributeSetCommitment, fields.allowedPredicateSetCommitment,
@@ -121,8 +116,8 @@ const setup = () => {
     );
     const boundHash = pureCircuits.verifierEvidenceBoundProposalPayloadHash(
       baseHash, evidenceVerifier.authorizationId, evidenceVerifier.keyIdCommitment,
-      simulator.getLedger().governancePolicyCommitment,
-      simulator.getLedger().governancePolicyVersion,
+      state.governancePolicyCommitment,
+      state.governancePolicyVersion,
     );
     const digest = pureCircuits.verifierProposalEvidenceSignatureDigest(
       registryId, FIXTURE_NETWORK_ID_COMMITMENT, encodeContractAddress(simulator.contractAddress),
@@ -132,32 +127,29 @@ const setup = () => {
       baseHash,
       boundHash,
       evidenceSignature: signJubjubDigestFromSeed(verifierSeed, digest),
-      bundle: bundle("tr:verifier:propose", boundHash),
+      bundle: await bundle("tr:verifier:propose", boundHash),
     };
   };
-  return { simulator, registryId, policy, maintainer, evidenceVerifier, sign, bundle, call, commit, proof };
+  return { simulator, registryId, policy, maintainer, evidenceVerifier, sign, bundle, call, proof };
 };
 
 describe("verifier proposal evidence binding", () => {
-  it("stores an append-only verifier-specific snapshot and rejects duplicate proposals", () => {
-    const registry = setup();
+  it("stores an append-only verifier-specific snapshot and rejects duplicate proposals", async () => {
+    const registry = await setup();
     const fields = proposal();
-    const { boundHash, evidenceSignature, bundle } = registry.proof(fields);
+    const { boundHash, evidenceSignature, bundle, baseHash } = await registry.proof(fields);
     const issuerDomain = pureCircuits.issuerEvidenceBoundProposalPayloadHash(
-      registry.proof(fields).baseHash,
+      baseHash,
       registry.evidenceVerifier.authorizationId,
       registry.evidenceVerifier.keyIdCommitment,
       registry.policy, 1n,
     );
     expect(boundHash).not.toEqual(issuerDomain);
-    expect(() => registry.simulator.contract.impureCircuits.getVerifierProposalEvidence(
-      registry.simulator.circuitContext, fields.authorizationId,
-    )).toThrow(/not registered/);
+    await expect(registry.simulator.getVerifierProposalEvidence(fields.authorizationId))
+      .rejects.toThrow(/not registered/);
 
-    const eventHash = registry.commit(registry.call(fields, bundle, undefined, undefined, evidenceSignature));
-    const evidence = registry.simulator.contract.impureCircuits.getVerifierProposalEvidence(
-      registry.simulator.circuitContext, fields.authorizationId,
-    ).result;
+    const eventHash = await registry.call(fields, bundle, undefined, undefined, evidenceSignature);
+    const evidence = await registry.simulator.getVerifierProposalEvidence(fields.authorizationId);
     bytesEqual(evidence.evidenceVerifierAuthorizationId, registry.evidenceVerifier.authorizationId);
     bytesEqual(evidence.evidenceVerifierDidCommitment, registry.evidenceVerifier.didCommitment);
     bytesEqual(evidence.evidenceVerifierKeyIdCommitment, registry.evidenceVerifier.keyIdCommitment);
@@ -168,22 +160,22 @@ describe("verifier proposal evidence binding", () => {
     expect(evidence.verifierSignatureAnnouncement).toEqual(evidenceSignature.announcement);
     expect(evidence.verifierSignatureResponse).toBe(evidenceSignature.response);
     bytesEqual(evidence.proposalGovernanceEventHash, eventHash);
-    expect(registry.simulator.getLedger().verifierAuthorizationCount).toBe(1n);
-    bytesEqual(registry.simulator.getLedger().lastAuthorizedActionPayloadHash, boundHash);
-    expect(() => registry.call(fields, registry.bundle("tr:verifier:propose", boundHash),
+    expect((await registry.simulator.getLedger()).verifierAuthorizationCount).toBe(1n);
+    bytesEqual((await registry.simulator.getLedger()).lastAuthorizedActionPayloadHash, boundHash);
+    await expect(registry.call(fields, await registry.bundle("tr:verifier:propose", boundHash),
       undefined, undefined, evidenceSignature))
-      .toThrow(/already exists/);
-    expect(registry.simulator.getLedger().verifierAuthorizationCount).toBe(1n);
+      .rejects.toThrow(/already exists/);
+    expect((await registry.simulator.getLedger()).verifierAuthorizationCount).toBe(1n);
   });
 
-  it("rejects an unregistered or wrong verifier key, an altered full payload, and absent quorum", () => {
-    const registry = setup();
+  it("rejects an unregistered or wrong verifier key, an altered full payload, and absent quorum", async () => {
+    const registry = await setup();
     const fields = proposal("tamper");
-    const { baseHash, boundHash, evidenceSignature, bundle } = registry.proof(fields);
-    expect(() => registry.call(fields, bundle, labelToBytes32("missing-key"), undefined, evidenceSignature))
-      .toThrow(/not registered/);
-    expect(() => registry.call(fields, bundle, undefined, labelToBytes32("wrong-key-id"), evidenceSignature))
-      .toThrow(/key id does not match/);
+    const { baseHash, boundHash, evidenceSignature, bundle } = await registry.proof(fields);
+    await expect(registry.call(fields, bundle, labelToBytes32("missing-key"), undefined, evidenceSignature))
+      .rejects.toThrow(/not registered/);
+    await expect(registry.call(fields, bundle, undefined, labelToBytes32("wrong-key-id"), evidenceSignature))
+      .rejects.toThrow(/key id does not match/);
     for (const change of [
       { subjectDidCommitment: labelToBytes32("did:midnight:other-subject") },
       { requestResourceId: labelToBytes32("request:other") },
@@ -194,135 +186,130 @@ describe("verifier proposal evidence binding", () => {
       { trustLevel: labelToBytes32("trust:other") },
       { evidenceHash: labelToBytes32("evidence:other") },
     ]) {
-      expect(() => registry.call({ ...fields, ...change }, bundle, undefined, undefined, evidenceSignature))
-        .toThrow(/invalid jubjub schnorr signature/i);
+      await expect(registry.call({ ...fields, ...change }, bundle, undefined, undefined, evidenceSignature))
+        .rejects.toThrow(/invalid jubjub schnorr signature/i);
     }
-    expect(() => registry.call({ ...fields, authorizationId: labelToBytes32("other-id") }, bundle,
-      undefined, undefined, evidenceSignature)).toThrow(/invalid jubjub schnorr signature/i);
+    await expect(registry.call({ ...fields, authorizationId: labelToBytes32("other-id") }, bundle,
+      undefined, undefined, evidenceSignature)).rejects.toThrow(/invalid jubjub schnorr signature/i);
     const issuerDigest = pureCircuits.issuerProposalEvidenceSignatureDigest(
       registry.registryId, FIXTURE_NETWORK_ID_COMMITMENT,
       encodeContractAddress(registry.simulator.contractAddress),
       registry.evidenceVerifier.keyIdCommitment, boundHash,
     ) as JubjubDigest;
-    expect(() => registry.call(fields, bundle, undefined, undefined,
+    await expect(registry.call(fields, bundle, undefined, undefined,
       signJubjubDigestFromSeed(new Uint8Array(32).fill(45), issuerDigest)))
-      .toThrow(/invalid jubjub schnorr signature/i);
-    expect(() => registry.call(fields, registry.bundle("tr:verifier:propose", baseHash),
-      undefined, undefined, evidenceSignature)).toThrow(/invalid jubjub schnorr signature/i);
-    expect(() => registry.call(fields, { ...bundle, signerCount: 0n },
-      undefined, undefined, evidenceSignature)).toThrow(/threshold/);
-    expect(registry.simulator.getLedger().verifierAuthorizationCount).toBe(0n);
-    expect(registry.simulator.getLedger().governanceActionCount).toBe(2n);
+      .rejects.toThrow(/invalid jubjub schnorr signature/i);
+    await expect(registry.call(fields, await registry.bundle("tr:verifier:propose", baseHash),
+      undefined, undefined, evidenceSignature)).rejects.toThrow(/invalid jubjub schnorr signature/i);
+    await expect(registry.call(fields, { ...bundle, signerCount: 0n },
+      undefined, undefined, evidenceSignature)).rejects.toThrow(/threshold/);
+    expect((await registry.simulator.getLedger()).verifierAuthorizationCount).toBe(0n);
+    expect((await registry.simulator.getLedger()).governanceActionCount).toBe(2n);
   });
 
-  it("authorizes and activates while retaining the original proposal evidence", () => {
-    const registry = setup();
+  it("authorizes and activates while retaining the original proposal evidence", async () => {
+    const registry = await setup();
     const fields = proposal("active-lifecycle");
-    const { bundle, evidenceSignature } = registry.proof(fields);
-    const proposalEvent = registry.commit(registry.call(
+    const { bundle, evidenceSignature } = await registry.proof(fields);
+    const proposalEvent = await registry.call(
       fields, bundle, undefined, undefined, evidenceSignature,
-    ));
-    const authorizeRecord = registry.simulator.contract.impureCircuits.getVerifierAuthorization(
-      registry.simulator.circuitContext, fields.authorizationId,
-    ).result;
+    );
+    const authorizeRecord = await registry.simulator.getVerifierAuthorization(fields.authorizationId);
     const authorizeHash = computeUpdateVerifierAuthorizationPayloadHash(
       fields.authorizationId, authorizeRecord.lifecycleEventHash, fields.evidenceHash,
     );
-    registry.commit(registry.simulator.contract.impureCircuits.authorizeVerifierAuthorization(
-      registry.simulator.circuitContext,
-      registry.bundle("tr:verifier:authorize", authorizeHash),
-      fields.authorizationId, fields.evidenceHash,
-    ));
-    const activateRecord = registry.simulator.contract.impureCircuits.getVerifierAuthorization(
-      registry.simulator.circuitContext, fields.authorizationId,
-    ).result;
+    const authorizationBundle = await registry.bundle("tr:verifier:authorize", authorizeHash);
+    await registry.simulator.runCircuit("authorizeVerifierAuthorization", (context) =>
+      registry.simulator.contract.impureCircuits.authorizeVerifierAuthorization(
+        context,
+        authorizationBundle,
+        fields.authorizationId, fields.evidenceHash,
+      ));
+    const activateRecord = await registry.simulator.getVerifierAuthorization(fields.authorizationId);
     const activateHash = computeUpdateVerifierAuthorizationPayloadHash(
       fields.authorizationId, activateRecord.lifecycleEventHash, fields.evidenceHash,
     );
-    registry.commit(registry.simulator.contract.impureCircuits.activateVerifierAuthorization(
-      registry.simulator.circuitContext,
-      registry.bundle("tr:verifier:activate", activateHash),
-      fields.authorizationId, fields.evidenceHash,
-    ));
-    expect(registry.simulator.contract.impureCircuits.getVerifierAuthorization(
-      registry.simulator.circuitContext, fields.authorizationId,
-    ).result.status).toBe(AuthorizationStatus.active);
-    bytesEqual(registry.simulator.contract.impureCircuits.getVerifierProposalEvidence(
-      registry.simulator.circuitContext, fields.authorizationId,
-    ).result.proposalGovernanceEventHash, proposalEvent);
+    const activationBundle = await registry.bundle("tr:verifier:activate", activateHash);
+    await registry.simulator.runCircuit("activateVerifierAuthorization", (context) =>
+      registry.simulator.contract.impureCircuits.activateVerifierAuthorization(
+        context,
+        activationBundle,
+        fields.authorizationId, fields.evidenceHash,
+      ));
+    expect((await registry.simulator.getVerifierAuthorization(fields.authorizationId)).status)
+      .toBe(AuthorizationStatus.active);
+    bytesEqual((await registry.simulator.getVerifierProposalEvidence(fields.authorizationId)).proposalGovernanceEventHash,
+      proposalEvent);
   });
 
-  it("rejects inactive keys and stale-policy approvals while preserving proposal evidence", () => {
-    const registry = setup();
+  it("rejects inactive keys and stale-policy approvals while preserving proposal evidence", async () => {
+    const registry = await setup();
     const fields = proposal("lifecycle");
-    const { bundle, evidenceSignature } = registry.proof(fields);
-    registry.commit(registry.call(fields, bundle, undefined, undefined, evidenceSignature));
-    const initialEvent = registry.simulator.getLedger().lastGovernanceEventHash;
-    const record = registry.simulator.contract.impureCircuits.getVerifierAuthorization(
-      registry.simulator.circuitContext, fields.authorizationId,
-    ).result;
+    const { bundle, evidenceSignature } = await registry.proof(fields);
+    await registry.call(fields, bundle, undefined, undefined, evidenceSignature);
+    const initialEvent = (await registry.simulator.getLedger()).lastGovernanceEventHash;
+    const record = await registry.simulator.getVerifierAuthorization(fields.authorizationId);
     const authorizeHash = computeUpdateVerifierAuthorizationPayloadHash(
       fields.authorizationId, record.lifecycleEventHash, fields.evidenceHash,
     );
-    const authorize = () => registry.simulator.contract.impureCircuits.authorizeVerifierAuthorization(
-      registry.simulator.circuitContext,
-      registry.bundle("tr:verifier:authorize", authorizeHash),
-      fields.authorizationId, fields.evidenceHash,
-    );
+    const authorizationBundle = await registry.bundle("tr:verifier:authorize", authorizeHash);
+    const authorize = () => registry.simulator.runCircuit("authorizeVerifierAuthorization", (context) =>
+      registry.simulator.contract.impureCircuits.authorizeVerifierAuthorization(
+        context,
+        authorizationBundle,
+        fields.authorizationId, fields.evidenceHash,
+      ));
     const newPolicy = labelToBytes32("policy:verifier-evidence:second");
     const policyHash = computeUpdateMaintainerThresholdPolicyPayloadHash(
       registry.policy, newPolicy, 2n, 1n, 1n, 1n,
     );
-    registry.simulator.updateMaintainerThresholdPolicy(
+    await registry.simulator.updateMaintainerThresholdPolicy(
       registry.maintainer.keyId,
       deriveJubjubPublicKeyFromSeed(registry.maintainer.seed),
-      registry.sign("tr:policy:thresholds:update", policyHash),
+      await registry.sign("tr:policy:thresholds:update", policyHash),
       newPolicy, 2n, 1n, 1n, 1n,
     );
-    expect(() => authorize()).toThrow(/proposal evidence policy is not current/);
-    const preserved = registry.simulator.contract.impureCircuits.getVerifierProposalEvidence(
-      registry.simulator.circuitContext, fields.authorizationId,
-    ).result;
+    await expect(authorize()).rejects.toThrow(/proposal evidence policy is not current/);
+    const preserved = await registry.simulator.getVerifierProposalEvidence(fields.authorizationId);
     bytesEqual(preserved.proposalGovernanceEventHash, initialEvent);
-    expect(registry.simulator.contract.impureCircuits.getVerifierAuthorization(
-      registry.simulator.circuitContext, fields.authorizationId,
-    ).result.status).toBe(AuthorizationStatus.proposed);
+    expect((await registry.simulator.getVerifierAuthorization(fields.authorizationId)).status)
+      .toBe(AuthorizationStatus.proposed);
   });
 
-  it("rejects a suspended verifier key before proposal", () => {
-    const registry = setup();
+  it("rejects a suspended verifier key before proposal", async () => {
+    const registry = await setup();
     const fields = proposal("inactive");
-    const { bundle, evidenceSignature } = registry.proof(fields);
-    const keyRecord = registry.simulator.getEvidenceVerifierKey(registry.evidenceVerifier.authorizationId);
+    const { bundle, evidenceSignature } = await registry.proof(fields);
+    const keyRecord = await registry.simulator.getEvidenceVerifierKey(registry.evidenceVerifier.authorizationId);
     const reason = labelToBytes32("incident:verifier-proposal");
     const suspendHash = computeUpdateEvidenceVerifierKeyPayloadHash(
       registry.evidenceVerifier.authorizationId, keyRecord.lifecycleEventHash, reason,
     );
-    registry.simulator.suspendEvidenceVerifierKey(
+    await registry.simulator.suspendEvidenceVerifierKey(
       registry.maintainer.keyId, deriveJubjubPublicKeyFromSeed(registry.maintainer.seed),
-      registry.sign("tr:evidence-verifier:suspend", suspendHash),
+      await registry.sign("tr:evidence-verifier:suspend", suspendHash),
       registry.evidenceVerifier.authorizationId, reason,
     );
-    expect(() => registry.call(fields, bundle, undefined, undefined, evidenceSignature))
-      .toThrow(/key is not active/);
+    await expect(registry.call(fields, bundle, undefined, undefined, evidenceSignature))
+      .rejects.toThrow(/key is not active/);
   });
 
-  it("rejects proposal signatures after the registered key policy becomes stale", () => {
-    const registry = setup();
+  it("rejects proposal signatures after the registered key policy becomes stale", async () => {
+    const registry = await setup();
     const fields = proposal("stale-at-proposal");
-    const { bundle, evidenceSignature } = registry.proof(fields);
+    const { bundle, evidenceSignature } = await registry.proof(fields);
     const newPolicy = labelToBytes32("policy:verifier-evidence:new");
     const policyHash = computeUpdateMaintainerThresholdPolicyPayloadHash(
       registry.policy, newPolicy, 2n, 1n, 1n, 1n,
     );
-    registry.simulator.updateMaintainerThresholdPolicy(
+    await registry.simulator.updateMaintainerThresholdPolicy(
       registry.maintainer.keyId,
       deriveJubjubPublicKeyFromSeed(registry.maintainer.seed),
-      registry.sign("tr:policy:thresholds:update", policyHash),
+      await registry.sign("tr:policy:thresholds:update", policyHash),
       newPolicy, 2n, 1n, 1n, 1n,
     );
-    expect(() => registry.call(fields, bundle, undefined, undefined, evidenceSignature))
-      .toThrow(/key policy is not current/);
-    expect(registry.simulator.getLedger().verifierAuthorizationCount).toBe(0n);
+    await expect(registry.call(fields, bundle, undefined, undefined, evidenceSignature))
+      .rejects.toThrow(/key policy is not current/);
+    expect((await registry.simulator.getLedger()).verifierAuthorizationCount).toBe(0n);
   });
 });

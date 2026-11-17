@@ -187,6 +187,13 @@ export class TrustRegistrySimulator {
     return operation;
   }
 
+  runCircuit<T>(
+    circuitId: string,
+    circuitFn: (context: CircuitContext<TrustRegistryPrivateState>) => Promise<CircuitResults<TrustRegistryPrivateState, T>>,
+  ): Promise<T> {
+    return this.executeCircuit(circuitId, circuitFn);
+  }
+
   authorizeMaintainerAuditEvent(
     maintainerKeyId: Uint8Array,
     maintainerPublicKey: JubjubPoint,
