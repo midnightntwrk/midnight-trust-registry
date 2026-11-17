@@ -52,8 +52,8 @@ describe("governed epoch HTTP boundary", () => {
           return harness.prepareRegistryEpochPublicationAction(label);
         },
         async execute(label, signers) {
-          const epoch = harness.executeRegistryEpochPublicationWithSignatures(label, signers);
-          return { epoch, eventHash: harness.getEpochPublicationWitness(epoch.epochId).eventHash };
+          const epoch = await harness.executeRegistryEpochPublicationWithSignatures(label, signers);
+          return { epoch, eventHash: (await harness.getEpochPublicationWitness(epoch.epochId)).eventHash };
         },
       },
     });
@@ -68,7 +68,7 @@ describe("governed epoch HTTP boundary", () => {
       const preparedResponse = await post("prepare", { label: "current" });
       expect(preparedResponse.status).toBe(200);
       const prepared = await preparedResponse.json() as PreparedGovernedEpochPublication;
-      expect(prepared.networkIdCommitment).toBe(hex(harness.simulator.getLedger().deploymentNetworkIdCommitment));
+      expect(prepared.networkIdCommitment).toBe(hex((await harness.simulator.getLedger()).deploymentNetworkIdCommitment));
       expect(prepared.contractAddress).toBe(`0x${harness.simulator.contractAddress}`);
       const vote = (networkIdCommitment: string, contractAddress = prepared.contractAddress) => ({
         keyId: hex(maintainer.keyId),
@@ -84,20 +84,20 @@ describe("governed epoch HTTP boundary", () => {
           BigInt(prepared.actionSequence),
         ))),
       });
-      const before = harness.simulator.getLedger().governanceActionCount;
+      const before = (await harness.simulator.getLedger()).governanceActionCount;
       expect((await post("publish", { label: "current", prepared, signers: [
         vote(hex(bytes32Commitment("wrong-network"))),
       ] })).status).toBe(403);
       expect((await post("publish", { label: "current", prepared, signers: [
         vote(prepared.networkIdCommitment, hex(bytes32Commitment("wrong-address"))),
       ] })).status).toBe(403);
-      expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
+      expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before);
       const published = await post("publish", { label: "current", prepared, signers: [
         vote(prepared.networkIdCommitment),
       ] });
       expect(published.status).toBe(202);
       expect((await published.json()).eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
-      expect(harness.simulator.getLedger().governanceActionCount).toBe(before + 1n);
+      expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before + 1n);
     } finally {
       await new Promise<void>((resolve, reject) =>
         server.close((error) => error ? reject(error) : resolve()));

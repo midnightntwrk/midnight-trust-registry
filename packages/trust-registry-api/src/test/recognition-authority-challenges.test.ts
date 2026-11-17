@@ -188,7 +188,7 @@ describe("recognition authority DID challenge", () => {
       format: "tr-recognition-accreditor-anchor-v1",
       targetRegistryId: binding.targetRegistryId,
       policyId: harness.policyId,
-      policyVersion: `v${(harness.simulator.getLedger().governancePolicyVersion + 1n).toString()}`,
+      policyVersion: `v${((await harness.simulator.getLedger()).governancePolicyVersion + 1n).toString()}`,
       accreditorDid: createMidnightDid("accreditor"),
       accreditorAssertionMethodId: `${createMidnightDid("accreditor")}#assertion-1`,
       credentialFamilyId: "credential-family:accreditation:v1",
@@ -202,7 +202,7 @@ describe("recognition authority DID challenge", () => {
       effectiveFrom: "2026-05-20T00:00:00.000Z",
       effectiveUntil: "2026-05-21T00:00:00.000Z",
     };
-    harness.governRecognitionAccreditorAnchor(anchor);
+    await harness.governRecognitionAccreditorAnchor(anchor);
     const evaluatedAtMs = Math.max(issuedAtMs + 1000, Date.parse(harness.policyRecord.effectiveFrom) + 1000);
     const commitment = sha256Hex("verified-accreditation-evidence");
     const verifiedAccreditation = {
@@ -236,7 +236,7 @@ describe("recognition authority DID challenge", () => {
       accreditationSubmissionCommitment: recognitionAccreditationSubmissionCommitment(accreditation),
       issuedAt: new Date(evaluatedAtMs).toISOString(),
     });
-    const activePolicyCommitment = `0x${Buffer.from(harness.simulator.getLedger().governancePolicyCommitment).toString("hex")}`;
+    const activePolicyCommitment = `0x${Buffer.from((await harness.simulator.getLedger()).governancePolicyCommitment).toString("hex")}`;
     let currentPolicy = harness.policyRecord;
     let currentPolicyCommitment = activePolicyCommitment;
     const request = {
