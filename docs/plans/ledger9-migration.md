@@ -95,6 +95,14 @@ transport failure, finality, and ambiguity. Successful submissions in these
 tests use mocked valid handles, not a proven and bound Ledger 9 transaction;
 real submission and finalized readback remain unqualified.
 
+Verifier-key insertion now consumes the Ledger 9 maintenance result's public
+finalized record, recognizes the SDK's failed-insertion error code, and rejects
+an older-era record without writing a success receipt. Its provider preflight
+decodes v9 serialized contract state before checking the absent key slot and
+authority counter. The journal, preflight, and reconciliation focused suite
+passes 14 tests. These are mocked SDK submissions; no actual verifier-key
+maintenance transaction or independently finalized image was observed.
+
 Docker Desktop did not answer `docker info` during this local pass. No Ledger 9
 container, live RPC, indexer, or proof-server claim follows from the Compose
 render and image pins; the hanging CLI call was stopped without modifying
