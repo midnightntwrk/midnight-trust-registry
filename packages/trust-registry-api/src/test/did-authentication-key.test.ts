@@ -61,6 +61,9 @@ describe("DID-owned signing key resolution", () => {
     expect(() => resolvedMidnightDidSigningKey({ ...resolution(), didDocumentMetadata: {
       deactivated: false, versionId: "0",
     } } as never, did, keyId, "authentication")).toThrow();
+    expect(() => resolvedMidnightDidSigningKey({ ...resolution(), didDocumentMetadata: {
+      deactivated: null, versionId: null,
+    } } as never, did, keyId, "authentication")).toThrow(/version is invalid/u);
     expect(() => resolvedMidnightDidSigningKey(resolution() as never, did, "#key-1", "authentication")).toThrow();
     expect(() => resolvedMidnightDidSigningKey({ ...resolution(), didDocument: {
       ...resolution().didDocument, verificationMethod: [{ ...resolution().didDocument.verificationMethod[0]!,

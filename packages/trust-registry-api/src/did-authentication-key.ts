@@ -6,6 +6,7 @@ import {
   parseDIDURL,
   resolveDIDURLReference,
   VerificationMethodType,
+  type DIDDocumentMetadata,
   type DIDKeyID,
   type VerificationMethod,
 } from "@midnight-ntwrk/midnight-did-domain";
@@ -20,7 +21,7 @@ export interface MidnightAuthenticationResolver {
       authentication?: readonly DIDKeyID[];
       capabilityInvocation?: readonly DIDKeyID[];
     };
-    didDocumentMetadata: { deactivated?: boolean; versionId?: string };
+    didDocumentMetadata: DIDDocumentMetadata;
   } | null>;
 }
 
