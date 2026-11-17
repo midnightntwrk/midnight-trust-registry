@@ -30,7 +30,7 @@ import { createTrustRegistryApiServer } from "../server.js";
 
 const bytes = (value: string): Uint8Array => Buffer.from(value.slice(2), "hex");
 
-const signPrepared = (
+const signPrepared = async (
   harness: LocalTrustRegistryIntegrationHarness,
   maintainer: MaintainerScenarioFixture,
   prepared: PreparedGovernedMembershipAction,
@@ -39,7 +39,7 @@ const signPrepared = (
   const signature = signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
     bytes(prepared.registryId),
-    harness.simulator.getLedger().deploymentNetworkIdCommitment,
+    (await harness.simulator.getLedger()).deploymentNetworkIdCommitment,
     Buffer.from(harness.simulator.contractAddress, "hex"),
     bytes(prepared.policyCommitment),
     bytes(prepared.actionKind),
@@ -59,7 +59,7 @@ describe("Compact-backed membership governance over HTTP", () => {
     const server = createTrustRegistryApiServer({
       source: {
         mode: "memory",
-        loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "unavailable" }),
+        loadSnapshot: async () => await publishSimulatorSnapshot(harness, { label: "unavailable" }),
       },
     });
     try {
@@ -80,19 +80,19 @@ describe("Compact-backed membership governance over HTTP", () => {
     const second = createMaintainerScenarioFixture("governed-http-second");
     const third = createMaintainerScenarioFixture("governed-http-third");
     const issuer = createIssuerScenarioFixture("governed-http-issuer");
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(third);
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
-    harness.proposeIssuer(issuer, [second]);
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(third);
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    await harness.proposeIssuer(issuer, [second]);
 
     const fixtures = { label: "governed-http", issuers: [{ label: "issuer", fixture: issuer }] };
-    let snapshot = publishSimulatorSnapshot(harness, fixtures);
+    let snapshot = await publishSimulatorSnapshot(harness, fixtures);
     const port: GovernedMembershipActionPort = {
       async prepare(role, authorizationId, action) {
         if (role !== "issuer" || authorizationId !== issuer.authorizationId) {
           throw new GovernedMembershipActionRejectedError("unknown-authorization");
         }
-        return harness.prepareIssuerDecisionAction(issuer, action);
+        return await harness.prepareIssuerDecisionAction(issuer, action);
       },
       async execute(role, authorizationId, action, signers) {
         if (role !== "issuer" || authorizationId !== issuer.authorizationId) {
@@ -100,11 +100,11 @@ describe("Compact-backed membership governance over HTTP", () => {
         }
         let eventHash: Uint8Array;
         try {
-          eventHash = harness.executeIssuerDecisionWithSignatures(issuer, action, signers);
+          eventHash = await harness.executeIssuerDecisionWithSignatures(issuer, action, signers);
         } catch {
           throw new GovernedMembershipActionRejectedError("invalid-signers");
         }
-        snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
+        snapshot = await publishSimulatorSnapshot(harness, fixtures, snapshot);
         return { eventHash: `0x${Buffer.from(eventHash).toString("hex")}` };
       },
     };
@@ -120,7 +120,7 @@ describe("Compact-backed membership governance over HTTP", () => {
       const url = (action: "approve" | "activate") =>
         `${base}/v1/governed/issuer/${issuer.authorizationId}/actions/${action}`;
       const post = (action: "approve" | "activate", prepared: PreparedGovernedMembershipAction,
-        signers: ReturnType<typeof signPrepared>[]) => fetch(url(action), {
+        signers: Awaited<ReturnType<typeof signPrepared>>[]) => fetch(url(action), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ prepared, signers }),
@@ -132,9 +132,9 @@ describe("Compact-backed membership governance over HTTP", () => {
       expect(preparedResponse.status).toBe(200);
       expect(preparedResponse.headers.get("cache-control")).toBe("no-store");
       const approval = await preparedResponse.json() as PreparedGovernedMembershipAction;
-      const first = signPrepared(harness, second, approval);
-      const next = signPrepared(harness, third, approval);
-      const before = harness.simulator.getLedger().governanceActionCount;
+      const first = await signPrepared(harness, second, approval);
+      const next = await signPrepared(harness, third, approval);
+      const before = (await harness.simulator.getLedger()).governanceActionCount;
 
       expect((await post("approve", approval, [first])).status).toBe(403);
       expect((await post("approve", approval, [first, first])).status).toBe(403);
@@ -143,7 +143,7 @@ describe("Compact-backed membership governance over HTTP", () => {
       ])).status).toBe(400);
       expect((await post("approve", { ...approval, policyCommitment: `0x${"00".repeat(32)}` },
         [first, next])).status).toBe(409);
-      expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
+      expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before);
 
       const approved = await post("approve", approval, [first, next]);
       expect(approved.status).toBe(202);
@@ -158,7 +158,7 @@ describe("Compact-backed membership governance over HTTP", () => {
       const activation = await activationResponse.json() as PreparedGovernedMembershipAction;
       expect(activation.actionSequence).not.toBe(approval.actionSequence);
       expect((await post("activate", activation, [
-        signPrepared(harness, second, activation), signPrepared(harness, third, activation),
+        await signPrepared(harness, second, activation), await signPrepared(harness, third, activation),
       ])).status).toBe(202);
 
       const evidenceResponse = await fetch(
@@ -167,8 +167,8 @@ describe("Compact-backed membership governance over HTTP", () => {
       expect(evidenceResponse.status).toBe(200);
       const bundle = await evidenceResponse.json();
       expect(bundle.authorization.status).toBe("active");
-      expect(() => new TrustRegistrySimulatorClient(harness.simulator)
-        .verifyIssuerAuthorizationBundle(bundle, {})).not.toThrow();
+      await expect(new TrustRegistrySimulatorClient(harness.simulator)
+        .verifyIssuerAuthorizationBundle(bundle, {})).resolves.toBeDefined();
       expect(snapshot.evidenceArchive.map((entry) => entry.authorization?.status))
         .toEqual(expect.arrayContaining(["proposed", "authorized"]));
       for (const archived of snapshot.evidenceArchive) {
@@ -194,18 +194,18 @@ describe("Compact-backed membership governance over HTTP", () => {
     const second = createMaintainerScenarioFixture("denial-http-second");
     const third = createMaintainerScenarioFixture("denial-http-third");
     const issuer = createIssuerScenarioFixture("denial-http-issuer");
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(third);
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
-    harness.proposeIssuer(issuer, [second]);
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(third);
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    await harness.proposeIssuer(issuer, [second]);
     const fixtures = { label: "governed-http-denial", issuers: [{ label: "issuer", fixture: issuer }] };
-    let snapshot = publishSimulatorSnapshot(harness, fixtures);
+    let snapshot = await publishSimulatorSnapshot(harness, fixtures);
     const port: GovernedMembershipActionPort = {
       async prepare(role, id, action) {
         if (role !== "issuer" || id !== issuer.authorizationId) {
           throw new GovernedMembershipActionRejectedError("unknown-authorization");
         }
-        return harness.prepareIssuerDecisionAction(issuer, action);
+        return await harness.prepareIssuerDecisionAction(issuer, action);
       },
       async execute(role, id, action, signers) {
         if (role !== "issuer" || id !== issuer.authorizationId) {
@@ -213,11 +213,11 @@ describe("Compact-backed membership governance over HTTP", () => {
         }
         let eventHash: Uint8Array;
         try {
-          eventHash = harness.executeIssuerDecisionWithSignatures(issuer, action, signers);
+          eventHash = await harness.executeIssuerDecisionWithSignatures(issuer, action, signers);
         } catch {
           throw new GovernedMembershipActionRejectedError("invalid-signers");
         }
-        snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
+        snapshot = await publishSimulatorSnapshot(harness, fixtures, snapshot);
         return { eventHash: `0x${Buffer.from(eventHash).toString("hex")}` };
       },
     };
@@ -237,17 +237,17 @@ describe("Compact-backed membership governance over HTTP", () => {
       const post = (body: unknown) => fetch(url, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
       });
-      const first = signPrepared(harness, second, prepared);
-      const thirdSigner = signPrepared(harness, third, prepared);
-      const before = harness.simulator.getLedger().governanceActionCount;
+      const first = await signPrepared(harness, second, prepared);
+      const thirdSigner = await signPrepared(harness, third, prepared);
+      const before = (await harness.simulator.getLedger()).governanceActionCount;
       expect((await post({ prepared, signers: [first] })).status).toBe(403);
-      expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
+      expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before);
       expect((await post({ prepared: { ...prepared, actionKind: `0x${"00".repeat(32)}` },
         signers: [first, thirdSigner] })).status).toBe(409);
       const accepted = await post({ prepared, signers: [first, thirdSigner] });
       expect(accepted.status, await accepted.text()).toBe(202);
       expect((await post({ prepared, signers: [first, thirdSigner] })).status).toBe(409);
-      const record = harness.simulator.getIssuerAuthorization(issuer.authorizationIdCommitment);
+      const record = await harness.simulator.getIssuerAuthorization(issuer.authorizationIdCommitment);
       expect(record.status).toBe(AuthorizationStatus.archived);
       expect(record.archivedAtSequence).toBe(before);
       expect(snapshot.evidenceArchive.some((entry) => entry.authorization?.status === "proposed")).toBe(true);
@@ -270,9 +270,9 @@ describe("Compact-backed membership governance over HTTP", () => {
       const bundle = await evidenceResponse.json();
       expect(bundle.authorization.status).toBe("archived");
       const client = new TrustRegistrySimulatorClient(harness.simulator);
-      expect(() => client.verifyIssuerAuthorizationBundle(bundle, {})).toThrow(/not active/iu);
-      expect(() => client.verifyIssuerAuthorizationBundle(bundle, { requireActive: false }))
-        .not.toThrow();
+      await expect(client.verifyIssuerAuthorizationBundle(bundle, {})).rejects.toThrow(/not active/iu);
+      await expect(client.verifyIssuerAuthorizationBundle(bundle, { requireActive: false }))
+        .resolves.toBeDefined();
 
       const scope = {
         role: "issuer",
@@ -308,24 +308,24 @@ describe("Compact-backed membership governance over HTTP", () => {
     const third = createMaintainerScenarioFixture("request-role-third");
     const verifier = createVerifierScenarioFixture("request-role-verifier");
     const auditor = createAuditorScenarioFixture("request-role-auditor");
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(third);
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
-    harness.proposeVerifier(verifier);
-    harness.proposeAuditor(auditor);
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(third);
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    await harness.proposeVerifier(verifier);
+    await harness.proposeAuditor(auditor);
     const fixtures = {
       label: "governed-request-roles",
       verifiers: [{ label: "verifier", fixture: verifier }],
       auditors: [{ label: "auditor", fixture: auditor }],
     };
-    let snapshot = publishSimulatorSnapshot(harness, fixtures);
+    let snapshot = await publishSimulatorSnapshot(harness, fixtures);
     const port: GovernedMembershipActionPort = {
       async prepare(role, authorizationId, action) {
         if (role === "verifier" && authorizationId === verifier.authorizationId) {
-          return harness.prepareVerifierDecisionAction(verifier, action);
+          return await harness.prepareVerifierDecisionAction(verifier, action);
         }
         if (role === "auditor" && authorizationId === auditor.authorizationId) {
-          return harness.prepareAuditorDecisionAction(auditor, action);
+          return await harness.prepareAuditorDecisionAction(auditor, action);
         }
         throw new GovernedMembershipActionRejectedError("unknown-authorization");
       },
@@ -333,9 +333,9 @@ describe("Compact-backed membership governance over HTTP", () => {
         let eventHash: Uint8Array;
         try {
           if (role === "verifier" && authorizationId === verifier.authorizationId) {
-            eventHash = harness.executeVerifierDecisionWithSignatures(verifier, action, signers);
+            eventHash = await harness.executeVerifierDecisionWithSignatures(verifier, action, signers);
           } else if (role === "auditor" && authorizationId === auditor.authorizationId) {
-            eventHash = harness.executeAuditorDecisionWithSignatures(auditor, action, signers);
+            eventHash = await harness.executeAuditorDecisionWithSignatures(auditor, action, signers);
           } else {
             throw new GovernedMembershipActionRejectedError("unknown-authorization");
           }
@@ -343,7 +343,7 @@ describe("Compact-backed membership governance over HTTP", () => {
           if (error instanceof GovernedMembershipActionRejectedError) throw error;
           throw new GovernedMembershipActionRejectedError("invalid-signers");
         }
-        snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
+        snapshot = await publishSimulatorSnapshot(harness, fixtures, snapshot);
         return { eventHash: `0x${Buffer.from(eventHash).toString("hex")}` };
       },
     };
@@ -369,20 +369,20 @@ describe("Compact-backed membership governance over HTTP", () => {
           const preparedResponse = await fetch(endpoint);
           expect(preparedResponse.status).toBe(200);
           const prepared = await preparedResponse.json() as PreparedGovernedMembershipAction;
-          const before = harness.simulator.getLedger().governanceActionCount;
+          const before = (await harness.simulator.getLedger()).governanceActionCount;
           const insufficient = await fetch(endpoint, {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ prepared, signers: [signPrepared(harness, second, prepared)] }),
+            body: JSON.stringify({ prepared, signers: [await signPrepared(harness, second, prepared)] }),
           });
           expect(insufficient.status).toBe(403);
-          expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
+          expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before);
           const accepted = await fetch(endpoint, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
               prepared,
-              signers: [signPrepared(harness, second, prepared), signPrepared(harness, third, prepared)],
+              signers: [await signPrepared(harness, second, prepared), await signPrepared(harness, third, prepared)],
             }),
           });
           expect(accepted.status).toBe(202);
@@ -396,9 +396,9 @@ describe("Compact-backed membership governance over HTTP", () => {
         expect(bundle.authorization.status).toBe("active");
         const client = new TrustRegistrySimulatorClient(harness.simulator);
         if (role === "verifier") {
-          expect(() => client.verifyVerifierAuthorizationBundle(bundle, {})).not.toThrow();
+          await expect(client.verifyVerifierAuthorizationBundle(bundle, {})).resolves.toBeDefined();
         } else {
-          expect(() => client.verifyAuditorAuthorizationBundle(bundle, {})).not.toThrow();
+          await expect(client.verifyAuditorAuthorizationBundle(bundle, {})).resolves.toBeDefined();
         }
       }
     } finally {
@@ -411,23 +411,23 @@ describe("Compact-backed membership governance over HTTP", () => {
     const second = createMaintainerScenarioFixture("governed-maintainer-second");
     const third = createMaintainerScenarioFixture("governed-maintainer-third");
     const candidate = createMaintainerScenarioFixture("governed-maintainer-candidate");
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(third);
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
-    const evidence = harness.createApplicationEvidence({
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(third);
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    const evidence = await harness.createApplicationEvidence({
       applicationId: candidate.maintainerId,
       subjectDid: candidate.subjectDid,
       role: "maintainer",
       scope: createMaintainerAuthorizationScopeFixture(harness.registryId),
     });
-    harness.proposeMaintainerWithApplicationEvidence(candidate, evidence);
+    await harness.proposeMaintainerWithApplicationEvidence(candidate, evidence);
 
     const port: GovernedMembershipActionPort = {
       async prepare(role, authorizationId, action) {
         if (role !== "maintainer" || authorizationId !== candidate.maintainerId) {
           throw new GovernedMembershipActionRejectedError("unknown-authorization");
         }
-        const prepared = harness.prepareMaintainerDecisionAction(candidate, action);
+        const prepared = await harness.prepareMaintainerDecisionAction(candidate, action);
         if (prepared.previousLifecycleEventHash === undefined) throw new Error("Missing lifecycle event");
         return {
           ...prepared,
@@ -440,7 +440,7 @@ describe("Compact-backed membership governance over HTTP", () => {
         }
         let eventHash: Uint8Array;
         try {
-          eventHash = harness.executeMaintainerDecisionWithSignatures(candidate, action, signers);
+          eventHash = await harness.executeMaintainerDecisionWithSignatures(candidate, action, signers);
         } catch {
           throw new GovernedMembershipActionRejectedError("invalid-signers");
         }
@@ -450,7 +450,7 @@ describe("Compact-backed membership governance over HTTP", () => {
     const server = createTrustRegistryApiServer({
       source: {
         mode: "memory",
-        loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "governed-maintainer-http" }),
+        loadSnapshot: async () => await publishSimulatorSnapshot(harness, { label: "governed-maintainer-http" }),
       },
       governedMembershipActions: port,
     });
@@ -462,7 +462,7 @@ describe("Compact-backed membership governance over HTTP", () => {
       const endpoint = (action: "approve" | "activate") =>
         `${base}/v1/governed/maintainer/${candidate.maintainerId}/actions/${action}`;
       const post = (action: "approve" | "activate", prepared: PreparedGovernedMembershipAction,
-        signers: ReturnType<typeof signPrepared>[]) => fetch(endpoint(action), {
+        signers: Awaited<ReturnType<typeof signPrepared>>[]) => fetch(endpoint(action), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ prepared, signers }),
@@ -478,20 +478,20 @@ describe("Compact-backed membership governance over HTTP", () => {
         expect(preparedResponse.headers.get("cache-control")).toBe("no-store");
         const prepared = await preparedResponse.json() as PreparedGovernedMembershipAction;
         expect(prepared.targetId).toBe(`0x${Buffer.from(candidate.maintainerIdCommitment).toString("hex")}`);
-        const before = harness.simulator.getLedger().governanceActionCount;
-        expect((await post(action, prepared, [signPrepared(harness, second, prepared)])).status).toBe(403);
+        const before = (await harness.simulator.getLedger()).governanceActionCount;
+        expect((await post(action, prepared, [await signPrepared(harness, second, prepared)])).status).toBe(403);
         expect((await post(action, prepared, [
-          signPrepared(harness, second, prepared), signPrepared(harness, candidate, prepared),
+          await signPrepared(harness, second, prepared), await signPrepared(harness, candidate, prepared),
         ])).status).toBe(403);
-        expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
+        expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before);
         expect((await post(action, prepared, [
-          signPrepared(harness, second, prepared), signPrepared(harness, third, prepared),
+          await signPrepared(harness, second, prepared), await signPrepared(harness, third, prepared),
         ])).status).toBe(202);
         expect((await post(action, prepared, [
-          signPrepared(harness, second, prepared), signPrepared(harness, third, prepared),
+          await signPrepared(harness, second, prepared), await signPrepared(harness, third, prepared),
         ])).status).toBe(409);
       }
-      expect(harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment).status)
+      expect((await harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment)).status)
         .toBe(AuthorizationStatus.active);
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
@@ -503,19 +503,19 @@ describe("Compact-backed membership governance over HTTP", () => {
     const second = createMaintainerScenarioFixture("governed-recognition-second");
     const third = createMaintainerScenarioFixture("governed-recognition-third");
     const recognition = createRecognitionScenarioFixture("governed-recognition-authority");
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(third);
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
-    harness.proposeRecognition(recognition);
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(third);
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    await harness.proposeRecognition(recognition);
 
     const fixtures = { label: "governed-recognition-http", recognitions: [{ label: "authority", fixture: recognition }] };
-    let snapshot = publishSimulatorSnapshot(harness, fixtures);
+    let snapshot = await publishSimulatorSnapshot(harness, fixtures);
     const port: GovernedMembershipActionPort = {
       async prepare(role, authorizationId, action) {
         if (role !== "recognition" || authorizationId !== recognition.recognitionId) {
           throw new GovernedMembershipActionRejectedError("unknown-authorization");
         }
-        const prepared = harness.prepareRecognitionDecisionAction(recognition, action);
+        const prepared = await harness.prepareRecognitionDecisionAction(recognition, action);
         if (prepared.previousLifecycleEventHash === undefined) throw new Error("Missing lifecycle event");
         return {
           ...prepared,
@@ -528,11 +528,11 @@ describe("Compact-backed membership governance over HTTP", () => {
         }
         let eventHash: Uint8Array;
         try {
-          eventHash = harness.executeRecognitionDecisionWithSignatures(recognition, action, signers);
+          eventHash = await harness.executeRecognitionDecisionWithSignatures(recognition, action, signers);
         } catch {
           throw new GovernedMembershipActionRejectedError("invalid-signers");
         }
-        snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
+        snapshot = await publishSimulatorSnapshot(harness, fixtures, snapshot);
         return { eventHash: `0x${Buffer.from(eventHash).toString("hex")}` };
       },
     };
@@ -548,7 +548,7 @@ describe("Compact-backed membership governance over HTTP", () => {
       const endpoint = (action: "approve" | "activate") =>
         `${base}/v1/governed/recognition/${recognition.recognitionId}/actions/${action}`;
       const post = (action: "approve" | "activate", prepared: PreparedGovernedMembershipAction,
-        signers: ReturnType<typeof signPrepared>[]) => fetch(endpoint(action), {
+        signers: Awaited<ReturnType<typeof signPrepared>>[]) => fetch(endpoint(action), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ prepared, signers }),
@@ -562,17 +562,17 @@ describe("Compact-backed membership governance over HTTP", () => {
         expect(response.headers.get("cache-control")).toBe("no-store");
         const prepared = await response.json() as PreparedGovernedMembershipAction;
         expect(prepared.targetId).toBe(`0x${Buffer.from(recognition.recognitionIdCommitment).toString("hex")}`);
-        const before = harness.simulator.getLedger().governanceActionCount;
-        expect((await post(action, prepared, [signPrepared(harness, second, prepared)])).status).toBe(403);
+        const before = (await harness.simulator.getLedger()).governanceActionCount;
+        expect((await post(action, prepared, [await signPrepared(harness, second, prepared)])).status).toBe(403);
         expect((await post(action, { ...prepared, policyCommitment: `0x${"00".repeat(32)}` }, [
-          signPrepared(harness, second, prepared), signPrepared(harness, third, prepared),
+          await signPrepared(harness, second, prepared), await signPrepared(harness, third, prepared),
         ])).status).toBe(409);
-        expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
+        expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before);
         expect((await post(action, prepared, [
-          signPrepared(harness, second, prepared), signPrepared(harness, third, prepared),
+          await signPrepared(harness, second, prepared), await signPrepared(harness, third, prepared),
         ])).status).toBe(202);
         expect((await post(action, prepared, [
-          signPrepared(harness, second, prepared), signPrepared(harness, third, prepared),
+          await signPrepared(harness, second, prepared), await signPrepared(harness, third, prepared),
         ])).status).toBe(409);
       }
       const evidenceResponse = await fetch(`${base}/v1/recognitions/${recognition.recognitionId}/evidence`);
@@ -581,8 +581,8 @@ describe("Compact-backed membership governance over HTTP", () => {
       expect(bundle.recognition.status).toBe("active");
       expect(bundle.recognition.recognizedRegistryId).toBe(recognition.recognizedRegistryId);
       expect(bundle.authorization).toBeUndefined();
-      expect(() => new TrustRegistrySimulatorClient(harness.simulator)
-        .verifyRecognitionBundle(bundle, {})).not.toThrow();
+      await expect(new TrustRegistrySimulatorClient(harness.simulator)
+        .verifyRecognitionBundle(bundle, {})).resolves.toBeDefined();
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
@@ -593,21 +593,21 @@ describe("Compact-backed membership governance over HTTP", () => {
     const second = createMaintainerScenarioFixture("recognition-denial-second");
     const third = createMaintainerScenarioFixture("recognition-denial-third");
     const recognition = createRecognitionScenarioFixture("denied-external-authority");
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(third);
-    harness.proposeRecognition(recognition);
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(third);
+    await harness.proposeRecognition(recognition);
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
     const fixtures = {
       label: "governed-recognition-denial-http",
       recognitions: [{ label: "denied-authority", fixture: recognition }],
     };
-    let snapshot = publishSimulatorSnapshot(harness, fixtures);
+    let snapshot = await publishSimulatorSnapshot(harness, fixtures);
     const port: GovernedMembershipActionPort = {
       async prepare(role, id, action) {
         if (role !== "recognition" || id !== recognition.recognitionId) {
           throw new GovernedMembershipActionRejectedError("unknown-authorization");
         }
-        const prepared = harness.prepareRecognitionDecisionAction(recognition, action);
+        const prepared = await harness.prepareRecognitionDecisionAction(recognition, action);
         if (prepared.previousLifecycleEventHash === undefined) throw new Error("Missing lifecycle event");
         return { ...prepared, previousLifecycleEventHash: prepared.previousLifecycleEventHash };
       },
@@ -617,11 +617,11 @@ describe("Compact-backed membership governance over HTTP", () => {
         }
         let eventHash: Uint8Array;
         try {
-          eventHash = harness.executeRecognitionDecisionWithSignatures(recognition, action, signers);
+          eventHash = await harness.executeRecognitionDecisionWithSignatures(recognition, action, signers);
         } catch {
           throw new GovernedMembershipActionRejectedError("invalid-signers");
         }
-        snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
+        snapshot = await publishSimulatorSnapshot(harness, fixtures, snapshot);
         return { eventHash: `0x${Buffer.from(eventHash).toString("hex")}` };
       },
     };
@@ -638,12 +638,12 @@ describe("Compact-backed membership governance over HTTP", () => {
       const contextResponse = await fetch(endpoint);
       expect(contextResponse.status).toBe(200);
       const prepared = await contextResponse.json() as PreparedGovernedMembershipAction;
-      const post = (signers: ReturnType<typeof signPrepared>[]) => fetch(endpoint, {
+      const post = (signers: Awaited<ReturnType<typeof signPrepared>>[]) => fetch(endpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ prepared, signers }),
       });
-      const signers = [signPrepared(harness, second, prepared), signPrepared(harness, third, prepared)];
+      const signers = [await signPrepared(harness, second, prepared), await signPrepared(harness, third, prepared)];
       expect((await post(signers.slice(0, 1))).status).toBe(403);
       expect((await post(signers)).status).toBe(202);
       expect((await post(signers)).status).toBe(409);
@@ -656,8 +656,8 @@ describe("Compact-backed membership governance over HTTP", () => {
       expect(bundle.recognition.effectiveFrom).toBeUndefined();
       expect(bundle.authorization).toBeUndefined();
       const client = new TrustRegistrySimulatorClient(harness.simulator);
-      expect(() => client.verifyRecognitionBundle(bundle, {})).toThrow(/not active/iu);
-      expect(() => client.verifyRecognitionBundle(bundle, { requireActive: false })).not.toThrow();
+      await expect(client.verifyRecognitionBundle(bundle, {})).rejects.toThrow(/not active/iu);
+      await expect(client.verifyRecognitionBundle(bundle, { requireActive: false })).resolves.toBeDefined();
 
       const evaluation = await fetch(`${base}/v1/recognitions/evaluate`, {
         method: "POST",
