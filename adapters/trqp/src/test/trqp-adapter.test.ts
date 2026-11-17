@@ -52,10 +52,10 @@ class LocalSimulatorTrqpSource implements TrustRegistryTrqpSource {
       : null;
   }
 
-  getAuthorizationDecision(
+  async getAuthorizationDecision(
     request: TrqpAuthorizationRequest,
     evaluatedAt: string,
-  ): TrqpAuthorizationDecision | null {
+  ): Promise<TrqpAuthorizationDecision | null> {
     if (request.authority_id !== this.harness.registryDid) {
       return null;
     }
@@ -70,7 +70,7 @@ class LocalSimulatorTrqpSource implements TrustRegistryTrqpSource {
         return null;
       }
 
-      return this.authorizationDecision(this.resolveCurrentOrHistorical(
+      return this.authorizationDecision(await this.resolveCurrentOrHistorical(
         () => this.harness.evaluateCurrentIssuerDecision(fixture),
         () => this.harness.buildIssuerHistoricalEvidence(fixture),
       ), evaluatedAt);
@@ -86,7 +86,7 @@ class LocalSimulatorTrqpSource implements TrustRegistryTrqpSource {
         return null;
       }
 
-      return this.authorizationDecision(this.resolveCurrentOrHistorical(
+      return this.authorizationDecision(await this.resolveCurrentOrHistorical(
         () => this.harness.evaluateCurrentVerifierDecision(fixture),
         () => this.harness.buildVerifierHistoricalEvidence(fixture),
       ), evaluatedAt);
@@ -95,10 +95,10 @@ class LocalSimulatorTrqpSource implements TrustRegistryTrqpSource {
     return null;
   }
 
-  getRecognitionDecision(
+  async getRecognitionDecision(
     request: TrqpRecognitionRequest,
     evaluatedAt: string,
-  ): TrqpRecognitionDecision | null {
+  ): Promise<TrqpRecognitionDecision | null> {
     if (request.authority_id !== this.harness.registryDid) {
       return null;
     }
@@ -122,7 +122,7 @@ class LocalSimulatorTrqpSource implements TrustRegistryTrqpSource {
       return null;
     }
 
-    return this.recognitionDecision(this.resolveCurrentOrHistorical(
+    return this.recognitionDecision(await this.resolveCurrentOrHistorical(
       () => this.harness.evaluateCurrentRecognitionDecision(fixture),
       () => this.harness.buildRecognitionHistoricalEvidence(fixture),
     ), evaluatedAt);
@@ -150,15 +150,15 @@ class LocalSimulatorTrqpSource implements TrustRegistryTrqpSource {
     };
   }
 
-  private resolveCurrentOrHistorical(
-    current: () => TrustRegistryEvidenceBundle,
-    historical: () => TrustRegistryEvidenceBundle,
-  ): TrustRegistryEvidenceBundle {
+  private async resolveCurrentOrHistorical(
+    current: () => Promise<TrustRegistryEvidenceBundle>,
+    historical: () => Promise<TrustRegistryEvidenceBundle>,
+  ): Promise<TrustRegistryEvidenceBundle> {
     try {
-      return current();
+      return await current();
     } catch (error) {
       if (error instanceof Error && /not active/i.test(error.message)) {
-        return historical();
+        return await historical();
       }
       throw error;
     }
@@ -185,8 +185,8 @@ describe("trust registry TRQP adapter", () => {
   it("uses one off-ledger clock instant for an untimed decision", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("source-time");
-    harness.authorizeIssuer(issuer);
-    const bundle = harness.evaluateCurrentIssuerDecision(issuer);
+    await harness.authorizeIssuer(issuer);
+    const bundle = await harness.evaluateCurrentIssuerDecision(issuer);
     const source: TrustRegistryTrqpSource = {
       getRegistryRecord: () => harness.registryRecord,
       getAuthorizationDecision: () => ({
@@ -212,10 +212,10 @@ describe("trust registry TRQP adapter", () => {
     const issuer = createIssuerScenarioFixture("degree");
     const verifier = createVerifierScenarioFixture("admissions");
 
-    harness.authorizeIssuer(issuer);
-    harness.authorizeVerifier(verifier);
-    const issuerAt = harness.evaluateCurrentIssuerDecision(issuer).epoch.validFrom;
-    const verifierAt = harness.evaluateCurrentVerifierDecision(verifier).epoch.validFrom;
+    await harness.authorizeIssuer(issuer);
+    await harness.authorizeVerifier(verifier);
+    const issuerAt = (await harness.evaluateCurrentIssuerDecision(issuer)).epoch.validFrom;
+    const verifierAt = (await harness.evaluateCurrentVerifierDecision(verifier)).epoch.validFrom;
 
     const adapter = new TrustRegistryTrqpAdapter(
       new LocalSimulatorTrqpSource(harness, {
@@ -261,9 +261,9 @@ describe("trust registry TRQP adapter", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("passport");
 
-    harness.authorizeIssuer(issuer);
-    harness.revokeIssuer(issuer);
-    const revokedAt = harness.buildIssuerHistoricalEvidence(issuer).epoch.validFrom;
+    await harness.authorizeIssuer(issuer);
+    await harness.revokeIssuer(issuer);
+    const revokedAt = (await harness.buildIssuerHistoricalEvidence(issuer)).epoch.validFrom;
 
     const adapter = new TrustRegistryTrqpAdapter(
       new LocalSimulatorTrqpSource(harness, {
@@ -314,9 +314,9 @@ describe("trust registry TRQP adapter", () => {
   it("evaluates recognition at the requested time instead of its latest status", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const recognition = createRecognitionScenarioFixture("historical-recognition");
-    harness.authorizeRecognition(recognition);
-    harness.revokeRecognition(recognition);
-    const revokedAt = harness.buildRecognitionHistoricalEvidence(recognition).epoch.validFrom;
+    await harness.authorizeRecognition(recognition);
+    await harness.revokeRecognition(recognition);
+    const revokedAt = (await harness.buildRecognitionHistoricalEvidence(recognition)).epoch.validFrom;
     const adapter = new TrustRegistryTrqpAdapter(
       new LocalSimulatorTrqpSource(harness, { recognitions: [recognition] }),
       { clock: () => revokedAt },
@@ -342,8 +342,8 @@ describe("trust registry TRQP adapter", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const recognition = createRecognitionScenarioFixture("gaia-x");
 
-    harness.authorizeRecognition(recognition);
-    const at = harness.evaluateCurrentRecognitionDecision(recognition).epoch.validFrom;
+    await harness.authorizeRecognition(recognition);
+    const at = (await harness.evaluateCurrentRecognitionDecision(recognition)).epoch.validFrom;
 
     const adapter = new TrustRegistryTrqpAdapter(
       new LocalSimulatorTrqpSource(harness, {
@@ -397,9 +397,9 @@ describe("trust registry TRQP adapter", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const requested = createIssuerScenarioFixture("requested-issuer");
     const substituted = createIssuerScenarioFixture("substituted-issuer");
-    harness.authorizeIssuer(requested);
-    harness.authorizeIssuer(substituted);
-    const bundle = harness.evaluateCurrentIssuerDecision(substituted);
+    await harness.authorizeIssuer(requested);
+    await harness.authorizeIssuer(substituted);
+    const bundle = await harness.evaluateCurrentIssuerDecision(substituted);
     const source: TrustRegistryTrqpSource = {
       getRegistryRecord: () => harness.registryRecord,
       getAuthorizationDecision: () => ({ bundle, statusAtTime: "active", trustedAtTime: true }),
@@ -424,11 +424,11 @@ describe("trust registry TRQP adapter", () => {
       expect(problem.type).toMatch(/invalid-source-data$/u);
     }
     const otherRegistry = new LocalTrustRegistryIntegrationHarness("other-registry");
-    otherRegistry.authorizeIssuer(substituted);
+    await otherRegistry.authorizeIssuer(substituted);
     const crossRegistry = new TrustRegistryTrqpAdapter({
       ...source,
-      getAuthorizationDecision: () => ({
-        bundle: otherRegistry.evaluateCurrentIssuerDecision(substituted),
+      getAuthorizationDecision: async () => ({
+        bundle: await otherRegistry.evaluateCurrentIssuerDecision(substituted),
         statusAtTime: "active",
         trustedAtTime: true,
       }),
@@ -441,8 +441,8 @@ describe("trust registry TRQP adapter", () => {
   it("rejects recognition evidence for a different external registry", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const recognition = createRecognitionScenarioFixture("requested-recognition");
-    harness.authorizeRecognition(recognition);
-    const bundle = harness.evaluateCurrentRecognitionDecision(recognition);
+    await harness.authorizeRecognition(recognition);
+    const bundle = await harness.evaluateCurrentRecognitionDecision(recognition);
     const source: TrustRegistryTrqpSource = {
       getRegistryRecord: () => harness.registryRecord,
       getAuthorizationDecision: () => null,
@@ -471,8 +471,8 @@ describe("trust registry TRQP adapter", () => {
   it("rejects issuer evidence with a substituted epoch, policy, or lifecycle decision", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("inconsistent-evidence");
-    harness.authorizeIssuer(issuer);
-    const bundle = harness.evaluateCurrentIssuerDecision(issuer);
+    await harness.authorizeIssuer(issuer);
+    const bundle = await harness.evaluateCurrentIssuerDecision(issuer);
     const request = {
       entity_id: issuer.subjectDid,
       authority_id: harness.registryDid,
@@ -505,8 +505,8 @@ describe("trust registry TRQP adapter", () => {
   it("rejects recognition evidence with a substituted policy or lifecycle decision", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const recognition = createRecognitionScenarioFixture("inconsistent-evidence");
-    harness.authorizeRecognition(recognition);
-    const bundle = harness.evaluateCurrentRecognitionDecision(recognition);
+    await harness.authorizeRecognition(recognition);
+    const bundle = await harness.evaluateCurrentRecognitionDecision(recognition);
     const request = {
       entity_id: recognition.recognizedAuthorityDid,
       authority_id: harness.registryDid,
@@ -535,10 +535,10 @@ describe("trust registry TRQP adapter", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("out-of-epoch-issuer");
     const recognition = createRecognitionScenarioFixture("out-of-epoch-recognition");
-    harness.authorizeIssuer(issuer);
-    harness.authorizeRecognition(recognition);
-    const authorizationBundle = harness.evaluateCurrentIssuerDecision(issuer);
-    const recognitionBundle = harness.evaluateCurrentRecognitionDecision(recognition);
+    await harness.authorizeIssuer(issuer);
+    await harness.authorizeRecognition(recognition);
+    const authorizationBundle = await harness.evaluateCurrentIssuerDecision(issuer);
+    const recognitionBundle = await harness.evaluateCurrentRecognitionDecision(recognition);
     const adapter = new TrustRegistryTrqpAdapter({
       getRegistryRecord: () => harness.registryRecord,
       getAuthorizationDecision: () => ({
@@ -574,10 +574,10 @@ describe("trust registry TRQP adapter", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("fractional-epoch-issuer");
     const recognition = createRecognitionScenarioFixture("fractional-epoch-recognition");
-    harness.authorizeIssuer(issuer);
-    harness.authorizeRecognition(recognition);
-    const authorizationBundle = harness.evaluateCurrentIssuerDecision(issuer);
-    const recognitionBundle = harness.evaluateCurrentRecognitionDecision(recognition);
+    await harness.authorizeIssuer(issuer);
+    await harness.authorizeRecognition(recognition);
+    const authorizationBundle = await harness.evaluateCurrentIssuerDecision(issuer);
+    const recognitionBundle = await harness.evaluateCurrentRecognitionDecision(recognition);
     const adapter = new TrustRegistryTrqpAdapter({
       getRegistryRecord: () => harness.registryRecord,
       getAuthorizationDecision: () => ({
@@ -626,7 +626,7 @@ describe("trust registry TRQP adapter", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const recognition = createRecognitionScenarioFixture("eidas");
 
-    harness.authorizeRecognition(recognition);
+    await harness.authorizeRecognition(recognition);
 
     const adapter = new TrustRegistryTrqpAdapter(
       new LocalSimulatorTrqpSource(harness, {

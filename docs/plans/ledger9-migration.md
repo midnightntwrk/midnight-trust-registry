@@ -72,11 +72,14 @@ challenge-response. The standalone key-resolution tests pass, but neither
 they nor the simulator integration suite qualify deployed actor journeys.
 
 The local VC trial source is [PR #755](https://github.com/midnightntwrk/midnight-verifiable-credentials/pull/755)
-at `dad8b2cae38c9971adb43d124ead1281b021416b`. Its Nix `npm-artifacts`
+at `dad8b2cae38c9971adb43d124ead1281b021416b`, merged on 2026-11-17.
+Its Nix `npm-artifacts`
 target built three tarballs. This worktree has private, ignored copies under
 `artifacts/ledger9-vc-pr755/`; the temporary `file:` overrides intentionally
 make frozen installs depend on those exact local inputs. They must be replaced
 with published `0.4.0` pins and a regenerated lockfile before a portable PR.
+The public npm registry returned no `@midnight-ntwrk/credential-compact@0.4.0`
+on 2026-11-17, so merging #755 alone does not remove this portability gate.
 
 | Trial tarball | SHA-256 |
 | --- | --- |
@@ -264,6 +267,12 @@ before setup completed; all seven pass after awaiting the fixture and client
 checks. `pnpm ci:lint` also passes at this local tree. These remain simulator
 and source checks, not proof-artifact, finalized deployment, or actor-journey
 evidence. No failed case was skipped or reclassified as a pass.
+The TRQP and OpenID Federation adapter test fixtures now await Ledger 9
+authorization, evidence, and ledger reads. Their focused suites pass 15 and
+10 tests respectively; the full workspace typecheck passes all ten runnable
+package tasks. Strict security-script typecheck, 244 local-ledger preflight
+tests, and 127 standalone-topology tests also pass at this local tree. These
+gates do not establish a responsive node or deployed-chain finality.
 
 ## Execution order
 

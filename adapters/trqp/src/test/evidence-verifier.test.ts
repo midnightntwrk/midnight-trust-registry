@@ -23,8 +23,8 @@ describe("independent TRQP evidence verification", () => {
   it("accepts an issuer grant and rejects substituted tuple, time, decision, and anchor", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("trqp-verified-issuer");
     const issuer = createIssuerScenarioFixture("trqp-verified-issuer");
-    harness.authorizeIssuer(issuer);
-    const bundle = harness.evaluateCurrentIssuerDecision(issuer);
+    await harness.authorizeIssuer(issuer);
+    const bundle = await harness.evaluateCurrentIssuerDecision(issuer);
     const at = bundle.epoch.validFrom;
     const request = {
       entity_id: issuer.subjectDid,
@@ -41,7 +41,7 @@ describe("independent TRQP evidence verification", () => {
       bundle,
     };
     const anchor = resolveCompactHistoricalEpochAnchor({
-      ledger: harness.simulator.getLedger(), registryId: harness.registryId,
+      ledger: await harness.simulator.getLedger(), registryId: harness.registryId,
       epochId: bundle.epoch.epochId, policyVersion: bundle.policy.version,
       sequenceToTimestamp: defaultSequenceToTimestamp,
       expectedNetworkId: harness.registryDid.split(":")[2]!,
@@ -95,8 +95,8 @@ describe("independent TRQP evidence verification", () => {
       ...anchor, epochRecord: { ...anchor.epochRecord, stateRoot: new Uint8Array(32) },
     })).toThrow(/state root mismatch/u);
 
-    harness.suspendIssuer(issuer);
-    const suspended = harness.buildIssuerHistoricalEvidence(issuer);
+    await harness.suspendIssuer(issuer);
+    const suspended = await harness.buildIssuerHistoricalEvidence(issuer);
     const suspendedAt = suspended.epoch.validFrom;
     const deniedRequest = { ...request, context: { time: suspendedAt } };
     const deniedResponse = {
@@ -104,7 +104,7 @@ describe("independent TRQP evidence verification", () => {
       authorized: false, bundle: suspended,
     };
     const deniedAnchor = resolveCompactHistoricalEpochAnchor({
-      ledger: harness.simulator.getLedger(), registryId: harness.registryId,
+      ledger: await harness.simulator.getLedger(), registryId: harness.registryId,
       epochId: suspended.epoch.epochId, policyVersion: suspended.policy.version,
       sequenceToTimestamp: defaultSequenceToTimestamp,
       expectedNetworkId: harness.registryDid.split(":")[2]!,
@@ -116,11 +116,11 @@ describe("independent TRQP evidence verification", () => {
       harness.registryDid, anchor)).toThrow(/Epoch id mismatch/u);
   });
 
-  it("verifies an exact verifier request rather than promoting it to issuer authority", () => {
+  it("verifies an exact verifier request rather than promoting it to issuer authority", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("trqp-verified-verifier");
     const verifier = createVerifierScenarioFixture("trqp-verified-verifier");
-    harness.authorizeVerifier(verifier);
-    const bundle = harness.evaluateCurrentVerifierDecision(verifier);
+    await harness.authorizeVerifier(verifier);
+    const bundle = await harness.evaluateCurrentVerifierDecision(verifier);
     const at = bundle.epoch.validFrom;
     const request = {
       entity_id: verifier.subjectDid, authority_id: harness.registryDid,
@@ -130,7 +130,7 @@ describe("independent TRQP evidence verification", () => {
       ...request, time_requested: at, time_evaluated: at, authorized: true, bundle,
     };
     const anchor = resolveCompactHistoricalEpochAnchor({
-      ledger: harness.simulator.getLedger(), registryId: harness.registryId,
+      ledger: await harness.simulator.getLedger(), registryId: harness.registryId,
       epochId: bundle.epoch.epochId, policyVersion: bundle.policy.version,
       sequenceToTimestamp: defaultSequenceToTimestamp,
       expectedNetworkId: harness.registryDid.split(":")[2]!,
@@ -146,8 +146,8 @@ describe("independent TRQP evidence verification", () => {
   it("requires exact recognition context and never turns it into a local grant", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("trqp-verified-recognition");
     const recognition = createRecognitionScenarioFixture("trqp-verified-recognition");
-    harness.authorizeRecognition(recognition);
-    const bundle = harness.evaluateCurrentRecognitionDecision(recognition);
+    await harness.authorizeRecognition(recognition);
+    const bundle = await harness.evaluateCurrentRecognitionDecision(recognition);
     const record = bundle.recognition!;
     const at = bundle.epoch.validFrom;
     const request = {
@@ -165,7 +165,7 @@ describe("independent TRQP evidence verification", () => {
       ...request, time_requested: at, time_evaluated: at, recognized: true, bundle,
     };
     const anchor = resolveCompactHistoricalEpochAnchor({
-      ledger: harness.simulator.getLedger(), registryId: harness.registryId,
+      ledger: await harness.simulator.getLedger(), registryId: harness.registryId,
       epochId: bundle.epoch.epochId, policyVersion: bundle.policy.version,
       sequenceToTimestamp: defaultSequenceToTimestamp,
       expectedNetworkId: harness.registryDid.split(":")[2]!,

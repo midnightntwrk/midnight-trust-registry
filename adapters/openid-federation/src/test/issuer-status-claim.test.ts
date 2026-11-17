@@ -23,14 +23,14 @@ const block = (label: string): string => sha256Hex(`federation-status-claim:${la
 const setup = async () => {
   const harness = new LocalTrustRegistryIntegrationHarness("federation-current-issuer");
   const issuer = createIssuerScenarioFixture("federation-current-issuer");
-  harness.authorizeIssuer(issuer);
-  const bundle = harness.evaluateCurrentIssuerDecision(issuer);
+  await harness.authorizeIssuer(issuer);
+  const bundle = await harness.evaluateCurrentIssuerDecision(issuer);
   if (bundle.authorization?.role !== "issuer" || bundle.statusPolicyBinding === undefined) {
     throw new Error("Expected an active issuer bundle");
   }
-  const epoch = harness.simulator.getEpochCommitment(bytes32Commitment(bundle.epoch.epochId));
-  const witness = harness.getEpochPublicationWitness(bundle.epoch.epochId);
-  const ledger = harness.simulator.getLedger();
+  const epoch = await harness.simulator.getEpochCommitment(bytes32Commitment(bundle.epoch.epochId));
+  const witness = await harness.getEpochPublicationWitness(bundle.epoch.epochId);
+  const ledger = await harness.simulator.getLedger();
   const networkId = issuer.subjectDid.split(":")[2]!;
   const contractAddress = `0x${harness.simulator.contractAddress}`;
   const acceptedEpoch = AcceptedDecisionEpochSchema.parse({
@@ -90,7 +90,7 @@ const setup = async () => {
     resourceId: issuer.resourceId,
     scope: issuer.authorizationScope,
   };
-  const currentGrant = harness.simulator.getCurrentIssuerAuthorization(
+  const currentGrant = await harness.simulator.getCurrentIssuerAuthorization(
     issuer.subjectDidCommitment, issuer.resourceType, issuer.resourceIdCommitment,
   );
   const readers: TrustedDecisionEvidenceReaders = {
