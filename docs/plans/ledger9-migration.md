@@ -321,6 +321,13 @@ The public-package consumer smoke also awaits issuer/verifier governance,
 evidence reads, and client verification; its positive checks and wrong-resource
 rejection pass against the local workspace build. Packed-tarball validation
 still requires a source-matched release candidate, not this partial build.
+An isolated source-matched skip-ZK build produced ten Trust Registry tarballs,
+but the normal packed smoke stopped at npm install because
+`@midnight-ntwrk/credential-compact@0.4.0` is not published. For local trial
+only, `packed-artifacts:smoke -- --vc-consumer --actor-journey
+--local-vc-tarballs-dir artifacts/ledger9-vc-pr755` installs the three exact VC
+trial tarballs alongside the Registry packages. This option refuses a release
+manifest and does not make the resulting package set portable or publishable.
 
 ## Execution order
 
