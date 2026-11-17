@@ -516,20 +516,12 @@ development-only bootstrap with the single-key maintenance authority; it
 does not qualify actor journeys, an approved maintenance transition, or a
 release.
 
-A subsequent read-only reconciliation on the same pinned multi-user chain at
-indexed height 2026 again matched all 66 verifier keys and maintenance counter
-65. One finalized ledger snapshot reported governance action count 1, one
-active maintainer, zero registered evidence-verifier keys, and zero active
-issuer, verifier, auditor, or recognition entries. Therefore the deployed
-issuer path cannot begin with a proposal: a governed evidence-verifier-key
-registration and its finalized readback must precede any evidence-bound
-issuer proposal. The contract also excludes the authorized maintainer's DID
-from being the registered evidence-verifier DID, so the development journey
-needs a separate verifier identity and key. That registration, live DID/VC
-evidence, and the actor
-submissions have not yet run on this chain. The ignored private readback
-helper retains the exact-plan, journal, and manifest checks; this observation
-does not approve or submit a shared-chain mutation.
+A read-only reconciliation on the pinned multi-user chain at indexed height
+2026 matched all 66 verifier keys and maintenance counter 65. At that point,
+the finalized ledger had governance action count 1, one active maintainer,
+zero evidence-verifier keys, and zero active issuer, verifier, auditor, or
+recognition entries. The issuer path first required a governed
+evidence-verifier-key registration under a DID distinct from the maintainer.
 
 One development-only evidence-verifier registration was prepared against this
 finalized baseline with a distinct verifier DID and a locally verified
@@ -548,12 +540,26 @@ exists for either attempt; do not retry or claim actor qualification until the
 proof check is diagnosed and a new one-shot plan is reviewed.
 A proof-only diagnostic using the full source-matched compiled contract, with
 `submitTx` replaced by a hard-failing local stub, reproduced the same `/check`
-HTTP 400. The staged single-operation wrapper is therefore not sufficient to
-explain the failure. The current development provider also uses a public test
-wallet whose balance changed while other sessions used the shared chain; a
-future actor write needs a separate funded session wallet and journal. Neither
-the proof-only diagnostic nor the failed reserved attempts submitted a
-transaction.
+HTTP 400. A private response capture showed the cause: unused maintainer
+signer slots carried zero-valued points, which the Ledger 9 proof server could
+not decode as `JubjubPoint` even though the circuit ignores inactive slots.
+The TypeScript bundle builder now retains zero key IDs but pads point fields
+with a deterministic valid prime-order point. Its regression test and the
+99-test contract suite pass. A subsequent full-contract proof-only call passed
+proving and balancing and reached the hard-failing broadcast guard.
+
+After confirming both older reservations failed before broadcast and finalized
+state still lacked the key, a new single-use private journal submitted the
+corrected development call. Transaction
+`007218fa13ba1e08992d672f37bfed0e414fa5bbd0776442b23549ebd3cddd7ca1`
+finalized at registry
+`0xf80638c64dcf63138b222426549bedb122673391b414658854f2a04a92b5be09`.
+Readback showed governance action count 2 and one active evidence-verifier key.
+The failed reservations, new receipt, and proof response remain private under
+the ignored smoke-state directory. This is one development-chain governance
+action, not a live DID/VC evidence journey or release qualification. The public
+test wallet is shared with other sessions; later actor writes need an exclusive
+funded session wallet and their own journals.
 
 ## Execution order
 
