@@ -15,11 +15,14 @@ minimumReleaseAgeExclude:
   - "@midnight-ntwrk/midnight-did-contract@1.0.0-rc1"
   - "@midnight-ntwrk/midnight-did-domain@1.0.0-rc1"
   - "@midnight-ntwrk/midnight-did-jubjub-schnorr@1.0.0-rc1"
+  # Exact published VC RC1 cohort for Ledger 9; remove after 2026-11-24 UTC.
+  - "@midnight-ntwrk/credential-compact@1.0.0-rc1"
+  - "@midnight-ntwrk/credential-did-midnight@1.0.0-rc1"
 
 overrides:
   "@effect/platform": 0.97.1
-  "@midnight-ntwrk/credential-compact": file:artifacts/ledger9-vc-pr755/midnight-ntwrk-credential-compact-0.4.0.tgz
-  "@midnight-ntwrk/credential-did-midnight": file:artifacts/ledger9-vc-pr755/midnight-ntwrk-credential-did-midnight-0.4.0.tgz
+  "@midnight-ntwrk/credential-compact": 1.0.0-rc1
+  "@midnight-ntwrk/credential-did-midnight": 1.0.0-rc1
   "@midnight-ntwrk/midnight-did": 1.0.0-rc1
   "@midnight-ntwrk/midnight-did-contract": 1.0.0-rc1
   "@midnight-ntwrk/midnight-did-domain": 1.0.0-rc1

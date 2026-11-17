@@ -131,15 +131,24 @@ The VC release gate applies only to VP evidence journeys, not basic DID
 challenge-response. The standalone key-resolution tests pass, but neither
 they nor the simulator integration suite qualify deployed actor journeys.
 
-The local VC trial source is [PR #755](https://github.com/midnightntwrk/midnight-verifiable-credentials/pull/755)
+The local VC trial source was [PR #755](https://github.com/midnightntwrk/midnight-verifiable-credentials/pull/755)
 at `dad8b2cae38c9971adb43d124ead1281b021416b`, merged on 2026-11-17.
-Its Nix `npm-artifacts`
-target built three tarballs. This worktree has private, ignored copies under
-`artifacts/ledger9-vc-pr755/`; the temporary `file:` overrides intentionally
-make frozen installs depend on those exact local inputs. They must be replaced
-with published `0.4.0` pins and a regenerated lockfile before a portable PR.
-The public npm registry returned no `@midnight-ntwrk/credential-compact@0.4.0`
-on 2026-11-17, so merging #755 alone does not remove this portability gate.
+Its Nix `npm-artifacts` target built the three historical trial tarballs below.
+Private, ignored copies remain under `artifacts/ledger9-vc-pr755/` for evidence,
+but the workspace no longer depends on them. The consumed VC packages,
+`credential-compact` and `credential-did-midnight`, are now pinned to published
+`1.0.0-rc1` versions with registry-resolved lockfile integrity. The published
+`credential-model@1.0.0-rc1` is part of the cohort but is not a direct Registry
+dependency. Exact-version minimum-release-age exceptions expire after
+2026-11-24 UTC; the seven-day default remains in force.
+
+On 2026-11-17, `pnpm install --frozen-lockfile --ignore-scripts`, the installed
+identity runtime gate (23 tests), documentation and security-script checks,
+and `integration:prebuilt` passed with the published VC RC1 pins. The prebuilt
+run found 66 full proof circuits and passed 378 integration, 111 API, 72
+applicant-portal, and 31 admin-console tests plus signed simulator journeys.
+This removes the VC tarball portability blocker, not the need for packed-package
+validation or finalized on-ledger actor evidence.
 
 | Trial tarball | SHA-256 |
 | --- | --- |
@@ -393,13 +402,13 @@ At `9e75d8fd`, the non-destructive workspace `test:light` and `typecheck`
 Turbo gates passed all ten runnable package tasks each, without cache hits.
 The contract suite reported 97 tests, the CLI 32, and the API 387. These
 source and fixture checks do not qualify local-node finality or deployment.
-At `20db73ea`, the artifact-policy suite passes 88 cases, including rejection
+At `20db73ea`, the artifact-policy suite passed 88 cases, including rejection
 of a local VC tarball override in release-manifest mode. The strict adversarial
-parity check passes 198/198 extracted cases with no missing IDs. These checks
-do not replace deployed proof or finalized actor evidence. A fresh Docker CLI
-query still hung, and npm returned E404 for
-`@midnight-ntwrk/credential-compact@0.4.0` on 2026-11-17; the local trial
-remains nonportable until that package cohort is published.
+parity check passed 198/198 extracted cases with no missing IDs. Those checks
+did not replace deployed proof or finalized actor evidence. At the time,
+`@midnight-ntwrk/credential-compact@0.4.0` was not on npm, so that historical
+trial required the local tarballs. The published `1.0.0-rc1` migration above
+supersedes that package-portability limitation.
 
 At the current local migration tree, full Compact 0.36.0 key generation first
 exposed a ZKIR v3 cost-model failure for `transientHash<JubjubPoint>` in
