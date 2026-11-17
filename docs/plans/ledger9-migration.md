@@ -454,6 +454,22 @@ evidence of a successful live deployment or permission to retry the failed
 attempt. The code mapping is documented in the
 [Midnight node error codes](https://docs.midnight.network/nodes/error-codes).
 
+On the owner's current shared chain, a fresh private pin at indexed block 362
+identified the chain independently of its reusable development genesis. A new
+source-matched ten-package manifest at signed revision `e51c6de9` verified all
+66 verifier keys. One separately journaled, development-only staged deployment
+then returned contract address
+`0xf80638c64dcf63138b222426549bedb122673391b414658854f2a04a92b5be09`
+at block 505. The node independently reports the receipt's block hash at
+height 505 and a finalized head beyond it; the API v4 indexer reports one
+`ContractDeploy` action for that address in the same block. Its transaction
+hash differs from the SDK receipt `txId`, so transaction-ID equivalence is not
+claimed. Read-only journal reconciliation reports `staged-bootstrap-pending`
+with a finalized contract image, not completed key installation or a qualified
+registry. The ignored `artifacts/ledger9-current-chain-smoke-state` journal and
+`artifacts/ledger9-current-chain-pack` manifest must be preserved; never replay
+this deployment. No additional shared-chain write was approved in this step.
+
 ## Execution order
 
 1. Keep the `ledger8` source branch only as a historical reference. Ledger 9
