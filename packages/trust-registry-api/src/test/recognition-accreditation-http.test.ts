@@ -82,7 +82,7 @@ describe("private recognition accreditation HTTP", () => {
 
   it("fails closed without a trusted port and does not expose private CORS", async () => {
     server = createTrustRegistryApiServer({
-      source: createInMemorySource(createOperatorWorkspace({ label: "recognition-no-port" }).snapshot),
+      source: createInMemorySource((await createOperatorWorkspace({ label: "recognition-no-port" })).snapshot),
     });
     const base = await listen(server);
     const path = `${base}/v1/recognition-evidence/${recognitionId}/challenges`;
@@ -98,7 +98,7 @@ describe("private recognition accreditation HTTP", () => {
     const store = new FileRecognitionAdmissionStore(paths.path, paths.governancePath);
     let failure: Error = new RecognitionAccreditationAuthorizationDeniedError();
     server = createTrustRegistryApiServer({
-      source: createInMemorySource(createOperatorWorkspace({ label: "recognition-auth-errors" }).snapshot),
+      source: createInMemorySource((await createOperatorWorkspace({ label: "recognition-auth-errors" })).snapshot),
       recognitionAccreditation: {
         challengeStore: store,
         admissionStore: store,
@@ -134,14 +134,14 @@ describe("private recognition accreditation HTTP", () => {
   it("verifies signed accreditation over HTTP with governed policy and one-use challenge", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("recognition-http-accreditation");
     const maintainer = createMaintainerScenarioFixture("recognition-http-signer");
-    harness.authorizeMaintainer(maintainer);
+    await harness.authorizeMaintainer(maintainer);
     const anchor = {
       ...RECOGNITION_VP_FIXTURE_ANCHOR,
       targetRegistryId: harness.registryId,
       policyId: harness.policyId,
-      policyVersion: `v${(harness.simulator.getLedger().governancePolicyVersion + 1n).toString()}`,
+      policyVersion: `v${((await harness.simulator.getLedger()).governancePolicyVersion + 1n).toString()}`,
     };
-    harness.governRecognitionAccreditorAnchor(anchor);
+    await harness.governRecognitionAccreditorAnchor(anchor);
     const binding = {
       targetRegistryId: harness.registryId,
       recognitionId,
@@ -150,7 +150,7 @@ describe("private recognition accreditation HTTP", () => {
       scopeResourceType: anchor.scopeResourceType,
       scopeResourceId: anchor.scopeResourceId,
     };
-    let policyCommitment = `0x${Buffer.from(harness.simulator.getLedger().governancePolicyCommitment).toString("hex")}`;
+    let policyCommitment = `0x${Buffer.from((await harness.simulator.getLedger()).governancePolicyCommitment).toString("hex")}`;
     const governedCommitment = policyCommitment;
     let failAtAdmissionRead = false;
     let contextReads = 0;
@@ -176,7 +176,7 @@ describe("private recognition accreditation HTTP", () => {
       readBinding: async () => binding,
       readCurrentGovernance: async () => ({
         governancePolicy: harness.policyRecord,
-        activePolicyCommitment: `0x${Buffer.from(harness.simulator.getLedger().governancePolicyCommitment).toString("hex")}`,
+        activePolicyCommitment: `0x${Buffer.from((await harness.simulator.getLedger()).governancePolicyCommitment).toString("hex")}`,
       }),
       prepare: async (currentBinding, evidenceCommitment) => {
         if (recognitionAuthorityChallengeBindingHash(currentBinding)
@@ -186,7 +186,7 @@ describe("private recognition accreditation HTTP", () => {
       execute: async (currentBinding, evidenceCommitment, signers, signature, prepared) => {
         if (recognitionAuthorityChallengeBindingHash(currentBinding)
           !== recognitionAuthorityChallengeBindingHash(binding)) throw new Error("Recognition binding was substituted");
-        const eventHash = harness.executeRecognitionProposalWithSignatures(
+        const eventHash = await harness.executeRecognitionProposalWithSignatures(
           recognitionFixture, signers, signature,
           { ...prepared, evidenceHash: Buffer.from(evidenceCommitment.slice(2), "hex") },
         );
@@ -217,7 +217,7 @@ describe("private recognition accreditation HTTP", () => {
     fixture = await createRecognitionAccreditationVpScenarioFixture({ anchor });
     let clockMs = NOW;
     server = createTrustRegistryApiServer({
-      source: createInMemorySource(createOperatorWorkspace({ label: "recognition-http-source" }).snapshot),
+      source: createInMemorySource((await createOperatorWorkspace({ label: "recognition-http-source" })).snapshot),
       clock: () => new Date(clockMs).toISOString(),
       recognitionAccreditation: port,
       governedRecognitionProposals: proposalPort,
@@ -227,7 +227,7 @@ describe("private recognition accreditation HTTP", () => {
     expect((await post(`${path}/challenges`, {}, false)).status).toBe(403);
     policyCommitment = sha256Hex("stale-policy");
     expect((await post(`${path}/challenges`, {})).status).toBe(403);
-    policyCommitment = `0x${Buffer.from(harness.simulator.getLedger().governancePolicyCommitment).toString("hex")}`;
+    policyCommitment = `0x${Buffer.from((await harness.simulator.getLedger()).governancePolicyCommitment).toString("hex")}`;
     const issued = await post(`${path}/challenges`, {});
     expect(issued.status).toBe(201);
     const challenge = await issued.json() as { nonce: string; challengeHash: string };
@@ -306,7 +306,7 @@ describe("private recognition accreditation HTTP", () => {
     expect(deniedPrepare.status).toBe(403);
     expect(deniedPrepare.headers.get("access-control-allow-origin")).toBeNull();
     expect((await post(`${proposalPath}/prepare`, proposalRequest, "did:midnight:wrong-authority")).status).toBe(403);
-    expect(harness.simulator.getLedger().recognitionCount).toBe(0n);
+    expect((await harness.simulator.getLedger()).recognitionCount).toBe(0n);
     await expect(withRecognitionProposalAdmission({
       recognitionId,
       readBinding: () => proposalPort.readBinding(recognitionId),
@@ -325,7 +325,7 @@ describe("private recognition accreditation HTTP", () => {
     const signature = signDeploymentBoundMaintainerActionFromSeed(
       maintainer.seed,
       Buffer.from(prepared.registryId.slice(2), "hex"),
-      harness.simulator.getLedger().deploymentNetworkIdCommitment,
+      (await harness.simulator.getLedger()).deploymentNetworkIdCommitment,
       Buffer.from(harness.simulator.contractAddress, "hex"),
       Buffer.from(prepared.policyCommitment.slice(2), "hex"),
       Buffer.from(prepared.actionKind.slice(2), "hex"),
@@ -334,7 +334,7 @@ describe("private recognition accreditation HTTP", () => {
     );
     const publicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
     const verifierSignature = harness.signRecognitionProposalEvidence(
-      harness.prepareRecognitionProposalAction(recognitionFixture, Buffer.from(receipt.evidenceCommitment.slice(2), "hex")),
+      await harness.prepareRecognitionProposalAction(recognitionFixture, Buffer.from(receipt.evidenceCommitment.slice(2), "hex")),
     );
     const submitBody = {
       ...proposalRequest,
@@ -350,13 +350,13 @@ describe("private recognition accreditation HTTP", () => {
     expect(deniedSubmit.status).toBe(403);
     expect(deniedSubmit.headers.get("access-control-allow-origin")).toBeNull();
     expect((await post(`${proposalPath}/submit`, submitBody, "did:midnight:wrong-authority")).status).toBe(403);
-    expect(harness.simulator.getLedger().recognitionCount).toBe(0n);
+    expect((await harness.simulator.getLedger()).recognitionCount).toBe(0n);
     const submitted = await post(`${proposalPath}/submit`, submitBody);
     expect(submitted.status).toBe(202);
     expect(submitted.headers.get("access-control-allow-origin")).toBeNull();
-    expect(harness.simulator.getLedger().recognitionCount).toBe(1n);
-    expect(`0x${Buffer.from(harness.simulator.getRecognition(recognitionFixture.recognitionIdCommitment).evidenceHash).toString("hex")}`)
+    expect((await harness.simulator.getLedger()).recognitionCount).toBe(1n);
+    expect(`0x${Buffer.from((await harness.simulator.getRecognition(recognitionFixture.recognitionIdCommitment)).evidenceHash).toString("hex")}`)
       .toBe(receipt.evidenceCommitment);
-    expect(harness.simulator.getLedger().issuerAuthorizationCount).toBe(0n);
+    expect((await harness.simulator.getLedger()).issuerAuthorizationCount).toBe(0n);
   });
 });
