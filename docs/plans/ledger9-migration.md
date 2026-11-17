@@ -273,6 +273,18 @@ authorization, evidence, and ledger reads. Their focused suites pass 15 and
 package tasks. Strict security-script typecheck, 244 local-ledger preflight
 tests, and 127 standalone-topology tests also pass at this local tree. These
 gates do not establish a responsive node or deployed-chain finality.
+The auditor-admission demo host now awaits CLI workspace construction before
+reading its registry ID or passing the workspace to the pending-application
+port. Both live-host integration files pass all four cases; the applicant
+portal suite passes 13 files and 72 tests. A direct, non-destructive Turbo
+`test:light` run passes all ten package tasks (nine from the local cache).
+The browser gate cannot start because this checkout lacks the source-matched
+`contracts/trust-registry/dist/trust-registry.compact` file required by
+`scripts/build-prebuilt-runtime.sh`; existing generated JavaScript is not a
+substitute for that provenance check. A read-only Docker socket ping and the
+local node RPC both timed out, so no live Ledger 9 or deployed E2E claim follows
+from these fixture results. Preserve the existing generated outputs until a
+source-matched Compact build can be prepared safely.
 
 ## Execution order
 
