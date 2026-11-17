@@ -516,6 +516,18 @@ development-only bootstrap with the single-key maintenance authority; it
 does not qualify actor journeys, an approved maintenance transition, or a
 release.
 
+A subsequent read-only reconciliation on the same pinned multi-user chain at
+indexed height 2026 again matched all 66 verifier keys and maintenance counter
+65. One finalized ledger snapshot reported governance action count 1, one
+active maintainer, zero registered evidence-verifier keys, and zero active
+issuer, verifier, auditor, or recognition entries. Therefore the deployed
+issuer path cannot begin with a proposal: a governed evidence-verifier-key
+registration and its finalized readback must precede any evidence-bound
+issuer proposal. That registration, live DID/VC evidence, and the actor
+submissions have not yet run on this chain. The ignored private readback
+helper retains the exact-plan, journal, and manifest checks; this observation
+does not approve or submit a shared-chain mutation.
+
 ## Execution order
 
 1. Keep the `ledger8` source branch only as a historical reference. Ledger 9
