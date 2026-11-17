@@ -13,9 +13,9 @@ qualification claim. The historical Ledger 8 source is the `ledger8` branch at
 | Indexer standalone | 4.4.101 | Pinned local container healthy; GraphQL serves indexed blocks and the matching genesis |
 | Proof server | 9.0.0 | Pinned local container listening on loopback with read-only parameter cache and fetching disabled; no TR proof run |
 | Compact compiler | 0.36.0 | Pinned Nix toolchain builds; contract compiles with `--skip-zk` after source type fixes |
-| Compact runtime | 0.21.0 | Locally installed with exact DID RC1 and VC PR #755 artifacts; runtime validation incomplete |
-| Midnight.js / testkit-js | 5.0.0 | Locally installed; provider and async circuit API migration incomplete |
-| Compact.js | 3.0.0 | Locally installed; core simulator and simulator client are async, but test/integration callers remain |
+| Compact runtime | 0.21.0 | Locally installed with exact DID RC1 and VC PR #755 artifacts; simulator/integration tests pass, deployed runtime unqualified |
+| Midnight.js / testkit-js | 5.0.0 | Locally installed; simulator/integration tests pass, deployed provider journey unqualified |
+| Compact.js | 3.0.0 | Locally installed; simulator, client, harness, and integration tests use awaited circuit/read APIs |
 | `@midnightntwrk/ledger-v9` | 1.0.0 | Required for new Ledger 9 transactions |
 | `@midnightntwrk/onchain-runtime-v4` | 4.0.0 | Required where directly consumed |
 | Midnight DID | exact 1.0.0-rc1 cohort | Published and installed locally under four dated, exact-version age exceptions |
@@ -30,7 +30,11 @@ The `@midnight-ntwrk/trust-registry-integration` `test:light` check also
 passes with the exact native Compact 0.36.0 compiler installed: it compiles
 the VC composition fixture and checks the credential/presentation envelope
 relation, including claim-root, issuer-method, and schema mismatches. It does
-not exercise a deployed Ledger 9 registry or a VP actor journey.
+not exercise a deployed Ledger 9 registry or a VP actor journey. At local head
+`6b53aac0`, the integration package typecheck has zero diagnostics and the full
+Vitest integration suite passes 52 files, 376 tests with two skipped. This is
+simulator/fixture validation, not a deployed or finalized end-to-end result.
+The two skipped cases remain unqualified.
 
 The official [Ledger 9 upgrade guide](https://docs.midnight.network/relnotes/ledger-9)
 is the compatibility source. The
@@ -47,9 +51,8 @@ mutation-intent keys through the DID-owned document and codec types, not the
 VC proof adapter. It still requires subject, controller, relationship,
 positive DID version, native Jubjub key type, and prime-order key checks.
 The VC release gate applies only to VP evidence journeys, not basic DID
-challenge-response. Existing API integration suites remain blocked by the
-unbuilt integration package in this worktree; the standalone key-resolution
-tests pass, but they do not qualify full actor journeys.
+challenge-response. The standalone key-resolution tests pass, but neither
+they nor the simulator integration suite qualify deployed actor journeys.
 
 The local VC trial source is [PR #755](https://github.com/midnightntwrk/midnight-verifiable-credentials/pull/755)
 at `dad8b2cae38c9971adb43d124ead1281b021416b`. Its Nix `npm-artifacts`
@@ -81,31 +84,30 @@ instead of the removed process-global network ID for the pinned deploy path.
 The simulator harness now exposes an awaited bootstrap promise for its
 evidence-verifier registration and awaits the Ledger 9 evidence-verifier key
 rotation/status circuits. The focused DID-key lifecycle suite passes all five
-cases. Other harness methods and integration tests still use synchronous
-simulator assumptions; the integration package typecheck remains red and this
-focused result is not a full harness qualification.
+cases. The remaining harness methods and integration callers now await the
+Ledger 9 simulator; the full integration typecheck and test suite pass.
 VC authority-key registration and suspension now await the same bootstrap,
 ledger reads, quorum signatures, and simulator circuits. The focused Ledger 9
 authority-key harness test passes registration, status transition, and a
-wrong-registry domain rejection; the broader decision-evidence suite remains
-part of the unfinished async migration.
+wrong-registry domain rejection; the broader decision-evidence suite now also
+passes with awaited circuit results.
 The governed threshold-policy revision path now awaits the Compact result
 before changing its local policy record and awaits the subsequent
 evidence-verifier registration. A focused Ledger 9 test confirms policy
 version progression, two governance actions, and the active replacement key.
-Other governance flows and their callers remain unqualified.
+External-quorum policy revision and recovery now pass their integration tests.
 The maintainer onboarding path now awaits evidence validation, governed
 proposal, authorization, and activation. Atomic recovery awaits its active
 membership and policy prechecks, then updates the local policy record only
 after the recovery circuit resolves. Focused Ledger 9 simulator tests cover
 successful onboarding, insufficient recovery quorum, and an atomic recovery
 that reduces active maintainers and revises the policy. They do not establish
-deployed-chain finality or qualify the remaining integration callers.
+deployed-chain finality.
 Issuer onboarding now awaits application evidence, proposal, authorization,
 and activation; issuer suspension, revocation, and archival also await their
 governed circuits. A focused Ledger 9 simulator test checks all six status
 transitions and sequence increments. It is simulator evidence only, not a
-deployed issuer journey or a passing full integration typecheck.
+deployed issuer journey.
 Verifier onboarding now awaits application evidence, proposal, authorization,
 and activation, followed by awaited suspension, revocation, and archival.
 The focused Ledger 9 simulator test confirms state and governance-sequence
@@ -113,20 +115,18 @@ changes across those actions; it is not a deployed verifier journey.
 Auditor onboarding and recognition proposal/decision/status methods now await
 their Ledger 9 simulator calls. Separate focused tests cover active, suspended,
 revoked, and archived states for each role. Recognition's signed external
-authority assertion is still a distinct integration path and is not qualified
-by the fixture-based recognition lifecycle test.
+authority assertion is a distinct integration path, now covered by its own
+passing integration test.
 Epoch publication, witness readback, and evidence-bundle assembly now await
 the Ledger 9 simulator. Focused issuer, verifier, auditor, and recognition
 tests verify active decision bundles against their published epoch roots and
 maintainer signatures; publishing an epoch adds a governance action. The
-integration harness source has no TypeScript diagnostics, but the package
-typecheck remains red because historical tests and other callers still use
-synchronous return values. These are simulated epochs, not finalized chain
+integration harness and its historical callers now typecheck and pass in the
+full integration suite. These are simulated epochs, not finalized chain
 receipts.
 The broad local simulator suite now passes all 36 cases with awaited Ledger 9
 governance and readback, including negative quorum, lifecycle, format, and
-tampered-evidence paths. That suite has no TypeScript diagnostics, but other
-integration tests still require async caller migration.
+tampered-evidence paths.
 The simulator-backed VC decision-evidence suite now passes both issuer and
 unchanged-grant tests. Its compiled VC consumer uses Ledger 9 named circuit
 contexts and awaited circuit results; it verifies installation, revocation,
@@ -142,9 +142,9 @@ network before reading the deployment or mutating its journal. Integration
 test fixtures no longer use the global setter, but other SDK 5 transaction and
 state-read APIs still require changes. The simulator client now awaits
 ledger reads and bundle context; its source-only build, focused async tests,
-and lint pass. Existing client tests and the integration harness still assume
-synchronous results. The full client and integration package typechecks remain
-red; these source edits are not deployment evidence.
+and lint pass. Integration callers now use asynchronous results and the
+integration package typecheck passes; these source edits are not deployment
+evidence.
 
 The public, local and staged deployment journal wrappers now compare the
 provider's configured network with the approved network before reserving an
