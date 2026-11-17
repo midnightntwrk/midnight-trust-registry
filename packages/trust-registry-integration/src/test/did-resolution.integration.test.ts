@@ -26,11 +26,11 @@ describe("trust registry DID integration", () => {
     const issuer = createIssuerScenarioFixture("degree");
     const verifier = createVerifierScenarioFixture("employment");
 
-    harness.authorizeIssuer(issuer);
-    harness.authorizeVerifier(verifier);
+    await harness.authorizeIssuer(issuer);
+    await harness.authorizeVerifier(verifier);
 
-    const issuerBundle = harness.evaluateCurrentIssuerDecision(issuer);
-    const verifierBundle = harness.evaluateCurrentVerifierDecision(verifier);
+    const issuerBundle = await harness.evaluateCurrentIssuerDecision(issuer);
+    const verifierBundle = await harness.evaluateCurrentVerifierDecision(verifier);
     const issuerDidFixture = createMidnightDidLedgerFixture(
       issuerBundle.subjectDid,
       {
@@ -72,9 +72,9 @@ describe("trust registry DID integration", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("passport");
 
-    harness.authorizeIssuer(issuer);
+    await harness.authorizeIssuer(issuer);
 
-    const issuerBundle = harness.evaluateCurrentIssuerDecision(issuer);
+    const issuerBundle = await harness.evaluateCurrentIssuerDecision(issuer);
     const resolver = createMidnightDidResolver([]);
 
     await expect(resolver.resolveResult(issuerBundle.subjectDid)).resolves.toBeNull();
