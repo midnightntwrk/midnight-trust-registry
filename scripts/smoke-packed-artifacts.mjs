@@ -21,7 +21,6 @@ const parseArgs = () => {
     artifactsDir: artifactDirectory,
     actorJourney: false,
     vcConsumer: false,
-    localVcTarballsDir: undefined,
   };
   const args = process.argv.slice(2);
 
@@ -42,12 +41,6 @@ const parseArgs = () => {
       case "--vc-consumer":
         options.vcConsumer = true;
         break;
-      case "--local-vc-tarballs-dir":
-        options.localVcTarballsDir = args[++index];
-        if (!options.localVcTarballsDir || options.localVcTarballsDir.startsWith("--")) {
-          throw new Error("--local-vc-tarballs-dir requires a directory path");
-        }
-        break;
       case "--help":
         console.log(
           [
@@ -58,7 +51,6 @@ const parseArgs = () => {
             "  --manifest <path>     Verify the candidate manifest before installing any tarball.",
             "  --actor-journey       Run four signed HTTP journeys and the recognition VC/VP scenario from packed packages.",
             "  --vc-consumer         Compile the packed Ledger 9 consumer fixture and check its pinned authority domain.",
-            "  --local-vc-tarballs-dir <dir>  Use local VC trial tarballs; incompatible with --manifest and not release evidence.",
           ].join("\n"),
         );
         process.exit(0);
@@ -105,24 +97,7 @@ const ensureArtifacts = (artifactsPath) => {
   });
 };
 
-const { artifactsDir, manifest, actorJourney, vcConsumer, localVcTarballsDir } = parseArgs();
-if (localVcTarballsDir !== undefined && manifest !== undefined) {
-  throw new Error("Local VC trial tarballs cannot be used with a verified release manifest");
-}
-if (localVcTarballsDir !== undefined && (!vcConsumer && !actorJourney)) {
-  throw new Error("Local VC trial tarballs require --vc-consumer or --actor-journey");
-}
-const localVcTarballs = localVcTarballsDir === undefined ? [] : [
-  "midnight-ntwrk-credential-compact-0.4.0.tgz",
-  "midnight-ntwrk-credential-did-midnight-0.4.0.tgz",
-  "midnight-ntwrk-credential-model-0.4.0.tgz",
-].map((name) => {
-  const filename = path.resolve(repoRoot, localVcTarballsDir, name);
-  if (!fs.lstatSync(filename).isFile()) {
-    throw new Error(`Local VC trial tarball must be a regular file: ${filename}`);
-  }
-  return filename;
-});
+const { artifactsDir, manifest, actorJourney, vcConsumer } = parseArgs();
 const resolvedArtifactsDir = path.resolve(repoRoot, artifactsDir);
 let tarballPaths;
 let candidateManifest;
@@ -158,7 +133,7 @@ try {
     path.join(smokeRoot, "package.json"),
     `${JSON.stringify({ name: "trust-registry-pack-smoke", private: true, type: "module" }, null, 2)}\n`,
   );
-  run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", ...tarballPaths, ...localVcTarballs], {
+  run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", ...tarballPaths], {
     cwd: smokeRoot,
   });
 

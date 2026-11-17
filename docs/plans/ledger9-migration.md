@@ -81,11 +81,9 @@ ports or chain are incompatible with the shared stack, use an explicitly unique
 project and state, not a shared-project restart. The version preflight is
 read-only and does not start or inspect containers.
 
-The installed-identity guard now accepts those local `file:` tarballs only when
-their bytes match the SHA-512 integrity in the frozen pnpm lockfile and their
-paths remain inside this checkout. Its 23 unit tests and installed-package
-check pass for six identity packages at Compact runtime 0.21.0. This is a local
-trial, not a portable dependency or a substitute for publishing VC 0.4.0.
+The installed-identity guard requires exact published identity versions and
+rejects local `file:` tarball overrides. Its unit tests and installed-package
+check pass for six identity packages at Compact runtime 0.21.0.
 The `@midnight-ntwrk/trust-registry-integration` `test:light` check also
 passes with the exact native Compact 0.36.0 compiler installed: it compiles
 the VC composition fixture and checks the credential/presentation envelope
@@ -133,9 +131,9 @@ they nor the simulator integration suite qualify deployed actor journeys.
 
 The local VC trial source was [PR #755](https://github.com/midnightntwrk/midnight-verifiable-credentials/pull/755)
 at `dad8b2cae38c9971adb43d124ead1281b021416b`, merged on 2026-11-17.
-Its Nix `npm-artifacts` target built the three historical trial tarballs below.
-Private, ignored copies remain under `artifacts/ledger9-vc-pr755/` for evidence,
-but the workspace no longer depends on them. The consumed VC packages,
+Its Nix `npm-artifacts` target built three historical 0.4.0 trial tarballs.
+The obsolete local copies and their smoke-install path have been removed.
+The consumed VC packages,
 `credential-compact` and `credential-did-midnight`, are now pinned to published
 `1.0.0-rc1` versions with registry-resolved lockfile integrity. The published
 `credential-model@1.0.0-rc1` is part of the cohort but is not a direct Registry
@@ -149,12 +147,6 @@ run found 66 full proof circuits and passed 378 integration, 111 API, 72
 applicant-portal, and 31 admin-console tests plus signed simulator journeys.
 This removes the VC tarball portability blocker, not the need for packed-package
 validation or finalized on-ledger actor evidence.
-
-| Trial tarball | SHA-256 |
-| --- | --- |
-| `midnight-ntwrk-credential-compact-0.4.0.tgz` | `10ded7cf431103f0031873e5b489eb5dc1853365694e1cbf2d15b384c8f563c7` |
-| `midnight-ntwrk-credential-did-midnight-0.4.0.tgz` | `4fa92d305a152e8d1239c0997fa86bcfd189eb952e08763a82dcaf407b143400` |
-| `midnight-ntwrk-credential-model-0.4.0.tgz` | `cc12db936817281e9c41b64c70b45131f6610c6634a7353bd9ad398f20610866` |
 
 Current compile evidence is limited to `compact:light`. The test simulator now
 awaits generated `initialState` and impure circuits, serializes calls, and
@@ -380,19 +372,16 @@ simulator/loopback journeys; the node did not finalize any of their actions.
 The compiled VC consumer fixture now awaits Ledger 9 constructor, named
 circuit contexts, signer installation, proof assertions, and ledger reads.
 Its issuer/verifier positive and substitution, rollback, and revocation
-negative checks pass with the local VC 0.4.0 trial packages. This is not a
-proof from a deployed registry or a portable packed-package result.
+negative checks passed at that point with local VC 0.4.0 trial packages.
+That result was not proof from a deployed registry or a portable
+packed-package result.
 The public-package consumer smoke also awaits issuer/verifier governance,
 evidence reads, and client verification; its positive checks and wrong-resource
 rejection pass against the local workspace build. Packed-tarball validation
 still requires a source-matched release candidate, not this partial build.
-An isolated source-matched skip-ZK build produced ten Trust Registry tarballs,
-but the normal packed smoke stopped at npm install because
-`@midnight-ntwrk/credential-compact@0.4.0` is not published. For local trial
-only, `packed-artifacts:smoke -- --vc-consumer --actor-journey
---local-vc-tarballs-dir artifacts/ledger9-vc-pr755` installs the three exact VC
-trial tarballs alongside the Registry packages. This option refuses a release
-manifest and does not make the resulting package set portable or publishable.
+An isolated source-matched skip-ZK build produced ten Trust Registry tarballs.
+At the time, normal packed smoke stopped at npm install because the 0.4.0 VC
+trial package was not published. The local trial install path is now removed.
 At `34c3155f`, that isolated smoke installed all ten Registry tarballs and
 passed the compiled VC consumer plus issuer, verifier, auditor, maintainer,
 and recognition actor journeys. It used skip-ZK output and local VC trial
@@ -403,7 +392,7 @@ Turbo gates passed all ten runnable package tasks each, without cache hits.
 The contract suite reported 97 tests, the CLI 32, and the API 387. These
 source and fixture checks do not qualify local-node finality or deployment.
 At `20db73ea`, the artifact-policy suite passed 88 cases, including rejection
-of a local VC tarball override in release-manifest mode. The strict adversarial
+of local VC tarball overrides in release-manifest mode. The strict adversarial
 parity check passed 198/198 extracted cases with no missing IDs. Those checks
 did not replace deployed proof or finalized actor evidence. At the time,
 `@midnight-ntwrk/credential-compact@0.4.0` was not on npm, so that historical

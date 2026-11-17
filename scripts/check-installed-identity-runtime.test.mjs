@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { checkInstalledIdentityRuntime } from "./check-installed-identity-runtime.mjs";
 
@@ -72,28 +71,10 @@ test("semantic YAML override drift fails", () => withFixture(({ root, save, over
   assert.throws(() => checkInstalledIdentityRuntime(root), /override 0\.7\.1 does not match 0\.7\.0/);
 }));
 
-test("local VC tarball must match the frozen lockfile", () => withFixture(({ root, put }) => {
+test("local identity tarball overrides are rejected", () => withFixture(({ root, put }) => {
   const archive = "file:artifacts/credential-compact-0.7.0.tgz";
-  const bytes = "local VC PR artifact";
-  const integrity = `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
-  put(archive.slice("file:".length), bytes);
   put("pnpm-workspace.yaml", `overrides:\n  "${leaf}": ${archive}\n  "${umbrella}": 0.7.0\n`);
-  put("pnpm-lock.yaml", { packages: { [`${leaf}@${archive}`]: { resolution: { tarball: archive, integrity } } } });
-  assert.equal(checkInstalledIdentityRuntime(root).identityCount, 2);
-  put(archive.slice("file:".length), "changed after install");
-  assert.throws(() => checkInstalledIdentityRuntime(root), /tarball differs from the lockfile/);
-}));
-
-test("local VC tarball cannot escape the checkout", () => withFixture(({ root, put }) => {
-  const outside = `${basename(root)}-outside-credential-compact-0.7.0.tgz`;
-  const archive = `file:../${outside}`;
-  try {
-    put(`../${outside}`, "not in checkout");
-    put("pnpm-workspace.yaml", `overrides:\n  "${leaf}": ${archive}\n  "${umbrella}": 0.7.0\n`);
-    assert.throws(() => checkInstalledIdentityRuntime(root), /tarball must be inside the checkout/);
-  } finally {
-    rmSync(join(root, "..", outside), { force: true });
-  }
+  assert.throws(() => checkInstalledIdentityRuntime(root), /override file:.* does not match 0\.7\.0/);
 }));
 
 test("Compact runtime override drift fails", () => withFixture(({ root, put }) => {

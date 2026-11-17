@@ -2,9 +2,8 @@
 
 > **Ledger 9 migration in progress.** This branch pins the official local
 > Ledger 9 node, indexer, proof server, Compact, Midnight.js, and DID cohort.
-> Browser, simulator, and local trial-tarball journeys pass, but a deployed
-> Trust Registry with finalized readback has not been qualified. The VC 0.4.0
-> trial packages are not yet published. See the
+> Browser and simulator journeys pass with published VC RC1 packages, but a
+> deployed Trust Registry with finalized readback has not been qualified. See the
 > [migration plan](docs/plans/ledger9-migration.md). The `ledger8` branch
 > preserves the historical 0.1.0 source.
 
