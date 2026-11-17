@@ -50,7 +50,7 @@ const parseArgs = () => {
             `  --artifacts-dir <dir>  Tarball directory. Defaults to ${artifactDirectory}.`,
             "  --manifest <path>     Verify the candidate manifest before installing any tarball.",
             "  --actor-journey       Run four signed HTTP journeys and the recognition VC/VP scenario from packed packages.",
-            "  --vc-consumer         Compile the packed Ledger 8 consumer fixture and check its pinned authority domain.",
+            "  --vc-consumer         Compile the packed Ledger 9 consumer fixture and check its pinned authority domain.",
           ].join("\n"),
         );
         process.exit(0);
@@ -175,7 +175,7 @@ try {
     );
     const compactVersion = fs.readFileSync(path.join(repoRoot, ".compact-version"), "utf8").trim();
     run("node", ["packed-vc-consumer-scenario.mjs", compactVersion], { cwd: smokeRoot });
-    console.log("[smoke-packed-artifacts] Packed Ledger 8 consumer fixture passed.");
+    console.log("[smoke-packed-artifacts] Packed Ledger 9 consumer fixture passed.");
   }
   if (actorJourney) {
     for (const script of [

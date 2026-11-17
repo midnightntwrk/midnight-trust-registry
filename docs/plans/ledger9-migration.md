@@ -312,6 +312,11 @@ membership journey now passes separately for issuer, verifier, auditor, and
 maintainer with awaited 2-of-3 governance, VP intake, epoch publication,
 historical readback, and file-backed process restart. These are still
 simulator/loopback journeys; the node did not finalize any of their actions.
+The compiled VC consumer fixture now awaits Ledger 9 constructor, named
+circuit contexts, signer installation, proof assertions, and ledger reads.
+Its issuer/verifier positive and substitution, rollback, and revocation
+negative checks pass with the local VC 0.4.0 trial packages. This is not a
+proof from a deployed registry or a portable packed-package result.
 
 ## Execution order
 
