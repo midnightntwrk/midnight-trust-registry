@@ -8,10 +8,10 @@ qualification claim. The historical Ledger 8 source is the `ledger8` branch at
 
 | Component | Selected version | Current migration state |
 | --- | --- | --- |
-| Node | 2.1.101 | Pinned local container healthy; `system_version` returns `2.1.101-86774edf`, runtime `specVersion` is `2001100` |
+| Node | 2.1.101 | Previously healthy with `system_version` `2.1.101-86774edf` and runtime `specVersion` `2001100`; current Docker RPC is unresponsive |
 | Ledger | 9.1.0.1 | Official image cohort and protocol-version evidence; no independent crate-version attestation from RPC |
-| Indexer standalone | 4.4.101 | Pinned local container healthy; GraphQL serves indexed blocks and the matching genesis |
-| Proof server | 9.0.0 | Pinned local container listening on loopback with read-only parameter cache and fetching disabled; no TR proof run |
+| Indexer standalone | 4.4.101 | Previously served indexed blocks and matching genesis; current Docker health is unverified |
+| Proof server | 9.0.0 | Previously listened on loopback with read-only parameter cache and fetching disabled; current Docker health is unverified, no TR proof run |
 | Compact compiler | 0.36.0 | Pinned Nix toolchain builds; contract compiles with `--skip-zk` after source type fixes |
 | Compact runtime | 0.21.0 | Locally installed with exact DID RC1 and VC PR #755 artifacts; simulator/integration tests pass, deployed runtime unqualified |
 | Midnight.js / testkit-js | 5.0.0 | Locally installed; simulator/integration tests pass, deployed provider journey unqualified |
@@ -337,6 +337,13 @@ At `9e75d8fd`, the non-destructive workspace `test:light` and `typecheck`
 Turbo gates passed all ten runnable package tasks each, without cache hits.
 The contract suite reported 97 tests, the CLI 32, and the API 387. These
 source and fixture checks do not qualify local-node finality or deployment.
+At `20db73ea`, the artifact-policy suite passes 88 cases, including rejection
+of a local VC tarball override in release-manifest mode. The strict adversarial
+parity check passes 198/198 extracted cases with no missing IDs. These checks
+do not replace deployed proof or finalized actor evidence. A fresh Docker CLI
+query still hung, and npm returned E404 for
+`@midnight-ntwrk/credential-compact@0.4.0` on 2026-11-17; the local trial
+remains nonportable until that package cohort is published.
 
 ## Execution order
 
