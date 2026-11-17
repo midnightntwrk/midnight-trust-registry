@@ -25,14 +25,14 @@ const signPrepared = (
   harness: LocalTrustRegistryIntegrationHarness,
   maintainer: MaintainerScenarioFixture,
   action: Pick<PreparedVerifierProposalAction,
-    "registryId" | "policyCommitment" | "actionKind" | "actionPayloadHash" | "actionSequence">,
+    "registryId" | "networkIdCommitment" | "policyCommitment" | "actionKind" | "actionPayloadHash" | "actionSequence">,
 ): MaintainerCoAuthorizer => ({
   keyId: maintainer.keyId,
   publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
   signature: signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
     action.registryId,
-    harness.simulator.getLedger().deploymentNetworkIdCommitment,
+    action.networkIdCommitment,
     Buffer.from(harness.simulator.contractAddress, "hex"),
     action.policyCommitment,
     action.actionKind,
@@ -42,91 +42,91 @@ const signPrepared = (
 });
 
 describe("externally signed Compact verifier governance", () => {
-  it("requires distinct active maintainers for proposal, approval, and activation", () => {
+  it("requires distinct active maintainers for proposal, approval, and activation", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("external-verifier");
     const second = createMaintainerScenarioFixture("verifier-second");
     const third = createMaintainerScenarioFixture("verifier-third");
     const outsider = createMaintainerScenarioFixture("verifier-outsider");
     const verifier = createVerifierScenarioFixture("external-verifier-applicant");
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(third);
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
-    const evidence = harness.createApplicationEvidence({
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(third);
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    const evidence = await harness.createApplicationEvidence({
       applicationId: verifier.authorizationId,
       subjectDid: verifier.subjectDid,
       role: "verifier",
       scope: createVerifierAuthorizationScopeFixture(verifier),
     });
-    const proposal = harness.prepareVerifierProposalAction(verifier, evidence);
+    const proposal = await harness.prepareVerifierProposalAction(verifier, evidence);
     const verifierSignature = harness.signVerifierProposalEvidence(proposal);
     const firstProposalSigner = signPrepared(harness, second, proposal);
     const secondProposalSigner = signPrepared(harness, third, proposal);
-    const beforeProposal = harness.simulator.getLedger().governanceActionCount;
-    expect(() => harness.prepareVerifierProposalAction(verifier, evidence, {
+    const beforeProposal = (await harness.simulator.getLedger()).governanceActionCount;
+    await expect(harness.prepareVerifierProposalAction(verifier, evidence, {
       scope: createVerifierAuthorizationScopeFixture(verifier),
       challengeHash: evidence.envelope.challengeHash,
       governedResource: { type: "requestProfile", id: "wrong-request-profile" },
-    })).toThrow(/scope does not match/u);
-    expect(() => harness.executeVerifierProposalWithSignatures(
+    })).rejects.toThrow(/scope does not match/u);
+    await expect(harness.executeVerifierProposalWithSignatures(
       verifier, evidence, [firstProposalSigner], verifierSignature,
-    )).toThrow();
-    expect(() => harness.executeVerifierProposalWithSignatures(
+    )).rejects.toThrow();
+    await expect(harness.executeVerifierProposalWithSignatures(
       verifier, evidence, [firstProposalSigner, firstProposalSigner], verifierSignature,
-    )).toThrow();
-    expect(() => harness.executeVerifierProposalWithSignatures(
+    )).rejects.toThrow();
+    await expect(harness.executeVerifierProposalWithSignatures(
       verifier, evidence, [firstProposalSigner, signPrepared(harness, outsider, proposal)], verifierSignature,
-    )).toThrow();
-    expect(() => harness.executeVerifierProposalWithSignatures(
+    )).rejects.toThrow();
+    await expect(harness.executeVerifierProposalWithSignatures(
       verifier, evidence, [firstProposalSigner, secondProposalSigner],
       signVerifierProposalEvidenceFromSeed(
         outsider.seed, proposal.registryId,
         proposal.networkIdCommitment, proposal.contractAddress,
         proposal.evidenceVerifierKeyIdCommitment, proposal.actionPayloadHash,
       ),
-    )).toThrow();
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeProposal);
-    harness.executeVerifierProposalWithSignatures(
+    )).rejects.toThrow();
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(beforeProposal);
+    await harness.executeVerifierProposalWithSignatures(
       verifier, evidence, [firstProposalSigner, secondProposalSigner], verifierSignature,
     );
-    const proposalEvidence = harness.simulator.getVerifierProposalEvidence(verifier.authorizationIdCommitment);
+    const proposalEvidence = await harness.simulator.getVerifierProposalEvidence(verifier.authorizationIdCommitment);
     expect(proposalEvidence.evidenceCommitment).toEqual(proposal.evidenceHash);
     expect(proposalEvidence.evidenceVerifierKeyIdCommitment).toEqual(proposal.evidenceVerifierKeyIdCommitment);
     expect(proposalEvidence.activePolicyVersion).toBe(proposal.policyVersion);
 
-    const approval = harness.prepareVerifierDecisionAction(verifier, "approve");
-    expect(() => harness.prepareVerifierDecisionAction(verifier, "unsupported" as "approve"))
-      .toThrow(/Unsupported verifier decision action/u);
-    const beforeApproval = harness.simulator.getLedger().governanceActionCount;
-    expect(() => harness.executeVerifierDecisionWithSignatures(
+    const approval = await harness.prepareVerifierDecisionAction(verifier, "approve");
+    await expect(harness.prepareVerifierDecisionAction(verifier, "unsupported" as "approve"))
+      .rejects.toThrow(/Unsupported verifier decision action/u);
+    const beforeApproval = (await harness.simulator.getLedger()).governanceActionCount;
+    await expect(harness.executeVerifierDecisionWithSignatures(
       verifier, "approve", [signPrepared(harness, second, approval)],
-    )).toThrow();
-    expect(() => harness.executeVerifierDecisionWithSignatures(
+    )).rejects.toThrow();
+    await expect(harness.executeVerifierDecisionWithSignatures(
       verifier, "approve", [
-        signPrepared(harness, second, { ...approval, policyCommitment: new Uint8Array(32) }),
+        signPrepared(harness, second, { ...approval, policyCommitment: new Uint8Array(32).fill(1) }),
         signPrepared(harness, third, approval),
       ],
-    )).toThrow();
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeApproval);
-    harness.executeVerifierDecisionWithSignatures(verifier, "approve", [
+    )).rejects.toThrow();
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(beforeApproval);
+    await harness.executeVerifierDecisionWithSignatures(verifier, "approve", [
       signPrepared(harness, second, approval), signPrepared(harness, third, approval),
     ]);
 
-    const activation = harness.prepareVerifierDecisionAction(verifier, "activate");
-    const beforeActivation = harness.simulator.getLedger().governanceActionCount;
-    expect(() => harness.executeVerifierDecisionWithSignatures(verifier, "activate", [
+    const activation = await harness.prepareVerifierDecisionAction(verifier, "activate");
+    const beforeActivation = (await harness.simulator.getLedger()).governanceActionCount;
+    await expect(harness.executeVerifierDecisionWithSignatures(verifier, "activate", [
       signPrepared(harness, second, approval), signPrepared(harness, third, approval),
-    ])).toThrow();
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeActivation);
-    harness.executeVerifierDecisionWithSignatures(verifier, "activate", [
+    ])).rejects.toThrow();
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(beforeActivation);
+    await harness.executeVerifierDecisionWithSignatures(verifier, "activate", [
       signPrepared(harness, second, activation), signPrepared(harness, third, activation),
     ]);
 
-    const bundle = harness.evaluateCurrentVerifierDecision(verifier, {
+    const bundle = await harness.evaluateCurrentVerifierDecision(verifier, {
       expectedRegistryId: harness.registryId,
     });
     expect(bundle.authorization?.status).toBe("active");
     expect(bundle.authorization?.resourceId).toBe(verifier.scopeResourceId);
-    expect(() => new TrustRegistrySimulatorClient(harness.simulator)
-      .verifyVerifierAuthorizationBundle(bundle, {})).not.toThrow();
+    await expect(new TrustRegistrySimulatorClient(harness.simulator)
+      .verifyVerifierAuthorizationBundle(bundle, {})).resolves.toBeDefined();
   });
 });
