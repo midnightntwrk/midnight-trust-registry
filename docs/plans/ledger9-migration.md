@@ -40,6 +40,14 @@ and 65 tests with asynchronous simulator reads and bundle verification. The
 contract package now typechecks and its full Vitest suite passes eight files
 and 97 tests. These are simulator and fixture checks, not a deployed Ledger 9
 flow.
+The CLI workspace now awaits replayed governance operations and snapshot
+projection. Its full suite passes five files and 32 tests. Epoch preparation
+waits for the harness's asynchronous evidence-verifier bootstrap, preventing
+a first-epoch signature from racing a governance-sequence change. The full
+integration suite still passes 52 files and 376 tests, with two skipped.
+The API package is not yet type-clean: its workspace mutation callers and
+many historical tests still expect synchronous CLI operations. No API or
+deployed actor qualification is claimed from the CLI result.
 
 The official [Ledger 9 upgrade guide](https://docs.midnight.network/relnotes/ledger-9)
 is the compatibility source. The

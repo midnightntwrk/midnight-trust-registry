@@ -268,7 +268,7 @@ const runInitWorkspace = async (
     strict: true,
   });
   const workspacePath = requireStringOption(parsed.values.workspace, "--workspace");
-  const workspace = createOperatorWorkspace(
+  const workspace = await createOperatorWorkspace(
     typeof parsed.values.label === "string"
       ? { label: parsed.values.label }
       : {},
@@ -516,7 +516,7 @@ const runWorkspaceMutation = async (
 ): Promise<number> => {
   const updatedWorkspace = await withExclusiveWorkspaceWrite(workspacePath, async () => {
     const workspace = await loadWorkspaceFromFile(workspacePath);
-    const updated = applyWorkspaceOperation(workspace, operation);
+    const updated = await applyWorkspaceOperation(workspace, operation);
     await writeWorkspaceToFile(workspacePath, updated);
     return updated;
   });

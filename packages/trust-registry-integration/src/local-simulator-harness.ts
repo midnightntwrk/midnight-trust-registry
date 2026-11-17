@@ -3746,6 +3746,7 @@ export class LocalTrustRegistryIntegrationHarness {
     lastStatusSequence: bigint;
     lifecycleEventRoot: string;
   }): Promise<PreparedRegistryEpochPublicationAction> {
+    await this.ready;
     const ledger = await this.assertSupportedContractFormat();
     const epochId = createScopedIdentifier("epoch", this.registryId,
       `seq-${input.lastStatusSequence.toString()}`);
@@ -3779,6 +3780,7 @@ export class LocalTrustRegistryIntegrationHarness {
   }
 
   async prepareRegistryEpochPublicationAction(label = "registry-current"): Promise<PreparedRegistryEpochPublicationAction> {
+    await this.ready;
     const ledger = await this.assertSupportedContractFormat();
     const statementId = createScopedIdentifier("registry-snapshot", this.registryId, label);
     return this.prepareEpochPublicationAction({
@@ -3895,6 +3897,7 @@ export class LocalTrustRegistryIntegrationHarness {
   }
 
   async publishRegistryEpoch(label = "registry-current"): Promise<EpochCommitment> {
+    await this.ready;
     const ledger = await this.assertSupportedContractFormat();
     const statementId = createScopedIdentifier("registry-snapshot", this.registryId, label);
     return this.ensurePublishedEpochCommitment({

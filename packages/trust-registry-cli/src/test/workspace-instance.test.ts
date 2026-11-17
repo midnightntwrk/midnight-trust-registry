@@ -16,17 +16,17 @@ it("retains a workspace instance across restart and mutation, but rotates after 
   const directory = await mkdtemp(join(tmpdir(), "tr-guided-instance-"));
   const workspacePath = join(directory, "guided.json");
   try {
-    await writeWorkspaceToFile(workspacePath, createOperatorWorkspace({ label: "guided-role-demo" }));
+    await writeWorkspaceToFile(workspacePath, await createOperatorWorkspace({ label: "guided-role-demo" }));
     const firstId = await ensureWorkspaceInstanceId(workspacePath);
     expect(await ensureWorkspaceInstanceId(workspacePath)).toBe(firstId);
 
-    const submitted = applyWorkspaceOperation(await loadWorkspaceFromFile(workspacePath), {
+    const submitted = await applyWorkspaceOperation(await loadWorkspaceFromFile(workspacePath), {
       operation: "submit", target: "issuer", label: "repeated-issuer",
     });
     await writeWorkspaceToFile(workspacePath, submitted);
     expect((await loadWorkspaceFromFile(workspacePath)).workspaceInstanceId).toBe(firstId);
 
-    await writeWorkspaceToFile(workspacePath, createOperatorWorkspace({ label: "guided-role-demo" }));
+    await writeWorkspaceToFile(workspacePath, await createOperatorWorkspace({ label: "guided-role-demo" }));
     const secondId = await ensureWorkspaceInstanceId(workspacePath);
     expect(secondId).not.toBe(firstId);
   } finally {

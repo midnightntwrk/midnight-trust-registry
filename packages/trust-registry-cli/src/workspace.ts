@@ -136,54 +136,54 @@ export const withExclusiveWorkspaceWrite = async <T>(
   }
 };
 
-const currentOrHistoricalIssuerEvidence = (
+const currentOrHistoricalIssuerEvidence = async (
   harness: LocalTrustRegistryIntegrationHarness,
   fixture: IssuerScenarioFixture,
-): TrustRegistryEvidenceBundle => {
-  if (harness.readIssuerAuthorizationStatus(fixture) === "active") {
-    return harness.evaluateCurrentIssuerDecision(fixture);
+): Promise<TrustRegistryEvidenceBundle> => {
+  if (await harness.readIssuerAuthorizationStatus(fixture) === "active") {
+    return await harness.evaluateCurrentIssuerDecision(fixture);
   }
 
-  return harness.buildIssuerHistoricalEvidence(fixture);
+  return await harness.buildIssuerHistoricalEvidence(fixture);
 };
 
-const currentOrHistoricalVerifierEvidence = (
+const currentOrHistoricalVerifierEvidence = async (
   harness: LocalTrustRegistryIntegrationHarness,
   fixture: VerifierScenarioFixture,
-): TrustRegistryEvidenceBundle => {
-  if (harness.readVerifierAuthorizationStatus(fixture) === "active") {
-    return harness.evaluateCurrentVerifierDecision(fixture);
+): Promise<TrustRegistryEvidenceBundle> => {
+  if (await harness.readVerifierAuthorizationStatus(fixture) === "active") {
+    return await harness.evaluateCurrentVerifierDecision(fixture);
   }
 
-  return harness.buildVerifierHistoricalEvidence(fixture);
+  return await harness.buildVerifierHistoricalEvidence(fixture);
 };
 
-const currentOrHistoricalAuditorEvidence = (
+const currentOrHistoricalAuditorEvidence = async (
   harness: LocalTrustRegistryIntegrationHarness,
   fixture: AuditorScenarioFixture,
-): TrustRegistryEvidenceBundle => {
-  const historical = harness.buildAuditorHistoricalEvidence(fixture);
+): Promise<TrustRegistryEvidenceBundle> => {
+  const historical = await harness.buildAuditorHistoricalEvidence(fixture);
   return historical.authorization?.status === "active"
-    ? harness.evaluateCurrentAuditorDecision(fixture)
+    ? await harness.evaluateCurrentAuditorDecision(fixture)
     : historical;
 };
 
-const currentOrHistoricalRecognitionEvidence = (
+const currentOrHistoricalRecognitionEvidence = async (
   harness: LocalTrustRegistryIntegrationHarness,
   fixture: RecognitionScenarioFixture,
-): TrustRegistryEvidenceBundle => {
-  if (harness.readRecognitionStatus(fixture) === "active") {
-    return harness.evaluateCurrentRecognitionDecision(fixture);
+): Promise<TrustRegistryEvidenceBundle> => {
+  if (await harness.readRecognitionStatus(fixture) === "active") {
+    return await harness.evaluateCurrentRecognitionDecision(fixture);
   }
 
-  return harness.buildRecognitionHistoricalEvidence(fixture);
+  return await harness.buildRecognitionHistoricalEvidence(fixture);
 };
 
-const issuerEntryFromFixture = (
+const issuerEntryFromFixture = async (
   harness: LocalTrustRegistryIntegrationHarness,
   tracked: TrackedIssuerFixture,
-): TrustRegistryAuthorizationSnapshotEntry => {
-  const evidence = currentOrHistoricalIssuerEvidence(harness, tracked.fixture);
+): Promise<TrustRegistryAuthorizationSnapshotEntry> => {
+  const evidence = await currentOrHistoricalIssuerEvidence(harness, tracked.fixture);
   return {
     label: tracked.label,
     authorization: collectAuthorizationRecord(evidence, "issuer"),
@@ -191,11 +191,11 @@ const issuerEntryFromFixture = (
   };
 };
 
-const verifierEntryFromFixture = (
+const verifierEntryFromFixture = async (
   harness: LocalTrustRegistryIntegrationHarness,
   tracked: TrackedVerifierFixture,
-): TrustRegistryAuthorizationSnapshotEntry => {
-  const evidence = currentOrHistoricalVerifierEvidence(harness, tracked.fixture);
+): Promise<TrustRegistryAuthorizationSnapshotEntry> => {
+  const evidence = await currentOrHistoricalVerifierEvidence(harness, tracked.fixture);
   return {
     label: tracked.label,
     authorization: collectAuthorizationRecord(evidence, "verifier"),
@@ -203,11 +203,11 @@ const verifierEntryFromFixture = (
   };
 };
 
-const auditorEntryFromFixture = (
+const auditorEntryFromFixture = async (
   harness: LocalTrustRegistryIntegrationHarness,
   tracked: TrackedAuditorFixture,
-): TrustRegistryAuthorizationSnapshotEntry => {
-  const evidence = currentOrHistoricalAuditorEvidence(harness, tracked.fixture);
+): Promise<TrustRegistryAuthorizationSnapshotEntry> => {
+  const evidence = await currentOrHistoricalAuditorEvidence(harness, tracked.fixture);
   return {
     label: tracked.label,
     authorization: collectAuthorizationRecord(evidence, "auditor"),
@@ -215,11 +215,11 @@ const auditorEntryFromFixture = (
   };
 };
 
-const recognitionEntryFromFixture = (
+const recognitionEntryFromFixture = async (
   harness: LocalTrustRegistryIntegrationHarness,
   tracked: TrackedRecognitionFixture,
-): TrustRegistryRecognitionSnapshotEntry => {
-  const evidence = currentOrHistoricalRecognitionEvidence(harness, tracked.fixture);
+): Promise<TrustRegistryRecognitionSnapshotEntry> => {
+  const evidence = await currentOrHistoricalRecognitionEvidence(harness, tracked.fixture);
   return {
     label: tracked.label,
     recognition: collectRecognitionRecord(evidence),
@@ -227,7 +227,7 @@ const recognitionEntryFromFixture = (
   };
 };
 
-const buildSnapshotFromTrackedFixtures = (
+const buildSnapshotFromTrackedFixtures = async (
   label: string,
   operationCount: number,
   harness: LocalTrustRegistryIntegrationHarness,
@@ -237,28 +237,32 @@ const buildSnapshotFromTrackedFixtures = (
     `Replayed operations: ${operationCount.toString()}.`,
   ],
   publishedRegistryEpoch?: EpochCommitment,
-): TrustRegistryOperatorSnapshot => {
-  const registryEpoch = publishedRegistryEpoch ?? harness.publishRegistryEpoch("workspace-current");
-  const issuerEntries = Array.from(trackedFixtures.issuers.values())
-    .map((tracked) => issuerEntryFromFixture(harness, tracked))
-    .sort((left, right) =>
-      left.authorization.authorizationId.localeCompare(right.authorization.authorizationId),
-    );
-  const verifierEntries = Array.from(trackedFixtures.verifiers.values())
-    .map((tracked) => verifierEntryFromFixture(harness, tracked))
-    .sort((left, right) =>
-      left.authorization.authorizationId.localeCompare(right.authorization.authorizationId),
-    );
-  const auditorEntries = Array.from(trackedFixtures.auditors.values())
-    .map((tracked) => auditorEntryFromFixture(harness, tracked))
-    .sort((left, right) =>
-      left.authorization.authorizationId.localeCompare(right.authorization.authorizationId),
-    );
-  const recognitionEntries = Array.from(trackedFixtures.recognitions.values())
-    .map((tracked) => recognitionEntryFromFixture(harness, tracked))
-    .sort((left, right) =>
-      left.recognition.recognitionId.localeCompare(right.recognition.recognitionId),
-    );
+): Promise<TrustRegistryOperatorSnapshot> => {
+  const registryEpoch = publishedRegistryEpoch ?? await harness.publishRegistryEpoch("workspace-current");
+  const issuerEntries: TrustRegistryAuthorizationSnapshotEntry[] = [];
+  for (const tracked of trackedFixtures.issuers.values()) {
+    issuerEntries.push(await issuerEntryFromFixture(harness, tracked));
+  }
+  issuerEntries.sort((left, right) =>
+    left.authorization.authorizationId.localeCompare(right.authorization.authorizationId));
+  const verifierEntries: TrustRegistryAuthorizationSnapshotEntry[] = [];
+  for (const tracked of trackedFixtures.verifiers.values()) {
+    verifierEntries.push(await verifierEntryFromFixture(harness, tracked));
+  }
+  verifierEntries.sort((left, right) =>
+    left.authorization.authorizationId.localeCompare(right.authorization.authorizationId));
+  const auditorEntries: TrustRegistryAuthorizationSnapshotEntry[] = [];
+  for (const tracked of trackedFixtures.auditors.values()) {
+    auditorEntries.push(await auditorEntryFromFixture(harness, tracked));
+  }
+  auditorEntries.sort((left, right) =>
+    left.authorization.authorizationId.localeCompare(right.authorization.authorizationId));
+  const recognitionEntries: TrustRegistryRecognitionSnapshotEntry[] = [];
+  for (const tracked of trackedFixtures.recognitions.values()) {
+    recognitionEntries.push(await recognitionEntryFromFixture(harness, tracked));
+  }
+  recognitionEntries.sort((left, right) =>
+    left.recognition.recognitionId.localeCompare(right.recognition.recognitionId));
 
   const epochsById = new Map<string, TrustRegistryOperatorSnapshot["currentEpoch"]>([
     [registryEpoch.epochId, registryEpoch],
@@ -274,7 +278,7 @@ const buildSnapshotFromTrackedFixtures = (
   const epochs = Array.from(epochsById.values()).sort((left, right) =>
     left.validFrom.localeCompare(right.validFrom),
   );
-  const ledgerCurrentEpochId = harness.simulator.getCurrentEpochCommitment().epochId;
+  const ledgerCurrentEpochId = (await harness.simulator.getCurrentEpochCommitment()).epochId;
   const currentEpoch = epochs.find((epoch) =>
     Buffer.from(bytes32Commitment(epoch.epochId)).equals(Buffer.from(ledgerCurrentEpochId)));
   if (currentEpoch === undefined) {
@@ -299,38 +303,41 @@ const buildSnapshotFromTrackedFixtures = (
 };
 
 /** Publishes a simulator epoch and projects the same governed state into the API snapshot model. */
-export const publishSimulatorSnapshot = (
+export const publishSimulatorSnapshot = async (
   harness: LocalTrustRegistryIntegrationHarness,
   fixtures: SimulatorSnapshotFixtures,
   previous?: TrustRegistryOperatorSnapshot,
   publishedRegistryEpoch?: EpochCommitment,
-): TrustRegistryOperatorSnapshot => {
+): Promise<TrustRegistryOperatorSnapshot> => {
   if (publishedRegistryEpoch !== undefined) {
     if (publishedRegistryEpoch.registryId !== harness.registryId) {
       throw new Error("Published registry epoch belongs to another registry");
     }
-    harness.getEpochPublicationWitness(publishedRegistryEpoch.epochId);
+    await harness.getEpochPublicationWitness(publishedRegistryEpoch.epochId);
     if (!isDeepStrictEqual(
       publishedRegistryEpoch,
-      harness.getPublishedEpochCommitment(publishedRegistryEpoch.epochId),
+      await harness.getPublishedEpochCommitment(publishedRegistryEpoch.epochId),
     )) {
       throw new Error("Published registry epoch does not match the Compact ledger commitment");
     }
-    const ledger = harness.simulator.getLedger();
-    if (!Buffer.from(harness.simulator.getCurrentEpochCommitment().epochId)
+    const ledger = await harness.simulator.getLedger();
+    if (!Buffer.from((await harness.simulator.getCurrentEpochCommitment()).epochId)
       .equals(Buffer.from(bytes32Commitment(publishedRegistryEpoch.epochId)))) {
       throw new Error("Published registry epoch is not the current Compact epoch");
     }
-    const statusSequences = [
-      ...(fixtures.issuers ?? []).map(({ fixture }) =>
-        harness.simulator.getIssuerAuthorization(fixture.authorizationIdCommitment).lastStatusSequence),
-      ...(fixtures.verifiers ?? []).map(({ fixture }) =>
-        harness.simulator.getVerifierAuthorization(fixture.authorizationIdCommitment).lastStatusSequence),
-      ...(fixtures.auditors ?? []).map(({ fixture }) =>
-        harness.simulator.getAuditorAuthorization(fixture.authorizationIdCommitment).lastStatusSequence),
-      ...(fixtures.recognitions ?? []).map(({ fixture }) =>
-        harness.simulator.getRecognition(fixture.recognitionIdCommitment).lastStatusSequence),
-    ];
+    const statusSequences: bigint[] = [];
+    for (const { fixture } of fixtures.issuers ?? []) {
+      statusSequences.push((await harness.simulator.getIssuerAuthorization(fixture.authorizationIdCommitment)).lastStatusSequence);
+    }
+    for (const { fixture } of fixtures.verifiers ?? []) {
+      statusSequences.push((await harness.simulator.getVerifierAuthorization(fixture.authorizationIdCommitment)).lastStatusSequence);
+    }
+    for (const { fixture } of fixtures.auditors ?? []) {
+      statusSequences.push((await harness.simulator.getAuditorAuthorization(fixture.authorizationIdCommitment)).lastStatusSequence);
+    }
+    for (const { fixture } of fixtures.recognitions ?? []) {
+      statusSequences.push((await harness.simulator.getRecognition(fixture.recognitionIdCommitment)).lastStatusSequence);
+    }
     for (const sequence of statusSequences) {
       const epochId = createScopedIdentifier("epoch", harness.registryId, `seq-${sequence.toString()}`);
       if (!ledger.epochCommitmentIds.member(bytes32Commitment(epochId))) {
@@ -355,7 +362,7 @@ export const publishSimulatorSnapshot = (
     if (tracked.recognitions.has(entry.fixture.recognitionId)) throw new Error("Duplicate recognition fixture");
     tracked.recognitions.set(entry.fixture.recognitionId, entry);
   }
-  const next = buildSnapshotFromTrackedFixtures(fixtures.label, 0, harness, tracked, [
+  const next = await buildSnapshotFromTrackedFixtures(fixtures.label, 0, harness, tracked, [
     "Snapshot projected from the supplied Compact simulator state.",
   ], publishedRegistryEpoch);
   if (publishedRegistryEpoch !== undefined && next.currentEpoch.epochId !== publishedRegistryEpoch.epochId) {
@@ -446,11 +453,11 @@ const requireRecognitionFixture = (
   return fixture.fixture;
 };
 
-const applyMutableOperation = (
+const applyMutableOperation = async (
   harness: LocalTrustRegistryIntegrationHarness,
   trackedFixtures: TrackedFixtures,
   operation: TrustRegistryOperatorWorkspaceOperation,
-): void => {
+): Promise<void> => {
   switch (operation.operation) {
     case "submit": {
       switch (operation.target) {
@@ -459,7 +466,7 @@ const applyMutableOperation = (
           if (trackedFixtures.issuers.has(fixture.authorizationId)) {
             throw new Error(`issuer label already submitted: ${operation.label}`);
           }
-          harness.proposeIssuer(fixture);
+          await harness.proposeIssuer(fixture);
           trackedFixtures.issuers.set(fixture.authorizationId, {
             label: operation.label,
             fixture,
@@ -471,7 +478,7 @@ const applyMutableOperation = (
           if (trackedFixtures.verifiers.has(fixture.authorizationId)) {
             throw new Error(`verifier label already submitted: ${operation.label}`);
           }
-          harness.proposeVerifier(fixture);
+          await harness.proposeVerifier(fixture);
           trackedFixtures.verifiers.set(fixture.authorizationId, {
             label: operation.label,
             fixture,
@@ -483,7 +490,7 @@ const applyMutableOperation = (
           if (trackedFixtures.auditors.has(fixture.authorizationId)) {
             throw new Error(`auditor label already submitted: ${operation.label}`);
           }
-          harness.proposeAuditor(fixture);
+          await harness.proposeAuditor(fixture);
           trackedFixtures.auditors.set(fixture.authorizationId, {
             label: operation.label,
             fixture,
@@ -495,7 +502,7 @@ const applyMutableOperation = (
           if (trackedFixtures.recognitions.has(fixture.recognitionId)) {
             throw new Error(`recognition label already submitted: ${operation.label}`);
           }
-          harness.proposeRecognition(fixture);
+          await harness.proposeRecognition(fixture);
           trackedFixtures.recognitions.set(fixture.recognitionId, {
             label: operation.label,
             fixture,
@@ -509,16 +516,16 @@ const applyMutableOperation = (
     case "approve": {
       switch (operation.target) {
         case "issuer":
-          harness.approveIssuer(requireIssuerFixture(trackedFixtures, operation.id));
+          await harness.approveIssuer(requireIssuerFixture(trackedFixtures, operation.id));
           return;
         case "verifier":
-          harness.approveVerifier(requireVerifierFixture(trackedFixtures, operation.id));
+          await harness.approveVerifier(requireVerifierFixture(trackedFixtures, operation.id));
           return;
         case "auditor":
-          harness.approveAuditor(requireAuditorFixture(trackedFixtures, operation.id));
+          await harness.approveAuditor(requireAuditorFixture(trackedFixtures, operation.id));
           return;
         case "recognition":
-          harness.approveRecognition(
+          await harness.approveRecognition(
             requireRecognitionFixture(trackedFixtures, operation.id),
           );
           return;
@@ -529,16 +536,16 @@ const applyMutableOperation = (
     case "activate": {
       switch (operation.target) {
         case "issuer":
-          harness.activateIssuer(requireIssuerFixture(trackedFixtures, operation.id));
+          await harness.activateIssuer(requireIssuerFixture(trackedFixtures, operation.id));
           return;
         case "verifier":
-          harness.activateVerifier(requireVerifierFixture(trackedFixtures, operation.id));
+          await harness.activateVerifier(requireVerifierFixture(trackedFixtures, operation.id));
           return;
         case "auditor":
-          harness.activateAuditor(requireAuditorFixture(trackedFixtures, operation.id));
+          await harness.activateAuditor(requireAuditorFixture(trackedFixtures, operation.id));
           return;
         case "recognition":
-          harness.activateRecognition(
+          await harness.activateRecognition(
             requireRecognitionFixture(trackedFixtures, operation.id),
           );
           return;
@@ -549,16 +556,16 @@ const applyMutableOperation = (
     case "suspend": {
       switch (operation.target) {
         case "issuer":
-          harness.suspendIssuer(requireIssuerFixture(trackedFixtures, operation.id));
+          await harness.suspendIssuer(requireIssuerFixture(trackedFixtures, operation.id));
           return;
         case "verifier":
-          harness.suspendVerifier(requireVerifierFixture(trackedFixtures, operation.id));
+          await harness.suspendVerifier(requireVerifierFixture(trackedFixtures, operation.id));
           return;
         case "auditor":
-          harness.suspendAuditor(requireAuditorFixture(trackedFixtures, operation.id));
+          await harness.suspendAuditor(requireAuditorFixture(trackedFixtures, operation.id));
           return;
         case "recognition":
-          harness.suspendRecognition(
+          await harness.suspendRecognition(
             requireRecognitionFixture(trackedFixtures, operation.id),
           );
           return;
@@ -569,16 +576,16 @@ const applyMutableOperation = (
     case "revoke": {
       switch (operation.target) {
         case "issuer":
-          harness.revokeIssuer(requireIssuerFixture(trackedFixtures, operation.id));
+          await harness.revokeIssuer(requireIssuerFixture(trackedFixtures, operation.id));
           return;
         case "verifier":
-          harness.revokeVerifier(requireVerifierFixture(trackedFixtures, operation.id));
+          await harness.revokeVerifier(requireVerifierFixture(trackedFixtures, operation.id));
           return;
         case "auditor":
-          harness.revokeAuditor(requireAuditorFixture(trackedFixtures, operation.id));
+          await harness.revokeAuditor(requireAuditorFixture(trackedFixtures, operation.id));
           return;
         case "recognition":
-          harness.revokeRecognition(
+          await harness.revokeRecognition(
             requireRecognitionFixture(trackedFixtures, operation.id),
           );
           return;
@@ -589,16 +596,16 @@ const applyMutableOperation = (
     case "archive": {
       switch (operation.target) {
         case "issuer":
-          harness.archiveIssuer(requireIssuerFixture(trackedFixtures, operation.id));
+          await harness.archiveIssuer(requireIssuerFixture(trackedFixtures, operation.id));
           return;
         case "verifier":
-          harness.archiveVerifier(requireVerifierFixture(trackedFixtures, operation.id));
+          await harness.archiveVerifier(requireVerifierFixture(trackedFixtures, operation.id));
           return;
         case "auditor":
-          harness.archiveAuditor(requireAuditorFixture(trackedFixtures, operation.id));
+          await harness.archiveAuditor(requireAuditorFixture(trackedFixtures, operation.id));
           return;
         case "recognition":
-          harness.archiveRecognition(
+          await harness.archiveRecognition(
             requireRecognitionFixture(trackedFixtures, operation.id),
           );
           return;
@@ -607,23 +614,23 @@ const applyMutableOperation = (
       }
     }
     case "publish-epoch":
-      harness.publishRegistryEpoch(operation.label ?? "workspace-current");
+      await harness.publishRegistryEpoch(operation.label ?? "workspace-current");
       return;
   }
 };
 
-const replayWorkspace = (
+const replayWorkspace = async (
   label: string,
   operations: readonly TrustRegistryOperatorWorkspaceOperation[],
-): {
+): Promise<{
   harness: LocalTrustRegistryIntegrationHarness;
   trackedFixtures: TrackedFixtures;
-} => {
+}> => {
   const harness = new LocalTrustRegistryIntegrationHarness(label);
   const trackedFixtures = createTrackedFixtures();
 
   for (const operation of operations) {
-    applyMutableOperation(harness, trackedFixtures, operation);
+    await applyMutableOperation(harness, trackedFixtures, operation);
   }
 
   return {
@@ -632,12 +639,12 @@ const replayWorkspace = (
   };
 };
 
-export const createOperatorWorkspace = (
+export const createOperatorWorkspace = async (
   input: { label?: string } = {},
-): TrustRegistryOperatorWorkspace => {
+): Promise<TrustRegistryOperatorWorkspace> => {
   const label = input.label ?? "midnight";
-  const { harness, trackedFixtures } = replayWorkspace(label, []);
-  const snapshot = buildSnapshotFromTrackedFixtures(label, 0, harness, trackedFixtures);
+  const { harness, trackedFixtures } = await replayWorkspace(label, []);
+  const snapshot = await buildSnapshotFromTrackedFixtures(label, 0, harness, trackedFixtures);
 
   return TrustRegistryOperatorWorkspaceSchema.parse({
     workspaceVersion: "3",
@@ -668,13 +675,13 @@ export const writeWorkspaceToFile = async (
   workspace: TrustRegistryOperatorWorkspace,
 ): Promise<void> => writeWorkspaceJson(workspacePath, workspace);
 
-export const applyWorkspaceOperation = (
+export const applyWorkspaceOperation = async (
   workspace: TrustRegistryOperatorWorkspace,
   operation: TrustRegistryOperatorWorkspaceOperation,
-): TrustRegistryOperatorWorkspace => {
+): Promise<TrustRegistryOperatorWorkspace> => {
   const operations = [...workspace.operations, operation];
-  const { harness, trackedFixtures } = replayWorkspace(workspace.registryLabel, operations);
-  const snapshot = retainHistoricalEvidence(workspace.snapshot, buildSnapshotFromTrackedFixtures(
+  const { harness, trackedFixtures } = await replayWorkspace(workspace.registryLabel, operations);
+  const snapshot = retainHistoricalEvidence(workspace.snapshot, await buildSnapshotFromTrackedFixtures(
     workspace.registryLabel,
     operations.length,
     harness,
