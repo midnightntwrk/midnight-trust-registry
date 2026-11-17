@@ -78,6 +78,21 @@ Current coverage:
   and invalid signed answers
   never establish eligibility. The transport does not authenticate Midnight
   finality or provide an independent live status-registry proof.
+  `createCanonicalApplicationVpFamilyAdapter` is the non-fixture parser for
+  this application's `tr-application-vp-credential-v1` and
+  `tr-application-vp-presentation-v1` signed bodies. It rejects noncanonical
+  JSON, unknown fields, and fixture-only versions; resolves the holder and
+  status-authority DID methods; and binds the exact body roots, issuer,
+  holder, status handle, role scope, challenge, origin, registry, deployment,
+  and policy before the qualified VP verifier accepts the proofs. The host
+  must supply `issuerEligibility` from authenticated finalized decision
+  evidence (for example `createGovernedApplicationIssuerEligibility`) and a
+  signed status source (for example `createHttpApplicationStatusSource`).
+  Neither callback can be derived from the presented credential. A body-level
+  claims commitment is not a general VC schema or an independently proven
+  disclosure claim. This adapter has fixture-DID/proof tests only; it does
+  not establish a deployed DID, published Registry decision epoch, live
+  VC-owned status service, or release-qualified actor journey.
 
 - local simulator trust-decision flows for issuer, verifier, and recognition
 - `prepareIssuerProposalAction`/`executeIssuerProposalWithSignatures` and
