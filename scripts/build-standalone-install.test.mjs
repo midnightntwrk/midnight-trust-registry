@@ -66,12 +66,18 @@ test("preflight checks proof and image inputs without creating an install direct
     assert.equal(existsSync(options.outputRoot), false);
     assert.throws(() => validateStandaloneInstallInputs(options, revision, () => []),
       /approved repository digest/u);
+    const reusable = { ...options, reuseVerifiedImageBundle: join(root, "prior-install") };
+    assert.equal(validateStandaloneInstallInputs(reusable, revision, inspectImage).sourceRevision, revision);
+    assert.throws(() => validateStandaloneInstallInputs({ ...reusable,
+      reuseVerifiedImageBundle: "relative" }, revision, inspectImage), /absolute bundle path/u);
     const apiImageDirectory = join(root, "api");
     await mkdir(apiImageDirectory);
     await writeFile(join(apiImageDirectory, "manifest.json"), JSON.stringify({
       sourceRevision: "b".repeat(40), archiveName: "api.image.tar",
     }));
     await writeFile(join(apiImageDirectory, "api.image.tar"), "archive\n");
+    assert.throws(() => validateStandaloneInstallInputs({ ...reusable, apiImageDirectory },
+      revision, inspectImage), /v3 package-only/u);
     assert.throws(() => validateStandaloneInstallInputs({ ...options, apiImageDirectory },
       revision, inspectImage), /source revision/u);
     await writeFile(join(apiImageDirectory, "manifest.json"), JSON.stringify({

@@ -130,6 +130,21 @@ from a successful key-generation smoke.
 
 From a clean, GPG-signed and DCO-signed source commit with full generated
 contract artifacts already present, run `pnpm run artifacts:standalone-install`.
+When Docker must not be used, a new **v3 ledger-only** bundle may reuse the
+three pinned node/indexer/prover archives from an already verified v3-v7
+install bundle:
+
+```sh
+node scripts/build-standalone-install.mjs --preflight --reuse-image-bundle <absolute-verified-prior-install-directory>
+node scripts/build-standalone-install.mjs --reuse-image-bundle <absolute-verified-prior-install-directory>
+```
+
+The prior bundle is fully reverified, its image role/digest pins must exactly
+match current Compose, and each copied archive is rehashed. Packages, manifest
+and Compose come from the new signed source; proof parameters are copied from
+the current local parameter source and pinned by new inventory hashes. This
+does not bring forward the prior API/portal images and does not qualify actor
+journeys; use a new complete same-source candidate for that gate.
 To include a separately built API image from the **same signed source SHA**,
 run instead:
 
