@@ -30,7 +30,7 @@ import { computeOperatorWorkspaceCommitment } from "../workspace-commitment.js";
 
 const label = "file-admission";
 const harness = new LocalTrustRegistryIntegrationHarness(label);
-const workspace = createOperatorWorkspace({ label });
+const workspace = await createOperatorWorkspace({ label });
 const issuer = createIssuerScenarioFixture(label);
 const scope = createIssuerAuthorizationScopeFixture(issuer);
 const governedResource = { type: "credentialFamily" as const, id: issuer.resourceId };
@@ -116,17 +116,17 @@ describe("file application admission store", () => {
     expect(await second.readForSubjectDid(createMidnightDid("other-applicant"), applicationId)).toBeNull();
     expect(await second.readForSubjectDid(issuer.subjectDid, "application:unknown:v1")).toBeNull();
     const archiveHarness = new LocalTrustRegistryIntegrationHarness(label);
-    archiveHarness.proposeIssuer(issuer);
-    const eventHash = archiveHarness.archiveIssuer(issuer);
-    const bundle = archiveHarness.buildIssuerHistoricalEvidence(issuer);
+    await archiveHarness.proposeIssuer(issuer);
+    const eventHash = await archiveHarness.archiveIssuer(issuer);
+    const bundle = await archiveHarness.buildIssuerHistoricalEvidence(issuer);
     const observation = {
       authorizationId: pending.authorizationId,
       binding: pending.binding,
       status: "archived" as const,
       archiveEventHash: `0x${Buffer.from(eventHash).toString("hex")}`,
     };
-    const verify = () => {
-      new TrustRegistrySimulatorClient(archiveHarness.simulator).verifyIssuerAuthorizationBundle(
+    const verify = async () => {
+      await new TrustRegistrySimulatorClient(archiveHarness.simulator).verifyIssuerAuthorizationBundle(
         bundle, { expectedRegistryId: archiveHarness.registryId, requireActive: false },
       );
       return bundle.authorization?.status === "archived"
@@ -142,7 +142,7 @@ describe("file application admission store", () => {
     expect((await second.listForSubjectDid(issuer.subjectDid))[0]?.summary.status).toBe("archived");
     expect(await second.readForSubjectDid(issuer.subjectDid, applicationId)).toEqual(archived);
     expect(await second.readPending(applicationId)).toBeNull();
-    await expect(second.acceptEvidence(applicationId, evidence(), now))
+    await expect(second.acceptEvidence(applicationId, await evidence(), now))
       .rejects.toMatchObject({ reason: "unknown-application" });
     const replacement = signedApplication("23", {
       applicationId: `${applicationId}:replacement`,
@@ -159,7 +159,7 @@ describe("file application admission store", () => {
     const second = store(path);
     const pending = await first.register(signedApplication(), now);
     expect(await second.readPending(applicationId)).toEqual(pending);
-    const signedEvidence = evidence();
+    const signedEvidence = await evidence();
     const receipt = await second.acceptEvidence(applicationId, signedEvidence, now);
     expect(await first.resolveAcceptedEvidence(applicationId)).toEqual({ evidence: signedEvidence, receipt });
     const captured = await first.readCapturedAdmission(applicationId);
@@ -207,13 +207,14 @@ describe("file application admission store", () => {
         policy: { ...workspace.snapshot.policy, version: "v2" },
       },
     };
-    await expect(admission.acceptEvidence(applicationId, evidence(), now))
+    await expect(admission.acceptEvidence(applicationId, await evidence(), now))
       .rejects.toMatchObject({ reason: "stale-policy" });
     currentWorkspace = workspace;
     await expect(admission.acceptEvidence(applicationId, {
-      ...evidence(), presentation: "private-vp-body",
+      ...await evidence(), presentation: "private-vp-body",
     } as ApplicationEvidenceSubmission, now)).rejects.toThrow();
-    const tampered = { ...evidence(), envelope: { ...evidence().envelope, subjectDid: harness.maintainerDid } };
+    const signedEvidence = await evidence();
+    const tampered = { ...signedEvidence, envelope: { ...signedEvidence.envelope, subjectDid: harness.maintainerDid } };
     await expect(admission.acceptEvidence(applicationId, tampered, now))
       .rejects.toMatchObject({ reason: "mismatched-evidence" });
     expect(await admission.resolveAcceptedEvidence(applicationId)).toBeNull();
