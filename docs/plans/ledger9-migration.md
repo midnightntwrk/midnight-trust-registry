@@ -317,6 +317,10 @@ circuit contexts, signer installation, proof assertions, and ledger reads.
 Its issuer/verifier positive and substitution, rollback, and revocation
 negative checks pass with the local VC 0.4.0 trial packages. This is not a
 proof from a deployed registry or a portable packed-package result.
+The public-package consumer smoke also awaits issuer/verifier governance,
+evidence reads, and client verification; its positive checks and wrong-resource
+rejection pass against the local workspace build. Packed-tarball validation
+still requires a source-matched release candidate, not this partial build.
 
 ## Execution order
 
