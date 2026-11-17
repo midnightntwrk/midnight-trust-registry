@@ -53,3 +53,18 @@ test("rejects wrong protocol, unavailable proof server, and invalid ports", asyn
     /Proof server is unavailable/u);
   await assert.rejects(checkLedger9LocalStack({ nodePort: "99999" }), /port must be/u);
 });
+
+test("identifies the unavailable local service", async () => {
+  const healthy = fixture().fetchImpl;
+  for (const [service, failingUrl] of [
+    ["Node RPC system_version", ":29944"],
+    ["Indexer GraphQL", "/api/v4/graphql"],
+    ["Proof server", ":26300/"],
+  ]) {
+    const fetchImpl = (url, options) => url.endsWith(failingUrl)
+      ? Promise.reject(new DOMException("The operation timed out", "TimeoutError"))
+      : healthy(url, options);
+    await assert.rejects(checkLedger9LocalStack({ fetchImpl }),
+      new RegExp(`${service} timed out after 5 seconds`, "u"));
+  }
+});
