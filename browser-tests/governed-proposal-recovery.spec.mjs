@@ -33,9 +33,9 @@ import { createStaticAssetHandler } from "../scripts/serve-static.mjs";
 const bytes = (hex) => Buffer.from(hex.slice(2), "hex");
 const hex = (value) => `0x${Buffer.from(value).toString("hex")}`;
 
-const signPrepared = (harness, maintainer, prepared) => {
+const signPrepared = async (harness, maintainer, prepared) => {
   const publicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
-  const ledger = harness.simulator.getLedger();
+  const ledger = await harness.simulator.getLedger();
   return {
     keyId: hex(maintainer.keyId),
     publicKey: { x: publicKey.x.toString(), y: publicKey.y.toString() },
@@ -114,12 +114,12 @@ for (const { role, responseLost } of [
   const harness = new LocalTrustRegistryIntegrationHarness(`admin-browser-${role}-proposal-recovery`);
   const second = createMaintainerScenarioFixture("admin-browser-second");
   const third = createMaintainerScenarioFixture("admin-browser-third");
-  harness.authorizeMaintainer(second);
-  harness.authorizeMaintainer(third);
-  harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+  await harness.authorizeMaintainer(second);
+  await harness.authorizeMaintainer(third);
+  await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
   const scenario = scenarioFor(role, harness);
   const { scope } = scenario;
-  const evidence = harness.createApplicationEvidence({
+  const evidence = await harness.createApplicationEvidence({
     applicationId: scenario.id,
     subjectDid: scenario.subjectDid,
     role,
@@ -140,7 +140,7 @@ for (const { role, responseLost } of [
   };
   const directory = await mkdtemp(join(tmpdir(), `tr-admin-${role}-browser-proposal-`));
   const journal = new FileProposalSubmissionJournal(join(directory, "submissions.json"));
-  let finalizedLedger = harness.simulator.getLedger();
+  let finalizedLedger = await harness.simulator.getLedger();
   const beforeActionCount = finalizedLedger.governanceActionCount;
   let executions = 0;
   const staticHandler = createStaticAssetHandler({
@@ -169,7 +169,7 @@ for (const { role, responseLost } of [
       },
       execute: async (_, submitted, signers, verifierSignature) => {
         executions += 1;
-        const eventHash = scenario.execute(submitted, signers, verifierSignature);
+        const eventHash = await scenario.execute(submitted, signers, verifierSignature);
         if (responseLost) throw new Error("HTTP response lost after Compact acceptance");
         return { eventHash: hex(eventHash) };
       },
@@ -197,10 +197,10 @@ for (const { role, responseLost } of [
     const preparedNode = page.locator("[data-proposal-context]");
     await expect(preparedNode).toBeVisible();
     const prepared = JSON.parse(await preparedNode.textContent());
-    const verifierSignature = scenario.signEvidence(scenario.prepare(evidence));
+    const verifierSignature = scenario.signEvidence(await scenario.prepare(evidence));
     const forgedContext = { ...prepared, actionSequence: (BigInt(prepared.actionSequence) + 1n).toString() };
     await page.locator("[data-proposal-signers]").fill(JSON.stringify([
-      signPrepared(harness, second, forgedContext), signPrepared(harness, third, prepared),
+      await signPrepared(harness, second, forgedContext), await signPrepared(harness, third, prepared),
     ]));
     await page.locator("[data-proposal-verifier-signature]").fill(hex(encodeJubjubSignature(verifierSignature)));
     await page.locator("[data-proposal-submit] button[type='submit']").click();
@@ -208,17 +208,17 @@ for (const { role, responseLost } of [
     expect(await journal.read(role, scenario.id)).toBeNull();
     expect(executions).toBe(0);
     await page.locator("[data-proposal-signers]").fill(JSON.stringify([
-      signPrepared(harness, second, prepared), signPrepared(harness, third, prepared),
+      await signPrepared(harness, second, prepared), await signPrepared(harness, third, prepared),
     ]));
     await page.locator("[data-proposal-submit] button[type='submit']").click();
     if (responseLost) {
       await expect(page.locator("body")).toContainText("proposal submission outcome unknown");
       expect(executions).toBe(1);
-      expect(harness.simulator.getLedger().governanceActionCount).toBeGreaterThan(beforeActionCount);
+      expect((await harness.simulator.getLedger()).governanceActionCount).toBeGreaterThan(beforeActionCount);
       await expect(page.locator("[data-proposal-submit]")).toHaveCount(0);
       await page.locator("[data-proposal-resolve]").click();
       await expect(page.locator("body")).toContainText("Proposal not observed");
-      finalizedLedger = harness.simulator.getLedger();
+      finalizedLedger = await harness.simulator.getLedger();
       await page.locator("[data-proposal-resolve]").click();
       await expect(page.locator("body")).toContainText(`Compact ${role} proposal observed`);
       expect((await journal.read(role, scenario.id))?.state).toBe("observed");
@@ -226,7 +226,7 @@ for (const { role, responseLost } of [
       await expect(page.locator(".alert.success")).toContainText(`Compact ${role} proposal accepted`);
       await expect(page.locator(".alert.success")).toContainText("Network finality is not implied");
       expect(executions).toBe(1);
-      expect(harness.simulator.getLedger().governanceActionCount).toBeGreaterThan(beforeActionCount);
+      expect((await harness.simulator.getLedger()).governanceActionCount).toBeGreaterThan(beforeActionCount);
       await expect(page.locator("[data-proposal-submit]")).toHaveCount(0);
       expect((await journal.read(role, scenario.id))?.state).toBe("submitted");
     }

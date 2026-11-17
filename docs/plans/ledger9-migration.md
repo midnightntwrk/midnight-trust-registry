@@ -285,6 +285,17 @@ substitute for that provenance check. A read-only Docker socket ping and the
 local node RPC both timed out, so no live Ledger 9 or deployed E2E claim follows
 from these fixture results. Preserve the existing generated outputs until a
 source-matched Compact build can be prepared safely.
+An isolated checkout at `9efb4b88` subsequently built source-matched
+skip-ZK Compact output and installed the frozen lockfile offline using the
+same ignored VC tarballs. Its pinned Playwright Chromium headless shell ran
+all 98 browser cases successfully after the browser fixtures awaited Ledger 9
+workspace, maintainer-policy, evidence, signature, execution, and ledger-read
+operations. The suite covers both portals, packaged-host DID sign-in, local
+workspace handoff, governance recovery, layout, accessibility, and offline
+egress controls. It is browser/fixture evidence only: no proof, deployed
+contract, finalized transaction, or live actor journey was observed. The
+active migration checkout still preserves its partial generated output; the
+isolated validation checkout and browser cache are disposable.
 
 ## Execution order
 
