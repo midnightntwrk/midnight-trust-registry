@@ -8,13 +8,13 @@ import {
 import { parseMidnightDIDString } from "@midnight-ntwrk/midnight-did";
 import { signJubjubDigest } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import { encodeJubjubSignature } from "@midnight-ntwrk/trust-registry-contract";
-import { canonicalizeJson, sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
+import { canonicalizeJson, computeAuthorizationScopeCommitment, issuerGovernedResourceId, sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
 import { describe, expect, it, vi } from "vitest";
 
 import { verifyQualifiedApplicationVp } from "../application-vp-verifier.js";
 import { encodeApplicationVpProof } from "../application-vp-proof-json.js";
 import { applicationStatusAttestationDigest, createAttestedApplicationStatusSource } from "../application-status-attestation.js";
-import { createCanonicalApplicationVpFamilyAdapter } from "../canonical-application-vp-family.js";
+import { createCanonicalApplicationVpFamilyAdapter, createGovernedCanonicalApplicationVpFamilyAdapter } from "../canonical-application-vp-family.js";
 import {
   createApplicationVpScenarioFixture,
   VP_FIXTURE_TRUST_CONTEXT,
@@ -26,10 +26,15 @@ const hex = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString("hex
 async function signedSubmission(credentialChanges: Record<string, unknown> = {}) {
   const fixture = await createApplicationVpScenarioFixture();
   const oldCredential = JSON.parse(fixture.input.submission.rawCredentialBody) as Record<string, unknown>;
+  if (fixture.input.scope.role !== "issuer") throw new Error("Expected issuer scope");
+  const issuerScope = { ...fixture.input.scope, schemaId: "schema:vp-application:v1" };
+  const issuerScopeCommitment = computeAuthorizationScopeCommitment(issuerScope);
   const credentialBody = canonicalizeJson({
     ...oldCredential,
     ...credentialChanges,
     version: "tr-application-vp-credential-v1",
+    credentialSchemaId: credentialChanges.credentialSchemaId ?? "schema:vp-application:v1",
+    credentialIssuerScopeCommitment: credentialChanges.credentialIssuerScopeCommitment ?? issuerScopeCommitment,
   });
   const credentialBodyRoot = root(credentialBody);
   const oldPresentation = JSON.parse(fixture.input.submission.rawPresentationBody) as Record<string, unknown>;
@@ -86,6 +91,8 @@ async function signedSubmission(credentialChanges: Record<string, unknown> = {})
   }));
   const family = createCanonicalApplicationVpFamilyAdapter({
     resolver: fixture.input.resolver,
+    expectedCredentialSchemaId: "schema:vp-application:v1",
+    expectedIssuerScopeCommitment: issuerScopeCommitment,
     issuerEligibility,
     statusSource,
   });
@@ -141,6 +148,54 @@ describe("canonical application VP family", () => {
     await expect(verifyQualifiedApplicationVp(input)).rejects.toMatchObject({ category: "ineligible" });
     expect(issuerEligibility).toHaveBeenCalledOnce();
     expect(statusSource).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a signed credential schema outside the host-selected issuer grant", async () => {
+    const { input, issuerEligibility, statusSource } = await signedSubmission({
+      credentialSchemaId: "schema:other:v1",
+    });
+    await expect(verifyQualifiedApplicationVp(input)).rejects.toMatchObject({ category: "invalid_presentation" });
+    expect(issuerEligibility).not.toHaveBeenCalled();
+    expect(statusSource).not.toHaveBeenCalled();
+  });
+
+  it("rejects a signed credential bound to a different issuer scope", async () => {
+    const { input, issuerEligibility, statusSource } = await signedSubmission({
+      credentialIssuerScopeCommitment: sha256Hex("other-issuer-scope"),
+    });
+    await expect(verifyQualifiedApplicationVp(input)).rejects.toMatchObject({ category: "invalid_presentation" });
+    expect(issuerEligibility).not.toHaveBeenCalled();
+    expect(statusSource).not.toHaveBeenCalled();
+  });
+
+  it("requires the governed issuer selection to cover its exact schema resource", async () => {
+    const { input, statusSource } = await signedSubmission();
+    const scope = JSON.parse(input.submission.rawCredentialBody) as { scope: typeof input.scope };
+    if (scope.scope.role !== "issuer") throw new Error("Expected issuer scope");
+    const grantScope = { ...scope.scope, schemaId: "schema:vp-application:v1" };
+    const selection = {
+      registryId: input.trustContext.registryId,
+      networkId: "undeployed",
+      contractAddress: input.trustContext.contractAddress,
+      subjectDid: JSON.parse(input.submission.rawCredentialBody).issuerDid as string,
+      role: "issuer" as const,
+      resourceType: "schema" as const,
+      resourceId: issuerGovernedResourceId(grantScope, "schema"),
+      scope: grantScope,
+    };
+    const config = {
+      resolver: input.resolver,
+      selection,
+      readers: {} as Parameters<typeof createGovernedCanonicalApplicationVpFamilyAdapter>[0]["readers"],
+      loadEvidence: async () => null,
+      allowedApplicationRoles: ["issuer"] as const,
+      statusSource,
+    };
+    const family = createGovernedCanonicalApplicationVpFamilyAdapter(config);
+    expect(await family.assertCredentialBodyBinding(await family.prepare(input.submission))).toBe(true);
+    expect(() => createGovernedCanonicalApplicationVpFamilyAdapter({ ...config, selection: {
+      ...selection, resourceId: "schema:wrong",
+    } })).toThrow(/exact governed credential schema/u);
   });
 
   it("rejects noncanonical, unknown-field, and fixture-only bodies", async () => {

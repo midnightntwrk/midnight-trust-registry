@@ -83,11 +83,17 @@ Current coverage:
   `tr-application-vp-presentation-v1` signed bodies. It rejects noncanonical
   JSON, unknown fields, and fixture-only versions; resolves the holder and
   status-authority DID methods; and binds the exact body roots, issuer,
-  holder, status handle, role scope, challenge, origin, registry, deployment,
-  and policy before the qualified VP verifier accepts the proofs. The host
-  must supply `issuerEligibility` from authenticated finalized decision
-  evidence (for example `createGovernedApplicationIssuerEligibility`) and a
-  signed status source (for example `createHttpApplicationStatusSource`).
+  holder, signed credential schema ID and full issuer-scope commitment, status
+  handle, role scope, challenge,
+  origin, registry, deployment, and policy before the qualified VP verifier
+  accepts the proofs. Prefer `createGovernedCanonicalApplicationVpFamilyAdapter`:
+  it requires an exact `schema` issuer grant selection, derives the signed
+  credential schema ID and full issuer scope from that grant, and uses
+  authenticated finalized decision readers. The lower-level factory requires
+  the host to pin the same schema and scope commitment and supply an
+  independently verified `issuerEligibility` callback.
+  Both require a signed status source such as
+  `createHttpApplicationStatusSource`.
   Neither callback can be derived from the presented credential. A body-level
   claims commitment is not a general VC schema or an independently proven
   disclosure claim. This adapter has fixture-DID/proof tests only; it does

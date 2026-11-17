@@ -2,12 +2,17 @@ import { Buffer } from "node:buffer";
 
 import { createMidnightDIDHolderBinding, resolveMidnightDIDMethodBinding } from "@midnight-ntwrk/credential-did-midnight";
 import { parseMidnightDIDString, type MidnightDIDResolverInterface } from "@midnight-ntwrk/midnight-did";
+import type { TrustedDecisionEvidenceReaders } from "@midnight-ntwrk/trust-registry-client";
 import {
   AuthorizationScopeSchema,
   HashHexSchema,
+  IssuerScopeSchema,
   canonicalizeJson,
   computeAuthorizationScopeCommitment,
+  issuerGovernedResourceId,
   sha256Hex,
+  type AuthorizationScope,
+  type DecisionEvidenceSelection,
   type IssuerStatusPolicyBinding,
 } from "@midnight-ntwrk/trust-registry-domain";
 import { z } from "zod";
@@ -19,6 +24,7 @@ import {
   type QualifiedApplicationVpFamilyAdapter,
 } from "./application-vp-verifier.js";
 import { decodeApplicationVpProof } from "./application-vp-proof-json.js";
+import { createGovernedApplicationIssuerEligibility } from "./governed-application-issuer.js";
 
 const MAX_BODY_BYTES = 16_384;
 const Did = z.string().startsWith("did:midnight:");
@@ -28,6 +34,8 @@ const CredentialBody = z.strictObject({
   version: z.literal("tr-application-vp-credential-v1"),
   issuerDid: Did,
   issuerMethodId: Method,
+  credentialSchemaId: IssuerScopeSchema.shape.schemaId,
+  credentialIssuerScopeCommitment: HashHexSchema,
   subjectDid: Did,
   holderMethodId: Method,
   scope: AuthorizationScopeSchema,
@@ -81,6 +89,10 @@ function hex(bytes: Uint8Array): string {
 /** Binds schema-specific signed bodies to the published VC proofs; trust decisions remain host-owned. */
 export function createCanonicalApplicationVpFamilyAdapter(input: {
   resolver: Pick<MidnightDIDResolverInterface, "resolveResult">;
+  /** Must be the schema ID in the host-selected active issuer grant. */
+  expectedCredentialSchemaId: string;
+  /** Must commit to the full host-selected issuer scope, not only its schema ID. */
+  expectedIssuerScopeCommitment: string;
   issuerEligibility: ApplicationVpFamilyAdapter<CanonicalApplicationVpSubmission>["assertIssuerEligible"];
   statusSource: (request: {
     material: ApplicationVpMaterial;
@@ -89,6 +101,8 @@ export function createCanonicalApplicationVpFamilyAdapter(input: {
     evaluatedAtMs: number;
   }) => Promise<{ validUntilMs: number; statusDecisionCommitment: string }>;
 }): QualifiedApplicationVpFamilyAdapter<CanonicalApplicationVpSubmission> {
+  const expectedSchemaId = IssuerScopeSchema.shape.schemaId.parse(input.expectedCredentialSchemaId);
+  const expectedIssuerScopeCommitment = HashHexSchema.parse(input.expectedIssuerScopeCommitment);
   const preparedBodies = new WeakMap<ApplicationVpMaterial, { credential: Credential; presentation: Presentation }>();
   const resolver: Pick<MidnightDIDResolverInterface, "resolveResult"> = {
     resolveResult: async (did) => {
@@ -148,6 +162,8 @@ export function createCanonicalApplicationVpFamilyAdapter(input: {
       const { credential, presentation } = bodies(material);
       if (credential.issuerDid !== material.issuerDid
         || credential.issuerMethodId !== material.issuerMethodId
+        || credential.credentialSchemaId !== expectedSchemaId
+        || credential.credentialIssuerScopeCommitment !== expectedIssuerScopeCommitment
         || credential.subjectDid !== material.subjectDid
         || credential.holderMethodId !== material.holderMethodId
         || credential.credentialExpiresAtMs !== material.credentialExpiresAtMs
@@ -191,4 +207,27 @@ export function createCanonicalApplicationVpFamilyAdapter(input: {
       return true;
     },
   };
+}
+
+/** Composes a signed schema match with independently authenticated issuer and status decisions. */
+export function createGovernedCanonicalApplicationVpFamilyAdapter(input: {
+  resolver: Pick<MidnightDIDResolverInterface, "resolveResult">;
+  selection: Omit<DecisionEvidenceSelection, "evaluationTime">;
+  readers: TrustedDecisionEvidenceReaders;
+  loadEvidence: () => Promise<unknown>;
+  allowedApplicationRoles: readonly AuthorizationScope["role"][];
+  statusSource: Parameters<typeof createCanonicalApplicationVpFamilyAdapter>[0]["statusSource"];
+}): QualifiedApplicationVpFamilyAdapter<CanonicalApplicationVpSubmission> {
+  const scope = IssuerScopeSchema.parse(input.selection.scope);
+  if (input.selection.role !== "issuer" || input.selection.resourceType !== "schema"
+    || input.selection.resourceId !== issuerGovernedResourceId(scope, "schema")) {
+    throw new Error("Application VP issuer selection must pin the exact governed credential schema");
+  }
+  return createCanonicalApplicationVpFamilyAdapter({
+    resolver: input.resolver,
+    expectedCredentialSchemaId: scope.schemaId,
+    expectedIssuerScopeCommitment: computeAuthorizationScopeCommitment(scope),
+    issuerEligibility: createGovernedApplicationIssuerEligibility(input),
+    statusSource: input.statusSource,
+  });
 }

@@ -611,7 +611,9 @@ reader. These reads did not submit a transaction or qualify live VP intake.
 The integration package now exports a non-fixture canonical application VP
 body adapter. Its signed-body, DID-method, presentation-context, and
 DID-signed status-attestation fixture tests pass, but the host still must
-supply authenticated finalized issuer decision evidence and a live VC-owned
+select an exact governed issuer `schema` grant matching the signed credential
+schema ID and full issuer-scope commitment, authenticate finalized decision
+evidence, and supply a live VC-owned
 status authority. The shared chain's zero published epochs currently prevent
 that governed issuer decision reader from accepting a live VP. Do not treat
 the adapter or its fixture tests as deployed actor evidence.
