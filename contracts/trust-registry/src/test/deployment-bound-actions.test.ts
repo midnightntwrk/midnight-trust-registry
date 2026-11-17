@@ -32,75 +32,93 @@ const bootstrap = (networkIdCommitment: Uint8Array, contractAddress?: string) =>
   return { maintainer, publicKey, registryId, simulator };
 };
 
-const signAudit = (source: ReturnType<typeof bootstrap>, payloadHash: Uint8Array) =>
-  signDeploymentBoundMaintainerActionFromSeed(
+const signAudit = async (source: ReturnType<typeof bootstrap>, payloadHash: Uint8Array) => {
+  const state = await source.simulator.getLedger();
+  return signDeploymentBoundMaintainerActionFromSeed(
     source.maintainer.seed,
     source.registryId,
-    source.simulator.getLedger().deploymentNetworkIdCommitment,
+    state.deploymentNetworkIdCommitment,
     Buffer.from(source.simulator.contractAddress, "hex"),
-    source.simulator.getLedger().governancePolicyCommitment,
+    state.governancePolicyCommitment,
     encodeCompactActionKind("tr:audit:generic"),
     payloadHash,
-    source.simulator.getLedger().governanceActionCount,
+    state.governanceActionCount,
   );
+};
 
 describe("deployment-bound governed actions", () => {
-  it("rejects a vote replayed at another contract address", () => {
+  it("rejects a vote replayed at another contract address", async () => {
     const network = labelToBytes32("network:replay-test");
     const source = bootstrap(network);
     const target = bootstrap(network);
     expect(source.simulator.contractAddress).not.toBe(target.simulator.contractAddress);
 
     const payload = labelToBytes32("audit:replay-test");
-    const signature = signAudit(source, payload);
-    const targetActionCount = target.simulator.getLedger().governanceActionCount;
-    const sourceActionCount = source.simulator.getLedger().governanceActionCount;
-    expect(() => target.simulator.authorizeMaintainerAuditEvent(
+    const signature = await signAudit(source, payload);
+    const targetActionCount = (await target.simulator.getLedger()).governanceActionCount;
+    const sourceActionCount = (await source.simulator.getLedger()).governanceActionCount;
+    await expect(target.simulator.authorizeMaintainerAuditEvent(
       target.maintainer.keyId, target.publicKey, signature, payload,
-    )).toThrow();
-    expect(target.simulator.getLedger().governanceActionCount).toBe(targetActionCount);
+    )).rejects.toThrow();
+    expect((await target.simulator.getLedger()).governanceActionCount).toBe(targetActionCount);
 
-    expect(source.simulator.authorizeMaintainerAuditEvent(
+    expect(await source.simulator.authorizeMaintainerAuditEvent(
       source.maintainer.keyId, source.publicKey, signature, payload,
     )).toHaveLength(32);
-    expect(source.simulator.getLedger().governanceActionCount).toBe(sourceActionCount + 1n);
+    expect((await source.simulator.getLedger()).governanceActionCount).toBe(sourceActionCount + 1n);
   });
 
-  it("rejects a vote signed for another pinned network", () => {
+  it("rejects a vote signed for another pinned network", async () => {
     const contractAddress = Buffer.from(labelToBytes32("contract:shared")).toString("hex");
     const source = bootstrap(labelToBytes32("network:source"), contractAddress);
     const target = bootstrap(labelToBytes32("network:target"), contractAddress);
     expect(source.simulator.contractAddress).toBe(target.simulator.contractAddress);
     const payload = labelToBytes32("audit:network-replay-test");
-    const signature = signAudit(source, payload);
-    const targetActionCount = target.simulator.getLedger().governanceActionCount;
-    const sourceActionCount = source.simulator.getLedger().governanceActionCount;
+    const signature = await signAudit(source, payload);
+    const targetActionCount = (await target.simulator.getLedger()).governanceActionCount;
+    const sourceActionCount = (await source.simulator.getLedger()).governanceActionCount;
 
-    expect(() => target.simulator.authorizeMaintainerAuditEvent(
+    await expect(target.simulator.authorizeMaintainerAuditEvent(
       target.maintainer.keyId, target.publicKey, signature, payload,
-    )).toThrow();
-    expect(target.simulator.getLedger().governanceActionCount).toBe(targetActionCount);
-    expect(source.simulator.authorizeMaintainerAuditEvent(
+    )).rejects.toThrow();
+    expect((await target.simulator.getLedger()).governanceActionCount).toBe(targetActionCount);
+    expect(await source.simulator.authorizeMaintainerAuditEvent(
       source.maintainer.keyId, source.publicKey, signature, payload,
     )).toHaveLength(32);
-    expect(source.simulator.getLedger().governanceActionCount).toBe(sourceActionCount + 1n);
+    expect((await source.simulator.getLedger()).governanceActionCount).toBe(sourceActionCount + 1n);
   });
 
-  it("rejects a stale same-deployment vote after another action consumes its sequence", () => {
+  it("rejects a stale same-deployment vote after another action consumes its sequence", async () => {
     const source = bootstrap(labelToBytes32("network:sequence-replay-test"));
     const stalePayload = labelToBytes32("audit:reserved-before-other-action");
     const otherPayload = labelToBytes32("audit:other-finalized-action");
-    const staleSignature = signAudit(source, stalePayload);
-    const otherSignature = signAudit(source, otherPayload);
-    const reservedSequence = source.simulator.getLedger().governanceActionCount;
+    const staleSignature = await signAudit(source, stalePayload);
+    const otherSignature = await signAudit(source, otherPayload);
+    const reservedSequence = (await source.simulator.getLedger()).governanceActionCount;
 
-    source.simulator.authorizeMaintainerAuditEvent(
+    await source.simulator.authorizeMaintainerAuditEvent(
       source.maintainer.keyId, source.publicKey, otherSignature, otherPayload,
     );
-    expect(source.simulator.getLedger().governanceActionCount).toBe(reservedSequence + 1n);
-    expect(() => source.simulator.authorizeMaintainerAuditEvent(
+    expect((await source.simulator.getLedger()).governanceActionCount).toBe(reservedSequence + 1n);
+    await expect(source.simulator.authorizeMaintainerAuditEvent(
       source.maintainer.keyId, source.publicKey, staleSignature, stalePayload,
-    )).toThrow();
-    expect(source.simulator.getLedger().governanceActionCount).toBe(reservedSequence + 1n);
+    )).rejects.toThrow();
+    expect((await source.simulator.getLedger()).governanceActionCount).toBe(reservedSequence + 1n);
+  });
+
+  it("serializes simultaneous votes against one action sequence", async () => {
+    const source = bootstrap(labelToBytes32("network:concurrent-vote-test"));
+    const payload = labelToBytes32("audit:concurrent-vote-test");
+    const signature = await signAudit(source, payload);
+    const sequence = (await source.simulator.getLedger()).governanceActionCount;
+    const first = source.simulator.authorizeMaintainerAuditEvent(
+      source.maintainer.keyId, source.publicKey, signature, payload,
+    );
+    const second = source.simulator.authorizeMaintainerAuditEvent(
+      source.maintainer.keyId, source.publicKey, signature, payload,
+    );
+    expect(await first).toHaveLength(32);
+    await expect(second).rejects.toThrow();
+    expect((await source.simulator.getLedger()).governanceActionCount).toBe(sequence + 1n);
   });
 });

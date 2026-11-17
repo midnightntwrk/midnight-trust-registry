@@ -56,10 +56,14 @@ with published `0.4.0` pins and a regenerated lockfile before a portable PR.
 | `midnight-ntwrk-credential-did-midnight-0.4.0.tgz` | `4fa92d305a152e8d1239c0997fa86bcfd189eb952e08763a82dcaf407b143400` |
 | `midnight-ntwrk-credential-model-0.4.0.tgz` | `cc12db936817281e9c41b64c70b45131f6610c6634a7353bd9ad398f20610866` |
 
-Current compile evidence is limited to `compact:light`. Contract TypeScript
-typecheck is red because generated `initialState` and impure circuits are
-asynchronous and the simulator still uses synchronous `CircuitResults`; this
-is a source migration, not a missing package or a qualification pass. No new
+Current compile evidence is limited to `compact:light`. The test simulator now
+awaits generated `initialState` and impure circuits, serializes calls, and
+labels each call with its actual circuit ID. Its source-only TypeScript build
+check passes, and the deployment-bound replay suite passes four cases,
+including simultaneous same-sequence votes. The full contract typecheck is
+still red: the remaining test and downstream caller sites treat simulator
+results and direct generated impure circuit results as synchronous. This is a
+source migration, not a missing package or a qualification pass. No new
 proving/verifier keys or deployed transactions have been generated.
 
 The next TypeScript pass must also remove `@midnight-ntwrk/midnight-js-network-id`

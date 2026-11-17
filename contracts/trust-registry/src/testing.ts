@@ -103,7 +103,9 @@ export const createMaintainerFixture = (
 export class TrustRegistrySimulator {
   readonly contract: Contract<TrustRegistryPrivateState>;
   readonly contractAddress: ContractAddress;
-  circuitContext: CircuitContext<TrustRegistryPrivateState>;
+  circuitContext!: CircuitContext<TrustRegistryPrivateState>;
+  readonly ready: Promise<void>;
+  private queue: Promise<void>;
 
   constructor(bootstrap: TrustRegistryBootstrapConfig) {
     if (bootstrap.contractAddress !== undefined
@@ -115,7 +117,7 @@ export class TrustRegistrySimulator {
     this.contract = new Contract<TrustRegistryPrivateState>(
       trustRegistryWitnesses,
     );
-    const initialState = this.contract.initialState(
+    this.ready = this.contract.initialState(
       createConstructorContext({}, "0".repeat(64)),
       bootstrap.registryId,
       bootstrap.registryDidCommitment,
@@ -126,17 +128,22 @@ export class TrustRegistrySimulator {
       bootstrap.maintainerPublicKey,
       bootstrap.maintainerThreshold,
       bootstrap.networkIdCommitment,
-    );
-    this.circuitContext = createCircuitContext(
-      this.contractAddress,
-      initialState.currentZswapLocalState,
-      initialState.currentContractState,
-      initialState.currentPrivateState,
-    );
+    ).then((initialState) => {
+      this.circuitContext = createCircuitContext({
+        circuitId: "constructor",
+        contractAddress: this.contractAddress,
+        coinPublicKeyOrZswapState: initialState.currentZswapLocalState,
+        contractState: initialState.currentContractState,
+        privateState: initialState.currentPrivateState,
+      });
+    });
+    this.queue = this.ready;
   }
 
-  getLedger(): Ledger {
-    return ledger(this.circuitContext.currentQueryContext.state);
+  async getLedger(): Promise<Ledger> {
+    await this.ready;
+    await this.queue;
+    return ledger(this.circuitContext.callContext.currentQueryContext.state);
   }
 
   private buildMaintainerAuthorizationBundle(
@@ -156,16 +163,28 @@ export class TrustRegistrySimulator {
   }
 
   private executeCircuit<T>(
-    circuitFn: () => CircuitResults<TrustRegistryPrivateState, T>,
-  ): T {
-    const result = circuitFn();
-    this.circuitContext = createCircuitContext(
-      this.contractAddress,
-      result.context.currentZswapLocalState,
-      result.context.currentQueryContext.state,
-      result.context.currentPrivateState,
-    );
-    return result.result;
+    circuitId: string,
+    circuitFn: (context: CircuitContext<TrustRegistryPrivateState>) => Promise<CircuitResults<TrustRegistryPrivateState, T>>,
+  ): Promise<T> {
+    const operation = this.queue.then(async () => {
+      await this.ready;
+      const previous = this.circuitContext.callContext;
+      if (previous.currentZswapLocalState === undefined || previous.currentPrivateState === undefined) {
+        throw new Error("Simulator state is incomplete");
+      }
+      const context = createCircuitContext({
+        circuitId,
+        contractAddress: this.contractAddress,
+        coinPublicKeyOrZswapState: previous.currentZswapLocalState,
+        contractState: previous.currentQueryContext.state,
+        privateState: previous.currentPrivateState,
+      });
+      const result = await circuitFn(context);
+      this.circuitContext = result.context;
+      return result.result;
+    });
+    this.queue = operation.then(() => undefined, () => undefined);
+    return operation;
   }
 
   authorizeMaintainerAuditEvent(
@@ -174,10 +193,10 @@ export class TrustRegistrySimulator {
     signature: { announcement: JubjubPoint; response: bigint },
     actionPayloadHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("authorizeMaintainerAuditEvent", (context) =>
       this.contract.impureCircuits.authorizeMaintainerAuditEvent(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -199,10 +218,10 @@ export class TrustRegistrySimulator {
     emergencyThreshold: bigint,
     archivalThreshold: bigint,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("updateMaintainerThresholdPolicy", (context) =>
       this.contract.impureCircuits.updateMaintainerThresholdPolicy(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -230,10 +249,10 @@ export class TrustRegistrySimulator {
     emergencyThreshold: bigint,
     archivalThreshold: bigint,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("recoverMaintainerMembership", (context) =>
       this.contract.impureCircuits.recoverMaintainerMembership(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -266,10 +285,10 @@ export class TrustRegistrySimulator {
     evidenceVerifierKeyIdCommitment: Uint8Array,
     evidenceSignature: { announcement: JubjubPoint; response: bigint },
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("proposeMaintainerMembership", (context) =>
       this.contract.impureCircuits.proposeMaintainerMembership(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -297,10 +316,10 @@ export class TrustRegistrySimulator {
     candidateMaintainerId: Uint8Array,
     evidenceHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("authorizeMaintainerMembership", (context) =>
       this.contract.impureCircuits.authorizeMaintainerMembership(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -320,10 +339,10 @@ export class TrustRegistrySimulator {
     candidateMaintainerId: Uint8Array,
     evidenceHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("activateMaintainerMembership", (context) =>
       this.contract.impureCircuits.activateMaintainerMembership(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -343,10 +362,10 @@ export class TrustRegistrySimulator {
     candidateMaintainerId: Uint8Array,
     evidenceHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("suspendMaintainerMembership", (context) =>
       this.contract.impureCircuits.suspendMaintainerMembership(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -366,10 +385,10 @@ export class TrustRegistrySimulator {
     candidateMaintainerId: Uint8Array,
     evidenceHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("revokeMaintainerMembership", (context) =>
       this.contract.impureCircuits.revokeMaintainerMembership(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -389,10 +408,10 @@ export class TrustRegistrySimulator {
     candidateMaintainerId: Uint8Array,
     evidenceHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("archiveMaintainerMembership", (context) =>
       this.contract.impureCircuits.archiveMaintainerMembership(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -407,10 +426,10 @@ export class TrustRegistrySimulator {
 
   getMaintainerMembership(
     maintainerId: Uint8Array,
-  ): MaintainerMembershipRecord {
-    return this.executeCircuit(() =>
+  ): Promise<MaintainerMembershipRecord> {
+    return this.executeCircuit("getMaintainerMembership", (context) =>
       this.contract.impureCircuits.getMaintainerMembership(
-        this.circuitContext,
+        context,
         maintainerId,
       ),
     );
@@ -418,10 +437,10 @@ export class TrustRegistrySimulator {
 
   getMaintainerProposalEvidence(
     maintainerId: Uint8Array,
-  ): MaintainerProposalEvidenceRecord {
-    return this.executeCircuit(() =>
+  ): Promise<MaintainerProposalEvidenceRecord> {
+    return this.executeCircuit("getMaintainerProposalEvidence", (context) =>
       this.contract.impureCircuits.getMaintainerProposalEvidence(
-        this.circuitContext,
+        context,
         maintainerId,
       ),
     );
@@ -429,10 +448,10 @@ export class TrustRegistrySimulator {
 
   getCurrentMaintainerMembership(
     maintainerDidCommitment: Uint8Array,
-  ): MaintainerMembershipRecord {
-    return this.executeCircuit(() =>
+  ): Promise<MaintainerMembershipRecord> {
+    return this.executeCircuit("getCurrentMaintainerMembership", (context) =>
       this.contract.impureCircuits.getCurrentMaintainerMembership(
-        this.circuitContext,
+        context,
         maintainerDidCommitment,
       ),
     );
@@ -451,10 +470,10 @@ export class TrustRegistrySimulator {
     policyCommitment: Uint8Array,
     policyVersion: bigint,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("registerVcAuthorityKey", (context) =>
       this.contract.impureCircuits.registerVcAuthorityKey(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId, maintainerPublicKey, signature, coAuthorizers,
         ),
@@ -470,16 +489,16 @@ export class TrustRegistrySimulator {
     );
   }
 
-  getVcAuthorityKey(keyIdCommitment: Uint8Array): VcAuthorityKeyRecord {
-    return this.executeCircuit(() =>
-      this.contract.impureCircuits.getVcAuthorityKey(this.circuitContext, keyIdCommitment),
+  getVcAuthorityKey(keyIdCommitment: Uint8Array): Promise<VcAuthorityKeyRecord> {
+    return this.executeCircuit("getVcAuthorityKey", (context) =>
+      this.contract.impureCircuits.getVcAuthorityKey(context, keyIdCommitment),
     );
   }
 
-  getCurrentVcAuthorityKey(consumerContractAddress: Uint8Array): VcAuthorityKeyRecord {
-    return this.executeCircuit(() =>
+  getCurrentVcAuthorityKey(consumerContractAddress: Uint8Array): Promise<VcAuthorityKeyRecord> {
+    return this.executeCircuit("getCurrentVcAuthorityKey", (context) =>
       this.contract.impureCircuits.getCurrentVcAuthorityKey(
-        this.circuitContext, consumerContractAddress,
+        context, consumerContractAddress,
       ),
     );
   }
@@ -491,10 +510,10 @@ export class TrustRegistrySimulator {
     keyIdCommitment: Uint8Array,
     reasonHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("suspendVcAuthorityKey", (context) =>
       this.contract.impureCircuits.suspendVcAuthorityKey(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId, maintainerPublicKey, signature, coAuthorizers,
         ),
@@ -511,10 +530,10 @@ export class TrustRegistrySimulator {
     keyIdCommitment: Uint8Array,
     reasonHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("revokeVcAuthorityKey", (context) =>
       this.contract.impureCircuits.revokeVcAuthorityKey(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId, maintainerPublicKey, signature, coAuthorizers,
         ),
@@ -534,10 +553,10 @@ export class TrustRegistrySimulator {
     newPublicKey: JubjubPoint,
     reasonHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("rotateVcAuthorityKey", (context) =>
       this.contract.impureCircuits.rotateVcAuthorityKey(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId, maintainerPublicKey, signature, coAuthorizers,
         ),
@@ -562,10 +581,10 @@ export class TrustRegistrySimulator {
     policyCommitment: Uint8Array,
     policyVersion: bigint,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("registerEvidenceVerifierKey", (context) =>
       this.contract.impureCircuits.registerEvidenceVerifierKey(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId, maintainerPublicKey, signature, coAuthorizers,
         ),
@@ -587,10 +606,10 @@ export class TrustRegistrySimulator {
     authorizationId: Uint8Array,
     reasonHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("suspendEvidenceVerifierKey", (context) =>
       this.contract.impureCircuits.suspendEvidenceVerifierKey(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId, maintainerPublicKey, signature, coAuthorizers,
         ),
@@ -607,10 +626,10 @@ export class TrustRegistrySimulator {
     authorizationId: Uint8Array,
     reasonHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("revokeEvidenceVerifierKey", (context) =>
       this.contract.impureCircuits.revokeEvidenceVerifierKey(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId, maintainerPublicKey, signature, coAuthorizers,
         ),
@@ -630,10 +649,10 @@ export class TrustRegistrySimulator {
     newPublicKey: JubjubPoint,
     reasonHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("rotateEvidenceVerifierKey", (context) =>
       this.contract.impureCircuits.rotateEvidenceVerifierKey(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId, maintainerPublicKey, signature, coAuthorizers,
         ),
@@ -646,28 +665,28 @@ export class TrustRegistrySimulator {
     );
   }
 
-  getEvidenceVerifierKey(authorizationId: Uint8Array): EvidenceVerifierKeyRecord {
-    return this.executeCircuit(() =>
+  getEvidenceVerifierKey(authorizationId: Uint8Array): Promise<EvidenceVerifierKeyRecord> {
+    return this.executeCircuit("getEvidenceVerifierKey", (context) =>
       this.contract.impureCircuits.getEvidenceVerifierKey(
-        this.circuitContext,
+        context,
         authorizationId,
       ),
     );
   }
 
-  getIssuerProposalEvidence(authorizationId: Uint8Array): IssuerProposalEvidenceRecord {
-    return this.executeCircuit(() =>
+  getIssuerProposalEvidence(authorizationId: Uint8Array): Promise<IssuerProposalEvidenceRecord> {
+    return this.executeCircuit("getIssuerProposalEvidence", (context) =>
       this.contract.impureCircuits.getIssuerProposalEvidence(
-        this.circuitContext,
+        context,
         authorizationId,
       ),
     );
   }
 
-  getVerifierProposalEvidence(authorizationId: Uint8Array): VerifierProposalEvidenceRecord {
-    return this.executeCircuit(() =>
+  getVerifierProposalEvidence(authorizationId: Uint8Array): Promise<VerifierProposalEvidenceRecord> {
+    return this.executeCircuit("getVerifierProposalEvidence", (context) =>
       this.contract.impureCircuits.getVerifierProposalEvidence(
-        this.circuitContext,
+        context,
         authorizationId,
       ),
     );
@@ -689,10 +708,10 @@ export class TrustRegistrySimulator {
     evidenceVerifierKeyIdCommitment: Uint8Array,
     evidenceSignature: { announcement: JubjubPoint; response: bigint },
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("proposeIssuerAuthorization", (context) =>
       this.contract.impureCircuits.proposeIssuerAuthorization(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -721,10 +740,10 @@ export class TrustRegistrySimulator {
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("authorizeIssuerAuthorization", (context) =>
       this.contract.impureCircuits.authorizeIssuerAuthorization(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -744,10 +763,10 @@ export class TrustRegistrySimulator {
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("activateIssuerAuthorization", (context) =>
       this.contract.impureCircuits.activateIssuerAuthorization(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -767,10 +786,10 @@ export class TrustRegistrySimulator {
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("suspendIssuerAuthorization", (context) =>
       this.contract.impureCircuits.suspendIssuerAuthorization(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -790,10 +809,10 @@ export class TrustRegistrySimulator {
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("revokeIssuerAuthorization", (context) =>
       this.contract.impureCircuits.revokeIssuerAuthorization(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -813,10 +832,10 @@ export class TrustRegistrySimulator {
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("archiveIssuerAuthorization", (context) =>
       this.contract.impureCircuits.archiveIssuerAuthorization(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -831,10 +850,10 @@ export class TrustRegistrySimulator {
 
   getIssuerAuthorization(
     authorizationId: Uint8Array,
-  ): IssuerAuthorizationRecord {
-    return this.executeCircuit(() =>
+  ): Promise<IssuerAuthorizationRecord> {
+    return this.executeCircuit("getIssuerAuthorization", (context) =>
       this.contract.impureCircuits.getIssuerAuthorization(
-        this.circuitContext,
+        context,
         authorizationId,
       ),
     );
@@ -844,10 +863,10 @@ export class TrustRegistrySimulator {
     subjectDidCommitment: Uint8Array,
     resourceType: IssuerResourceType,
     resourceId: Uint8Array,
-  ): IssuerAuthorizationRecord {
-    return this.executeCircuit(() =>
+  ): Promise<IssuerAuthorizationRecord> {
+    return this.executeCircuit("getCurrentIssuerAuthorization", (context) =>
       this.contract.impureCircuits.getCurrentIssuerAuthorization(
-        this.circuitContext,
+        context,
         subjectDidCommitment,
         resourceType,
         resourceId,
@@ -859,15 +878,15 @@ export class TrustRegistrySimulator {
     subjectDidCommitment: Uint8Array,
     resourceType: IssuerResourceType,
     resourceId: Uint8Array,
-  ): void {
-    this.executeCircuit(() =>
+  ): Promise<void> {
+    return this.executeCircuit("assertIssuerAuthorized", (context) =>
       this.contract.impureCircuits.assertIssuerAuthorized(
-        this.circuitContext,
+        context,
         subjectDidCommitment,
         resourceType,
         resourceId,
       ),
-    );
+    ).then(() => undefined);
   }
 
   proposeVerifierAuthorization(
@@ -887,10 +906,10 @@ export class TrustRegistrySimulator {
     evidenceVerifierKeyIdCommitment: Uint8Array,
     evidenceSignature: { announcement: JubjubPoint; response: bigint },
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("proposeVerifierAuthorization", (context) =>
       this.contract.impureCircuits.proposeVerifierAuthorization(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -920,10 +939,10 @@ export class TrustRegistrySimulator {
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("authorizeVerifierAuthorization", (context) =>
       this.contract.impureCircuits.authorizeVerifierAuthorization(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -943,10 +962,10 @@ export class TrustRegistrySimulator {
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("activateVerifierAuthorization", (context) =>
       this.contract.impureCircuits.activateVerifierAuthorization(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -966,10 +985,10 @@ export class TrustRegistrySimulator {
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("suspendVerifierAuthorization", (context) =>
       this.contract.impureCircuits.suspendVerifierAuthorization(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -989,10 +1008,10 @@ export class TrustRegistrySimulator {
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("revokeVerifierAuthorization", (context) =>
       this.contract.impureCircuits.revokeVerifierAuthorization(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -1012,10 +1031,10 @@ export class TrustRegistrySimulator {
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("archiveVerifierAuthorization", (context) =>
       this.contract.impureCircuits.archiveVerifierAuthorization(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -1030,10 +1049,10 @@ export class TrustRegistrySimulator {
 
   getVerifierAuthorization(
     authorizationId: Uint8Array,
-  ): VerifierAuthorizationRecord {
-    return this.executeCircuit(() =>
+  ): Promise<VerifierAuthorizationRecord> {
+    return this.executeCircuit("getVerifierAuthorization", (context) =>
       this.contract.impureCircuits.getVerifierAuthorization(
-        this.circuitContext,
+        context,
         authorizationId,
       ),
     );
@@ -1045,10 +1064,10 @@ export class TrustRegistrySimulator {
     allowedAttributeSetCommitment: Uint8Array,
     allowedPredicateSetCommitment: Uint8Array,
     disclosureLevelCommitment: Uint8Array,
-  ): VerifierAuthorizationRecord {
-    return this.executeCircuit(() =>
+  ): Promise<VerifierAuthorizationRecord> {
+    return this.executeCircuit("getCurrentVerifierAuthorization", (context) =>
       this.contract.impureCircuits.getCurrentVerifierAuthorization(
-        this.circuitContext,
+        context,
         subjectDidCommitment,
         requestResourceId,
         allowedAttributeSetCommitment,
@@ -1074,10 +1093,10 @@ export class TrustRegistrySimulator {
     evidenceVerifierKeyIdCommitment: Uint8Array,
     evidenceSignature: { announcement: JubjubPoint; response: bigint },
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("proposeRecognition", (context) =>
       this.contract.impureCircuits.proposeRecognition(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -1106,10 +1125,10 @@ export class TrustRegistrySimulator {
     recognitionId: Uint8Array,
     evidenceHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("authorizeRecognition", (context) =>
       this.contract.impureCircuits.authorizeRecognition(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -1129,10 +1148,10 @@ export class TrustRegistrySimulator {
     recognitionId: Uint8Array,
     evidenceHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("activateRecognition", (context) =>
       this.contract.impureCircuits.activateRecognition(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -1152,10 +1171,10 @@ export class TrustRegistrySimulator {
     recognitionId: Uint8Array,
     evidenceHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("suspendRecognition", (context) =>
       this.contract.impureCircuits.suspendRecognition(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -1175,10 +1194,10 @@ export class TrustRegistrySimulator {
     recognitionId: Uint8Array,
     evidenceHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("revokeRecognition", (context) =>
       this.contract.impureCircuits.revokeRecognition(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -1198,10 +1217,10 @@ export class TrustRegistrySimulator {
     recognitionId: Uint8Array,
     evidenceHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("archiveRecognition", (context) =>
       this.contract.impureCircuits.archiveRecognition(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -1216,10 +1235,10 @@ export class TrustRegistrySimulator {
 
   getRecognition(
     recognitionId: Uint8Array,
-  ): RecognitionRecord {
-    return this.executeCircuit(() =>
+  ): Promise<RecognitionRecord> {
+    return this.executeCircuit("getRecognition", (context) =>
       this.contract.impureCircuits.getRecognition(
-        this.circuitContext,
+        context,
         recognitionId,
       ),
     );
@@ -1227,10 +1246,10 @@ export class TrustRegistrySimulator {
 
   getRecognitionProposalEvidence(
     recognitionId: Uint8Array,
-  ): RecognitionProposalEvidenceRecord {
-    return this.executeCircuit(() =>
+  ): Promise<RecognitionProposalEvidenceRecord> {
+    return this.executeCircuit("getRecognitionProposalEvidence", (context) =>
       this.contract.impureCircuits.getRecognitionProposalEvidence(
-        this.circuitContext,
+        context,
         recognitionId,
       ),
     );
@@ -1241,10 +1260,10 @@ export class TrustRegistrySimulator {
     recognizedRegistryId: Uint8Array,
     scopeResourceType: Uint8Array,
     scopeResourceId: Uint8Array,
-  ): RecognitionRecord {
-    return this.executeCircuit(() =>
+  ): Promise<RecognitionRecord> {
+    return this.executeCircuit("getCurrentRecognition", (context) =>
       this.contract.impureCircuits.getCurrentRecognition(
-        this.circuitContext,
+        context,
         recognizedAuthorityDidCommitment,
         recognizedRegistryId,
         scopeResourceType,
@@ -1270,10 +1289,10 @@ export class TrustRegistrySimulator {
     evidenceVerifierKeyIdCommitment: Uint8Array,
     evidenceSignature: { announcement: JubjubPoint; response: bigint },
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("proposeAuditorAuthorization", (context) =>
       this.contract.impureCircuits.proposeAuditorAuthorization(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -1303,10 +1322,10 @@ export class TrustRegistrySimulator {
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("authorizeAuditorAuthorization", (context) =>
       this.contract.impureCircuits.authorizeAuditorAuthorization(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -1326,10 +1345,10 @@ export class TrustRegistrySimulator {
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("activateAuditorAuthorization", (context) =>
       this.contract.impureCircuits.activateAuditorAuthorization(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -1349,10 +1368,10 @@ export class TrustRegistrySimulator {
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("suspendAuditorAuthorization", (context) =>
       this.contract.impureCircuits.suspendAuditorAuthorization(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -1372,10 +1391,10 @@ export class TrustRegistrySimulator {
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("revokeAuditorAuthorization", (context) =>
       this.contract.impureCircuits.revokeAuditorAuthorization(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -1395,10 +1414,10 @@ export class TrustRegistrySimulator {
     authorizationId: Uint8Array,
     evidenceHash: Uint8Array,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("archiveAuditorAuthorization", (context) =>
       this.contract.impureCircuits.archiveAuditorAuthorization(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -1413,10 +1432,10 @@ export class TrustRegistrySimulator {
 
   getAuditorAuthorization(
     authorizationId: Uint8Array,
-  ): AuditorAuthorizationRecord {
-    return this.executeCircuit(() =>
+  ): Promise<AuditorAuthorizationRecord> {
+    return this.executeCircuit("getAuditorAuthorization", (context) =>
       this.contract.impureCircuits.getAuditorAuthorization(
-        this.circuitContext,
+        context,
         authorizationId,
       ),
     );
@@ -1424,10 +1443,10 @@ export class TrustRegistrySimulator {
 
   getAuditorProposalEvidence(
     authorizationId: Uint8Array,
-  ): AuditorProposalEvidenceRecord {
-    return this.executeCircuit(() =>
+  ): Promise<AuditorProposalEvidenceRecord> {
+    return this.executeCircuit("getAuditorProposalEvidence", (context) =>
       this.contract.impureCircuits.getAuditorProposalEvidence(
-        this.circuitContext,
+        context,
         authorizationId,
       ),
     );
@@ -1439,10 +1458,10 @@ export class TrustRegistrySimulator {
     allowedAttributeSetCommitment: Uint8Array,
     allowedPredicateSetCommitment: Uint8Array,
     disclosureLevelCommitment: Uint8Array,
-  ): AuditorAuthorizationRecord {
-    return this.executeCircuit(() =>
+  ): Promise<AuditorAuthorizationRecord> {
+    return this.executeCircuit("getCurrentAuditorAuthorization", (context) =>
       this.contract.impureCircuits.getCurrentAuditorAuthorization(
-        this.circuitContext,
+        context,
         subjectDidCommitment,
         requestResourceId,
         allowedAttributeSetCommitment,
@@ -1458,17 +1477,17 @@ export class TrustRegistrySimulator {
     allowedAttributeSetCommitment: Uint8Array,
     allowedPredicateSetCommitment: Uint8Array,
     disclosureLevelCommitment: Uint8Array,
-  ): void {
-    this.executeCircuit(() =>
+  ): Promise<void> {
+    return this.executeCircuit("assertAuditorAuthorized", (context) =>
       this.contract.impureCircuits.assertAuditorAuthorized(
-        this.circuitContext,
+        context,
         subjectDidCommitment,
         requestResourceId,
         allowedAttributeSetCommitment,
         allowedPredicateSetCommitment,
         disclosureLevelCommitment,
       ),
-    );
+    ).then(() => undefined);
   }
 
   publishEpochCommitment(
@@ -1482,10 +1501,10 @@ export class TrustRegistrySimulator {
     validFromSequence: bigint,
     validUntilSequence: bigint,
     coAuthorizers: readonly MaintainerCoAuthorizer[] = [],
-  ): Uint8Array {
-    return this.executeCircuit(() =>
+  ): Promise<Uint8Array> {
+    return this.executeCircuit("publishEpochCommitment", (context) =>
       this.contract.impureCircuits.publishEpochCommitment(
-        this.circuitContext,
+        context,
         this.buildMaintainerAuthorizationBundle(
           maintainerKeyId,
           maintainerPublicKey,
@@ -1504,19 +1523,19 @@ export class TrustRegistrySimulator {
 
   getEpochCommitment(
     epochId: Uint8Array,
-  ): EpochCommitmentRecord {
-    return this.executeCircuit(() =>
+  ): Promise<EpochCommitmentRecord> {
+    return this.executeCircuit("getEpochCommitment", (context) =>
       this.contract.impureCircuits.getEpochCommitment(
-        this.circuitContext,
+        context,
         epochId,
       ),
     );
   }
 
-  getCurrentEpochCommitment(): EpochCommitmentRecord {
-    return this.executeCircuit(() =>
+  getCurrentEpochCommitment(): Promise<EpochCommitmentRecord> {
+    return this.executeCircuit("getCurrentEpochCommitment", (context) =>
       this.contract.impureCircuits.getCurrentEpochCommitment(
-        this.circuitContext,
+        context,
       ),
     );
   }
@@ -1526,16 +1545,16 @@ export class TrustRegistrySimulator {
     recognizedRegistryId: Uint8Array,
     scopeResourceType: Uint8Array,
     scopeResourceId: Uint8Array,
-  ): void {
-    this.executeCircuit(() =>
+  ): Promise<void> {
+    return this.executeCircuit("assertRecognitionActive", (context) =>
       this.contract.impureCircuits.assertRecognitionActive(
-        this.circuitContext,
+        context,
         recognizedAuthorityDidCommitment,
         recognizedRegistryId,
         scopeResourceType,
         scopeResourceId,
       ),
-    );
+    ).then(() => undefined);
   }
 
   assertVerifierAuthorized(
@@ -1544,16 +1563,16 @@ export class TrustRegistrySimulator {
     allowedAttributeSetCommitment: Uint8Array,
     allowedPredicateSetCommitment: Uint8Array,
     disclosureLevelCommitment: Uint8Array,
-  ): void {
-    this.executeCircuit(() =>
+  ): Promise<void> {
+    return this.executeCircuit("assertVerifierAuthorized", (context) =>
       this.contract.impureCircuits.assertVerifierAuthorized(
-        this.circuitContext,
+        context,
         subjectDidCommitment,
         requestResourceId,
         allowedAttributeSetCommitment,
         allowedPredicateSetCommitment,
         disclosureLevelCommitment,
       ),
-    );
+    ).then(() => undefined);
   }
 }
