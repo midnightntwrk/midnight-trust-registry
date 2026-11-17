@@ -37,11 +37,14 @@ require a new index for older 4.3 data. Exact Docker image digests are in
 validates the base and offline configurations without starting containers.
 
 The registry contract and trust-state model do not require VC. VP-based
-application evidence does. The current API also imports the VC package's
-`resolveMidnightDIDMethodBinding` for actor authentication and mutation
-intents; that is a removable implementation coupling, not a registry
-protocol requirement. Core DID authentication should use DID-owned resolution
-before the VC release gate is applied only to VP evidence journeys.
+application evidence does. The API now resolves actor authentication and
+mutation-intent keys through the DID-owned document and codec types, not the
+VC proof adapter. It still requires subject, controller, relationship,
+positive DID version, native Jubjub key type, and prime-order key checks.
+The VC release gate applies only to VP evidence journeys, not basic DID
+challenge-response. Existing API integration suites remain blocked by the
+unbuilt integration package in this worktree; the standalone key-resolution
+tests pass, but they do not qualify full actor journeys.
 
 The local VC trial source is [PR #755](https://github.com/midnightntwrk/midnight-verifiable-credentials/pull/755)
 at `dad8b2cae38c9971adb43d124ead1281b021416b`. Its Nix `npm-artifacts`
@@ -131,10 +134,10 @@ containers or volumes.
    with `2.1.101`, `state_getRuntimeVersion.specVersion` is `2001100`, and
    `midnight_ledgerVersion` names `crate-ledger-9.1.0.1`. Confirm indexer
    genesis, progress and contract-state decoding before application calls.
-3. Consume published, exact-version DID 1.0.0-rc1 packages. Decouple the API's
-   DID method lookup from the VC-owned binding helper without weakening key
-   relationship, controller or origin checks. Core actor authentication can
-   qualify before the VC migration. VP evidence journeys wait for a tested
+3. Consume published, exact-version DID 1.0.0-rc1 packages. Complete API
+   actor-authentication qualification with the DID-owned key lookup and
+   preserve key relationship, controller and origin checks. Core actor
+   authentication can qualify before the VC migration. VP evidence journeys wait for a tested
    Ledger 9 VC core and DID binding from
    [VC #754](https://github.com/midnightntwrk/midnight-verifiable-credentials/issues/754)
    and PR #755. Do not combine VC 0.3.0/runtime 0.16.0 with

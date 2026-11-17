@@ -1,10 +1,6 @@
 import { Buffer } from "node:buffer";
 import { createHash, createPublicKey, randomBytes, verify as verifySignature } from "node:crypto";
 
-import {
-  resolveMidnightDIDMethodBinding,
-  type ResolveMidnightDIDMethodBindingOptions,
-} from "@midnight-ntwrk/credential-did-midnight";
 import { parseMidnightDIDString, resolveLongFormOffchainMidnightDID } from "@midnight-ntwrk/midnight-did";
 import { verifyJubjubPayload } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import { decodeCanonicalJubjubSignatureHex, isPrimeOrderJubjubPoint } from "@midnight-ntwrk/trust-registry-contract";
@@ -18,8 +14,9 @@ import {
   type ActorAuthenticationContext,
   type ActorAuthenticationPurpose,
 } from "@midnight-ntwrk/trust-registry-domain";
+import { resolvedMidnightDidSigningKey, type MidnightAuthenticationResolver } from "./did-authentication-key.js";
 
-type MidnightResolver = ResolveMidnightDIDMethodBindingOptions["resolver"];
+type MidnightResolver = MidnightAuthenticationResolver;
 
 export interface ActorAuthenticationChallengeStore {
   /** Insert and consume must be atomic across every process serving this deployment. */
@@ -109,13 +106,8 @@ export function createActorAuthenticationService(input: {
           throw new ActorAuthenticationResolverUnavailableError(error);
         }
         try {
-          const method = await resolveMidnightDIDMethodBinding({
-            resolver: { resolveResult: async () => resolved },
-            did,
-            verificationMethodId: `#${actorKeyId.split("#")[1]}`,
-            relationship: "authentication",
-          });
-          if (actorKeyId !== `${actorDid}#${actorKeyId.split("#")[1]}` || !isPrimeOrderJubjubPoint(method.publicKey)) {
+          const publicKey = resolvedMidnightDidSigningKey(resolved!, did, actorKeyId, "authentication");
+          if (!isPrimeOrderJubjubPoint(publicKey)) {
             throw new InvalidActorAuthenticationIdentityError();
           }
         } catch {
@@ -195,14 +187,9 @@ export function createActorAuthenticationService(input: {
           throw new ActorAuthenticationResolverUnavailableError(error);
         }
         try {
-          const method = await resolveMidnightDIDMethodBinding({
-            resolver: { resolveResult: async () => resolved },
-            did,
-            verificationMethodId: `#${challenge.actorKeyId.split("#")[1]}`,
-            relationship: "authentication",
-          });
-          verified = isPrimeOrderJubjubPoint(method.publicKey) && verifyJubjubPayload(
-            method.publicKey,
+          const publicKey = resolvedMidnightDidSigningKey(resolved!, did, challenge.actorKeyId, "authentication");
+          verified = isPrimeOrderJubjubPoint(publicKey) && verifyJubjubPayload(
+            publicKey,
             actorAuthenticationDigestBytes(challenge),
             decodeCanonicalJubjubSignatureHex(signature.value),
           );

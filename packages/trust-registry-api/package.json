@@ -55,8 +55,8 @@
   },
   "dependencies": {
     "@midnight-ntwrk/compact-runtime": "0.21.0",
-    "@midnight-ntwrk/credential-did-midnight": "0.4.0",
     "@midnight-ntwrk/midnight-did": "1.0.0-rc1",
+    "@midnight-ntwrk/midnight-did-domain": "1.0.0-rc1",
     "@midnight-ntwrk/midnight-did-jubjub-schnorr": "1.0.0-rc1",
     "@midnight-ntwrk/trust-registry-cli": "workspace:0.1.0",
     "@midnight-ntwrk/trust-registry-client": "workspace:0.1.0",
@@ -67,7 +67,6 @@
     "zod": "^4.6.6"
   },
   "devDependencies": {
-    "@midnight-ntwrk/midnight-did-domain": "1.0.0-rc1",
     "@midnight-ntwrk/midnight-js-contracts": "5.0.0"
   }
 }

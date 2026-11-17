@@ -224,10 +224,10 @@ importers:
       '@midnight-ntwrk/compact-runtime':
         specifier: 0.21.0
         version: 0.21.0
-      '@midnight-ntwrk/credential-did-midnight':
-        specifier: file:../../artifacts/ledger9-vc-pr755/midnight-ntwrk-credential-did-midnight-0.4.0.tgz
-        version: file:artifacts/ledger9-vc-pr755/midnight-ntwrk-credential-did-midnight-0.4.0.tgz
       '@midnight-ntwrk/midnight-did':
+        specifier: 1.0.0-rc1
+        version: 1.0.0-rc1
+      '@midnight-ntwrk/midnight-did-domain':
         specifier: 1.0.0-rc1
         version: 1.0.0-rc1
       '@midnight-ntwrk/midnight-did-jubjub-schnorr':
@@ -255,9 +255,6 @@ importers:
         specifier: ^4.6.6
         version: 4.6.6
     devDependencies:
-      '@midnight-ntwrk/midnight-did-domain':
-        specifier: 1.0.0-rc1
-        version: 1.0.0-rc1
       '@midnight-ntwrk/midnight-js-contracts':
         specifier: 5.0.0
         version: 5.0.0
