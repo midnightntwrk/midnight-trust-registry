@@ -691,6 +691,24 @@ journals, receipts, proof logs, and fixture signer remain ignored and private;
 do not replay the submissions. The shared node/indexer/proof-server lifecycle
 was not changed.
 
+The same pinned chain also accepted a separate fixture auditor lifecycle.
+The proposal was proved with broadcast blocked, then submitted once under a
+private journal (receipt
+`008590c65207a5ad38e0ad40bbe236c30fb3aef89bc7ccef2d79e2d2e2231677ee`).
+Separate proof-only passes preceded one-shot authorization and activation,
+with receipts
+`00aa0ab482660296ece70f4aca3a7d9e1ea8302478e897b1d998735d99d3794ed1`
+and `00405ee95ef80f1cfdfb02c9e6fd0577203a105a6d6e7a0b616c970731cc819053`.
+An independent read-only process at indexed height 4073 found governance
+action count 12, one active auditor, and the selected auditor's proposed,
+authorized, and active sequences 9/10/11. All 66 verifier-key hashes still
+matched the source manifest. The selected auditor's lifecycle event root does
+not match the earlier registry-snapshot epoch. This is deployed local
+fixture-evidence governance testing, not a live DID/VP-verified auditor
+application, accepted decision epoch, or release evidence. The private
+journals and proof logs must not be replayed; the shared stack was not managed
+or restarted.
+
 ## Execution order
 
 1. Keep the `ledger8` source branch only as a historical reference. Ledger 9

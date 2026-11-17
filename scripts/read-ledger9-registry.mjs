@@ -15,17 +15,19 @@ export function parseRegistryReadArgs(args, env = process.env) {
   let contractAddress;
   let issuerLabel;
   let verifierLabel;
+  let auditorLabel;
   let manifestPath;
   let epochId;
   for (let index = 0; index < args.length; index += 2) {
     const flag = args[index];
     const value = args[index + 1];
-    if (!value || !["--address", "--issuer-label", "--verifier-label", "--manifest", "--epoch-id"].includes(flag)) {
-      throw new Error("Usage: read-ledger9-registry.mjs --address 0x... [--issuer-label label] [--verifier-label label] [--manifest path] [--epoch-id 0x...]");
+    if (!value || !["--address", "--issuer-label", "--verifier-label", "--auditor-label", "--manifest", "--epoch-id"].includes(flag)) {
+      throw new Error("Usage: read-ledger9-registry.mjs --address 0x... [--issuer-label label] [--verifier-label label] [--auditor-label label] [--manifest path] [--epoch-id 0x...]");
     }
     if (flag === "--address" && contractAddress === undefined) contractAddress = value;
     else if (flag === "--issuer-label" && issuerLabel === undefined) issuerLabel = value;
     else if (flag === "--verifier-label" && verifierLabel === undefined) verifierLabel = value;
+    else if (flag === "--auditor-label" && auditorLabel === undefined) auditorLabel = value;
     else if (flag === "--manifest" && manifestPath === undefined) manifestPath = value;
     else if (flag === "--epoch-id" && epochId === undefined) epochId = value;
     else throw new Error(`Duplicate option: ${flag}`);
@@ -41,6 +43,10 @@ export function parseRegistryReadArgs(args, env = process.env) {
     || verifierLabel.trim() !== verifierLabel || verifierLabel.includes("\0"))) {
     throw new Error("Verifier label is invalid");
   }
+  if (auditorLabel !== undefined && (auditorLabel.length === 0 || auditorLabel.length > 256
+    || auditorLabel.trim() !== auditorLabel || auditorLabel.includes("\0"))) {
+    throw new Error("Auditor label is invalid");
+  }
   if (epochId !== undefined && (!ADDRESS.test(epochId) || /^0x0{64}$/u.test(epochId))) {
     throw new Error("Epoch id must be a nonzero lowercase bytes32 commitment");
   }
@@ -50,7 +56,7 @@ export function parseRegistryReadArgs(args, env = process.env) {
     || Number(env.TR_EXPECTED_CHECKPOINT_HEIGHT) < 1) {
     throw new Error("Pin TR_EXPECTED_GENESIS_HASH and a non-genesis checkpoint height/hash before reading registry state");
   }
-  return { contractAddress, issuerLabel, verifierLabel, manifestPath, epochId };
+  return { contractAddress, issuerLabel, verifierLabel, auditorLabel, manifestPath, epochId };
 }
 
 export function assertFinalizedVerifierKeyCatalog(image, manifest, circuitNames) {
@@ -102,7 +108,8 @@ function summarizeEpoch(ledger, id) {
   };
 }
 
-export function summarizeFinalizedRegistry(image, attached, contractAddress, issuerSelection, epochId, verifierSelection) {
+export function summarizeFinalizedRegistry(image, attached, contractAddress, issuerSelection, epochId,
+  verifierSelection, auditorSelection) {
   if (!image || image.networkId !== "undeployed") {
     throw new Error("Finalized Ledger 9 registry image is unavailable for this contract");
   }
@@ -119,6 +126,12 @@ export function summarizeFinalizedRegistry(image, attached, contractAddress, iss
   if (verifier !== null && typeof verifierStatus !== "string") {
     throw new Error("Finalized verifier has an unknown authorization status");
   }
+  const auditor = auditorSelection && ledger.auditorAuthorizationRecords.member(auditorSelection.id)
+    ? ledger.auditorAuthorizationRecords.lookup(auditorSelection.id) : null;
+  const auditorStatus = auditor === null ? null : auditorSelection.statusNames[auditor.status];
+  if (auditor !== null && typeof auditorStatus !== "string") {
+    throw new Error("Finalized auditor has an unknown authorization status");
+  }
   let currentEpoch = null;
   if (ledger.epochCommitmentCount > 0n) {
     const id = ledger.latestEpochCommitmentId;
@@ -131,6 +144,7 @@ export function summarizeFinalizedRegistry(image, attached, contractAddress, iss
     : summarizeEpoch(ledger, Buffer.from(epochId.slice(2), "hex"));
   const issuerLifecycleEventRoot = issuer === null ? null : hex32(issuer.lifecycleEventHash);
   const verifierLifecycleEventRoot = verifier === null ? null : hex32(verifier.lifecycleEventHash);
+  const auditorLifecycleEventRoot = auditor === null ? null : hex32(auditor.lifecycleEventHash);
   const decisionEpoch = selectedEpoch === undefined ? currentEpoch : selectedEpoch;
   return {
     network: "undeployed",
@@ -171,11 +185,20 @@ export function summarizeFinalizedRegistry(image, attached, contractAddress, iss
         lifecycleEventRoot: verifierLifecycleEventRoot,
         epochEventRootMatchesLifecycle: decisionEpoch !== null
           && decisionEpoch.eventRoot === verifierLifecycleEventRoot } }),
+    ...(auditorSelection === undefined ? {} : { auditor: auditor === null
+      ? { label: auditorSelection.label, found: false }
+      : { label: auditorSelection.label, found: true, status: auditorStatus,
+        proposedAtSequence: auditor.proposedAtSequence.toString(),
+        authorizedAtSequence: auditor.authorizedAtSequence.toString(),
+        activeFromSequence: auditor.activeFromSequence.toString(),
+        lifecycleEventRoot: auditorLifecycleEventRoot,
+        epochEventRootMatchesLifecycle: decisionEpoch !== null
+          && decisionEpoch.eventRoot === auditorLifecycleEventRoot } }),
   };
 }
 
 export async function readLedger9Registry(args = process.argv.slice(2), env = process.env) {
-  const { contractAddress, issuerLabel, verifierLabel, manifestPath, epochId } = parseRegistryReadArgs(args, env);
+  const { contractAddress, issuerLabel, verifierLabel, auditorLabel, manifestPath, epochId } = parseRegistryReadArgs(args, env);
   const attached = await checkLedger9LocalStack(localnetInputFromEnvironment(env));
   const [{ bytes32Commitment }, { AuthorizationStatus, TrustRegistryContract, trustRegistryWitnesses },
     { createLocalNetworkDeploymentActionReader }] =
@@ -200,12 +223,16 @@ export async function readLedger9Registry(args = process.argv.slice(2), env = pr
   const verifierSelection = verifierLabel === undefined ? undefined : {
     label: verifierLabel, id: bytes32Commitment(verifierLabel), statusNames: AuthorizationStatus,
   };
+  const auditorSelection = auditorLabel === undefined ? undefined : {
+    label: auditorLabel, id: bytes32Commitment(auditorLabel), statusNames: AuthorizationStatus,
+  };
   const catalog = manifestPath === undefined ? {} : assertFinalizedVerifierKeyCatalog(
     image,
     await readBoundedManifest(manifestPath),
     Object.keys(new TrustRegistryContract.Contract(trustRegistryWitnesses).provableCircuits),
   );
-  return { ...summarizeFinalizedRegistry(image, attached, contractAddress, issuerSelection, epochId, verifierSelection),
+  return { ...summarizeFinalizedRegistry(image, attached, contractAddress, issuerSelection, epochId, verifierSelection,
+    auditorSelection),
     ...catalog };
 }
 

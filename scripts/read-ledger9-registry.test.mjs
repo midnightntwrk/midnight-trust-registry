@@ -12,11 +12,13 @@ const env = {
 
 test("registry read requires an exact address and non-genesis chain pin", () => {
   assert.deepEqual(parseRegistryReadArgs(["--address", address, "--issuer-label", "issuer:example"], env), {
-    contractAddress: address, issuerLabel: "issuer:example", verifierLabel: undefined,
+    contractAddress: address, issuerLabel: "issuer:example", verifierLabel: undefined, auditorLabel: undefined,
     manifestPath: undefined, epochId: undefined,
   });
   assert.equal(parseRegistryReadArgs(["--address", address, "--verifier-label", "verifier:example"], env)
     .verifierLabel, "verifier:example");
+  assert.equal(parseRegistryReadArgs(["--address", address, "--auditor-label", "auditor:example"], env)
+    .auditorLabel, "auditor:example");
   assert.equal(parseRegistryReadArgs(["--address", address, "--manifest", "release.json"], env).manifestPath,
     "release.json");
   assert.equal(parseRegistryReadArgs(["--address", address, "--epoch-id", address], env).epochId, address);
@@ -26,6 +28,7 @@ test("registry read requires an exact address and non-genesis chain pin", () => 
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--manifest", "a", "--manifest", "b"], env), /Duplicate/u);
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--issuer-label", "x\0y"], env), /invalid/u);
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--verifier-label", "x\0y"], env), /invalid/u);
+  assert.throws(() => parseRegistryReadArgs(["--address", address, "--auditor-label", "x\0y"], env), /invalid/u);
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--epoch-id", "0xA"], env), /Epoch id/u);
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--epoch-id", address,
     "--epoch-id", address], env), /Duplicate/u);
@@ -57,6 +60,7 @@ test("registry read summarizes finalized state and selected actors without leaki
   const issuerLabel = "issuer:example";
   const issuerId = new Uint8Array(32).fill(1);
   const verifierId = new Uint8Array(32).fill(6);
+  const auditorId = new Uint8Array(32).fill(8);
   const statusNames = { 2: "active" };
   const record = {
     status: 2,
@@ -79,6 +83,10 @@ test("registry read summarizes finalized state and selected actors without leaki
       },
       verifierAuthorizationRecords: {
         member: (id) => Buffer.from(id).equals(Buffer.from(verifierId)),
+        lookup: () => record,
+      },
+      auditorAuthorizationRecords: {
+        member: (id) => Buffer.from(id).equals(Buffer.from(auditorId)),
         lookup: () => record,
       },
     },
@@ -108,6 +116,16 @@ test("registry read summarizes finalized state and selected actors without leaki
   { label: "verifier:unknown", found: false });
   assert.throws(() => summarizeFinalizedRegistry(image, attached, address, undefined, undefined,
     { label: "verifier:example", id: verifierId, statusNames: {} }), /unknown authorization status/u);
+  assert.deepEqual(summarizeFinalizedRegistry(image, attached, address, undefined, undefined, undefined,
+    { label: "auditor:example", id: auditorId, statusNames }).auditor,
+  { label: "auditor:example", found: true, status: "active",
+    proposedAtSequence: "3", authorizedAtSequence: "4", activeFromSequence: "5",
+    lifecycleEventRoot: `0x${"02".repeat(32)}`, epochEventRootMatchesLifecycle: false });
+  assert.deepEqual(summarizeFinalizedRegistry(image, attached, address, undefined, undefined, undefined,
+    { label: "auditor:unknown", id: new Uint8Array(32).fill(7), statusNames }).auditor,
+  { label: "auditor:unknown", found: false });
+  assert.throws(() => summarizeFinalizedRegistry(image, attached, address, undefined, undefined, undefined,
+    { label: "auditor:example", id: auditorId, statusNames: {} }), /unknown authorization status/u);
   assert.throws(() => summarizeFinalizedRegistry(image, attached, address,
     { label: issuerLabel, id: issuerId, statusNames: {} }), /unknown authorization status/u);
   assert.throws(() => summarizeFinalizedRegistry(null, attached, address), /unavailable/u);
@@ -147,6 +165,8 @@ test("registry read summarizes finalized state and selected actors without leaki
     .epochEventRootMatchesLifecycle, false);
   assert.equal(summarizeFinalizedRegistry(withEpoch, attached, address, undefined, undefined,
     { label: "verifier:example", id: verifierId, statusNames }).verifier.epochEventRootMatchesLifecycle, true);
+  assert.equal(summarizeFinalizedRegistry(withEpoch, attached, address, undefined, undefined, undefined,
+    { label: "auditor:example", id: auditorId, statusNames }).auditor.epochEventRootMatchesLifecycle, true);
   assert.equal(summarizeFinalizedRegistry(withEpoch, attached, address, undefined,
     `0x${"08".repeat(32)}`).selectedEpoch, null);
   assert.throws(() => summarizeFinalizedRegistry({ ...withEpoch, ledger: {
