@@ -79,8 +79,8 @@ canonical `0x`-prefixed hex; its focused tests and integration lint pass.
 This is only a partial migration: production integration source and standalone
 operator scripts no longer import the removed global network-ID package.
 Verifier-key insertion rejects a provider configured for a different approved
-network before reading the deployment or mutating its journal. Several test
-fixtures still use the global setter, and other SDK 5 transaction and
+network before reading the deployment or mutating its journal. Integration
+test fixtures no longer use the global setter, but other SDK 5 transaction and
 state-read APIs still require changes. The simulator client now awaits
 ledger reads and bundle context; its source-only build, focused async tests,
 and lint pass. Existing client tests and the integration harness still assume
@@ -90,8 +90,11 @@ red; these source edits are not deployment evidence.
 The public, local and staged deployment journal wrappers now compare the
 provider's configured network with the approved network before reserving an
 attempt. Their focused suite passes 11 tests without the removed global
-network-ID package. The public deployment and staged-reconciliation suites
-still contain old global-network fixtures and require separate migration.
+network-ID package. The public-deployment policy suite also passes 26 tests
+with explicit provider configuration and a v9-era fixture adapter; it uses
+placeholder verifier-key bytes for policy branching, not genuine serialized
+v9 key material. The staged-reconciliation suite uses the explicit local
+network input and no global setter.
 
 The finalized deployment reader now rejects non-v9 serialized contract state
 and decodes v9 bytes through Compact runtime 0.21 before reading the ledger or

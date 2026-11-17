@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import { bytes32Commitment, bytes32Hex } from "@midnight-ntwrk/trust-registry-client";
 import {
   deriveJubjubPublicKeyFromSeed, MaintainerStatus,
@@ -80,7 +79,6 @@ const image = (): FinalizedRegistryDeploymentImage => ({
 });
 
 beforeEach(() => {
-  setNetworkId("undeployed");
   vi.clearAllMocks();
 });
 

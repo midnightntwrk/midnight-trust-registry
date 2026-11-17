@@ -160,7 +160,7 @@ describe("deployment attempt journal", () => {
     await expect(link.inspect()).rejects.toBeInstanceOf(DeploymentAttemptJournalInvalidError);
     const fresh = await journal();
     await expect(deployPublicTrustRegistryOnce({
-      ...intent(), providers: providers("preprod"), journal: fresh,
+      ...intent(), network: publicNetwork, providers: providers("preprod"), journal: fresh,
     })).rejects.toThrow(/providers do not match/u);
     expect(await fresh.inspect()).toBeNull();
     expect(submit).toHaveBeenCalledOnce();
