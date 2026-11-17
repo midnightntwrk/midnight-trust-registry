@@ -1868,19 +1868,19 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  authorizeIssuer(fixture: IssuerScenarioFixture): Uint8Array {
-    this.proposeIssuer(fixture);
-    this.approveIssuer(fixture);
+  async authorizeIssuer(fixture: IssuerScenarioFixture): Promise<Uint8Array> {
+    await this.proposeIssuer(fixture);
+    await this.approveIssuer(fixture);
     return this.activateIssuer(fixture);
   }
 
-  proposeIssuer(
+  async proposeIssuer(
     fixture: IssuerScenarioFixture,
     additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
-  ): Uint8Array {
+  ): Promise<Uint8Array> {
     return this.proposeIssuerWithApplicationEvidence(
       fixture,
-      this.createApplicationEvidence({
+      await this.createApplicationEvidence({
         applicationId: fixture.authorizationId,
         subjectDid: fixture.subjectDid,
         role: "issuer",
@@ -1891,13 +1891,13 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  proposeIssuerWithApplicationEvidence(
+  async proposeIssuerWithApplicationEvidence(
     fixture: IssuerScenarioFixture,
     evidence: ApplicationEvidenceSubmission,
     additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
     expectedEvidence: SimulatorApplicationEvidenceExpectation = defaultIssuerEvidenceExpectation(fixture),
-  ): Uint8Array {
-    const prepared = this.prepareIssuerProposalAction(fixture, evidence, expectedEvidence);
+  ): Promise<Uint8Array> {
+    const prepared = await this.prepareIssuerProposalAction(fixture, evidence, expectedEvidence);
     return this.executeIssuerProposalWithSignatures(
       fixture,
       evidence,
@@ -1905,13 +1905,13 @@ export class LocalTrustRegistryIntegrationHarness {
         {
           keyId: this.bootstrapMaintainer.keyId,
           publicKey: this.bootstrapPublicKey,
-          signature: this.bootstrapActionSignature(
+          signature: await this.bootstrapActionSignature(
             prepared.actionKind,
             prepared.actionPayloadHash,
             prepared.actionSequence,
           ),
         },
-        ...this.maintainerCoAuthorizers(
+        ...await this.maintainerCoAuthorizers(
           additionalMaintainers,
           prepared.actionKind,
           prepared.actionPayloadHash,
@@ -1930,11 +1930,12 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  prepareIssuerProposalAction(
+  async prepareIssuerProposalAction(
     fixture: IssuerScenarioFixture,
     evidence: ApplicationEvidenceSubmission,
     expectedEvidence: SimulatorApplicationEvidenceExpectation = defaultIssuerEvidenceExpectation(fixture),
-  ): PreparedIssuerProposalAction {
+  ): Promise<PreparedIssuerProposalAction> {
+    await this.ready;
     if (
       expectedEvidence.scope.role !== "issuer" ||
       expectedEvidence.governedResource.type !== issuerGovernedResource(fixture).type ||
@@ -1945,7 +1946,7 @@ export class LocalTrustRegistryIntegrationHarness {
     ) {
       throw new Error("Issuer proposal scope does not match governed resource");
     }
-    const proposedEvidenceHash = this.assertApplicationEvidence({
+    const proposedEvidenceHash = await this.assertApplicationEvidence({
       evidence,
       applicationId: fixture.authorizationId,
       subjectDid: fixture.subjectDid,
@@ -1955,7 +1956,7 @@ export class LocalTrustRegistryIntegrationHarness {
     const statusPolicyBindingCommitment = hashHexToBytes32(
       computeIssuerStatusPolicyBindingCommitment(this.issuerStatusPolicyBinding(fixture)),
     );
-    const ledger = this.simulator.getLedger();
+    const ledger = await this.simulator.getLedger();
     const baseIssuerPayloadHash = computeCreateIssuerAuthorizationPayloadHash(
       fixture.authorizationIdCommitment,
       fixture.subjectDidCommitment,
@@ -2001,18 +2002,18 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  executeIssuerProposalWithSignatures(
+  async executeIssuerProposalWithSignatures(
     fixture: IssuerScenarioFixture,
     evidence: ApplicationEvidenceSubmission,
     signers: readonly MaintainerCoAuthorizer[],
     verifierSignature: TrustRegistryJubjubSignature,
     expectedEvidence: SimulatorApplicationEvidenceExpectation = defaultIssuerEvidenceExpectation(fixture),
-  ): Uint8Array {
+  ): Promise<Uint8Array> {
     const primary = signers[0];
     if (primary === undefined) throw new Error("Issuer proposal requires a maintainer signature");
-    const prepared = this.prepareIssuerProposalAction(fixture, evidence, expectedEvidence);
+    const prepared = await this.prepareIssuerProposalAction(fixture, evidence, expectedEvidence);
     const accepted = this.snapshotAcceptedApplicationEvidence(evidence, expectedEvidence);
-    const eventHash = this.simulator.proposeIssuerAuthorization(
+    const eventHash = await this.simulator.proposeIssuerAuthorization(
       primary.keyId,
       primary.publicKey,
       primary.signature,
@@ -2033,28 +2034,29 @@ export class LocalTrustRegistryIntegrationHarness {
     return eventHash;
   }
 
-  private recheckIssuerApplicationEvidence(fixture: IssuerScenarioFixture): void {
-    this.recheckAcceptedApplicationEvidence({
+  private async recheckIssuerApplicationEvidence(fixture: IssuerScenarioFixture): Promise<void> {
+    await this.recheckAcceptedApplicationEvidence({
       role: "issuer",
       applicationId: fixture.authorizationId,
       subjectDid: fixture.subjectDid,
       scope: createIssuerAuthorizationScopeFixture(fixture),
       governedResource: issuerGovernedResource(fixture),
-      proposalCommitment: this.simulator.getIssuerProposalEvidence(fixture.authorizationIdCommitment)
+      proposalCommitment: (await this.simulator.getIssuerProposalEvidence(fixture.authorizationIdCommitment))
         .evidenceCommitment,
     });
   }
 
-  prepareIssuerDecisionAction(
+  async prepareIssuerDecisionAction(
     fixture: IssuerScenarioFixture,
     action: IssuerDecisionAction,
-  ): PreparedIssuerDecisionAction {
+  ): Promise<PreparedIssuerDecisionAction> {
+    await this.ready;
     if (!["approve", "activate", "suspend", "revoke", "archive"].includes(action)) {
       throw new Error("Unsupported issuer decision action");
     }
-    if (action === "approve" || action === "activate") this.recheckIssuerApplicationEvidence(fixture);
-    const ledger = this.simulator.getLedger();
-    const current = this.simulator.getIssuerAuthorization(fixture.authorizationIdCommitment);
+    if (action === "approve" || action === "activate") await this.recheckIssuerApplicationEvidence(fixture);
+    const ledger = await this.simulator.getLedger();
+    const current = await this.simulator.getIssuerAuthorization(fixture.authorizationIdCommitment);
     const evidenceHash = action === "approve" || action === "activate"
       ? current.evidenceHash : bytes32Commitment(`${fixture.authorizationId}:${action}`);
     const actionKinds = {
@@ -2083,14 +2085,14 @@ export class LocalTrustRegistryIntegrationHarness {
   }
 
   /** The Compact simulator verifies current context, active signer membership, and quorum. */
-  executeIssuerDecisionWithSignatures(
+  async executeIssuerDecisionWithSignatures(
     fixture: IssuerScenarioFixture,
     action: IssuerDecisionAction,
     signers: readonly MaintainerCoAuthorizer[],
-  ): Uint8Array {
+  ): Promise<Uint8Array> {
     const primary = signers[0];
     if (primary === undefined) throw new Error("Issuer decision requires a maintainer signature");
-    const prepared = this.prepareIssuerDecisionAction(fixture, action);
+    const prepared = await this.prepareIssuerDecisionAction(fixture, action);
     if (action === "approve") {
       return this.simulator.authorizeIssuerAuthorization(
         primary.keyId,
@@ -2109,32 +2111,32 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.authorizationIdCommitment, prepared.evidenceHash, signers.slice(1));
   }
 
-  approveIssuer(
+  async approveIssuer(
     fixture: IssuerScenarioFixture,
     additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
-  ): Uint8Array {
-    this.recheckIssuerApplicationEvidence(fixture);
-    const authorizedEvidenceHash = this.simulator.getIssuerAuthorization(
+  ): Promise<Uint8Array> {
+    await this.recheckIssuerApplicationEvidence(fixture);
+    const current = await this.simulator.getIssuerAuthorization(
       fixture.authorizationIdCommitment,
-    ).evidenceHash;
-    const authorizeActionSequence = this.simulator.getLedger().governanceActionCount;
+    );
+    const authorizedEvidenceHash = current.evidenceHash;
+    const authorizeActionSequence = (await this.simulator.getLedger()).governanceActionCount;
     const actionPayloadHash = computeUpdateIssuerAuthorizationPayloadHash(
       fixture.authorizationIdCommitment,
-      this.simulator.getIssuerAuthorization(fixture.authorizationIdCommitment)
-        .lifecycleEventHash,
+      current.lifecycleEventHash,
       authorizedEvidenceHash,
     );
     return this.simulator.authorizeIssuerAuthorization(
       this.bootstrapMaintainer.keyId,
       this.bootstrapPublicKey,
-      this.bootstrapActionSignature(
+      await this.bootstrapActionSignature(
         AUTHORIZE_ISSUER_ACTION_KIND,
         actionPayloadHash,
         authorizeActionSequence,
       ),
       fixture.authorizationIdCommitment,
       authorizedEvidenceHash,
-      this.maintainerCoAuthorizers(
+      await this.maintainerCoAuthorizers(
         additionalMaintainers,
         AUTHORIZE_ISSUER_ACTION_KIND,
         actionPayloadHash,
@@ -2143,33 +2145,33 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  activateIssuer(
+  async activateIssuer(
     fixture: IssuerScenarioFixture,
     additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
-  ): Uint8Array {
-    this.recheckIssuerApplicationEvidence(fixture);
-    const evidenceHash = this.simulator.getIssuerAuthorization(
+  ): Promise<Uint8Array> {
+    await this.recheckIssuerApplicationEvidence(fixture);
+    const current = await this.simulator.getIssuerAuthorization(
       fixture.authorizationIdCommitment,
-    ).evidenceHash;
-    const actionSequence = this.simulator.getLedger().governanceActionCount;
+    );
+    const evidenceHash = current.evidenceHash;
+    const actionSequence = (await this.simulator.getLedger()).governanceActionCount;
     const actionPayloadHash = computeUpdateIssuerAuthorizationPayloadHash(
       fixture.authorizationIdCommitment,
-      this.simulator.getIssuerAuthorization(fixture.authorizationIdCommitment)
-        .lifecycleEventHash,
+      current.lifecycleEventHash,
       evidenceHash,
     );
 
     return this.simulator.activateIssuerAuthorization(
       this.bootstrapMaintainer.keyId,
       this.bootstrapPublicKey,
-      this.bootstrapActionSignature(
+      await this.bootstrapActionSignature(
         ACTIVATE_ISSUER_ACTION_KIND,
         actionPayloadHash,
         actionSequence,
       ),
       fixture.authorizationIdCommitment,
       evidenceHash,
-      this.maintainerCoAuthorizers(
+      await this.maintainerCoAuthorizers(
         additionalMaintainers,
         ACTIVATE_ISSUER_ACTION_KIND,
         actionPayloadHash,
@@ -2181,7 +2183,7 @@ export class LocalTrustRegistryIntegrationHarness {
   suspendIssuer(
     fixture: IssuerScenarioFixture,
     additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
-  ): Uint8Array {
+  ): Promise<Uint8Array> {
     return this.updateIssuerLifecycle(
       fixture,
       "suspend",
@@ -2193,7 +2195,7 @@ export class LocalTrustRegistryIntegrationHarness {
   revokeIssuer(
     fixture: IssuerScenarioFixture,
     additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
-  ): Uint8Array {
+  ): Promise<Uint8Array> {
     return this.updateIssuerLifecycle(
       fixture,
       "revoke",
@@ -2205,7 +2207,7 @@ export class LocalTrustRegistryIntegrationHarness {
   archiveIssuer(
     fixture: IssuerScenarioFixture,
     additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
-  ): Uint8Array {
+  ): Promise<Uint8Array> {
     return this.updateIssuerLifecycle(
       fixture,
       "archive",
@@ -3341,25 +3343,26 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  private updateIssuerLifecycle(
+  private async updateIssuerLifecycle(
     fixture: IssuerScenarioFixture,
     actionName: "suspend" | "revoke" | "archive",
     actionKind: Uint8Array,
     additionalMaintainers: readonly MaintainerScenarioFixture[] = [],
-  ): Uint8Array {
+  ): Promise<Uint8Array> {
+    await this.ready;
     const evidenceHash = bytes32Commitment(
       `${fixture.authorizationId}:${actionName}`,
     );
-    const currentRecord = this.simulator.getIssuerAuthorization(
+    const currentRecord = await this.simulator.getIssuerAuthorization(
       fixture.authorizationIdCommitment,
     );
-    const actionSequence = this.simulator.getLedger().governanceActionCount;
+    const actionSequence = (await this.simulator.getLedger()).governanceActionCount;
     const actionPayloadHash = computeUpdateIssuerAuthorizationPayloadHash(
       fixture.authorizationIdCommitment,
       currentRecord.lifecycleEventHash,
       evidenceHash,
     );
-    const signature = this.signMaintainerActionFromSeed(
+    const signature = await this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
       actionKind,
@@ -3374,7 +3377,7 @@ export class LocalTrustRegistryIntegrationHarness {
         signature,
         fixture.authorizationIdCommitment,
         evidenceHash,
-        this.maintainerCoAuthorizers(
+        await this.maintainerCoAuthorizers(
           additionalMaintainers,
           actionKind,
           actionPayloadHash,
@@ -3389,7 +3392,7 @@ export class LocalTrustRegistryIntegrationHarness {
         signature,
         fixture.authorizationIdCommitment,
         evidenceHash,
-        this.maintainerCoAuthorizers(
+        await this.maintainerCoAuthorizers(
           additionalMaintainers,
           actionKind,
           actionPayloadHash,
@@ -3403,7 +3406,7 @@ export class LocalTrustRegistryIntegrationHarness {
       signature,
       fixture.authorizationIdCommitment,
       evidenceHash,
-      this.maintainerCoAuthorizers(
+      await this.maintainerCoAuthorizers(
         additionalMaintainers,
         actionKind,
         actionPayloadHash,

@@ -101,6 +101,11 @@ after the recovery circuit resolves. Focused Ledger 9 simulator tests cover
 successful onboarding, insufficient recovery quorum, and an atomic recovery
 that reduces active maintainers and revises the policy. They do not establish
 deployed-chain finality or qualify the remaining integration callers.
+Issuer onboarding now awaits application evidence, proposal, authorization,
+and activation; issuer suspension, revocation, and archival also await their
+governed circuits. A focused Ledger 9 simulator test checks all six status
+transitions and sequence increments. It is simulator evidence only, not a
+deployed issuer journey or a passing full integration typecheck.
 Readback-only paths use their explicit network and receipt. A strict helper
 encodes the tagged Compact runtime Schnorr verifying key into the policy's
 canonical `0x`-prefixed hex; its focused tests and integration lint pass.
