@@ -304,6 +304,14 @@ test now first proves its baseline workspace is valid; previously it spread
 an unresolved Promise, making its negative cases vacuous. Its focused suite
 passes 18 tests. These commands use fixtures and simulated finality, not a
 deployed contract or live-chain receipt.
+The packed recognition journey now awaits Ledger 9 maintainer setup, governed
+accreditor anchor, proposal signatures, ledger/evidence reads, and current
+decision verification. It passes its VP accreditation, retained proposal
+signature, loopback evidence API, and suspension assertions. The signed
+membership journey now passes separately for issuer, verifier, auditor, and
+maintainer with awaited 2-of-3 governance, VP intake, epoch publication,
+historical readback, and file-backed process restart. These are still
+simulator/loopback journeys; the node did not finalize any of their actions.
 
 ## Execution order
 
