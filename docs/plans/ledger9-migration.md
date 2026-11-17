@@ -72,8 +72,9 @@ key hash to match the selected source-matched release manifest; it reports that
 manifest's source revision. Without `--manifest`, the numeric key count alone
 does not establish a source match. This local manifest comparison is not an
 independent signature or release approval check. The output includes the
-finalized `publishedEpochCount`; an active fixture issuer with zero published
-epochs cannot satisfy the governed VP decision-evidence path.
+finalized `publishedEpochCount` and current epoch roots. An active fixture
+issuer does not satisfy the governed VP decision-evidence path merely because
+a registry snapshot epoch has been published.
 
 Run any shared-stack development workload through
 `pnpm localnet:run -- <command> [args...]`. This wrapper performs the same
@@ -609,19 +610,31 @@ source-matched `e51c6de9` manifest confirmed exact equality for all 66
 finalized verifier-key hashes, maintenance counter 65, and the active fixture
 issuer. A separate finalized read found `epochCommitmentCount` zero, so no
 accepted decision epoch exists on this chain for the governed VP eligibility
-reader. These reads did not submit a transaction or qualify live VP intake.
+reader at that point. These reads did not submit a transaction or qualify live
+VP intake.
 The integration package now exports a non-fixture canonical application VP
 body adapter. Its signed-body, DID-method, presentation-context, and
 DID-signed status-attestation fixture tests pass, but the host still must
 select an exact governed issuer `schema` grant matching the signed credential
 schema ID and full issuer-scope commitment, authenticate finalized decision
-evidence, and supply a live VC-owned
-status authority. The shared chain's zero published epochs currently prevent
-that governed issuer decision reader from accepting a live VP. Do not treat
-the adapter or its fixture tests as deployed actor evidence.
+evidence, and supply a live VC-owned status authority. Do not treat the
+adapter or its fixture tests as deployed actor evidence.
 The canonical body also passes the qualified API intake callback and produces
 a verifiable evidence signature in a local fixture test. This verifies the
 adapter-to-intake boundary, not a live API deployment or chain submission.
+On the shared Ledger 9 development chain, a separate one-shot maintainer
+transaction published a **registry snapshot** epoch after proof-only validation:
+transaction `00b4e26350468604748b039bac5d424401eb7b519afb2fae03aa68be7526d3b513`
+at contract `0xf80638c64dcf63138b222426549bedb122673391b414658854f2a04a92b5be09`.
+An independent finalized read matched the private journal's epoch ID
+`0xef86093e44b5e9bb5c24070844f6f01bec431b662acf6c033db5028f5662b709`,
+state/event/policy roots, publication event hash, and action sequence 5.
+The source-matched `e51c6de9` manifest still matches all 66 verifier keys;
+the ledger now reports governance action count 6 and one published epoch.
+The journal and development signer remain private in the ignored smoke-state
+directory. This epoch anchors only a development registry snapshot, **not**
+the fixture issuer's authorization statement. It does not satisfy the governed
+issuer decision reader, live VP status authority, or release qualification.
 
 ## Execution order
 

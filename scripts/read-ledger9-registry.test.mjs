@@ -76,6 +76,7 @@ test("registry read summarizes finalized state and a selected issuer without lea
   assert.equal(summary.verifierKeyCount, 2);
   assert.equal(summary.governanceActionCount, "5");
   assert.equal(summary.publishedEpochCount, "0");
+  assert.equal(summary.currentEpoch, null);
   assert.equal(summary.requiredEpochPublishSigners, "2");
   assert.deepEqual(summary.issuer, { label: issuerLabel, found: true, status: "active",
     proposedAtSequence: "3", authorizedAtSequence: "4", activeFromSequence: "5" });
@@ -85,4 +86,31 @@ test("registry read summarizes finalized state and a selected issuer without lea
   assert.throws(() => summarizeFinalizedRegistry(image, attached, address,
     { label: issuerLabel, id: issuerId, statusNames: {} }), /unknown authorization status/u);
   assert.throws(() => summarizeFinalizedRegistry(null, attached, address), /unavailable/u);
+  const epochId = new Uint8Array(32).fill(9);
+  const epoch = {
+    epochId, stateRoot: new Uint8Array(32).fill(1), eventRoot: new Uint8Array(32).fill(2),
+    policyRoot: new Uint8Array(32).fill(3), publicationPolicyCommitment: new Uint8Array(32).fill(4),
+    publicationEventHash: new Uint8Array(32).fill(5),
+    validFromSequence: 5n, validUntilSequence: 65n, publishedAtSequence: 5n,
+  };
+  const withEpoch = { ...image, ledger: { ...image.ledger,
+    epochCommitmentCount: 1n, latestEpochCommitmentId: epochId,
+    epochCommitmentIds: { member: () => true },
+    epochCommitmentRecords: { lookup: () => epoch },
+  } };
+  assert.deepEqual(summarizeFinalizedRegistry(withEpoch, attached, address).currentEpoch, {
+    idCommitment: `0x${"09".repeat(32)}`,
+    stateRoot: `0x${"01".repeat(32)}`,
+    eventRoot: `0x${"02".repeat(32)}`,
+    policyRoot: `0x${"03".repeat(32)}`,
+    publicationPolicyCommitment: `0x${"04".repeat(32)}`,
+    publicationEventHash: `0x${"05".repeat(32)}`,
+    validFromSequence: "5", validUntilSequence: "65", publishedAtSequence: "5",
+  });
+  assert.throws(() => summarizeFinalizedRegistry({ ...withEpoch, ledger: {
+    ...withEpoch.ledger, epochCommitmentIds: { member: () => false },
+  } }, attached, address), /absent from the commitment index/u);
+  assert.throws(() => summarizeFinalizedRegistry({ ...withEpoch, ledger: {
+    ...withEpoch.ledger, epochCommitmentRecords: { lookup: () => ({ ...epoch, epochId: new Uint8Array(32) }) },
+  } }, attached, address), /different identifier/u);
 });

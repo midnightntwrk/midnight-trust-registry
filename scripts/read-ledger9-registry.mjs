@@ -4,6 +4,12 @@ import { fileURLToPath } from "node:url";
 import { checkLedger9LocalStack, localnetInputFromEnvironment } from "./check-ledger9-local-stack.mjs";
 
 const ADDRESS = /^0x[0-9a-f]{64}$/u;
+const hex32 = (value) => {
+  if (!(value instanceof Uint8Array) || value.length !== 32) {
+    throw new Error("Finalized epoch contains a non-bytes32 commitment");
+  }
+  return `0x${Buffer.from(value).toString("hex")}`;
+};
 
 export function parseRegistryReadArgs(args, env = process.env) {
   let contractAddress;
@@ -77,6 +83,28 @@ export function summarizeFinalizedRegistry(image, attached, contractAddress, iss
   if (issuer !== null && typeof issuerStatus !== "string") {
     throw new Error("Finalized issuer has an unknown authorization status");
   }
+  let currentEpoch = null;
+  if (ledger.epochCommitmentCount > 0n) {
+    const id = ledger.latestEpochCommitmentId;
+    if (!ledger.epochCommitmentIds.member(id)) {
+      throw new Error("Finalized latest epoch is absent from the commitment index");
+    }
+    const record = ledger.epochCommitmentRecords.lookup(id);
+    if (hex32(record.epochId) !== hex32(id)) {
+      throw new Error("Finalized latest epoch record has a different identifier");
+    }
+    currentEpoch = {
+      idCommitment: hex32(id),
+      stateRoot: hex32(record.stateRoot),
+      eventRoot: hex32(record.eventRoot),
+      policyRoot: hex32(record.policyRoot),
+      publicationPolicyCommitment: hex32(record.publicationPolicyCommitment),
+      publicationEventHash: hex32(record.publicationEventHash),
+      validFromSequence: record.validFromSequence.toString(),
+      validUntilSequence: record.validUntilSequence.toString(),
+      publishedAtSequence: record.publishedAtSequence.toString(),
+    };
+  }
   return {
     network: "undeployed",
     nodeVersion: attached.nodeVersion,
@@ -89,6 +117,7 @@ export function summarizeFinalizedRegistry(image, attached, contractAddress, iss
     maintenanceCounter: image.maintenanceAuthority.counter.toString(),
     governanceActionCount: ledger.governanceActionCount.toString(),
     publishedEpochCount: ledger.epochCommitmentCount.toString(),
+    currentEpoch,
     activeMaintainers: ledger.activeMaintainerCount.toString(),
     requiredEpochPublishSigners: ledger.maintainerThreshold.toString(),
     evidenceVerifierKeys: ledger.evidenceVerifierKeyCount.toString(),
