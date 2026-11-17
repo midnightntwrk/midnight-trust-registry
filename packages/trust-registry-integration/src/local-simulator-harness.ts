@@ -879,20 +879,21 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  createApplicationEvidence(input: {
+  async createApplicationEvidence(input: {
     applicationId: string;
     subjectDid: string;
     role: ApplicationEvidenceRole;
     scope: AuthorizationScope;
     governedResource?: GovernedResource;
-  }): ApplicationEvidenceSubmission {
+  }): Promise<ApplicationEvidenceSubmission> {
+    await this.ready;
     const scope = AuthorizationScopeSchema.parse(input.scope);
     if (scope.role !== input.role) throw new Error("Application evidence scope role does not match applicant role");
     const governedResource = input.governedResource ?? defaultGovernedResource(scope);
     if (governedResourceInScope(scope, governedResource.type) !== governedResource.id) {
       throw new Error("Application evidence governed resource is outside the scope");
     }
-    this.assertSupportedContractFormat();
+    await this.assertSupportedContractFormat();
     const verifiedAt = this.evidenceTime();
     const expiresAt = new Date(Date.parse(verifiedAt) + 24 * 60 * 60 * 1000).toISOString();
     const envelope = {
@@ -935,18 +936,33 @@ export class LocalTrustRegistryIntegrationHarness {
     };
   }
 
-  verifyApplicationEvidenceSignature(
+  async verifyApplicationEvidenceSignature(
     commitment: string,
     signature: ApplicationEvidenceSignature,
     verifier: AuthorizedEvidenceVerifier,
+  ): Promise<boolean> {
+    await this.ready;
+    try {
+      const key = await this.simulator.getEvidenceVerifierKey(this.currentEvidenceVerifierAuthorizationId);
+      const ledger = await this.simulator.getLedger();
+      return this.verifyApplicationEvidenceSignatureWithState(commitment, signature, verifier, key, ledger);
+    } catch {
+      return false;
+    }
+  }
+
+  private verifyApplicationEvidenceSignatureWithState(
+    commitment: string,
+    signature: ApplicationEvidenceSignature,
+    verifier: AuthorizedEvidenceVerifier,
+    key: Awaited<ReturnType<TrustRegistrySimulator["getEvidenceVerifierKey"]>>,
+    ledger: Awaited<ReturnType<TrustRegistrySimulator["getLedger"]>>,
   ): boolean {
     if (
       verifier.did !== this.evidenceVerifier.did ||
       signature.keyId !== this.evidenceVerifier.keyIds[0]
     ) return false;
     try {
-      const key = this.simulator.getEvidenceVerifierKey(this.currentEvidenceVerifierAuthorizationId);
-      const ledger = this.simulator.getLedger();
       if (
         key.status !== EvidenceVerifierKeyStatus.active
         || !sameBytes(key.verifierDidCommitment, bytes32Commitment(verifier.did))
@@ -969,7 +985,7 @@ export class LocalTrustRegistryIntegrationHarness {
     }
   }
 
-  assertApplicationEvidence(input: {
+  async assertApplicationEvidence(input: {
     evidence: ApplicationEvidenceSubmission;
     applicationId: string;
     subjectDid: string;
@@ -977,14 +993,17 @@ export class LocalTrustRegistryIntegrationHarness {
     scope: AuthorizationScope;
     challengeHash?: string;
     governedResource?: GovernedResource;
-  }): Uint8Array {
+  }): Promise<Uint8Array> {
+    await this.ready;
     const scope = AuthorizationScopeSchema.parse(input.scope);
     if (scope.role !== input.role) throw new Error("Application evidence scope role does not match applicant role");
     const governedResource = input.governedResource ?? defaultGovernedResource(scope);
     if (governedResourceInScope(scope, governedResource.type) !== governedResource.id) {
       throw new Error("Application evidence governed resource is outside the scope");
     }
-    this.assertSupportedContractFormat();
+    await this.assertSupportedContractFormat();
+    const key = await this.simulator.getEvidenceVerifierKey(this.currentEvidenceVerifierAuthorizationId);
+    const ledger = await this.simulator.getLedger();
     const parsed = assertValidApplicationEvidence(
       input.evidence,
       {
@@ -1000,7 +1019,8 @@ export class LocalTrustRegistryIntegrationHarness {
         evaluatedAt: this.evidenceTime(),
       },
       [this.evidenceVerifier],
-      (commitment, signature, verifier) => this.verifyApplicationEvidenceSignature(commitment, signature, verifier),
+      (commitment, signature, verifier) =>
+        this.verifyApplicationEvidenceSignatureWithState(commitment, signature, verifier, key, ledger),
     );
     return hashHexToBytes32(parsed.commitment);
   }
@@ -1030,21 +1050,21 @@ export class LocalTrustRegistryIntegrationHarness {
     };
   }
 
-  private recheckAcceptedApplicationEvidence(input: {
+  private async recheckAcceptedApplicationEvidence(input: {
     role: ApplicationEvidenceRole;
     applicationId: string;
     subjectDid: string;
     scope: AuthorizationScope;
     governedResource: GovernedResource;
     proposalCommitment: Uint8Array;
-  }): void {
+  }): Promise<void> {
     const accepted = this.acceptedApplicationEvidence.get(
       this.acceptedEvidenceKey(input.role, input.applicationId),
     );
     if (accepted === undefined) {
       throw new Error(`${input.role} application evidence is unavailable for approval or activation`);
     }
-    const commitment = this.assertApplicationEvidence({
+    const commitment = await this.assertApplicationEvidence({
       evidence: accepted.evidence,
       applicationId: input.applicationId,
       subjectDid: input.subjectDid,
@@ -1493,14 +1513,15 @@ export class LocalTrustRegistryIntegrationHarness {
     return result;
   }
 
-  prepareAtomicMaintainerRecoveryAction(
+  async prepareAtomicMaintainerRecoveryAction(
     fixture: MaintainerScenarioFixture,
     evidenceHash: Uint8Array,
     defaultThreshold: bigint,
     emergencyThreshold: bigint,
     archivalThreshold: bigint,
-  ): PreparedAtomicMaintainerRecoveryAction {
-    const ledger = this.simulator.getLedger();
+  ): Promise<PreparedAtomicMaintainerRecoveryAction> {
+    await this.ready;
+    const ledger = await this.simulator.getLedger();
     if (ledger.activeMaintainerCount <= 1n) {
       throw new AtomicMaintainerRecoveryPrecheckError("Cannot remove the last active maintainer");
     }
@@ -1510,11 +1531,11 @@ export class LocalTrustRegistryIntegrationHarness {
       emergencyThreshold,
       archivalThreshold,
     );
-    const current = this.simulator.getMaintainerMembership(fixture.maintainerIdCommitment);
+    const current = await this.simulator.getMaintainerMembership(fixture.maintainerIdCommitment);
     if (current.status !== ContractAuthorizationStatus.active) {
       throw new AtomicMaintainerRecoveryPrecheckError("Recovery target must be active");
     }
-    const policy = this.prepareThresholdPolicyRevisionAction(
+    const policy = await this.prepareThresholdPolicyRevisionAction(
       defaultThreshold, emergencyThreshold, archivalThreshold,
     );
     return {
@@ -1537,17 +1558,17 @@ export class LocalTrustRegistryIntegrationHarness {
     };
   }
 
-  executeAtomicMaintainerRecoveryWithSignatures(
+  async executeAtomicMaintainerRecoveryWithSignatures(
     fixture: MaintainerScenarioFixture,
     evidenceHash: Uint8Array,
     defaultThreshold: bigint,
     emergencyThreshold: bigint,
     archivalThreshold: bigint,
     signers: readonly MaintainerCoAuthorizer[],
-  ): Uint8Array {
+  ): Promise<Uint8Array> {
     const primary = signers[0];
     if (primary === undefined) throw new Error("Atomic recovery requires a maintainer signature");
-    const prepared = this.prepareAtomicMaintainerRecoveryAction(
+    const prepared = await this.prepareAtomicMaintainerRecoveryAction(
       fixture, evidenceHash, defaultThreshold, emergencyThreshold, archivalThreshold,
     );
     const nextAnchors = this.policyRecordValue.recognitionAccreditorAnchors.map(
@@ -1557,7 +1578,7 @@ export class LocalTrustRegistryIntegrationHarness {
       defaultThreshold, emergencyThreshold, archivalThreshold,
       prepared.nextPolicyVersion, prepared.actionSequence + 1n, nextAnchors,
     );
-    const result = this.simulator.recoverMaintainerMembership(
+    const result = await this.simulator.recoverMaintainerMembership(
       primary.keyId, primary.publicKey, primary.signature,
       fixture.maintainerIdCommitment, prepared.evidenceHash,
       prepared.nextPolicyCommitment, prepared.nextPolicyVersion,
@@ -1579,16 +1600,16 @@ export class LocalTrustRegistryIntegrationHarness {
     return result;
   }
 
-  authorizeMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {
-    this.proposeMaintainer(fixture);
-    this.approveMaintainer(fixture);
+  async authorizeMaintainer(fixture: MaintainerScenarioFixture): Promise<Uint8Array> {
+    await this.proposeMaintainer(fixture);
+    await this.approveMaintainer(fixture);
     return this.activateMaintainer(fixture);
   }
 
-  proposeMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {
+  async proposeMaintainer(fixture: MaintainerScenarioFixture): Promise<Uint8Array> {
     return this.proposeMaintainerWithApplicationEvidence(
       fixture,
-      this.createApplicationEvidence({
+      await this.createApplicationEvidence({
         applicationId: fixture.maintainerId,
         subjectDid: fixture.subjectDid,
         role: "maintainer",
@@ -1597,7 +1618,7 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  proposeMaintainerWithApplicationEvidence(
+  async proposeMaintainerWithApplicationEvidence(
     fixture: MaintainerScenarioFixture,
     evidence: ApplicationEvidenceSubmission,
     expectedEvidence: SimulatorApplicationEvidenceExpectation = {
@@ -1605,24 +1626,24 @@ export class LocalTrustRegistryIntegrationHarness {
       challengeHash: sha256Hex(`challenge:${fixture.maintainerId}`),
       governedResource: { type: "registry", id: this.registryId },
     },
-  ): Uint8Array {
-    const prepared = this.prepareMaintainerProposalAction(fixture, evidence, expectedEvidence);
+  ): Promise<Uint8Array> {
+    const prepared = await this.prepareMaintainerProposalAction(fixture, evidence, expectedEvidence);
     return this.executeMaintainerProposalWithSignatures(fixture, evidence, [
       {
         keyId: this.bootstrapMaintainer.keyId,
         publicKey: this.bootstrapPublicKey,
-        signature: this.bootstrapActionSignature(
+        signature: await this.bootstrapActionSignature(
           prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
         ),
       },
-      ...this.maintainerCoAuthorizers(
-        this.activeDefaultQuorumCoMaintainers(),
+      ...await this.maintainerCoAuthorizers(
+        await this.activeDefaultQuorumCoMaintainers(),
         prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
       ),
     ], this.signMaintainerProposalEvidence(prepared), expectedEvidence);
   }
 
-  prepareMaintainerProposalAction(
+  async prepareMaintainerProposalAction(
     fixture: MaintainerScenarioFixture,
     evidence: ApplicationEvidenceSubmission,
     expectedEvidence: SimulatorApplicationEvidenceExpectation = {
@@ -1630,7 +1651,8 @@ export class LocalTrustRegistryIntegrationHarness {
       challengeHash: sha256Hex(`challenge:${fixture.maintainerId}`),
       governedResource: { type: "registry", id: this.registryId },
     },
-  ): PreparedMaintainerProposalAction {
+  ): Promise<PreparedMaintainerProposalAction> {
+    await this.ready;
     if (
       expectedEvidence.scope.role !== "maintainer" ||
       expectedEvidence.scope.registryId !== this.registryId ||
@@ -1640,14 +1662,14 @@ export class LocalTrustRegistryIntegrationHarness {
       throw new Error("Maintainer proposal scope does not match governed registry");
     }
     const candidatePublicKey = deriveJubjubPublicKeyFromSeed(fixture.seed);
-    const proposedEvidenceHash = this.assertApplicationEvidence({
+    const proposedEvidenceHash = await this.assertApplicationEvidence({
       evidence,
       applicationId: fixture.maintainerId,
       subjectDid: fixture.subjectDid,
       role: "maintainer",
       ...expectedEvidence,
     });
-    const ledger = this.simulator.getLedger();
+    const ledger = await this.simulator.getLedger();
     const baseMaintainerPayloadHash = computeCreateMaintainerMembershipPayloadHash(
       fixture.maintainerIdCommitment,
       fixture.subjectDidCommitment,
@@ -1690,7 +1712,7 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  executeMaintainerProposalWithSignatures(
+  async executeMaintainerProposalWithSignatures(
     fixture: MaintainerScenarioFixture,
     evidence: ApplicationEvidenceSubmission,
     signers: readonly MaintainerCoAuthorizer[],
@@ -1700,14 +1722,14 @@ export class LocalTrustRegistryIntegrationHarness {
       challengeHash: sha256Hex(`challenge:${fixture.maintainerId}`),
       governedResource: { type: "registry", id: this.registryId },
     },
-  ): Uint8Array {
+  ): Promise<Uint8Array> {
     const primary = signers[0];
     if (primary === undefined) throw new Error("Maintainer proposal requires a maintainer signature");
-    const prepared = this.prepareMaintainerProposalAction(fixture, evidence, expectedEvidence);
+    const prepared = await this.prepareMaintainerProposalAction(fixture, evidence, expectedEvidence);
     const candidatePublicKey = deriveJubjubPublicKeyFromSeed(fixture.seed);
     const accepted = this.snapshotAcceptedApplicationEvidence(evidence, expectedEvidence);
 
-    const eventHash = this.simulator.proposeMaintainerMembership(
+    const eventHash = await this.simulator.proposeMaintainerMembership(
       primary.keyId,
       primary.publicKey,
       primary.signature,
@@ -1727,26 +1749,27 @@ export class LocalTrustRegistryIntegrationHarness {
     return eventHash;
   }
 
-  prepareMaintainerDecisionAction(
+  async prepareMaintainerDecisionAction(
     fixture: MaintainerScenarioFixture,
     action: IssuerDecisionAction,
-  ): PreparedMaintainerAction {
+  ): Promise<PreparedMaintainerAction> {
+    await this.ready;
     if (!["approve", "activate", "suspend", "revoke", "archive"].includes(action)) {
       throw new Error("Unsupported maintainer decision action");
     }
     if (action === "approve" || action === "activate") {
-      this.recheckAcceptedApplicationEvidence({
+      await this.recheckAcceptedApplicationEvidence({
         role: "maintainer",
         applicationId: fixture.maintainerId,
         subjectDid: fixture.subjectDid,
         scope: createMaintainerAuthorizationScopeFixture(this.registryId),
         governedResource: { type: "registry", id: this.registryId },
-        proposalCommitment: this.simulator.getMaintainerProposalEvidence(fixture.maintainerIdCommitment)
+        proposalCommitment: (await this.simulator.getMaintainerProposalEvidence(fixture.maintainerIdCommitment))
           .evidenceCommitment,
       });
     }
-    const current = this.simulator.getMaintainerMembership(fixture.maintainerIdCommitment);
-    const ledger = this.simulator.getLedger();
+    const current = await this.simulator.getMaintainerMembership(fixture.maintainerIdCommitment);
+    const ledger = await this.simulator.getLedger();
     const evidenceHash = action === "approve" || action === "activate"
       ? current.evidenceHash : bytes32Commitment(`${fixture.maintainerId}:${action}`);
     const actionKinds = {
@@ -1772,14 +1795,14 @@ export class LocalTrustRegistryIntegrationHarness {
     };
   }
 
-  executeMaintainerDecisionWithSignatures(
+  async executeMaintainerDecisionWithSignatures(
     fixture: MaintainerScenarioFixture,
     action: IssuerDecisionAction,
     signers: readonly MaintainerCoAuthorizer[],
-  ): Uint8Array {
+  ): Promise<Uint8Array> {
     const primary = signers[0];
     if (primary === undefined) throw new Error("Maintainer decision requires a maintainer signature");
-    const prepared = this.prepareMaintainerDecisionAction(fixture, action);
+    const prepared = await this.prepareMaintainerDecisionAction(fixture, action);
     if (action === "approve") {
       return this.simulator.authorizeMaintainerMembership(
         primary.keyId, primary.publicKey, primary.signature,
@@ -1790,34 +1813,34 @@ export class LocalTrustRegistryIntegrationHarness {
       : action === "suspend" ? this.simulator.suspendMaintainerMembership.bind(this.simulator)
         : action === "revoke" ? this.simulator.revokeMaintainerMembership.bind(this.simulator)
           : this.simulator.archiveMaintainerMembership.bind(this.simulator);
-    const result = circuit(primary.keyId, primary.publicKey, primary.signature,
+    const result = await circuit(primary.keyId, primary.publicKey, primary.signature,
       fixture.maintainerIdCommitment, prepared.evidenceHash, signers.slice(1));
     if (action === "activate") this.knownMaintainers.set(bytes32Hex(fixture.maintainerIdCommitment), fixture);
     return result;
   }
 
-  private fixtureMaintainerDecision(fixture: MaintainerScenarioFixture, action: IssuerDecisionAction): Uint8Array {
-    const prepared = this.prepareMaintainerDecisionAction(fixture, action);
+  private async fixtureMaintainerDecision(fixture: MaintainerScenarioFixture, action: IssuerDecisionAction): Promise<Uint8Array> {
+    const prepared = await this.prepareMaintainerDecisionAction(fixture, action);
     return this.executeMaintainerDecisionWithSignatures(fixture, action, [
       {
         keyId: this.bootstrapMaintainer.keyId,
         publicKey: this.bootstrapPublicKey,
-        signature: this.bootstrapActionSignature(
+        signature: await this.bootstrapActionSignature(
           prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
         ),
       },
-      ...this.maintainerCoAuthorizers(
-        this.activeDefaultQuorumCoMaintainers(),
+      ...await this.maintainerCoAuthorizers(
+        await this.activeDefaultQuorumCoMaintainers(),
         prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
       ),
     ]);
   }
 
-  approveMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {
+  approveMaintainer(fixture: MaintainerScenarioFixture): Promise<Uint8Array> {
     return this.fixtureMaintainerDecision(fixture, "approve");
   }
 
-  activateMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {
+  activateMaintainer(fixture: MaintainerScenarioFixture): Promise<Uint8Array> {
     return this.fixtureMaintainerDecision(fixture, "activate");
   }
 
@@ -3550,8 +3573,8 @@ export class LocalTrustRegistryIntegrationHarness {
     }
   }
 
-  private assertSupportedContractFormat(): ReturnType<TrustRegistrySimulator["getLedger"]> {
-    const ledger = this.simulator.getLedger();
+  private async assertSupportedContractFormat(): Promise<Awaited<ReturnType<TrustRegistrySimulator["getLedger"]>>> {
+    const ledger = await this.simulator.getLedger();
     if (ledger.contractVersion !== 1n) {
       throw new Error("Unsupported trust registry format");
     }

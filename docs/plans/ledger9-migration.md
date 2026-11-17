@@ -94,6 +94,13 @@ before changing its local policy record and awaits the subsequent
 evidence-verifier registration. A focused Ledger 9 test confirms policy
 version progression, two governance actions, and the active replacement key.
 Other governance flows and their callers remain unqualified.
+The maintainer onboarding path now awaits evidence validation, governed
+proposal, authorization, and activation. Atomic recovery awaits its active
+membership and policy prechecks, then updates the local policy record only
+after the recovery circuit resolves. Focused Ledger 9 simulator tests cover
+successful onboarding, insufficient recovery quorum, and an atomic recovery
+that reduces active maintainers and revises the policy. They do not establish
+deployed-chain finality or qualify the remaining integration callers.
 Readback-only paths use their explicit network and receipt. A strict helper
 encodes the tagged Compact runtime Schnorr verifying key into the policy's
 canonical `0x`-prefixed hex; its focused tests and integration lint pass.
