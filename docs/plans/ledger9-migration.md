@@ -123,6 +123,10 @@ integration harness source has no TypeScript diagnostics, but the package
 typecheck remains red because historical tests and other callers still use
 synchronous return values. These are simulated epochs, not finalized chain
 receipts.
+The broad local simulator suite now passes all 36 cases with awaited Ledger 9
+governance and readback, including negative quorum, lifecycle, format, and
+tampered-evidence paths. That suite has no TypeScript diagnostics, but other
+integration tests still require async caller migration.
 Readback-only paths use their explicit network and receipt. A strict helper
 encodes the tagged Compact runtime Schnorr verifying key into the policy's
 canonical `0x`-prefixed hex; its focused tests and integration lint pass.
