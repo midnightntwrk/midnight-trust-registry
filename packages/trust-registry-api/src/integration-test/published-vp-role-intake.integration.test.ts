@@ -37,7 +37,7 @@ import { consumeChallengeAndSubmitApplication } from "../application-intake.js";
 
 const roles = ["verifier", "auditor", "maintainer"] as const;
 
-const signPrepared = (
+const signPrepared = async (
   harness: LocalTrustRegistryIntegrationHarness,
   maintainer: MaintainerScenarioFixture,
   prepared: {
@@ -47,13 +47,13 @@ const signPrepared = (
     actionPayloadHash: Uint8Array;
     actionSequence: bigint;
   },
-): MaintainerCoAuthorizer => ({
+): Promise<MaintainerCoAuthorizer> => ({
   keyId: maintainer.keyId,
   publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
   signature: signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
     prepared.registryId,
-    harness.simulator.getLedger().deploymentNetworkIdCommitment,
+    (await harness.simulator.getLedger()).deploymentNetworkIdCommitment,
     Buffer.from(harness.simulator.contractAddress, "hex"),
     prepared.policyCommitment,
     prepared.actionKind,
@@ -101,9 +101,9 @@ describe("published VP proof for non-issuer application roles", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const second = createMaintainerScenarioFixture(`vp-${role}-quorum-second`);
     const third = createMaintainerScenarioFixture(`vp-${role}-quorum-third`);
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(third);
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(third);
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
     harness.advanceEvidenceTimeBy(60_000);
     const applicant = scenario(role, harness);
     const trustContext = { ...VP_FIXTURE_TRUST_CONTEXT, registryId: harness.registryId };
@@ -141,10 +141,10 @@ describe("published VP proof for non-issuer application roles", () => {
       signer: proof.signer,
       trustContext,
     });
-    const beforeProposal = harness.simulator.getLedger().governanceActionCount;
+    const beforeProposal = (await harness.simulator.getLedger()).governanceActionCount;
     const propose = vi.fn(async ({ evidence }: { evidence: ApplicationEvidenceSubmission }) => {
       expect(evidence.signature.keyId).toBe(harness.evidenceVerifier.keyIds[0]);
-      expect(harness.verifyApplicationEvidenceSignature(
+      expect(await harness.verifyApplicationEvidenceSignature(
         evidence.commitment, evidence.signature, harness.evidenceVerifier,
       )).toBe(true);
       const expectedEvidence = {
@@ -153,33 +153,33 @@ describe("published VP proof for non-issuer application roles", () => {
         governedResource: applicant.governedResource,
       };
       if (applicant.role === "verifier") {
-        const prepared = harness.prepareVerifierProposalAction(applicant.fixture, evidence, expectedEvidence);
+        const prepared = await harness.prepareVerifierProposalAction(applicant.fixture, evidence, expectedEvidence);
         return {
           evidence,
-          eventHash: harness.executeVerifierProposalWithSignatures(
+          eventHash: await harness.executeVerifierProposalWithSignatures(
             applicant.fixture, evidence,
-            [signPrepared(harness, second, prepared), signPrepared(harness, third, prepared)],
+            [await signPrepared(harness, second, prepared), await signPrepared(harness, third, prepared)],
             harness.signVerifierProposalEvidence(prepared), expectedEvidence,
           ),
         };
       }
       if (applicant.role === "auditor") {
-        const prepared = harness.prepareAuditorProposalAction(applicant.fixture, evidence, expectedEvidence);
+        const prepared = await harness.prepareAuditorProposalAction(applicant.fixture, evidence, expectedEvidence);
         return {
           evidence,
-          eventHash: harness.executeAuditorProposalWithSignatures(
+          eventHash: await harness.executeAuditorProposalWithSignatures(
             applicant.fixture, evidence,
-            [signPrepared(harness, second, prepared), signPrepared(harness, third, prepared)],
+            [await signPrepared(harness, second, prepared), await signPrepared(harness, third, prepared)],
             harness.signAuditorProposalEvidence(prepared), expectedEvidence,
           ),
         };
       }
-      const prepared = harness.prepareMaintainerProposalAction(applicant.fixture, evidence, expectedEvidence);
+      const prepared = await harness.prepareMaintainerProposalAction(applicant.fixture, evidence, expectedEvidence);
       return {
         evidence,
-        eventHash: harness.executeMaintainerProposalWithSignatures(
+        eventHash: await harness.executeMaintainerProposalWithSignatures(
           applicant.fixture, evidence,
-          [signPrepared(harness, second, prepared), signPrepared(harness, third, prepared)],
+          [await signPrepared(harness, second, prepared), await signPrepared(harness, third, prepared)],
           harness.signMaintainerProposalEvidence(prepared), expectedEvidence,
         ),
       };
@@ -270,60 +270,60 @@ describe("published VP proof for non-issuer application roles", () => {
       expect(propose).not.toHaveBeenCalled();
     }
 
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeProposal);
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(beforeProposal);
     const result = await consumeChallengeAndSubmitApplication(input);
     const { evidence, eventHash } = result;
     expect(eventHash).toHaveLength(32);
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeProposal + 1n);
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(beforeProposal + 1n);
     expect(evidence.envelope.role).toBe(role);
     expect(evidence.envelope.subjectDid).toBe(applicant.subjectDid);
     expect(evidence.envelope.scopeCommitment).toBe(binding.scopeCommitment);
     expect(JSON.stringify(evidence)).not.toContain("private-presentation-payload");
     expect(propose).toHaveBeenCalledOnce();
     await expect(consumeChallengeAndSubmitApplication(input)).rejects.toThrow(/already consumed/u);
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeProposal + 1n);
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(beforeProposal + 1n);
 
     const client = new TrustRegistrySimulatorClient(harness.simulator);
     if (applicant.role === "verifier") {
-      const record = harness.simulator.getVerifierAuthorization(applicant.fixture.authorizationIdCommitment);
+      const record = await harness.simulator.getVerifierAuthorization(applicant.fixture.authorizationIdCommitment);
       expect(Buffer.from(record.evidenceHash).toString("hex")).toBe(evidence.commitment.slice(2));
       for (const action of ["approve", "activate"] as const) {
-        const prepared = harness.prepareVerifierDecisionAction(applicant.fixture, action);
-        harness.executeVerifierDecisionWithSignatures(applicant.fixture, action, [
-          signPrepared(harness, second, prepared), signPrepared(harness, third, prepared),
+        const prepared = await harness.prepareVerifierDecisionAction(applicant.fixture, action);
+        await harness.executeVerifierDecisionWithSignatures(applicant.fixture, action, [
+          await signPrepared(harness, second, prepared), await signPrepared(harness, third, prepared),
         ]);
       }
-      const bundle = harness.evaluateCurrentVerifierDecision(applicant.fixture, {
+      const bundle = await harness.evaluateCurrentVerifierDecision(applicant.fixture, {
         expectedRegistryId: harness.registryId,
       });
       expect(bundle.authorization?.status).toBe("active");
       expect(bundle.authorization?.resourceId).toBe(applicant.fixture.scopeResourceId);
-      expect(() => client.verifyVerifierAuthorizationBundle(bundle, {})).not.toThrow();
+      await expect(client.verifyVerifierAuthorizationBundle(bundle, {})).resolves.toBeDefined();
     } else if (applicant.role === "auditor") {
-      const record = harness.simulator.getAuditorAuthorization(applicant.fixture.authorizationIdCommitment);
+      const record = await harness.simulator.getAuditorAuthorization(applicant.fixture.authorizationIdCommitment);
       expect(Buffer.from(record.evidenceHash).toString("hex")).toBe(evidence.commitment.slice(2));
       for (const action of ["approve", "activate"] as const) {
-        const prepared = harness.prepareAuditorDecisionAction(applicant.fixture, action);
-        harness.executeAuditorDecisionWithSignatures(applicant.fixture, action, [
-          signPrepared(harness, second, prepared), signPrepared(harness, third, prepared),
+        const prepared = await harness.prepareAuditorDecisionAction(applicant.fixture, action);
+        await harness.executeAuditorDecisionWithSignatures(applicant.fixture, action, [
+          await signPrepared(harness, second, prepared), await signPrepared(harness, third, prepared),
         ]);
       }
-      const bundle = harness.evaluateCurrentAuditorDecision(applicant.fixture, {
+      const bundle = await harness.evaluateCurrentAuditorDecision(applicant.fixture, {
         expectedRegistryId: harness.registryId,
       });
       expect(bundle.authorization?.status).toBe("active");
       expect(bundle.authorization?.resourceId).toBe(applicant.fixture.scopeResourceId);
-      expect(() => client.verifyAuditorAuthorizationBundle(bundle, {})).not.toThrow();
+      await expect(client.verifyAuditorAuthorizationBundle(bundle, {})).resolves.toBeDefined();
     } else {
-      const record = harness.simulator.getMaintainerMembership(applicant.fixture.maintainerIdCommitment);
+      const record = await harness.simulator.getMaintainerMembership(applicant.fixture.maintainerIdCommitment);
       expect(Buffer.from(record.evidenceHash).toString("hex")).toBe(evidence.commitment.slice(2));
       for (const action of ["approve", "activate"] as const) {
-        const prepared = harness.prepareMaintainerDecisionAction(applicant.fixture, action);
-        harness.executeMaintainerDecisionWithSignatures(applicant.fixture, action, [
-          signPrepared(harness, second, prepared), signPrepared(harness, third, prepared),
+        const prepared = await harness.prepareMaintainerDecisionAction(applicant.fixture, action);
+        await harness.executeMaintainerDecisionWithSignatures(applicant.fixture, action, [
+          await signPrepared(harness, second, prepared), await signPrepared(harness, third, prepared),
         ]);
       }
-      expect(harness.simulator.getMaintainerMembership(applicant.fixture.maintainerIdCommitment).status)
+      expect((await harness.simulator.getMaintainerMembership(applicant.fixture.maintainerIdCommitment)).status)
         .toBe(AuthorizationStatus.active);
     }
   });
