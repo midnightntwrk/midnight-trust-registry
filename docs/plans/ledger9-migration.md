@@ -149,6 +149,15 @@ The proof server uses the existing read-only parameter cache, with the 2p15
 and 2p16 files matching the SHA-256 values recorded in VC PR #755. Service
 startup does not establish parameter completeness for every TR circuit.
 
+With these services running, `pnpm check:ledger9-local-stack` repeats the
+loopback-only node version, runtime protocol, node/indexer genesis, indexed
+block protocol, and proof-server reachability checks. Set
+`TR_EXPECTED_GENESIS_HASH` to an independently approved value if the check must
+also enforce a particular local chain; ports can be overridden with
+`TR_NODE_PORT`, `TR_INDEXER_PORT`, and `TR_PROOF_PORT`. The command does not sign
+or approve genesis, exercise a proof, deploy a contract, or establish
+transaction finality. It is intentionally not part of offline CI.
+
 ## Execution order
 
 1. Keep the `ledger8` source branch only as a historical reference. Ledger 9
