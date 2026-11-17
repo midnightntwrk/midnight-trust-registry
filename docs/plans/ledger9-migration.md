@@ -664,6 +664,14 @@ full 66-circuit workspace typecheck, strict security-script typecheck, and
 full-artifact inventory passed at local head `a660d816` before this read-only
 diagnostic change. No new chain action or actor qualification occurred.
 
+At signed local head `500ca537`, ten packages were packed from the full
+Ledger 9 output and installed into an isolated consumer. The published VC
+consumer fixture and packed signed issuer, verifier, auditor, maintainer, and
+recognition journeys all passed. These are package-portability and fixture
+results, not deployed actor evidence. The temporary tarballs were removed
+after the smoke; the ignored source-matched deployment pack and private
+journals remain preserved.
+
 ## Execution order
 
 1. Keep the `ledger8` source branch only as a historical reference. Ledger 9
