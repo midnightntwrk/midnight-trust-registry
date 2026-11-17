@@ -672,6 +672,25 @@ results, not deployed actor evidence. The temporary tarballs were removed
 after the smoke; the ignored source-matched deployment pack and private
 journals remain preserved.
 
+On the same pinned multi-user development chain, a distinct fixture verifier
+proposal passed full-contract proof and wallet balance with broadcast blocked,
+then was submitted once under a new private journal. Its proposal receipt was
+`00c45430d88629100d16fdbb76aaee1c9e1ab701fb4cf74041d9aa9e8425d7c01e`.
+Separate proof-only and journaled maintainer calls authorized and activated
+that verifier, with receipts
+`0042764fb10a7a06a95af3154dafc4e513bf3e65e4153dff7d6f5014e2e26f5337`
+and `007491f1084b2cd9177d269c6744006ef3d10013fac79e15b4b11c02ebdab8fd8e`.
+The repo-owned pinned read-only command at indexed height 3901 independently
+found governance action count 9, one active verifier, all 66 verifier-key
+hashes matching the source manifest, and the selected verifier's active
+lifecycle at sequences 6/7/8. The existing snapshot epoch does **not** match
+that verifier's lifecycle event root. These are development-only,
+fixture-evidence-backed deployed transitions, not a live DID/VP-verified
+application, accepted decision epoch, or release qualification. The one-shot
+journals, receipts, proof logs, and fixture signer remain ignored and private;
+do not replay the submissions. The shared node/indexer/proof-server lifecycle
+was not changed.
+
 ## Execution order
 
 1. Keep the `ledger8` source branch only as a historical reference. Ledger 9
