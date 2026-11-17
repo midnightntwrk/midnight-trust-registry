@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 
-import { sampleSigningKey, signatureVerifyingKey } from "@midnight-ntwrk/compact-runtime";
+import { ContractState, createConstructorContext, sampleSigningKey, signatureVerifyingKey } from "@midnight-ntwrk/compact-runtime";
 import { bytes32Commitment, bytes32Hex } from "@midnight-ntwrk/trust-registry-client";
 import { deriveJubjubPublicKeyFromSeed, TrustRegistryContract, trustRegistryWitnesses } from "@midnight-ntwrk/trust-registry-contract";
 import { TrustRegistrySimulator } from "@midnight-ntwrk/trust-registry-contract/testing";
@@ -187,6 +187,29 @@ describe("isolated local Trust Registry deployment", () => {
     expect(Object.keys(new staged(trustRegistryWitnesses).provableCircuits)).toEqual([initialVerifierKeyName]);
     expect(Object.keys(new TrustRegistryContract.Contract(trustRegistryWitnesses).provableCircuits))
       .toHaveLength(circuitNames.length);
+    const constructorArgs = [
+      bytes32Commitment(bootstrap.registryId), bootstrap.registryDidCommitment,
+      bootstrap.governancePolicyCommitment, bootstrap.maintainerId,
+      bootstrap.maintainerDidCommitment, bootstrap.maintainerKeyId,
+      bootstrap.maintainerPublicKey, bootstrap.maintainerThreshold,
+      bytes32Commitment("undeployed"),
+    ] as const;
+    const stagedInitial = await new staged(trustRegistryWitnesses).initialState(
+      createConstructorContext({}, "0".repeat(64)), ...constructorArgs,
+    );
+    const fullInitial = await new TrustRegistryContract.Contract(trustRegistryWitnesses).initialState(
+      createConstructorContext({}, "0".repeat(64)), ...constructorArgs,
+    );
+    expect(fullInitial.currentContractState.operations()).toHaveLength(circuitNames.length);
+    expect(stagedInitial.currentContractState.operations()).toEqual([initialVerifierKeyName]);
+    expect(ContractState.deserialize(stagedInitial.currentContractState.serialize()).operations())
+      .toEqual([initialVerifierKeyName]);
+    expect(stagedInitial.currentContractState.data.toString())
+      .toEqual(fullInitial.currentContractState.data.toString());
+    expect(stagedInitial.currentContractState.maintenanceAuthority.serialize())
+      .toEqual(fullInitial.currentContractState.maintenanceAuthority.serialize());
+    expect(stagedInitial.currentContractState.balance)
+      .toEqual(fullInitial.currentContractState.balance);
     const result = await deployLocalTrustRegistryStaged({
       network: localNetwork,
       bootstrap: {

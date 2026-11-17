@@ -37,8 +37,8 @@ const plan = {
   network: {
     networkId: "undeployed",
     rpcUrl: "http://127.0.0.1:29944",
-    indexerHttpUrl: "http://127.0.0.1:28088/graphql",
-    indexerWsUrl: "ws://127.0.0.1:28088/graphql/ws",
+    indexerHttpUrl: "http://127.0.0.1:28088/api/v4/graphql",
+    indexerWsUrl: "ws://127.0.0.1:28088/api/v4/graphql/ws",
     expectedGenesisHash: `0x${"b".repeat(64)}`,
     allowedHosts: ["127.0.0.1"],
   },

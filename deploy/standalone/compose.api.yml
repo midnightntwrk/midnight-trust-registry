@@ -3,6 +3,8 @@ services:
   api:
     profiles: [runtime]
     image: ${TR_API_IMAGE:?verified locally loaded API image required}
+    labels:
+      org.midnight.localnet.scope: trust-registry-isolated
     pull_policy: never
     user: "${TR_API_UID:?approval file owner UID required}:${TR_API_GID:?approval file owner GID required}"
     read_only: true

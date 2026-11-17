@@ -2,7 +2,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { CompiledContract } from "@midnight-ntwrk/compact-js";
-import { type JubjubPoint, type SigningKey } from "@midnight-ntwrk/compact-runtime";
+import { ContractState, type JubjubPoint, type SigningKey } from "@midnight-ntwrk/compact-runtime";
 import { deployContract, type ContractProviders } from "@midnight-ntwrk/midnight-js-contracts";
 import { bytes32Commitment, bytes32Hex } from "@midnight-ntwrk/trust-registry-client";
 import { MaintainerStatus, TrustRegistryContract, trustRegistryWitnesses, type TrustRegistryPrivateState } from "@midnight-ntwrk/trust-registry-contract";
@@ -258,6 +258,23 @@ export function stagedBootstrapContract(initialVerifierKeyName: string):
       for (const name of Object.keys(this.provableCircuits)) {
         if (name !== initialVerifierKeyName) Reflect.deleteProperty(this.provableCircuits, name);
       }
+    }
+
+    override async initialState(
+      ...args: Parameters<TrustRegistryContract.Contract<TrustRegistryPrivateState>["initialState"]>
+    ) {
+      const initialized = await super.initialState(...args);
+      const initialOperation = initialized.currentContractState.operation(initialVerifierKeyName);
+      if (initialOperation === undefined) {
+        throw new Error("Initial staged operation is absent from the compiled contract state");
+      }
+      // Compact emits blank slots for every circuit; Ledger 9 rejects any slot without a verifier key.
+      const stagedState = new ContractState();
+      stagedState.data = initialized.currentContractState.data;
+      stagedState.maintenanceAuthority = initialized.currentContractState.maintenanceAuthority;
+      stagedState.balance = initialized.currentContractState.balance;
+      stagedState.setOperation(initialVerifierKeyName, initialOperation);
+      return { ...initialized, currentContractState: stagedState };
     }
   };
 }

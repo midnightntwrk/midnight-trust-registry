@@ -15,6 +15,7 @@ test("plaintext node WebSockets stay on the local ledger bridge while infrastruc
   assert.deepEqual(base.networks["host-access"], {});
   for (const service of Object.values(base.services)) {
     assert.deepEqual(service.networks, ["ledger", "host-access"]);
+    assert.equal(service.labels["org.midnight.localnet.scope"], "trust-registry-isolated");
   }
   assert.deepEqual(base.services.node.ports, ["127.0.0.1:${TR_NODE_PORT:-29944}:9944"]);
   assert.deepEqual(base.services.indexer.ports, ["127.0.0.1:${TR_INDEXER_PORT:-28088}:8088"]);
@@ -37,8 +38,9 @@ test("optional API overlay stays on the internal ledger network and requires sig
   assert.deepEqual(Object.keys(overlay.services), ["api"]);
   const api = overlay.services.api;
   assert.deepEqual(Object.keys(api).sort(), ["cap_drop", "command", "depends_on", "environment", "expose",
-    "healthcheck", "image", "init", "networks", "pids_limit", "profiles", "pull_policy",
+    "healthcheck", "image", "init", "labels", "networks", "pids_limit", "profiles", "pull_policy",
     "read_only", "security_opt", "tmpfs", "user", "volumes"].sort());
+  assert.equal(api.labels["org.midnight.localnet.scope"], "trust-registry-isolated");
   assert.deepEqual(api.profiles, ["runtime"]);
   assert.deepEqual(api.networks, ["ledger"]);
   assert.equal(api.image, "${TR_API_IMAGE:?verified locally loaded API image required}");

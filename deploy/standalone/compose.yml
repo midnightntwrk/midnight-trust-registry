@@ -1,10 +1,13 @@
-# Ledger 9 development qualification stack. Existing Ledger 8 volumes are not reusable.
-# Exact image bytes and provenance require separate install-inventory approval.
+# Isolated Ledger 9 qualification stack, never the shared midnight-network project.
+# For shared-stack development use the repo's read-only check:ledger9-local-stack command.
+# Existing Ledger 8 volumes are not reusable. Image provenance needs install-inventory approval.
 name: ${TR_STACK_NAME:-tr-standalone-ledger9-local}
 
 services:
   node:
     image: midnightntwrk/midnight-node@sha256:0c1ad548d523c1109aa1f16daab1bf72dcb78c7e17b8a8c6d97424ad0eba7b8a
+    labels:
+      org.midnight.localnet.scope: trust-registry-isolated
     platform: linux/arm64
     ports:
       - "127.0.0.1:${TR_NODE_PORT:-29944}:9944"
@@ -28,6 +31,8 @@ services:
 
   indexer:
     image: midnightntwrk/indexer-standalone@sha256:119f35db548ba1c390845f215bb1e928e73038bef7c315825aee0461bd54499d
+    labels:
+      org.midnight.localnet.scope: trust-registry-isolated
     platform: linux/arm64
     restart: on-failure
     ports:
@@ -57,6 +62,8 @@ services:
 
   proof-server:
     image: midnightntwrk/proof-server@sha256:5617e26aa76d06c44f4bee667c37eb71ccf02fefe0e5848100fa84001282d515
+    labels:
+      org.midnight.localnet.scope: trust-registry-isolated
     platform: linux/arm64
     command: [midnight-proof-server, -v]
     ports:

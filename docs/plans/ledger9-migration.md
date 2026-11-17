@@ -21,6 +21,56 @@ qualification claim. The historical Ledger 8 source is the `ledger8` branch at
 | Midnight DID | exact 1.0.0-rc1 cohort | Published and installed locally under four dated, exact-version age exceptions |
 | VC Compact and DID binding | PR #755 source, 0.4.0 artifacts | Built from exact PR head locally; not merged or published to npm |
 
+## Localnet ownership and attach
+
+For compatible development, attach read-only to the designated owner's shared
+`midnight-network` stack instead of starting another stack. Run
+`pnpm localnet:discover` from this repository (or
+`pnpm check:ledger9-local-stack` to run its unit tests first). Both commands
+only query loopback HTTP endpoints and never invoke Docker, start containers,
+or change the shared project. If discovery fails, diagnose the reported
+service and ask the designated owner; do not retry by starting a stack.
+The failure output includes the diagnostic and this owner handoff. Only tests
+requiring a fresh chain or incompatible versions should create a separate
+`midnight-<repo>-<ledger>-<run-id>` project with Compose-managed volumes and
+Docker-assigned loopback ports. That is a deliberate isolated run, not an
+automatic fallback from shared-stack discovery.
+The discovery command prints the verified node and indexer state plus client
+URLs. Its defaults are node
+`127.0.0.1:9944`, indexer `127.0.0.1:8088/api/v4/graphql`, and proof server
+`127.0.0.1:6300`. The check requires node `2.1.101`, Ledger 9 protocol
+`2001100`, matching node/indexer genesis and latest indexed block hash, and
+proof-server `9.0.2`. The WebSocket URL in its output is derived from the
+verified API v4 HTTP endpoint but is not itself handshake-tested. A passing
+attach is infrastructure evidence only, not a registry deployment or
+proof-submission test.
+
+Run any shared-stack development workload through
+`pnpm localnet:run -- <command> [args...]`. This wrapper performs the same
+read-only discovery before spawning the command; on failure it reports the
+diagnostic and does not spawn anything. Its own code never starts
+`midnight-network`; do not pass a lifecycle command as the workload. The
+wrapper honors the same `TR_NODE_PORT`, `TR_INDEXER_PORT`, `TR_PROOF_PORT`,
+genesis, and proof-version overrides as discovery.
+
+`pnpm localnet:discover` and `pnpm check:ledger9-local-stack` are the current
+shared-stack root targets. Fixture demos and simulator integration do not use
+a live stack and must not acquire one. The standalone wizard and direct
+deployment/key-insertion scripts use their own approved plan's endpoint and
+genesis preflight before any provider or submission; that signed, plan-scoped
+boundary must not be replaced by the shared-stack wrapper.
+
+`deploy/standalone/compose.yml` remains the repo-owned **isolated** qualification
+stack, with its own project, volumes, private indexer credentials, and loopback
+ports. It must not be run as `midnight-network` or against the owner's volumes.
+Its existing image digests and proof-parameter policy remain unchanged until
+separately validated; the Compose services carry an isolation label for
+ownership checks. For an isolated stack, set `TR_NODE_PORT`, `TR_INDEXER_PORT`,
+`TR_PROOF_PORT`, and `TR_EXPECTED_PROOF_VERSION` before the preflight. If its
+ports or chain are incompatible with the shared stack, use an explicitly unique
+project and state, not a shared-project restart. The version preflight is
+read-only and does not start or inspect containers.
+
 The installed-identity guard now accepts those local `file:` tarballs only when
 their bytes match the SHA-512 integrity in the frozen pnpm lockfile and their
 paths remain inside this checkout. Its 23 unit tests and installed-package
@@ -228,12 +278,11 @@ The proof server uses the existing read-only parameter cache, with the 2p15
 and 2p16 files matching the SHA-256 values recorded in VC PR #755. Service
 startup does not establish parameter completeness for every TR circuit.
 
-With these services running, `pnpm check:ledger9-local-stack` repeats the
-loopback-only node version, runtime protocol, node/indexer genesis, indexed
-block protocol, and proof-server reachability checks. Set
+For this historical isolated stack, `pnpm check:ledger9-local-stack` requires
+the three `TR_*_PORT` overrides and `TR_EXPECTED_PROOF_VERSION=9.0.0`; the
+current defaults attach to the owner's shared stack instead. Set
 `TR_EXPECTED_GENESIS_HASH` to an independently approved value if the check must
-also enforce a particular local chain; ports can be overridden with
-`TR_NODE_PORT`, `TR_INDEXER_PORT`, and `TR_PROOF_PORT`. The command does not sign
+also enforce a particular local chain. The command does not sign
 or approve genesis, exercise a proof, deploy a contract, or establish
 transaction finality. It is intentionally not part of offline CI.
 After an approved Docker Desktop restart, the dedicated node and proof-server
@@ -378,6 +427,22 @@ ZK-config provider from checking the generated artifact set. This local
 packaging fix does not itself establish a portable release bundle.
 Full-package candidate validation also rejects a contract archive without
 the Compact manifest before treating its key inventory as complete.
+
+A single approved development-only staged deployment on a separate, shared
+Ledger 9 local chain reached the node but was rejected with `1010: Invalid
+Transaction: Custom error: 110` (`VerifierKeyNotSet`). No submitted receipt was
+recorded and deployment remains unverified; the attempt journal remains
+quarantined for read-only reconciliation. The generated Compact constructor inserted all 66
+operation slots, while the staged `CompiledContract` supplied only the selected
+initial verifier key. Ledger 9 rejects the remaining blank slots. The staged
+bootstrap adapter preserves constructor data, maintenance authority, and
+balances but carries only the selected operation in the initial contract state.
+A real-constructor regression test
+checks the serialized operation set, and an offline Midnight.js 5 unproven
+deploy build observed one operation with a nonempty verifier key. This is not
+evidence of a successful live deployment or permission to retry the failed
+attempt. The code mapping is documented in the
+[Midnight node error codes](https://docs.midnight.network/nodes/error-codes).
 
 ## Execution order
 

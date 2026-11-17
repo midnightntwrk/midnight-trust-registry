@@ -5,6 +5,26 @@ import { fileURLToPath } from "node:url";
 
 const genesisPattern = /^0x[0-9a-f]{64}$/u;
 
+export function localnetAttachFailure(error) {
+  const diagnostic = error instanceof Error ? error.message : String(error);
+  return [
+    `Shared Ledger 9 attach failed: ${diagnostic}`,
+    "The midnight-network project is owner-managed; do not start or restart it from this repository.",
+    "Ask the designated owner to restore the shared stack, then rerun pnpm localnet:discover.",
+    "Continue offline work meanwhile. Fresh-chain or incompatible tests require a separately named isolated project and Docker-assigned loopback ports.",
+  ].join("\n");
+}
+
+export function localnetInputFromEnvironment(env = process.env) {
+  return {
+    nodePort: env.TR_NODE_PORT,
+    indexerPort: env.TR_INDEXER_PORT,
+    proofPort: env.TR_PROOF_PORT,
+    expectedGenesisHash: env.TR_EXPECTED_GENESIS_HASH,
+    expectedProofVersion: env.TR_EXPECTED_PROOF_VERSION,
+  };
+}
+
 function port(value, fallback) {
   const parsed = Number(value ?? fallback);
   if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 65535) {
@@ -31,9 +51,12 @@ async function fetchLocal(fetchImpl, url, options, service) {
 
 export async function checkLedger9LocalStack(input = {}) {
   const fetchImpl = input.fetchImpl ?? fetch;
-  const nodeUrl = `http://127.0.0.1:${port(input.nodePort, 29944)}`;
-  const indexerUrl = `http://127.0.0.1:${port(input.indexerPort, 28088)}/api/v4/graphql`;
-  const proofUrl = `http://127.0.0.1:${port(input.proofPort, 26300)}/`;
+  const nodeUrl = `http://127.0.0.1:${port(input.nodePort, 9944)}`;
+  const indexerPort = port(input.indexerPort, 8088);
+  const indexerUrl = `http://127.0.0.1:${indexerPort}/api/v4/graphql`;
+  const indexerWsUrl = `ws://127.0.0.1:${indexerPort}/api/v4/graphql/ws`;
+  const proofServerUrl = `http://127.0.0.1:${port(input.proofPort, 6300)}`;
+  const proofUrl = `${proofServerUrl}/version`;
   const request = async (method, params = []) => {
     const body = await json(await fetchLocal(fetchImpl, nodeUrl, {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -66,26 +89,26 @@ export async function checkLedger9LocalStack(input = {}) {
   assert.equal(indexedGenesis?.height, 0, "Indexer has not served genesis");
   assert.equal(`0x${indexedGenesis.hash}`, genesisHash, "Node and indexer genesis differ");
   const latest = (await query("{ block { height hash protocolVersion } }")).block;
-  assert.ok(Number.isSafeInteger(latest?.height) && latest.height >= 0, "Indexer has no current block");
+  assert.ok(Number.isSafeInteger(latest?.height) && latest.height > 0, "Indexer has no current block");
   assert.equal(latest.protocolVersion, 2001100, "Indexer is not serving Ledger 9 protocol blocks");
   assert.match(latest.hash, /^[0-9a-f]{64}$/u, "Indexer current block hash is malformed");
+  const nodeIndexedHash = await request("chain_getBlockHash", [latest.height]);
+  assert.equal(nodeIndexedHash, `0x${latest.hash}`, "Node and indexer disagree at the indexed height");
   const proof = await fetchLocal(fetchImpl, proofUrl, {}, "Proof server");
   if (!proof.ok) throw new Error(`Proof server is unavailable: HTTP ${proof.status}`);
-  return { nodeVersion, protocolVersion: runtime.specVersion, genesisHash,
-    indexedHeight: latest.height, proofServerReachable: true };
+  const proofVersion = (await proof.text()).trim();
+  assert.equal(proofVersion, input.expectedProofVersion ?? "9.0.2", "Unexpected proof server version");
+  return { urls: { nodeRpcUrl: nodeUrl, indexerHttpUrl: indexerUrl,
+    indexerWsUrl, proofServerUrl }, nodeVersion, protocolVersion: runtime.specVersion, genesisHash,
+    indexedHeight: latest.height, indexedBlockHash: nodeIndexedHash, proofVersion };
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   try {
-    const result = await checkLedger9LocalStack({
-      nodePort: process.env.TR_NODE_PORT,
-      indexerPort: process.env.TR_INDEXER_PORT,
-      proofPort: process.env.TR_PROOF_PORT,
-      expectedGenesisHash: process.env.TR_EXPECTED_GENESIS_HASH,
-    });
+    const result = await checkLedger9LocalStack(localnetInputFromEnvironment());
     console.log(JSON.stringify(result));
   } catch (error) {
-    console.error(`Ledger 9 local stack check failed: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(localnetAttachFailure(error));
     process.exitCode = 1;
   }
 }
