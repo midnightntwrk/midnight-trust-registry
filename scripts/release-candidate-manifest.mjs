@@ -290,6 +290,8 @@ export function assertFullPackedContract(paths, contractInfo) {
   const files = paths.map((path) => path.replace(/^package\//u, ""));
   const required = "dist/managed/trust-registry/compiler/contract-info.json";
   if (!files.includes(required)) throw new Error(`Packed contract is missing ${required}`);
+  const contractManifest = "dist/managed/trust-registry/compiler/contract-manifest.json";
+  if (!files.includes(contractManifest)) throw new Error(`Packed contract is missing ${contractManifest}`);
   const missing = missingFullContractArtifacts(files, "trust-registry", proofCircuitNames(contractInfo));
   if (missing.length > 0) throw new Error(`Packed contract has incomplete proof artifacts: ${missing.join(" and ")}`);
 }

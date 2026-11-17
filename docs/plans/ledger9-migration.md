@@ -376,6 +376,8 @@ bundle and release-candidate inventory now retain and hash that file as a
 required source-bound asset; silently dropping it would prevent the Ledger 9
 ZK-config provider from checking the generated artifact set. This local
 packaging fix does not itself establish a portable release bundle.
+Full-package candidate validation also rejects a contract archive without
+the Compact manifest before treating its key inventory as complete.
 
 ## Execution order
 
