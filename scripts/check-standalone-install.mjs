@@ -205,12 +205,14 @@ export function installedImageIdFromArchive(archive, reference) {
     if (oci.schemaVersion !== 2 || oci.manifests.length < 1 || oci.manifests.length > 32) {
       throw new Error("Container archive has an invalid platform index");
     }
-    const matching = oci.manifests.filter((entry) => entry?.platform?.os === "linux"
+    /** @type {Array<{ platform?: { os?: string, architecture?: string }, digest?: string, mediaType?: string }>} */
+    const descriptors = oci.manifests;
+    const matching = descriptors.filter((entry) => entry?.platform?.os === "linux"
       && entry.platform.architecture === "arm64");
     const selected = matching.length === 1 ? matching[0] : null;
     const childDigest = /^sha256:([0-9a-f]{64})$/u.exec(selected?.digest ?? "")?.[1];
     if (!childDigest || !["application/vnd.oci.image.manifest.v1+json",
-      "application/vnd.docker.distribution.manifest.v2+json"].includes(selected.mediaType)) {
+      "application/vnd.docker.distribution.manifest.v2+json"].includes(selected?.mediaType ?? "")) {
       throw new Error("Container archive lacks a unique Linux/arm64 image manifest");
     }
     const child = archiveMember(archive, `blobs/sha256/${childDigest}`);

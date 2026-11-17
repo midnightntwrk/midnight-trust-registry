@@ -121,6 +121,11 @@ read-only and does not start or inspect containers.
 The installed-identity guard requires exact published identity versions and
 rejects local `file:` tarball overrides. Its unit tests and installed-package
 check pass for six identity packages at Compact runtime 0.21.0.
+In a checkout retaining full generated Compact artifacts, use
+`pnpm integration:prebuilt` and `pnpm typecheck:prebuilt` for non-destructive
+validation. The ordinary root `typecheck` target follows Turbo build
+dependencies and recompiles the 66 circuits; light targets replace the full
+distribution output. Neither is appropriate for an artifact-bearing checkout.
 The `@midnight-ntwrk/trust-registry-integration` `test:light` check also
 passes with the exact native Compact 0.36.0 compiler installed: it compiles
 the VC composition fixture and checks the credential/presentation envelope
