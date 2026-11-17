@@ -26,6 +26,11 @@ their bytes match the SHA-512 integrity in the frozen pnpm lockfile and their
 paths remain inside this checkout. Its 23 unit tests and installed-package
 check pass for six identity packages at Compact runtime 0.21.0. This is a local
 trial, not a portable dependency or a substitute for publishing VC 0.4.0.
+The `@midnight-ntwrk/trust-registry-integration` `test:light` check also
+passes with the exact native Compact 0.36.0 compiler installed: it compiles
+the VC composition fixture and checks the credential/presentation envelope
+relation, including claim-root, issuer-method, and schema mismatches. It does
+not exercise a deployed Ledger 9 registry or a VP actor journey.
 
 The official [Ledger 9 upgrade guide](https://docs.midnight.network/relnotes/ledger-9)
 is the compatibility source. The
