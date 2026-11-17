@@ -447,9 +447,11 @@ install, packet-level egress denial, actor journeys, or release qualification.
 ## Offline Runtime Boundary
 
 The repository includes `deploy/standalone/compose.yml` as an **isolated
-development smoke stack**, derived from a pinned `midnight-examples` revision.
-It uses arm64 image digests, separate `tr-standalone-local-smoke` volumes, an
-internal container network, and a read-only proof-parameter bind mount.
+development smoke stack** on Ledger 9. It uses arm64 image digests, separate
+`tr-standalone-ledger9-local` volumes, an internal ledger bridge plus a
+project-private host-access bridge, and a read-only proof-parameter bind mount.
+The host-access bridge is for local node, indexer, and proof-server port
+forwarding; it is not an egress-denied offline actor environment.
 Provision `TR_INDEXER_PASSWORD`, a 64-character hex `TR_INDEXER_SECRET`, and
 an absolute `TR_PROOF_PARAMS_DIR` pointing to the checked cache in a private,
 untracked environment file before running
@@ -1544,8 +1546,10 @@ finality, mempool, and any candidate contract state before a signed recovery
 decision. Stop and remove the relay after collecting the observation.
 
 Run `node scripts/check-standalone-topology.mjs` against the selected
-`TR_STACK_NAME` project (the default is `tr-standalone-local-smoke`) after the
-offline cold start. It reads
+`TR_STACK_NAME` project (the current Compose default is
+`tr-standalone-ledger9-local`) after an offline cold start. The strict topology
+observer requires internal-only service attachments; it intentionally does not
+qualify the development Compose stack's host-access bridge. It reads
 Docker metadata without changing containers or volumes and fails on extra
 network attachments, missing persistence mounts, a writable proof cache,
 fetch-enabled proof server, non-loopback or unexpected published ports, or

@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { checkStandaloneTopology, standaloneStackConfig } from "./check-standalone-topology.mjs";
 
-const project = "tr-standalone-local-smoke";
+const project = "tr-standalone-ledger9-local";
 const ledger = `${project}_ledger`;
 const expected = { proofParamsDir: "/private/verified/proof-params",
   indexerPassword: "test-password", indexerSecret: "test-secret" };

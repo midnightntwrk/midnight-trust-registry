@@ -10,7 +10,7 @@ import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { exactStringSet } from "./standalone-exact-fields-policy.mjs";
 
 const run = promisify(execFile);
-const DEFAULT_PROJECT = "tr-standalone-local-smoke";
+const DEFAULT_PROJECT = "tr-standalone-ledger9-local";
 const SERVICES = ["node", "indexer", "proof-server"];
 const DIGEST_IMAGE = /^[a-z0-9][a-z0-9./_-]*@sha256:[0-9a-f]{64}$/u;
 /** @type {Record<string, {variable: string, defaultPort: number, target: string}>} */
@@ -52,8 +52,8 @@ const PORTS = {
 export function standaloneStackConfig(env = process.env) {
   const project = env.TR_STACK_NAME ?? DEFAULT_PROJECT;
   if (typeof project !== "string" || project.length > 63
-    || !/^tr-standalone-local-[a-z0-9][a-z0-9-]*[a-z0-9]$/u.test(project)) {
-    throw new Error("Local stack project name must use the tr-standalone-local-* namespace");
+    || !/^tr-standalone-(?:local|ledger9)-[a-z0-9][a-z0-9-]*[a-z0-9]$/u.test(project)) {
+    throw new Error("Local stack project name must use the tr-standalone-local-* or tr-standalone-ledger9-* namespace");
   }
   if (env.COMPOSE_PROJECT_NAME !== undefined && env.COMPOSE_PROJECT_NAME !== project) {
     throw new Error("COMPOSE_PROJECT_NAME must match TR_STACK_NAME");

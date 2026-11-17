@@ -224,7 +224,7 @@ test("v2 inventory cannot smuggle an unverified API overlay", async () => {
 test("v3 install pins complete runtime Compose bytes", async () => {
   const { root, inventory } = await fixture();
   try {
-    const compose = Buffer.from(`name: \${TR_STACK_NAME:-tr-standalone-local-smoke}\nservices:\n  node:\n    image: ${reference("node")}\n  indexer:\n    image: ${reference("indexer")}\n  proof-server:\n    image: ${reference("proof-server")}\n`);
+    const compose = Buffer.from(`name: \${TR_STACK_NAME:-tr-standalone-ledger9-local}\nservices:\n  node:\n    image: ${reference("node")}\n  indexer:\n    image: ${reference("indexer")}\n  proof-server:\n    image: ${reference("proof-server")}\n`);
     const offlineCompose = Buffer.from("services:\n  node:\n    pull_policy: never\n  indexer:\n    pull_policy: never\n  proof-server:\n    pull_policy: never\n");
     inventory.format = "tr-standalone-install-v3";
     inventory.runtimeCompose = { path: "compose.yml", sha256: sha(compose),
@@ -269,7 +269,7 @@ test("v3 install pins complete runtime Compose bytes", async () => {
 test("v4 binds an API archive to the exact install source and runtime config", async () => {
   const { root, inventory } = await fixture();
   try {
-    const compose = Buffer.from(`name: \${TR_STACK_NAME:-tr-standalone-local-smoke}\nservices:\n  node:\n    image: ${reference("node")}\n  indexer:\n    image: ${reference("indexer")}\n  proof-server:\n    image: ${reference("proof-server")}\n`);
+    const compose = Buffer.from(`name: \${TR_STACK_NAME:-tr-standalone-ledger9-local}\nservices:\n  node:\n    image: ${reference("node")}\n  indexer:\n    image: ${reference("indexer")}\n  proof-server:\n    image: ${reference("proof-server")}\n`);
     const offlineCompose = Buffer.from("services: {}\n");
     await writeFile(join(root, "compose.yml"), compose);
     await writeFile(join(root, "compose.offline.yml"), offlineCompose);
@@ -358,7 +358,7 @@ test("v4 binds an API archive to the exact install source and runtime config", a
 test("v5 binds both portal OCI archives to the exact install source and roles", async () => {
   const { root, inventory } = await fixture();
   try {
-    const compose = Buffer.from(`name: \${TR_STACK_NAME:-tr-standalone-local-smoke}\nservices:\n  node:\n    image: ${reference("node")}\n  indexer:\n    image: ${reference("indexer")}\n  proof-server:\n    image: ${reference("proof-server")}\n`);
+    const compose = Buffer.from(`name: \${TR_STACK_NAME:-tr-standalone-ledger9-local}\nservices:\n  node:\n    image: ${reference("node")}\n  indexer:\n    image: ${reference("indexer")}\n  proof-server:\n    image: ${reference("proof-server")}\n`);
     const offlineCompose = Buffer.from("services: {}\n");
     await writeFile(join(root, "compose.yml"), compose);
     await writeFile(join(root, "compose.offline.yml"), offlineCompose);
@@ -415,7 +415,7 @@ test("v5 binds both portal OCI archives to the exact install source and roles", 
 test("v6 pins the installation relay script beside the complete runtime", async () => {
   const { root, inventory } = await fixture();
   try {
-    const compose = Buffer.from(`name: \${TR_STACK_NAME:-tr-standalone-local-smoke}\nservices:\n  node:\n    image: ${reference("node")}\n  indexer:\n    image: ${reference("indexer")}\n  proof-server:\n    image: ${reference("proof-server")}\n`);
+    const compose = Buffer.from(`name: \${TR_STACK_NAME:-tr-standalone-ledger9-local}\nservices:\n  node:\n    image: ${reference("node")}\n  indexer:\n    image: ${reference("indexer")}\n  proof-server:\n    image: ${reference("proof-server")}\n`);
     const offlineCompose = Buffer.from("services: {}\n");
     await writeFile(join(root, "compose.yml"), compose);
     await writeFile(join(root, "compose.offline.yml"), offlineCompose);
@@ -496,7 +496,7 @@ test("v6 pins the installation relay script beside the complete runtime", async 
 test("v7 requires a source-bound generator, keyless manifest, and offline keygen parameters", async () => {
   const { root, inventory } = await fixture();
   try {
-    const compose = Buffer.from(`name: \${TR_STACK_NAME:-tr-standalone-local-smoke}\nservices:\n  node:\n    image: ${reference("node")}\n  indexer:\n    image: ${reference("indexer")}\n  proof-server:\n    image: ${reference("proof-server")}\n`);
+    const compose = Buffer.from(`name: \${TR_STACK_NAME:-tr-standalone-ledger9-local}\nservices:\n  node:\n    image: ${reference("node")}\n  indexer:\n    image: ${reference("indexer")}\n  proof-server:\n    image: ${reference("proof-server")}\n`);
     const offline = Buffer.from("services: {}\n");
     const apiCompose = Buffer.from("services:\n  api:\n    profiles: [runtime]\n");
     for (const [name, bytes] of [["compose.yml", compose],
@@ -577,7 +577,7 @@ test("v7 requires a source-bound generator, keyless manifest, and offline keygen
 test("v2 API portal asset pins must match both static portal manifests", async () => {
   const { root, inventory } = await fixture();
   try {
-    const compose = Buffer.from(`name: \${TR_STACK_NAME:-tr-standalone-local-smoke}\nservices:\n  node:\n    image: ${reference("node")}\n  indexer:\n    image: ${reference("indexer")}\n  proof-server:\n    image: ${reference("proof-server")}\n`);
+    const compose = Buffer.from(`name: \${TR_STACK_NAME:-tr-standalone-ledger9-local}\nservices:\n  node:\n    image: ${reference("node")}\n  indexer:\n    image: ${reference("indexer")}\n  proof-server:\n    image: ${reference("proof-server")}\n`);
     const offlineCompose = Buffer.from("services: {}\n");
     await writeFile(join(root, "compose.yml"), compose);
     await writeFile(join(root, "compose.offline.yml"), offlineCompose);
