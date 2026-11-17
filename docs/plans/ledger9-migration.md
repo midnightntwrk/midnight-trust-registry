@@ -478,10 +478,30 @@ this deployment. No additional shared-chain write was approved in this step.
 The next-key planner subsequently read the current finalized image without
 reserving or submitting anything. It found one installed key of 66, selected
 `activateAuditorAuthorization` as the first missing release-catalog key, and
-confirmed maintenance authority counter zero. A private insertion plan is
-saved beside the deployment journal, but its per-circuit journal does not
-exist. Installing that key or the remaining 64 would be additional
-shared-chain writes, not covered by the one-deployment approval.
+confirmed maintenance authority counter zero. A private insertion plan was
+saved beside the deployment journal, but its per-circuit journal did not yet
+exist. Installing that key or the remaining 64 required separate approval
+because the one-deployment approval did not cover further shared-chain writes.
+
+On 2026-11-17, the operator separately approved installation of the remaining
+65 verifier keys on this same shared development chain. The repo-owned attach
+check confirmed the pinned genesis and non-genesis checkpoint before each
+sequential submission. Each accepted insertion was journaled per circuit and
+required finalized readback before the next. Two submissions returned the
+node's `isInvalid` rejection without a receipt. Their reservations and logs
+were preserved, finalized reads showed the corresponding keys absent, and
+private rejection-evidence records were written before retrying each once in
+a fresh wallet session. Neither rejected attempt was treated as a successful
+transaction or silently replayed. A separate read-only check at indexed
+height 1878 confirmed all 66 verifier-key hashes equal the source-matched
+manifest at `e51c6de9`, the maintenance counter is 65, and the latest
+insertion is verified. The finalized image hash was
+`0xbe4737bd4d96c7b2ffcb75015b1fe94fd19bdecc9e97a75f0b41b9b8a3d26056`.
+Private journals and recovery evidence remain under the ignored
+`artifacts/ledger9-current-chain-smoke-state/` directory. This is a
+development-only bootstrap with the single-key maintenance authority; it
+does not qualify actor journeys, an approved maintenance transition, or a
+release.
 
 ## Execution order
 
