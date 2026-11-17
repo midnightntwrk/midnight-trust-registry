@@ -766,6 +766,24 @@ was published. This is a stronger deployed canonical-shape smoke, still not
 a qualified issuer decision or release evidence. Do not replay its one-shot
 transactions or treat the shared-chain fixture signer as an operator key.
 
+To repeat only the finalized readback on the current shared chain, use the
+ignored local pin and source-matched manifest. The indexed height may advance
+between runs; a different genesis, checkpoint, contract, or key catalog is a
+stop condition:
+
+```sh
+node --env-file=artifacts/ledger9-current-chain.env scripts/read-ledger9-registry.mjs \
+  --address 0xf80638c64dcf63138b222426549bedb122673391b414658854f2a04a92b5be09 \
+  --issuer-label auth:issuer:ledger9-canonical-development:v1 \
+  --issuer-resource-id tr:issuer-resource:v1:246716fb2652b22d1185766776827e8311b9c357bcf33dc3605d228e5e41d839 \
+  --manifest artifacts/ledger9-current-chain-pack/release-manifest.json
+```
+
+The expected selected issuer is active with lifecycle sequences 15/16/17,
+`canonicalResourceIdCommitmentMatches: true`, and
+`epochEventRootMatchesLifecycle: false`. The last value is an explicit
+qualification gap, not a transient indexer failure.
+
 ## Execution order
 
 1. Keep the `ledger8` source branch only as a historical reference. Ledger 9
@@ -796,11 +814,16 @@ transactions or treat the shared-chain fixture signer as an operator key.
    changes verifier keys. Either use an approved maintenance transition for an
    existing deployment or deploy a new contract; never attach the new keys to
    an old deployment without that transition.
-6. Run fixture CI, then a separate deployed local actor qualification: signed
-   genesis, DID session, VP evidence, issuer/verifier/auditor submissions,
-   maintainer votes, finalized readback, restart and recovery. Record the exact
-   source, image, genesis and contract identities. Browser/CLI fixture tests
-   alone are not deployment evidence.
+6. Run fixture CI, then qualify deployed actor journeys on the owner's shared
+   multi-user Ledger 9 chain. Pin genesis and a non-genesis checkpoint, use a
+   dedicated wallet and one-shot journal per attempt, and tolerate unrelated
+   head advancement while rejecting chain, contract, or source-image drift.
+   Cover DID session, VP evidence, issuer/verifier/auditor submissions,
+   maintainer votes, and finalized readback. Tests that require a chain restart,
+   restore, or deliberately ambiguous submission must use an explicitly isolated
+   project; never disrupt the shared stack. Record the exact source, image,
+   genesis, checkpoint, and contract identities. Browser/CLI fixture tests and
+   the deployed fixture transitions above are not live DID/VP qualification.
 
 The work is tracked under [#292](https://github.com/midnightntwrk/midnight-trust-registry/issues/292):
 [#319](https://github.com/midnightntwrk/midnight-trust-registry/issues/319)
