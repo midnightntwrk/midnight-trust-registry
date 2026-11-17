@@ -127,6 +127,11 @@ The broad local simulator suite now passes all 36 cases with awaited Ledger 9
 governance and readback, including negative quorum, lifecycle, format, and
 tampered-evidence paths. That suite has no TypeScript diagnostics, but other
 integration tests still require async caller migration.
+The simulator-backed VC decision-evidence suite now passes both issuer and
+unchanged-grant tests. Its compiled VC consumer uses Ledger 9 named circuit
+contexts and awaited circuit results; it verifies installation, revocation,
+replay, schema proof, and verifier request checks. This is local simulator and
+compiled-circuit evidence, not a finalized deployment receipt.
 Readback-only paths use their explicit network and receipt. A strict helper
 encodes the tagged Compact runtime Schnorr verifying key into the policy's
 canonical `0x`-prefixed hex; its focused tests and integration lint pass.

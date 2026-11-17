@@ -102,9 +102,9 @@ describe("simulator-backed VC decision evidence composition", () => {
     const harness = new LocalTrustRegistryIntegrationHarness("vc-decision-composition");
     const coMaintainer = createMaintainerScenarioFixture("vc-decision-co-maintainer");
     const issuer = createIssuerScenarioFixture("vc-decision-issuer", IssuerResourceType.schema);
-    harness.authorizeMaintainer(coMaintainer);
-    harness.authorizeMaintainer(createMaintainerScenarioFixture("vc-decision-third-maintainer"));
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    await harness.authorizeMaintainer(coMaintainer);
+    await harness.authorizeMaintainer(createMaintainerScenarioFixture("vc-decision-third-maintainer"));
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
     const networkId = issuer.subjectDid.split(":")[2]!;
     const contractAddress = hex(encodeContractAddress(harness.simulator.contractAddress));
     const authoritySeed = new Uint8Array(32).fill(77);
@@ -128,17 +128,17 @@ describe("simulator-backed VC decision evidence composition", () => {
       keyIdCommitment: authorityKeyIdCommitment,
       publicKey: authorityAnchor.publicKey,
     });
-    harness.proposeIssuer(issuer, [coMaintainer]);
-    harness.approveIssuer(issuer, [coMaintainer]);
-    harness.activateIssuer(issuer, [coMaintainer]);
+    await harness.proposeIssuer(issuer, [coMaintainer]);
+    await harness.approveIssuer(issuer, [coMaintainer]);
+    await harness.activateIssuer(issuer, [coMaintainer]);
 
-    const bundle = harness.evaluateCurrentIssuerDecision(issuer);
+    const bundle = await harness.evaluateCurrentIssuerDecision(issuer);
     if (bundle.authorization === undefined || bundle.statusPolicyBinding === undefined) {
       throw new Error("Expected an issuer grant and status-policy preimage");
     }
-    const epochRecord = harness.simulator.getEpochCommitment(bytes32Commitment(bundle.epoch.epochId));
-    const witness = harness.getEpochPublicationWitness(bundle.epoch.epochId);
-    const ledger = harness.simulator.getLedger();
+    const epochRecord = await harness.simulator.getEpochCommitment(bytes32Commitment(bundle.epoch.epochId));
+    const witness = await harness.getEpochPublicationWitness(bundle.epoch.epochId);
+    const ledger = await harness.simulator.getLedger();
     const epochTransaction = sha256Hex("simulator:vc-decision:epoch-transaction");
     const epochBlock = sha256Hex("simulator:vc-decision:epoch-block");
     const didTransaction = sha256Hex("simulator:vc-decision:did-transaction");
@@ -218,7 +218,7 @@ describe("simulator-backed VC decision evidence composition", () => {
       bundle: { ...bundle, inclusionProof: { ...bundle.inclusionProof,
         leafHash: sha256Hex("different-grant-leaf") } },
     })).toThrow(/grant leaf hash mismatch/u);
-    const currentGrant = harness.simulator.getCurrentIssuerAuthorization(
+    const currentGrant = await harness.simulator.getCurrentIssuerAuthorization(
       issuer.subjectDidCommitment,
       issuer.resourceType,
       issuer.resourceIdCommitment,
@@ -317,11 +317,11 @@ describe("simulator-backed VC decision evidence composition", () => {
     });
     await expect(substitutedSelectionSource("issuer", issuer.authorizationId))
       .rejects.toThrow(/registry or subject mismatch/u);
-    const compactSequence = harness.simulator.getLedger().governanceActionCount.toString();
+    const compactSequence = ledger.governanceActionCount.toString();
     const compactEvidence = { ...evidence, decisionSequence: compactSequence };
     const compactReaders = createCompactLedgerDecisionReaders({
       readFinalizedView: async () => ({
-        ledger: harness.simulator.getLedger(),
+        ledger,
         acceptedEpoch: context.acceptedEpoch,
         publication: context.publication,
         evaluationTime: context.decisionPoint.evaluationTime,
@@ -343,7 +343,7 @@ describe("simulator-backed VC decision evidence composition", () => {
         networkId,
         finalizedBlockHash,
         contractAddress: context.selection.contractAddress,
-        ledger: harness.simulator.getLedger(),
+        ledger,
       }),
       readAuthenticatedEpochPublication: async (selected, epochId, blockHash) => {
         expect(selected).toEqual(context.selection);
@@ -364,7 +364,7 @@ describe("simulator-backed VC decision evidence composition", () => {
         networkId: "other-network",
         finalizedBlockHash,
         contractAddress: context.selection.contractAddress,
-        ledger: harness.simulator.getLedger(),
+        ledger,
       }),
       readAuthenticatedEpochPublication: async () => {
         throw new Error("Wrong checkpoint must fail before publication lookup");
@@ -382,7 +382,7 @@ describe("simulator-backed VC decision evidence composition", () => {
         networkId,
         finalizedBlockHash,
         contractAddress: sha256Hex("other-deployment"),
-        ledger: harness.simulator.getLedger(),
+        ledger,
       }),
       readAuthenticatedEpochPublication: async () => {
         throw new Error("Wrong deployment must fail before publication lookup");
@@ -400,7 +400,7 @@ describe("simulator-backed VC decision evidence composition", () => {
         networkId,
         finalizedBlockHash: `0x${"0".repeat(64)}`,
         contractAddress: context.selection.contractAddress,
-        ledger: harness.simulator.getLedger(),
+        ledger,
       }),
       readAuthenticatedEpochPublication: async () => {
         throw new Error("Invalid checkpoint must fail before publication lookup");
@@ -414,7 +414,7 @@ describe("simulator-backed VC decision evidence composition", () => {
     )).rejects.toThrow(/checkpoint does not match selected deployment/u);
     const wrongEpochReaders = createCompactLedgerDecisionReaders({
       readFinalizedView: async () => ({
-        ledger: harness.simulator.getLedger(),
+        ledger,
         acceptedEpoch: { ...context.acceptedEpoch, stateRoot: sha256Hex("wrong-finalized-epoch-root") },
         publication: context.publication,
         evaluationTime: context.decisionPoint.evaluationTime,
@@ -427,7 +427,7 @@ describe("simulator-backed VC decision evidence composition", () => {
     )).rejects.toThrow(/does not match finalized Compact ledger/u);
     const wrongEpochIdReaders = createCompactLedgerDecisionReaders({
       readFinalizedView: async () => ({
-        ledger: harness.simulator.getLedger(),
+        ledger,
         acceptedEpoch: { ...context.acceptedEpoch, epochId: "epoch:unrelated" },
         publication: context.publication,
         evaluationTime: context.decisionPoint.evaluationTime,
@@ -441,7 +441,7 @@ describe("simulator-backed VC decision evidence composition", () => {
     const wrongNetworkLedgerReaders = createCompactLedgerDecisionReaders({
       readFinalizedView: async () => ({
         ledger: {
-          ...harness.simulator.getLedger(),
+          ...ledger,
           deploymentNetworkIdCommitment: bytes32Commitment("other-network"),
         },
         acceptedEpoch: context.acceptedEpoch,
@@ -456,7 +456,7 @@ describe("simulator-backed VC decision evidence composition", () => {
     )).rejects.toThrow(/identity or epoch mismatch/u);
     const wrongPublicationNetworkReaders = createCompactLedgerDecisionReaders({
       readFinalizedView: async () => ({
-        ledger: harness.simulator.getLedger(),
+        ledger,
         acceptedEpoch: context.acceptedEpoch,
         publication: {
           ...context.publication,
@@ -472,7 +472,7 @@ describe("simulator-backed VC decision evidence composition", () => {
     )).rejects.toThrow(/identity or epoch mismatch/u);
     const wrongTimeMappingReaders = createCompactLedgerDecisionReaders({
       readFinalizedView: async () => ({
-        ledger: harness.simulator.getLedger(),
+        ledger,
         acceptedEpoch: context.acceptedEpoch,
         publication: context.publication,
         evaluationTime: context.decisionPoint.evaluationTime,
@@ -486,7 +486,7 @@ describe("simulator-backed VC decision evidence composition", () => {
     )).rejects.toThrow(/does not match finalized Compact ledger/u);
     const changedPolicyReaders = createCompactLedgerDecisionReaders({
       readFinalizedView: async () => ({
-        ledger: { ...harness.simulator.getLedger(), governancePolicyCommitment: bytes32Commitment("changed-policy") },
+        ledger: { ...ledger, governancePolicyCommitment: bytes32Commitment("changed-policy") },
         acceptedEpoch: context.acceptedEpoch,
         publication: context.publication,
         evaluationTime: context.decisionPoint.evaluationTime,
@@ -682,25 +682,25 @@ describe("simulator-backed VC decision evidence composition", () => {
       }),
     );
     const secret = seedBytesToJubjubSecretScalar(authoritySeed);
-    const governedAuthorityKey = harness.simulator.getCurrentVcAuthorityKey(authorityFields.consumerContractAddress);
+    const governedAuthorityKey = await harness.simulator.getCurrentVcAuthorityKey(authorityFields.consumerContractAddress);
     expect(governedAuthorityKey.keyIdCommitment).toEqual(Uint8Array.from(authorityKeyIdCommitment));
     expect(governedAuthorityKey.status).toBe(VcAuthorityKeyStatus.active);
     expect(governedAuthorityKey.policyCommitment).toEqual(converted.descriptor.policyCommitment);
     const currentAuthorityState = {
-      registryIdCommitment: harness.simulator.getLedger().registryId,
-      currentPolicyCommitment: harness.simulator.getLedger().governancePolicyCommitment,
-      currentPolicyVersion: harness.simulator.getLedger().governancePolicyVersion,
+      registryIdCommitment: ledger.registryId,
+      currentPolicyCommitment: ledger.governancePolicyCommitment,
+      currentPolicyVersion: ledger.governancePolicyVersion,
       currentKey: governedAuthorityKey,
     };
     const authorityKeyReader = {
       readCurrentFinalizedVcAuthorityState: async (domain: typeof authorityAnchor.domain) => {
         expect(domain).toEqual(authorityAnchor.domain);
-        const ledger = harness.simulator.getLedger();
+        const ledger = await harness.simulator.getLedger();
         return {
           registryIdCommitment: ledger.registryId,
           currentPolicyCommitment: ledger.governancePolicyCommitment,
           currentPolicyVersion: ledger.governancePolicyVersion,
-          currentKey: harness.simulator.getCurrentVcAuthorityKey(authorityFields.consumerContractAddress),
+          currentKey: await harness.simulator.getCurrentVcAuthorityKey(authorityFields.consumerContractAddress),
         };
       },
     };
@@ -936,12 +936,12 @@ describe("simulator-backed VC decision evidence composition", () => {
     )).toThrow(/must not decrease/u);
 
     const verifier = createVerifierScenarioFixture("vc-decision-verifier");
-    harness.authorizeVerifier(verifier);
-    const verifierBundle = harness.evaluateCurrentVerifierDecision(verifier);
+    await harness.authorizeVerifier(verifier);
+    const verifierBundle = await harness.evaluateCurrentVerifierDecision(verifier);
     if (verifierBundle.authorization === undefined) throw new Error("Expected an active verifier grant");
-    const verifierEpochRecord = harness.simulator.getEpochCommitment(bytes32Commitment(verifierBundle.epoch.epochId));
-    const verifierWitness = harness.getEpochPublicationWitness(verifierBundle.epoch.epochId);
-    const verifierLedger = harness.simulator.getLedger();
+    const verifierEpochRecord = await harness.simulator.getEpochCommitment(bytes32Commitment(verifierBundle.epoch.epochId));
+    const verifierWitness = await harness.getEpochPublicationWitness(verifierBundle.epoch.epochId);
+    const verifierLedger = await harness.simulator.getLedger();
     const verifierEpochTransaction = sha256Hex("simulator:vc-verifier:epoch-transaction");
     const verifierEpochBlock = sha256Hex("simulator:vc-verifier:epoch-block");
     const verifierDidTransaction = sha256Hex("simulator:vc-verifier:did-transaction");
@@ -1012,7 +1012,7 @@ describe("simulator-backed VC decision evidence composition", () => {
       decisionSequence: verifierEpochRecord.publishedAtSequence.toString(),
     } satisfies Parameters<typeof buildDecisionEvidenceClaim>[0];
     const verifierEvidence = buildDecisionEvidenceClaim(verifierBuildInput);
-    const currentVerifierGrant = harness.simulator.getCurrentVerifierAuthorization(
+    const currentVerifierGrant = await harness.simulator.getCurrentVerifierAuthorization(
       verifier.subjectDidCommitment,
       verifier.requestResourceIdCommitment,
       verifier.allowedAttributeSetCommitment,
@@ -1081,11 +1081,11 @@ describe("simulator-backed VC decision evidence composition", () => {
       verifierSelection, verifierEvidence.epoch.epochId, verifierEvidence.grant.authorizationId,
     );
     if (verifierSnapshot === null) throw new Error("Expected a verifier snapshot");
-    const verifierCompactSequence = harness.simulator.getLedger().governanceActionCount.toString();
+    const verifierCompactSequence = verifierLedger.governanceActionCount.toString();
     const verifierCompactEvidence = { ...verifierEvidence, decisionSequence: verifierCompactSequence };
     const verifierCompactReaders = createCompactLedgerDecisionReaders({
       readFinalizedView: async () => ({
-        ledger: harness.simulator.getLedger(),
+        ledger: verifierLedger,
         acceptedEpoch: verifierSnapshot.acceptedEpoch,
         publication: verifierSnapshot.publication,
         evaluationTime: verifierSnapshot.decisionPoint.evaluationTime,
@@ -1142,33 +1142,36 @@ describe("simulator-backed VC decision evidence composition", () => {
       expect(compile.status, compile.stderr).toBe(0);
       const compiled = await import(pathToFileURL(join(output, "contract/index.js")).href);
       const consumer = new compiled.Contract({});
-      const initial = consumer.initialState(
+      const initial = await consumer.initialState(
         createConstructorContext({}, "0".repeat(64)),
         pinnedVcAuthority(authorityAnchor),
         vcAuthorityDomainFields(authorityAnchor.domain),
       );
       const contractAddress = consumerContractAddress;
-      let circuitContext = createCircuitContext(
+      let circuitContext = createCircuitContext({
+        circuitId: "installSignerAuthorization",
         contractAddress,
-        initial.currentZswapLocalState,
-        initial.currentContractState,
-        initial.currentPrivateState,
-      );
-      const installed = consumer.circuits.installSignerAuthorization(circuitContext, signed.descriptor, signed.proof);
-      circuitContext = createCircuitContext(
+        coinPublicKeyOrZswapState: initial.currentZswapLocalState,
+        contractState: initial.currentContractState,
+        privateState: initial.currentPrivateState,
+      });
+      const nextContext = (circuitId: string, previous: typeof circuitContext) => createCircuitContext({
+        circuitId,
         contractAddress,
-        installed.context.currentZswapLocalState,
-        installed.context.currentQueryContext.state,
-        installed.context.currentPrivateState,
-      );
-      expect(compiled.ledger(circuitContext.currentQueryContext.state)
+        coinPublicKeyOrZswapState: previous.callContext.currentZswapLocalState!,
+        contractState: previous.callContext.currentQueryContext.state,
+        privateState: previous.callContext.currentPrivateState,
+      });
+      const installed = await consumer.circuits.installSignerAuthorization(circuitContext, signed.descriptor, signed.proof);
+      circuitContext = nextContext("installSignerAuthorization", installed.context);
+      expect(compiled.ledger(circuitContext.callContext.currentQueryContext.state)
         .installedSigners.lookup(signed.descriptor.authorizationId).decisionSequence)
         .toBe(signed.descriptor.decisionSequence);
-      expect(() => consumer.circuits.installSignerAuthorization(
+      await expect(consumer.circuits.installSignerAuthorization(
         circuitContext, signed.descriptor, signed.proof,
-      )).toThrow(/sequence must increase/u);
+      )).rejects.toThrow(/sequence must increase/u);
       const wrongAnchorContract = new compiled.Contract({});
-      const wrongInitial = wrongAnchorContract.initialState(
+      const wrongInitial = await wrongAnchorContract.initialState(
         createConstructorContext({}, "0".repeat(64)),
         pinnedVcAuthority({
           ...authorityAnchor,
@@ -1178,41 +1181,43 @@ describe("simulator-backed VC decision evidence composition", () => {
           ...authorityAnchor.domain, consumerContractAddress: sha256Hex("wrong-consumer-contract"),
         }),
       );
-      const wrongAnchorContext = createCircuitContext(
-        sampleContractAddress(),
-        wrongInitial.currentZswapLocalState,
-        wrongInitial.currentContractState,
-        wrongInitial.currentPrivateState,
-      );
-      expect(() => wrongAnchorContract.circuits.installSignerAuthorization(
+      const wrongAnchorContext = createCircuitContext({
+        circuitId: "installSignerAuthorization",
+        contractAddress: sampleContractAddress(),
+        coinPublicKeyOrZswapState: wrongInitial.currentZswapLocalState,
+        contractState: wrongInitial.currentContractState,
+        privateState: wrongInitial.currentPrivateState,
+      });
+      await expect(wrongAnchorContract.circuits.installSignerAuthorization(
         wrongAnchorContext, signed.descriptor, signed.proof,
-      )).toThrow();
+      )).rejects.toThrow();
       const replayConsumer = new compiled.Contract({});
-      const replayInitial = replayConsumer.initialState(
+      const replayInitial = await replayConsumer.initialState(
         createConstructorContext({}, "0".repeat(64)),
         pinnedVcAuthority(authorityAnchor),
         vcAuthorityDomainFields(authorityAnchor.domain),
       );
-      const replayContext = createCircuitContext(
-        sampleContractAddress(),
-        replayInitial.currentZswapLocalState,
-        replayInitial.currentContractState,
-        replayInitial.currentPrivateState,
-      );
-      expect(() => replayConsumer.circuits.installSignerAuthorization(
+      const replayContext = createCircuitContext({
+        circuitId: "installSignerAuthorization",
+        contractAddress: sampleContractAddress(),
+        coinPublicKeyOrZswapState: replayInitial.currentZswapLocalState,
+        contractState: replayInitial.currentContractState,
+        privateState: replayInitial.currentPrivateState,
+      });
+      await expect(replayConsumer.circuits.installSignerAuthorization(
         replayContext, signed.descriptor, signed.proof,
-      )).toThrow(/consumer address does not match this contract/u);
-      expect(() => new compiled.Contract({}).initialState(
+      )).rejects.toThrow(/consumer address does not match this contract/u);
+      await expect(new compiled.Contract({}).initialState(
         createConstructorContext({}, "0".repeat(64)),
         pinnedVcAuthority(authorityAnchor),
         vcAuthorityDomainFields({
           ...authorityAnchor.domain, consumerContractAddress: sha256Hex("wrong-consumer-contract"),
         }),
-      )).toThrow(/domain preimage mismatch/u);
-      expect(() => consumer.circuits.installSignerAuthorization(
+      )).rejects.toThrow(/domain preimage mismatch/u);
+      await expect(consumer.circuits.installSignerAuthorization(
         circuitContext, signed.descriptor,
         { ...signed.proof, createdAt: signed.proof.createdAt + 1n },
-      )).toThrow();
+      )).rejects.toThrow();
       const credential = {
         version: 1n,
         schema: vcSchema,
@@ -1236,18 +1241,19 @@ describe("simulator-backed VC decision evidence composition", () => {
         createdAt: 1n,
         challengeHash: randomBytes(32),
       });
-      expect(() => consumer.circuits.assertIssuerCredentialSchemaSignerProof(
-        circuitContext, credential, credentialProof, signed.descriptor.authorizationId,
-      )).not.toThrow();
-      expect(() => consumer.circuits.assertIssuerCredentialSchemaSignerProof(
-        circuitContext, credential,
+      const issuerContext = nextContext("assertIssuerCredentialSchemaSignerProof", circuitContext);
+      await expect(consumer.circuits.assertIssuerCredentialSchemaSignerProof(
+        issuerContext, credential, credentialProof, signed.descriptor.authorizationId,
+      )).resolves.toBeDefined();
+      await expect(consumer.circuits.assertIssuerCredentialSchemaSignerProof(
+        issuerContext, credential,
         { ...credentialProof, signature: { ...credentialProof.signature, s: credentialProof.signature.s + 1n } },
         signed.descriptor.authorizationId,
-      )).toThrow();
-      expect(() => consumer.circuits.assertIssuerCredentialSchemaSignerProof(
-        circuitContext, { ...credential, schema: { ...vcSchema, schemaId: bytes32Commitment("wrong-schema") } },
+      )).rejects.toThrow();
+      await expect(consumer.circuits.assertIssuerCredentialSchemaSignerProof(
+        issuerContext, { ...credential, schema: { ...vcSchema, schemaId: bytes32Commitment("wrong-schema") } },
         credentialProof, signed.descriptor.authorizationId,
-      )).toThrow();
+      )).rejects.toThrow();
 
       const authority = pinnedVcAuthority(authorityAnchor);
       const signDescriptor = (descriptor: typeof signed.descriptor): Proof => signFixtureContextProof(
@@ -1262,40 +1268,30 @@ describe("simulator-backed VC decision evidence composition", () => {
         decisionSequence: signed.descriptor.decisionSequence + 1n,
         didStateVersion: signed.descriptor.didStateVersion - 1n,
       };
-      expect(() => consumer.circuits.installSignerAuthorization(
+      await expect(consumer.circuits.installSignerAuthorization(
         circuitContext, rollback, signDescriptor(rollback),
-      )).toThrow(/must not decrease/u);
+      )).rejects.toThrow(/must not decrease/u);
       const revoked = {
         ...signed.descriptor,
         decisionSequence: signed.descriptor.decisionSequence + 1n,
         state: AuthorizationState.revoked,
       };
-      const revokedInstall = consumer.circuits.installSignerAuthorization(
+      const revokedInstall = await consumer.circuits.installSignerAuthorization(
         circuitContext, revoked, signDescriptor(revoked),
       );
-      circuitContext = createCircuitContext(
-        contractAddress,
-        revokedInstall.context.currentZswapLocalState,
-        revokedInstall.context.currentQueryContext.state,
-        revokedInstall.context.currentPrivateState,
-      );
+      circuitContext = nextContext("installSignerAuthorization", revokedInstall.context);
       const replay = {
         ...signed.descriptor,
         decisionSequence: revoked.decisionSequence + 1n,
       };
-      expect(() => consumer.circuits.installSignerAuthorization(
+      await expect(consumer.circuits.installSignerAuthorization(
         circuitContext, replay, signDescriptor(replay),
-      )).toThrow(/must remain revoked/u);
+      )).rejects.toThrow(/must remain revoked/u);
 
-      const verifierInstall = consumer.circuits.installSignerAuthorization(
+      const verifierInstall = await consumer.circuits.installSignerAuthorization(
         circuitContext, verifierSigned.descriptor, verifierSigned.proof,
       );
-      circuitContext = createCircuitContext(
-        contractAddress,
-        verifierInstall.context.currentZswapLocalState,
-        verifierInstall.context.currentQueryContext.state,
-        verifierInstall.context.currentPrivateState,
-      );
+      circuitContext = nextContext("installSignerAuthorization", verifierInstall.context);
       const requestProof = signFixtureContextProof(
         seedBytesToJubjubSecretScalar(verifierSeed),
         verifierBinding.verificationMethodRef,
@@ -1303,18 +1299,19 @@ describe("simulator-backed VC decision evidence composition", () => {
         2n,
         pureCircuits.verifierRequestProofChallenge,
       );
-      expect(() => consumer.circuits.assertVerifierRequestAuthorized(
-        circuitContext, requestScopeCommitment, requestProof, verifierSigned.descriptor.authorizationId,
-      )).not.toThrow();
-      expect(() => consumer.circuits.assertVerifierRequestAuthorized(
-        circuitContext, bytes32Commitment("other-request-scope"), requestProof, verifierSigned.descriptor.authorizationId,
-      )).toThrow();
+      const verifierContext = nextContext("assertVerifierRequestAuthorized", circuitContext);
+      await expect(consumer.circuits.assertVerifierRequestAuthorized(
+        verifierContext, requestScopeCommitment, requestProof, verifierSigned.descriptor.authorizationId,
+      )).resolves.toBeDefined();
+      await expect(consumer.circuits.assertVerifierRequestAuthorized(
+        verifierContext, bytes32Commitment("other-request-scope"), requestProof, verifierSigned.descriptor.authorizationId,
+      )).rejects.toThrow();
     } finally {
       await rm(output, { recursive: true, force: true });
     }
 
-    harness.suspendVerifier(verifier);
-    const suspendedVerifier = harness.simulator.getCurrentVerifierAuthorization(
+    await harness.suspendVerifier(verifier);
+    const suspendedVerifier = await harness.simulator.getCurrentVerifierAuthorization(
       verifier.subjectDidCommitment,
       verifier.requestResourceIdCommitment,
       verifier.allowedAttributeSetCommitment,
@@ -1355,8 +1352,8 @@ describe("simulator-backed VC decision evidence composition", () => {
         didDocument: { ...didDocument, assertionMethod: undefined },
       },
     })).toThrow(/relationship is absent/u);
-    harness.suspendIssuer(issuer, [coMaintainer]);
-    const suspended = harness.simulator.getCurrentIssuerAuthorization(
+    await harness.suspendIssuer(issuer, [coMaintainer]);
+    const suspended = await harness.simulator.getCurrentIssuerAuthorization(
       issuer.subjectDidCommitment,
       issuer.resourceType,
       issuer.resourceIdCommitment,
@@ -1406,12 +1403,15 @@ describe("simulator-backed VC decision evidence composition", () => {
       pinnedAnchor: authorityAnchor,
       authorityKeyIdCommitment,
       authorityKeyReader: {
-        readCurrentFinalizedVcAuthorityState: async () => ({
-          registryIdCommitment: harness.simulator.getLedger().registryId,
-          currentPolicyCommitment: harness.simulator.getLedger().governancePolicyCommitment,
-          currentPolicyVersion: harness.simulator.getLedger().governancePolicyVersion,
-          currentKey: harness.simulator.getVcAuthorityKey(authorityKeyIdCommitment),
-        }),
+        readCurrentFinalizedVcAuthorityState: async () => {
+          const currentLedger = await harness.simulator.getLedger();
+          return {
+            registryIdCommitment: currentLedger.registryId,
+            currentPolicyCommitment: currentLedger.governancePolicyCommitment,
+            currentPolicyVersion: currentLedger.governancePolicyVersion,
+            currentKey: await harness.simulator.getVcAuthorityKey(authorityKeyIdCommitment),
+          };
+        },
       },
       sign: async () => { throw new Error("Suspended authority reached key custody"); },
     });
@@ -1421,13 +1421,13 @@ describe("simulator-backed VC decision evidence composition", () => {
   it("keeps an unchanged grant current across unrelated epochs but rejects a changed grant", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("superseded-current-epoch");
     const issuer = createIssuerScenarioFixture("superseded-current-epoch");
-    harness.authorizeIssuer(issuer);
-    const oldBundle = harness.evaluateCurrentIssuerDecision(issuer);
+    await harness.authorizeIssuer(issuer);
+    const oldBundle = await harness.evaluateCurrentIssuerDecision(issuer);
     if (oldBundle.authorization?.role !== "issuer") throw new Error("Expected issuer authorization");
-    const oldRecord = harness.simulator.getEpochCommitment(bytes32Commitment(oldBundle.epoch.epochId));
-    const oldWitness = harness.getEpochPublicationWitness(oldBundle.epoch.epochId);
-    const newer = harness.publishRegistryEpoch("newer-current-epoch");
-    const ledger = harness.simulator.getLedger();
+    const oldRecord = await harness.simulator.getEpochCommitment(bytes32Commitment(oldBundle.epoch.epochId));
+    const oldWitness = await harness.getEpochPublicationWitness(oldBundle.epoch.epochId);
+    const newer = await harness.publishRegistryEpoch("newer-current-epoch");
+    const ledger = await harness.simulator.getLedger();
     expect(newer.epochId).not.toBe(oldBundle.epoch.epochId);
     expect(ledger.governanceActionCount <= oldRecord.validUntilSequence).toBe(true);
     const networkId = issuer.subjectDid.split(":")[2]!;
@@ -1454,7 +1454,7 @@ describe("simulator-backed VC decision evidence composition", () => {
     };
     const readers = createCompactLedgerDecisionReaders({
       readFinalizedView: async () => ({
-        ledger: harness.simulator.getLedger(),
+        ledger: await harness.simulator.getLedger(),
         acceptedEpoch: AcceptedDecisionEpochSchema.parse(acceptedEpoch),
         publication: {
           registryIdCommitment: harness.registryIdCommitment,
@@ -1483,7 +1483,7 @@ describe("simulator-backed VC decision evidence composition", () => {
       selection, oldBundle.epoch.epochId, issuer.authorizationId,
     );
     expect(current?.decisionPoint.currentGrant.status).toBe("active");
-    harness.suspendIssuer(issuer);
+    await harness.suspendIssuer(issuer);
     await expect(readers.readCurrentFinalizedRegistryDecision(
       selection, oldBundle.epoch.epochId, issuer.authorizationId,
     )).rejects.toThrow(/stale for the current grant/u);
