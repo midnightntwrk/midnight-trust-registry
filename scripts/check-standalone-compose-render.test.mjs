@@ -5,11 +5,14 @@ import { checkRenderedStandaloneCompose, ledger9Images, syntheticRenderEnvironme
 
 const base = () => ({
   name: "tr-standalone-local-rendercheck",
-  networks: { ledger: { internal: true, name: "tr-standalone-local-rendercheck_ledger" } },
+  networks: {
+    ledger: { internal: true, name: "tr-standalone-local-rendercheck_ledger" },
+    "host-access": { name: "tr-standalone-local-rendercheck_host-access" },
+  },
   services: Object.fromEntries(["indexer", "node", "proof-server"].map((name) => {
     const [target, published] = { indexer: [8088, "28088"], node: [9944, "29944"],
       "proof-server": [6300, "26300"] }[name];
-    return [name, { networks: { ledger: null }, ports: [{ host_ip: "127.0.0.1",
+    return [name, { networks: { ledger: null, "host-access": null }, ports: [{ host_ip: "127.0.0.1",
       target, published, protocol: "tcp" }], pull_policy: "never",
     image: `tr-standalone/${name}:synthetic-render-only`,
     environment: name === "indexer" ? { APP__INFRA__NODE__URL: "ws://node:9944",
@@ -17,7 +20,7 @@ const base = () => ({
   })),
 });
 
-test("render policy accepts the isolated offline topology", () => {
+test("render policy accepts an isolated ledger and localhost infrastructure bridge", () => {
   checkRenderedStandaloneCompose(base(), true);
 });
 
@@ -52,6 +55,12 @@ test("render policy rejects an extra peer, public port, or external bridge", () 
   const external = base();
   external.networks.ledger.internal = false;
   assert.throws(() => checkRenderedStandaloneCompose(external, true));
+  const missingAccess = base();
+  delete missingAccess.services.node.networks["host-access"];
+  assert.throws(() => checkRenderedStandaloneCompose(missingAccess, true));
+  const sharedAccess = base();
+  sharedAccess.networks["host-access"].external = true;
+  assert.throws(() => checkRenderedStandaloneCompose(sharedAccess, true));
 });
 
 test("render policy rejects an offline pull or external indexer endpoint", () => {

@@ -8,10 +8,10 @@ qualification claim. The historical Ledger 8 source is the `ledger8` branch at
 
 | Component | Selected version | Current migration state |
 | --- | --- | --- |
-| Node | 2.1.101 | Default Compose image pinned by digest; render checked |
-| Ledger | 9.1.0.1 | Expected node runtime; live RPC not yet checked |
-| Indexer standalone | 4.4.101 | Default Compose image pinned by digest; render checked |
-| Proof server | 9.0.0 | Default Compose image pinned by digest; render checked |
+| Node | 2.1.101 | Pinned local container healthy; `system_version` returns `2.1.101-86774edf`, runtime `specVersion` is `2001100` |
+| Ledger | 9.1.0.1 | Official image cohort and protocol-version evidence; no independent crate-version attestation from RPC |
+| Indexer standalone | 4.4.101 | Pinned local container healthy; GraphQL serves indexed blocks and the matching genesis |
+| Proof server | 9.0.0 | Pinned local container listening on loopback with read-only parameter cache and fetching disabled; no TR proof run |
 | Compact compiler | 0.36.0 | Pinned Nix toolchain builds; contract compiles with `--skip-zk` after source type fixes |
 | Compact runtime | 0.21.0 | Locally installed with exact DID RC1 and VC PR #755 artifacts; runtime validation incomplete |
 | Midnight.js / testkit-js | 5.0.0 | Locally installed; provider and async circuit API migration incomplete |
@@ -127,10 +127,27 @@ and ambiguous recovery states. The wrapper test mocks SDK submission; it does
 not prove a real transaction, wallet balance, broadcast, or finalized committee
 transition.
 
-Docker Desktop still did not answer a bounded `docker info` probe. No Ledger 9
-container, live RPC, indexer, or proof-server claim follows from the Compose
-render and image pins; the hanging CLI call was stopped without modifying
-containers or volumes.
+Docker Desktop subsequently became responsive. The three digest-pinned
+containers are running under the dedicated `tr-standalone-ledger9-local`
+Compose project; the node and indexer are healthy. The local node returns
+genesis `0x823383ec0302be8417cfcbcc62f21df08f4047bca37aaea89e3f54b550ebae1d`
+at height zero, and the indexer independently returns the same height-zero
+hash through `/api/v4/graphql`. The indexer returned an indexed block at
+height 36 with protocol version `2001100` during this probe. This genesis is
+specific to these local volumes and is not a checked-in network constant.
+The node's `midnight_ledgerVersion` RPC returned `1.0.1`, so that RPC is not
+being treated as an attestation of the documented `9.1.0.1` crate version.
+No contract state, transaction, finalized readback, or Trust Registry proof
+has yet been observed on this stack.
+
+Docker Desktop did not publish ports from the original single `internal: true`
+network. Compose now retains an internal ledger bridge and adds a separate
+project-private host-access bridge for the three infrastructure services;
+only `127.0.0.1:29944`, `:28088`, and `:26300` are published. This makes the
+infrastructure containers egress-capable, not an egress-denied actor test.
+The proof server uses the existing read-only parameter cache, with the 2p15
+and 2p16 files matching the SHA-256 values recorded in VC PR #755. Service
+startup does not establish parameter completeness for every TR circuit.
 
 ## Execution order
 
@@ -139,10 +156,11 @@ containers or volumes.
    runtime profile. Remove old node/indexer volumes only after confirming they
    belong to this project and no active container uses them. Never reuse an
    older database with indexer 4.4.101.
-2. Qualify the three official images in the default Compose file. Confirm `system_version` starts
-   with `2.1.101`, `state_getRuntimeVersion.specVersion` is `2001100`, and
-   `midnight_ledgerVersion` names `crate-ledger-9.1.0.1`. Confirm indexer
-   genesis, progress and contract-state decoding before application calls.
+2. Qualify the three official images in the default Compose file. The local
+   `system_version`, runtime `specVersion`, and node/indexer genesis and
+   progress checks now pass. Confirm the exact ledger crate provenance through
+   the image build inventory rather than treating `midnight_ledgerVersion` as
+   that value; still verify deployed contract-state decoding before application calls.
 3. Consume published, exact-version DID 1.0.0-rc1 packages. Complete API
    actor-authentication qualification with the DID-owned key lookup and
    preserve key relationship, controller and origin checks. Core actor

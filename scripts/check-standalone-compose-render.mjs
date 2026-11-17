@@ -36,12 +36,15 @@ export function syntheticRenderEnvironment(inherited = process.env) {
 export function checkRenderedStandaloneCompose(config, offline) {
   assert.equal(config.name, project);
   assert.deepEqual(Object.keys(config.services).sort(), services);
-  assert.deepEqual(Object.keys(config.networks), ["ledger"]);
+  assert.deepEqual(Object.keys(config.networks).sort(), ["host-access", "ledger"]);
   assert.equal(config.networks.ledger.internal, true);
   assert.equal(config.networks.ledger.name, `${project}_ledger`);
+  assert.equal(config.networks["host-access"].name, `${project}_host-access`);
+  assert.notEqual(config.networks["host-access"].internal, true);
+  assert.notEqual(config.networks["host-access"].external, true);
   for (const service of services) {
     const actual = config.services[service];
-    assert.deepEqual(Object.keys(actual.networks), ["ledger"]);
+    assert.deepEqual(Object.keys(actual.networks).sort(), ["host-access", "ledger"]);
     assert.equal(actual.ports?.length, 1);
     const [target, published] = ports[service];
     assert.equal(actual.ports[0].host_ip, "127.0.0.1");
