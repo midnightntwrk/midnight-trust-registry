@@ -94,18 +94,18 @@ Use the builder below to generate a v6 inventory; do not hand-edit it.
       { "path": "bls_midnight_2p13", "sha256": "<sha256>" },
       { "path": "bls_midnight_2p14", "sha256": "<sha256>" },
       { "path": "bls_midnight_2p15", "sha256": "<sha256>" },
-      { "path": "dust/9/spend.prover", "sha256": "<sha256>" },
-      { "path": "dust/9/spend.verifier", "sha256": "<sha256>" },
-      { "path": "dust/9/spend.bzkir", "sha256": "<sha256>" },
-      { "path": "zswap/9/spend.prover", "sha256": "<sha256>" },
-      { "path": "zswap/9/spend.verifier", "sha256": "<sha256>" },
-      { "path": "zswap/9/spend.bzkir", "sha256": "<sha256>" },
-      { "path": "zswap/9/output.prover", "sha256": "<sha256>" },
-      { "path": "zswap/9/output.verifier", "sha256": "<sha256>" },
-      { "path": "zswap/9/output.bzkir", "sha256": "<sha256>" },
-      { "path": "zswap/9/sign.prover", "sha256": "<sha256>" },
-      { "path": "zswap/9/sign.verifier", "sha256": "<sha256>" },
-      { "path": "zswap/9/sign.bzkir", "sha256": "<sha256>" }
+      { "path": "dust/10/spend.prover", "sha256": "<sha256>" },
+      { "path": "dust/10/spend.verifier", "sha256": "<sha256>" },
+      { "path": "dust/10/spend.bzkir", "sha256": "<sha256>" },
+      { "path": "zswap/10/spend.prover", "sha256": "<sha256>" },
+      { "path": "zswap/10/spend.verifier", "sha256": "<sha256>" },
+      { "path": "zswap/10/spend.bzkir", "sha256": "<sha256>" },
+      { "path": "zswap/10/output.prover", "sha256": "<sha256>" },
+      { "path": "zswap/10/output.verifier", "sha256": "<sha256>" },
+      { "path": "zswap/10/output.bzkir", "sha256": "<sha256>" },
+      { "path": "zswap/10/sign.prover", "sha256": "<sha256>" },
+      { "path": "zswap/10/sign.verifier", "sha256": "<sha256>" },
+      { "path": "zswap/10/sign.bzkir", "sha256": "<sha256>" }
     ]
   }
 }

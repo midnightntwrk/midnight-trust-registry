@@ -1,8 +1,8 @@
 export const STANDALONE_PROOF_PARAMETER_PATHS = Object.freeze([
   ...[10, 11, 12, 13, 14, 15].map((k) => `bls_midnight_2p${k}`),
-  ...["spend.prover", "spend.verifier", "spend.bzkir"].map((name) => `dust/9/${name}`),
+  ...["spend.prover", "spend.verifier", "spend.bzkir"].map((name) => `dust/10/${name}`),
   ...["spend", "output", "sign"].flatMap((circuit) =>
-    ["prover", "verifier", "bzkir"].map((extension) => `zswap/9/${circuit}.${extension}`)),
+    ["prover", "verifier", "bzkir"].map((extension) => `zswap/10/${circuit}.${extension}`)),
 ].sort());
 
 export const PROTOCOL_KEY_PATHS = Object.freeze(STANDALONE_PROOF_PARAMETER_PATHS
