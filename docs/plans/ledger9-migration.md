@@ -328,6 +328,11 @@ only, `packed-artifacts:smoke -- --vc-consumer --actor-journey
 --local-vc-tarballs-dir artifacts/ledger9-vc-pr755` installs the three exact VC
 trial tarballs alongside the Registry packages. This option refuses a release
 manifest and does not make the resulting package set portable or publishable.
+At `34c3155f`, that isolated smoke installed all ten Registry tarballs and
+passed the compiled VC consumer plus issuer, verifier, auditor, maintainer,
+and recognition actor journeys. It used skip-ZK output and local VC trial
+tarballs, not full proving artifacts, deployed transactions, or published
+VC packages.
 
 ## Execution order
 
