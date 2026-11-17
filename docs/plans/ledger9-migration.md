@@ -546,6 +546,14 @@ quarantined. A subsequent pinned-chain finalized read still found the same
 governance sequence and zero evidence-verifier keys. No transaction receipt
 exists for either attempt; do not retry or claim actor qualification until the
 proof check is diagnosed and a new one-shot plan is reviewed.
+A proof-only diagnostic using the full source-matched compiled contract, with
+`submitTx` replaced by a hard-failing local stub, reproduced the same `/check`
+HTTP 400. The staged single-operation wrapper is therefore not sufficient to
+explain the failure. The current development provider also uses a public test
+wallet whose balance changed while other sessions used the shared chain; a
+future actor write needs a separate funded session wallet and journal. Neither
+the proof-only diagnostic nor the failed reserved attempts submitted a
+transaction.
 
 ## Execution order
 
