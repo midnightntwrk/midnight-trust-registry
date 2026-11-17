@@ -806,8 +806,24 @@ or release evidence. The shared chain may advance from unrelated users without
 invalidating this observation; a changed chain identity or contract is a stop
 condition.
 
+A third fixture candidate (`participant:maintainer:ledger9-development-maintainer-3:v1`)
+then passed proof-only proposal, authorization, and activation before separate
+one-shot submissions. The proposal's finalized event hash
+`0x40e7f8fa29b3f065737811126b7f00ca76e918c802ca7603b78915fca8be6168`
+matched its journal, which was reconciled to `observed`. Authorization and
+activation receipts were
+`0011bdffae19db5567594e8fa3667276afd684ddf4a12bb47171bc75ea38561dac`
+and `0007e3fc3d8e0bef542a88ada25bb23518daaa21a9559775a4d748de780dc07330`.
+An independent pinned-chain read reported governance action count 24, three
+active maintainers with three distinct public keys and DID commitments, and
+all 66 source-matched verifier keys. The threshold is still **one**. These
+fixture identities and signatures do not represent independent operators or
+accepted VP admission. The ignored private proposal and decision journals
+must not be replayed.
+
 The approved local-ledger API plan requires at least three distinct
-maintainers and a threshold of at least two, so this deployment cannot yet
+maintainers and a threshold of at least two. The development contract now has
+three distinct fixture maintainers, but remains at threshold one and cannot yet
 qualify the live DID/VP API path. The integration package now provides
 `prepareUnsignedLocalMaintainerProposalCall` to derive the first candidate's
 deployment-bound signing context from an independently authenticated finalized
@@ -817,8 +833,8 @@ signature and current distinct maintainer signatures. The separate
 journal and a guarded transport, and rechecks the reserved action before
 broadcast. These helpers do not themselves verify an accepted application VP;
 the caller must supply that admission evidence through the governed intake.
-Before using this contract for API qualification, onboard and activate a third
-distinct maintainer, update and finalize the threshold policy, then execute
+Before using this contract for API qualification, prepare an exact next
+governance-policy snapshot, update and finalize the threshold policy, then execute
 the separately approved maintenance-authority transition. Recheck the full
 verifier-key catalog and governance history after each step. Keep each attempt
 in a separate one-shot journal with independent finalized readback. The
