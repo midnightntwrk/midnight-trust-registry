@@ -687,6 +687,37 @@ const createMaintainerMembershipFixture = (label: string, seedByte: number) => {
   };
 };
 
+it("binds a maintainer proposal payload to both Jubjub key coordinates", () => {
+  const candidate = createMaintainerMembershipFixture("coordinate-commitment", 41);
+  const otherKey = createMaintainerMembershipFixture("different-coordinate-commitment", 42).publicKey;
+  const payloadHash = (publicKey: typeof candidate.publicKey) =>
+    computeCreateMaintainerMembershipPayloadHash(
+      candidate.maintainerId,
+      candidate.maintainerDidCommitment,
+      candidate.keyId,
+      publicKey,
+      candidate.policyId,
+      candidate.trustLevel,
+      candidate.evidenceHash,
+    );
+  expect(payloadHash(otherKey)).not.toEqual(payloadHash(candidate.publicKey));
+});
+
+it("pins the Ledger 9 maintainer proposal payload hash", () => {
+  const publicKey = deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(41));
+  const hash = computeCreateMaintainerMembershipPayloadHash(
+    labelToBytes32("maintainer:vector"),
+    labelToBytes32("did:vector"),
+    labelToBytes32("key:vector"),
+    publicKey,
+    labelToBytes32("policy:vector"),
+    labelToBytes32("trust:vector"),
+    labelToBytes32("evidence:vector"),
+  );
+  expect(Buffer.from(hash).toString("hex"))
+    .toBe("169084e90da3996cf714f88a8370e96569393824d01f67be3b84162895495ef5");
+});
+
 const maintainerProposalProof = async (
   registry: RegistryFixture,
   candidate: ReturnType<typeof createMaintainerMembershipFixture>,

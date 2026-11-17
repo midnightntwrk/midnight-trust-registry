@@ -8,11 +8,11 @@ qualification claim. The historical Ledger 8 source is the `ledger8` branch at
 
 | Component | Selected version | Current migration state |
 | --- | --- | --- |
-| Node | 2.1.101 | Previously healthy with `system_version` `2.1.101-86774edf` and runtime `specVersion` `2001100`; current Docker RPC is unresponsive |
+| Node | 2.1.101 | Live loopback check passes with `system_version` `2.1.101-86774edf` and runtime `specVersion` `2001100` |
 | Ledger | 9.1.0.1 | Official image cohort and protocol-version evidence; no independent crate-version attestation from RPC |
-| Indexer standalone | 4.4.101 | Previously served indexed blocks and matching genesis; current Docker health is unverified |
-| Proof server | 9.0.0 | Previously listened on loopback with read-only parameter cache and fetching disabled; current Docker health is unverified, no TR proof run |
-| Compact compiler | 0.36.0 | Pinned Nix toolchain builds; contract compiles with `--skip-zk` after source type fixes |
+| Indexer standalone | 4.4.101 | Live indexed block and matching genesis check passes |
+| Proof server | 9.0.0 | Live loopback reachability check passes with read-only parameter cache and fetching disabled; no deployed TR proof run |
+| Compact compiler | 0.36.0 | Full source-matched compile generates all 66 circuits and prover/verifier keys |
 | Compact runtime | 0.21.0 | Locally installed with exact DID RC1 and VC PR #755 artifacts; simulator/integration tests pass, deployed runtime unqualified |
 | Midnight.js / testkit-js | 5.0.0 | Locally installed; simulator/integration tests pass, deployed provider journey unqualified |
 | Compact.js | 3.0.0 | Locally installed; simulator, client, harness, and integration tests use awaited circuit/read APIs |
@@ -236,12 +236,13 @@ also enforce a particular local chain; ports can be overridden with
 `TR_NODE_PORT`, `TR_INDEXER_PORT`, and `TR_PROOF_PORT`. The command does not sign
 or approve genesis, exercise a proof, deploy a contract, or establish
 transaction finality. It is intentionally not part of offline CI.
-The most recent live recheck after the API migration timed out: the local
-node's loopback RPC returned no bytes within five seconds, and Docker CLI
-queries did not complete. The three stack-check unit tests still pass, but
-the live stack is not currently verified healthy. Do not infer a source
-regression from this timeout or claim deployed qualification; inspect Docker
-Desktop and the dedicated project containers before the next runtime phase.
+After an approved Docker Desktop restart, the dedicated node and proof-server
+containers were restarted without deleting their volumes. The live
+`pnpm check:ledger9-local-stack` probe passed again: node
+`2.1.101-86774edf`, runtime protocol `2001100`, matching node/indexer genesis
+`0x823383ec0302be8417cfcbcc62f21df08f4047bca37aaea89e3f54b550ebae1d`,
+indexed height 605, and reachable proof server. This is infrastructure
+readiness, not a deployed registry transaction or finality claim.
 Offline source validation at `e7e02633` now passes the repository lint gate,
 127 standalone-topology cases, 244 local-ledger preflight cases, and strict
 security-script typecheck. The standalone install policy is tested against
@@ -278,13 +279,9 @@ reading its registry ID or passing the workspace to the pending-application
 port. Both live-host integration files pass all four cases; the applicant
 portal suite passes 13 files and 72 tests. A direct, non-destructive Turbo
 `test:light` run passes all ten package tasks (nine from the local cache).
-The browser gate cannot start because this checkout lacks the source-matched
-`contracts/trust-registry/dist/trust-registry.compact` file required by
-`scripts/build-prebuilt-runtime.sh`; existing generated JavaScript is not a
-substitute for that provenance check. A read-only Docker socket ping and the
-local node RPC both timed out, so no live Ledger 9 or deployed E2E claim follows
-from these fixture results. Preserve the existing generated outputs until a
-source-matched Compact build can be prepared safely.
+That earlier browser attempt was blocked by missing source-matched Compact
+output and an unresponsive Docker daemon. Both prerequisites were subsequently
+restored; its earlier result is not the current qualification state.
 An isolated checkout at `7ff17a86` subsequently built source-matched
 skip-ZK Compact output and installed the frozen lockfile offline using the
 same ignored VC tarballs. Its pinned Playwright Chromium headless shell ran
@@ -344,6 +341,26 @@ do not replace deployed proof or finalized actor evidence. A fresh Docker CLI
 query still hung, and npm returned E404 for
 `@midnight-ntwrk/credential-compact@0.4.0` on 2026-11-17; the local trial
 remains nonportable until that package cohort is published.
+
+At the current local migration tree, full Compact 0.36.0 key generation first
+exposed a ZKIR v3 cost-model failure for `transientHash<JubjubPoint>` in
+`proposeMaintainerMembership`. The maintainer key commitment now uses a
+domain-separated persistent hash of the point's X and Y coordinates; focused
+tests assert coordinate sensitivity and pin the resulting Ledger 9 proposal
+payload hash. This changes the proposal transcript and verifier keys: Ledger 8
+signatures and key material must not be reused for a Ledger 9 deployment.
+`zkir-v3 mock-compile-many` then passed all 66 circuit inputs, and the full
+Compact build produced 66 proof circuits, 132 nonempty prover/verifier keys,
+and 132 nonempty ZKIR/BZKIR files. `pnpm contract:check-full-artifacts` passed
+against the source-matched outputs. `pnpm integration:prebuilt` passed with
+378 integration, 111 API integration, 72 applicant portal, and 31 admin
+console tests, plus the signed role journeys and final full-artifact check.
+After installing the pinned headless Chromium, `pnpm test:browser` passed all
+98 Playwright cases at this tree. The first attempt failed before any browser
+test ran because that executable was absent; it was an environment setup
+failure, not an application failure. These are local full-artifact and fixture
+results, not proof of a deployed contract, finalized transaction, or live
+actor journey.
 
 ## Execution order
 

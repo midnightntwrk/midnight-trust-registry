@@ -839,7 +839,12 @@ export pure circuit schnorrChallengeDigest(
 }
 
 pure circuit maintainerPublicKeyCommitment(publicKey: JubjubPoint): Bytes<32> {
-  return upgradeFromTransient(transientHash<JubjubPoint>(publicKey));
+  // ZKIR v3 cannot synthesize transientHash<JubjubPoint>; bind both coordinates explicitly.
+  return persistentHash<Vector<3, Bytes<32>>>([
+    pad(32, "tr:maintainer-key:v2"),
+    (jubjubPointX(publicKey) as Bytes<32>),
+    (jubjubPointY(publicKey) as Bytes<32>)
+  ]);
 }
 
 pure circuit assertNonIdentitySignerPoint(point: JubjubPoint): [] {
