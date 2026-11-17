@@ -8,7 +8,7 @@ import { localApiOrigin, observeLocalApiCurrentReads } from "../local-ledger-api
 import { createTrustRegistryApiServer } from "../server.js";
 import type { TrustRegistryApiStateSource } from "../source.js";
 
-const snapshot = createDemoSnapshot({ label: "observation-route-unit" });
+const snapshot = await createDemoSnapshot({ label: "observation-route-unit" });
 const selection = {
   snapshot,
   finalizedBlockHash: `0x${"a".repeat(64)}`,

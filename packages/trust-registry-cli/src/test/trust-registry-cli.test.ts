@@ -69,8 +69,8 @@ describe("trust registry operator CLI", () => {
     }).success).toBe(false);
   }, CLI_TEST_TIMEOUT_MS);
 
-  it("rejects auditor snapshot rows with a substituted role or evidence record", () => {
-    const snapshot = createDemoSnapshot({ label: "auditor-snapshot-boundary" });
+  it("rejects auditor snapshot rows with a substituted role or evidence record", async () => {
+    const snapshot = await createDemoSnapshot({ label: "auditor-snapshot-boundary" });
     const auditor = snapshot.auditorEntries[0];
     const otherAuditor = snapshot.auditorEntries[1];
     const verifier = snapshot.verifierEntries[0];
@@ -640,7 +640,7 @@ describe("trust registry operator CLI", () => {
       evidenceArchive: archived.snapshot.evidenceArchive.map((bundle, index) =>
         index === 0 ? { ...bundle, registryId: "registry:foreign:v1" } : bundle),
     }).success).toBe(false);
-    const recognition = createDemoSnapshot({ label: "archive-dual-statement" })
+    const recognition = (await createDemoSnapshot({ label: "archive-dual-statement" }))
       .recognitionEntries[0]?.recognition;
     if (recognition === undefined) throw new Error("expected demo recognition");
     const dualBundle = {

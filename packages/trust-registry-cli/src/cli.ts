@@ -243,7 +243,7 @@ const runInitDemo = async (argv: readonly string[], io: CliIo): Promise<number> 
     strict: true,
   });
   const outputPath = requireStringOption(parsed.values.output, "--output");
-  const snapshot = createDemoSnapshot(
+  const snapshot = await createDemoSnapshot(
     typeof parsed.values.label === "string"
       ? { label: parsed.values.label }
       : {},

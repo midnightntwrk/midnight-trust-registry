@@ -64,9 +64,9 @@ const currentRecognitionEntry = (
   evidence,
 });
 
-export const createDemoSnapshot = (
+export const createDemoSnapshot = async (
   input: DemoSnapshotOptions = {},
-): TrustRegistryOperatorSnapshot => {
+): Promise<TrustRegistryOperatorSnapshot> => {
   const label = input.label ?? "midnight";
   const harness = new LocalTrustRegistryIntegrationHarness(label);
 
@@ -81,68 +81,68 @@ export const createDemoSnapshot = (
     HISTORICAL_RECOGNITION_LABEL,
   );
 
-  harness.authorizeIssuer(activeIssuer);
-  harness.authorizeIssuer(historicalIssuer);
-  harness.suspendIssuer(historicalIssuer);
-  harness.revokeIssuer(historicalIssuer);
-  harness.archiveIssuer(historicalIssuer);
+  await harness.authorizeIssuer(activeIssuer);
+  await harness.authorizeIssuer(historicalIssuer);
+  await harness.suspendIssuer(historicalIssuer);
+  await harness.revokeIssuer(historicalIssuer);
+  await harness.archiveIssuer(historicalIssuer);
 
-  harness.authorizeVerifier(activeVerifier);
-  harness.authorizeVerifier(historicalVerifier);
-  harness.suspendVerifier(historicalVerifier);
-  harness.revokeVerifier(historicalVerifier);
-  harness.archiveVerifier(historicalVerifier);
+  await harness.authorizeVerifier(activeVerifier);
+  await harness.authorizeVerifier(historicalVerifier);
+  await harness.suspendVerifier(historicalVerifier);
+  await harness.revokeVerifier(historicalVerifier);
+  await harness.archiveVerifier(historicalVerifier);
 
-  harness.authorizeAuditor(activeAuditor);
-  harness.authorizeAuditor(historicalAuditor);
-  harness.suspendAuditor(historicalAuditor);
-  harness.revokeAuditor(historicalAuditor);
-  harness.archiveAuditor(historicalAuditor);
+  await harness.authorizeAuditor(activeAuditor);
+  await harness.authorizeAuditor(historicalAuditor);
+  await harness.suspendAuditor(historicalAuditor);
+  await harness.revokeAuditor(historicalAuditor);
+  await harness.archiveAuditor(historicalAuditor);
 
-  harness.authorizeRecognition(activeRecognition);
-  harness.authorizeRecognition(historicalRecognition);
-  harness.suspendRecognition(historicalRecognition);
-  harness.revokeRecognition(historicalRecognition);
-  harness.archiveRecognition(historicalRecognition);
+  await harness.authorizeRecognition(activeRecognition);
+  await harness.authorizeRecognition(historicalRecognition);
+  await harness.suspendRecognition(historicalRecognition);
+  await harness.revokeRecognition(historicalRecognition);
+  await harness.archiveRecognition(historicalRecognition);
 
   const issuerEntries = [
     currentIssuerEntry(
       ACTIVE_ISSUER_LABEL,
-      harness.evaluateCurrentIssuerDecision(activeIssuer),
+      await harness.evaluateCurrentIssuerDecision(activeIssuer),
     ),
     currentIssuerEntry(
       HISTORICAL_ISSUER_LABEL,
-      harness.buildIssuerHistoricalEvidence(historicalIssuer),
+      await harness.buildIssuerHistoricalEvidence(historicalIssuer),
     ),
   ];
   const verifierEntries = [
     currentVerifierEntry(
       ACTIVE_VERIFIER_LABEL,
-      harness.evaluateCurrentVerifierDecision(activeVerifier),
+      await harness.evaluateCurrentVerifierDecision(activeVerifier),
     ),
     currentVerifierEntry(
       HISTORICAL_VERIFIER_LABEL,
-      harness.buildVerifierHistoricalEvidence(historicalVerifier),
+      await harness.buildVerifierHistoricalEvidence(historicalVerifier),
     ),
   ];
   const auditorEntries = [
     currentAuditorEntry(
       ACTIVE_AUDITOR_LABEL,
-      harness.evaluateCurrentAuditorDecision(activeAuditor),
+      await harness.evaluateCurrentAuditorDecision(activeAuditor),
     ),
     currentAuditorEntry(
       HISTORICAL_AUDITOR_LABEL,
-      harness.buildAuditorHistoricalEvidence(historicalAuditor),
+      await harness.buildAuditorHistoricalEvidence(historicalAuditor),
     ),
   ];
   const recognitionEntries = [
     currentRecognitionEntry(
       ACTIVE_RECOGNITION_LABEL,
-      harness.evaluateCurrentRecognitionDecision(activeRecognition),
+      await harness.evaluateCurrentRecognitionDecision(activeRecognition),
     ),
     currentRecognitionEntry(
       HISTORICAL_RECOGNITION_LABEL,
-      harness.buildRecognitionHistoricalEvidence(historicalRecognition),
+      await harness.buildRecognitionHistoricalEvidence(historicalRecognition),
     ),
   ];
 

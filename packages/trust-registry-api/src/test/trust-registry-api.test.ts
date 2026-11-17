@@ -148,7 +148,7 @@ describe("trust registry api", () => {
   });
 
   it("omits wildcard CORS when the private-listener policy is selected", async () => {
-    const server = await startServer(createInMemorySource(createDemoSnapshot()), undefined, "none");
+    const server = await startServer(createInMemorySource(await createDemoSnapshot()), undefined, "none");
     try {
       for (const method of ["GET", "OPTIONS"]) {
         const response = await fetch(`${server.url}/health`, {
@@ -206,7 +206,7 @@ describe("trust registry api", () => {
   });
 
   it("keeps auditor current and historical lookups role-disjoint and scope-bound", async () => {
-    const snapshot = createDemoSnapshot({ label: "auditor-query" });
+    const snapshot = await createDemoSnapshot({ label: "auditor-query" });
     const [active, archived] = snapshot.auditorEntries;
     if (active === undefined || archived === undefined) {
       throw new Error("expected active and archived auditor fixtures");
@@ -592,7 +592,7 @@ describe("trust registry api", () => {
   });
 
   it("uses a record-specific evidence epoch despite another overlapping epoch", async () => {
-    const snapshot = createDemoSnapshot({ label: "epoch-mismatch" });
+    const snapshot = await createDemoSnapshot({ label: "epoch-mismatch" });
     const entry = snapshot.issuerEntries.find((candidate) => candidate.authorization.status === "active");
     if (entry === undefined) throw new Error("expected an active issuer");
     const evidenceEpoch = entry.evidence.epoch;
@@ -641,7 +641,7 @@ describe("trust registry api", () => {
   });
 
   it("uses the same instant for implicit and explicit TRQP requests without overstating an unaccepted root", async () => {
-    const snapshot = createDemoSnapshot({ label: "trqp-current-projection" });
+    const snapshot = await createDemoSnapshot({ label: "trqp-current-projection" });
     const entry = snapshot.issuerEntries.find((candidate) => candidate.authorization.status === "active");
     if (entry === undefined) throw new Error("expected an active issuer");
     const at = entry.evidence.epoch.validFrom;
@@ -723,7 +723,7 @@ describe("trust registry api", () => {
   });
 
   it("does not project an expired active authorization as trusted at snapshot time", async () => {
-    const snapshot = createDemoSnapshot({ label: "expired-current-trqp" });
+    const snapshot = await createDemoSnapshot({ label: "expired-current-trqp" });
     const entry = snapshot.issuerEntries.find((candidate) => candidate.authorization.status === "active");
     if (entry?.authorization.activeFrom === undefined) throw new Error("expected active issuer");
     const effectiveUntil = new Date(Date.parse(entry.authorization.activeFrom) + 1).toISOString();
@@ -769,7 +769,7 @@ describe("trust registry api", () => {
   });
 
   it("rejects epoch evidence one microsecond after validUntil", async () => {
-    const snapshot = createDemoSnapshot({ label: "submillisecond-evidence-expiry" });
+    const snapshot = await createDemoSnapshot({ label: "submillisecond-evidence-expiry" });
     const entry = snapshot.issuerEntries.find((candidate) => candidate.authorization.status === "active");
     if (entry === undefined) throw new Error("expected an active issuer");
     const justAfter = new Date(Date.parse(entry.evidence.epoch.validUntil)).toISOString().replace(/Z$/, "001Z");
@@ -792,7 +792,7 @@ describe("trust registry api", () => {
   });
 
   it("selects the newest authorization epoch beyond millisecond precision", async () => {
-    const snapshot = createDemoSnapshot({ label: "fractional-epoch-order" });
+    const snapshot = await createDemoSnapshot({ label: "fractional-epoch-order" });
     const entry = snapshot.issuerEntries.find((candidate) => candidate.authorization.status === "active");
     if (entry === undefined) throw new Error("expected active issuer evidence");
     const start = new Date(Date.parse(entry.evidence.epoch.validFrom) + 1).toISOString().slice(0, -1);
@@ -825,7 +825,7 @@ describe("trust registry api", () => {
   });
 
   it("selects the newest recognition epoch beyond millisecond precision", async () => {
-    const snapshot = createDemoSnapshot({ label: "fractional-recognition-epoch-order" });
+    const snapshot = await createDemoSnapshot({ label: "fractional-recognition-epoch-order" });
     const entry = snapshot.recognitionEntries[0];
     if (entry === undefined) throw new Error("expected recognition evidence");
     const start = new Date(Date.parse(entry.evidence.epoch.validFrom) + 1).toISOString().slice(0, -1);
@@ -859,7 +859,7 @@ describe("trust registry api", () => {
   });
 
   it("requires exact recognition context rather than treating omission as a wildcard", async () => {
-    const snapshot = createDemoSnapshot({ label: "recognition-context-lookup" });
+    const snapshot = await createDemoSnapshot({ label: "recognition-context-lookup" });
     const original = snapshot.recognitionEntries[0];
     if (original === undefined) throw new Error("expected recognition fixture");
     if (original.evidence.recognition === undefined) throw new Error("expected recognition evidence");
@@ -916,7 +916,7 @@ describe("trust registry api", () => {
   });
 
   it("reports the proved statement epoch when an unrelated epoch overlaps the instant", async () => {
-    const snapshot = createDemoSnapshot({ label: "overlapping-evidence-epoch" });
+    const snapshot = await createDemoSnapshot({ label: "overlapping-evidence-epoch" });
     const entry = snapshot.issuerEntries.find((candidate) => candidate.authorization.status === "active");
     if (entry === undefined) throw new Error("expected an active issuer");
     const at = new Date(Date.parse(entry.evidence.epoch.validFrom) + 1_000).toISOString();
@@ -1127,7 +1127,7 @@ describe("trust registry api", () => {
       await server.close();
     }
 
-    const verifier = createDemoSnapshot({ label: "dual-recognition-proof" })
+    const verifier = (await createDemoSnapshot({ label: "dual-recognition-proof" }))
       .verifierEntries[0]?.authorization;
     if (verifier === undefined) throw new Error("expected demo verifier");
     const dualBundle = {
