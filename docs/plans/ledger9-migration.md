@@ -462,11 +462,19 @@ then returned contract address
 `0xf80638c64dcf63138b222426549bedb122673391b414658854f2a04a92b5be09`
 at block 505. The node independently reports the receipt's block hash at
 height 505 and a finalized head beyond it; the API v4 indexer reports one
-`ContractDeploy` action for that address in the same block. Its transaction
-hash differs from the SDK receipt `txId`, so transaction-ID equivalence is not
-claimed. Read-only journal reconciliation reports `staged-bootstrap-pending`
-with a finalized contract image, not completed key installation or a qualified
-registry. The ignored `artifacts/ledger9-current-chain-smoke-state` journal and
+`ContractDeploy` action for that address in the same block. The SDK receipt
+`txId` is the second value in that `RegularTransaction.identifiers` array;
+the separate indexer `Transaction.hash` has a different value and must not be
+compared to the receipt ID. This independently links the receipt ID, block,
+and deployed address without equating the two hash fields. Read-only journal
+reconciliation reports `staged-bootstrap-pending` with a finalized contract
+image, not completed key installation or a qualified registry. The repeatable read-only
+`scripts/observe-local-deployment-inclusion.mjs <private-plan.json>` check
+requires the finalized node block, API v4 block, receipt identifier, and
+`ContractDeploy` address to agree. It describes the indexed transaction as
+indexer-reported, not as a cryptographic inclusion proof. Run it through the
+pinned `localnet:run` wrapper; it never submits a transaction. The ignored
+`artifacts/ledger9-current-chain-smoke-state` journal and
 `artifacts/ledger9-current-chain-pack` manifest must be preserved; never replay
 this deployment. No additional shared-chain write was approved in this step.
 
