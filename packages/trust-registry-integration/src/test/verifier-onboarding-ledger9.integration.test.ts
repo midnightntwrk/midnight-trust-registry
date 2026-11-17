@@ -15,6 +15,9 @@ describe("Ledger 9 verifier onboarding harness", () => {
     expect(activationHash).toHaveLength(32);
     expect((await harness.simulator.getVerifierAuthorization(verifier.authorizationIdCommitment)).status)
       .toBe(AuthorizationStatus.active);
+    const bundle = await harness.evaluateCurrentVerifierDecision(verifier);
+    expect(bundle.authorization?.status).toBe("active");
+    await harness.assertPublishedEpochEvidence(bundle);
     await harness.suspendVerifier(verifier);
     expect((await harness.simulator.getVerifierAuthorization(verifier.authorizationIdCommitment)).status)
       .toBe(AuthorizationStatus.suspended);
@@ -24,6 +27,6 @@ describe("Ledger 9 verifier onboarding harness", () => {
     await harness.archiveVerifier(verifier);
     expect((await harness.simulator.getVerifierAuthorization(verifier.authorizationIdCommitment)).status)
       .toBe(AuthorizationStatus.archived);
-    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before + 6n);
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before + 7n);
   });
 });

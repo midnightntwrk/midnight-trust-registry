@@ -15,6 +15,9 @@ describe("Ledger 9 recognition lifecycle harness", () => {
     expect(activationHash).toHaveLength(32);
     expect((await harness.simulator.getRecognition(recognition.recognitionIdCommitment)).status)
       .toBe(AuthorizationStatus.active);
+    const bundle = await harness.evaluateCurrentRecognitionDecision(recognition);
+    expect(bundle.recognition?.status).toBe("active");
+    await harness.assertPublishedEpochEvidence(bundle);
     await harness.suspendRecognition(recognition);
     expect((await harness.simulator.getRecognition(recognition.recognitionIdCommitment)).status)
       .toBe(AuthorizationStatus.suspended);
@@ -24,6 +27,6 @@ describe("Ledger 9 recognition lifecycle harness", () => {
     await harness.archiveRecognition(recognition);
     expect((await harness.simulator.getRecognition(recognition.recognitionIdCommitment)).status)
       .toBe(AuthorizationStatus.archived);
-    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before + 6n);
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before + 7n);
   });
 });

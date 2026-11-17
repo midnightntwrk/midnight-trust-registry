@@ -16,5 +16,15 @@ describe("Ledger 9 maintainer onboarding harness", () => {
     expect((await harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment)).status)
       .toBe(AuthorizationStatus.active);
     expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before + 3n);
+    await harness.suspendMaintainer(candidate);
+    expect((await harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment)).status)
+      .toBe(AuthorizationStatus.suspended);
+    await harness.revokeMaintainer(candidate);
+    expect((await harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment)).status)
+      .toBe(AuthorizationStatus.revoked);
+    await harness.archiveMaintainer(candidate);
+    expect((await harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment)).status)
+      .toBe(AuthorizationStatus.archived);
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before + 6n);
   });
 });

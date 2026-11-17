@@ -1844,7 +1844,7 @@ export class LocalTrustRegistryIntegrationHarness {
     return this.fixtureMaintainerDecision(fixture, "activate");
   }
 
-  suspendMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {
+  suspendMaintainer(fixture: MaintainerScenarioFixture): Promise<Uint8Array> {
     return this.updateMaintainerLifecycle(
       fixture,
       "suspend",
@@ -1852,7 +1852,7 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  revokeMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {
+  revokeMaintainer(fixture: MaintainerScenarioFixture): Promise<Uint8Array> {
     return this.updateMaintainerLifecycle(
       fixture,
       "revoke",
@@ -1860,7 +1860,7 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  archiveMaintainer(fixture: MaintainerScenarioFixture): Uint8Array {
+  archiveMaintainer(fixture: MaintainerScenarioFixture): Promise<Uint8Array> {
     return this.updateMaintainerLifecycle(
       fixture,
       "archive",
@@ -3008,36 +3008,36 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  evaluateCurrentIssuerDecision(
+  async evaluateCurrentIssuerDecision(
     fixture: IssuerScenarioFixture,
     options: { expectedRegistryId?: string } = {},
-  ): TrustRegistryEvidenceBundle {
-    this.assertSupportedContractFormat();
+  ): Promise<TrustRegistryEvidenceBundle> {
+    await this.assertSupportedContractFormat();
     this.assertRegistryId(options.expectedRegistryId);
-    this.simulator.assertIssuerAuthorized(
+    await this.simulator.assertIssuerAuthorized(
       fixture.subjectDidCommitment,
       fixture.resourceType,
       fixture.resourceIdCommitment,
     );
-    const bundle = this.buildIssuerHistoricalEvidence(fixture);
-    this.assertPublishedEpochEvidence(bundle);
+    const bundle = await this.buildIssuerHistoricalEvidence(fixture);
+    await this.assertPublishedEpochEvidence(bundle);
     return bundle;
   }
 
-  readIssuerAuthorizationStatus(
+  async readIssuerAuthorizationStatus(
     fixture: IssuerScenarioFixture,
-  ): AuthorizationRecord["status"] {
-    this.assertSupportedContractFormat();
+  ): Promise<AuthorizationRecord["status"]> {
+    await this.assertSupportedContractFormat();
     return contractStatusName(
-      this.simulator.getIssuerAuthorization(fixture.authorizationIdCommitment).status,
+      (await this.simulator.getIssuerAuthorization(fixture.authorizationIdCommitment)).status,
     );
   }
 
-  buildIssuerHistoricalEvidence(
+  async buildIssuerHistoricalEvidence(
     fixture: IssuerScenarioFixture,
-  ): TrustRegistryEvidenceBundle {
-    this.assertSupportedContractFormat();
-    const record = this.simulator.getIssuerAuthorization(
+  ): Promise<TrustRegistryEvidenceBundle> {
+    await this.assertSupportedContractFormat();
+    const record = await this.simulator.getIssuerAuthorization(
       fixture.authorizationIdCommitment,
     );
     const authorization = this.buildIssuerAuthorizationRecord(fixture, record);
@@ -3049,38 +3049,38 @@ export class LocalTrustRegistryIntegrationHarness {
     });
   }
 
-  evaluateCurrentVerifierDecision(
+  async evaluateCurrentVerifierDecision(
     fixture: VerifierScenarioFixture,
     options: { expectedRegistryId?: string } = {},
-  ): TrustRegistryEvidenceBundle {
-    this.assertSupportedContractFormat();
+  ): Promise<TrustRegistryEvidenceBundle> {
+    await this.assertSupportedContractFormat();
     this.assertRegistryId(options.expectedRegistryId);
-    this.simulator.assertVerifierAuthorized(
+    await this.simulator.assertVerifierAuthorized(
       fixture.subjectDidCommitment,
       fixture.requestResourceIdCommitment,
       fixture.allowedAttributeSetCommitment,
       fixture.allowedPredicateSetCommitment,
       fixture.disclosureLevelCommitment,
     );
-    const bundle = this.buildVerifierHistoricalEvidence(fixture);
-    this.assertPublishedEpochEvidence(bundle);
+    const bundle = await this.buildVerifierHistoricalEvidence(fixture);
+    await this.assertPublishedEpochEvidence(bundle);
     return bundle;
   }
 
-  readVerifierAuthorizationStatus(
+  async readVerifierAuthorizationStatus(
     fixture: VerifierScenarioFixture,
-  ): AuthorizationRecord["status"] {
-    this.assertSupportedContractFormat();
+  ): Promise<AuthorizationRecord["status"]> {
+    await this.assertSupportedContractFormat();
     return contractStatusName(
-      this.simulator.getVerifierAuthorization(fixture.authorizationIdCommitment).status,
+      (await this.simulator.getVerifierAuthorization(fixture.authorizationIdCommitment)).status,
     );
   }
 
-  buildVerifierHistoricalEvidence(
+  async buildVerifierHistoricalEvidence(
     fixture: VerifierScenarioFixture,
-  ): TrustRegistryEvidenceBundle {
-    this.assertSupportedContractFormat();
-    const record = this.simulator.getVerifierAuthorization(
+  ): Promise<TrustRegistryEvidenceBundle> {
+    await this.assertSupportedContractFormat();
+    const record = await this.simulator.getVerifierAuthorization(
       fixture.authorizationIdCommitment,
     );
     const authorization = this.buildVerifierAuthorizationRecord(fixture, record);
@@ -3092,53 +3092,53 @@ export class LocalTrustRegistryIntegrationHarness {
     });
   }
 
-  evaluateCurrentAuditorDecision(
+  async evaluateCurrentAuditorDecision(
     fixture: AuditorScenarioFixture,
     options: { expectedRegistryId?: string } = {},
-  ): TrustRegistryEvidenceBundle {
-    this.assertSupportedContractFormat();
+  ): Promise<TrustRegistryEvidenceBundle> {
+    await this.assertSupportedContractFormat();
     this.assertRegistryId(options.expectedRegistryId);
-    this.simulator.assertAuditorAuthorized(
+    await this.simulator.assertAuditorAuthorized(
       fixture.subjectDidCommitment,
       fixture.requestResourceIdCommitment,
       fixture.allowedAttributeSetCommitment,
       fixture.allowedPredicateSetCommitment,
       fixture.disclosureLevelCommitment,
     );
-    const bundle = this.buildAuditorHistoricalEvidence(fixture);
-    this.assertPublishedEpochEvidence(bundle);
+    const bundle = await this.buildAuditorHistoricalEvidence(fixture);
+    await this.assertPublishedEpochEvidence(bundle);
     return bundle;
   }
 
-  evaluateCurrentRecognitionDecision(
+  async evaluateCurrentRecognitionDecision(
     fixture: RecognitionScenarioFixture,
     options: { expectedRegistryId?: string } = {},
-  ): TrustRegistryEvidenceBundle {
-    this.assertSupportedContractFormat();
+  ): Promise<TrustRegistryEvidenceBundle> {
+    await this.assertSupportedContractFormat();
     this.assertRegistryId(options.expectedRegistryId);
-    this.simulator.assertRecognitionActive(
+    await this.simulator.assertRecognitionActive(
       fixture.recognizedAuthorityDidCommitment,
       fixture.recognizedRegistryIdCommitment,
       fixture.scopeResourceTypeCommitment,
       fixture.scopeResourceIdCommitment,
     );
-    const bundle = this.buildRecognitionHistoricalEvidence(fixture);
-    this.assertPublishedEpochEvidence(bundle);
+    const bundle = await this.buildRecognitionHistoricalEvidence(fixture);
+    await this.assertPublishedEpochEvidence(bundle);
     return bundle;
   }
 
-  assertPublishedEpochEvidence(
+  async assertPublishedEpochEvidence(
     bundle: TrustRegistryEvidenceBundle,
     options: { evaluationTime?: string } = {},
-  ): void {
-    const ledger = this.assertSupportedContractFormat();
+  ): Promise<void> {
+    const ledger = await this.assertSupportedContractFormat();
     this.assertRegistryId(bundle.registryId);
     const versionMatch = /^v([1-9]\d*)$/.exec(bundle.policy.version);
     if (versionMatch === null) {
       throw new Error("Policy version is invalid");
     }
     const version = BigInt(versionMatch[1]!);
-    const epochRecord = this.simulator.getEpochCommitment(
+    const epochRecord = await this.simulator.getEpochCommitment(
       bytes32Commitment(bundle.epoch.epochId),
     );
     const expectedStateRoot = bytes32Hex(epochRecord.stateRoot);
@@ -3228,9 +3228,7 @@ export class LocalTrustRegistryIntegrationHarness {
       epochRecord.validFromSequence,
       epochRecord.validUntilSequence,
     );
-    const maintainerRecord = this.simulator
-      .getLedger()
-      .maintainerRecords.lookup(epochRecord.maintainerKeyId);
+    const maintainerRecord = ledger.maintainerRecords.lookup(epochRecord.maintainerKeyId);
     if (
       !(epochRecord.publicationPolicyCommitment instanceof Uint8Array)
       || epochRecord.publicationPolicyCommitment.length !== 32
@@ -3244,7 +3242,7 @@ export class LocalTrustRegistryIntegrationHarness {
       verified = verifyDeploymentBoundMaintainerAction(
         maintainerRecord.publicKey,
         this.registryIdCommitment,
-        this.simulator.getLedger().deploymentNetworkIdCommitment,
+        ledger.deploymentNetworkIdCommitment,
         Buffer.from(this.simulator.contractAddress, "hex"),
         epochRecord.publicationPolicyCommitment,
         CREATE_EPOCH_ACTION_KIND,
@@ -3260,11 +3258,11 @@ export class LocalTrustRegistryIntegrationHarness {
     }
   }
 
-  buildRecognitionHistoricalEvidence(
+  async buildRecognitionHistoricalEvidence(
     fixture: RecognitionScenarioFixture,
-  ): TrustRegistryEvidenceBundle {
-    this.assertSupportedContractFormat();
-    const record = this.simulator.getRecognition(fixture.recognitionIdCommitment);
+  ): Promise<TrustRegistryEvidenceBundle> {
+    await this.assertSupportedContractFormat();
+    const record = await this.simulator.getRecognition(fixture.recognitionIdCommitment);
     const recognition = this.buildRecognitionRecord(fixture, record);
     return this.buildEvidenceBundle({
       subjectDid: fixture.recognizedAuthorityDid,
@@ -3273,20 +3271,20 @@ export class LocalTrustRegistryIntegrationHarness {
     });
   }
 
-  readRecognitionStatus(
+  async readRecognitionStatus(
     fixture: RecognitionScenarioFixture,
-  ): RecognitionRecord["status"] {
-    this.assertSupportedContractFormat();
+  ): Promise<RecognitionRecord["status"]> {
+    await this.assertSupportedContractFormat();
     return contractStatusName(
-      this.simulator.getRecognition(fixture.recognitionIdCommitment).status,
+      (await this.simulator.getRecognition(fixture.recognitionIdCommitment)).status,
     );
   }
 
-  buildAuditorHistoricalEvidence(
+  async buildAuditorHistoricalEvidence(
     fixture: AuditorScenarioFixture,
-  ): TrustRegistryEvidenceBundle {
-    this.assertSupportedContractFormat();
-    const record = this.simulator.getAuditorAuthorization(
+  ): Promise<TrustRegistryEvidenceBundle> {
+    await this.assertSupportedContractFormat();
+    const record = await this.simulator.getAuditorAuthorization(
       fixture.authorizationIdCommitment,
     );
     const authorization = this.buildAuditorAuthorizationRecord(fixture, record);
@@ -3297,19 +3295,20 @@ export class LocalTrustRegistryIntegrationHarness {
     });
   }
 
-  private updateMaintainerLifecycle(
+  private async updateMaintainerLifecycle(
     fixture: MaintainerScenarioFixture,
     actionName: "suspend" | "revoke" | "archive",
     actionKind: Uint8Array,
-  ): Uint8Array {
+  ): Promise<Uint8Array> {
+    await this.ready;
     const evidenceHash = bytes32Commitment(
       `${fixture.maintainerId}:${actionName}`,
     );
-    const currentRecord = this.simulator.getMaintainerMembership(
+    const currentRecord = await this.simulator.getMaintainerMembership(
       fixture.maintainerIdCommitment,
     );
-    const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const signature = this.signMaintainerActionFromSeed(
+    const actionSequence = (await this.simulator.getLedger()).governanceActionCount;
+    const signature = await this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
       actionKind,
@@ -3742,12 +3741,12 @@ export class LocalTrustRegistryIntegrationHarness {
     return revision;
   }
 
-  private prepareEpochPublicationAction(input: {
+  private async prepareEpochPublicationAction(input: {
     statementLeafHash: string;
     lastStatusSequence: bigint;
     lifecycleEventRoot: string;
-  }): PreparedRegistryEpochPublicationAction {
-    this.assertSupportedContractFormat();
+  }): Promise<PreparedRegistryEpochPublicationAction> {
+    const ledger = await this.assertSupportedContractFormat();
     const epochId = createScopedIdentifier("epoch", this.registryId,
       `seq-${input.lastStatusSequence.toString()}`);
     const epochIdCommitment = bytes32Commitment(epochId);
@@ -3761,16 +3760,16 @@ export class LocalTrustRegistryIntegrationHarness {
     return {
       epochId,
       registryId: Uint8Array.from(this.registryIdCommitment),
-      networkIdCommitment: Uint8Array.from(this.simulator.getLedger().deploymentNetworkIdCommitment),
+      networkIdCommitment: Uint8Array.from(ledger.deploymentNetworkIdCommitment),
       contractAddress: Buffer.from(this.simulator.contractAddress, "hex"),
       epochIdCommitment,
-      policyCommitment: Uint8Array.from(this.simulator.getLedger().governancePolicyCommitment),
+      policyCommitment: Uint8Array.from(ledger.governancePolicyCommitment),
       actionKind: Uint8Array.from(CREATE_EPOCH_ACTION_KIND),
       actionPayloadHash: computeCreateEpochCommitmentPayloadHash(
         epochIdCommitment, stateRoot, eventRoot, policyRoot,
         validFromSequence, validUntilSequence,
       ),
-      actionSequence: this.simulator.getLedger().governanceActionCount,
+      actionSequence: ledger.governanceActionCount,
       stateRoot,
       eventRoot,
       policyRoot,
@@ -3779,8 +3778,8 @@ export class LocalTrustRegistryIntegrationHarness {
     };
   }
 
-  prepareRegistryEpochPublicationAction(label = "registry-current"): PreparedRegistryEpochPublicationAction {
-    const ledger = this.assertSupportedContractFormat();
+  async prepareRegistryEpochPublicationAction(label = "registry-current"): Promise<PreparedRegistryEpochPublicationAction> {
+    const ledger = await this.assertSupportedContractFormat();
     const statementId = createScopedIdentifier("registry-snapshot", this.registryId, label);
     return this.prepareEpochPublicationAction({
       statementLeafHash: computeRegistryStatementLeafHash({
@@ -3795,13 +3794,13 @@ export class LocalTrustRegistryIntegrationHarness {
   }
 
   /** Compact verifies the active maintainer keys, signatures, policy, sequence, and quorum. */
-  executeRegistryEpochPublicationWithSignatures(
+  async executeRegistryEpochPublicationWithSignatures(
     label: string,
     signers: readonly MaintainerCoAuthorizer[],
-  ): EpochCommitment {
+  ): Promise<EpochCommitment> {
     const primary = signers[0];
     if (primary === undefined) throw new Error("Epoch publication requires a maintainer signature");
-    const prepared = this.prepareRegistryEpochPublicationAction(label);
+    const prepared = await this.prepareRegistryEpochPublicationAction(label);
     const signersWithDids = signers.map((signer) => {
       const maintainer = [...this.knownMaintainers.values()].find((candidate) =>
         sameBytes(candidate.keyId, signer.keyId));
@@ -3810,7 +3809,7 @@ export class LocalTrustRegistryIntegrationHarness {
     }).sort((left, right) => compareMaintainerKeyIds(
       left.signer.keyId, right.signer.keyId,
     ));
-    const eventHash = this.simulator.publishEpochCommitment(
+    const eventHash = await this.simulator.publishEpochCommitment(
       primary.keyId, primary.publicKey, primary.signature,
       prepared.epochIdCommitment, prepared.stateRoot, prepared.eventRoot,
       prepared.policyRoot, prepared.validFromSequence, prepared.validUntilSequence,
@@ -3825,42 +3824,42 @@ export class LocalTrustRegistryIntegrationHarness {
       })),
     });
     return this.buildEpochCommitment(prepared.epochId,
-      this.simulator.getEpochCommitment(prepared.epochIdCommitment));
+      await this.simulator.getEpochCommitment(prepared.epochIdCommitment));
   }
 
-  private ensurePublishedEpochCommitment(input: {
+  private async ensurePublishedEpochCommitment(input: {
     statementId: string;
     statementLeafHash: string;
     lastStatusSequence: bigint;
     lifecycleEventRoot: string;
     statementStatus: string;
-  }): EpochCommitment {
-    const prepared = this.prepareEpochPublicationAction(input);
+  }): Promise<EpochCommitment> {
+    const prepared = await this.prepareEpochPublicationAction(input);
 
     let record: ContractEpochCommitmentRecord;
     try {
-      record = this.simulator.getEpochCommitment(prepared.epochIdCommitment);
+      record = await this.simulator.getEpochCommitment(prepared.epochIdCommitment);
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
       if (!/not registered/i.test(message)) {
         throw error;
       }
 
-      const signature = this.signMaintainerActionFromSeed(
+      const signature = await this.signMaintainerActionFromSeed(
         this.bootstrapMaintainer.seed,
         prepared.registryId,
         prepared.actionKind,
         prepared.actionPayloadHash,
         prepared.actionSequence,
       );
-      const coMaintainers = this.activeDefaultQuorumCoMaintainers();
-      const coAuthorizers = this.maintainerCoAuthorizers(
+      const coMaintainers = await this.activeDefaultQuorumCoMaintainers();
+      const coAuthorizers = await this.maintainerCoAuthorizers(
         coMaintainers,
         prepared.actionKind,
         prepared.actionPayloadHash,
         prepared.actionSequence,
       );
-      const eventHash = this.simulator.publishEpochCommitment(
+      const eventHash = await this.simulator.publishEpochCommitment(
         this.bootstrapMaintainer.keyId,
         this.bootstrapPublicKey,
         signature,
@@ -3872,7 +3871,7 @@ export class LocalTrustRegistryIntegrationHarness {
         prepared.validUntilSequence,
         coAuthorizers,
       );
-      record = this.simulator.getEpochCommitment(prepared.epochIdCommitment);
+      record = await this.simulator.getEpochCommitment(prepared.epochIdCommitment);
       this.epochPublicationWitnesses.set(prepared.epochId, {
         eventHash: bytes32Hex(eventHash),
         signatures: [
@@ -3895,8 +3894,8 @@ export class LocalTrustRegistryIntegrationHarness {
     return this.buildEpochCommitment(prepared.epochId, record);
   }
 
-  publishRegistryEpoch(label = "registry-current"): EpochCommitment {
-    const ledger = this.assertSupportedContractFormat();
+  async publishRegistryEpoch(label = "registry-current"): Promise<EpochCommitment> {
+    const ledger = await this.assertSupportedContractFormat();
     const statementId = createScopedIdentifier("registry-snapshot", this.registryId, label);
     return this.ensurePublishedEpochCommitment({
       statementId,
@@ -3912,15 +3911,15 @@ export class LocalTrustRegistryIntegrationHarness {
     });
   }
 
-  getEpochPublicationWitness(epochId: string): {
+  async getEpochPublicationWitness(epochId: string): Promise<{
     eventHash: string;
     signatures: Array<{ keyId: string; algorithm: "jubjub-schnorr"; signature: string }>;
-  } {
+  }> {
     const witness = this.epochPublicationWitnesses.get(epochId);
     if (witness === undefined) {
       throw new Error("Epoch publication witness is not available in this simulator session");
     }
-    const record = this.simulator.getEpochCommitment(bytes32Commitment(epochId));
+    const record = await this.simulator.getEpochCommitment(bytes32Commitment(epochId));
     if (bytes32Hex(record.publicationEventHash) !== witness.eventHash) {
       throw new Error("Epoch publication witness does not match the ledger event");
     }
@@ -3930,9 +3929,9 @@ export class LocalTrustRegistryIntegrationHarness {
     };
   }
 
-  getPublishedEpochCommitment(epochId: string): EpochCommitment {
+  async getPublishedEpochCommitment(epochId: string): Promise<EpochCommitment> {
     return this.buildEpochCommitment(epochId,
-      this.simulator.getEpochCommitment(bytes32Commitment(epochId)));
+      await this.simulator.getEpochCommitment(bytes32Commitment(epochId)));
   }
 
   private buildEpochCommitment(
@@ -3965,14 +3964,14 @@ export class LocalTrustRegistryIntegrationHarness {
     });
   }
 
-  private buildEvidenceBundle(input: {
+  private async buildEvidenceBundle(input: {
     subjectDid: string;
     lastStatusSequence: bigint;
     authorization?: AuthorizationRecord;
     recognition?: RecognitionRecord;
     referencedStatusRegistryId?: string;
     statusPolicyBinding?: IssuerStatusPolicyBinding;
-  }): TrustRegistryEvidenceBundle {
+  }): Promise<TrustRegistryEvidenceBundle> {
     const bundleRole = input.authorization?.role ?? "recognition";
     const bundleSubjectId =
       input.authorization?.authorizationId ?? input.recognition?.recognitionId;
@@ -3985,7 +3984,7 @@ export class LocalTrustRegistryIntegrationHarness {
       input.authorization !== undefined
         ? computeAuthorizationStatementLeafHash(input.authorization)
         : computeRecognitionStatementLeafHash(input.recognition!);
-    const epoch = this.ensurePublishedEpochCommitment({
+    const epoch = await this.ensurePublishedEpochCommitment({
       statementId: bundleSubjectId ?? "missing",
       statementLeafHash: leafHash,
       lastStatusSequence: input.lastStatusSequence,

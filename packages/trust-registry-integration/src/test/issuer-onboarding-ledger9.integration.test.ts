@@ -19,6 +19,10 @@ describe("Ledger 9 issuer onboarding harness", () => {
     expect((await harness.simulator.getIssuerAuthorization(issuer.authorizationIdCommitment)).status)
       .toBe(AuthorizationStatus.active);
     expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before + 3n);
+    const bundle = await harness.evaluateCurrentIssuerDecision(issuer);
+    expect(bundle.authorization?.status).toBe("active");
+    await harness.assertPublishedEpochEvidence(bundle);
+    expect((await harness.getEpochPublicationWitness(bundle.epoch.epochId)).signatures).toHaveLength(1);
 
     await harness.suspendIssuer(issuer);
     expect((await harness.simulator.getIssuerAuthorization(issuer.authorizationIdCommitment)).status)
@@ -29,6 +33,6 @@ describe("Ledger 9 issuer onboarding harness", () => {
     await harness.archiveIssuer(issuer);
     expect((await harness.simulator.getIssuerAuthorization(issuer.authorizationIdCommitment)).status)
       .toBe(AuthorizationStatus.archived);
-    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before + 6n);
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before + 7n);
   });
 });

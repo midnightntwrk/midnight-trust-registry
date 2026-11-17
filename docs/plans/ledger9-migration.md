@@ -115,6 +115,14 @@ their Ledger 9 simulator calls. Separate focused tests cover active, suspended,
 revoked, and archived states for each role. Recognition's signed external
 authority assertion is still a distinct integration path and is not qualified
 by the fixture-based recognition lifecycle test.
+Epoch publication, witness readback, and evidence-bundle assembly now await
+the Ledger 9 simulator. Focused issuer, verifier, auditor, and recognition
+tests verify active decision bundles against their published epoch roots and
+maintainer signatures; publishing an epoch adds a governance action. The
+integration harness source has no TypeScript diagnostics, but the package
+typecheck remains red because historical tests and other callers still use
+synchronous return values. These are simulated epochs, not finalized chain
+receipts.
 Readback-only paths use their explicit network and receipt. A strict helper
 encodes the tagged Compact runtime Schnorr verifying key into the policy's
 canonical `0x`-prefixed hex; its focused tests and integration lint pass.

@@ -15,6 +15,9 @@ describe("Ledger 9 auditor onboarding harness", () => {
     expect(activationHash).toHaveLength(32);
     expect((await harness.simulator.getAuditorAuthorization(auditor.authorizationIdCommitment)).status)
       .toBe(AuthorizationStatus.active);
+    const bundle = await harness.evaluateCurrentAuditorDecision(auditor);
+    expect(bundle.authorization?.status).toBe("active");
+    await harness.assertPublishedEpochEvidence(bundle);
     await harness.suspendAuditor(auditor);
     expect((await harness.simulator.getAuditorAuthorization(auditor.authorizationIdCommitment)).status)
       .toBe(AuthorizationStatus.suspended);
@@ -24,6 +27,6 @@ describe("Ledger 9 auditor onboarding harness", () => {
     await harness.archiveAuditor(auditor);
     expect((await harness.simulator.getAuditorAuthorization(auditor.authorizationIdCommitment)).status)
       .toBe(AuthorizationStatus.archived);
-    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before + 6n);
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before + 7n);
   });
 });
