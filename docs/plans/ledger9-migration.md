@@ -69,7 +69,9 @@ requires the complete generated circuit catalog and every finalized verifier
 key hash to match the selected source-matched release manifest; it reports that
 manifest's source revision. Without `--manifest`, the numeric key count alone
 does not establish a source match. This local manifest comparison is not an
-independent signature or release approval check.
+independent signature or release approval check. The output includes the
+finalized `publishedEpochCount`; an active fixture issuer with zero published
+epochs cannot satisfy the governed VP decision-evidence path.
 
 Run any shared-stack development workload through
 `pnpm localnet:run -- <command> [args...]`. This wrapper performs the same
@@ -603,7 +605,9 @@ unqualified on this chain.
 At indexed height 2744, the pinned read-only Registry command with the
 source-matched `e51c6de9` manifest confirmed exact equality for all 66
 finalized verifier-key hashes, maintenance counter 65, and the active fixture
-issuer. This comparison did not submit a transaction or qualify live VP intake.
+issuer. A separate finalized read found `epochCommitmentCount` zero, so no
+accepted decision epoch exists on this chain for the governed VP eligibility
+reader. These reads did not submit a transaction or qualify live VP intake.
 
 ## Execution order
 
