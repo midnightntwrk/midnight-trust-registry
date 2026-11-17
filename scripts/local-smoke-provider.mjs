@@ -2,7 +2,6 @@ import { sampleSigningKey } from "@midnight-ntwrk/compact-runtime";
 import { httpClientProofProvider } from "@midnight-ntwrk/midnight-js-http-client-proof-provider";
 import { indexerPublicDataProvider } from "@midnight-ntwrk/midnight-js-indexer-public-data-provider";
 import { NodeZkConfigProvider } from "@midnight-ntwrk/midnight-js-node-zk-config-provider";
-import { DustSecretKey, ZswapSecretKeys } from "@midnight-ntwrk/midnight-js-protocol/v9";
 import {
   FluentWalletBuilder,
   inMemoryPrivateStateProvider,
@@ -87,6 +86,10 @@ export async function loadOrCreateSmokeMaintenanceKey(directory) {
   return key;
 }
 
+export async function connectSmokeWallet(logger, environment, built, withWallet = MidnightWalletProvider.withWallet) {
+  return withWallet(logger, environment, built.wallet, built.seeds, built.keystore);
+}
+
 async function createLocalWalletMaterial({ network }, env = process.env) {
   const config = validateLocalSmokeEnvironment(network, env);
   const nodeWs = new URL(network.rpcUrl);
@@ -104,12 +107,7 @@ async function createLocalWalletMaterial({ network }, env = process.env) {
   globalThis.WebSocket = WebSocket;
   const built = await FluentWalletBuilder.forEnvironment(walletEnvironment)
     .withSeed(config.walletSeed).buildWithoutStarting();
-  const wallet = await MidnightWalletProvider.withWallet(
-    SILENT_LOGGER, walletEnvironment, built.wallet,
-    ZswapSecretKeys.fromSeed(built.seeds.shielded),
-    DustSecretKey.fromSeed(built.seeds.dust),
-    built.keystore,
-  );
+  const wallet = await connectSmokeWallet(SILENT_LOGGER, walletEnvironment, built);
   try {
     await wallet.start(false);
     await syncWallet(wallet.wallet, 1_000, 300_000);

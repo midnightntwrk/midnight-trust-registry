@@ -5,10 +5,23 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import {
+  connectSmokeWallet,
   loadOrCreateSmokeMaintenanceKey,
   PUBLIC_LOCAL_SMOKE_SEED,
   validateLocalSmokeEnvironment,
 } from "./local-smoke-provider.mjs";
+
+test("Ledger 9 smoke provider passes WalletSeeds to testkit-js v5", async () => {
+  const logger = { marker: "logger" };
+  const env = { marker: "environment" };
+  const built = { wallet: { marker: "wallet" }, seeds: { marker: "seeds" }, keystore: { marker: "keystore" } };
+  const connected = { marker: "connected" };
+  const result = await connectSmokeWallet(logger, env, built, async (...args) => {
+    assert.deepEqual(args, [logger, env, built.wallet, built.seeds, built.keystore]);
+    return connected;
+  });
+  assert.equal(result, connected);
+});
 
 const network = {
   networkId: "undeployed",

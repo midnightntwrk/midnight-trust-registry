@@ -362,6 +362,13 @@ failure, not an application failure. These are local full-artifact and fixture
 results, not proof of a deployed contract, finalized transaction, or live
 actor journey.
 
+The development-only `local-smoke-provider` also needed the testkit-js 5.0.0
+wallet API: `MidnightWalletProvider.withWallet` now receives the complete
+`WalletSeeds` object, not separate shielded and DUST secret keys. A read-only
+live probe then synchronized the public local test wallet and observed
+spendable NIGHT and DUST on this dedicated Ledger 9 stack. It did not open a
+maintenance key, submit a transaction, deploy the registry, or approve genesis.
+
 ## Execution order
 
 1. Keep the `ledger8` source branch only as a historical reference. Ledger 9
