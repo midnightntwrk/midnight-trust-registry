@@ -105,8 +105,8 @@ const sign = (maintainer, prepared, sourceHarness = harness) => {
     signature: asHex(encodeJubjubSignature(signature)),
   };
 };
-const signCompact = (maintainer, prepared, sourceHarness = harness, policyCommitment) => {
-  const ledger = sourceHarness.simulator.getLedger();
+const signCompact = async (maintainer, prepared, sourceHarness = harness, policyCommitment) => {
+  const ledger = await sourceHarness.simulator.getLedger();
   return {
     keyId: maintainer.keyId,
     publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
@@ -134,7 +134,7 @@ const expectedAdversarialCaseCount = 198;
 await runMaintainerSafetyScenarios(adversarialMatrix, signCompact);
 
 const { denialEventHash, deniedIssuer, deniedBundle, replacementIssuer, replacementProposalEventHash } =
-  runDenialSafetyScenario(adversarialMatrix, signCompact);
+  await runDenialSafetyScenario(adversarialMatrix, signCompact);
 
 await runApplicationEvidenceSafetyScenarios(adversarialMatrix);
 
