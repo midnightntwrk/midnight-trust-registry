@@ -368,6 +368,9 @@ wallet API: `MidnightWalletProvider.withWallet` now receives the complete
 live probe then synchronized the public local test wallet and observed
 spendable NIGHT and DUST on this dedicated Ledger 9 stack. It did not open a
 maintenance key, submit a transaction, deploy the registry, or approve genesis.
+The provider set also now includes Midnight.js 5's required network ID and
+3600-second transaction TTL; a second live probe confirmed the constructed
+provider exposes those values without making a write.
 
 ## Execution order
 

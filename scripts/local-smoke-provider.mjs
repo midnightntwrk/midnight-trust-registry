@@ -90,6 +90,10 @@ export async function connectSmokeWallet(logger, environment, built, withWallet 
   return withWallet(logger, environment, built.wallet, built.seeds, built.keystore);
 }
 
+export function localSmokeMidnightConfig(network) {
+  return { networkId: network.networkId, ttlSeconds: 3600 };
+}
+
 async function createLocalWalletMaterial({ network }, env = process.env) {
   const config = validateLocalSmokeEnvironment(network, env);
   const nodeWs = new URL(network.rpcUrl);
@@ -120,6 +124,7 @@ async function createLocalWalletMaterial({ network }, env = process.env) {
     const contractDist = dirname(fileURLToPath(import.meta.resolve("@midnight-ntwrk/trust-registry-contract")));
     const zkConfig = new NodeZkConfigProvider(join(contractDist, "managed", "trust-registry"));
     const providers = {
+      config: localSmokeMidnightConfig(network),
       privateStateProvider: inMemoryPrivateStateProvider(),
       publicDataProvider: indexerPublicDataProvider(network.indexerHttpUrl, network.indexerWsUrl),
       zkConfigProvider: zkConfig,

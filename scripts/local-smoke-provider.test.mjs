@@ -6,6 +6,7 @@ import { test } from "node:test";
 
 import {
   connectSmokeWallet,
+  localSmokeMidnightConfig,
   loadOrCreateSmokeMaintenanceKey,
   PUBLIC_LOCAL_SMOKE_SEED,
   validateLocalSmokeEnvironment,
@@ -21,6 +22,10 @@ test("Ledger 9 smoke provider passes WalletSeeds to testkit-js v5", async () => 
     return connected;
   });
   assert.equal(result, connected);
+});
+
+test("Ledger 9 smoke provider pins the local network and transaction TTL", () => {
+  assert.deepEqual(localSmokeMidnightConfig(network), { networkId: "undeployed", ttlSeconds: 3600 });
 });
 
 const network = {
