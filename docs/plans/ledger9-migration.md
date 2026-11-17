@@ -19,7 +19,7 @@ qualification claim. The historical Ledger 8 source is the `ledger8` branch at
 | `@midnightntwrk/ledger-v9` | 1.0.0 | Required for new Ledger 9 transactions |
 | `@midnightntwrk/onchain-runtime-v4` | 4.0.0 | Required where directly consumed |
 | Midnight DID | exact 1.0.0-rc1 cohort | Published and installed locally under four dated, exact-version age exceptions |
-| VC Compact and DID binding | PR #755 source, 0.4.0 artifacts | Built from exact PR head locally; not merged or published to npm |
+| VC Compact and DID binding | published 1.0.0-rc1 | Exact versions installed from npm; packed Registry consumer and fixture journeys pass, deployed VP actor journey unqualified |
 
 ## Localnet ownership and attach
 
@@ -44,6 +44,10 @@ proof-server `9.0.2`. The WebSocket URL in its output is derived from the
 verified API v4 HTTP endpoint but is not itself handshake-tested. A passing
 attach is infrastructure evidence only, not a registry deployment or
 proof-submission test.
+The shared chain is a multi-user development network. Sessions must preserve
+separate wallets and journals, pin a non-genesis checkpoint before relying on
+prior deployment records, and treat unrelated transactions or changing head
+height as normal. Never reset or restart it to make a Registry test pass.
 
 Run any shared-stack development workload through
 `pnpm localnet:run -- <command> [args...]`. This wrapper performs the same
@@ -145,8 +149,17 @@ identity runtime gate (23 tests), documentation and security-script checks,
 and `integration:prebuilt` passed with the published VC RC1 pins. The prebuilt
 run found 66 full proof circuits and passed 378 integration, 111 API, 72
 applicant-portal, and 31 admin-console tests plus signed simulator journeys.
-This removes the VC tarball portability blocker, not the need for packed-package
-validation or finalized on-ledger actor evidence.
+This removes the VC tarball portability blocker, but does not establish
+finalized on-ledger actor evidence.
+
+At local head `4afefc41`, the full-artifact check found all 66 proof circuits,
+the ten Registry package-content checks passed, and a separate clean-install
+smoke from ten freshly packed tarballs passed the Ledger 9 VC consumer fixture
+and signed issuer, verifier, auditor, maintainer, and recognition fixture
+journeys. The tarballs were built in an exclusive temporary target rather than
+replacing the source-matched current-chain pack. This closes the packed-package
+portability check for the published VC RC1 pins, but none of these fixture
+journeys submitted to or read finalized actor state from the shared chain.
 
 Current compile evidence is limited to `compact:light`. The test simulator now
 awaits generated `initialState` and impure circuits, serializes calls, and
