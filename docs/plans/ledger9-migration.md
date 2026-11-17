@@ -15,7 +15,7 @@ qualification claim. The historical Ledger 8 source is the `ledger8` branch at
 | Compact compiler | 0.36.0 | Pinned Nix toolchain builds; contract compiles with `--skip-zk` after source type fixes |
 | Compact runtime | 0.21.0 | Locally installed with exact DID RC1 and VC PR #755 artifacts; runtime validation incomplete |
 | Midnight.js / testkit-js | 5.0.0 | Locally installed; provider and async circuit API migration incomplete |
-| Compact.js | 3.0.0 | Locally installed; core simulator is async, but client/caller migration remains |
+| Compact.js | 3.0.0 | Locally installed; core simulator and simulator client are async, but test/integration callers remain |
 | `@midnightntwrk/ledger-v9` | 1.0.0 | Required for new Ledger 9 transactions |
 | `@midnightntwrk/onchain-runtime-v4` | 4.0.0 | Required where directly consumed |
 | Midnight DID | exact 1.0.0-rc1 cohort | Published and installed locally under four dated, exact-version age exceptions |
@@ -75,9 +75,11 @@ encodes the tagged Compact runtime Schnorr verifying key into the policy's
 canonical `0x`-prefixed hex; its focused tests and integration lint pass.
 This is only a partial migration: `public-maintenance-transition` and test
 fixtures still use the removed network-ID package, and other SDK 5 transaction
-and state-read APIs still require changes. The simulator client and its callers
-also need async conversion. The full integration package typecheck remains red;
-these source edits are not deployment evidence.
+and state-read APIs still require changes. The simulator client now awaits
+ledger reads and bundle context; its source-only build, focused async tests,
+and lint pass. Existing client tests and the integration harness still assume
+synchronous results. The full client and integration package typechecks remain
+red; these source edits are not deployment evidence.
 
 Docker Desktop did not answer `docker info` during this local pass. No Ledger 9
 container, live RPC, indexer, or proof-server claim follows from the Compose
