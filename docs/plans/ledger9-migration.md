@@ -561,6 +561,14 @@ action, not a live DID/VC evidence journey or release qualification. The public
 test wallet is shared with other sessions; later actor writes need an exclusive
 funded session wallet and their own journals.
 
+The next issuer-intake preflight used the finalized evidence-verifier key,
+fixture-only evidence commitment, and separate issuer DID. The deployed
+`proposeIssuerAuthorization` circuit passed a full-contract proof and wallet
+balance, then reached a hard-failing `submitTx` stub. This confirms that the
+current chain and compiled circuit accept the signed fixture inputs, but no
+issuer proposal was broadcast or finalized. It does not establish live VP
+verification or the complete issuer workflow.
+
 ## Execution order
 
 1. Keep the `ledger8` source branch only as a historical reference. Ledger 9
