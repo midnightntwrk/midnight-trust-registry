@@ -93,7 +93,7 @@ describe("public decision-evidence query", () => {
     const evidence = fixture(harness);
     let served: unknown = evidence;
     const server = createTrustRegistryApiServer({
-      source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "decision-query" }) },
+      source: { mode: "memory", loadSnapshot: async () => await publishSimulatorSnapshot(harness, { label: "decision-query" }) },
       readDecisionEvidence: async () => served,
     });
     servers.push(server);
@@ -113,7 +113,7 @@ describe("public decision-evidence query", () => {
 
   it("fails closed when the source is absent, malformed, missing, or unavailable", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("decision-query-absent");
-    const snapshot = () => publishSimulatorSnapshot(harness, { label: "decision-query" });
+    const snapshot = async () => await publishSimulatorSnapshot(harness, { label: "decision-query" });
     const cases: {
       readDecisionEvidence?: () => Promise<unknown | null>;
       status: number;

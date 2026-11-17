@@ -68,7 +68,7 @@ describe("application VP HTTP intake", () => {
 
   async function start(configurePort = true) {
     server = createTrustRegistryApiServer({
-      source: createInMemorySource(createOperatorWorkspace({ label: "vp-http" }).snapshot),
+      source: createInMemorySource((await createOperatorWorkspace({ label: "vp-http" })).snapshot),
       clock: () => new Date(nowMs).toISOString(),
       ...(configurePort ? { applicationVp: port } : {}),
     });

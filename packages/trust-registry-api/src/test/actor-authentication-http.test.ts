@@ -100,7 +100,7 @@ describe("phase-0 DID authentication HTTP", () => {
       ...(ledgerResolver ? { resolver } : {}), store, clock: () => nowMs,
     });
     server = createTrustRegistryApiServer({
-      source: createInMemorySource(createOperatorWorkspace({ label: "actor-auth-http" }).snapshot),
+      source: createInMemorySource((await createOperatorWorkspace({ label: "actor-auth-http" })).snapshot),
       ...(configured ? { actorAuthentication: { challenges, sessions: createActorSessionService(() => nowMs) } } : {}),
       ...(applicationVp === undefined ? {} : { applicationVp }),
       ...(pendingApplicationRegistration === undefined ? {} : { pendingApplicationRegistration }),

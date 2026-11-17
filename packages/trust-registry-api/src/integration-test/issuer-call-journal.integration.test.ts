@@ -5,7 +5,6 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import { bytes32Commitment } from "@midnight-ntwrk/trust-registry-client";
 import {
   EvidenceVerifierKeyStatus,
@@ -133,7 +132,6 @@ describe("issuer SDK handoff with private journal", () => {
   let path: string;
 
   beforeEach(async () => {
-    setNetworkId("undeployed");
     mocks.submitCallTx.mockReset();
     directory = await mkdtemp(join(tmpdir(), "tr-issuer-call-journal-"));
     path = join(directory, "journal.json");
@@ -217,6 +215,8 @@ describe("issuer SDK handoff with private journal", () => {
       data: { block: { height: 0, hash: genesisHash.slice(2) } },
     })));
     try {
+      const { LedgerTransaction } = await import("../../../trust-registry-integration/node_modules/@midnight-ntwrk/midnight-js-types/dist/index.js");
+      vi.spyOn(LedgerTransaction, "require").mockImplementation((value) => value as never);
       const config = {
         nodeWsUrl: "ws://node:9944", indexerHttpUrl: "http://node:8088/graphql",
         indexerWsUrl: "ws://node:8088/graphql/ws", allowedHosts: ["node"],
@@ -232,7 +232,9 @@ describe("issuer SDK handoff with private journal", () => {
       });
       mocks.submitCallTx.mockImplementation(async (providers: Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"]) => {
         await providers.midnightProvider.submitTx({
-          identifiers: () => ["tx-ambiguous"], serialize: () => new Uint8Array([1, 2, 3]),
+          era: "v9", stage: "Finalized",
+          deserialize: () => ({ identifiers: () => ["tx-ambiguous"] }),
+          serialize: () => new Uint8Array([1, 2, 3]),
         } as never);
         throw new Error("response lost after broadcast");
       });
@@ -252,6 +254,7 @@ describe("issuer SDK handoff with private journal", () => {
       expect(broadcast).toHaveBeenCalledOnce();
       expect(mocks.submitCallTx).toHaveBeenCalledOnce();
     } finally {
+      vi.restoreAllMocks();
       vi.unstubAllGlobals();
     }
   });
