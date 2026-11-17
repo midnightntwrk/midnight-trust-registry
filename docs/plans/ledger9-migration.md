@@ -253,8 +253,9 @@ operations as if they were synchronous, producing failed assertions and
 unhandled rejections. All 40 `scripts/adversarial-compact.test.mjs` cases now
 pass after awaiting setup, circuit results, client verification, and expected
 rejections. The five isolated maintainer-safety demo tests, 22 governed-action
-API cases, 23 proposal-admission API cases, and 16 public API/TRQP cases also
-pass. Other adversarial API, application-evidence, and governed-demo cases
+API cases, 23 proposal-admission API cases, 16 public API/TRQP cases, eight
+matrix cases, and five governed-policy API cases also pass. Other adversarial
+API and governed-demo cases
 still require async migration and a complete gate rerun; no failed case has
 been skipped or reclassified as a pass.
 
