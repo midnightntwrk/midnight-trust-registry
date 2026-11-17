@@ -254,8 +254,8 @@ unhandled rejections. All 40 `scripts/adversarial-compact.test.mjs` cases now
 pass after awaiting setup, circuit results, client verification, and expected
 rejections. The five isolated maintainer-safety demo tests, 22 governed-action
 API cases, 23 proposal-admission API cases, 16 public API/TRQP cases, eight
-matrix cases, and five governed-policy API cases also pass. Other adversarial
-API and governed-demo cases
+matrix cases, five governed-policy API cases, and eight proposal-signature API
+cases also pass. Other adversarial API and governed-demo cases
 still require async migration and a complete gate rerun; no failed case has
 been skipped or reclassified as a pass.
 
