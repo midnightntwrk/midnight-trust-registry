@@ -89,6 +89,11 @@ ledger reads, quorum signatures, and simulator circuits. The focused Ledger 9
 authority-key harness test passes registration, status transition, and a
 wrong-registry domain rejection; the broader decision-evidence suite remains
 part of the unfinished async migration.
+The governed threshold-policy revision path now awaits the Compact result
+before changing its local policy record and awaits the subsequent
+evidence-verifier registration. A focused Ledger 9 test confirms policy
+version progression, two governance actions, and the active replacement key.
+Other governance flows and their callers remain unqualified.
 Readback-only paths use their explicit network and receipt. A strict helper
 encodes the tagged Compact runtime Schnorr verifying key into the policy's
 canonical `0x`-prefixed hex; its focused tests and integration lint pass.
