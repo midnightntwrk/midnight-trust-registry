@@ -37,9 +37,9 @@ simulator/fixture validation, not a deployed or finalized end-to-end result.
 The two skipped cases remain unqualified.
 The client package also typechecks and its full Vitest suite passes eight files
 and 65 tests with asynchronous simulator reads and bundle verification. The
-contract package typecheck is still red: its large historical test file has
-hundreds of synchronous simulator callers. Passing client and integration
-packages does not qualify the contract package or a deployed Ledger 9 flow.
+contract package now typechecks and its full Vitest suite passes eight files
+and 97 tests. These are simulator and fixture checks, not a deployed Ledger 9
+flow.
 
 The official [Ledger 9 upgrade guide](https://docs.midnight.network/relnotes/ledger-9)
 is the compatibility source. The
@@ -75,13 +75,13 @@ with published `0.4.0` pins and a regenerated lockfile before a portable PR.
 Current compile evidence is limited to `compact:light`. The test simulator now
 awaits generated `initialState` and impure circuits, serializes calls, and
 labels each call with its actual circuit ID. Its source-only TypeScript build
-check passes, and four focused suites pass 26 cases: deployment-bound replay,
-evidence-verifier-key lifecycle, VC-authority-key lifecycle, and verifier
-proposal evidence. The latter uses a serialized test-only raw-circuit entry
-point rather than mutating simulator context. The full contract typecheck is
-still red: the large registry test and downstream caller sites still treat
-simulator results as synchronous. This is a
-source migration, not a missing package or a qualification pass. No new
+check passes, and the full contract suite passes 97 cases, including
+deployment-bound replay, evidence-verifier-key lifecycle, VC-authority-key
+lifecycle, and verifier proposal evidence. The latter uses a serialized
+test-only raw-circuit entry point rather than mutating simulator context.
+The historical registry test now awaits Ledger 9 reads and circuit results,
+including expected rejection paths. This is a source migration, not a
+deployment qualification pass. No new
 proving/verifier keys or deployed transactions have been generated.
 
 The integration source now uses the deployment provider's `config.networkId`
