@@ -60,7 +60,7 @@ test("registry read summarizes finalized state and a selected issuer without lea
     verifierKeySha256: { one: "a", two: "b" }, maintenanceAuthority: { counter: 1n },
     ledger: {
       governanceActionCount: 5n, epochCommitmentCount: 0n,
-      activeMaintainerCount: 1n, evidenceVerifierKeyCount: 1n,
+      activeMaintainerCount: 1n, maintainerThreshold: 2n, evidenceVerifierKeyCount: 1n,
       activeIssuerAuthorizationCount: 1n, activeVerifierAuthorizationCount: 0n,
       activeAuditorAuthorizationCount: 0n, activeRecognitionCount: 0n,
       issuerAuthorizationRecords: {
@@ -76,6 +76,7 @@ test("registry read summarizes finalized state and a selected issuer without lea
   assert.equal(summary.verifierKeyCount, 2);
   assert.equal(summary.governanceActionCount, "5");
   assert.equal(summary.publishedEpochCount, "0");
+  assert.equal(summary.requiredEpochPublishSigners, "2");
   assert.deepEqual(summary.issuer, { label: issuerLabel, found: true, status: "active",
     proposedAtSequence: "3", authorizedAtSequence: "4", activeFromSequence: "5" });
   assert.deepEqual(summarizeFinalizedRegistry(image, attached, address,

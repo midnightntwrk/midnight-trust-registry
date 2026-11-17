@@ -90,6 +90,7 @@ export function summarizeFinalizedRegistry(image, attached, contractAddress, iss
     governanceActionCount: ledger.governanceActionCount.toString(),
     publishedEpochCount: ledger.epochCommitmentCount.toString(),
     activeMaintainers: ledger.activeMaintainerCount.toString(),
+    requiredEpochPublishSigners: ledger.maintainerThreshold.toString(),
     evidenceVerifierKeys: ledger.evidenceVerifierKeyCount.toString(),
     activeIssuers: ledger.activeIssuerAuthorizationCount.toString(),
     activeVerifiers: ledger.activeVerifierAuthorizationCount.toString(),

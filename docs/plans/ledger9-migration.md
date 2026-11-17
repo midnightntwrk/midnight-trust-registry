@@ -63,7 +63,9 @@ node --env-file=artifacts/ledger9-current-chain.env scripts/read-ledger9-registr
 ```
 
 The output reports the observed chain identity, finalized block hash, verifier
-key count, governance counters, and selected issuer lifecycle. It does not
+key count, governance counters, active maintainer count, required epoch-publish
+signer count, and selected issuer lifecycle. The signer count is a policy
+threshold, not proof that those signers or their private keys are available. It does not
 verify that an issuer supplied live DID/VP evidence. With `--manifest`, it
 requires the complete generated circuit catalog and every finalized verifier
 key hash to match the selected source-matched release manifest; it reports that
