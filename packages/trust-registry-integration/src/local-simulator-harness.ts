@@ -2216,10 +2216,10 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  proposeVerifier(fixture: VerifierScenarioFixture): Uint8Array {
+  async proposeVerifier(fixture: VerifierScenarioFixture): Promise<Uint8Array> {
     return this.proposeVerifierWithApplicationEvidence(
       fixture,
-      this.createApplicationEvidence({
+      await this.createApplicationEvidence({
         applicationId: fixture.authorizationId,
         subjectDid: fixture.subjectDid,
         role: "verifier",
@@ -2228,7 +2228,7 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  proposeVerifierWithApplicationEvidence(
+  async proposeVerifierWithApplicationEvidence(
     fixture: VerifierScenarioFixture,
     evidence: ApplicationEvidenceSubmission,
     expectedEvidence: SimulatorApplicationEvidenceExpectation = {
@@ -2236,18 +2236,18 @@ export class LocalTrustRegistryIntegrationHarness {
       challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
       governedResource: { type: "requestProfile", id: fixture.scopeResourceId },
     },
-  ): Uint8Array {
-    const prepared = this.prepareVerifierProposalAction(fixture, evidence, expectedEvidence);
+  ): Promise<Uint8Array> {
+    const prepared = await this.prepareVerifierProposalAction(fixture, evidence, expectedEvidence);
     return this.executeVerifierProposalWithSignatures(fixture, evidence, [
       {
         keyId: this.bootstrapMaintainer.keyId,
         publicKey: this.bootstrapPublicKey,
-        signature: this.bootstrapActionSignature(
+        signature: await this.bootstrapActionSignature(
           prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
         ),
       },
-      ...this.maintainerCoAuthorizers(
-        this.activeDefaultQuorumCoMaintainers(),
+      ...await this.maintainerCoAuthorizers(
+        await this.activeDefaultQuorumCoMaintainers(),
         prepared.actionKind,
         prepared.actionPayloadHash,
         prepared.actionSequence,
@@ -2255,7 +2255,7 @@ export class LocalTrustRegistryIntegrationHarness {
     ], this.signVerifierProposalEvidence(prepared), expectedEvidence);
   }
 
-  prepareVerifierProposalAction(
+  async prepareVerifierProposalAction(
     fixture: VerifierScenarioFixture,
     evidence: ApplicationEvidenceSubmission,
     expectedEvidence: SimulatorApplicationEvidenceExpectation = {
@@ -2263,7 +2263,8 @@ export class LocalTrustRegistryIntegrationHarness {
       challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
       governedResource: { type: "requestProfile", id: fixture.scopeResourceId },
     },
-  ): PreparedVerifierProposalAction {
+  ): Promise<PreparedVerifierProposalAction> {
+    await this.ready;
     if (
       expectedEvidence.scope.role !== "verifier" ||
       expectedEvidence.governedResource.type !== "requestProfile" ||
@@ -2273,14 +2274,14 @@ export class LocalTrustRegistryIntegrationHarness {
     ) {
       throw new Error("Verifier proposal scope does not match governed request profile");
     }
-    const proposedEvidenceHash = this.assertApplicationEvidence({
+    const proposedEvidenceHash = await this.assertApplicationEvidence({
       evidence,
       applicationId: fixture.authorizationId,
       subjectDid: fixture.subjectDid,
       role: "verifier",
       ...expectedEvidence,
     });
-    const ledger = this.simulator.getLedger();
+    const ledger = await this.simulator.getLedger();
     const baseVerifierPayloadHash = computeCreateVerifierAuthorizationPayloadHash(
       fixture.authorizationIdCommitment,
       fixture.subjectDidCommitment,
@@ -2325,7 +2326,7 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  executeVerifierProposalWithSignatures(
+  async executeVerifierProposalWithSignatures(
     fixture: VerifierScenarioFixture,
     evidence: ApplicationEvidenceSubmission,
     signers: readonly MaintainerCoAuthorizer[],
@@ -2335,12 +2336,12 @@ export class LocalTrustRegistryIntegrationHarness {
       challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
       governedResource: { type: "requestProfile", id: fixture.scopeResourceId },
     },
-  ): Uint8Array {
+  ): Promise<Uint8Array> {
     const primary = signers[0];
     if (primary === undefined) throw new Error("Verifier proposal requires a maintainer signature");
-    const prepared = this.prepareVerifierProposalAction(fixture, evidence, expectedEvidence);
+    const prepared = await this.prepareVerifierProposalAction(fixture, evidence, expectedEvidence);
     const accepted = this.snapshotAcceptedApplicationEvidence(evidence, expectedEvidence);
-    const eventHash = this.simulator.proposeVerifierAuthorization(
+    const eventHash = await this.simulator.proposeVerifierAuthorization(
       primary.keyId,
       primary.publicKey,
       primary.signature,
@@ -2362,26 +2363,27 @@ export class LocalTrustRegistryIntegrationHarness {
     return eventHash;
   }
 
-  prepareVerifierDecisionAction(
+  async prepareVerifierDecisionAction(
     fixture: VerifierScenarioFixture,
     action: IssuerDecisionAction,
-  ): PreparedIssuerDecisionAction {
+  ): Promise<PreparedIssuerDecisionAction> {
+    await this.ready;
     if (!["approve", "activate", "suspend", "revoke", "archive"].includes(action)) {
       throw new Error("Unsupported verifier decision action");
     }
     if (action === "approve" || action === "activate") {
-      this.recheckAcceptedApplicationEvidence({
+      await this.recheckAcceptedApplicationEvidence({
         role: "verifier",
         applicationId: fixture.authorizationId,
         subjectDid: fixture.subjectDid,
         scope: createVerifierAuthorizationScopeFixture(fixture),
         governedResource: { type: "requestProfile", id: fixture.scopeResourceId },
-        proposalCommitment: this.simulator.getVerifierProposalEvidence(fixture.authorizationIdCommitment)
+        proposalCommitment: (await this.simulator.getVerifierProposalEvidence(fixture.authorizationIdCommitment))
           .evidenceCommitment,
       });
     }
-    const current = this.simulator.getVerifierAuthorization(fixture.authorizationIdCommitment);
-    const ledger = this.simulator.getLedger();
+    const current = await this.simulator.getVerifierAuthorization(fixture.authorizationIdCommitment);
+    const ledger = await this.simulator.getLedger();
     const evidenceHash = action === "approve" || action === "activate"
       ? current.evidenceHash : bytes32Commitment(`${fixture.authorizationId}:${action}`);
     const actionKinds = {
@@ -2407,14 +2409,14 @@ export class LocalTrustRegistryIntegrationHarness {
     };
   }
 
-  executeVerifierDecisionWithSignatures(
+  async executeVerifierDecisionWithSignatures(
     fixture: VerifierScenarioFixture,
     action: IssuerDecisionAction,
     signers: readonly MaintainerCoAuthorizer[],
-  ): Uint8Array {
+  ): Promise<Uint8Array> {
     const primary = signers[0];
     if (primary === undefined) throw new Error("Verifier decision requires a maintainer signature");
-    const prepared = this.prepareVerifierDecisionAction(fixture, action);
+    const prepared = await this.prepareVerifierDecisionAction(fixture, action);
     if (action === "approve") {
       return this.simulator.authorizeVerifierAuthorization(
         primary.keyId, primary.publicKey, primary.signature,
@@ -2429,18 +2431,18 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.authorizationIdCommitment, prepared.evidenceHash, signers.slice(1));
   }
 
-  private fixtureVerifierDecision(fixture: VerifierScenarioFixture, action: IssuerDecisionAction): Uint8Array {
-    const prepared = this.prepareVerifierDecisionAction(fixture, action);
+  private async fixtureVerifierDecision(fixture: VerifierScenarioFixture, action: IssuerDecisionAction): Promise<Uint8Array> {
+    const prepared = await this.prepareVerifierDecisionAction(fixture, action);
     return this.executeVerifierDecisionWithSignatures(fixture, action, [
       {
         keyId: this.bootstrapMaintainer.keyId,
         publicKey: this.bootstrapPublicKey,
-        signature: this.bootstrapActionSignature(
+        signature: await this.bootstrapActionSignature(
           prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
         ),
       },
-      ...this.maintainerCoAuthorizers(
-        this.activeDefaultQuorumCoMaintainers(),
+      ...await this.maintainerCoAuthorizers(
+        await this.activeDefaultQuorumCoMaintainers(),
         prepared.actionKind,
         prepared.actionPayloadHash,
         prepared.actionSequence,
@@ -2448,21 +2450,21 @@ export class LocalTrustRegistryIntegrationHarness {
     ]);
   }
 
-  approveVerifier(fixture: VerifierScenarioFixture): Uint8Array {
+  approveVerifier(fixture: VerifierScenarioFixture): Promise<Uint8Array> {
     return this.fixtureVerifierDecision(fixture, "approve");
   }
 
-  activateVerifier(fixture: VerifierScenarioFixture): Uint8Array {
+  activateVerifier(fixture: VerifierScenarioFixture): Promise<Uint8Array> {
     return this.fixtureVerifierDecision(fixture, "activate");
   }
 
-  authorizeVerifier(fixture: VerifierScenarioFixture): Uint8Array {
-    this.proposeVerifier(fixture);
-    this.approveVerifier(fixture);
+  async authorizeVerifier(fixture: VerifierScenarioFixture): Promise<Uint8Array> {
+    await this.proposeVerifier(fixture);
+    await this.approveVerifier(fixture);
     return this.activateVerifier(fixture);
   }
 
-  suspendVerifier(fixture: VerifierScenarioFixture): Uint8Array {
+  suspendVerifier(fixture: VerifierScenarioFixture): Promise<Uint8Array> {
     return this.updateVerifierLifecycle(
       fixture,
       "suspend",
@@ -2470,7 +2472,7 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  revokeVerifier(fixture: VerifierScenarioFixture): Uint8Array {
+  revokeVerifier(fixture: VerifierScenarioFixture): Promise<Uint8Array> {
     return this.updateVerifierLifecycle(
       fixture,
       "revoke",
@@ -2478,7 +2480,7 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  archiveVerifier(fixture: VerifierScenarioFixture): Uint8Array {
+  archiveVerifier(fixture: VerifierScenarioFixture): Promise<Uint8Array> {
     return this.updateVerifierLifecycle(
       fixture,
       "archive",
@@ -3415,19 +3417,20 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  private updateVerifierLifecycle(
+  private async updateVerifierLifecycle(
     fixture: VerifierScenarioFixture,
     actionName: "suspend" | "revoke" | "archive",
     actionKind: Uint8Array,
-  ): Uint8Array {
+  ): Promise<Uint8Array> {
+    await this.ready;
     const evidenceHash = bytes32Commitment(
       `${fixture.authorizationId}:${actionName}`,
     );
-    const currentRecord = this.simulator.getVerifierAuthorization(
+    const currentRecord = await this.simulator.getVerifierAuthorization(
       fixture.authorizationIdCommitment,
     );
-    const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const signature = this.signMaintainerActionFromSeed(
+    const actionSequence = (await this.simulator.getLedger()).governanceActionCount;
+    const signature = await this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
       actionKind,
