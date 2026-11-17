@@ -7,7 +7,9 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { FileDeploymentAttemptJournal } from "@midnight-ntwrk/trust-registry-integration";
+import { FileDeploymentAttemptJournal, LocalTrustRegistryIntegrationHarness } from "@midnight-ntwrk/trust-registry-integration";
+import { computeGovernancePolicySnapshotCommitment,
+  deriveGovernancePolicySnapshot } from "@midnight-ntwrk/trust-registry-domain";
 
 import {
   loadApprovedMaintenanceMaterial, reconcileLocalDeployment, runLocalDeployment,
@@ -53,6 +55,11 @@ test("rejects malformed local deployment plans", () => {
   const staged = { ...plan, format: "tr-local-staged-deployment-plan-v1",
     initialVerifierKeyName: "authorizeMaintainerAuditEvent" };
   assert.equal(validateLocalDeploymentPlan(staged), staged);
+  const policyStaged = { ...staged, format: "tr-local-staged-deployment-plan-v2",
+    policyRecordPath: join(root, "policy.json"), policyRecordSha256: "d".repeat(64) };
+  assert.equal(validateLocalDeploymentPlan(policyStaged), policyStaged);
+  assert.throws(() => validateLocalDeploymentPlan({ ...policyStaged, policyRecordPath: "relative.json" }), /exact source/u);
+  assert.throws(() => validateLocalDeploymentPlan({ ...policyStaged, policyRecordSha256: "bad" }), /exact source/u);
   assert.throws(() => validateLocalDeploymentPlan({ ...staged, initialVerifierKeyName: "" }), /exact source/u);
   assert.throws(() => validateLocalDeploymentPlan({ ...plan, initialVerifierKeyName: "authorizeMaintainerAuditEvent" }), /exact source/u);
   assert.throws(() => validateLocalDeploymentPlan({ ...staged, format: plan.format }), /exact source/u);
@@ -68,6 +75,56 @@ test("rejects malformed local deployment plans", () => {
     { ...plan, network: { ...plan.network, indexerHttpUrl: null } }]) {
     assert.throws(() => validateLocalDeploymentPlan(malformed), /exact source/u);
   }
+});
+
+test("policy-bound staged plan rejects changed bytes and ad hoc bootstrap commitments", async () => {
+  const harness = new LocalTrustRegistryIntegrationHarness("policy-plan");
+  const policyPath = join(root, "canonical-policy.json");
+  const policyBytes = Buffer.from(JSON.stringify(harness.policyRecord));
+  await writeFile(policyPath, policyBytes);
+  const expected = computeGovernancePolicySnapshotCommitment(
+    deriveGovernancePolicySnapshot(harness.policyRecord));
+  const staged = { ...plan, format: "tr-local-staged-deployment-plan-v2",
+    initialVerifierKeyName: "authorizeMaintainerAuditEvent",
+    policyRecordPath: policyPath,
+    policyRecordSha256: createHash("sha256").update(policyBytes).digest("hex") };
+  let factoryCalls = 0;
+  let deployCalls = 0;
+  let stopCalls = 0;
+  const bootstrap = { registryId: harness.registryId, maintainerThreshold: 1n,
+    governancePolicyCommitment: Buffer.from(expected.slice(2), "hex") };
+  const dependencies = {
+    validateEndpoints: async () => {}, observe: async () => {},
+    loadProvider: async () => ({ createLocalDeploymentMaterial: async () => {
+      factoryCalls += 1;
+      return { bootstrap, providers: {}, contractMaintenanceSigningKey: "test-key",
+        stop: async () => { stopCalls += 1; } };
+    } }),
+    deployOnce: async (input) => {
+      deployCalls += 1;
+      assert.equal(input.initialVerifierKeyName, staged.initialVerifierKeyName);
+      return { receipt: { networkId: "undeployed", txId: "tx-policy" },
+        readback: { status: "staged-bootstrap-pending" } };
+    },
+  };
+  assert.equal((await runLocalDeployment(staged, dependencies)).readbackStatus, "staged-bootstrap-pending");
+  assert.equal(deployCalls, 1);
+  assert.equal(stopCalls, 1);
+  await assert.rejects(runLocalDeployment({ ...staged, policyRecordSha256: "e".repeat(64) }, dependencies),
+    /policy record bytes changed/u);
+  assert.equal(factoryCalls, 1);
+  const duplicateBytes = Buffer.from(policyBytes.toString("utf8").replace(
+    '"version":"v1"', '"version":"v1","version":"v2"'));
+  const duplicatePath = join(root, "duplicate-policy.json");
+  await writeFile(duplicatePath, duplicateBytes);
+  await assert.rejects(runLocalDeployment({ ...staged, policyRecordPath: duplicatePath,
+    policyRecordSha256: createHash("sha256").update(duplicateBytes).digest("hex") }, dependencies),
+  /canonical signed JSON without duplicate keys/u);
+  assert.equal(factoryCalls, 1);
+  bootstrap.governancePolicyCommitment = Buffer.alloc(32, 7);
+  await assert.rejects(runLocalDeployment(staged, dependencies), /bootstrap disagrees/u);
+  assert.equal(deployCalls, 1);
+  assert.equal(stopCalls, 2);
 });
 
 test("staged plan passes its circuit pin without changing the full-plan path", async () => {

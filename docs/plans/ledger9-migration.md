@@ -843,6 +843,12 @@ the bootstrap's `bytes32Commitment("policy:local-development-smoke")`, not a
 canonical `GovernancePolicySnapshot` commitment. Therefore, even a successful
 threshold-update circuit on this contract would not retroactively establish a
 canonical version-1 policy record or satisfy domain policy-revision continuity.
+For future staged deployments, the new v2 plan pins the canonical policy
+record's bytes and requires the approved provider to bootstrap its exact
+derived snapshot commitment before any submission. The existing v1 plan and
+deployed fixture remain unchanged. A source-matched v2 provider, independently
+reviewed policy record, fresh deployment journal, and live readback are still
+required; this preflight alone is not a deployed policy-qualified registry.
 Before using a contract for API qualification, establish an independently
 reviewable initial policy snapshot and exact next snapshot, update and finalize
 the threshold policy, then execute

@@ -1179,7 +1179,8 @@ export async function attemptStandaloneDeployment(directory, planPath, dependenc
       state: "reserved",
       planSha256: sha256(planBytes),
       journalPath: plan.journalPath,
-      stagedPlan: plan.format === "tr-local-staged-deployment-plan-v1" ? {
+      stagedPlan: (plan.format === "tr-local-staged-deployment-plan-v1"
+        || plan.format === "tr-local-staged-deployment-plan-v2") ? {
         initialVerifierKeyName: plan.initialVerifierKeyName,
         network: plan.network,
         providerModulePath: plan.providerModulePath,
@@ -1217,7 +1218,8 @@ export async function reconcileStandaloneDeployment(directory, planPath, depende
     }
     const planBytes = await regularBytes(resolve(planPath));
     const plan = validateLocalDeploymentPlan(parseJsonBytes(planBytes));
-    if (plan.format !== "tr-local-staged-deployment-plan-v1"
+    if ((plan.format !== "tr-local-staged-deployment-plan-v1"
+      && plan.format !== "tr-local-staged-deployment-plan-v2")
       || sha256(planBytes) !== record.deployment.planSha256
       || plan.journalPath !== record.deployment.journalPath
       || plan.sourceRevision !== record.sourceRevision

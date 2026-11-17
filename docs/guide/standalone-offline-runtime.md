@@ -799,6 +799,19 @@ attempt; reconcile the earlier journal and chain with a human recovery decision
 first. The development-only public genesis wallet and 1-of-3 committee remain
 unsuitable for release approval.
 
+For a new policy-bound staged installation, use
+`tr-local-staged-deployment-plan-v2` instead of v1 and include absolute
+`policyRecordPath` and lowercase SHA-256 `policyRecordSha256` fields. The
+record must be canonical JSON and an active v1 governance policy for the bootstrap registry with
+one-maintainer thresholds. The deploy helper verifies its approved bytes and
+derives the canonical policy snapshot commitment before submission; it rejects
+a provider whose bootstrap commitment differs. Preserve the approved record
+with the deployment journal for API policy-history validation. V1 plans remain
+readable for existing development attempts but do not establish an
+interpretable policy record. Changing an existing plan or provider hash is
+not a recovery method; use a fresh approval and journal only after resolving
+any earlier attempt.
+
 For a staged deployment with a finalized receipt, insert one remaining key at
 a time through `node scripts/standalone-setup-wizard.mjs insert-key
 <private-setup-dir> <approved-insertion-plan.json>`. Each key uses the fixed private journal path
