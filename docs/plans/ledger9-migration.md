@@ -11,7 +11,7 @@ qualification claim. The historical Ledger 8 source is the `ledger8` branch at
 | Node | 2.1.101 | Live loopback check passes with `system_version` `2.1.101-86774edf` and runtime `specVersion` `2001100` |
 | Ledger | 9.1.0.1 | Official image cohort and protocol-version evidence; no independent crate-version attestation from RPC |
 | Indexer standalone | 4.4.101 | Live indexed block and matching genesis check passes |
-| Proof server | 9.0.0 | Live loopback reachability check passes with read-only parameter cache and fetching disabled; no deployed TR proof run |
+| Proof server | 9.0.2 observed | Live loopback/version check passes, but the first deployed Registry call fails in `proveTx` when `/check` returns HTTP 400; proving remains unqualified |
 | Compact compiler | 0.36.0 | Full source-matched compile generates all 66 circuits and prover/verifier keys |
 | Compact runtime | 0.21.0 | Locally installed with exact DID RC1 and VC PR #755 artifacts; simulator/integration tests pass, deployed runtime unqualified |
 | Midnight.js / testkit-js | 5.0.0 | Locally installed; simulator/integration tests pass, deployed provider journey unqualified |
@@ -530,6 +530,22 @@ evidence, and the actor
 submissions have not yet run on this chain. The ignored private readback
 helper retains the exact-plan, journal, and manifest checks; this observation
 does not approve or submit a shared-chain mutation.
+
+One development-only evidence-verifier registration was prepared against this
+finalized baseline with a distinct verifier DID and a locally verified
+deployment-bound maintainer signature. The first reserved attempt stopped in
+Midnight.js 5 transaction construction because the new wallet session's
+in-memory private-state provider lacked `trustRegistryPrivateState`. SDK source
+places that failure before unproven transaction creation. Its reservation and
+private pre-broadcast evidence were retained. A separate one-shot retry
+initialized the empty contract private state, then reached the proof provider;
+`proveTx` failed when proof-server `/check` returned HTTP 400. Midnight.js 5
+calls `proveTx` before wallet balance and `submitTx`, so that failure also
+preceded broadcast. The second reservation and proof-failure evidence remain
+quarantined. A subsequent pinned-chain finalized read still found the same
+governance sequence and zero evidence-verifier keys. No transaction receipt
+exists for either attempt; do not retry or claim actor qualification until the
+proof check is diagnosed and a new one-shot plan is reviewed.
 
 ## Execution order
 
