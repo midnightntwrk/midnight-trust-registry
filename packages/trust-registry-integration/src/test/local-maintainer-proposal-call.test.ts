@@ -73,7 +73,8 @@ function fixture(): { input: UnsignedLocalMaintainerProposalCall; ledger: TrustR
       lookup: () => ({ status: AuthorizationStatus.active }),
     },
     maintainerProposalEvidenceRecords: { member: () => false },
-    maintainerKeyIds: { member: () => false },
+    maintainerKeyIds: { member: () => false, *[Symbol.iterator]() {} },
+    maintainerRecords: { lookup: () => ({ publicKey: input.candidatePublicKey }) },
     currentMaintainerMembershipIdsByDidCommitment: {
       member: () => false, lookup: () => bytes32Commitment("old-maintainer"),
     },
@@ -180,6 +181,18 @@ describe("local maintainer proposal signing preflight", () => {
         lookup: () => ({ status: AuthorizationStatus.revoked }),
       },
     } as unknown as TrustRegistryContract.Ledger)).not.toThrow();
+  });
+
+  it("rejects a reused public key even when its key ID differs", () => {
+    const { input, ledger } = fixture();
+    expect(() => prepareUnsignedLocalMaintainerProposalCall(input, {
+      ...ledger,
+      maintainerKeyIds: {
+        ...ledger.maintainerKeyIds,
+        member: () => false,
+        *[Symbol.iterator]() { yield bytes32Commitment("existing-maintainer-key"); },
+      },
+    })).toThrow(/public key is already registered/u);
   });
 
   it("rejects an inactive or substituted evidence verifier", () => {

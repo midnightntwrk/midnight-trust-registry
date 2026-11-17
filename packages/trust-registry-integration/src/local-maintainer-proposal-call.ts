@@ -96,6 +96,13 @@ export function prepareUnsignedLocalMaintainerProposalCall(
     || ledger.maintainerKeyIds.member(input.candidateKeyId)) {
     throw new Error("Maintainer policy is stale or the candidate identity is already registered");
   }
+  for (const keyId of ledger.maintainerKeyIds) {
+    const existing = ledger.maintainerRecords.lookup(keyId);
+    if (existing.publicKey.x === input.candidatePublicKey.x
+      && existing.publicKey.y === input.candidatePublicKey.y) {
+      throw new Error("Candidate maintainer public key is already registered");
+    }
+  }
   const didScope = TrustRegistryContract.pureCircuits.maintainerMembershipScopeKey(input.maintainerDidCommitment);
   const keyScope = TrustRegistryContract.pureCircuits.maintainerMembershipKeyScopeKey(input.candidateKeyId);
   for (const [index, scope] of [
