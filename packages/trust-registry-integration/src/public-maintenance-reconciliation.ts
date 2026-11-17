@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { ContractMaintenanceAuthority, MaintenanceUpdate, ReplaceAuthority } from "@midnight-ntwrk/midnight-js-protocol/ledger";
+import { ContractMaintenanceAuthority, MaintenanceUpdate, ReplaceAuthority } from "@midnightntwrk/ledger-v9";
 
 import {
   readPostDeploymentLocalTrustRegistry,
@@ -44,7 +44,8 @@ export function committeeMaintenanceUpdateSha256(input: {
   validateMaintenancePolicy({ mode: "committee", verifyingKeys: [...input.committee],
     threshold: input.threshold });
   const authority = new ContractMaintenanceAuthority(
-    input.committee.map((key) => key.slice(2)), input.threshold, input.currentCounter + 1n,
+    input.committee.map((key) => ({ tag: "schnorr" as const, value: key.slice(2) })),
+    input.threshold, input.currentCounter + 1n,
   );
   const update = new MaintenanceUpdate(input.contractAddress.slice(2),
     [new ReplaceAuthority(authority)], input.currentCounter);

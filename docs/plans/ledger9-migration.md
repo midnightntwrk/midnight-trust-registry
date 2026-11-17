@@ -73,9 +73,10 @@ instead of the removed process-global network ID for the pinned deploy path.
 Readback-only paths use their explicit network and receipt. A strict helper
 encodes the tagged Compact runtime Schnorr verifying key into the policy's
 canonical `0x`-prefixed hex; its focused tests and integration lint pass.
-This is only a partial migration: `public-maintenance-transition` and test
-fixtures still use the removed network-ID package, and other SDK 5 transaction
-and state-read APIs still require changes. The simulator client now awaits
+This is only a partial migration: production integration source no longer
+imports the removed global network-ID package, but standalone scripts and
+several test fixtures still do, and other SDK 5 transaction and state-read
+APIs still require changes. The simulator client now awaits
 ledger reads and bundle context; its source-only build, focused async tests,
 and lint pass. Existing client tests and the integration harness still assume
 synchronous results. The full client and integration package typechecks remain
@@ -103,7 +104,16 @@ authority counter. The journal, preflight, and reconciliation focused suite
 passes 14 tests. These are mocked SDK submissions; no actual verifier-key
 maintenance transaction or independently finalized image was observed.
 
-Docker Desktop did not answer `docker info` during this local pass. No Ledger 9
+Committee maintenance preparation, submission, and reconciliation now use
+Ledger 9 tagged signature/verifying-key types. Submission seals the prepared
+transaction as a v9 unproven SDK handle and compares provider `config.networkId`
+with the approved network. Their three focused suites pass 44 cases, including
+the reconstructed update hash, explicit network mismatch, journal reservation,
+and ambiguous recovery states. The wrapper test mocks SDK submission; it does
+not prove a real transaction, wallet balance, broadcast, or finalized committee
+transition.
+
+Docker Desktop still did not answer a bounded `docker info` probe. No Ledger 9
 container, live RPC, indexer, or proof-server claim follows from the Compose
 render and image pins; the hanging CLI call was stopped without modifying
 containers or volumes.

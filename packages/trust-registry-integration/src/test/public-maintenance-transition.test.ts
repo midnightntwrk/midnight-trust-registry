@@ -2,9 +2,8 @@ import { createHash } from "node:crypto";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { sampleSigningKey, signatureVerifyingKey } from "@midnight-ntwrk/compact-runtime";
-import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
-import { MaintenanceUpdate, ReplaceAuthority, signData, verifySignature } from "@midnight-ntwrk/midnight-js-protocol/ledger";
+import { sampleSigningKey } from "@midnight-ntwrk/compact-runtime";
+import { MaintenanceUpdate, ReplaceAuthority, signData, verifySignature } from "@midnightntwrk/ledger-v9";
 import { bytes32Commitment, bytes32Hex } from "@midnight-ntwrk/trust-registry-client";
 import { deriveJubjubPublicKeyFromSeed, MaintainerStatus, TrustRegistryContract, trustRegistryWitnesses } from "@midnight-ntwrk/trust-registry-contract";
 
@@ -16,6 +15,7 @@ import {
   type CommitteeTransitionApproval,
   type LocalCommitteeTransitionApproval,
 } from "../public-maintenance-transition.js";
+import { maintenanceSigningKeyHex } from "../maintenance-verifying-key.js";
 
 const mocks = vi.hoisted(() => ({
   createReader: vi.fn(),
@@ -33,8 +33,8 @@ vi.mock("../local-network-deployment-action-reader.js", () => ({
 const address = `0x${"a".repeat(64)}`;
 const finalizedBlockHash = `0x${"b".repeat(64)}`;
 const bootstrapKey = sampleSigningKey();
-const bootstrapVerifyingKey = `0x${signatureVerifyingKey(bootstrapKey)}`;
-const committeeKeys = Array.from({ length: 3 }, () => `0x${signatureVerifyingKey(sampleSigningKey())}`);
+const bootstrapVerifyingKey = maintenanceSigningKeyHex(bootstrapKey);
+const committeeKeys = Array.from({ length: 3 }, () => maintenanceSigningKeyHex(sampleSigningKey()));
 const bootstrap = {
   registryId: "registry:committee-transition-test",
   registryDidCommitment: bytes32Commitment("did:midnight:preprod:registry"),
@@ -137,7 +137,6 @@ const localImage = (): FinalizedRegistryDeploymentImage => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
-  setNetworkId("preprod");
   mocks.createReader.mockReturnValue({ readCurrentFinalizedDeploymentImage: mocks.readImage });
   mocks.createLocalReader.mockReturnValue({ readCurrentFinalizedDeploymentImage: mocks.readImage });
   mocks.readImage.mockResolvedValue(image());
@@ -145,7 +144,6 @@ beforeEach(() => {
 
 describe("local maintenance committee transition", () => {
   it("requires explicit staged mode and the exact post-insertion counter", () => {
-    setNetworkId("undeployed");
     const expectedCounter = BigInt(Object.keys(verifierKeySha256).length - 1);
     const stagedImage = {
       ...localImage(), maintenanceAuthority: {
@@ -164,14 +162,12 @@ describe("local maintenance committee transition", () => {
         ...stagedImage.maintenanceAuthority, counter: expectedCounter + 1n,
       },
     })).toThrow(/expected counter/u);
-    setNetworkId("preprod");
     expect(() => prepareCommitteeTransitionFromFinalizedImage({
       ...approval(), stagedVerifierKeyInstallation: true,
     }, image())).toThrow(/local-only/u);
   });
 
   it("uses only the local finalized reader and signs a counter-one undeployed update", async () => {
-    setNetworkId("undeployed");
     mocks.readImage.mockResolvedValueOnce(localImage());
     const input = localApproval();
     const plan = await prepareLocalNetworkCommitteeTransition(input);
@@ -183,16 +179,16 @@ describe("local maintenance committee transition", () => {
     expect(tx.serialize().length).toBeGreaterThan(0);
   });
 
-  it("rejects wrong local image, missing image, wrong SDK network, and public relabeling", async () => {
-    setNetworkId("undeployed");
+  it("rejects wrong local image, missing image, mismatched receipt, and public relabeling", async () => {
     const input = localApproval();
     mocks.readImage.mockResolvedValueOnce({ ...localImage(), networkId: "preprod" });
     await expect(prepareLocalNetworkCommitteeTransition(input)).rejects.toThrow(/image disagrees/u);
     mocks.readImage.mockResolvedValueOnce(null);
     await expect(prepareLocalNetworkCommitteeTransition(input)).rejects.toThrow(/image is unavailable/u);
     await expect(preparePublicNetworkCommitteeTransition(input as never)).rejects.toThrow(/does not accept/u);
-    setNetworkId("preprod");
-    await expect(prepareLocalNetworkCommitteeTransition(input)).rejects.toThrow(/undeployed network/u);
+    await expect(prepareLocalNetworkCommitteeTransition({
+      ...input, receipt: { ...input.receipt, networkId: "preprod" },
+    })).rejects.toThrow(/approved transition network/u);
   });
 });
 
@@ -219,12 +215,14 @@ describe("public maintenance committee transition", () => {
     expect(maintenanceUpdate.counter).toBe(0n);
     expect(maintenanceUpdate.signatures).toHaveLength(1);
     expect(maintenanceUpdate.signatures[0]?.[0]).toBe(0n);
-    expect(verifySignature(bootstrapVerifyingKey.slice(2), maintenanceUpdate.dataToSign,
+    expect(verifySignature({ tag: "schnorr", value: bootstrapVerifyingKey.slice(2) }, maintenanceUpdate.dataToSign,
       maintenanceUpdate.signatures[0]![1])).toBe(true);
     expect(maintenanceUpdate.updates).toHaveLength(1);
     expect(maintenanceUpdate.updates[0]).toBeInstanceOf(ReplaceAuthority);
     const replacement = maintenanceUpdate.updates[0] as ReplaceAuthority;
-    expect(replacement.authority.committee).toEqual(committeeKeys.map((key) => key.slice(2)));
+    expect(replacement.authority.committee).toEqual(committeeKeys.map((key) => ({
+      tag: "schnorr", value: key.slice(2),
+    })));
     expect(replacement.authority.threshold).toBe(2);
     expect(replacement.authority.counter).toBe(1n);
     expect(() => plan.authorize(signData(sampleSigningKey(), plan.dataToSign)))
@@ -282,7 +280,7 @@ describe("public maintenance committee transition", () => {
       .toThrow(/committee policy/u);
   });
 
-  it("rejects a syntactically canonical key that Ledger 8 cannot verify", () => {
+  it("rejects a syntactically canonical key that Ledger 9 cannot verify", () => {
     const input = approval();
     input.maintenancePolicy = {
       mode: "committee",
@@ -293,7 +291,7 @@ describe("public maintenance committee transition", () => {
       .toThrow(/Malformed Schnorr verifying key/u);
   });
 
-  it("rejects weak governance, expired approvals, and network changes", () => {
+  it("rejects weak governance, expired approvals, and mismatched network pins", () => {
     const weak = approval();
     weak.governance = { ...governance, activeMaintainerCount: 2n };
     expect(() => prepareCommitteeTransitionFromFinalizedImage(weak, image()))
@@ -302,10 +300,10 @@ describe("public maintenance committee transition", () => {
     expired.expiresAt = new Date(Date.now() - 1000);
     expect(() => prepareCommitteeTransitionFromFinalizedImage(expired, image()))
       .toThrow(/expiry/u);
-    const plan = prepareCommitteeTransitionFromFinalizedImage(approval(), image());
-    setNetworkId("preview");
-    expect(() => plan.authorize(signData(bootstrapKey, plan.dataToSign)))
-      .toThrow(/network changed/u);
+    const mismatched = approval();
+    mismatched.receipt = { ...mismatched.receipt, networkId: "preview" };
+    expect(() => prepareCommitteeTransitionFromFinalizedImage(mismatched, image()))
+      .toThrow(/approved transition network/u);
   });
 
   it("refuses a signature after the prepared transaction expires", () => {

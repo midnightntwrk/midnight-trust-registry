@@ -3,8 +3,9 @@ import { constants } from "node:fs";
 import { lstat, open } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
+import type { Signature } from "@midnightntwrk/ledger-v9";
 import { submitTxAsync, type ContractProviders } from "@midnight-ntwrk/midnight-js-contracts";
-import type { Signature } from "@midnight-ntwrk/midnight-js-protocol/ledger";
+import { LedgerTransaction } from "@midnight-ntwrk/midnight-js-types";
 import { z } from "zod";
 import { TrustRegistryContract, type TrustRegistryPrivateState } from "@midnight-ntwrk/trust-registry-contract";
 
@@ -186,8 +187,11 @@ export async function submitPublicNetworkCommitteeTransition(input: {
   journal: FileMaintenanceTransitionJournal;
   providers: ContractProviders<RegistryContract>;
 }): Promise<string> {
+  if (input.providers.config.networkId !== input.approval.network.networkId) {
+    throw new Error("Maintenance providers do not match the approved network");
+  }
   const plan = await preparePublicNetworkCommitteeTransition(input.approval);
-  const tx = plan.authorize(input.signature);
+  const tx = LedgerTransaction.seal("v9", "Unproven", plan.authorize(input.signature));
   return input.journal.executeOnce(plan, () => submitTxAsync(input.providers, { unprovenTx: tx }));
 }
 
@@ -205,11 +209,14 @@ export async function submitLocalNetworkCommitteeTransition(input: {
     || /^0x0{64}$/u.test(input.approvedFinalizedBlockHash)) {
     throw new Error("Approved local maintenance signing pins are invalid");
   }
+  if (input.providers.config.networkId !== input.approval.network.networkId) {
+    throw new Error("Maintenance providers do not match the approved network");
+  }
   const plan = await prepareLocalNetworkCommitteeTransition(input.approval);
   if (createHash("sha256").update(plan.dataToSign).digest("hex") !== input.approvedUpdateSha256) {
     throw new Error("Fresh local maintenance plan disagrees with the approved signing request");
   }
-  const tx = plan.authorize(input.signature);
+  const tx = LedgerTransaction.seal("v9", "Unproven", plan.authorize(input.signature));
   return input.journal.executeOnce(
     plan, () => submitTxAsync(input.providers, { unprovenTx: tx }), input.approvedFinalizedBlockHash,
   );
