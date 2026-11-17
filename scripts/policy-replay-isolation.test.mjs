@@ -13,8 +13,8 @@ import {
   LocalTrustRegistryIntegrationHarness,
 } from "../packages/trust-registry-integration/dist/index.js";
 
-const signAction = (harness, maintainer, prepared, policyCommitment) => {
-  const ledger = harness.simulator.getLedger();
+const signAction = async (harness, maintainer, prepared, policyCommitment) => {
+  const ledger = await harness.simulator.getLedger();
   return {
     keyId: maintainer.keyId,
     publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
@@ -31,52 +31,52 @@ const signAction = (harness, maintainer, prepared, policyCommitment) => {
   };
 };
 
-test("snapshot publication cannot confound isolated old-policy signature replay", () => {
+test("snapshot publication cannot confound isolated old-policy signature replay", async () => {
   const snapshotHarness = new LocalTrustRegistryIntegrationHarness("policy-snapshot-side-effect");
   const historical = createIssuerScenarioFixture("policy-snapshot-historical");
-  snapshotHarness.authorizeIssuer(historical);
-  const beforeSnapshot = snapshotHarness.simulator.getLedger().governanceActionCount;
-  publishSimulatorSnapshot(snapshotHarness, {
+  await snapshotHarness.authorizeIssuer(historical);
+  const beforeSnapshot = (await snapshotHarness.simulator.getLedger()).governanceActionCount;
+  await publishSimulatorSnapshot(snapshotHarness, {
     label: "policy-snapshot-side-effect",
     issuers: [{ fixture: historical, label: "historical" }],
   });
-  assert.ok(snapshotHarness.simulator.getLedger().governanceActionCount > beforeSnapshot);
+  assert.ok((await snapshotHarness.simulator.getLedger()).governanceActionCount > beforeSnapshot);
 
   const replayHarness = new LocalTrustRegistryIntegrationHarness("policy-replay-isolated");
   const second = createMaintainerScenarioFixture("policy-replay-second");
   const third = createMaintainerScenarioFixture("policy-replay-third");
   const current = createIssuerScenarioFixture("policy-replay-current");
-  replayHarness.authorizeMaintainer(second);
-  replayHarness.authorizeMaintainer(third);
-  const formerPolicy = Buffer.from(replayHarness.simulator.getLedger().governancePolicyCommitment);
-  replayHarness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
-  replayHarness.proposeIssuer(current, [second]);
-  const prepared = replayHarness.prepareIssuerDecisionAction(current, "approve");
-  const sequence = replayHarness.simulator.getLedger().governanceActionCount;
+  await replayHarness.authorizeMaintainer(second);
+  await replayHarness.authorizeMaintainer(third);
+  const formerPolicy = Buffer.from((await replayHarness.simulator.getLedger()).governancePolicyCommitment);
+  await replayHarness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+  await replayHarness.proposeIssuer(current, [second]);
+  const prepared = await replayHarness.prepareIssuerDecisionAction(current, "approve");
+  const sequence = (await replayHarness.simulator.getLedger()).governanceActionCount;
   assert.equal(prepared.actionSequence, sequence);
-  const pendingAuthorization = structuredClone(replayHarness.simulator.getIssuerAuthorization(
+  const pendingAuthorization = structuredClone(await replayHarness.simulator.getIssuerAuthorization(
     current.authorizationIdCommitment,
   ));
-  const oldSignature = signAction(replayHarness, second, prepared, formerPolicy);
-  const oldCoSignature = signAction(replayHarness, third, prepared, formerPolicy);
-  assert.throws(() => replayHarness.simulator.authorizeIssuerAuthorization(
+  const oldSignature = await signAction(replayHarness, second, prepared, formerPolicy);
+  const oldCoSignature = await signAction(replayHarness, third, prepared, formerPolicy);
+  await assert.rejects(replayHarness.simulator.authorizeIssuerAuthorization(
     oldSignature.keyId, oldSignature.publicKey, oldSignature.signature,
     current.authorizationIdCommitment, prepared.evidenceHash, [oldCoSignature],
   ), /Invalid Jubjub Schnorr signature/u);
-  assert.equal(replayHarness.simulator.getLedger().governanceActionCount, sequence);
-  assert.deepEqual(replayHarness.simulator.getIssuerAuthorization(
+  assert.equal((await replayHarness.simulator.getLedger()).governanceActionCount, sequence);
+  assert.deepEqual(await replayHarness.simulator.getIssuerAuthorization(
     current.authorizationIdCommitment,
   ), pendingAuthorization);
 
-  const currentPolicy = replayHarness.simulator.getLedger().governancePolicyCommitment;
-  const signature = signAction(replayHarness, second, prepared, currentPolicy);
-  const coSignature = signAction(replayHarness, third, prepared, currentPolicy);
-  replayHarness.simulator.authorizeIssuerAuthorization(
+  const currentPolicy = (await replayHarness.simulator.getLedger()).governancePolicyCommitment;
+  const signature = await signAction(replayHarness, second, prepared, currentPolicy);
+  const coSignature = await signAction(replayHarness, third, prepared, currentPolicy);
+  await replayHarness.simulator.authorizeIssuerAuthorization(
     signature.keyId, signature.publicKey, signature.signature,
     current.authorizationIdCommitment, prepared.evidenceHash, [coSignature],
   );
-  assert.equal(replayHarness.simulator.getLedger().governanceActionCount, sequence + 1n);
-  assert.notDeepEqual(replayHarness.simulator.getIssuerAuthorization(
+  assert.equal((await replayHarness.simulator.getLedger()).governanceActionCount, sequence + 1n);
+  assert.notDeepEqual(await replayHarness.simulator.getIssuerAuthorization(
     current.authorizationIdCommitment,
   ), pendingAuthorization);
 });

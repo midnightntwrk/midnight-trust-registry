@@ -20,18 +20,18 @@ import {
   LocalTrustRegistryIntegrationHarness,
 } from "../packages/trust-registry-integration/dist/index.js";
 
-const bootstrapMembership = (harness) => ({
+const bootstrapMembership = async (harness) => ({
   maintainerIdCommitment: harness.maintainerIdCommitment,
   maintainerId: harness.maintainerId,
   subjectDidCommitment: harness.maintainerDidCommitment,
-  keyId: harness.simulator.getLedger().lastAuthorizedMaintainerKeyId,
+  keyId: (await harness.simulator.getLedger()).lastAuthorizedMaintainerKeyId,
   seed: new Uint8Array(32),
   subjectDid: harness.maintainerDid,
   trustLevel: "bootstrap-maintainer",
 });
 
-const signAction = (harness, maintainer, prepared, policyCommitment) => {
-  const ledger = harness.simulator.getLedger();
+const signAction = async (harness, maintainer, prepared, policyCommitment) => {
+  const ledger = await harness.simulator.getLedger();
   return {
     keyId: maintainer.keyId,
     publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
@@ -81,58 +81,60 @@ const activeIssuerEvidence = (label) => {
   return { harness, issuer, client, bundle };
 };
 
-test("compact-self-voted-maintainer-suspension", () => {
+test("compact-self-voted-maintainer-suspension", async () => {
   const harness = new LocalTrustRegistryIntegrationHarness("isolated-self-suspension");
-  const before = harness.simulator.getLedger().governanceActionCount;
-  assert.equal(harness.simulator.getLedger().activeMaintainerCount, 1n);
-  assert.throws(() => harness.suspendMaintainer(bootstrapMembership(harness)), /own DID/iu);
-  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
-  assert.equal(harness.simulator.getLedger().activeMaintainerCount, 1n);
+  await harness.ready;
+  const before = (await harness.simulator.getLedger()).governanceActionCount;
+  assert.equal((await harness.simulator.getLedger()).activeMaintainerCount, 1n);
+  await assert.rejects(harness.suspendMaintainer(await bootstrapMembership(harness)), /own DID/iu);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
+  assert.equal((await harness.simulator.getLedger()).activeMaintainerCount, 1n);
 });
 
-test("compact-self-voted-maintainer-revocation", () => {
+test("compact-self-voted-maintainer-revocation", async () => {
   const harness = new LocalTrustRegistryIntegrationHarness("isolated-self-revocation");
-  const before = harness.simulator.getLedger().governanceActionCount;
-  assert.equal(harness.simulator.getLedger().activeMaintainerCount, 1n);
-  assert.throws(() => harness.revokeMaintainer(bootstrapMembership(harness)), /own DID/iu);
-  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
-  assert.equal(harness.simulator.getLedger().activeMaintainerCount, 1n);
+  await harness.ready;
+  const before = (await harness.simulator.getLedger()).governanceActionCount;
+  assert.equal((await harness.simulator.getLedger()).activeMaintainerCount, 1n);
+  await assert.rejects(harness.revokeMaintainer(await bootstrapMembership(harness)), /own DID/iu);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
+  assert.equal((await harness.simulator.getLedger()).activeMaintainerCount, 1n);
 });
 
-test("compact-removal-below-maintainer-threshold", () => {
+test("compact-removal-below-maintainer-threshold", async () => {
   const harness = new LocalTrustRegistryIntegrationHarness("isolated-removal-threshold");
   const second = createMaintainerScenarioFixture("isolated-removal-second");
   const third = createMaintainerScenarioFixture("isolated-removal-third");
-  harness.authorizeMaintainer(second);
-  harness.authorizeMaintainer(third);
-  harness.updateMaintainerThresholdPolicy(2n, 1n, 1n, [second]);
-  const target = bootstrapMembership(harness);
-  const prepared = harness.prepareMaintainerDecisionAction(target, "suspend");
-  const before = harness.simulator.getLedger().governanceActionCount;
-  assert.equal(harness.simulator.getLedger().activeMaintainerCount, 3n);
-  assert.throws(() => harness.executeMaintainerDecisionWithSignatures(
-    target, "suspend", [signAction(harness, second, prepared)],
+  await harness.authorizeMaintainer(second);
+  await harness.authorizeMaintainer(third);
+  await harness.updateMaintainerThresholdPolicy(2n, 1n, 1n, [second]);
+  const target = await bootstrapMembership(harness);
+  const prepared = await harness.prepareMaintainerDecisionAction(target, "suspend");
+  const before = (await harness.simulator.getLedger()).governanceActionCount;
+  assert.equal((await harness.simulator.getLedger()).activeMaintainerCount, 3n);
+  await assert.rejects(harness.executeMaintainerDecisionWithSignatures(
+    target, "suspend", [await signAction(harness, second, prepared)],
   ), /non-conflicted removal quorum/iu);
-  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
-  assert.equal(harness.simulator.getLedger().activeMaintainerCount, 3n);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
+  assert.equal((await harness.simulator.getLedger()).activeMaintainerCount, 3n);
 });
 
-test("compact-removed-maintainer-signer", () => {
+test("compact-removed-maintainer-signer", async () => {
   const harness = new LocalTrustRegistryIntegrationHarness("isolated-removed-signer");
   const removed = createMaintainerScenarioFixture("isolated-removed-key");
   const issuer = createIssuerScenarioFixture("isolated-removed-issuer");
-  harness.authorizeMaintainer(removed);
-  harness.suspendMaintainer(removed);
-  harness.proposeIssuer(issuer);
-  const prepared = harness.prepareIssuerDecisionAction(issuer, "approve");
-  const before = harness.simulator.getLedger().governanceActionCount;
-  assert.throws(() => harness.executeIssuerDecisionWithSignatures(
-    issuer, "approve", [signAction(harness, removed, prepared)],
+  await harness.authorizeMaintainer(removed);
+  await harness.suspendMaintainer(removed);
+  await harness.proposeIssuer(issuer);
+  const prepared = await harness.prepareIssuerDecisionAction(issuer, "approve");
+  const before = (await harness.simulator.getLedger()).governanceActionCount;
+  await assert.rejects(harness.executeIssuerDecisionWithSignatures(
+    issuer, "approve", [await signAction(harness, removed, prepared)],
   ), /active|authorized|maintainer|signature|assert/iu);
-  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
 });
 
-test("denied-proposal-blocks-live-scope-reuse", () => {
+test("denied-proposal-blocks-live-scope-reuse", async () => {
   const harness = new LocalTrustRegistryIntegrationHarness("isolated-live-scope");
   const issuer = createIssuerScenarioFixture("isolated-live-scope-issuer");
   const replacementId = `${issuer.authorizationId}:replacement`;
@@ -141,49 +143,49 @@ test("denied-proposal-blocks-live-scope-reuse", () => {
     authorizationId: replacementId,
     authorizationIdCommitment: bytes32Commitment(replacementId),
   };
-  harness.proposeIssuer(issuer);
-  const before = harness.simulator.getLedger().governanceActionCount;
-  assert.throws(() => harness.proposeIssuer(replacement), /live authorization/iu);
-  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+  await harness.proposeIssuer(issuer);
+  const before = (await harness.simulator.getLedger()).governanceActionCount;
+  await assert.rejects(harness.proposeIssuer(replacement), /live authorization/iu);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
 });
 
-test("denied-proposal-requires-quorum", () => {
+test("denied-proposal-requires-quorum", async () => {
   const harness = new LocalTrustRegistryIntegrationHarness("isolated-denial-quorum");
   const second = createMaintainerScenarioFixture("isolated-denial-second");
   const third = createMaintainerScenarioFixture("isolated-denial-third");
   const issuer = createIssuerScenarioFixture("isolated-denial-issuer");
-  harness.authorizeMaintainer(second);
-  harness.authorizeMaintainer(third);
-  harness.proposeIssuer(issuer);
-  harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
-  const prepared = harness.prepareIssuerDecisionAction(issuer, "archive");
-  const before = harness.simulator.getLedger().governanceActionCount;
-  assert.throws(() => harness.executeIssuerDecisionWithSignatures(
-    issuer, "archive", [signAction(harness, second, prepared)],
+  await harness.authorizeMaintainer(second);
+  await harness.authorizeMaintainer(third);
+  await harness.proposeIssuer(issuer);
+  await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+  const prepared = await harness.prepareIssuerDecisionAction(issuer, "archive");
+  const before = (await harness.simulator.getLedger()).governanceActionCount;
+  await assert.rejects(harness.executeIssuerDecisionWithSignatures(
+    issuer, "archive", [await signAction(harness, second, prepared)],
   ), /threshold|quorum|signer|authorization/iu);
-  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
-  const archived = harness.executeIssuerDecisionWithSignatures(
-    issuer, "archive", [signAction(harness, second, prepared), signAction(harness, third, prepared)],
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
+  const archived = await harness.executeIssuerDecisionWithSignatures(
+    issuer, "archive", [await signAction(harness, second, prepared), await signAction(harness, third, prepared)],
   );
   assert.equal(archived.length, 32);
 });
 
-test("denied-proposal-is-not-trust", () => {
+test("denied-proposal-is-not-trust", async () => {
   const harness = new LocalTrustRegistryIntegrationHarness("isolated-archived-proposal");
   const issuer = createIssuerScenarioFixture("isolated-archived-issuer");
-  harness.proposeIssuer(issuer);
-  harness.archiveIssuer(issuer);
-  const bundle = harness.buildIssuerHistoricalEvidence(issuer);
+  await harness.proposeIssuer(issuer);
+  await harness.archiveIssuer(issuer);
+  const bundle = await harness.buildIssuerHistoricalEvidence(issuer);
   assert.equal(bundle.authorization.status, "archived");
   assert.equal(bundle.authorization.authorizedAt, undefined);
-  assert.throws(() => new TrustRegistrySimulatorClient(harness.simulator)
+  await assert.rejects(new TrustRegistrySimulatorClient(harness.simulator)
     .verifyIssuerAuthorizationBundle(bundle, {}), /not active/iu);
 });
 
-test("issuer-signed-wrong-policy-id", () => {
+test("issuer-signed-wrong-policy-id", async () => {
   const harness = new LocalTrustRegistryIntegrationHarness("isolated-wrong-evidence-policy");
   const issuer = createIssuerScenarioFixture("isolated-wrong-evidence-policy-issuer");
-  const evidence = harness.createApplicationEvidence({
+  const evidence = await harness.createApplicationEvidence({
     applicationId: issuer.authorizationId,
     subjectDid: issuer.subjectDid,
     role: "issuer",
@@ -197,19 +199,19 @@ test("issuer-signed-wrong-policy-id", () => {
     commitment,
     signature: harness.signApplicationEvidenceCommitment(commitment),
   };
-  assert.equal(harness.verifyApplicationEvidenceSignature(
+  assert.equal(await harness.verifyApplicationEvidenceSignature(
     signed.commitment, signed.signature, harness.evidenceVerifier,
   ), true);
-  const before = harness.simulator.getLedger().governanceActionCount;
-  assert.throws(() => harness.proposeIssuerWithApplicationEvidence(issuer, signed), /policyId does not match/iu);
-  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
-  harness.proposeIssuerWithApplicationEvidence(issuer, evidence);
+  const before = (await harness.simulator.getLedger()).governanceActionCount;
+  await assert.rejects(harness.proposeIssuerWithApplicationEvidence(issuer, signed), /policyId does not match/iu);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
+  await harness.proposeIssuerWithApplicationEvidence(issuer, evidence);
 });
 
-test("issuer-expired-signed-application-evidence", () => {
+test("issuer-expired-signed-application-evidence", async () => {
   const harness = new LocalTrustRegistryIntegrationHarness("isolated-expired-evidence");
   const issuer = createIssuerScenarioFixture("isolated-expired-evidence-issuer");
-  const evidence = harness.createApplicationEvidence({
+  const evidence = await harness.createApplicationEvidence({
     applicationId: issuer.authorizationId,
     subjectDid: issuer.subjectDid,
     role: "issuer",
@@ -217,34 +219,34 @@ test("issuer-expired-signed-application-evidence", () => {
     governedResource: { type: "credentialFamily", id: issuer.resourceId },
   });
   harness.advanceEvidenceTimeBy(24 * 60 * 60 * 1000 + 1);
-  const before = harness.simulator.getLedger().governanceActionCount;
-  assert.throws(() => harness.proposeIssuerWithApplicationEvidence(issuer, evidence), /evidence is expired/iu);
-  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
-  const fresh = harness.createApplicationEvidence({
+  const before = (await harness.simulator.getLedger()).governanceActionCount;
+  await assert.rejects(harness.proposeIssuerWithApplicationEvidence(issuer, evidence), /evidence is expired/iu);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
+  const fresh = await harness.createApplicationEvidence({
     applicationId: issuer.authorizationId,
     subjectDid: issuer.subjectDid,
     role: "issuer",
     scope: createIssuerAuthorizationScopeFixture(issuer),
     governedResource: { type: "credentialFamily", id: issuer.resourceId },
   });
-  harness.proposeIssuerWithApplicationEvidence(issuer, fresh);
+  await harness.proposeIssuerWithApplicationEvidence(issuer, fresh);
 });
 
-test("integration-old-policy-application-preflight", () => {
+test("integration-old-policy-application-preflight", async () => {
   const harness = new LocalTrustRegistryIntegrationHarness("isolated-old-policy-application");
   const second = createMaintainerScenarioFixture("isolated-old-policy-second");
   const third = createMaintainerScenarioFixture("isolated-old-policy-third");
   const issuer = createIssuerScenarioFixture("isolated-old-policy-issuer");
-  harness.authorizeMaintainer(second);
-  harness.authorizeMaintainer(third);
-  harness.proposeIssuer(issuer);
-  harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
-  const before = harness.simulator.getLedger().governanceActionCount;
-  assert.throws(() => harness.prepareIssuerDecisionAction(issuer, "approve"), /policyVersion does not match/iu);
-  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+  await harness.authorizeMaintainer(second);
+  await harness.authorizeMaintainer(third);
+  await harness.proposeIssuer(issuer);
+  await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+  const before = (await harness.simulator.getLedger()).governanceActionCount;
+  await assert.rejects(harness.prepareIssuerDecisionAction(issuer, "approve"), /policyVersion does not match/iu);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
   const current = createIssuerScenarioFixture("isolated-current-policy-issuer");
-  harness.proposeIssuer(current, [second]);
-  harness.approveIssuer(current, [second]);
+  await harness.proposeIssuer(current, [second]);
+  await harness.approveIssuer(current, [second]);
 });
 
 test("compact-old-policy-signature-replay", () => {
