@@ -2,11 +2,16 @@ import {
   ActorAuthenticationChallengeSchema,
   ActorAuthenticationSignatureSchema,
   actorAuthenticationDigestBytes,
+  computeSignedPendingApplicationCommitment,
   PendingApplicationListResponseSchema,
+  PendingApplicationRecordSchema,
+  SignedPendingApplicationSchema,
   type ActorAuthenticationChallenge,
   type ActorAuthenticationPurpose,
   type ActorAuthenticationSignature,
   type PendingApplicationSummary,
+  type PendingApplicationRecord,
+  type SignedPendingApplication,
 } from "@midnight-ntwrk/trust-registry-domain/browser";
 
 const TOKEN_PATTERN = /^trsa_[A-Za-z0-9_-]{43}$/u;
@@ -31,6 +36,7 @@ export type ActorDidSession<P extends ActorAuthenticationPurpose = ActorAuthenti
   actorDid: string;
   actorKeyId: string;
   purpose: P;
+  origin: string;
   registryId: string;
   genesisHash: string;
   contractAddress: string;
@@ -49,13 +55,22 @@ export type SignInActorDidInput<P extends ActorAuthenticationPurpose> = {
   clock?: () => number;
 };
 
+export function isSameOriginPrivateApi(apiBase: string, pageOrigin: string): boolean {
+  try {
+    const url = new URL(apiBase);
+    return url.origin === pageOrigin && url.username === "" && url.password === ""
+      && (url.protocol === "https:" || (url.protocol === "http:"
+        && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)));
+  } catch {
+    return false;
+  }
+}
+
 function sameOriginApi(apiBase: string, pageOrigin: string): string {
-  const url = new URL(apiBase);
-  if (url.origin !== pageOrigin || url.username !== "" || url.password !== ""
-    || (url.protocol !== "https:" && !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))) {
+  if (!isSameOriginPrivateApi(apiBase, pageOrigin)) {
     throw new Error("DID sign-in requires the same trusted API origin as this page.");
   }
-  return url.href.replace(/\/$/u, "");
+  return new URL(apiBase).href.replace(/\/$/u, "");
 }
 
 async function responsePayload(response: Response, action: string): Promise<unknown> {
@@ -118,7 +133,7 @@ export async function signInActorDid<P extends ActorAuthenticationPurpose>(
     || !Number.isFinite(expiresAt) || expiresAt <= clock() || expiresAt - clock() > MAX_SESSION_AGE_MS) {
     throw new Error("DID sign-in returned a mismatched session.");
   }
-  return { actorDid, actorKeyId, purpose: input.purpose, registryId: input.registryId,
+  return { actorDid, actorKeyId, purpose: input.purpose, origin: input.pageOrigin, registryId: input.registryId,
     genesisHash: challenge.genesisHash, contractAddress: challenge.contractAddress,
     accessToken: value.accessToken, expiresAt: value.expiresAt as string };
 }
@@ -130,6 +145,7 @@ export async function signOutActorDid(input: {
   fetchImpl?: typeof fetch;
 }): Promise<void> {
   const base = sameOriginApi(input.apiBase, input.pageOrigin);
+  if (input.session.origin !== input.pageOrigin) throw new Error("DID session origin does not match this page.");
   const response = await (input.fetchImpl ?? fetch)(`${base}/v1/actor-authentication/session`, {
     method: "DELETE", credentials: "omit", cache: "no-store", redirect: "error",
     headers: { authorization: `Bearer ${input.session.accessToken}` },
@@ -141,6 +157,128 @@ export type ApplicantApplicationList =
   | { status: "available"; entries: readonly PendingApplicationSummary[] }
   | { status: "unavailable" };
 
+function currentApplicantSession(session: ActorDidSession<"applicant-session">, clock: () => number): void {
+  const expiresAt = Date.parse(session.expiresAt);
+  if (session.purpose !== "applicant-session" || !TOKEN_PATTERN.test(session.accessToken)
+    || !Number.isFinite(expiresAt) || expiresAt <= clock()) {
+    throw new Error("A current applicant DID session is required.");
+  }
+}
+
+/** Register a signed applicant intent without placing signer key material in this client. */
+export async function registerApplicantApplication(input: {
+  apiBase: string;
+  pageOrigin: string;
+  session: ActorDidSession<"applicant-session">;
+  request: SignedPendingApplication;
+  fetchImpl?: typeof fetch;
+  clock?: () => number;
+}): Promise<PendingApplicationRecord> {
+  const unknownOutcome = () => new Error("Pending application outcome is unknown after submission. Do not resubmit the signed request; reconcile it by exact request identity.");
+  const base = sameOriginApi(input.apiBase, input.pageOrigin);
+  if (input.session.origin !== input.pageOrigin) throw new Error("Applicant DID session origin does not match this page.");
+  const clock = input.clock ?? Date.now;
+  currentApplicantSession(input.session, clock);
+  const request = SignedPendingApplicationSchema.parse(input.request);
+  if (request.intent.actorDid !== input.session.actorDid
+    || request.intent.actorKeyId !== input.session.actorKeyId
+    || request.intent.registryId !== input.session.registryId
+    || Date.parse(request.intent.expiresAt) <= clock()) {
+    throw new Error("Signed application does not match the current applicant DID session.");
+  }
+  let response: Response;
+  try {
+    response = await (input.fetchImpl ?? fetch)(`${base}/v1/pending-applications`, {
+      method: "POST", credentials: "omit", cache: "no-store", redirect: "error",
+      headers: { "content-type": "application/json", authorization: `Bearer ${input.session.accessToken}` },
+      body: JSON.stringify(request),
+    });
+  } catch {
+    throw unknownOutcome();
+  }
+  if (!response.ok && (response.status < 400 || response.status === 408
+    || response.status === 429 || response.status >= 500)) throw unknownOutcome();
+  let payload: unknown;
+  try {
+    payload = await responsePayload(response, "Pending application registration");
+  } catch (error) {
+    if (response.ok) throw unknownOutcome();
+    throw error;
+  }
+  const parsed = PendingApplicationRecordSchema.safeParse(payload);
+  if (!parsed.success || parsed.data.status !== "pending"
+    || parsed.data.binding.applicationId !== request.applicationId
+    || parsed.data.authorizationId !== request.authorizationId
+    || parsed.data.binding.registryId !== input.session.registryId
+    || parsed.data.binding.subjectDid !== input.session.actorDid
+    || parsed.data.binding.role !== request.scope.role
+    || parsed.data.binding.scopeCommitment !== request.intent.scopeCommitment
+    || parsed.data.binding.governedResource.type !== request.governedResource.type
+    || parsed.data.binding.governedResource.id !== request.governedResource.id
+    || (parsed.data.requestCommitment !== undefined
+      && parsed.data.requestCommitment !== computeSignedPendingApplicationCommitment(request))) {
+    throw new Error("Pending application registration returned a mismatched record. Do not resubmit the signed request; reconcile it by exact request identity.");
+  }
+  return parsed.data;
+}
+
+export type ApplicantApplicationReconciliation =
+  | { status: "observed"; record: PendingApplicationRecord }
+  | { status: "unknown" };
+
+/** A matching committed request proves intake observation, not a finalized governance decision. */
+export async function reconcileApplicantApplication(input: {
+  apiBase: string;
+  pageOrigin: string;
+  session: ActorDidSession<"applicant-session">;
+  request: SignedPendingApplication;
+  fetchImpl?: typeof fetch;
+  clock?: () => number;
+}): Promise<ApplicantApplicationReconciliation> {
+  const base = sameOriginApi(input.apiBase, input.pageOrigin);
+  if (input.session.origin !== input.pageOrigin) throw new Error("Applicant DID session origin does not match this page.");
+  currentApplicantSession(input.session, input.clock ?? Date.now);
+  const request = SignedPendingApplicationSchema.parse(input.request);
+  if (request.intent.actorDid !== input.session.actorDid
+    || request.intent.actorKeyId !== input.session.actorKeyId
+    || request.intent.registryId !== input.session.registryId) {
+    throw new Error("Signed application does not match the current applicant DID session.");
+  }
+  let response: Response;
+  try {
+    response = await (input.fetchImpl ?? fetch)(`${base}/v1/pending-applications/${encodeURIComponent(request.applicationId)}`, {
+      method: "GET", credentials: "omit", cache: "no-store", redirect: "error",
+      headers: { authorization: `Bearer ${input.session.accessToken}` },
+    });
+  } catch {
+    return { status: "unknown" };
+  }
+  if (response.status === 404 || response.status >= 500) return { status: "unknown" };
+  if (!response.ok) await responsePayload(response, "Pending application reconciliation");
+  let payload: unknown;
+  try {
+    payload = await response.json() as unknown;
+  } catch {
+    return { status: "unknown" };
+  }
+  const parsed = PendingApplicationRecordSchema.safeParse(payload);
+  if (!parsed.success) return { status: "unknown" };
+  const record = parsed.data;
+  if (record.requestCommitment === undefined) return { status: "unknown" };
+  if (record.requestCommitment !== computeSignedPendingApplicationCommitment(request)
+    || record.binding.applicationId !== request.applicationId
+    || record.authorizationId !== request.authorizationId
+    || record.binding.registryId !== input.session.registryId
+    || record.binding.subjectDid !== input.session.actorDid
+    || record.binding.role !== request.scope.role
+    || record.binding.scopeCommitment !== request.intent.scopeCommitment
+    || record.binding.governedResource.type !== request.governedResource.type
+    || record.binding.governedResource.id !== request.governedResource.id) {
+    throw new Error("Pending application reconciliation returned a mismatched record. Do not resubmit the signed request.");
+  }
+  return { status: "observed", record };
+}
+
 export async function listApplicantApplications(input: {
   apiBase: string;
   pageOrigin: string;
@@ -149,12 +287,8 @@ export async function listApplicantApplications(input: {
   clock?: () => number;
 }): Promise<ApplicantApplicationList> {
   const base = sameOriginApi(input.apiBase, input.pageOrigin);
-  const expiresAt = Date.parse(input.session.expiresAt);
-  if (input.session.purpose !== "applicant-session"
-    || !TOKEN_PATTERN.test(input.session.accessToken)
-    || !Number.isFinite(expiresAt) || expiresAt <= (input.clock ?? Date.now)()) {
-    throw new Error("A current applicant DID session is required.");
-  }
+  if (input.session.origin !== input.pageOrigin) throw new Error("Applicant DID session origin does not match this page.");
+  currentApplicantSession(input.session, input.clock ?? Date.now);
   const response = await (input.fetchImpl ?? fetch)(`${base}/v1/pending-applications`, {
     method: "GET", credentials: "omit", cache: "no-store", redirect: "error",
     headers: { authorization: `Bearer ${input.session.accessToken}` },

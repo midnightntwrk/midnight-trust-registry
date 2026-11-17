@@ -112,6 +112,9 @@ describe("file application admission store", () => {
       },
     }]);
     expect(await second.listForSubjectDid(createMidnightDid("other-applicant"))).toEqual([]);
+    expect(await second.readForSubjectDid(issuer.subjectDid, applicationId)).toEqual(pending);
+    expect(await second.readForSubjectDid(createMidnightDid("other-applicant"), applicationId)).toBeNull();
+    expect(await second.readForSubjectDid(issuer.subjectDid, "application:unknown:v1")).toBeNull();
     const archiveHarness = new LocalTrustRegistryIntegrationHarness(label);
     archiveHarness.proposeIssuer(issuer);
     const eventHash = archiveHarness.archiveIssuer(issuer);
@@ -137,6 +140,7 @@ describe("file application admission store", () => {
     const archived = await first.recordArchived(observation, verify);
     expect(archived.status).toBe("archived");
     expect((await second.listForSubjectDid(issuer.subjectDid))[0]?.summary.status).toBe("archived");
+    expect(await second.readForSubjectDid(issuer.subjectDid, applicationId)).toEqual(archived);
     expect(await second.readPending(applicationId)).toBeNull();
     await expect(second.acceptEvidence(applicationId, evidence(), now))
       .rejects.toMatchObject({ reason: "unknown-application" });

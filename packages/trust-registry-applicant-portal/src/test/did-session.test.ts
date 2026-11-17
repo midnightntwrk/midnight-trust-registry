@@ -46,7 +46,7 @@ describe("applicant DID session client", () => {
       apiBase: origin, pageOrigin: origin, registryId: challenge.registryId,
       signer, fetchImpl, clock: () => NOW,
     });
-    expect(result).toEqual({ actorDid, actorKeyId, purpose: "applicant-session", registryId: challenge.registryId,
+    expect(result).toEqual({ actorDid, actorKeyId, purpose: "applicant-session", origin, registryId: challenge.registryId,
       genesisHash: challenge.genesisHash, contractAddress: challenge.contractAddress,
       accessToken: session.accessToken, expiresAt: session.expiresAt });
     expect(result).not.toHaveProperty("role");
@@ -95,7 +95,7 @@ describe("applicant DID session client", () => {
     const revokeMock = vi.fn(async (_url: string, _init?: RequestInit) => new Response(null, { status: 204 }));
     const revoke = revokeMock as unknown as typeof fetch;
     await signOutApplicantDid({ apiBase: origin, pageOrigin: origin,
-      session: { ...session, registryId: challenge.registryId,
+      session: { ...session, origin, registryId: challenge.registryId,
         genesisHash: challenge.genesisHash, contractAddress: challenge.contractAddress }, fetchImpl: revoke });
     expect(revokeMock.mock.calls[0]?.[1]).toMatchObject({ method: "DELETE", credentials: "omit",
       headers: { authorization: `Bearer ${session.accessToken}` } });
@@ -118,7 +118,7 @@ describe("applicant DID session client", () => {
   it("reports when server-side session revocation cannot be confirmed", async () => {
     const fetchImpl = vi.fn(async () => new Response(null, { status: 503 })) as unknown as typeof fetch;
     await expect(signOutApplicantDid({ apiBase: origin, pageOrigin: origin,
-      session: { ...session, registryId: challenge.registryId,
+      session: { ...session, origin, registryId: challenge.registryId,
         genesisHash: challenge.genesisHash, contractAddress: challenge.contractAddress },
       fetchImpl })).rejects.toThrow("HTTP 503");
   });

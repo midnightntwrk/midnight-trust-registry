@@ -6,7 +6,7 @@ import { canonicalizeAuthorizationScope, computeAuthorizationScopeCommitment, ty
 import { prepareAuditorApplication, signPreparedAuditorApplication, type AuditorApplicationDraft, type PreparedAuditorApplication } from "./auditor-application.js";
 import { prepareIssuerApplication, prepareMaintainerApplication, prepareVerifierApplication, signPreparedMembershipApplication, type IssuerApplicationDraft, type MaintainerApplicationDraft, type PreparedMembershipApplication, type VerifierApplicationDraft } from "./membership-application.js";
 import { signInApplicantDid, signOutApplicantDid, type ApplicantDidSession, type ApplicantDidSigner } from "./did-session.js";
-import { isActorDidSigner } from "@midnight-ntwrk/trust-registry-client/browser-authentication";
+import { isActorDidSigner, isSameOriginPrivateApi } from "@midnight-ntwrk/trust-registry-client/browser-authentication";
 
 const STORAGE_KEY = "trust-registry.portal.api-base";
 
@@ -177,13 +177,7 @@ const auditorScopeMatches = (value: unknown, expected: AuditorScopeInput): boole
 };
 
 export const canUsePrivateEvidenceHost = (apiBase: string, pageUrl: URL): boolean => {
-  try {
-    const api = new URL(apiBase);
-    return api.username === "" && api.password === "" && api.origin === pageUrl.origin
-      && (api.protocol === "https:" || api.hostname === "localhost" || api.hostname === "127.0.0.1");
-  } catch {
-    return false;
-  }
+  return isSameOriginPrivateApi(apiBase, pageUrl.origin);
 };
 
 export const escapeHtml = (value: string): string =>
@@ -1121,6 +1115,9 @@ export const createApplicantPortalApp = (
     root.querySelector<HTMLButtonElement>("[data-did-sign-in]")?.addEventListener("click", () => {
       void signInDid();
     });
+    root.querySelector<HTMLButtonElement>("[data-did-sign-in-primary]")?.addEventListener("click", () => {
+      void signInDid();
+    });
     root.querySelector<HTMLButtonElement>("[data-did-sign-out]")?.addEventListener("click", () => {
       void signOutDid();
     });
@@ -1499,6 +1496,10 @@ export const createApplicantPortalApp = (
       const form = event.currentTarget as HTMLFormElement;
       const input = form.querySelector<HTMLTextAreaElement>("[name='presentation']");
       if (input === null) return;
+      if (form.querySelector<HTMLInputElement>("[data-vp-consent]")?.checked !== true) {
+        setState({ evidenceError: "Review the request and consent before sharing your presentation." });
+        return;
+      }
       const raw = input.value;
       input.value = "";
       void submitApplicationPresentation(raw);
@@ -1583,6 +1584,7 @@ export const createApplicantPortalApp = (
     const advancedOpen = root.querySelector<HTMLDetailsElement>(".advanced-tools")?.open ?? false;
     const previousVpForm = root.querySelector<HTMLFormElement>("[data-application-vp-form]");
     const previousVp = previousVpForm?.querySelector<HTMLTextAreaElement>("[name='presentation']")?.value;
+    const previousVpConsent = previousVpForm?.querySelector<HTMLInputElement>("[data-vp-consent]")?.checked ?? false;
     const previousChallengeHash = previousVpForm?.dataset.challengeHash;
     const cards = state.inspection === undefined ? [] : toInspectionCards(state.inspection);
     const issuerCards = cards.filter((card) => card.target === "issuer");
@@ -1695,7 +1697,7 @@ export const createApplicantPortalApp = (
                   ? "This host can accept signed applications but cannot list them. Keep your receipt ID to continue. Sign-in never grants a role."
                 : activeDidSession === undefined
                   ? didSignerAvailable
-                    ? 'Before sending private evidence, <a href="#connection-details">sign in with your digital identity in Workspace settings</a>. You can prepare a request now; sign-in does not grant a role.'
+                    ? 'Sign in to send private evidence. You can prepare a request now; sign-in does not grant a role.'
                     : 'You can prepare a request here. To send private evidence, ask your host to connect a digital identity signer, then <a href="#connection-details">sign in in Workspace settings</a>.'
                   : "Identity confirmed for this session. Proof of eligibility and governed approval are still required before a role becomes active."}</p>
             <div class="journey-cards">
@@ -1708,7 +1710,11 @@ export const createApplicantPortalApp = (
             <section class="application-readiness" aria-labelledby="application-readiness-heading">
               <div class="readiness-heading"><p class="eyebrow">Application readiness</p><h3 id="application-readiness-heading">What happens next</h3></div>
               <ul>
-                <li><span class="readiness-step">Identity</span><strong>${activeDidSession !== undefined ? "Signed in for this session" : state.loading && state.didSession !== undefined ? "Paused while checking source" : "Not signed in"}</strong></li>
+                <li id="identity-step"><span class="readiness-step">Identity</span><strong${activeDidSession !== undefined ? ' data-focus-key="did-sign-in-primary" tabindex="-1"' : ""}>${activeDidSession !== undefined ? "Signed in for this session" : state.loading && state.didSession !== undefined ? "Paused while checking source" : "Not signed in"}</strong>
+                  ${activeDidSession === undefined && didSignerAvailable && privateHost && state.inspection !== undefined
+                    ? `<button class="readiness-action" type="button" data-did-sign-in-primary data-focus-key="did-sign-in-primary"${state.didBusy || state.loading ? " disabled" : ""}>${state.didBusy ? "Signing in…" : "Sign in to continue"}</button>` : ""}
+                  ${state.didError === undefined || !didSignerAvailable ? "" : `<span class="readiness-error" role="alert">${escapeHtml(state.didError)}</span>`}
+                </li>
                 <li><span class="readiness-step">Eligibility</span><strong>Not verified in this view</strong></li>
                 <li><span class="readiness-step">Registry role</span><strong>Requires governed approval</strong></li>
               </ul>
@@ -2142,10 +2148,12 @@ export const createApplicantPortalApp = (
                   <p>Nonce: <span class="mono">${escapeHtml(pending.challenge.nonce)}</span></p>
                   <p>Challenge hash: <span class="mono">${escapeHtml(pending.challenge.challengeHash)}</span></p>
                   <form data-application-vp-form data-challenge-hash="${escapeHtml(pending.challenge.challengeHash)}">
+                    <p class="step-hint">Review the role, policy, resource, and scope above before presenting. The verifier sees the VP to check eligibility; the registry retains only redacted signed evidence. This does not grant the requested role.</p>
                     <label class="label">Presentation JSON
                       <textarea class="input mono" name="presentation" rows="6" required></textarea>
                     </label>
-                    <button class="button" type="submit"${state.evidenceBusy ? " disabled" : ""}>Submit VP evidence</button>
+                    <label class="vp-consent"><input type="checkbox" data-vp-consent required /><span>I consent to share this presentation for this request and one-use challenge.</span></label>
+                    <button class="button" type="submit"${state.evidenceBusy ? " disabled" : ""}>Verify eligibility evidence</button>
                   </form>
                 </div>
               `}
@@ -2239,6 +2247,8 @@ export const createApplicantPortalApp = (
     if (previousVp !== undefined && previousChallengeHash === state.pendingApplication?.challenge?.challengeHash) {
       const currentVp = root.querySelector<HTMLTextAreaElement>("[data-application-vp-form] [name='presentation']");
       if (currentVp !== null) currentVp.value = previousVp;
+      const currentConsent = root.querySelector<HTMLInputElement>("[data-application-vp-form] [data-vp-consent]");
+      if (currentConsent !== null) currentConsent.checked = previousVpConsent;
     }
     if (previousSignedEnvelope !== undefined) {
       const currentEnvelope = root.querySelector<HTMLTextAreaElement>("[data-signed-submit] [name='signedEnvelope']");

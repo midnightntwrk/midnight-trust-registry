@@ -5,6 +5,7 @@ import { deriveJubjubPublicKeyFromSeed, encodeJubjubSignature, signJubjubPayload
 import {
   computeAuthorizationScopeCommitment,
   computePendingApplicationPayloadCommitment,
+  computeSignedPendingApplicationCommitment,
   issuerGovernedResourceId,
   mutationIntentDigestBytes,
   requestGovernedResourceId,
@@ -134,6 +135,9 @@ describe("pending application registration transition", () => {
       },
     }]);
     expect(await port.listForSubjectDid(createMidnightDid("other-applicant"))).toEqual([]);
+    expect(await port.readForSubjectDid(applicantDid, accepted.binding.applicationId)).toEqual(accepted);
+    expect(await port.readForSubjectDid(createMidnightDid("other-applicant"), accepted.binding.applicationId)).toBeNull();
+    expect(await port.readForSubjectDid(applicantDid, "application:auditor:unknown:v1")).toBeNull();
   });
 
   it("authenticates the applicant DID and binds the complete request scope to current policy", async () => {
@@ -148,6 +152,7 @@ describe("pending application registration transition", () => {
       status: "pending",
       authorizationId: request.authorizationId,
       createdAt: now.toISOString(),
+      requestCommitment: computeSignedPendingApplicationCommitment(request),
       binding: {
         registryId: initial.workspace.snapshot.registry.registryId,
         applicationId: request.applicationId,

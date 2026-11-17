@@ -23,8 +23,22 @@ the private key. The client requests a purpose-bound challenge, checks the
 actor, registry, origin, expiry, and optional deployment identity before
 asking that signer to sign the challenge digest. Challenge, session, and
 sign-out requests do not follow redirects. It accepts only a matching,
-short-lived session response from the same-origin API. Loopback HTTP is for
-local development; non-loopback sign-in requires HTTPS.
+short-lived session response from the same-origin API. HTTP is allowed only
+for exact-origin `localhost`, `127.0.0.1`, or `[::1]` loopback development;
+non-loopback sign-in requires HTTPS. The browser portal uses this same policy.
+
+The embedding, same-origin host owns and injects
+`window.midnightTrustRegistryDidSigner` with `getIdentity()` and
+`signDigest({ challenge, digest })`. Treat that host and signer as trusted code
+at the same level as the page: neither the registry UI nor this client stores
+wallet keys or proves that an injected signer is trustworthy. The signer must
+independently parse the exact challenge, verify actor DID and key, registry,
+deployment, origin, purpose, nonce, and expiry against its own trusted context,
+and recompute `actorAuthenticationDigestBytes(challenge)` before signing. It
+must not blindly sign the supplied `digest` or a challenge from an unrelated
+origin. Reject a mismatch, cancellation, or unavailable key rather than
+returning a signature. The host must protect private keys outside page storage
+and ensure untrusted page scripts cannot replace the signer.
 
 The returned bearer is an **identity session only**. Keep it in memory, use it
 only with the intended same-origin private route, and clear it on sign-out,
@@ -40,6 +54,15 @@ an available empty list from the API's specific `pending-application-list-unavai
 problem. Other HTTP failures, malformed data, and maintainer-purpose sessions
 fail rather than appearing as an empty inbox. This read does not confer a role
 or authorize any application or governance write.
+
+`registerApplicantApplication` is the shared headless/browser path for a
+pre-signed pending request. It requires an unexpired applicant DID session on
+the exact API origin, matches the signed actor, key, and registry to that
+session, and checks the pending record returned by the API. The external signer
+still owns the key; the server, not this client, verifies the signature and
+authorizes the write. Successful registration means pending intake, not VP
+eligibility, maintainer approval, or finalized on-chain authority. The signed
+role journeys exercise this path against the local simulator host.
 
 For challenge-backed application proposals, `scopeCommitment` means the
 canonical `tr-scope-v1` authorization-scope digest, not a hash of the governed

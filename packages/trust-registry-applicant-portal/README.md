@@ -61,7 +61,7 @@ Current scope:
   backend or browser persistence layer
 
 The private pending-application panel is enabled only when the portal and API are hosted at
-the same HTTPS origin (or the same localhost origin for development). The host
+the same HTTPS origin (or the same exact loopback HTTP origin, including `[::1]`, for development). The host
 must inject a `PendingApplicationRegistrationPort` and an `ApplicationVpHttpPort`
 with applicant authentication, a trusted
 pending-application resolver, VP verifier, authorized evidence signer, atomic
@@ -79,6 +79,25 @@ proposal or approve membership. The reference in-memory registration port is
 single-process and non-durable. A production host must provide atomic pending
 persistence, a live policy view, and an authorized evidence verifier before
 exposing this flow.
+
+Before submitting a VP, the applicant sees the request's DID, role, policy,
+resource, and scope and must explicitly consent to share the presentation for
+that one-use challenge. Refusing consent sends no VP request. A new challenge
+requires a fresh consent decision. The verifier may inspect the VP to decide
+eligibility, but the registry stores only redacted signed evidence. Neither
+consent nor a verified VP is itself a registry role grant.
+
+DID sign-in requires a trusted same-origin host to inject
+`window.midnightTrustRegistryDidSigner`; see the
+[client signer contract](../trust-registry-client/README.md#browser-identity-session).
+When a current applicant session is supplied to the portal client, private
+registration and VP requests send its bearer only to that exact API origin,
+without ambient browser credentials or redirects. The host still authenticates
+each route; the client token is not a signed mutation intent.
+The host owns key custody and signer-side challenge verification. A successful
+sign-in only proves DID key control; it never grants issuer, verifier, auditor,
+or maintainer authority. VP eligibility and governed registry authorization
+remain independent steps.
 
 To demonstrate the private panel without a production host, run
 `pnpm run demo:auditor` from the repository root and open its loopback URL.

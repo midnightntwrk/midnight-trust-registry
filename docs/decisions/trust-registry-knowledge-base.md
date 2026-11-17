@@ -3240,3 +3240,55 @@ Both apps now have Chromium checks for editable loopback development endpoint
 switching. Reads move to the selected host and stop on the old host; the portal
 continues to disable private evidence actions when the new API is cross-origin
 to the page. Packaged same-origin endpoint locking remains a separate test.
+
+## Qualified VP intake boundary
+
+The integration package now offers a separate qualified application VP intake
+factory. Its host supplies a pinned API origin, registry ID, genesis hash, and
+contract address. The VC family adapter must derive the applicant DID, audience,
+deployment tuple, nonce, requested role, scope commitment, and application
+policy ID/version from the verified signed presentation body. The verifier
+also requires the governed issuer status-policy binding to name that same
+registry. Missing context, cross-registry issuer authorization, and changed
+signed fields deny eligibility before the one-use challenge is consumed.
+The older unqualified factory remains only a fixture/reference path.
+
+The issuer API intake and verifier, auditor, and maintainer simulator journeys
+now exercise the qualified factory. Their wrong-audience, wrong-registry, and
+wrong-policy cases leave the challenge live and do not propose evidence. The
+implementation commit `4d3f197` passed 97 offline Chromium tests, 359
+integration tests (two existing skips), 111 API integration tests, and a
+disposable `./run.sh --light` gate with 198/198 adversarial parity. These are local
+fixture/simulator results, not deployed finality. Issue #302 remains open until
+a host supplies a genuine VC/status adapter and authenticated finalized issuer
+authorization; DID sign-in and VP eligibility alone do not grant a role.
+
+## Shared applicant API and headless CLI, 2026-11-16
+
+The pending-application record schema now lives in the domain package so the
+API and shared client validate the same shape. The shared client registers a
+pre-signed request only with a current applicant-purpose DID session, exact
+origin, matching actor/key/registry, and matching pending response binding.
+It owns no signer key; the server remains responsible for signature and policy
+verification. The signed issuer, verifier, auditor, and maintainer simulator
+journeys use this client path and retain a fixed test clock.
+
+The operator CLI adds `api-register` and `api-applications` commands. Their
+bearer and signed input arrive on stdin, not as shell arguments. A separate
+sign-in origin carried by the session must match the selected API origin before a token is
+sent. The packaged current-time loopback test exercises the executable list
+command, an explicit unavailable result, and denied reuse after sign-out.
+A second current-time loopback host exercises executable CLI registration
+with a real DID-signed intent and in-memory registration port, then checks
+same-applicant readback, wrong actor/origin rejection, and replay denial.
+When registration transport fails or its post-send response is unreadable or
+server-failed, the client and CLI report an unknown
+outcome rather than suggesting a blind retry; a pending-list summary cannot
+prove the identity of the accepted signed request.
+This is a controlled HTTP host, not a deployed registry. A pending
+registration is not VP eligibility or a finalized grant. At this local head,
+the fast headless suite, 326 API unit tests, CLI tests, lint, docs/OpenAPI,
+and all 97 offline Playwright tests passed. Complete typed actor vote/poll,
+ambiguous-write reconciliation, live status, and independently finalized
+ledger reads remain open under #297 and #219/#59. No release or production
+qualification follows from this evidence.
