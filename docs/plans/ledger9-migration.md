@@ -558,16 +558,27 @@ Readback showed governance action count 2 and one active evidence-verifier key.
 The failed reservations, new receipt, and proof response remain private under
 the ignored smoke-state directory. This is one development-chain governance
 action, not a live DID/VC evidence journey or release qualification. The public
-test wallet is shared with other sessions; later actor writes need an exclusive
-funded session wallet and their own journals.
+test wallet is shared with other sessions, so every actor write needs a fresh
+one-shot journal and finalized-state reconciliation. A repeatable actor harness
+should use an exclusive funded session wallet instead.
 
 The next issuer-intake preflight used the finalized evidence-verifier key,
 fixture-only evidence commitment, and separate issuer DID. The deployed
 `proposeIssuerAuthorization` circuit passed a full-contract proof and wallet
-balance, then reached a hard-failing `submitTx` stub. This confirms that the
-current chain and compiled circuit accept the signed fixture inputs, but no
-issuer proposal was broadcast or finalized. It does not establish live VP
-verification or the complete issuer workflow.
+balance, then reached a hard-failing `submitTx` stub. A separately journaled
+one-shot call then finalized the proposal as transaction
+`006bb3b322cee279acf2407a8752d1d6fe735fa5c3c745dcd0468e0adec92a900f`.
+The proposed record retained the fixture evidence commitment. The subsequent
+`authorizeIssuerAuthorization` and `activateIssuerAuthorization` calls each
+passed proof-only preflight, then finalized in distinct one-shot journals as
+transactions `00c6517d8bbe3f9f2a0296f725bd0c5432ba8665d37ca502324c35b9dd859ff50f`
+and `00b2d3ed1ae43e16a5a8bb13d84a833759bd435ca6317ee1bdb72326c11efbf9b4`.
+An independent read-only ledger check found governance action count 5, one
+active issuer, one active evidence-verifier key, and all 66 verifier keys.
+These are deployed local fixture-backed governance transitions, not a live
+DID/VP-verified issuer application or a release qualification result. Verifier,
+auditor, recognition, restart/restore, and ambiguous-submission journeys remain
+unqualified on this chain.
 
 ## Execution order
 
