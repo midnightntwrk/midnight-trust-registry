@@ -746,6 +746,26 @@ before its active lifecycle can be used for an actor-specific epoch and
 decision bundle. The old fixture remains a useful contract-lifecycle smoke,
 but cannot qualify that decision path.
 
+A second development issuer fixture now uses the domain's canonical schema
+resource ID and `computeIssuerStatusPolicyBindingCommitment` preimage. Its
+proposal passed proof-only validation with broadcast blocked, then was
+submitted once under a separate private journal (receipt
+`008cc632915309e88484b2a73a49dd4f22743f794df89cc94ce2692c413aba56b3`).
+The separately proved and journaled authorization and activation receipts
+were `00335ebb04bb81addf7db6d4fc9567ffba063b4a0d95d7631a7654dae2ad7ca74c`
+and `005688356581ab4426636bc9120e604915b36c92ed4e48ff02790ec2bb1fc5b16f`.
+An independent pinned read at indexed height 4447 reported governance action
+count 18, two active issuers, the new issuer's lifecycle sequences 15/16/17,
+`canonicalResourceIdCommitmentMatches: true`, status-policy binding commitment
+`0xc03e880d3053f086a96c5670f0b7eac9a67b40a943bff23db89473297fefa079`,
+and all 66 verifier-key hashes matching the source manifest. The status
+binding has a syntactically valid fixture preimage, not a verified VC-owned
+live status authority. No accepted application VP receipt or authenticated
+live DID session was submitted through the API, and no actor-specific epoch
+was published. This is a stronger deployed canonical-shape smoke, still not
+a qualified issuer decision or release evidence. Do not replay its one-shot
+transactions or treat the shared-chain fixture signer as an operator key.
+
 ## Execution order
 
 1. Keep the `ledger8` source branch only as a historical reference. Ledger 9
