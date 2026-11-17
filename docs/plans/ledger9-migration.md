@@ -58,13 +58,18 @@ registry can be inspected without starting a wallet or submitting a call:
 ```sh
 node --env-file=artifacts/ledger9-current-chain.env scripts/read-ledger9-registry.mjs \
   --address 0xf80638c64dcf63138b222426549bedb122673391b414658854f2a04a92b5be09 \
-  --issuer-label issuer:local-development-fixture:v1
+  --issuer-label issuer:local-development-fixture:v1 \
+  --manifest artifacts/ledger9-current-chain-pack/release-manifest.json
 ```
 
 The output reports the observed chain identity, finalized block hash, verifier
 key count, governance counters, and selected issuer lifecycle. It does not
-verify that an issuer supplied live DID/VP evidence, and its numeric counts do
-not replace a source-matched key-inventory check.
+verify that an issuer supplied live DID/VP evidence. With `--manifest`, it
+requires the complete generated circuit catalog and every finalized verifier
+key hash to match the selected source-matched release manifest; it reports that
+manifest's source revision. Without `--manifest`, the numeric key count alone
+does not establish a source match. This local manifest comparison is not an
+independent signature or release approval check.
 
 Run any shared-stack development workload through
 `pnpm localnet:run -- <command> [args...]`. This wrapper performs the same
@@ -595,6 +600,10 @@ These are deployed local fixture-backed governance transitions, not a live
 DID/VP-verified issuer application or a release qualification result. Verifier,
 auditor, recognition, restart/restore, and ambiguous-submission journeys remain
 unqualified on this chain.
+At indexed height 2744, the pinned read-only Registry command with the
+source-matched `e51c6de9` manifest confirmed exact equality for all 66
+finalized verifier-key hashes, maintenance counter 65, and the active fixture
+issuer. This comparison did not submit a transaction or qualify live VP intake.
 
 ## Execution order
 

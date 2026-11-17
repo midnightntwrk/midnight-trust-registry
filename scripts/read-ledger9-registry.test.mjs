@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { parseRegistryReadArgs, summarizeFinalizedRegistry } from "./read-ledger9-registry.mjs";
+import { assertFinalizedVerifierKeyCatalog, parseRegistryReadArgs, summarizeFinalizedRegistry } from "./read-ledger9-registry.mjs";
 
 const address = `0x${"a".repeat(64)}`;
 const env = {
@@ -12,12 +12,37 @@ const env = {
 
 test("registry read requires an exact address and non-genesis chain pin", () => {
   assert.deepEqual(parseRegistryReadArgs(["--address", address, "--issuer-label", "issuer:example"], env), {
-    contractAddress: address, issuerLabel: "issuer:example",
+    contractAddress: address, issuerLabel: "issuer:example", manifestPath: undefined,
   });
+  assert.equal(parseRegistryReadArgs(["--address", address, "--manifest", "release.json"], env).manifestPath,
+    "release.json");
   assert.throws(() => parseRegistryReadArgs(["--address", address], {}), /Pin TR_EXPECTED/u);
   assert.throws(() => parseRegistryReadArgs(["--address", `0x${"0".repeat(64)}`], env), /nonzero/u);
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--address", address], env), /Duplicate/u);
+  assert.throws(() => parseRegistryReadArgs(["--address", address, "--manifest", "a", "--manifest", "b"], env), /Duplicate/u);
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--issuer-label", "x\0y"], env), /invalid/u);
+});
+
+test("registry read requires every finalized verifier key to match the source manifest", () => {
+  const manifest = {
+    format: "tr-release-candidate-manifest-v2",
+    sourceRevision: "a".repeat(40),
+    verifierKeySha256: { first: "b".repeat(64), second: "c".repeat(64) },
+  };
+  const image = { verifierKeySha256: { second: "c".repeat(64), first: "b".repeat(64) } };
+  assert.deepEqual(assertFinalizedVerifierKeyCatalog(image, manifest, ["first", "second"]), {
+    sourceRevision: manifest.sourceRevision, verifierKeyCatalogMatched: true,
+  });
+  assert.throws(() => assertFinalizedVerifierKeyCatalog(image,
+    { ...manifest, verifierKeySha256: { first: "b".repeat(64) } }, ["first", "second"]), /incomplete/u);
+  assert.throws(() => assertFinalizedVerifierKeyCatalog(image,
+    { ...manifest, verifierKeySha256: { ...manifest.verifierKeySha256, extra: "d".repeat(64) } },
+    ["first", "second"]), /incomplete/u);
+  assert.throws(() => assertFinalizedVerifierKeyCatalog(
+    { verifierKeySha256: { ...image.verifierKeySha256, first: "d".repeat(64) } },
+    manifest, ["first", "second"]), /disagree/u);
+  assert.throws(() => assertFinalizedVerifierKeyCatalog(
+    { verifierKeySha256: { first: "b".repeat(64) } }, manifest, ["first", "second"]), /disagree/u);
 });
 
 test("registry read summarizes finalized state and a selected issuer without leaking a key", () => {

@@ -1,3 +1,4 @@
+import { lstat, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 import { checkLedger9LocalStack, localnetInputFromEnvironment } from "./check-ledger9-local-stack.mjs";
@@ -7,14 +8,16 @@ const ADDRESS = /^0x[0-9a-f]{64}$/u;
 export function parseRegistryReadArgs(args, env = process.env) {
   let contractAddress;
   let issuerLabel;
+  let manifestPath;
   for (let index = 0; index < args.length; index += 2) {
     const flag = args[index];
     const value = args[index + 1];
-    if (!value || !["--address", "--issuer-label"].includes(flag)) {
-      throw new Error("Usage: read-ledger9-registry.mjs --address 0x... [--issuer-label label]");
+    if (!value || !["--address", "--issuer-label", "--manifest"].includes(flag)) {
+      throw new Error("Usage: read-ledger9-registry.mjs --address 0x... [--issuer-label label] [--manifest path]");
     }
     if (flag === "--address" && contractAddress === undefined) contractAddress = value;
     else if (flag === "--issuer-label" && issuerLabel === undefined) issuerLabel = value;
+    else if (flag === "--manifest" && manifestPath === undefined) manifestPath = value;
     else throw new Error(`Duplicate option: ${flag}`);
   }
   if (!ADDRESS.test(contractAddress ?? "") || /^0x0{64}$/u.test(contractAddress)) {
@@ -30,7 +33,37 @@ export function parseRegistryReadArgs(args, env = process.env) {
     || Number(env.TR_EXPECTED_CHECKPOINT_HEIGHT) < 1) {
     throw new Error("Pin TR_EXPECTED_GENESIS_HASH and a non-genesis checkpoint height/hash before reading registry state");
   }
-  return { contractAddress, issuerLabel };
+  return { contractAddress, issuerLabel, manifestPath };
+}
+
+export function assertFinalizedVerifierKeyCatalog(image, manifest, circuitNames) {
+  const hashes = manifest?.verifierKeySha256;
+  const expected = [...circuitNames].sort();
+  if (!["tr-release-candidate-manifest-v2", "tr-release-candidate-manifest-v3"].includes(manifest?.format)
+    || !/^[0-9a-f]{40}$/u.test(manifest?.sourceRevision ?? "")
+    || hashes === null || typeof hashes !== "object" || Array.isArray(hashes)
+    || expected.length === 0 || new Set(expected).size !== expected.length
+    || !sameNames(Object.keys(hashes), expected)
+    || expected.some((name) => !/^[0-9a-f]{64}$/u.test(hashes[name]))) {
+    throw new Error("Release manifest has an invalid or incomplete verifier-key catalog");
+  }
+  if (!sameNames(Object.keys(image.verifierKeySha256), expected)
+    || expected.some((name) => image.verifierKeySha256[name] !== hashes[name])) {
+    throw new Error("Finalized verifier keys disagree with the source-matched release manifest");
+  }
+  return { sourceRevision: manifest.sourceRevision, verifierKeyCatalogMatched: true };
+}
+
+function sameNames(left, right) {
+  return left.length === right.length && left.sort().every((name, index) => name === right[index]);
+}
+
+async function readBoundedManifest(path) {
+  const stat = await lstat(path);
+  if (!stat.isFile() || stat.size === 0 || stat.size > 16 * 1024 * 1024) {
+    throw new Error("Release manifest must be a bounded regular file");
+  }
+  return JSON.parse(await readFile(path, "utf8"));
 }
 
 export function summarizeFinalizedRegistry(image, attached, contractAddress, issuerSelection) {
@@ -71,9 +104,10 @@ export function summarizeFinalizedRegistry(image, attached, contractAddress, iss
 }
 
 export async function readLedger9Registry(args = process.argv.slice(2), env = process.env) {
-  const { contractAddress, issuerLabel } = parseRegistryReadArgs(args, env);
+  const { contractAddress, issuerLabel, manifestPath } = parseRegistryReadArgs(args, env);
   const attached = await checkLedger9LocalStack(localnetInputFromEnvironment(env));
-  const [{ bytes32Commitment }, { AuthorizationStatus }, { createLocalNetworkDeploymentActionReader }] =
+  const [{ bytes32Commitment }, { AuthorizationStatus, TrustRegistryContract, trustRegistryWitnesses },
+    { createLocalNetworkDeploymentActionReader }] =
     await Promise.all([
       import("@midnight-ntwrk/trust-registry-client"),
       import("@midnight-ntwrk/trust-registry-contract"),
@@ -92,7 +126,12 @@ export async function readLedger9Registry(args = process.argv.slice(2), env = pr
   const issuerSelection = issuerLabel === undefined ? undefined : {
     label: issuerLabel, id: bytes32Commitment(issuerLabel), statusNames: AuthorizationStatus,
   };
-  return summarizeFinalizedRegistry(image, attached, contractAddress, issuerSelection);
+  const catalog = manifestPath === undefined ? {} : assertFinalizedVerifierKeyCatalog(
+    image,
+    await readBoundedManifest(manifestPath),
+    Object.keys(new TrustRegistryContract.Contract(trustRegistryWitnesses).provableCircuits),
+  );
+  return { ...summarizeFinalizedRegistry(image, attached, contractAddress, issuerSelection), ...catalog };
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
