@@ -157,6 +157,33 @@ test("installed check supports Nix and upstream COMPACT_DIRECTORY layouts", () =
     ], { encoding: "utf8", env });
     assert.equal(matching.status, 0, matching.stderr);
 
+    writeFileSync(compact, `#!/bin/sh\necho '${pinnedVersion} (b5d9e4dfc 2026-11-03)'\n`);
+    writeFileSync(compiler, `#!/bin/sh\necho '${pinnedVersion} (b5d9e4dfc 2026-11-03)'\n`);
+    const annotated = spawnSync(process.execPath, [
+      join(sourceRoot, "scripts/check-compact-version.mjs"),
+      "--check-installed",
+    ], { encoding: "utf8", env });
+    assert.equal(annotated.status, 0, annotated.stderr);
+
+    writeFileSync(compiler, `#!/bin/sh\necho '${pinnedVersion} (untrusted)'\n`);
+    const malformedAnnotation = spawnSync(process.execPath, [
+      join(sourceRoot, "scripts/check-compact-version.mjs"),
+      "--check-installed",
+    ], { encoding: "utf8", env });
+    assert.notEqual(malformedAnnotation.status, 0);
+    assert.match(malformedAnnotation.stderr, /compiler .* does not match pin/u);
+
+    writeFileSync(compiler, `#!/bin/sh\necho ${pinnedVersion}\n`);
+    writeFileSync(compact, `#!/bin/sh\necho '${pinnedVersion}-rc1'\n`);
+    const prerelease = spawnSync(process.execPath, [
+      join(sourceRoot, "scripts/check-compact-version.mjs"),
+      "--check-installed",
+    ], { encoding: "utf8", env });
+    assert.notEqual(prerelease.status, 0);
+    assert.match(prerelease.stderr, /Installed Compact .* does not match pin/u);
+
+    writeFileSync(compact, `#!/bin/sh\necho ${pinnedVersion}\n`);
+
     rmSync(compiler);
     const upstreamLayout = spawnSync(process.execPath, [
       join(sourceRoot, "scripts/check-compact-version.mjs"),

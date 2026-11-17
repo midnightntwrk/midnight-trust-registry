@@ -102,6 +102,13 @@ export function readCompactPin(directory = root) {
   return pin.trimEnd();
 }
 
+function matchesInstalledVersion(installed, version) {
+  if (installed === version) return true;
+  const escapedVersion = version.replaceAll(".", "\\.");
+  return new RegExp(`^${escapedVersion} \\([0-9a-f]{9,40} \\d{4}-\\d{2}-\\d{2}\\)$`, "u")
+    .test(installed);
+}
+
 export function checkCompactVersion(directory = root) {
   const version = readCompactPin(directory);
   const yaml = require("js-yaml");
@@ -177,14 +184,14 @@ if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(f
           }
           throw error;
         }
-        if (installed !== version) {
+        if (!matchesInstalledVersion(installed, version)) {
           throw new Error(`Installed Compact ${installed} does not match pin ${version}`);
         }
         if (process.env.COMPACT_DIRECTORY) {
           const compiler = resolve(process.env.COMPACT_DIRECTORY, "bin/compactc");
           if (existsSync(compiler)) {
             const compilerVersion = execFileSync(compiler, ["--version"], { encoding: "utf8" }).trim();
-            if (compilerVersion !== version) {
+            if (!matchesInstalledVersion(compilerVersion, version)) {
               throw new Error(`Compact compiler ${compilerVersion} does not match pin ${version}`);
             }
           }
