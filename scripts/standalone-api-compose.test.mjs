@@ -5,15 +5,16 @@ import { test } from "node:test";
 
 import yaml from "js-yaml";
 
-test("plaintext node WebSockets remain confined to the local ledger bridge", async () => {
+test("plaintext node WebSockets stay on the local ledger bridge while infrastructure has loopback access", async () => {
   const base = yaml.load(await readFile(
     fileURLToPath(new URL("../deploy/standalone/compose.yml", import.meta.url)), "utf8"));
   const offline = yaml.load(await readFile(
     fileURLToPath(new URL("../deploy/standalone/compose.offline.yml", import.meta.url)), "utf8"));
   assert.deepEqual(Object.keys(base.services).sort(), ["indexer", "node", "proof-server"]);
   assert.equal(base.networks.ledger.internal, true);
+  assert.deepEqual(base.networks["host-access"], {});
   for (const service of Object.values(base.services)) {
-    assert.deepEqual(service.networks, ["ledger"]);
+    assert.deepEqual(service.networks, ["ledger", "host-access"]);
   }
   assert.deepEqual(base.services.node.ports, ["127.0.0.1:${TR_NODE_PORT:-29944}:9944"]);
   assert.deepEqual(base.services.indexer.ports, ["127.0.0.1:${TR_INDEXER_PORT:-28088}:8088"]);

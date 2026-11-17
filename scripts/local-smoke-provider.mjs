@@ -2,7 +2,7 @@ import { sampleSigningKey } from "@midnight-ntwrk/compact-runtime";
 import { httpClientProofProvider } from "@midnight-ntwrk/midnight-js-http-client-proof-provider";
 import { indexerPublicDataProvider } from "@midnight-ntwrk/midnight-js-indexer-public-data-provider";
 import { NodeZkConfigProvider } from "@midnight-ntwrk/midnight-js-node-zk-config-provider";
-import { DustSecretKey, ZswapSecretKeys } from "@midnight-ntwrk/midnight-js-protocol/ledger";
+import { DustSecretKey, ZswapSecretKeys } from "@midnight-ntwrk/midnight-js-protocol/v9";
 import {
   FluentWalletBuilder,
   inMemoryPrivateStateProvider,
@@ -71,7 +71,7 @@ export async function loadOrCreateSmokeMaintenanceKey(directory) {
   }
   if (file) {
     try {
-      await file.writeFile(`${sampleSigningKey()}\n`);
+      await file.writeFile(`${sampleSigningKey().value}\n`);
       await file.sync();
     } finally {
       await file.close();

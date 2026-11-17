@@ -545,7 +545,7 @@ const stackDependencies = (f) => ({ verifyBundle: f.verifyBundle,
 
 async function committeeDocument(f, overrides = {}) {
   const record = JSON.parse(await readFile(join(f.directory, "setup-record.json"), "utf8"));
-  const keys = Array.from({ length: 3 }, () => `0x${signatureVerifyingKey(sampleSigningKey())}`);
+  const keys = Array.from({ length: 3 }, () => `0x${signatureVerifyingKey(sampleSigningKey()).value}`);
   const document = {
     format: "tr-local-committee-approval-v2",
     sourceRevision,
@@ -1804,7 +1804,7 @@ async function committeeTransitionFixture() {
   const requestPath = join(f.directory, "committee-transition-request.json");
   const request = {
     format: "tr-local-committee-transition-request-v1", sourceRevision,
-    bootstrapMaintenanceVerifyingKey: `0x${signatureVerifyingKey(sampleSigningKey())}`,
+    bootstrapMaintenanceVerifyingKey: `0x${signatureVerifyingKey(sampleSigningKey()).value}`,
     expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
     bootstrap: {
       registryId: "registry:midnight:undeployed:test",
@@ -3244,7 +3244,7 @@ test("smoke threshold and repeated custody roles cannot become release approval"
   await approve(f);
   await assert.rejects(approveCommittee(f, {
     maintenancePolicy: { mode: "committee", threshold: 1,
-      verifyingKeys: Array.from({ length: 3 }, () => `0x${signatureVerifyingKey(sampleSigningKey())}`) },
+      verifyingKeys: Array.from({ length: 3 }, () => `0x${signatureVerifyingKey(sampleSigningKey()).value}`) },
   }), /multi-party threshold/u);
   const validKeys = (await committeeDocument(f)).document.maintenancePolicy.verifyingKeys;
   await assert.rejects(approveCommittee(f, {

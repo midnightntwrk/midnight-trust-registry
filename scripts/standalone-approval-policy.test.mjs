@@ -40,7 +40,7 @@ test("reviewer proposal rejects a delimiter-collided field schema", () => {
 });
 
 test("release committee binds distinct usable keys to distinct custodian roles", () => {
-  const keys = Array.from({ length: 3 }, () => `0x${signatureVerifyingKey(sampleSigningKey())}`);
+  const keys = Array.from({ length: 3 }, () => `0x${signatureVerifyingKey(sampleSigningKey()).value}`);
   const policy = { mode: "committee", threshold: 2, verifyingKeys: keys };
   const custodians = keys.map((verifyingKey, index) => ({
     verifyingKey,

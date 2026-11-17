@@ -1,5 +1,5 @@
 import { validateMaintenancePolicy } from "@midnight-ntwrk/trust-registry-integration";
-import { ContractMaintenanceAuthority } from "@midnight-ntwrk/midnight-js-protocol/ledger";
+import { ContractMaintenanceAuthority } from "@midnight-ntwrk/midnight-js-protocol/v9";
 
 import { exactFields } from "./standalone-exact-fields-policy.mjs";
 
@@ -46,7 +46,8 @@ export function validateReleaseCommittee(maintenancePolicy, custodians) {
   const keys = /** @type {string[]} */ (maintenancePolicy.verifyingKeys);
   validateMaintenancePolicy({ mode: "committee", verifyingKeys: keys, threshold: maintenancePolicy.threshold });
   try {
-    new ContractMaintenanceAuthority(keys.map((key) => key.slice(2)), maintenancePolicy.threshold, 1n);
+    new ContractMaintenanceAuthority(keys.map((key) => ({ tag: "schnorr", value: key.slice(2) })),
+      maintenancePolicy.threshold, 1n);
   } catch {
     throw new Error("Release committee contains a verifying key the Midnight ledger cannot use");
   }
