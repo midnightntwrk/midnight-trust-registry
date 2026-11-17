@@ -9,16 +9,18 @@ signature, signing time, and revocation/expiry statuses; callers still own
 their bounded input reads, pinned public keyring, and fixed GPG execution.
 Passing this policy does not authenticate ledger finality or qualify a release.
 
-The local-only package exports its Ledger 8 consumer source as
+The local-only package exports its Ledger 9 consumer source as
 `@midnight-ntwrk/trust-registry-integration/fixtures/vc-authority-consumer.compact`.
-Compile it with the repository's pinned Compact compiler and the published
-`@midnight-ntwrk/credential-compact` include path. The packed-artifact smoke
-gate's `--vc-consumer` option tests that clean-install boundary, pinned
-authority-domain construction, issuer/verifier proof acceptance, and forged
-signature, wrong-scope, and replay rejection. Source integration tests add
+Compile it with the repository's pinned Compact compiler and the exact local
+VC 0.4.0 trial include path until that package is published. The
+packed-artifact smoke gate's `--vc-consumer` option tests that clean-install
+boundary and pinned authority-domain construction. It checks issuer/verifier
+proof acceptance plus forged signature, wrong-scope, and replay rejection.
+Source integration tests add
 verified Trust Registry decisions and the broader negative matrix. Neither
-path proves deployed
-cross-contract synchronization or network finality.
+path proves deployed cross-contract synchronization or network finality. The
+`--local-vc-tarballs-dir` smoke option is only a local trial and cannot be
+combined with a verified release manifest.
 
 Current coverage:
 
