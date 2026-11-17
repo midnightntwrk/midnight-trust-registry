@@ -52,7 +52,7 @@ afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
 });
 
-const sign = (
+const sign = async (
   harness: LocalTrustRegistryIntegrationHarness,
   maintainer: MaintainerScenarioFixture,
   prepared: PreparedGovernedRecognitionProposal,
@@ -61,7 +61,7 @@ const sign = (
   const signature = signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
     bytes(prepared.registryId),
-    harness.simulator.getLedger().deploymentNetworkIdCommitment,
+    (await harness.simulator.getLedger()).deploymentNetworkIdCommitment,
     Buffer.from(harness.simulator.contractAddress, "hex"),
     bytes(prepared.policyCommitment),
     bytes(prepared.actionKind),
@@ -79,7 +79,7 @@ describe("governed recognition proposal HTTP", () => {
   it("requires an injected Compact-backed port", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("recognition-proposal-unavailable");
     const server = createTrustRegistryApiServer({
-      source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "unavailable" }) },
+      source: { mode: "memory", loadSnapshot: async () => await publishSimulatorSnapshot(harness, { label: "unavailable" }) },
     });
     try {
       await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -98,16 +98,16 @@ describe("governed recognition proposal HTTP", () => {
     const harness = new LocalTrustRegistryIntegrationHarness("recognition-proposal-http");
     const second = createMaintainerScenarioFixture("recognition-http-second");
     const third = createMaintainerScenarioFixture("recognition-http-third");
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(third);
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(third);
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
     const anchor = {
       ...RECOGNITION_VP_FIXTURE_ANCHOR,
       targetRegistryId: harness.registryId,
       policyId: harness.policyId,
-      policyVersion: `v${(harness.simulator.getLedger().governancePolicyVersion + 1n).toString()}`,
+      policyVersion: `v${((await harness.simulator.getLedger()).governancePolicyVersion + 1n).toString()}`,
     };
-    harness.governRecognitionAccreditorAnchor(anchor, [second]);
+    await harness.governRecognitionAccreditorAnchor(anchor, [second]);
     const base = createRecognitionScenarioFixture("recognition-proposal-http");
     const recognition = {
       ...base,
@@ -133,7 +133,7 @@ describe("governed recognition proposal HTTP", () => {
     const governanceWorkspacePath = join(directory, "governance.json");
     const admissionStore = new FileRecognitionAdmissionStore(join(directory, "admission.json"), governanceWorkspacePath);
     const evidenceCommitment = sha256Hex("verified-combined-recognition-evidence");
-    let finalizedLedger = harness.simulator.getLedger();
+    let finalizedLedger = await harness.simulator.getLedger();
     const challengeHash = sha256Hex("recognition-proposal-challenge");
     await admissionStore.insert({
       challengeHash,
@@ -153,7 +153,7 @@ describe("governed recognition proposal HTTP", () => {
       },
       async readCurrentGovernance() {
         return { governancePolicy: harness.policyRecord,
-          activePolicyCommitment: hex(harness.simulator.getLedger().governancePolicyCommitment) };
+          activePolicyCommitment: hex((await harness.simulator.getLedger()).governancePolicyCommitment) };
       },
       async prepare(currentBinding, evidence) {
         if (currentBinding.recognitionId !== recognition.recognitionId
@@ -166,7 +166,7 @@ describe("governed recognition proposal HTTP", () => {
         return harness.prepareRecognitionProposalAction(recognition, bytes(evidence));
       },
       async preflightSubmission(_binding, _evidence, signers, verifierSignature, prepared) {
-        const ledger = harness.simulator.getLedger();
+        const ledger = await harness.simulator.getLedger();
         const verifierKey = ledger.evidenceVerifierKeyRecords.lookup(prepared.evidenceVerifierAuthorizationId);
         if (BigInt(signers.length) < ledger.maintainerThreshold
           || signers.some((signer) => {
@@ -199,7 +199,7 @@ describe("governed recognition proposal HTTP", () => {
           throw new GovernedRecognitionProposalRejectedError("invalid-evidence");
         }
         try {
-          const eventHash = harness.executeRecognitionProposalWithSignatures(
+          const eventHash = await harness.executeRecognitionProposalWithSignatures(
             recognition, signers, verifierSignature, { ...prepared, evidenceHash: bytes(evidence) },
           );
           return { eventHash: hex(eventHash) };
@@ -214,7 +214,7 @@ describe("governed recognition proposal HTTP", () => {
     const separateStore = new FileRecognitionAdmissionStore(join(directory, "other-admission.json"), governanceWorkspacePath);
     const journal = new FileProposalSubmissionJournal(join(directory, "proposal-journal.json"));
     expect(() => createTrustRegistryApiServer({
-      source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "mismatched" }) },
+      source: { mode: "memory", loadSnapshot: async () => await publishSimulatorSnapshot(harness, { label: "mismatched" }) },
       governedRecognitionProposals: port,
       proposalSubmissionJournal: journal,
       recognitionAccreditation: {
@@ -227,7 +227,7 @@ describe("governed recognition proposal HTTP", () => {
     const noPreflightPort: GovernedRecognitionProposalPort = { ...port };
     delete noPreflightPort.preflightSubmission;
     expect(() => createTrustRegistryApiServer({
-      source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "no-preflight" }) },
+      source: { mode: "memory", loadSnapshot: async () => await publishSimulatorSnapshot(harness, { label: "no-preflight" }) },
       governedRecognitionProposals: noPreflightPort,
       proposalSubmissionJournal: journal,
       recognitionAccreditation: {
@@ -238,7 +238,7 @@ describe("governed recognition proposal HTTP", () => {
       },
     })).toThrow(/side-effect-free submission preflight/u);
     const server = createTrustRegistryApiServer({
-      source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness, {
+      source: { mode: "memory", loadSnapshot: async () => await publishSimulatorSnapshot(harness, {
         label: "recognition-proposal-http", recognitions: [{ label: "partner", fixture: recognition }],
       }) },
       governedRecognitionProposals: port,
@@ -275,13 +275,13 @@ describe("governed recognition proposal HTTP", () => {
         recognitionId: binding.recognitionId,
         challengeHash,
         bindingHash: recognitionAuthorityChallengeBindingHash(binding),
-        policyCommitment: hex(harness.simulator.getLedger().governancePolicyCommitment),
-        anchorCommitment: harness.resolveCurrentRecognitionAccreditorAnchor({
+        policyCommitment: hex((await harness.simulator.getLedger()).governancePolicyCommitment),
+        anchorCommitment: (await harness.resolveCurrentRecognitionAccreditorAnchor({
           recognizedRegistryId: binding.recognizedRegistryId,
           scopeResourceType: binding.scopeResourceType,
           scopeResourceId: binding.scopeResourceId,
           evaluatedAtMs: now,
-        }).commitment,
+        })).commitment,
         evidenceCommitment,
         expiresAtMs: now + 30_000,
         nowMs: now,
@@ -300,16 +300,16 @@ describe("governed recognition proposal HTTP", () => {
       const prepared = await preparedResponse.json() as PreparedGovernedRecognitionProposal;
       expect(prepared.evidenceHash).toBe(evidenceCommitment);
       const verifierSignature = harness.signRecognitionProposalEvidence(
-        harness.prepareRecognitionProposalAction(recognition, bytes(evidenceCommitment)),
+        await harness.prepareRecognitionProposalAction(recognition, bytes(evidenceCommitment)),
       );
-      const submit = (signed: PreparedGovernedRecognitionProposal, signers: ReturnType<typeof sign>[],
+      const submit = (signed: PreparedGovernedRecognitionProposal, signers: Awaited<ReturnType<typeof sign>>[],
         signature = verifierSignature) => post("submit", {
           ...request, prepared: signed, signers,
           evidenceVerifierSignature: hex(encodeJubjubSignature(signature)),
         });
-      const first = sign(harness, second, prepared);
-      const other = sign(harness, third, prepared);
-      const outsider = sign(harness, createMaintainerScenarioFixture("recognition-outsider"), prepared);
+      const first = await sign(harness, second, prepared);
+      const other = await sign(harness, third, prepared);
+      const outsider = await sign(harness, createMaintainerScenarioFixture("recognition-outsider"), prepared);
       const insufficient = await submit(prepared, [first]);
       expect(insufficient.status, JSON.stringify(await insufficient.json())).toBe(403);
       expect((await submit(prepared, [first, outsider])).status).toBe(403);
@@ -333,12 +333,12 @@ describe("governed recognition proposal HTTP", () => {
           actionPayloadHash: prepared.actionPayloadHash,
         },
       });
-      expect(harness.simulator.getLedger().recognitionCount).toBe(1n);
-      expect(harness.simulator.getLedger().issuerAuthorizationCount).toBe(0n);
+      expect((await harness.simulator.getLedger()).recognitionCount).toBe(1n);
+      expect((await harness.simulator.getLedger()).issuerAuthorizationCount).toBe(0n);
       expect((await submit(prepared, [first, other])).status).toBe(409);
       expect(await (await resolve(request)).json()).toEqual({ state: "not-observed" });
       expect(await journal.read("recognition", recognition.recognitionId)).toMatchObject({ state: "submitted" });
-      finalizedLedger = harness.simulator.getLedger();
+      finalizedLedger = await harness.simulator.getLedger();
       const recovered = await resolve(request);
       expect(recovered.status).toBe(200);
       expect(recovered.headers.get("cache-control")).toBe("no-store");
