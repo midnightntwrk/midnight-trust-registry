@@ -2488,30 +2488,31 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  proposeRecognition(fixture: RecognitionScenarioFixture): Uint8Array {
-    const prepared = this.prepareRecognitionProposalAction(fixture);
+  async proposeRecognition(fixture: RecognitionScenarioFixture): Promise<Uint8Array> {
+    const prepared = await this.prepareRecognitionProposalAction(fixture);
     return this.executeRecognitionProposalWithSignatures(fixture, [
       {
         keyId: this.bootstrapMaintainer.keyId,
         publicKey: this.bootstrapPublicKey,
-        signature: this.bootstrapActionSignature(
+        signature: await this.bootstrapActionSignature(
           prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
         ),
       },
-      ...this.maintainerCoAuthorizers(
-        this.activeDefaultQuorumCoMaintainers(),
+      ...await this.maintainerCoAuthorizers(
+        await this.activeDefaultQuorumCoMaintainers(),
         prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
       ),
     ], this.signRecognitionProposalEvidence(prepared));
   }
 
-  prepareRecognitionProposalAction(
+  async prepareRecognitionProposalAction(
     fixture: RecognitionScenarioFixture,
     evidenceHash?: Uint8Array,
-  ): PreparedRecognitionProposalAction {
+  ): Promise<PreparedRecognitionProposalAction> {
+    await this.ready;
     const proposedEvidenceHash = evidenceHash ?? bytes32Commitment(`${fixture.recognitionId}:propose`);
     if (proposedEvidenceHash.length !== 32) throw new Error("Recognition evidence commitment must be 32 bytes");
-    const ledger = this.simulator.getLedger();
+    const ledger = await this.simulator.getLedger();
     const baseRecognitionPayloadHash = computeCreateRecognitionPayloadHash(
       fixture.recognitionIdCommitment,
       fixture.recognizedAuthorityDidCommitment,
@@ -2583,23 +2584,24 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  executeRecognitionProposalWithSignatures(
+  async executeRecognitionProposalWithSignatures(
     fixture: RecognitionScenarioFixture,
     signers: readonly MaintainerCoAuthorizer[],
     evidenceSignature: TrustRegistryJubjubSignature,
-    prepared = this.prepareRecognitionProposalAction(fixture),
-  ): Uint8Array {
+    prepared?: PreparedRecognitionProposalAction,
+  ): Promise<Uint8Array> {
     const primary = signers[0];
     if (primary === undefined) throw new Error("Recognition proposal requires a maintainer signature");
-    const current = this.prepareRecognitionProposalAction(fixture, prepared.evidenceHash);
-    if (prepared.actionSequence !== current.actionSequence
-      || !sameBytes(prepared.registryId, current.registryId)
-      || !sameBytes(prepared.recognitionId, current.recognitionId)
-      || !sameBytes(prepared.policyCommitment, current.policyCommitment)
-      || !sameBytes(prepared.actionKind, current.actionKind)
-      || !sameBytes(prepared.actionPayloadHash, current.actionPayloadHash)
-      || !sameBytes(prepared.evidenceVerifierAuthorizationId, current.evidenceVerifierAuthorizationId)
-      || !sameBytes(prepared.evidenceVerifierKeyIdCommitment, current.evidenceVerifierKeyIdCommitment)) {
+    const selected = prepared ?? await this.prepareRecognitionProposalAction(fixture);
+    const current = await this.prepareRecognitionProposalAction(fixture, selected.evidenceHash);
+    if (selected.actionSequence !== current.actionSequence
+      || !sameBytes(selected.registryId, current.registryId)
+      || !sameBytes(selected.recognitionId, current.recognitionId)
+      || !sameBytes(selected.policyCommitment, current.policyCommitment)
+      || !sameBytes(selected.actionKind, current.actionKind)
+      || !sameBytes(selected.actionPayloadHash, current.actionPayloadHash)
+      || !sameBytes(selected.evidenceVerifierAuthorizationId, current.evidenceVerifierAuthorizationId)
+      || !sameBytes(selected.evidenceVerifierKeyIdCommitment, current.evidenceVerifierKeyIdCommitment)) {
       throw new Error("Recognition proposal context is stale or substituted");
     }
 
@@ -2612,25 +2614,26 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.recognizedRegistryIdCommitment,
       fixture.scopeResourceTypeCommitment,
       fixture.scopeResourceIdCommitment,
-      prepared.policyCommitment,
+      selected.policyCommitment,
       bytes32Commitment(fixture.trustLevel),
-      prepared.evidenceHash,
-      prepared.evidenceVerifierAuthorizationId,
-      prepared.evidenceVerifierKeyIdCommitment,
+      selected.evidenceHash,
+      selected.evidenceVerifierAuthorizationId,
+      selected.evidenceVerifierKeyIdCommitment,
       evidenceSignature,
       signers.slice(1),
     );
   }
 
-  prepareRecognitionDecisionAction(
+  async prepareRecognitionDecisionAction(
     fixture: RecognitionScenarioFixture,
     action: IssuerDecisionAction,
-  ): PreparedRecognitionAction {
+  ): Promise<PreparedRecognitionAction> {
+    await this.ready;
     if (!["approve", "activate", "suspend", "revoke", "archive"].includes(action)) {
       throw new Error("Unsupported recognition decision action");
     }
-    const current = this.simulator.getRecognition(fixture.recognitionIdCommitment);
-    const ledger = this.simulator.getLedger();
+    const current = await this.simulator.getRecognition(fixture.recognitionIdCommitment);
+    const ledger = await this.simulator.getLedger();
     const evidenceHash = action === "approve" || action === "activate"
       ? current.evidenceHash : bytes32Commitment(`${fixture.recognitionId}:${action}`);
     const actionKinds = {
@@ -2656,14 +2659,14 @@ export class LocalTrustRegistryIntegrationHarness {
     };
   }
 
-  executeRecognitionDecisionWithSignatures(
+  async executeRecognitionDecisionWithSignatures(
     fixture: RecognitionScenarioFixture,
     action: IssuerDecisionAction,
     signers: readonly MaintainerCoAuthorizer[],
-  ): Uint8Array {
+  ): Promise<Uint8Array> {
     const primary = signers[0];
     if (primary === undefined) throw new Error("Recognition decision requires a maintainer signature");
-    const prepared = this.prepareRecognitionDecisionAction(fixture, action);
+    const prepared = await this.prepareRecognitionDecisionAction(fixture, action);
     if (action === "approve") {
       return this.simulator.authorizeRecognition(
         primary.keyId, primary.publicKey, primary.signature,
@@ -2678,41 +2681,41 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.recognitionIdCommitment, prepared.evidenceHash, signers.slice(1));
   }
 
-  private fixtureRecognitionDecision(fixture: RecognitionScenarioFixture, action: IssuerDecisionAction): Uint8Array {
-    const prepared = this.prepareRecognitionDecisionAction(fixture, action);
+  private async fixtureRecognitionDecision(fixture: RecognitionScenarioFixture, action: IssuerDecisionAction): Promise<Uint8Array> {
+    const prepared = await this.prepareRecognitionDecisionAction(fixture, action);
     return this.executeRecognitionDecisionWithSignatures(fixture, action, [
       {
         keyId: this.bootstrapMaintainer.keyId,
         publicKey: this.bootstrapPublicKey,
-        signature: this.bootstrapActionSignature(
+        signature: await this.bootstrapActionSignature(
           prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
         ),
       },
-      ...this.maintainerCoAuthorizers(
-        this.activeDefaultQuorumCoMaintainers(),
+      ...await this.maintainerCoAuthorizers(
+        await this.activeDefaultQuorumCoMaintainers(),
         prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
       ),
     ]);
   }
 
-  approveRecognition(fixture: RecognitionScenarioFixture): Uint8Array {
+  approveRecognition(fixture: RecognitionScenarioFixture): Promise<Uint8Array> {
     return this.fixtureRecognitionDecision(fixture, "approve");
   }
 
-  activateRecognition(fixture: RecognitionScenarioFixture): Uint8Array {
+  activateRecognition(fixture: RecognitionScenarioFixture): Promise<Uint8Array> {
     return this.fixtureRecognitionDecision(fixture, "activate");
   }
 
-  authorizeRecognition(fixture: RecognitionScenarioFixture): Uint8Array {
-    this.proposeRecognition(fixture);
-    this.approveRecognition(fixture);
+  async authorizeRecognition(fixture: RecognitionScenarioFixture): Promise<Uint8Array> {
+    await this.proposeRecognition(fixture);
+    await this.approveRecognition(fixture);
     return this.activateRecognition(fixture);
   }
 
-  proposeAuditor(fixture: AuditorScenarioFixture): Uint8Array {
+  async proposeAuditor(fixture: AuditorScenarioFixture): Promise<Uint8Array> {
     return this.proposeAuditorWithApplicationEvidence(
       fixture,
-      this.createApplicationEvidence({
+      await this.createApplicationEvidence({
         applicationId: fixture.authorizationId,
         subjectDid: fixture.subjectDid,
         role: "auditor",
@@ -2721,7 +2724,7 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  proposeAuditorWithApplicationEvidence(
+  async proposeAuditorWithApplicationEvidence(
     fixture: AuditorScenarioFixture,
     evidence: ApplicationEvidenceSubmission,
     expectedEvidence: SimulatorApplicationEvidenceExpectation = {
@@ -2729,18 +2732,18 @@ export class LocalTrustRegistryIntegrationHarness {
       challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
       governedResource: { type: "requestProfile", id: fixture.scopeResourceId },
     },
-  ): Uint8Array {
-    const prepared = this.prepareAuditorProposalAction(fixture, evidence, expectedEvidence);
+  ): Promise<Uint8Array> {
+    const prepared = await this.prepareAuditorProposalAction(fixture, evidence, expectedEvidence);
     return this.executeAuditorProposalWithSignatures(fixture, evidence, [
       {
         keyId: this.bootstrapMaintainer.keyId,
         publicKey: this.bootstrapPublicKey,
-        signature: this.bootstrapActionSignature(
+        signature: await this.bootstrapActionSignature(
           prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
         ),
       },
-      ...this.maintainerCoAuthorizers(
-        this.activeDefaultQuorumCoMaintainers(),
+      ...await this.maintainerCoAuthorizers(
+        await this.activeDefaultQuorumCoMaintainers(),
         prepared.actionKind,
         prepared.actionPayloadHash,
         prepared.actionSequence,
@@ -2748,7 +2751,7 @@ export class LocalTrustRegistryIntegrationHarness {
     ], this.signAuditorProposalEvidence(prepared), expectedEvidence);
   }
 
-  prepareAuditorProposalAction(
+  async prepareAuditorProposalAction(
     fixture: AuditorScenarioFixture,
     evidence: ApplicationEvidenceSubmission,
     expectedEvidence: SimulatorApplicationEvidenceExpectation = {
@@ -2756,7 +2759,8 @@ export class LocalTrustRegistryIntegrationHarness {
       challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
       governedResource: { type: "requestProfile", id: fixture.scopeResourceId },
     },
-  ): PreparedAuditorProposalAction {
+  ): Promise<PreparedAuditorProposalAction> {
+    await this.ready;
     if (
       expectedEvidence.scope.role !== "auditor" ||
       expectedEvidence.governedResource.type !== "requestProfile" ||
@@ -2766,14 +2770,14 @@ export class LocalTrustRegistryIntegrationHarness {
     ) {
       throw new Error("Auditor proposal scope does not match governed request profile");
     }
-    const proposedEvidenceHash = this.assertApplicationEvidence({
+    const proposedEvidenceHash = await this.assertApplicationEvidence({
       evidence,
       applicationId: fixture.authorizationId,
       subjectDid: fixture.subjectDid,
       role: "auditor",
       ...expectedEvidence,
     });
-    const ledger = this.simulator.getLedger();
+    const ledger = await this.simulator.getLedger();
     const baseAuditorPayloadHash = computeCreateAuditorAuthorizationPayloadHash(
       fixture.authorizationIdCommitment,
       fixture.subjectDidCommitment,
@@ -2818,7 +2822,7 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  executeAuditorProposalWithSignatures(
+  async executeAuditorProposalWithSignatures(
     fixture: AuditorScenarioFixture,
     evidence: ApplicationEvidenceSubmission,
     signers: readonly MaintainerCoAuthorizer[],
@@ -2828,12 +2832,12 @@ export class LocalTrustRegistryIntegrationHarness {
       challengeHash: sha256Hex(`challenge:${fixture.authorizationId}`),
       governedResource: { type: "requestProfile", id: fixture.scopeResourceId },
     },
-  ): Uint8Array {
+  ): Promise<Uint8Array> {
     const primary = signers[0];
     if (primary === undefined) throw new Error("Auditor proposal requires a maintainer signature");
-    const prepared = this.prepareAuditorProposalAction(fixture, evidence, expectedEvidence);
+    const prepared = await this.prepareAuditorProposalAction(fixture, evidence, expectedEvidence);
     const accepted = this.snapshotAcceptedApplicationEvidence(evidence, expectedEvidence);
-    const eventHash = this.simulator.proposeAuditorAuthorization(
+    const eventHash = await this.simulator.proposeAuditorAuthorization(
       primary.keyId,
       primary.publicKey,
       primary.signature,
@@ -2855,26 +2859,27 @@ export class LocalTrustRegistryIntegrationHarness {
     return eventHash;
   }
 
-  prepareAuditorDecisionAction(
+  async prepareAuditorDecisionAction(
     fixture: AuditorScenarioFixture,
     action: IssuerDecisionAction,
-  ): PreparedIssuerDecisionAction {
+  ): Promise<PreparedIssuerDecisionAction> {
+    await this.ready;
     if (!["approve", "activate", "suspend", "revoke", "archive"].includes(action)) {
       throw new Error("Unsupported auditor decision action");
     }
     if (action === "approve" || action === "activate") {
-      this.recheckAcceptedApplicationEvidence({
+      await this.recheckAcceptedApplicationEvidence({
         role: "auditor",
         applicationId: fixture.authorizationId,
         subjectDid: fixture.subjectDid,
         scope: createAuditorAuthorizationScopeFixture(fixture),
         governedResource: { type: "requestProfile", id: fixture.scopeResourceId },
-        proposalCommitment: this.simulator.getAuditorProposalEvidence(fixture.authorizationIdCommitment)
+        proposalCommitment: (await this.simulator.getAuditorProposalEvidence(fixture.authorizationIdCommitment))
           .evidenceCommitment,
       });
     }
-    const current = this.simulator.getAuditorAuthorization(fixture.authorizationIdCommitment);
-    const ledger = this.simulator.getLedger();
+    const current = await this.simulator.getAuditorAuthorization(fixture.authorizationIdCommitment);
+    const ledger = await this.simulator.getLedger();
     const evidenceHash = action === "approve" || action === "activate"
       ? current.evidenceHash : bytes32Commitment(`${fixture.authorizationId}:${action}`);
     const actionKinds = {
@@ -2900,14 +2905,14 @@ export class LocalTrustRegistryIntegrationHarness {
     };
   }
 
-  executeAuditorDecisionWithSignatures(
+  async executeAuditorDecisionWithSignatures(
     fixture: AuditorScenarioFixture,
     action: IssuerDecisionAction,
     signers: readonly MaintainerCoAuthorizer[],
-  ): Uint8Array {
+  ): Promise<Uint8Array> {
     const primary = signers[0];
     if (primary === undefined) throw new Error("Auditor decision requires a maintainer signature");
-    const prepared = this.prepareAuditorDecisionAction(fixture, action);
+    const prepared = await this.prepareAuditorDecisionAction(fixture, action);
     if (action === "approve") {
       return this.simulator.authorizeAuditorAuthorization(
         primary.keyId, primary.publicKey, primary.signature,
@@ -2922,18 +2927,18 @@ export class LocalTrustRegistryIntegrationHarness {
       fixture.authorizationIdCommitment, prepared.evidenceHash, signers.slice(1));
   }
 
-  private fixtureAuditorDecision(fixture: AuditorScenarioFixture, action: IssuerDecisionAction): Uint8Array {
-    const prepared = this.prepareAuditorDecisionAction(fixture, action);
+  private async fixtureAuditorDecision(fixture: AuditorScenarioFixture, action: IssuerDecisionAction): Promise<Uint8Array> {
+    const prepared = await this.prepareAuditorDecisionAction(fixture, action);
     return this.executeAuditorDecisionWithSignatures(fixture, action, [
       {
         keyId: this.bootstrapMaintainer.keyId,
         publicKey: this.bootstrapPublicKey,
-        signature: this.bootstrapActionSignature(
+        signature: await this.bootstrapActionSignature(
           prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
         ),
       },
-      ...this.maintainerCoAuthorizers(
-        this.activeDefaultQuorumCoMaintainers(),
+      ...await this.maintainerCoAuthorizers(
+        await this.activeDefaultQuorumCoMaintainers(),
         prepared.actionKind,
         prepared.actionPayloadHash,
         prepared.actionSequence,
@@ -2941,21 +2946,21 @@ export class LocalTrustRegistryIntegrationHarness {
     ]);
   }
 
-  approveAuditor(fixture: AuditorScenarioFixture): Uint8Array {
+  approveAuditor(fixture: AuditorScenarioFixture): Promise<Uint8Array> {
     return this.fixtureAuditorDecision(fixture, "approve");
   }
 
-  activateAuditor(fixture: AuditorScenarioFixture): Uint8Array {
+  activateAuditor(fixture: AuditorScenarioFixture): Promise<Uint8Array> {
     return this.fixtureAuditorDecision(fixture, "activate");
   }
 
-  authorizeAuditor(fixture: AuditorScenarioFixture): Uint8Array {
-    this.proposeAuditor(fixture);
-    this.approveAuditor(fixture);
+  async authorizeAuditor(fixture: AuditorScenarioFixture): Promise<Uint8Array> {
+    await this.proposeAuditor(fixture);
+    await this.approveAuditor(fixture);
     return this.activateAuditor(fixture);
   }
 
-  suspendAuditor(fixture: AuditorScenarioFixture): Uint8Array {
+  suspendAuditor(fixture: AuditorScenarioFixture): Promise<Uint8Array> {
     return this.updateAuditorLifecycle(
       fixture,
       "suspend",
@@ -2963,7 +2968,7 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  revokeAuditor(fixture: AuditorScenarioFixture): Uint8Array {
+  revokeAuditor(fixture: AuditorScenarioFixture): Promise<Uint8Array> {
     return this.updateAuditorLifecycle(
       fixture,
       "revoke",
@@ -2971,7 +2976,7 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  archiveAuditor(fixture: AuditorScenarioFixture): Uint8Array {
+  archiveAuditor(fixture: AuditorScenarioFixture): Promise<Uint8Array> {
     return this.updateAuditorLifecycle(
       fixture,
       "archive",
@@ -2979,7 +2984,7 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  suspendRecognition(fixture: RecognitionScenarioFixture): Uint8Array {
+  suspendRecognition(fixture: RecognitionScenarioFixture): Promise<Uint8Array> {
     return this.updateRecognitionLifecycle(
       fixture,
       "suspend",
@@ -2987,7 +2992,7 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  revokeRecognition(fixture: RecognitionScenarioFixture): Uint8Array {
+  revokeRecognition(fixture: RecognitionScenarioFixture): Promise<Uint8Array> {
     return this.updateRecognitionLifecycle(
       fixture,
       "revoke",
@@ -2995,7 +3000,7 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  archiveRecognition(fixture: RecognitionScenarioFixture): Uint8Array {
+  archiveRecognition(fixture: RecognitionScenarioFixture): Promise<Uint8Array> {
     return this.updateRecognitionLifecycle(
       fixture,
       "archive",
@@ -3469,19 +3474,20 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  private updateAuditorLifecycle(
+  private async updateAuditorLifecycle(
     fixture: AuditorScenarioFixture,
     actionName: "suspend" | "revoke" | "archive",
     actionKind: Uint8Array,
-  ): Uint8Array {
+  ): Promise<Uint8Array> {
+    await this.ready;
     const evidenceHash = bytes32Commitment(
       `${fixture.authorizationId}:${actionName}`,
     );
-    const currentRecord = this.simulator.getAuditorAuthorization(
+    const currentRecord = await this.simulator.getAuditorAuthorization(
       fixture.authorizationIdCommitment,
     );
-    const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const signature = this.signMaintainerActionFromSeed(
+    const actionSequence = (await this.simulator.getLedger()).governanceActionCount;
+    const signature = await this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
       actionKind,
@@ -3520,19 +3526,20 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  private updateRecognitionLifecycle(
+  private async updateRecognitionLifecycle(
     fixture: RecognitionScenarioFixture,
     actionName: "suspend" | "revoke" | "archive",
     actionKind: Uint8Array,
-  ): Uint8Array {
+  ): Promise<Uint8Array> {
+    await this.ready;
     const evidenceHash = bytes32Commitment(
       `${fixture.recognitionId}:${actionName}`,
     );
-    const currentRecord = this.simulator.getRecognition(
+    const currentRecord = await this.simulator.getRecognition(
       fixture.recognitionIdCommitment,
     );
-    const actionSequence = this.simulator.getLedger().governanceActionCount;
-    const signature = this.signMaintainerActionFromSeed(
+    const actionSequence = (await this.simulator.getLedger()).governanceActionCount;
+    const signature = await this.signMaintainerActionFromSeed(
       this.bootstrapMaintainer.seed,
       this.registryIdCommitment,
       actionKind,

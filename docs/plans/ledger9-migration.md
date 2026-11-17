@@ -110,6 +110,11 @@ Verifier onboarding now awaits application evidence, proposal, authorization,
 and activation, followed by awaited suspension, revocation, and archival.
 The focused Ledger 9 simulator test confirms state and governance-sequence
 changes across those actions; it is not a deployed verifier journey.
+Auditor onboarding and recognition proposal/decision/status methods now await
+their Ledger 9 simulator calls. Separate focused tests cover active, suspended,
+revoked, and archived states for each role. Recognition's signed external
+authority assertion is still a distinct integration path and is not qualified
+by the fixture-based recognition lifecycle test.
 Readback-only paths use their explicit network and receipt. A strict helper
 encodes the tagged Compact runtime Schnorr verifying key into the policy's
 canonical `0x`-prefixed hex; its focused tests and integration lint pass.
