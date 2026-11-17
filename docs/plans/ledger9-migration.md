@@ -87,6 +87,12 @@ and lint pass. Existing client tests and the integration harness still assume
 synchronous results. The full client and integration package typechecks remain
 red; these source edits are not deployment evidence.
 
+The public, local and staged deployment journal wrappers now compare the
+provider's configured network with the approved network before reserving an
+attempt. Their focused suite passes 11 tests without the removed global
+network-ID package. The public deployment and staged-reconciliation suites
+still contain old global-network fixtures and require separate migration.
+
 The finalized deployment reader now rejects non-v9 serialized contract state
 and decodes v9 bytes through Compact runtime 0.21 before reading the ledger or
 maintenance image. Its focused suite passes six tests, including the wrong-era

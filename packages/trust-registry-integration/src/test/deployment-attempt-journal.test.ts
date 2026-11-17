@@ -5,7 +5,6 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { sampleSigningKey } from "@midnight-ntwrk/compact-runtime";
-import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import { bytes32Commitment } from "@midnight-ntwrk/trust-registry-client";
 import { deriveJubjubPublicKeyFromSeed, TrustRegistryContract, trustRegistryWitnesses } from "@midnight-ntwrk/trust-registry-contract";
 
@@ -86,14 +85,11 @@ const journal = async () => {
   return new FileDeploymentAttemptJournal(join(directory, "deployment.json"));
 };
 
-beforeEach(() => {
-  vi.clearAllMocks();
-  setNetworkId("preview");
-});
+beforeEach(() => { vi.clearAllMocks(); });
 afterEach(async () => {
-  setNetworkId("undeployed");
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
 });
+const providers = (networkId: "preview" | "preprod" | "undeployed") => ({ config: { networkId } }) as never;
 
 describe("deployment attempt journal", () => {
   it("persists only public intent and receipt, then rejects another attempt", async () => {
@@ -163,8 +159,9 @@ describe("deployment attempt journal", () => {
     await symlink(join(directories[0]!, "deployment.json"), join(directories[1]!, "deployment.json"));
     await expect(link.inspect()).rejects.toBeInstanceOf(DeploymentAttemptJournalInvalidError);
     const fresh = await journal();
-    setNetworkId("preprod");
-    await expect(fresh.executeOnce(intent(), submit)).rejects.toThrow(/network does not match/u);
+    await expect(deployPublicTrustRegistryOnce({
+      ...intent(), providers: providers("preprod"), journal: fresh,
+    })).rejects.toThrow(/providers do not match/u);
     expect(await fresh.inspect()).toBeNull();
     expect(submit).toHaveBeenCalledOnce();
   });
@@ -215,31 +212,44 @@ describe("deployment attempt journal", () => {
     const publicJournal = await journal();
     mocks.deployPublic.mockResolvedValue(result());
     await expect(deployPublicTrustRegistryOnce({
-      ...intent(), providers: {} as never, journal: publicJournal,
+      ...intent(), providers: providers("preview"), journal: publicJournal,
       network: { ...publicNetwork, fetchImpl: vi.fn() as never },
     })).resolves.toEqual(result());
     expect(mocks.deployPublic).toHaveBeenCalledOnce();
 
-    setNetworkId("undeployed");
     const localJournal = await journal();
     mocks.deployLocal.mockResolvedValue(result("undeployed"));
     await expect(deployLocalTrustRegistryOnce({
-      ...intent(), providers: {} as never, journal: localJournal,
+      ...intent(), providers: providers("undeployed"), journal: localJournal,
       network: { ...localNetwork, fetchImpl: vi.fn() as never },
     })).resolves.toEqual(result("undeployed"));
     expect(mocks.deployLocal).toHaveBeenCalledOnce();
     await expect(deployPublicTrustRegistryOnce({
-      ...intent(), providers: {} as never, journal: await journal(),
+      ...intent(), providers: providers("undeployed"), journal: await journal(),
       network: { ...localNetwork, fetchImpl: vi.fn() as never } as never,
     })).rejects.toThrow(/does not accept the undeployed/u);
   });
 
+  it("rejects local provider mismatch before reserving either deployment path", async () => {
+    const file = await journal();
+    const input = {
+      ...intent(), providers: providers("preprod"), journal: file,
+      network: { ...localNetwork, fetchImpl: vi.fn() as never },
+    };
+    await expect(deployLocalTrustRegistryOnce(input)).rejects.toThrow(/providers do not match/u);
+    await expect(deployLocalTrustRegistryStagedOnce({
+      ...input, initialVerifierKeyName: Object.keys(releaseManifest.verifierKeySha256)[0]!,
+    })).rejects.toThrow(/providers do not match/u);
+    expect(await file.inspect()).toBeNull();
+    expect(mocks.deployLocal).not.toHaveBeenCalled();
+    expect(mocks.deployStaged).not.toHaveBeenCalled();
+  });
+
   it("does not reserve a deployment when installed verifier assets disagree", async () => {
-    setNetworkId("undeployed");
     const localJournal = await journal();
     mocks.verifyInstalledVerifierKeyAssets.mockRejectedValueOnce(new Error("verifier mismatch"));
     await expect(deployLocalTrustRegistryOnce({
-      ...intent(), providers: {} as never, journal: localJournal,
+      ...intent(), providers: providers("undeployed"), journal: localJournal,
       network: { ...localNetwork, fetchImpl: vi.fn() as never },
     })).rejects.toThrow(/verifier mismatch/u);
     expect(await localJournal.inspect()).toBeNull();
@@ -247,10 +257,9 @@ describe("deployment attempt journal", () => {
   });
 
   it("binds a staged local attempt to the approved initial circuit", async () => {
-    setNetworkId("undeployed");
     const initialVerifierKeyName = Object.keys(releaseManifest.verifierKeySha256)[0]!;
     const input = {
-      ...intent(), providers: {} as never, journal: await journal(),
+      ...intent(), providers: providers("undeployed"), journal: await journal(),
       network: { ...localNetwork, fetchImpl: vi.fn() as never },
       initialVerifierKeyName,
     };

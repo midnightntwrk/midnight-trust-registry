@@ -294,6 +294,9 @@ export async function deployPublicTrustRegistryOnce(input: {
   if ((input.network.networkId as string) === "undeployed") {
     throw new Error("Public deployment journal does not accept the undeployed network");
   }
+  if (input.providers.config.networkId !== input.network.networkId) {
+    throw new Error("Deployment providers do not match the approved network");
+  }
   await verifyInstalledVerifierKeyAssets(input.releaseManifest);
   return input.journal.executeOnce(input, () => deployPublicTrustRegistry(input));
 }
@@ -310,6 +313,9 @@ export async function deployLocalTrustRegistryOnce(input: {
 }): Promise<PublicRegistryDeploymentResult> {
   if (input.network.networkId !== "undeployed") {
     throw new Error("Local deployment journal requires the undeployed network");
+  }
+  if (input.providers.config.networkId !== input.network.networkId) {
+    throw new Error("Deployment providers do not match the approved network");
   }
   await verifyInstalledVerifierKeyAssets(input.releaseManifest);
   return input.journal.executeOnce(input, () => deployLocalTrustRegistry(input));
@@ -328,6 +334,9 @@ export async function deployLocalTrustRegistryStagedOnce(input: {
 }): Promise<PublicRegistryDeploymentResult> {
   if (input.network.networkId !== "undeployed") {
     throw new Error("Staged local deployment journal requires the undeployed network");
+  }
+  if (input.providers.config.networkId !== input.network.networkId) {
+    throw new Error("Deployment providers do not match the approved network");
   }
   await verifyInstalledVerifierKeyAssets(input.releaseManifest);
   return input.journal.executeOnce(input, () => deployLocalTrustRegistryStaged(input));
