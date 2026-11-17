@@ -123,7 +123,7 @@ describe("simulator-backed VC decision evidence composition", () => {
     };
     const authorityFields = vcAuthorityDomainFields(authorityAnchor.domain);
     const authorityKeyIdCommitment = bytes32Commitment("vc-authority:decision-key");
-    harness.registerVcAuthorityKey({
+    await harness.registerVcAuthorityKey({
       domain: authorityAnchor.domain,
       keyIdCommitment: authorityKeyIdCommitment,
       publicKey: authorityAnchor.publicKey,
@@ -1395,9 +1395,9 @@ describe("simulator-backed VC decision evidence composition", () => {
       signer: async () => { throw new Error("Withdrawn schema reached authority key custody"); },
     })).rejects.toThrow(/current grant mismatch/u);
 
-    harness.suspendVcAuthorityKey(authorityKeyIdCommitment, bytes32Commitment("vc-authority:suspension-reason"));
-    expect(harness.simulator.getVcAuthorityKey(authorityKeyIdCommitment).status).toBe(VcAuthorityKeyStatus.suspended);
-    expect(() => harness.simulator.getCurrentVcAuthorityKey(authorityFields.consumerContractAddress)).toThrow();
+    await harness.suspendVcAuthorityKey(authorityKeyIdCommitment, bytes32Commitment("vc-authority:suspension-reason"));
+    expect((await harness.simulator.getVcAuthorityKey(authorityKeyIdCommitment)).status).toBe(VcAuthorityKeyStatus.suspended);
+    await expect(harness.simulator.getCurrentVcAuthorityKey(authorityFields.consumerContractAddress)).rejects.toThrow();
     const suspendedAuthoritySigner = createQuorumGatedVcAuthoritySigner({
       evidence,
       selection: context.selection,

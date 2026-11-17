@@ -84,6 +84,11 @@ rotation/status circuits. The focused DID-key lifecycle suite passes all five
 cases. Other harness methods and integration tests still use synchronous
 simulator assumptions; the integration package typecheck remains red and this
 focused result is not a full harness qualification.
+VC authority-key registration and suspension now await the same bootstrap,
+ledger reads, quorum signatures, and simulator circuits. The focused Ledger 9
+authority-key harness test passes registration, status transition, and a
+wrong-registry domain rejection; the broader decision-evidence suite remains
+part of the unfinished async migration.
 Readback-only paths use their explicit network and receipt. A strict helper
 encodes the tagged Compact runtime Schnorr verifying key into the policy's
 canonical `0x`-prefixed hex; its focused tests and integration lint pass.

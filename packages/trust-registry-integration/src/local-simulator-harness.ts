@@ -815,13 +815,15 @@ export class LocalTrustRegistryIntegrationHarness {
     return this.changeEvidenceVerifierKeyStatus("revoke", label);
   }
 
-  registerVcAuthorityKey(input: {
+  async registerVcAuthorityKey(input: {
     domain: VcAuthorityDomain;
     keyIdCommitment: Uint8Array;
     publicKey: ReturnType<typeof deriveJubjubPublicKeyFromSeed>;
-  }): void {
-    const policyCommitment = this.simulator.getLedger().governancePolicyCommitment;
-    const policyVersion = this.simulator.getLedger().governancePolicyVersion;
+  }): Promise<void> {
+    await this.ready;
+    const ledger = await this.simulator.getLedger();
+    const policyCommitment = ledger.governancePolicyCommitment;
+    const policyVersion = ledger.governancePolicyVersion;
     const prepared = prepareVcAuthorityKeyRegistration({
       domain: input.domain,
       registryId: this.registryId,
@@ -831,11 +833,11 @@ export class LocalTrustRegistryIntegrationHarness {
       policyCommitment,
       policyVersion,
     });
-    const actionSequence = this.simulator.getLedger().governanceActionCount;
-    this.simulator.registerVcAuthorityKey(
+    const actionSequence = ledger.governanceActionCount;
+    await this.simulator.registerVcAuthorityKey(
       this.bootstrapMaintainer.keyId,
       this.bootstrapPublicKey,
-      this.bootstrapActionSignature(REGISTER_VC_AUTHORITY_KEY_ACTION_KIND, prepared.payloadHash, actionSequence),
+      await this.bootstrapActionSignature(REGISTER_VC_AUTHORITY_KEY_ACTION_KIND, prepared.payloadHash, actionSequence),
       prepared.keyIdCommitment,
       prepared.authorityDidCommitment,
       prepared.authorityMethodIdCommitment,
@@ -844,8 +846,8 @@ export class LocalTrustRegistryIntegrationHarness {
       prepared.consumerContractAddress,
       prepared.policyCommitment,
       prepared.policyVersion,
-      this.maintainerCoAuthorizers(
-        this.activeDefaultQuorumCoMaintainers(),
+      await this.maintainerCoAuthorizers(
+        await this.activeDefaultQuorumCoMaintainers(),
         REGISTER_VC_AUTHORITY_KEY_ACTION_KIND,
         prepared.payloadHash,
         actionSequence,
@@ -853,22 +855,23 @@ export class LocalTrustRegistryIntegrationHarness {
     );
   }
 
-  suspendVcAuthorityKey(keyIdCommitment: Uint8Array, reasonHash: Uint8Array): void {
-    const previous = this.simulator.getVcAuthorityKey(keyIdCommitment);
+  async suspendVcAuthorityKey(keyIdCommitment: Uint8Array, reasonHash: Uint8Array): Promise<void> {
+    await this.ready;
+    const previous = await this.simulator.getVcAuthorityKey(keyIdCommitment);
     const payload = computeUpdateVcAuthorityKeyPayloadHash(
       keyIdCommitment,
       previous.lifecycleEventHash,
       reasonHash,
     );
-    const actionSequence = this.simulator.getLedger().governanceActionCount;
-    this.simulator.suspendVcAuthorityKey(
+    const actionSequence = (await this.simulator.getLedger()).governanceActionCount;
+    await this.simulator.suspendVcAuthorityKey(
       this.bootstrapMaintainer.keyId,
       this.bootstrapPublicKey,
-      this.bootstrapActionSignature(SUSPEND_VC_AUTHORITY_KEY_ACTION_KIND, payload, actionSequence),
+      await this.bootstrapActionSignature(SUSPEND_VC_AUTHORITY_KEY_ACTION_KIND, payload, actionSequence),
       keyIdCommitment,
       reasonHash,
-      this.maintainerCoAuthorizers(
-        this.activeDefaultQuorumCoMaintainers(),
+      await this.maintainerCoAuthorizers(
+        await this.activeDefaultQuorumCoMaintainers(),
         SUSPEND_VC_AUTHORITY_KEY_ACTION_KIND,
         payload,
         actionSequence,
