@@ -12,15 +12,19 @@ const env = {
 
 test("registry read requires an exact address and non-genesis chain pin", () => {
   assert.deepEqual(parseRegistryReadArgs(["--address", address, "--issuer-label", "issuer:example"], env), {
-    contractAddress: address, issuerLabel: "issuer:example", manifestPath: undefined,
+    contractAddress: address, issuerLabel: "issuer:example", manifestPath: undefined, epochId: undefined,
   });
   assert.equal(parseRegistryReadArgs(["--address", address, "--manifest", "release.json"], env).manifestPath,
     "release.json");
+  assert.equal(parseRegistryReadArgs(["--address", address, "--epoch-id", address], env).epochId, address);
   assert.throws(() => parseRegistryReadArgs(["--address", address], {}), /Pin TR_EXPECTED/u);
   assert.throws(() => parseRegistryReadArgs(["--address", `0x${"0".repeat(64)}`], env), /nonzero/u);
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--address", address], env), /Duplicate/u);
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--manifest", "a", "--manifest", "b"], env), /Duplicate/u);
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--issuer-label", "x\0y"], env), /invalid/u);
+  assert.throws(() => parseRegistryReadArgs(["--address", address, "--epoch-id", "0xA"], env), /Epoch id/u);
+  assert.throws(() => parseRegistryReadArgs(["--address", address, "--epoch-id", address,
+    "--epoch-id", address], env), /Duplicate/u);
 });
 
 test("registry read requires every finalized verifier key to match the source manifest", () => {
@@ -95,7 +99,7 @@ test("registry read summarizes finalized state and a selected issuer without lea
   };
   const withEpoch = { ...image, ledger: { ...image.ledger,
     epochCommitmentCount: 1n, latestEpochCommitmentId: epochId,
-    epochCommitmentIds: { member: () => true },
+    epochCommitmentIds: { member: (id) => Buffer.from(id).equals(Buffer.from(epochId)) },
     epochCommitmentRecords: { lookup: () => epoch },
   } };
   assert.deepEqual(summarizeFinalizedRegistry(withEpoch, attached, address).currentEpoch, {
@@ -107,6 +111,11 @@ test("registry read summarizes finalized state and a selected issuer without lea
     publicationEventHash: `0x${"05".repeat(32)}`,
     validFromSequence: "5", validUntilSequence: "65", publishedAtSequence: "5",
   });
+  assert.deepEqual(summarizeFinalizedRegistry(withEpoch, attached, address, undefined,
+    `0x${"09".repeat(32)}`).selectedEpoch,
+  summarizeFinalizedRegistry(withEpoch, attached, address).currentEpoch);
+  assert.equal(summarizeFinalizedRegistry(withEpoch, attached, address, undefined,
+    `0x${"08".repeat(32)}`).selectedEpoch, null);
   assert.throws(() => summarizeFinalizedRegistry({ ...withEpoch, ledger: {
     ...withEpoch.ledger, epochCommitmentIds: { member: () => false },
   } }, attached, address), /absent from the commitment index/u);

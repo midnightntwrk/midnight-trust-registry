@@ -635,6 +635,22 @@ The journal and development signer remain private in the ignored smoke-state
 directory. This epoch anchors only a development registry snapshot, **not**
 the fixture issuer's authorization statement. It does not satisfy the governed
 issuer decision reader, live VP status authority, or release qualification.
+After a process restart or ambiguous response, reconcile the exact epoch ID
+from the private one-shot journal rather than retrying publication:
+
+```sh
+node --env-file=artifacts/ledger9-current-chain.env \
+  scripts/reconcile-ledger9-epoch.mjs \
+  --journal artifacts/ledger9-current-chain-smoke-state/development-registry-epoch.json \
+  --manifest artifacts/ledger9-current-chain-pack/release-manifest.json
+```
+
+The command checks the pinned chain, source-matched verifier-key catalog,
+journal payload commitment, and selected finalized epoch roots. It exits 0
+only for a finalized match, 2 for unresolved inclusion that must be inspected,
+and 1 for invalid or conflicting evidence. Its `recordedTxId` is copied from
+the private submission receipt, not independently proven by the ledger reader.
+It never submits a transaction.
 
 ## Execution order
 

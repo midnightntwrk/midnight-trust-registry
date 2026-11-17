@@ -15,15 +15,17 @@ export function parseRegistryReadArgs(args, env = process.env) {
   let contractAddress;
   let issuerLabel;
   let manifestPath;
+  let epochId;
   for (let index = 0; index < args.length; index += 2) {
     const flag = args[index];
     const value = args[index + 1];
-    if (!value || !["--address", "--issuer-label", "--manifest"].includes(flag)) {
-      throw new Error("Usage: read-ledger9-registry.mjs --address 0x... [--issuer-label label] [--manifest path]");
+    if (!value || !["--address", "--issuer-label", "--manifest", "--epoch-id"].includes(flag)) {
+      throw new Error("Usage: read-ledger9-registry.mjs --address 0x... [--issuer-label label] [--manifest path] [--epoch-id 0x...]");
     }
     if (flag === "--address" && contractAddress === undefined) contractAddress = value;
     else if (flag === "--issuer-label" && issuerLabel === undefined) issuerLabel = value;
     else if (flag === "--manifest" && manifestPath === undefined) manifestPath = value;
+    else if (flag === "--epoch-id" && epochId === undefined) epochId = value;
     else throw new Error(`Duplicate option: ${flag}`);
   }
   if (!ADDRESS.test(contractAddress ?? "") || /^0x0{64}$/u.test(contractAddress)) {
@@ -33,13 +35,16 @@ export function parseRegistryReadArgs(args, env = process.env) {
     || issuerLabel.trim() !== issuerLabel || issuerLabel.includes("\0"))) {
     throw new Error("Issuer label is invalid");
   }
+  if (epochId !== undefined && (!ADDRESS.test(epochId) || /^0x0{64}$/u.test(epochId))) {
+    throw new Error("Epoch id must be a nonzero lowercase bytes32 commitment");
+  }
   if (!ADDRESS.test(env.TR_EXPECTED_GENESIS_HASH ?? "")
     || !ADDRESS.test(env.TR_EXPECTED_CHECKPOINT_HASH ?? "")
     || !Number.isSafeInteger(Number(env.TR_EXPECTED_CHECKPOINT_HEIGHT))
     || Number(env.TR_EXPECTED_CHECKPOINT_HEIGHT) < 1) {
     throw new Error("Pin TR_EXPECTED_GENESIS_HASH and a non-genesis checkpoint height/hash before reading registry state");
   }
-  return { contractAddress, issuerLabel, manifestPath };
+  return { contractAddress, issuerLabel, manifestPath, epochId };
 }
 
 export function assertFinalizedVerifierKeyCatalog(image, manifest, circuitNames) {
@@ -72,7 +77,26 @@ async function readBoundedManifest(path) {
   return JSON.parse(await readFile(path, "utf8"));
 }
 
-export function summarizeFinalizedRegistry(image, attached, contractAddress, issuerSelection) {
+function summarizeEpoch(ledger, id) {
+  if (!ledger.epochCommitmentIds.member(id)) return null;
+  const record = ledger.epochCommitmentRecords.lookup(id);
+  if (hex32(record.epochId) !== hex32(id)) {
+    throw new Error("Finalized epoch record has a different identifier");
+  }
+  return {
+    idCommitment: hex32(id),
+    stateRoot: hex32(record.stateRoot),
+    eventRoot: hex32(record.eventRoot),
+    policyRoot: hex32(record.policyRoot),
+    publicationPolicyCommitment: hex32(record.publicationPolicyCommitment),
+    publicationEventHash: hex32(record.publicationEventHash),
+    validFromSequence: record.validFromSequence.toString(),
+    validUntilSequence: record.validUntilSequence.toString(),
+    publishedAtSequence: record.publishedAtSequence.toString(),
+  };
+}
+
+export function summarizeFinalizedRegistry(image, attached, contractAddress, issuerSelection, epochId) {
   if (!image || image.networkId !== "undeployed") {
     throw new Error("Finalized Ledger 9 registry image is unavailable for this contract");
   }
@@ -89,21 +113,7 @@ export function summarizeFinalizedRegistry(image, attached, contractAddress, iss
     if (!ledger.epochCommitmentIds.member(id)) {
       throw new Error("Finalized latest epoch is absent from the commitment index");
     }
-    const record = ledger.epochCommitmentRecords.lookup(id);
-    if (hex32(record.epochId) !== hex32(id)) {
-      throw new Error("Finalized latest epoch record has a different identifier");
-    }
-    currentEpoch = {
-      idCommitment: hex32(id),
-      stateRoot: hex32(record.stateRoot),
-      eventRoot: hex32(record.eventRoot),
-      policyRoot: hex32(record.policyRoot),
-      publicationPolicyCommitment: hex32(record.publicationPolicyCommitment),
-      publicationEventHash: hex32(record.publicationEventHash),
-      validFromSequence: record.validFromSequence.toString(),
-      validUntilSequence: record.validUntilSequence.toString(),
-      publishedAtSequence: record.publishedAtSequence.toString(),
-    };
+    currentEpoch = summarizeEpoch(ledger, id);
   }
   return {
     network: "undeployed",
@@ -118,6 +128,7 @@ export function summarizeFinalizedRegistry(image, attached, contractAddress, iss
     governanceActionCount: ledger.governanceActionCount.toString(),
     publishedEpochCount: ledger.epochCommitmentCount.toString(),
     currentEpoch,
+    ...(epochId === undefined ? {} : { selectedEpoch: summarizeEpoch(ledger, Buffer.from(epochId.slice(2), "hex")) }),
     activeMaintainers: ledger.activeMaintainerCount.toString(),
     requiredEpochPublishSigners: ledger.maintainerThreshold.toString(),
     evidenceVerifierKeys: ledger.evidenceVerifierKeyCount.toString(),
@@ -135,7 +146,7 @@ export function summarizeFinalizedRegistry(image, attached, contractAddress, iss
 }
 
 export async function readLedger9Registry(args = process.argv.slice(2), env = process.env) {
-  const { contractAddress, issuerLabel, manifestPath } = parseRegistryReadArgs(args, env);
+  const { contractAddress, issuerLabel, manifestPath, epochId } = parseRegistryReadArgs(args, env);
   const attached = await checkLedger9LocalStack(localnetInputFromEnvironment(env));
   const [{ bytes32Commitment }, { AuthorizationStatus, TrustRegistryContract, trustRegistryWitnesses },
     { createLocalNetworkDeploymentActionReader }] =
@@ -162,7 +173,7 @@ export async function readLedger9Registry(args = process.argv.slice(2), env = pr
     await readBoundedManifest(manifestPath),
     Object.keys(new TrustRegistryContract.Contract(trustRegistryWitnesses).provableCircuits),
   );
-  return { ...summarizeFinalizedRegistry(image, attached, contractAddress, issuerSelection), ...catalog };
+  return { ...summarizeFinalizedRegistry(image, attached, contractAddress, issuerSelection, epochId), ...catalog };
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
