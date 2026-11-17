@@ -247,6 +247,14 @@ has a project-private host-access bridge for loopback forwarding; the stricter
 offline topology observer still rejects that extra attachment, rather than
 misreporting it as an internal-only runtime. These source checks do not prove
 the currently unresponsive live stack or a deployed actor journey.
+The separate `test:demo-smoke-scripts` gate is still red. Its historical
+adversarial/demo cases call asynchronous Ledger 9 harness and simulator
+operations as if they were synchronous, producing failed assertions and
+unhandled rejections. At `85007b34`, the isolated policy-replay case and the
+first ten Compact adversarial safety cases pass after awaiting setup, circuit
+results, and expected rejections. The remaining adversarial matrix and
+governed-demo cases must be migrated and rerun before claiming this gate;
+no failed case has been skipped or reclassified as a pass.
 
 ## Execution order
 
