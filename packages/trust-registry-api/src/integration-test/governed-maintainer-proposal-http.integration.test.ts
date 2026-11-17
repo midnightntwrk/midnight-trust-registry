@@ -32,7 +32,7 @@ import { acceptedProposalAdmission } from "./fixtures/accepted-proposal-admissio
 
 const bytes = (value: string): Uint8Array => Buffer.from(value.slice(2), "hex");
 
-const signPrepared = (
+const signPrepared = async (
   harness: LocalTrustRegistryIntegrationHarness,
   maintainer: MaintainerScenarioFixture,
   prepared: PreparedGovernedMaintainerProposal,
@@ -41,7 +41,7 @@ const signPrepared = (
   const signature = signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
     bytes(prepared.registryId),
-    harness.simulator.getLedger().deploymentNetworkIdCommitment,
+    (await harness.simulator.getLedger()).deploymentNetworkIdCommitment,
     Buffer.from(harness.simulator.contractAddress, "hex"),
     bytes(prepared.policyCommitment),
     bytes(prepared.actionKind), bytes(prepared.actionPayloadHash), BigInt(prepared.actionSequence),
@@ -59,17 +59,17 @@ describe("Compact-backed maintainer proposals over HTTP", () => {
     const second = createMaintainerScenarioFixture("maintainer-http-second");
     const third = createMaintainerScenarioFixture("maintainer-http-third");
     const candidate = createMaintainerScenarioFixture("maintainer-http-candidate");
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(third);
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(third);
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
     const scope = createMaintainerAuthorizationScopeFixture(harness.registryId);
-    const evidence = harness.createApplicationEvidence({
+    const evidence = await harness.createApplicationEvidence({
       applicationId: candidate.maintainerId,
       subjectDid: candidate.subjectDid,
       role: "maintainer",
       scope,
     });
-    const source = { mode: "memory" as const, loadSnapshot: async () => publishSimulatorSnapshot(harness,
+    const source = { mode: "memory" as const, loadSnapshot: async () => await publishSimulatorSnapshot(harness,
       { label: "maintainer-proposal-http" }) };
     const unavailable = createTrustRegistryApiServer({ source });
     try {
@@ -90,14 +90,14 @@ describe("Compact-backed maintainer proposals over HTTP", () => {
           throw new GovernedMaintainerProposalRejectedError("unknown-maintainer");
         }
         try {
-          return harness.prepareMaintainerProposalAction(candidate, submitted);
+          return await harness.prepareMaintainerProposalAction(candidate, submitted);
         } catch {
           throw new GovernedMaintainerProposalRejectedError("invalid-evidence");
         }
       },
       async preflightSubmission(_maintainerId, _evidence, signers, signature, context) {
         preflights += 1;
-        const ledger = harness.simulator.getLedger();
+        const ledger = await harness.simulator.getLedger();
         if (BigInt(signers.length) < ledger.maintainerThreshold) {
           throw new GovernedMaintainerProposalRejectedError("invalid-signers");
         }
@@ -116,7 +116,7 @@ describe("Compact-backed maintainer proposals over HTTP", () => {
           throw new GovernedMaintainerProposalRejectedError("unknown-maintainer");
         }
         try {
-          const eventHash = harness.executeMaintainerProposalWithSignatures(
+          const eventHash = await harness.executeMaintainerProposalWithSignatures(
             candidate, submitted, signers, verifierSignature,
           );
           return { eventHash: `0x${Buffer.from(eventHash).toString("hex")}` };
@@ -152,9 +152,9 @@ describe("Compact-backed maintainer proposals over HTTP", () => {
       expect(preparedResponse.headers.get("cache-control")).toBe("no-store");
       const prepared = await preparedResponse.json() as PreparedGovernedMaintainerProposal;
       expect(prepared.evidenceHash).toBe(evidence.commitment);
-      const signature = harness.signMaintainerProposalEvidence(harness.prepareMaintainerProposalAction(candidate, evidence));
+      const signature = harness.signMaintainerProposalEvidence(await harness.prepareMaintainerProposalAction(candidate, evidence));
       const encoded = `0x${Buffer.from(encodeJubjubSignature(signature)).toString("hex")}`;
-      const signers = [signPrepared(harness, second, prepared), signPrepared(harness, third, prepared)];
+      const signers = [await signPrepared(harness, second, prepared), await signPrepared(harness, third, prepared)];
       const submit = (context: PreparedGovernedMaintainerProposal, proof: string, votes = signers) =>
         post("submit", { evidence, prepared: context, signers: votes, evidenceVerifierSignature: proof });
       const insufficient = await submit(prepared, encoded, [signers[0]!]);
@@ -183,7 +183,7 @@ describe("Compact-backed maintainer proposals over HTTP", () => {
       expect(recorded?.state).toBe("submitted");
       expect(recorded?.reservationContext).toEqual({ actionSequence: prepared.actionSequence,
         actionKind: prepared.actionKind, actionPayloadHash: prepared.actionPayloadHash });
-      expect(harness.simulator.getLedger().maintainerMembershipCount).toBe(4n);
+      expect((await harness.simulator.getLedger()).maintainerMembershipCount).toBe(4n);
       expect((await submit(prepared, encoded)).status).toBe(409);
       expect(await (await post("resolve", { evidence })).json()).toEqual({
         state: "observed", eventHash: receipt.eventHash,

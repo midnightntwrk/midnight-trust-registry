@@ -33,7 +33,7 @@ import { acceptedProposalAdmission } from "./fixtures/accepted-proposal-admissio
 
 const bytes = (value: string): Uint8Array => Buffer.from(value.slice(2), "hex");
 
-const signPrepared = (
+const signPrepared = async (
   harness: LocalTrustRegistryIntegrationHarness,
   maintainer: MaintainerScenarioFixture,
   prepared: PreparedGovernedAuditorProposal,
@@ -42,7 +42,7 @@ const signPrepared = (
   const signature = signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
     bytes(prepared.registryId),
-    harness.simulator.getLedger().deploymentNetworkIdCommitment,
+    (await harness.simulator.getLedger()).deploymentNetworkIdCommitment,
     Buffer.from(harness.simulator.contractAddress, "hex"),
     bytes(prepared.policyCommitment),
     bytes(prepared.actionKind), bytes(prepared.actionPayloadHash), BigInt(prepared.actionSequence),
@@ -60,17 +60,17 @@ describe("Compact-backed auditor proposals over HTTP", () => {
     const second = createMaintainerScenarioFixture("auditor-http-second");
     const third = createMaintainerScenarioFixture("auditor-http-third");
     const auditor = createAuditorScenarioFixture("auditor-http-candidate");
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(third);
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(third);
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
     const scope = createAuditorAuthorizationScopeFixture(auditor);
-    const evidence = harness.createApplicationEvidence({
+    const evidence = await harness.createApplicationEvidence({
       applicationId: auditor.authorizationId,
       subjectDid: auditor.subjectDid,
       role: "auditor",
       scope,
     });
-    const source = { mode: "memory" as const, loadSnapshot: async () => publishSimulatorSnapshot(harness,
+    const source = { mode: "memory" as const, loadSnapshot: async () => await publishSimulatorSnapshot(harness,
       { label: "auditor-proposal-http", auditors: [{ label: "candidate", fixture: auditor }] }) };
     const unavailable = createTrustRegistryApiServer({ source });
     try {
@@ -91,14 +91,14 @@ describe("Compact-backed auditor proposals over HTTP", () => {
           throw new GovernedAuditorProposalRejectedError("unknown-authorization");
         }
         try {
-          return harness.prepareAuditorProposalAction(auditor, submitted);
+          return await harness.prepareAuditorProposalAction(auditor, submitted);
         } catch {
           throw new GovernedAuditorProposalRejectedError("invalid-evidence");
         }
       },
       async preflightSubmission(_authorizationId, _evidence, signers, signature, context) {
         preflights += 1;
-        const ledger = harness.simulator.getLedger();
+        const ledger = await harness.simulator.getLedger();
         if (BigInt(signers.length) < ledger.maintainerThreshold) {
           throw new GovernedAuditorProposalRejectedError("invalid-signers");
         }
@@ -117,7 +117,7 @@ describe("Compact-backed auditor proposals over HTTP", () => {
           throw new GovernedAuditorProposalRejectedError("unknown-authorization");
         }
         try {
-          const eventHash = harness.executeAuditorProposalWithSignatures(
+          const eventHash = await harness.executeAuditorProposalWithSignatures(
             auditor, submitted, signers, verifierSignature,
           );
           return { eventHash: `0x${Buffer.from(eventHash).toString("hex")}` };
@@ -153,9 +153,9 @@ describe("Compact-backed auditor proposals over HTTP", () => {
       expect(preparedResponse.headers.get("cache-control")).toBe("no-store");
       const prepared = await preparedResponse.json() as PreparedGovernedAuditorProposal;
       expect(prepared.evidenceHash).toBe(evidence.commitment);
-      const signature = harness.signAuditorProposalEvidence(harness.prepareAuditorProposalAction(auditor, evidence));
+      const signature = harness.signAuditorProposalEvidence(await harness.prepareAuditorProposalAction(auditor, evidence));
       const encoded = `0x${Buffer.from(encodeJubjubSignature(signature)).toString("hex")}`;
-      const signers = [signPrepared(harness, second, prepared), signPrepared(harness, third, prepared)];
+      const signers = [await signPrepared(harness, second, prepared), await signPrepared(harness, third, prepared)];
       const submit = (context: PreparedGovernedAuditorProposal, proof: string, votes = signers) =>
         post("submit", { evidence, prepared: context, signers: votes, evidenceVerifierSignature: proof });
       const insufficient = await submit(prepared, encoded, [signers[0]!]);
@@ -184,7 +184,7 @@ describe("Compact-backed auditor proposals over HTTP", () => {
       expect(recorded?.state).toBe("submitted");
       expect(recorded?.reservationContext).toEqual({ actionSequence: prepared.actionSequence,
         actionKind: prepared.actionKind, actionPayloadHash: prepared.actionPayloadHash });
-      expect(harness.simulator.getLedger().auditorAuthorizationCount).toBe(1n);
+      expect((await harness.simulator.getLedger()).auditorAuthorizationCount).toBe(1n);
       expect((await submit(prepared, encoded)).status).toBe(409);
       expect(await (await post("resolve", { evidence })).json()).toEqual({
         state: "observed", eventHash: receipt.eventHash,
