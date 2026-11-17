@@ -98,7 +98,7 @@ export async function transitionSignedMutationState(
     throw new MutationNonceCapacityExceededError();
   }
   const workspace = {
-    ...applyIntentBoundWorkspaceOperation(preflight.intent, state.workspace, operation, now),
+    ...await applyIntentBoundWorkspaceOperation(preflight.intent, state.workspace, operation, now),
     mutationNonceClock: now.toISOString(),
   };
   return { workspace, consumedNonces: { ...retained, [nonceKey]: { actorKey, expiresAt: intent.expiresAt } } };

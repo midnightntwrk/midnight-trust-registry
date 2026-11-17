@@ -45,9 +45,11 @@ projection. Its full suite passes five files and 32 tests. Epoch preparation
 waits for the harness's asynchronous evidence-verifier bootstrap, preventing
 a first-epoch signature from racing a governance-sequence change. The full
 integration suite still passes 52 files and 376 tests, with two skipped.
-The API package is not yet type-clean: its workspace mutation callers and
-many historical tests still expect synchronous CLI operations. No API or
-deployed actor qualification is claimed from the CLI result.
+The API production build now awaits workspace mutations and signed-intent
+preflight. Its focused mutation-intent-preflight and signed-mutation-state
+suites pass 15 tests. The full API typecheck remains red because many
+historical test callers still expect synchronous CLI operations. No API or
+deployed actor qualification is claimed from these focused results.
 
 The official [Ledger 9 upgrade guide](https://docs.midnight.network/relnotes/ledger-9)
 is the compatibility source. The
