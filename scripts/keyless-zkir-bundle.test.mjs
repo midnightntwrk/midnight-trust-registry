@@ -25,6 +25,7 @@ async function fixture(t) {
   await writeFile(join(full, "compiler/contract-info.json"), JSON.stringify({
     "compiler-version": "0.31.1", circuits: [{ name: "demoCircuit", proof: true }],
   }));
+  await writeFile(join(full, "compiler/contract-manifest.json"), "{\"manifest-version\":\"1\"}\n");
   await writeFile(join(full, "contract/index.js"), "export const demo = true;\n");
   await writeFile(join(full, "contract/index.js.map"), "{}\n");
   await writeFile(join(full, "contract/index.d.ts"), "export declare const demo: boolean;\n");
@@ -45,6 +46,8 @@ test("keyless bundle excludes keys and regenerates only verified outputs", async
   assert.equal((await readdir(join(paths.keyless, "zkir"))).length, 2);
   const verified = await verifyKeylessZkirBundle(paths.keyless, created.manifestSha256);
   assert.equal(verified.manifest.keys["demoCircuit.prover"], sha256("sample-zkir\n"));
+  assert.equal(verified.manifest.assets["compiler/contract-manifest.json"],
+    sha256("{\"manifest-version\":\"1\"}\n"));
   await materializeKeylessZkirBundle(paths.keyless, paths.restored, paths.generator,
     created.manifestSha256);
   assert.equal((await readFile(join(paths.restored, "keys/demoCircuit.prover"), "utf8")),
@@ -61,6 +64,23 @@ test("trusted digest and ZKIR mutations fail before materialization", async (t) 
   await assert.rejects(materializeKeylessZkirBundle(paths.keyless, paths.restored,
     paths.generator, created.manifestSha256), /asset hash mismatch/u);
   await assert.rejects(lstat(paths.restored), { code: "ENOENT" });
+});
+
+test("a changed Compact contract manifest fails before key regeneration", async (t) => {
+  const paths = await fixture(t);
+  const created = await createKeylessZkirBundle(paths.full, paths.keyless, revision, paths.generator);
+  await writeFile(join(paths.keyless, "compiler/contract-manifest.json"), "{}\n");
+  await assert.rejects(materializeKeylessZkirBundle(paths.keyless, paths.restored,
+    paths.generator, created.manifestSha256), /asset hash mismatch/u);
+  await assert.rejects(lstat(paths.restored), { code: "ENOENT" });
+});
+
+test("Ledger 9 source without a Compact contract manifest cannot become keyless", async (t) => {
+  const paths = await fixture(t);
+  await rm(join(paths.full, "compiler/contract-manifest.json"));
+  await assert.rejects(createKeylessZkirBundle(paths.full, paths.keyless, revision,
+    paths.generator), /Compiler assets/u);
+  await assert.rejects(lstat(paths.keyless), { code: "ENOENT" });
 });
 
 test("builder rejects a keyless manifest that differs from signed-source outputs", async (t) => {

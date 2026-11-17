@@ -371,6 +371,11 @@ maintenance key, submit a transaction, deploy the registry, or approve genesis.
 The provider set also now includes Midnight.js 5's required network ID and
 3600-second transaction TTL; a second live probe confirmed the constructed
 provider exposes those values without making a write.
+Compact 0.36 also emits `compiler/contract-manifest.json`. The keyless ZKIR
+bundle and release-candidate inventory now retain and hash that file as a
+required source-bound asset; silently dropping it would prevent the Ledger 9
+ZK-config provider from checking the generated artifact set. This local
+packaging fix does not itself establish a portable release bundle.
 
 ## Execution order
 

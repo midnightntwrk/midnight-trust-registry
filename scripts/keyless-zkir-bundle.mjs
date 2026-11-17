@@ -17,7 +17,8 @@ const runFile = promisify(execFile);
 const SHA256 = /^[0-9a-f]{64}$/u;
 const REVISION = /^[0-9a-f]{40}$/u;
 const CIRCUIT = /^[A-Za-z][A-Za-z0-9_]*$/u;
-const BASE_ASSETS = ["compiler/contract-info.json", "contract/index.d.ts", "contract/index.js",
+const BASE_ASSETS = ["compiler/contract-info.json", "compiler/contract-manifest.json",
+  "contract/index.d.ts", "contract/index.js",
   "contract/index.js.map"];
 const FORMAT = "tr-keyless-zkir-v1";
 /** @typedef {{format: string, sourceRevision: string, compilerVersion: string,
@@ -126,7 +127,8 @@ export async function createKeylessZkirBundle(fullManaged, target, revision, key
   exactNames(await filesBelow(join(source, "zkir")), assets.filter((name) => name.startsWith("zkir/"))
     .map((name) => name.slice("zkir/".length)), "ZKIR assets");
   exactNames(await filesBelow(join(source, "keys")), keys, "Key assets");
-  exactNames(await filesBelow(join(source, "compiler")), ["contract-info.json"], "Compiler assets");
+  exactNames(await filesBelow(join(source, "compiler")), ["contract-info.json", "contract-manifest.json"],
+    "Compiler assets");
   exactNames(await filesBelow(join(source, "contract")), BASE_ASSETS.filter((name) =>
     name.startsWith("contract/")).map((name) => name.slice("contract/".length)), "Contract assets");
   const assetHashes = Object.fromEntries(await Promise.all(assets.map(async (name) =>

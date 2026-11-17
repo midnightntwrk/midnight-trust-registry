@@ -95,6 +95,7 @@ test("v3 candidate binds all keyless assets, key expectations, and local-only pu
     circuits: [{ name: "proveA", proof: true }] });
   const assetBytes = {
     "compiler/contract-info.json": info,
+    "compiler/contract-manifest.json": "{\"manifest-version\":\"1\"}\n",
     "contract/index.js": "generated-test\n",
     "contract/index.js.map": "{}\n",
     "contract/index.d.ts": "export {};\n",

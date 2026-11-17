@@ -124,7 +124,8 @@ function keylessContractManifest(tarball, contractInfo, trustedDigest) {
     throw new Error("Keyless contract package contains prover or verifier key bytes");
   }
   const names = proofCircuitNames(contractInfo).sort();
-  const assets = ["compiler/contract-info.json", "contract/index.d.ts", "contract/index.js",
+  const assets = ["compiler/contract-info.json", "compiler/contract-manifest.json",
+    "contract/index.d.ts", "contract/index.js",
     "contract/index.js.map", ...names.flatMap((name) => [`zkir/${name}.zkir`, `zkir/${name}.bzkir`])].sort();
   const keys = names.flatMap((name) => [`${name}.prover`, `${name}.verifier`]).sort();
   const actual = entries.filter((entry) => entry.startsWith(`${CONTRACT_PREFIX}/`) && !entry.endsWith("/"))
