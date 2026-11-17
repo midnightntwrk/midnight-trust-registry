@@ -15,7 +15,7 @@ qualification claim. The historical Ledger 8 source is the `ledger8` branch at
 | Compact compiler | 0.36.0 | Pinned Nix toolchain builds; contract compiles with `--skip-zk` after source type fixes |
 | Compact runtime | 0.21.0 | Locally installed with exact DID RC1 and VC PR #755 artifacts; runtime validation incomplete |
 | Midnight.js / testkit-js | 5.0.0 | Locally installed; provider and async circuit API migration incomplete |
-| Compact.js | 3.0.0 | Locally installed; simulator still assumes synchronous circuits |
+| Compact.js | 3.0.0 | Locally installed; core simulator is async, but client/caller migration remains |
 | `@midnightntwrk/ledger-v9` | 1.0.0 | Required for new Ledger 9 transactions |
 | `@midnightntwrk/onchain-runtime-v4` | 4.0.0 | Required where directly consumed |
 | Midnight DID | exact 1.0.0-rc1 cohort | Published and installed locally under four dated, exact-version age exceptions |
@@ -68,18 +68,16 @@ simulator results as synchronous. This is a
 source migration, not a missing package or a qualification pass. No new
 proving/verifier keys or deployed transactions have been generated.
 
-The next TypeScript pass must also remove `@midnight-ntwrk/midnight-js-network-id`
-imports: Midnight.js 5 carries `{ networkId, ttlSeconds }` in each provider
-set's `config`, not a process-global setter/getter. Deployment, proposal and
-maintenance paths must compare that config with the pinned network/receipt,
-while readback-only paths must use their explicit network and finalized
-checkpoint. `@midnight-ntwrk/midnight-js-protocol/ledger` and `/compact-runtime`
-deep imports are no longer available. Runtime `signatureVerifyingKey` returns
-a tagged `{ tag, value }` object, so old string operations on the result need
-an explicit Schnorr-key encoding and comparison. A direct integration package
-typecheck currently reports these API breaks as well as unresolved local
-contract/client exports because those packages have not yet built under the
-new asynchronous Compact surface.
+The integration source now uses the deployment provider's `config.networkId`
+instead of the removed process-global network ID for the pinned deploy path.
+Readback-only paths use their explicit network and receipt. A strict helper
+encodes the tagged Compact runtime Schnorr verifying key into the policy's
+canonical `0x`-prefixed hex; its focused tests and integration lint pass.
+This is only a partial migration: `public-maintenance-transition` and test
+fixtures still use the removed network-ID package, and other SDK 5 transaction
+and state-read APIs still require changes. The simulator client and its callers
+also need async conversion. The full integration package typecheck remains red;
+these source edits are not deployment evidence.
 
 Docker Desktop did not answer `docker info` during this local pass. No Ledger 9
 container, live RPC, indexer, or proof-server claim follows from the Compose

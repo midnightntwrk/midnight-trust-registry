@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 
-import { getNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import { ContractMaintenanceAuthority, MaintenanceUpdate, ReplaceAuthority } from "@midnight-ntwrk/midnight-js-protocol/ledger";
 
 import {
@@ -81,7 +80,7 @@ async function reconcilePinnedCommitteeTransition(
   readPostDeployment: () => Promise<PublicRegistryDeploymentReadback>,
 ): Promise<MaintenanceTransitionReconciliation> {
   const { approval } = input;
-  if (getNetworkId() !== approval.network.networkId || approval.receipt.networkId !== approval.network.networkId) {
+  if (approval.receipt.networkId !== approval.network.networkId) {
     throw new Error("Midnight.js network does not match the approved transition network");
   }
   if (!HASH.test(input.approvedUpdateSha256) || !BLOCK.test(input.approvedFinalizedBlockHash)

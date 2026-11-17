@@ -10,6 +10,7 @@ import type {
 } from "@midnight-ntwrk/trust-registry-client";
 import { TrustRegistryContract, type MaintainerStatus } from "@midnight-ntwrk/trust-registry-contract/contract";
 import { getLocalNetworkProfile } from "./network-profiles.js";
+import { maintenanceVerifyingKeyHex } from "./maintenance-verifying-key.js";
 
 export type FinalizedNetworkCheckpoint = {
   networkId: string;
@@ -104,7 +105,7 @@ const deploymentImage = (state: ContractState) => {
   return {
     verifierKeySha256: Object.fromEntries(entries),
     maintenanceAuthority: {
-      committee: authority.committee.map((key) => `0x${key.toLowerCase()}`),
+      committee: authority.committee.map(maintenanceVerifyingKeyHex),
       threshold: authority.threshold,
       counter: authority.counter,
     },

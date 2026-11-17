@@ -3,12 +3,10 @@ import { constants } from "node:fs";
 import { lstat, open } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
-import { signatureVerifyingKey } from "@midnight-ntwrk/compact-runtime";
+import type { SigningKey } from "@midnight-ntwrk/compact-runtime";
 import {
   InsertVerifierKeyTxFailedError, submitInsertVerifierKeyTx, type ContractProviders,
 } from "@midnight-ntwrk/midnight-js-contracts";
-import { getNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
-import type { SigningKey } from "@midnight-ntwrk/midnight-js-protocol/compact-runtime";
 import { createVerifierKey, type FinalizedTxData } from "@midnight-ntwrk/midnight-js-types";
 import { TrustRegistryContract, type TrustRegistryPrivateState } from "@midnight-ntwrk/trust-registry-contract";
 import { z } from "zod";
@@ -23,6 +21,7 @@ import {
   type ReleaseVerifierKeyManifest,
 } from "./public-network-deployment.js";
 import { readPinnedInstalledVerifierKey } from "./verifier-asset-preflight.js";
+import { maintenanceSigningKeyHex } from "./maintenance-verifying-key.js";
 
 type RegistryContract = TrustRegistryContract.Contract<TrustRegistryPrivateState>;
 const Hex32 = z.string().regex(/^0x[0-9a-f]{64}$/u);
@@ -233,7 +232,7 @@ export function planLocalVerifierKeyInsertion(input: {
   bootstrapMaintenanceVerifyingKey: string;
   circuitName: string;
 }, image: FinalizedRegistryDeploymentImage): LocalVerifierKeyInsertionPlan {
-  if (input.network.networkId !== "undeployed" || getNetworkId() !== "undeployed"
+  if (input.network.networkId !== "undeployed"
     || input.receipt.networkId !== "undeployed") {
     throw new Error("Verifier-key insertion requires the undeployed local network");
   }
@@ -328,7 +327,7 @@ export async function reconcileLocalVerifierKeyInsertion(input: {
   circuitName: string;
   journal: FileVerifierKeyInsertionJournal;
 }): Promise<LocalVerifierKeyInsertionReadback> {
-  if (input.network.networkId !== "undeployed" || getNetworkId() !== "undeployed") {
+  if (input.network.networkId !== "undeployed") {
     throw new Error("Verifier-key reconciliation requires the undeployed local network");
   }
   const entry = await input.journal.inspect();
@@ -387,14 +386,14 @@ export async function submitLocalVerifierKeyInsertion(input: {
   const key = await readPinnedInstalledVerifierKey(input.releaseManifest, input.circuitName);
   const compiledContract = compiledStagedVerifierKeyContract(input.circuitName);
   const verifierKey = createVerifierKey(key);
-  const expectedKey = input.bootstrapMaintenanceVerifyingKey.slice(2);
-  if (signatureVerifyingKey(input.contractMaintenanceSigningKey).toLowerCase() !== expectedKey) {
+  const expectedKey = input.bootstrapMaintenanceVerifyingKey;
+  if (maintenanceSigningKeyHex(input.contractMaintenanceSigningKey) !== expectedKey) {
     throw new Error("Insertion signing key disagrees with the pinned bootstrap authority");
   }
   const address = input.receipt.contractAddress.slice(2);
   const priorSigningKey = await input.providers.privateStateProvider.getSigningKey(address);
   if (priorSigningKey !== null
-    && signatureVerifyingKey(priorSigningKey).toLowerCase() !== expectedKey) {
+    && maintenanceSigningKeyHex(priorSigningKey) !== expectedKey) {
     throw new Error("Provider has a different contract maintenance signing key");
   }
   if (priorSigningKey === null) {
@@ -402,7 +401,7 @@ export async function submitLocalVerifierKeyInsertion(input: {
   }
   const installedSigningKey = await input.providers.privateStateProvider.getSigningKey(address);
   if (installedSigningKey === null
-    || signatureVerifyingKey(installedSigningKey).toLowerCase() !== expectedKey) {
+    || maintenanceSigningKeyHex(installedSigningKey) !== expectedKey) {
     throw new Error("Provider cannot read back the approved maintenance signing key");
   }
   const providerState = await input.providers.publicDataProvider.queryContractState(address);
