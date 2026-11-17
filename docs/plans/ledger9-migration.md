@@ -784,6 +784,21 @@ The expected selected issuer is active with lifecycle sequences 15/16/17,
 `epochEventRootMatchesLifecycle: false`. The last value is an explicit
 qualification gap, not a transient indexer failure.
 
+The current development contract has one active maintainer and a threshold of
+one. The approved local-ledger API plan requires at least three distinct
+maintainers and a threshold of at least two, so this deployment cannot yet
+qualify the live DID/VP API path. The integration package now provides
+`prepareUnsignedLocalMaintainerProposalCall` to derive the first candidate's
+deployment-bound signing context from an independently authenticated finalized
+ledger. It neither verifies an accepted application VP nor submits a call.
+Before using this contract for API qualification, onboard two additional
+independent maintainers with evidence-backed proposal, authorization, and
+activation receipts; update and finalize the threshold policy; then execute
+the separately approved maintenance-authority transition. Recheck the full
+verifier-key catalog and governance history after each step. Keep each attempt
+in a separate one-shot journal, and do not substitute fixture signatures for
+the future accepted VP or independent plan approval.
+
 ## Execution order
 
 1. Keep the `ledger8` source branch only as a historical reference. Ledger 9
