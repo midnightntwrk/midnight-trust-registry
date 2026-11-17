@@ -41,11 +41,11 @@ describe("published VC and DID trust integration", () => {
       subjectDid,
       subjectDidCommitment: bytes32Commitment(subjectDid),
     };
-    harness.authorizeIssuer(issuer);
+    await harness.authorizeIssuer(issuer);
 
     const client = new TrustRegistrySimulatorClient(harness.simulator);
-    const bundle = client.verifyIssuerAuthorizationBundle(
-      harness.evaluateCurrentIssuerDecision(issuer),
+    const bundle = await client.verifyIssuerAuthorizationBundle(
+      await harness.evaluateCurrentIssuerDecision(issuer),
       {
         expectedRegistryId: harness.registryId,
         expectedSubjectDid: subjectDid,

@@ -362,7 +362,7 @@ describe("local verifier-key insertion", () => {
     const file = await journal();
     await expect(submitLocalVerifierKeyInsertion({
       ...input(), journal: file,
-      providers: { ...providers(), config: { networkId: "preview" } } as never,
+      providers: { ...(providers() as object), config: { networkId: "preview" } } as never,
     })).rejects.toThrow(/approved network/u);
     expect(await file.inspect()).toBeNull();
     expect(mocks.readImage).not.toHaveBeenCalled();
