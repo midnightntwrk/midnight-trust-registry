@@ -1,5 +1,13 @@
 # Standalone Offline Runtime Qualification
 
+Ledger 9 migration note: this guide retains the Ledger 8 `0.1.0` release
+qualification procedure. The current Ledger 9 development Compose stack has a
+Docker Desktop `host-access` bridge and reports `internalNetworkOnly: false`;
+it is not an offline-qualified runtime. Use the
+[Ledger 9 migration plan](../plans/ledger9-migration.md) for current stack
+versions, validation, and remaining gates. Do not apply the historical v6
+install or relay procedure below to the current development stack.
+
 Status: **0.1.0 release-candidate gate**, not a claim that the full stack is deployed or
 supported offline. Online access is allowed during installation; after setup,
 the running Trust Registry must not depend on public network services.
@@ -1457,8 +1465,8 @@ For a **development-only** real-ledger deployment smoke, the repository-owned
 Use it only against the dedicated `undeployed` loopback stack, with the public
 local genesis wallet seed documented by `midnight-examples`. Set
 `TR_SMOKE_WALLET_SEED` to that public seed, `TR_SMOKE_STATE_DIR` to the private
-setup directory, and `TR_SMOKE_PROOF_URL` to the temporary loopback proof
-relay. The module rejects public-network IDs, non-loopback endpoints, a
+setup directory, and `TR_SMOKE_PROOF_URL` to the loopback proof-server
+endpoint. The module rejects public-network IDs, non-loopback endpoints, a
 different wallet seed, and a non-private state directory. It saves a random
 bootstrap maintenance signing key as `smoke-maintenance-key` (mode 0600)
 before wallet submission. Keep that file with the one-attempt journal for
@@ -1471,8 +1479,12 @@ the observed setup before reserving the attempt. Running this smoke can
 produce local-ledger evidence only after a real receipt and finalized readback;
 the 1-of-3 transition and release approvals remain separate, open gates.
 
-The dedicated internal Docker network used in development does not expose its
-configured loopback ports to the host on the tested Docker Desktop setup.
+The following relay procedure applies only to the historical internal-only
+Ledger 8 bundle, not the current Ledger 9 development Compose stack. The
+current stack uses its named `host-access` bridge for direct loopback ports
+and must not be described as offline-qualified.
+The older dedicated internal Docker network did not expose its configured
+loopback ports to the host on the tested Docker Desktop setup.
 For an **online installation or deployment window only**, run a temporary
 fixed-destination relay using the already verified, loaded API image, then attach that
 one container to the selected internal ledger network. The relay has no configurable
