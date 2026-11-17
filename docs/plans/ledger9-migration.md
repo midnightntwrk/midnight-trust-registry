@@ -790,7 +790,12 @@ maintainers and a threshold of at least two, so this deployment cannot yet
 qualify the live DID/VP API path. The integration package now provides
 `prepareUnsignedLocalMaintainerProposalCall` to derive the first candidate's
 deployment-bound signing context from an independently authenticated finalized
-ledger. It neither verifies an accepted application VP nor submits a call.
+ledger. `prepareLocalMaintainerProposalCall` verifies the evidence-verifier
+signature and current distinct maintainer signatures. The separate
+`submitLocalMaintainerProposalCall` path requires a deployment-bound one-shot
+journal and a guarded transport, and rechecks the reserved action before
+broadcast. These helpers do not themselves verify an accepted application VP;
+the caller must supply that admission evidence through the governed intake.
 Before using this contract for API qualification, onboard two additional
 independent maintainers with evidence-backed proposal, authorization, and
 activation receipts; update and finalize the threshold policy; then execute
