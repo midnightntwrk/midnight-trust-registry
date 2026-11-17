@@ -29,7 +29,7 @@ const attempt = (authorizationId: string, sequence?: bigint,
   } }),
 });
 
-const input = (harness: LocalTrustRegistryIntegrationHarness, recorded: ProposalSubmissionAttempt) => ({
+const input = async (harness: LocalTrustRegistryIntegrationHarness, recorded: ProposalSubmissionAttempt) => ({
   attempt: recorded,
   registryId: harness.registryId,
   contractAddress: `0x${harness.simulator.contractAddress}`,
@@ -41,21 +41,22 @@ const input = (harness: LocalTrustRegistryIntegrationHarness, recorded: Proposal
     networkId: "undeployed",
     finalizedBlockHash: hash("d"),
     contractAddress: `0x${harness.simulator.contractAddress}`,
-    ledger: harness.simulator.getLedger(),
+    ledger: await harness.simulator.getLedger(),
   },
 });
 
 describe("read-only proposal recovery candidates", () => {
   it("requires a later finalized governance sequence and an absent proposal record", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("recovery-candidate-absent");
-    const sequence = harness.simulator.getLedger().governanceActionCount;
+    await harness.ready;
+    const sequence = (await harness.simulator.getLedger()).governanceActionCount;
     const recorded = attempt("issuer:never-submitted", sequence);
-    const live = await assessProposalRecoveryCandidate(input(harness, recorded));
+    const live = await assessProposalRecoveryCandidate(await input(harness, recorded));
     expect(live.reason).toBe("sequence-still-live");
     expect(live.reviewCandidate).toBe(false);
 
-    harness.proposeMaintainer(createMaintainerScenarioFixture("recovery-candidate-advancer"));
-    const candidate = await assessProposalRecoveryCandidate(input(harness, recorded));
+    await harness.proposeMaintainer(createMaintainerScenarioFixture("recovery-candidate-advancer"));
+    const candidate = await assessProposalRecoveryCandidate(await input(harness, recorded));
     expect(candidate).toMatchObject({
       format: "tr-local-proposal-recovery-candidate-v3",
       reason: "sequence-invalidated-record-absent", reviewCandidate: true,
@@ -64,24 +65,25 @@ describe("read-only proposal recovery candidates", () => {
       planExpectedGenesisHash: hash("e"), planSourceRevision: "f".repeat(40),
       approvedPlanSha256: "7".repeat(64),
       journalBindingDigest: hash("8"),
-      finalizedGovernanceActionCount: harness.simulator.getLedger().governanceActionCount.toString(),
-      finalizedLastActionKind: `0x${Buffer.from(harness.simulator.getLedger().lastAuthorizedActionKind).toString("hex")}`,
-      finalizedLastActionPayloadHash: `0x${Buffer.from(harness.simulator.getLedger().lastAuthorizedActionPayloadHash).toString("hex")}`,
+      finalizedGovernanceActionCount: (await harness.simulator.getLedger()).governanceActionCount.toString(),
+      finalizedLastActionKind: `0x${Buffer.from((await harness.simulator.getLedger()).lastAuthorizedActionKind).toString("hex")}`,
+      finalizedLastActionPayloadHash: `0x${Buffer.from((await harness.simulator.getLedger()).lastAuthorizedActionPayloadHash).toString("hex")}`,
       retryPermitted: false, releaseQualified: false,
     });
     expect(candidate.attemptDigest).toMatch(/^0x[0-9a-f]{64}$/u);
-    expect((await assessProposalRecoveryCandidate(input(harness, { ...recorded,
+    expect((await assessProposalRecoveryCandidate(await input(harness, { ...recorded,
       evidenceCommitment: hash("9"),
     }))).attemptDigest).not.toBe(candidate.attemptDigest);
   });
 
   it("keeps later sequence history and a matching last action inconclusive", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("recovery-candidate-history");
-    const sequence = harness.simulator.getLedger().governanceActionCount;
+    await harness.ready;
+    const sequence = (await harness.simulator.getLedger()).governanceActionCount;
     const recorded = attempt("issuer:history", sequence);
-    harness.proposeMaintainer(createMaintainerScenarioFixture("recovery-candidate-first"));
+    await harness.proposeMaintainer(createMaintainerScenarioFixture("recovery-candidate-first"));
 
-    const immediatelyAfter = input(harness, recorded);
+    const immediatelyAfter = await input(harness, recorded);
     const matchingLastAction = {
       ...immediatelyAfter,
       view: { ...immediatelyAfter.view, ledger: {
@@ -112,8 +114,8 @@ describe("read-only proposal recovery candidates", () => {
       } },
     })).rejects.toThrow(/last action readback/u);
 
-    harness.proposeMaintainer(createMaintainerScenarioFixture("recovery-candidate-second"));
-    const later = await assessProposalRecoveryCandidate(input(harness, recorded));
+    await harness.proposeMaintainer(createMaintainerScenarioFixture("recovery-candidate-second"));
+    const later = await assessProposalRecoveryCandidate(await input(harness, recorded));
     expect(later.reason).toBe("sequence-advanced-history-unavailable");
     expect(later.finalizedLastActionKind).toBeNull();
     expect(later.finalizedLastActionPayloadHash).toBeNull();
@@ -123,21 +125,22 @@ describe("read-only proposal recovery candidates", () => {
 
   it("blocks matching and conflicting finalized proposal records", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("recovery-candidate-present");
+    await harness.ready;
     const issuer = createIssuerScenarioFixture("recovery-candidate-issuer");
-    const sequence = harness.simulator.getLedger().governanceActionCount;
-    harness.proposeIssuer(issuer);
+    const sequence = (await harness.simulator.getLedger()).governanceActionCount;
+    await harness.proposeIssuer(issuer);
     const observation = await resolveCompactProposalObservation(
       async () => harness.simulator.getLedger(), harness.registryId, "issuer", issuer.authorizationId,
     );
     expect(observation).not.toBeNull();
     const recorded = attempt(issuer.authorizationId, sequence);
-    const matching = await assessProposalRecoveryCandidate(input(harness, {
+    const matching = await assessProposalRecoveryCandidate(await input(harness, {
       ...recorded, evidenceCommitment: observation!.evidenceCommitment,
     }));
     expect(matching.reason).toBe("matching-record");
     expect(matching.observedEventHash).toBe(observation!.eventHash);
     expect(matching.reviewCandidate).toBe(false);
-    const malformedLastAction = input(harness, {
+    const malformedLastAction = await input(harness, {
       ...recorded, evidenceCommitment: observation!.evidenceCommitment,
     });
     expect((await assessProposalRecoveryCandidate({
@@ -146,17 +149,17 @@ describe("read-only proposal recovery candidates", () => {
         ...malformedLastAction.view.ledger, lastAuthorizedActionKind: new Uint8Array(31),
       } },
     })).reason).toBe("matching-record");
-    const conflicting = await assessProposalRecoveryCandidate(input(harness, recorded));
+    const conflicting = await assessProposalRecoveryCandidate(await input(harness, recorded));
     expect(conflicting.reason).toBe("conflicting-record");
     expect(conflicting.reviewCandidate).toBe(false);
-    const eventConflict = await assessProposalRecoveryCandidate(input(harness, {
+    const eventConflict = await assessProposalRecoveryCandidate(await input(harness, {
       ...recorded, evidenceCommitment: observation!.evidenceCommitment,
       state: "submitted", eventHash: hash("9"),
     }));
     expect(eventConflict.reason).toBe("conflicting-record");
-    harness.approveIssuer(issuer);
-    harness.activateIssuer(issuer);
-    const afterApproval = await assessProposalRecoveryCandidate(input(harness, {
+    await harness.approveIssuer(issuer);
+    await harness.activateIssuer(issuer);
+    const afterApproval = await assessProposalRecoveryCandidate(await input(harness, {
       ...recorded, evidenceCommitment: observation!.evidenceCommitment,
     }));
     expect(afterApproval.reason).toBe("matching-record");
@@ -165,21 +168,23 @@ describe("read-only proposal recovery candidates", () => {
 
   it("keeps legacy and already-submitted entries blocked even after sequence advancement", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("recovery-candidate-legacy");
-    const sequence = harness.simulator.getLedger().governanceActionCount;
-    harness.authorizeMaintainer(createMaintainerScenarioFixture("recovery-candidate-next"));
-    expect((await assessProposalRecoveryCandidate(input(harness, attempt("issuer:legacy")))).reason)
+    await harness.ready;
+    const sequence = (await harness.simulator.getLedger()).governanceActionCount;
+    await harness.authorizeMaintainer(createMaintainerScenarioFixture("recovery-candidate-next"));
+    expect((await assessProposalRecoveryCandidate(await input(harness, attempt("issuer:legacy")))).reason)
       .toBe("legacy-reservation");
     const reserved = attempt("issuer:submitted", sequence);
     const submitted: ProposalSubmissionAttempt = { ...reserved, state: "submitted", eventHash: hash("e") };
-    const report = await assessProposalRecoveryCandidate(input(harness, submitted));
+    const report = await assessProposalRecoveryCandidate(await input(harness, submitted));
     expect(report.reason).toBe("non-reserved-attempt");
     expect(report.retryPermitted).toBe(false);
   });
 
   it("fails closed on a substituted deployment or registry", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("recovery-candidate-binding");
-    const recorded = attempt("issuer:binding", harness.simulator.getLedger().governanceActionCount);
-    const valid = input(harness, recorded);
+    await harness.ready;
+    const recorded = attempt("issuer:binding", (await harness.simulator.getLedger()).governanceActionCount);
+    const valid = await input(harness, recorded);
     await expect(assessProposalRecoveryCandidate({ ...valid, contractAddress: hash("f") }))
       .rejects.toThrow(/pinned finalized local ledger view/u);
     await expect(assessProposalRecoveryCandidate({ ...valid, registryId: "other-registry" }))
@@ -198,15 +203,17 @@ describe("read-only proposal recovery candidates", () => {
 
   it("distinguishes a sequence ahead of finality from a still-live sequence", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("recovery-candidate-ahead");
-    const recorded = attempt("issuer:ahead", harness.simulator.getLedger().governanceActionCount + 1n);
-    const report = await assessProposalRecoveryCandidate(input(harness, recorded));
+    await harness.ready;
+    const recorded = attempt("issuer:ahead", (await harness.simulator.getLedger()).governanceActionCount + 1n);
+    const report = await assessProposalRecoveryCandidate(await input(harness, recorded));
     expect(report.reason).toBe("sequence-ahead-of-finality");
     expect(report.reviewCandidate).toBe(false);
   });
 
   it("rejects an out-of-range finalized governance count", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("recovery-candidate-count-bounds");
-    const valid = input(harness, attempt("issuer:bounds", 0n));
+    await harness.ready;
+    const valid = await input(harness, attempt("issuer:bounds", 0n));
     for (const governanceActionCount of [-1n, 1n << 64n]) {
       await expect(assessProposalRecoveryCandidate({
         ...valid,
@@ -217,6 +224,7 @@ describe("read-only proposal recovery candidates", () => {
 
   it("rejects malformed reservation context instead of reporting a candidate", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("recovery-candidate-malformed");
+    await harness.ready;
     const valid = attempt("issuer:malformed", 0n);
     const invalid = [
       { ...valid.reservationContext!, actionSequence: "01" },
@@ -225,7 +233,7 @@ describe("read-only proposal recovery candidates", () => {
       { ...valid.reservationContext!, actionPayloadHash: "bad" },
     ];
     for (const reservationContext of invalid) {
-      await expect(assessProposalRecoveryCandidate(input(harness, {
+      await expect(assessProposalRecoveryCandidate(await input(harness, {
         ...valid, reservationContext,
       }))).rejects.toThrow(/invalid/u);
     }
@@ -233,11 +241,12 @@ describe("read-only proposal recovery candidates", () => {
 
   it("accepts only the Compact proposal action kind for the reserved role", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("recovery-candidate-action-kind");
-    const sequence = harness.simulator.getLedger().governanceActionCount;
+    await harness.ready;
+    const sequence = (await harness.simulator.getLedger()).governanceActionCount;
     for (const role of ["issuer", "verifier", "auditor", "maintainer", "recognition"] as const) {
       const recorded = attempt(`${role}:candidate`, sequence, role);
-      expect((await assessProposalRecoveryCandidate(input(harness, recorded))).reason).toBe("sequence-still-live");
-      await expect(assessProposalRecoveryCandidate(input(harness, {
+      expect((await assessProposalRecoveryCandidate(await input(harness, recorded))).reason).toBe("sequence-still-live");
+      await expect(assessProposalRecoveryCandidate(await input(harness, {
         ...recorded,
         reservationContext: { ...recorded.reservationContext!, actionKind: actionKind("issuer" === role ? "verifier" : "issuer") },
       }))).rejects.toThrow(/action kind does not match its proposal role/u);
