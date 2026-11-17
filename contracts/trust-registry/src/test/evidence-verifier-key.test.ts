@@ -40,17 +40,19 @@ const fixture = () => {
     maintainerPublicKey,
     maintainerThreshold: 1n,
   });
-  const sign = (kind: Uint8Array, payloadHash: Uint8Array) =>
-    signDeploymentBoundMaintainerActionFromSeed(
+  const sign = async (kind: Uint8Array, payloadHash: Uint8Array) => {
+    const state = await simulator.getLedger();
+    return signDeploymentBoundMaintainerActionFromSeed(
       maintainer.seed,
       registryId,
       FIXTURE_NETWORK_ID_COMMITMENT,
       encodeContractAddress(simulator.contractAddress),
-      simulator.getLedger().governancePolicyCommitment,
+      state.governancePolicyCommitment,
       kind,
       payloadHash,
-      simulator.getLedger().governanceActionCount,
+      state.governanceActionCount,
     );
+  };
   return { simulator, registryId, policyCommitment, maintainer, maintainerPublicKey, sign };
 };
 
@@ -65,12 +67,13 @@ const key = (label: string, seedByte: number) => {
   };
 };
 
-const register = (
+const register = async (
   registry: ReturnType<typeof fixture>,
   candidate: ReturnType<typeof key>,
   payloadOverride?: Uint8Array,
-) => {
+): Promise<Uint8Array> => {
   const { simulator, maintainer, maintainerPublicKey, policyCommitment, sign } = registry;
+  const policyVersion = (await simulator.getLedger()).governancePolicyVersion;
   const payload = computeCreateEvidenceVerifierKeyPayloadHash(
     candidate.authorizationId,
     candidate.didCommitment,
@@ -78,41 +81,41 @@ const register = (
     candidate.publicKey,
     candidate.suite,
     policyCommitment,
-    simulator.getLedger().governancePolicyVersion,
+    policyVersion,
   );
   return simulator.registerEvidenceVerifierKey(
     maintainer.keyId,
     maintainerPublicKey,
-    sign(REGISTER, payloadOverride ?? payload),
+    await sign(REGISTER, payloadOverride ?? payload),
     candidate.authorizationId,
     candidate.didCommitment,
     candidate.keyIdCommitment,
     candidate.publicKey,
     candidate.suite,
     policyCommitment,
-    simulator.getLedger().governancePolicyVersion,
+    policyVersion,
   );
 };
 
 describe("governed evidence verifier keys", () => {
-  it("registers one DID-bound key under the active policy and rejects duplicate scopes and keys", () => {
+  it("registers one DID-bound key under the active policy and rejects duplicate scopes and keys", async () => {
     const registry = fixture();
     const first = key("first", 21);
-    register(registry, first);
-    const record = registry.simulator.getEvidenceVerifierKey(first.authorizationId);
+    await register(registry, first);
+    const record = await registry.simulator.getEvidenceVerifierKey(first.authorizationId);
     expect(record.status).toBe(EvidenceVerifierKeyStatus.active);
     expect(Buffer.from(record.verifierDidCommitment)).toEqual(Buffer.from(first.didCommitment));
     expect(Buffer.from(record.keyIdCommitment)).toEqual(Buffer.from(first.keyIdCommitment));
     expect(record.policyVersion).toBe(1n);
 
     const sameDid = { ...key("second", 22), didCommitment: first.didCommitment };
-    expect(() => register(registry, sameDid)).toThrow();
+    await expect(register(registry, sameDid)).rejects.toThrow();
     const sameKey = { ...key("third", 23), keyIdCommitment: first.keyIdCommitment };
-    expect(() => register(registry, sameKey)).toThrow();
-    expect(() => register(registry, first)).toThrow();
+    await expect(register(registry, sameKey)).rejects.toThrow();
+    await expect(register(registry, first)).rejects.toThrow();
   });
 
-  it("rejects a stale policy and a signature over another verifier payload", () => {
+  it("rejects a stale policy and a signature over another verifier payload", async () => {
     const registry = fixture();
     const candidate = key("policy", 24);
     const unrelated = key("unrelated", 25);
@@ -125,8 +128,8 @@ describe("governed evidence verifier keys", () => {
       registry.policyCommitment,
       1n,
     );
-    expect(() => register(registry, candidate, unrelatedPayload)).toThrow();
-    const wrongPolicySignature = registry.sign(
+    await expect(register(registry, candidate, unrelatedPayload)).rejects.toThrow();
+    const wrongPolicySignature = await registry.sign(
       REGISTER,
       computeCreateEvidenceVerifierKeyPayloadHash(
         candidate.authorizationId,
@@ -138,7 +141,7 @@ describe("governed evidence verifier keys", () => {
         2n,
       ),
     );
-    expect(() => registry.simulator.registerEvidenceVerifierKey(
+    await expect(registry.simulator.registerEvidenceVerifierKey(
       registry.maintainer.keyId,
       registry.maintainerPublicKey,
       wrongPolicySignature,
@@ -149,31 +152,31 @@ describe("governed evidence verifier keys", () => {
       candidate.suite,
       registry.policyCommitment,
       2n,
-    )).toThrow();
-    expect(registry.simulator.getLedger().governanceActionCount).toBe(1n);
+    )).rejects.toThrow();
+    expect((await registry.simulator.getLedger()).governanceActionCount).toBe(1n);
   });
 
-  it("rejects a suite without an implemented on-ledger verifier", () => {
+  it("rejects a suite without an implemented on-ledger verifier", async () => {
     const registry = fixture();
-    expect(() => register(registry, {
+    await expect(register(registry, {
       ...key("other-suite", 30),
       suite: labelToBytes32("ed25519"),
-    })).toThrow(/Jubjub Schnorr/);
+    })).rejects.toThrow(/Jubjub Schnorr/);
   });
 
-  it("rejects an identity verifier key at registration and rotation", () => {
+  it("rejects an identity verifier key at registration and rotation", async () => {
     const registry = fixture();
     const identity = { x: 0n, y: 1n };
-    expect(() => register(registry, {
+    await expect(register(registry, {
       ...key("identity", 33), publicKey: identity,
-    })).toThrow(/must not be identity/);
-    expect(registry.simulator.getLedger().evidenceVerifierKeyCount).toBe(0n);
+    })).rejects.toThrow(/must not be identity/);
+    expect((await registry.simulator.getLedger()).evidenceVerifierKeyCount).toBe(0n);
 
     const first = key("rotate-before-identity", 34);
-    register(registry, first);
+    await register(registry, first);
     const replacement = { ...key("rotate-to-identity", 35), publicKey: identity };
     const reason = labelToBytes32("rotation:invalid-identity");
-    const oldRecord = registry.simulator.getEvidenceVerifierKey(first.authorizationId);
+    const oldRecord = await registry.simulator.getEvidenceVerifierKey(first.authorizationId);
     const newPayload = computeCreateEvidenceVerifierKeyPayloadHash(
       replacement.authorizationId,
       first.didCommitment,
@@ -186,53 +189,53 @@ describe("governed evidence verifier keys", () => {
     const payload = computeRotateEvidenceVerifierKeyPayloadHash(
       first.authorizationId, oldRecord.lifecycleEventHash, newPayload, reason,
     );
-    expect(() => registry.simulator.rotateEvidenceVerifierKey(
+    await expect(registry.simulator.rotateEvidenceVerifierKey(
       registry.maintainer.keyId, registry.maintainerPublicKey,
-      registry.sign(ROTATE, payload), first.authorizationId,
+      await registry.sign(ROTATE, payload), first.authorizationId,
       replacement.authorizationId, replacement.keyIdCommitment, replacement.publicKey, reason,
-    )).toThrow(/must not be identity/);
-    expect(registry.simulator.getEvidenceVerifierKey(first.authorizationId).status)
+    )).rejects.toThrow(/must not be identity/);
+    expect((await registry.simulator.getEvidenceVerifierKey(first.authorizationId)).status)
       .toBe(EvidenceVerifierKeyStatus.active);
   });
 
-  it("rejects a nonidentity low-order verifier key", () => {
+  it("rejects a nonidentity low-order verifier key", async () => {
     const registry = fixture();
     const orderTwoPoint = {
       x: 0n,
       y: 52435875175126190479447740508185965837690552500527637822603658699938581184512n,
     };
     // Compact's ecMul can reject this point before the subgroup assertion evaluates.
-    expect(() => register(registry, {
+    await expect(register(registry, {
       ...key("order-two", 36), publicKey: orderTwoPoint,
-    })).toThrow();
-    expect(registry.simulator.getLedger().evidenceVerifierKeyCount).toBe(0n);
-    expect(registry.simulator.getLedger().governanceActionCount).toBe(1n);
+    })).rejects.toThrow();
+    expect((await registry.simulator.getLedger()).evidenceVerifierKeyCount).toBe(0n);
+    expect((await registry.simulator.getLedger()).governanceActionCount).toBe(1n);
   });
 
-  it("prevents a maintainer from approving their own verifier DID", () => {
+  it("prevents a maintainer from approving their own verifier DID", async () => {
     const registry = fixture();
     const candidate = {
       ...key("self-approval", 31),
       didCommitment: registry.maintainer.didCommitment,
     };
-    expect(() => register(registry, candidate)).toThrow(/own DID/);
-    expect(registry.simulator.getLedger().governanceActionCount).toBe(1n);
+    await expect(register(registry, candidate)).rejects.toThrow(/own DID/);
+    expect((await registry.simulator.getLedger()).governanceActionCount).toBe(1n);
   });
 
-  it("suspends and revokes a key without allowing it to be reused", () => {
+  it("suspends and revokes a key without allowing it to be reused", async () => {
     const registry = fixture();
     const candidate = key("suspend", 26);
-    register(registry, candidate);
+    await register(registry, candidate);
     const reason = labelToBytes32("incident:evidence-verifier");
-    const record = registry.simulator.getEvidenceVerifierKey(candidate.authorizationId);
+    const record = await registry.simulator.getEvidenceVerifierKey(candidate.authorizationId);
     const suspendHash = computeUpdateEvidenceVerifierKeyPayloadHash(
       candidate.authorizationId, record.lifecycleEventHash, reason,
     );
-    registry.simulator.suspendEvidenceVerifierKey(
+    await registry.simulator.suspendEvidenceVerifierKey(
       registry.maintainer.keyId, registry.maintainerPublicKey,
-      registry.sign(SUSPEND, suspendHash), candidate.authorizationId, reason,
+      await registry.sign(SUSPEND, suspendHash), candidate.authorizationId, reason,
     );
-    expect(registry.simulator.getEvidenceVerifierKey(candidate.authorizationId).status)
+    expect((await registry.simulator.getEvidenceVerifierKey(candidate.authorizationId)).status)
       .toBe(EvidenceVerifierKeyStatus.suspended);
 
     const replacement = key("suspended-rotation", 32);
@@ -245,37 +248,37 @@ describe("governed evidence verifier keys", () => {
       registry.policyCommitment,
       1n,
     );
-    const suspendedRecord = registry.simulator.getEvidenceVerifierKey(candidate.authorizationId);
+    const suspendedRecord = await registry.simulator.getEvidenceVerifierKey(candidate.authorizationId);
     const rotateHash = computeRotateEvidenceVerifierKeyPayloadHash(
       candidate.authorizationId, suspendedRecord.lifecycleEventHash, proposedNewPayload, reason,
     );
-    expect(() => registry.simulator.rotateEvidenceVerifierKey(
+    await expect(registry.simulator.rotateEvidenceVerifierKey(
       registry.maintainer.keyId, registry.maintainerPublicKey,
-      registry.sign(ROTATE, rotateHash), candidate.authorizationId,
+      await registry.sign(ROTATE, rotateHash), candidate.authorizationId,
       replacement.authorizationId, replacement.keyIdCommitment, replacement.publicKey, reason,
-    )).toThrow(/active to rotate/);
+    )).rejects.toThrow(/active to rotate/);
 
-    const suspended = registry.simulator.getEvidenceVerifierKey(candidate.authorizationId);
+    const suspended = await registry.simulator.getEvidenceVerifierKey(candidate.authorizationId);
     const revokeHash = computeUpdateEvidenceVerifierKeyPayloadHash(
       candidate.authorizationId, suspended.lifecycleEventHash, reason,
     );
-    registry.simulator.revokeEvidenceVerifierKey(
+    await registry.simulator.revokeEvidenceVerifierKey(
       registry.maintainer.keyId, registry.maintainerPublicKey,
-      registry.sign(REVOKE, revokeHash), candidate.authorizationId, reason,
+      await registry.sign(REVOKE, revokeHash), candidate.authorizationId, reason,
     );
-    expect(registry.simulator.getEvidenceVerifierKey(candidate.authorizationId).status)
+    expect((await registry.simulator.getEvidenceVerifierKey(candidate.authorizationId)).status)
       .toBe(EvidenceVerifierKeyStatus.revoked);
     const reuse = { ...key("replacement", 27), keyIdCommitment: candidate.keyIdCommitment };
-    expect(() => register(registry, reuse)).toThrow();
+    await expect(register(registry, reuse)).rejects.toThrow();
   });
 
-  it("rotates atomically and preserves the retired key record", () => {
+  it("rotates atomically and preserves the retired key record", async () => {
     const registry = fixture();
     const first = key("rotate", 28);
-    register(registry, first);
+    await register(registry, first);
     const second = key("rotate-next", 29);
     const reason = labelToBytes32("rotation:evidence-verifier");
-    const oldRecord = registry.simulator.getEvidenceVerifierKey(first.authorizationId);
+    const oldRecord = await registry.simulator.getEvidenceVerifierKey(first.authorizationId);
     const newPayload = computeCreateEvidenceVerifierKeyPayloadHash(
       second.authorizationId,
       first.didCommitment,
@@ -288,14 +291,14 @@ describe("governed evidence verifier keys", () => {
     const payload = computeRotateEvidenceVerifierKeyPayloadHash(
       first.authorizationId, oldRecord.lifecycleEventHash, newPayload, reason,
     );
-    registry.simulator.rotateEvidenceVerifierKey(
+    await registry.simulator.rotateEvidenceVerifierKey(
       registry.maintainer.keyId, registry.maintainerPublicKey,
-      registry.sign(ROTATE, payload), first.authorizationId,
+      await registry.sign(ROTATE, payload), first.authorizationId,
       second.authorizationId, second.keyIdCommitment, second.publicKey, reason,
     );
-    expect(registry.simulator.getEvidenceVerifierKey(first.authorizationId).status)
+    expect((await registry.simulator.getEvidenceVerifierKey(first.authorizationId)).status)
       .toBe(EvidenceVerifierKeyStatus.retired);
-    const current = registry.simulator.getEvidenceVerifierKey(second.authorizationId);
+    const current = await registry.simulator.getEvidenceVerifierKey(second.authorizationId);
     expect(current.status).toBe(EvidenceVerifierKeyStatus.active);
     expect(Buffer.from(current.verifierDidCommitment)).toEqual(Buffer.from(first.didCommitment));
     expect(Buffer.from(current.predecessorAuthorizationId)).toEqual(Buffer.from(first.authorizationId));

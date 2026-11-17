@@ -59,10 +59,12 @@ with published `0.4.0` pins and a regenerated lockfile before a portable PR.
 Current compile evidence is limited to `compact:light`. The test simulator now
 awaits generated `initialState` and impure circuits, serializes calls, and
 labels each call with its actual circuit ID. Its source-only TypeScript build
-check passes, and the deployment-bound replay suite passes four cases,
-including simultaneous same-sequence votes. The full contract typecheck is
-still red: the remaining test and downstream caller sites treat simulator
-results and direct generated impure circuit results as synchronous. This is a
+check passes, and three focused suites pass 20 cases: deployment-bound replay,
+evidence-verifier-key lifecycle, and VC-authority-key lifecycle. The full
+contract typecheck is still red: the remaining test and downstream caller
+sites treat simulator results and direct generated impure circuit results as
+synchronous. The proposal-evidence suite also directly mutates simulator
+context and needs an async test entry point rather than an unsafe cast. This is a
 source migration, not a missing package or a qualification pass. No new
 proving/verifier keys or deployed transactions have been generated.
 
