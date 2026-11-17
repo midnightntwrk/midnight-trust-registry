@@ -811,6 +811,9 @@ readable for existing development attempts but do not establish an
 interpretable policy record. Changing an existing plan or provider hash is
 not a recovery method; use a fresh approval and journal only after resolving
 any earlier attempt.
+The repository's `scripts/local-policy-bound-smoke-provider.mjs` consumes the
+approved policy input for a **new development-only** v2 plan. It still uses
+the public local test wallet and is not a release-custody provider.
 
 For a staged deployment with a finalized receipt, insert one remaining key at
 a time through `node scripts/standalone-setup-wizard.mjs insert-key

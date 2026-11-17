@@ -846,9 +846,11 @@ canonical version-1 policy record or satisfy domain policy-revision continuity.
 For future staged deployments, the new v2 plan pins the canonical policy
 record's bytes and requires the approved provider to bootstrap its exact
 derived snapshot commitment before any submission. The existing v1 plan and
-deployed fixture remain unchanged. A source-matched v2 provider, independently
-reviewed policy record, fresh deployment journal, and live readback are still
-required; this preflight alone is not a deployed policy-qualified registry.
+deployed fixture remain unchanged. The development-only policy-bound provider
+is available, but a fresh source-matched pack, independently reviewed policy
+record, approved private plan, separate deployment journal, and actual live
+readback are still missing. This preflight alone is not a deployed
+policy-qualified registry.
 Before using a contract for API qualification, establish an independently
 reviewable initial policy snapshot and exact next snapshot, update and finalize
 the threshold policy, then execute

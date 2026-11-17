@@ -95,8 +95,9 @@ test("policy-bound staged plan rejects changed bytes and ad hoc bootstrap commit
     governancePolicyCommitment: Buffer.from(expected.slice(2), "hex") };
   const dependencies = {
     validateEndpoints: async () => {}, observe: async () => {},
-    loadProvider: async () => ({ createLocalDeploymentMaterial: async () => {
+    loadProvider: async () => ({ createLocalDeploymentMaterial: async (input) => {
       factoryCalls += 1;
+      assert.deepEqual(input.approvedPolicy, { registryId: harness.registryId, commitment: expected });
       return { bootstrap, providers: {}, contractMaintenanceSigningKey: "test-key",
         stop: async () => { stopCalls += 1; } };
     } }),

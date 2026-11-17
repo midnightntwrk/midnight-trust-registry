@@ -131,8 +131,11 @@ async function loadApprovedMaterial(plan, dependencies, approval, factoryName) {
     throw new Error(`Approved provider module must export ${factoryName}`);
   }
   const material = await /** @type {(input: {network: LocalDeploymentPlan["network"],
-   * releaseManifest: DeploymentInput["releaseManifest"]}) => Promise<unknown>} */ (factory)({
+   * releaseManifest: DeploymentInput["releaseManifest"], approvedPolicy?:
+   * {registryId: string, commitment: string}}) => Promise<unknown>} */ (factory)({
     network: plan.network, releaseManifest: manifest,
+    ...(factoryName === "createLocalDeploymentMaterial" && approvedPolicy !== null
+      ? { approvedPolicy } : {}),
   });
   if (factoryName === "createLocalDeploymentMaterial" && approvedPolicy !== null) {
     try {
