@@ -26,6 +26,7 @@ import {
 import {
   FileProposalSubmissionJournal,
   ProposalSubmissionAlreadyPendingError,
+  ProposalSubmissionAttributionRequiredError,
   ProposalSubmissionBlockedByReservationError,
   ProposalSubmissionConflictError,
   ProposalSubmissionOutcomeUnknownError,
@@ -292,7 +293,7 @@ describe("issuer SDK handoff with private journal", () => {
     expect(mocks.submitCallTx).not.toHaveBeenCalled();
   });
 
-  it("retains an ambiguous attempt until finalized reconciliation, then blocks replay after reopen", async () => {
+  it("retains an ambiguous attempt even if an identical proposal is finalized later", async () => {
     const journal = new FileProposalSubmissionJournal(path);
     await journal.bindDeployment(registryLabel, contractAddress, genesisHash);
     const request = input(journal);
@@ -310,13 +311,14 @@ describe("issuer SDK handoff with private journal", () => {
       .toBe("reserved");
     await expect(submitLocalIssuerProposalCall(input(restarted)))
       .rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
-    expect((await restarted.reconcile("issuer", authorizationLabel,
-      async () => ({ eventHash, evidenceCommitment }))).state).toBe("observed");
+    await expect(restarted.reconcile("issuer", authorizationLabel,
+      async () => ({ eventHash, evidenceCommitment })))
+      .rejects.toBeInstanceOf(ProposalSubmissionAttributionRequiredError);
 
     const reopened = new FileProposalSubmissionJournal(path);
     await reopened.assertDeploymentBinding(registryLabel, contractAddress, genesisHash);
     expect(await reopened.read("issuer", authorizationLabel)).toMatchObject({
-      state: "observed", eventHash, evidenceCommitment,
+      state: "reserved", eventHash: null, evidenceCommitment,
     });
     await expect(submitLocalIssuerProposalCall(input(reopened)))
       .rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);

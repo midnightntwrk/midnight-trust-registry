@@ -11,6 +11,7 @@ import {
   FileProposalSubmissionJournal,
   InvalidProposalSubmissionJournalError,
   ProposalSubmissionAlreadyPendingError,
+  ProposalSubmissionAttributionRequiredError,
   ProposalSubmissionBlockedByReservationError,
   ProposalSubmissionCapacityError,
   ProposalSubmissionConflictError,
@@ -244,10 +245,12 @@ describe("private governed proposal submission journal", () => {
       throw new Error("finality source unavailable");
     })).rejects.toThrow("finality source unavailable");
     expect(await reopened.read(role, authorizationId)).toMatchObject({ state: "reserved" });
-    expect(await reopened.reconcile(role, authorizationId,
-      async () => ({ eventHash, evidenceCommitment }))).toMatchObject({ state: "observed", eventHash });
-    await expect(submitOther()).resolves.toEqual({ eventHash: otherEventHash });
-    expect(executions).toBe(2);
+    await expect(reopened.reconcile(role, authorizationId,
+      async () => ({ eventHash, evidenceCommitment })))
+      .rejects.toBeInstanceOf(ProposalSubmissionAttributionRequiredError);
+    expect(await reopened.read(role, authorizationId)).toMatchObject({ state: "reserved", eventHash: null });
+    await expect(submitOther()).rejects.toBeInstanceOf(ProposalSubmissionBlockedByReservationError);
+    expect(executions).toBe(1);
   });
 
   it("retains signed action context through an ambiguous result and restart", async () => {
@@ -260,14 +263,30 @@ describe("private governed proposal submission journal", () => {
       state: "reserved", reservationContext,
     });
     expect(JSON.parse(await readFile(path, "utf8")).attempts[0].reservationContext).toEqual(reservationContext);
-    expect(await reopened.reconcile("issuer", authorizationId,
-      async () => ({ eventHash, evidenceCommitment }))).toMatchObject({
-      state: "observed", reservationContext,
-    });
+    await expect(reopened.reconcile("issuer", authorizationId,
+      async () => ({ eventHash, evidenceCommitment })))
+      .rejects.toBeInstanceOf(ProposalSubmissionAttributionRequiredError);
     expect(await reopened.rotateObserved(async () => ({ eventHash, evidenceCommitment })))
-      .toEqual({ archived: 1, pending: 0 });
+      .toEqual({ archived: 0, pending: 1 });
     expect(await new FileProposalSubmissionJournal(path).read("issuer", authorizationId))
-      .toMatchObject({ state: "observed", reservationContext });
+      .toMatchObject({ state: "reserved", eventHash: null, reservationContext });
+  });
+
+  it("does not attribute a later identical proposal to an earlier rejected reservation", async () => {
+    const rejected = new FileProposalSubmissionJournal(join(directory, "rejected.json"));
+    const later = new FileProposalSubmissionJournal(join(directory, "later.json"));
+    await expect(rejected.executeOnce("issuer", authorizationId, evidenceCommitment,
+      async () => { throw new Error("Invalid Transaction: Custom error: 138"); }, reservationContext))
+      .rejects.toBeInstanceOf(ProposalSubmissionOutcomeUnknownError);
+    await later.executeOnce("issuer", authorizationId, evidenceCommitment,
+      async () => ({ eventHash }), reservationContext);
+    expect(await later.reconcile("issuer", authorizationId,
+      async () => ({ eventHash, evidenceCommitment }))).toMatchObject({ state: "observed" });
+    await expect(rejected.reconcile("issuer", authorizationId,
+      async () => ({ eventHash, evidenceCommitment })))
+      .rejects.toBeInstanceOf(ProposalSubmissionAttributionRequiredError);
+    expect(await new FileProposalSubmissionJournal(join(directory, "rejected.json"))
+      .read("issuer", authorizationId)).toMatchObject({ state: "reserved", eventHash: null, reservationContext });
   });
 
   it("rejects invalid signed action context before creating a reservation", async () => {
@@ -412,7 +431,7 @@ describe("private governed proposal submission journal", () => {
     }
   });
 
-  it("does not downgrade a finalized observation when a delayed submit receipt arrives", async () => {
+  it("waits for an attributable delayed receipt before observing finality", async () => {
     const journal = new FileProposalSubmissionJournal(path);
     let releaseSubmission!: () => void;
     let submissionStarted!: () => void;
@@ -424,10 +443,13 @@ describe("private governed proposal submission journal", () => {
       return { eventHash };
     });
     await started;
-    expect(await journal.reconcile("maintainer", authorizationId,
-      async () => ({ eventHash, evidenceCommitment }))).toMatchObject({ state: "observed" });
+    await expect(journal.reconcile("maintainer", authorizationId,
+      async () => ({ eventHash, evidenceCommitment })))
+      .rejects.toBeInstanceOf(ProposalSubmissionAttributionRequiredError);
     releaseSubmission();
     expect(await executing).toEqual({ eventHash });
+    expect(await journal.reconcile("maintainer", authorizationId,
+      async () => ({ eventHash, evidenceCommitment }))).toMatchObject({ state: "observed" });
     expect(await journal.read("maintainer", authorizationId)).toMatchObject({ state: "observed", eventHash });
   });
 
@@ -524,14 +546,14 @@ describe("private governed proposal submission journal", () => {
       return { eventHash };
     })).rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
     expect(executions).toBe(0);
-    expect(await reopened.reconcile("issuer", "unknown-outcome",
+    await expect(reopened.reconcile("issuer", "unknown-outcome",
       async () => ({ eventHash: otherEventHash, evidenceCommitment })))
-      .toMatchObject({ state: "observed", eventHash: otherEventHash });
+      .rejects.toBeInstanceOf(ProposalSubmissionAttributionRequiredError);
     expect(await reopened.rotateObserved(async () => ({ eventHash: otherEventHash, evidenceCommitment })))
-      .toEqual({ archived: 1, pending: 0 });
-    expect(await reopened.read("issuer", "unknown-outcome")).toMatchObject({ state: "observed" });
+      .toEqual({ archived: 0, pending: 1 });
+    expect(await reopened.read("issuer", "unknown-outcome")).toMatchObject({ state: "reserved", eventHash: null });
     expect(await reopened.inspectCapacity()).toMatchObject({
-      activeEntries: 0, pendingEntries: 0, archivedEntries: 2, archiveCount: 2,
+      activeEntries: 1, pendingEntries: 1, archivedEntries: 1, archiveCount: 1,
     });
   });
 

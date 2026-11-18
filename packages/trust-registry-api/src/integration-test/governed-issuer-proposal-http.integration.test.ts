@@ -66,7 +66,7 @@ const signPrepared = async (
 };
 
 describe("Compact-backed issuer proposals over HTTP", () => {
-  it("rejects a known-invalid quorum before a real journal reservation and reconciles an uncertain response", async () => {
+  it("rejects an invalid quorum before reservation and quarantines an uncertain response", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("issuer-journal-http");
     const second = createMaintainerScenarioFixture("issuer-journal-second");
     const third = createMaintainerScenarioFixture("issuer-journal-third");
@@ -267,23 +267,6 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       expect(executions).toBe(0);
       expect(await journal.read("issuer", issuer.authorizationId)).toBeNull();
       expect((await harness.simulator.getLedger()).governanceActionCount).toBe(BigInt(prepared.actionSequence));
-      await expect(journal.executeOnce("verifier", "private-blocking-authorization", evidence.commitment,
-        async () => { throw new Error("response lost after submission"); }, {
-          actionSequence: prepared.actionSequence,
-          actionKind: prepared.actionKind,
-          actionPayloadHash: prepared.actionPayloadHash,
-        })).rejects.toThrow();
-      expect((await harness.simulator.getLedger()).governanceActionCount).toBe(BigInt(prepared.actionSequence));
-      const blocked = await post("submit", request);
-      expect(blocked.status).toBe(409);
-      const blockedProblem = await blocked.json() as { type: string; detail: string };
-      expect(blockedProblem.type).toMatch(/proposal-submission-blocked$/u);
-      expect(JSON.stringify(blockedProblem)).not.toContain("private-blocking-authorization");
-      expect(JSON.stringify(blockedProblem)).not.toContain("verifier");
-      expect(executions).toBe(0);
-      expect((await harness.simulator.getLedger()).governanceActionCount).toBe(BigInt(prepared.actionSequence));
-      await journal.reconcile("verifier", "private-blocking-authorization",
-        async () => ({ eventHash: `0x${"99".repeat(32)}`, evidenceCommitment: evidence.commitment }));
       const refreshedPrepared = await (await post("prepare", { evidence, terms })).json() as PreparedGovernedIssuerProposal;
       expect(refreshedPrepared, "proposal context changed before issuer execution").toEqual(prepared);
       const uncertain = await post("submit", request);
@@ -322,8 +305,12 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       expect(await (await post("resolve", { evidence })).json()).toEqual({ state: "not-observed" });
       finalizedLedger = await harness.simulator.getLedger();
       expect(eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
-      expect(await (await post("resolve", { evidence })).json()).toEqual({ state: "observed", eventHash });
-      expect(await reopenedJournal.read("issuer", issuer.authorizationId)).toMatchObject({ state: "observed", eventHash });
+      const unattributed = await post("resolve", { evidence });
+      expect(unattributed.status).toBe(409);
+      expect((await unattributed.json()).type).toMatch(/proposal-submission-attribution-required$/u);
+      expect(await reopenedJournal.read("issuer", issuer.authorizationId)).toMatchObject({
+        state: "reserved", eventHash: null,
+      });
     } finally {
       server.closeAllConnections();
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

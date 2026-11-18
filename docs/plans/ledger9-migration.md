@@ -1047,6 +1047,16 @@ DID/VP and finalized-state adapters, approved writer inputs, and an actual
 one-shot actor submission before #322 can pass. No shared-chain transaction or
 container lifecycle action was performed for this check.
 
+The three older policy-bound issuer reservations and the later successful
+patched-client attempt share the same authorization ID, evidence commitment,
+and action context. A finalized proposal cannot identify which journal attempt
+landed from those fields. The local journal now refuses to mark a reservation
+with no recorded event hash `observed` merely because such a proposal appears;
+the original files remain quarantined. A regression covers this exact
+cross-journal attribution case. This is a fail-closed guard, not disposition
+of the old reservations: #323 still needs independently attributable
+transaction evidence or an approved recovery path.
+
 1. Keep the `ledger8` source branch only as a historical reference. Ledger 9
    replaces the default standalone Compose stack; there is no parallel Ledger 8
    runtime profile. Remove old node/indexer volumes only after confirming they

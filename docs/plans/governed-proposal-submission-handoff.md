@@ -26,7 +26,9 @@ reported a validation error.
 
 Recovery uses a separately supplied reader that authenticates the finalized
 ledger view and returns the role/ID's proposal record. A matching evidence
-commitment and event hash advances the journal to `observed`. No observation
+commitment and previously recorded submission event hash advances the journal
+to `observed`. A reservation without that hash stays quarantined even if a
+later record has the same role, ID, evidence, and action context. No observation
 leaves it reserved/submitted and does not authorize a retry. A conflicting
 ledger record fails closed. A production deployment needs an independently
 authenticated Midnight finality reader, durable admission storage, and an
@@ -152,8 +154,8 @@ is not stopped by it, and already-open indexer streams are not canceled.
 A restart clears this in-memory guard even if no reconciliation occurred.
 The private proposal journal blocks all new proposals while any reserved
 attempt remains, including after restart. A lagging or unavailable finalized
-reader does not clear that reservation; only a matching finalized observation
-marks it observed. Callers must preserve the journal and must not replace it
+reader does not clear that reservation; a matching record alone cannot attribute
+an event-hash-free attempt. Callers must preserve the journal and must not replace it
 to bypass this gate. An operator-only recovery path for a never-observed
 reservation is still missing; [#220](https://github.com/midnightntwrk/midnight-trust-registry/issues/220)
 blocks the local RC until it is designed, tested, and independently reviewed.

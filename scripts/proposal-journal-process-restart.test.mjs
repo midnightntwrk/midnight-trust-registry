@@ -20,8 +20,8 @@ test("durable proposal quarantine survives independent process restarts", async 
     for (const [phase, expectedState] of [
       ["reserve", "reserved"],
       ["retry", "reserved"],
-      ["reconcile", "observed"],
-      ["replay", "observed"],
+      ["reconcile", "reserved"],
+      ["replay", "reserved"],
     ]) {
       const child = runPhase(phase, journal, broadcasts);
       assert.equal(child.status, 0, `${phase}: ${child.stderr}`);

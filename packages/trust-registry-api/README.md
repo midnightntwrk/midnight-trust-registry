@@ -214,7 +214,10 @@ use `trust-registry-api reconcile-local-proposal` with
 the same signed-plan arguments, exact `--role` and `--authorization-id`, and
 an absolute `--submission-journal` path. It marks an entry `observed` only
 when the verified ledger record matches the journal's evidence commitment
-and any recorded event hash. A different deployment binding fails closed
+and its recorded event hash. A `reserved` attempt has no event hash; a later
+submission with the same authorization and evidence could produce the matching
+record, so reconciliation reports an attribution error and leaves that
+reservation quarantined. A different deployment binding fails closed
 before readback. Output distinguishes `observed` from `not-observed`; absence
 leaves the attempt pending and never permits a retry.
 An embedding host enabling local-ledger proposal routes must expose the
@@ -224,8 +227,9 @@ Local resolve routes use that source's finalized proposal reader, never a
 separately injected port resolver. Actual submission target binding and real
 local-ledger actor journeys remain RC gates; the shipped CLI does not wire
 governed proposal ports.
-Even an `observed` entry does not prove transaction identity after a lost
-response, independently authenticate finality, or qualify the release.
+Even an `observed` entry does not independently authenticate finality or
+qualify the release. A lost response without an event hash needs separately
+attributable evidence; a matching proposal alone cannot resolve the attempt.
 For a read-only current-route check against a running loopback listener, run
 `trust-registry-api observe-local-ledger-api` with the same four signed-plan
 arguments and `--api-origin http://127.0.0.1:4400`. It compares registry,

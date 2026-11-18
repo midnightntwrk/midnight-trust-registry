@@ -3,6 +3,7 @@ import process from "node:process";
 import {
   FileProposalSubmissionJournal,
   ProposalSubmissionAlreadyPendingError,
+  ProposalSubmissionAttributionRequiredError,
   ProposalSubmissionBlockedByReservationError,
   ProposalSubmissionOutcomeUnknownError,
 } from "@midnight-ntwrk/trust-registry-api";
@@ -68,10 +69,20 @@ if (operation === "reserve") {
   }
 } else if (operation === "lagging" || operation === "observed") {
   await journal.assertDeploymentBinding("registry:local", contract, genesis);
-  const result = await journal.reconcile("issuer", "issuer:1", async () => operation === "lagging"
-    ? null : { eventHash: event, evidenceCommitment: evidence });
-  if (result.state !== (operation === "lagging" ? "reserved" : "observed")) {
-    throw new Error("Finalized reconciliation changed the wrong journal state");
+  if (operation === "lagging") {
+    const result = await journal.reconcile("issuer", "issuer:1", async () => null);
+    if (result.state !== "reserved") throw new Error("Lagging read released the reservation");
+  } else {
+    try {
+      await journal.reconcile("issuer", "issuer:1",
+        async () => ({ eventHash: event, evidenceCommitment: evidence }));
+      throw new Error("Unattributed finalized proposal released the reservation");
+    } catch (error) {
+      if (!(error instanceof ProposalSubmissionAttributionRequiredError)) throw error;
+    }
+    if ((await journal.read("issuer", "issuer:1"))?.state !== "reserved") {
+      throw new Error("Finalized reconciliation changed the wrong journal state");
+    }
   }
 } else if (operation === "write-failure") {
   try {

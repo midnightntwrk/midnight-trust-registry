@@ -182,8 +182,8 @@ An additional child is force-killed after reservation durability but before
 the broadcast callback can write its marker; a fresh child remains blocked.
 The API package's process-restart test also constructs a fresh pinned provider
 on every child launch: an ambiguous issuer attempt blocks both retry and an
-unrelated verifier attempt; a lagging read keeps the reservation, a matching
-observed event permits a different intent but not replay of the issuer intent,
+unrelated verifier attempt; a lagging read keeps the reservation, and a matching
+proposal without an attributable receipt still blocks both intents,
 and a failed journal write never reaches the submission callback. These are
 fresh-process journal and provider-construction tests with injected submission
 callbacks, not evidence that a real provider was restarted or broadcast to a
