@@ -8,6 +8,7 @@ import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-cli
 import { deriveJubjubPublicKeyFromSeed, encodeJubjubSignature, signJubjubPayloadFromSeed } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import {
   computeAuthorizationScopeCommitment,
+  computeApplicationEvidenceCommitment,
   computePendingApplicationPayloadCommitment,
   createScopedIdentifier,
   mutationIntentDigestBytes,
@@ -16,12 +17,16 @@ import {
 } from "@midnight-ntwrk/trust-registry-domain";
 import {
   createIssuerAuthorizationScopeFixture,
+  capturePrivateApplicationStatusWitness,
+  createApplicationVpScenarioFixture,
+  createAttestedApplicationStatusSource,
   createIssuerScenarioFixture,
   createMidnightDid,
   createMidnightDidLedgerFixture,
   createMidnightDidResolver,
   LocalTrustRegistryIntegrationHarness,
   VP_FIXTURE_TIME_MS,
+  VP_FIXTURE_NONCE,
 } from "@midnight-ntwrk/trust-registry-integration";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -175,6 +180,50 @@ describe("file application admission store", () => {
     const raw = await readFile(path, "utf8");
     expect(raw).not.toContain('"presentation":');
     expect(raw).not.toContain("private-vp-body");
+    expect((await stat(path)).mode & 0o777).toBe(0o600);
+  });
+
+  it("stores a bounded status witness privately with its accepted evidence", async () => {
+    const path = await storePath();
+    const admission = store(path);
+    await admission.register(signedApplication(), now);
+    const scenario = await createApplicationVpScenarioFixture();
+    const witness = capturePrivateApplicationStatusWitness({
+      material: scenario.material,
+      nonce: VP_FIXTURE_NONCE,
+      signed: scenario.signedStatusAttestation,
+    });
+    const source = createAttestedApplicationStatusSource({
+      resolver: scenario.input.resolver,
+      fetchAttestation: async () => scenario.signedStatusAttestation,
+    });
+    const status = await source({
+      material: scenario.material,
+      binding: scenario.fixtureStatusPolicyBinding,
+      nonce: VP_FIXTURE_NONCE,
+      evaluatedAtMs: VP_FIXTURE_TIME_MS,
+    });
+    const original = await evidence();
+    const envelope = {
+      ...original.envelope,
+      challengeHash: witness.signed.statement.challengeHash,
+      statusDecisionCommitment: status.statusDecisionCommitment,
+    };
+    const commitment = computeApplicationEvidenceCommitment(envelope);
+    const signedEvidence = { envelope, commitment, signature: harness.signApplicationEvidenceCommitment(commitment) };
+    await expect(admission.acceptEvidence(applicationId, signedEvidence, now, {
+      ...witness, nonce: `0x${"22".repeat(32)}`,
+    })).rejects.toThrow(/differs/u);
+    expect(await admission.readCapturedStatusWitness(applicationId, commitment)).toBeNull();
+    await admission.acceptEvidence(applicationId, signedEvidence, now, witness);
+    const reopened = store(path);
+    expect(await reopened.readCapturedStatusWitness(applicationId, commitment)).toEqual(witness);
+    expect(await reopened.readCapturedStatusWitness(applicationId, original.commitment)).toBeNull();
+    expect(await reopened.resolveAcceptedEvidence(applicationId)).toEqual({
+      evidence: signedEvidence,
+      receipt: expect.any(Object),
+    });
+    expect(JSON.stringify(await reopened.readCapturedAdmission(applicationId))).not.toContain(witness.nonce);
     expect((await stat(path)).mode & 0o777).toBe(0o600);
   });
 

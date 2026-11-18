@@ -39,27 +39,30 @@ they do not cryptographically prove DID, VC, status, or finality verification.
 The adapter's actual verification rules, trust anchors, endpoint allowlist,
 and failure behavior require separate implementation and review.
 
-The accepted application file intentionally retains only redacted evidence and
-its receipt. It does not retain the credential body root, status-handle
-commitment, or signed status witness needed by
-`createHttpApplicationStatusSource` for a fresh status check. The status source
-accepts only the VP-derived credential body root and status binding (registry,
-authority-method reference, and handle commitment), not the entire VP proof.
-A live host must obtain those inputs from a separately protected, application-bound witness or
-from a new applicant presentation, then verify the witness against the accepted
-evidence commitment and challenge hash and the current governed status-policy binding. Do not infer current
-status from the old `statusDecisionCommitment`, persist raw VP claims in the
-public application record, or return a fabricated
+`FileApplicationAdmissionStore.acceptEvidence` can atomically retain an optional
+`tr-private-application-status-witness-v1` record with the redacted evidence
+and receipt in its mode-0600 private admission file. Construct it with
+`capturePrivateApplicationStatusWitness` from the verified VP-derived credential
+body root, status binding, nonce, and signed status decision. The store checks
+its internal consistency and accepted challenge hash; it does **not** verify
+the status signature or decision commitment. The private
+`readCapturedStatusWitness` method requires the accepted evidence commitment
+and is never included in public admission reads. The packaged VP intake does
+not yet supply this optional record automatically. A live host must capture it
+at verified intake or require a new applicant presentation, then verify it
+against the accepted evidence and current governed status-policy binding.
+Do not infer current status from the old `statusDecisionCommitment`, persist raw
+VP claims in the public application record, or return a fabricated
 `tr-live-issuer-evidence-verification-v1` result. Missing witness, unavailable
 status authority, or changed binding must stop the proposal before its journal
-reservation. This witness lifecycle and the VC-owned status service remain
-implementation work for the Ledger 9 actor qualification issue.
-`refreshCapturedApplicationStatus` is a read-only building block for that host:
+reservation. The VC-owned status service remains implementation work for the
+Ledger 9 actor qualification issue. `refreshCapturedApplicationStatus` is a
+read-only building block for that host:
 it first audits the private intake witness against the accepted challenge and
 status-decision commitment, then checks a distinct-nonce, current signed
 status attestation at trusted time. Its validity never exceeds the accepted
 evidence expiry. It does not authenticate the accepted
-application, store the witness, select a governed issuer, or authorize a
+application, select a governed issuer, or authorize a
 registry mutation; those remain host responsibilities.
 
 ## Run the acceptance case

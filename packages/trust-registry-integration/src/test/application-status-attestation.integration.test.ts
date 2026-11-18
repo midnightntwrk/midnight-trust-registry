@@ -8,7 +8,9 @@ import { describe, expect, it } from "vitest";
 import {
   applicationStatusAttestationDigest,
   applicationStatusDecisionCommitment,
+  capturePrivateApplicationStatusWitness,
   createAttestedApplicationStatusSource,
+  materialFromPrivateApplicationStatusWitness,
   verifyApplicationStatusDecisionWitness,
   type ApplicationStatusWitnessMaterial,
   type SignedApplicationStatusStatement,
@@ -114,6 +116,29 @@ describe("DID-signed application status attestation", () => {
       ...minimalRequest,
       material: { ...material, credentialBodyRoot: new Uint8Array(32).fill(7) },
     })).rejects.toThrow();
+  });
+
+  it("round-trips a bounded private status witness without raw VP claims", async () => {
+    const { source, request, resolver, signed } = await fixture();
+    const record = capturePrivateApplicationStatusWitness({
+      material: request.material, nonce: request.nonce, signed,
+    });
+    const stored = JSON.parse(JSON.stringify(record));
+    expect(JSON.stringify(stored)).not.toContain("rawCredentialBody");
+    const material = materialFromPrivateApplicationStatusWitness(stored);
+    await expect(source({ ...request, material })).resolves.toMatchObject({
+      statusDecisionCommitment: (await source(request)).statusDecisionCommitment,
+    });
+    await expect(verifyApplicationStatusDecisionWitness({
+      signed: stored.signed, material, resolver,
+      binding: request.binding, nonce: stored.nonce,
+      expectedChallengeHash: sha256Hex(Buffer.from(stored.nonce.slice(2), "hex")),
+      expectedCommitment: (await source(request)).statusDecisionCommitment,
+      evaluatedAtMs: request.evaluatedAtMs,
+    })).resolves.toBe(true);
+    expect(() => capturePrivateApplicationStatusWitness({
+      material: request.material, nonce: `0x${"22".repeat(32)}`, signed,
+    })).toThrow(/differs/u);
   });
 
   it("accepts an exactly five-minute signed window with fractional timestamps", async () => {
