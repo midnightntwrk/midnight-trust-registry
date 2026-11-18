@@ -39,10 +39,11 @@ The discovery command prints the verified node and indexer state plus client
 URLs. Its defaults are node
 `127.0.0.1:9944`, indexer `127.0.0.1:8088/api/v4/graphql`, and proof server
 `127.0.0.1:6300`. The check requires node `2.1.101`, Ledger 9 protocol
-`2001100`, matching node/indexer genesis and latest indexed block hash, and
-proof-server `9.0.2`. The WebSocket URL in its output is derived from the
+`2001100`, matching node/indexer genesis and latest indexed block hash, an
+indexed height no later than the node-reported finalized head, and proof-server
+`9.0.2`. The WebSocket URL in its output is derived from the
 verified API v4 HTTP endpoint but is not itself handshake-tested. A passing
-attach is infrastructure evidence only, not a registry deployment or
+attach is node-consistency evidence only, not independent finality, a registry deployment, or
 proof-submission test.
 The shared chain is a multi-user development network. Sessions must preserve
 separate wallets and journals, pin a non-genesis checkpoint before relying on

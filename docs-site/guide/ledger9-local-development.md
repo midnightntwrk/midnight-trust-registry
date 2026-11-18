@@ -25,8 +25,11 @@ pnpm run localnet:discover
 
 This read-only discovery expects node `127.0.0.1:9944`, indexer GraphQL API
 v4 `127.0.0.1:8088/api/v4/graphql`, and proof server `127.0.0.1:6300`.
-It checks versions, node/indexer genesis and indexed progress, and never
-invokes Docker. On failure, keep the diagnostic and ask the stack owner.
+It checks versions, node/indexer genesis and indexed progress, and requires the
+indexed block to be no later than the node-reported finalized head. It never
+invokes Docker. This checks consistency with the attached node, not independent
+finality or registry authorization. On failure, keep the diagnostic and ask the
+stack owner.
 
 For a specific deployment, additionally pin the observed genesis and a
 **non-genesis** block height/hash in a private ignored environment file using

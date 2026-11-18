@@ -96,6 +96,14 @@ export async function checkLedger9LocalStack(input = {}) {
   assert.match(latest.hash, /^[0-9a-f]{64}$/u, "Indexer current block hash is malformed");
   const nodeIndexedHash = await request("chain_getBlockHash", [latest.height]);
   assert.equal(nodeIndexedHash, `0x${latest.hash}`, "Node and indexer disagree at the indexed height");
+  const finalizedBlockHash = await request("chain_getFinalizedHead");
+  assert.match(finalizedBlockHash, genesisPattern, "Invalid node finalized block hash");
+  const finalizedHeader = await request("chain_getHeader", [finalizedBlockHash]);
+  assert.match(finalizedHeader?.number, /^0x(?:0|[1-9a-f][0-9a-f]*)$/u,
+    "Invalid node finalized block height");
+  const finalizedHeight = Number(BigInt(finalizedHeader.number));
+  assert.ok(Number.isSafeInteger(finalizedHeight), "Node finalized block height is unsafe");
+  assert.ok(latest.height <= finalizedHeight, "Indexer is ahead of the node finalized head");
   if (input.expectedCheckpointHeight !== undefined || input.expectedCheckpointHash !== undefined) {
     const height = Number(input.expectedCheckpointHeight);
     if (!Number.isSafeInteger(height) || height < 1
@@ -114,7 +122,8 @@ export async function checkLedger9LocalStack(input = {}) {
   assert.equal(proofVersion, input.expectedProofVersion ?? "9.0.2", "Unexpected proof server version");
   return { urls: { nodeRpcUrl: nodeUrl, indexerHttpUrl: indexerUrl,
     indexerWsUrl, proofServerUrl }, nodeVersion, protocolVersion: runtime.specVersion, genesisHash,
-    indexedHeight: latest.height, indexedBlockHash: nodeIndexedHash, proofVersion };
+    indexedHeight: latest.height, indexedBlockHash: nodeIndexedHash,
+    finalizedHeight, finalizedBlockHash, proofVersion };
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

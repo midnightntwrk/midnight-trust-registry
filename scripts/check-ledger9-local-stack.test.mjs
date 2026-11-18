@@ -29,6 +29,9 @@ function fixture(overrides = {}) {
         : params[0] === 12 ? `0x${(overrides.checkpointHash ?? "d".repeat(64))}`
           : params[0] === (overrides.indexedHeight ?? 23)
             ? `0x${(overrides.nodeIndexedHash ?? "b".repeat(64))}` : genesis,
+      chain_getFinalizedHead: overrides.finalizedHash ?? `0x${"b".repeat(64)}`,
+      chain_getHeader: { number: overrides.finalizedNumber
+        ?? `0x${(overrides.indexedHeight ?? 23).toString(16)}` },
     }[method];
     return Response.json({ jsonrpc: "2.0", id: 1, result });
   };
@@ -45,8 +48,9 @@ test("checks shared-stack node, indexed block and proof-server versions", async 
     proofServerUrl: "http://127.0.0.1:6300",
   }, nodeVersion: "2.1.101-test", protocolVersion: 2001100,
     genesisHash: genesis, indexedHeight: 23, indexedBlockHash: `0x${"b".repeat(64)}`,
+    finalizedHeight: 23, finalizedBlockHash: `0x${"b".repeat(64)}`,
     proofVersion: "9.0.2" });
-  assert.equal(calls.length, 7);
+  assert.equal(calls.length, 9);
   assert.ok(calls.every(({ url }) => url.startsWith("http://127.0.0.1:")));
   assert.ok(calls.some(({ url }) => url === "http://127.0.0.1:9944"));
   assert.ok(calls.some(({ url }) => url === "http://127.0.0.1:8088/api/v4/graphql"));
@@ -64,6 +68,21 @@ test("rejects node/indexer divergence beyond genesis", async () => {
   await assert.rejects(checkLedger9LocalStack({
     fetchImpl: fixture({ nodeIndexedHash: "c".repeat(64) }).fetchImpl,
   }), /disagree at the indexed height/u);
+});
+
+test("rejects an indexed block ahead of the node-reported finalized head", async () => {
+  await assert.rejects(checkLedger9LocalStack({
+    fetchImpl: fixture({ finalizedNumber: "0x16" }).fetchImpl,
+  }), /ahead of the node finalized head/u);
+  await assert.rejects(checkLedger9LocalStack({
+    fetchImpl: fixture({ finalizedHash: "not-a-hash" }).fetchImpl,
+  }), /Invalid node finalized block hash/u);
+  await assert.rejects(checkLedger9LocalStack({
+    fetchImpl: fixture({ finalizedNumber: "23" }).fetchImpl,
+  }), /Invalid node finalized block height/u);
+  await assert.rejects(checkLedger9LocalStack({
+    fetchImpl: fixture({ finalizedNumber: "0x20000000000000" }).fetchImpl,
+  }), /finalized block height is unsafe/u);
 });
 
 test("pins a non-genesis checkpoint to distinguish replaced local chains", async () => {
