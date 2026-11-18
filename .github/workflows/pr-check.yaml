@@ -49,6 +49,8 @@ jobs:
             governance
             docs
             deps
+            audit
+            publish
             config
             scripts
           requireScope: false
