@@ -452,6 +452,10 @@ export function verifyPreparedReleaseCandidate(input) {
     throw new Error("Prepared release is not a full package set for the exact source revision");
   }
   const packageRoot = json(join(repoRoot, "package.json"));
+  if (!isRecord(packageRoot) || typeof packageRoot.version !== "string"
+    || typeof packageRoot.packageManager !== "string") {
+    throw new Error("Prepared release root package identity is invalid");
+  }
   const dependencies = isRecord(packageRoot.dependencies) ? packageRoot.dependencies : {};
   const identityDependencies = Object.fromEntries(Object.entries(dependencies)
     .filter(([name]) => name.startsWith("@midnight-ntwrk/midnight-did")
@@ -467,10 +471,12 @@ export function verifyPreparedReleaseCandidate(input) {
     throw new Error("Prepared release identity differs from the exact source checkout");
   }
   for (const entry of manifest.packages) {
-    if (!isRecord(entry) || !workspaces.includes(entry.workspace)) {
+    if (!isRecord(entry) || typeof entry.workspace !== "string"
+      || !workspaces.includes(entry.workspace)) {
       throw new Error("Prepared package workspace is not in the release catalog");
     }
     const source = json(join(repoRoot, entry.workspace, "package.json"));
+    if (!isRecord(source)) throw new Error("Prepared package source manifest is invalid");
     if (source.name !== entry.name || source.version !== entry.version
       || entry.publication !== (publish.includes(entry.workspace) ? "npm" : "local-only")) {
       throw new Error("Prepared package identity or publication differs from the source catalog");
