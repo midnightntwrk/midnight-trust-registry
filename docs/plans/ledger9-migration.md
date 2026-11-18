@@ -1005,6 +1005,14 @@ reserved proposal journals and their private evidence remain intact pending
 explicit reconciliation. The public smoke wallet is not an isolation boundary
 on a multi-user shared chain.
 
+At local signed head `4693c7e5`, ten Registry tarballs were packed into an
+exclusive temporary target and installed into a fresh consumer. The packed
+Ledger 9 VC fixture and signed issuer, verifier, auditor, maintainer, and
+recognition fixture journeys passed with the patched dependency graph. The
+temporary target was removed after the test; the source-matched deployment
+bundle and private journals were retained. This is package portability and
+fixture evidence, not a finalized DID/VP actor journey.
+
 ## Execution order
 
 1. Keep the `ledger8` source branch only as a historical reference. Ledger 9
