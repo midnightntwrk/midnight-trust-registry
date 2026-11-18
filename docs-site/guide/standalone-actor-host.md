@@ -46,8 +46,10 @@ and receipt in its mode-0600 private admission file. Construct it with
 body root, status binding, nonce, and signed status decision. The store checks
 its internal consistency and accepted challenge hash; it does **not** verify
 the status signature or decision commitment. The private
-`readCapturedStatusWitness` method requires the accepted evidence commitment
-and is never included in public admission reads. The HTTP intake forwards this
+`readCapturedPrivateAdmission` method requires an independently pinned accepted
+evidence commitment
+and returns the pending record, accepted evidence, and witness from one private
+state revision. Public admission reads remain redacted. The HTTP intake forwards this
 record only when its trusted `verifyPresentation` callback supplies it, after
 checking the consumed challenge; it never returns the record over HTTP. The
 qualified VP verifier carries the record when its status adapter uses

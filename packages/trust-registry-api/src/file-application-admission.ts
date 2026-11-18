@@ -193,14 +193,27 @@ export class FileApplicationAdmissionStore implements PendingApplicationRegistra
     };
   }
 
-  /** Private host read; public admission methods never return this witness. */
-  async readCapturedStatusWitness(
+  /** One private host read binds the witness to the accepted evidence and pending application. */
+  async readCapturedPrivateAdmission(
     applicationId: string,
     expectedEvidenceCommitment: string,
-  ): Promise<PrivateApplicationStatusWitness | null> {
-    const record = (await this.readState()).accepted.find((entry) => entry.applicationId === applicationId);
-    if (record === undefined || record.evidence.commitment !== expectedEvidenceCommitment) return null;
-    return record.privateStatusWitness === undefined ? null : structuredClone(record.privateStatusWitness);
+  ): Promise<{
+    pending: PendingApplicationRecord;
+    accepted: AcceptedApplicationEvidence;
+    privateStatusWitness: PrivateApplicationStatusWitness;
+  } | null> {
+    const state = await this.readState();
+    const pending = state.applications.find(
+      (entry) => entry.binding.applicationId === applicationId && entry.status === "pending",
+    );
+    const record = state.accepted.find((entry) => entry.applicationId === applicationId);
+    if (pending === undefined || record === undefined || record.privateStatusWitness === undefined
+      || record.evidence.commitment !== expectedEvidenceCommitment) return null;
+    return structuredClone({
+      pending,
+      accepted: { evidence: record.evidence, receipt: record.receipt },
+      privateStatusWitness: record.privateStatusWitness,
+    });
   }
 
   async acceptEvidence(

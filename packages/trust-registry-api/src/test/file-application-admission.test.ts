@@ -214,11 +214,19 @@ describe("file application admission store", () => {
     await expect(admission.acceptEvidence(applicationId, signedEvidence, now, {
       ...witness, nonce: `0x${"22".repeat(32)}`,
     })).rejects.toThrow(/differs/u);
-    expect(await admission.readCapturedStatusWitness(applicationId, commitment)).toBeNull();
+    expect(await admission.readCapturedPrivateAdmission(applicationId, commitment)).toBeNull();
     await admission.acceptEvidence(applicationId, signedEvidence, now, witness);
     const reopened = store(path);
-    expect(await reopened.readCapturedStatusWitness(applicationId, commitment)).toEqual(witness);
-    expect(await reopened.readCapturedStatusWitness(applicationId, original.commitment)).toBeNull();
+    const privateCapture = await reopened.readCapturedPrivateAdmission(applicationId, commitment);
+    expect(privateCapture).toEqual({
+      pending: await reopened.readPending(applicationId),
+      accepted: await reopened.resolveAcceptedEvidence(applicationId),
+      privateStatusWitness: witness,
+    });
+    expect(privateCapture).not.toBeNull();
+    privateCapture!.privateStatusWitness.nonce = `0x${"33".repeat(32)}`;
+    expect((await reopened.readCapturedPrivateAdmission(applicationId, commitment))?.privateStatusWitness).toEqual(witness);
+    expect(await reopened.readCapturedPrivateAdmission(applicationId, original.commitment)).toBeNull();
     expect(await reopened.resolveAcceptedEvidence(applicationId)).toEqual({
       evidence: signedEvidence,
       receipt: expect.any(Object),
