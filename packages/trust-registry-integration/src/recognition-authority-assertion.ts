@@ -13,7 +13,7 @@ import {
   sha256Hex,
   type RecognitionAuthorityAssertion,
   type SignedRecognitionAuthorityAssertion,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import { verifyDidJubjubSignature } from "./did-signature-verification.js";
 

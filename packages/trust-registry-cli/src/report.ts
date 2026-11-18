@@ -2,7 +2,7 @@ import type {
   EpochCommitment,
   GovernancePolicyRecord,
   RegistryRecord,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import type {
   TrustRegistryAuthorizationSnapshotEntry,

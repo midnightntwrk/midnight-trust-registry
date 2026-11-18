@@ -9,7 +9,7 @@ import {
   encodeJubjubSignature,
   pureCircuits,
   signDeploymentBoundMaintainerActionFromSeed,
-} from "@midnight-ntwrk/trust-registry-contract";
+} from "@midnightntwrk/trust-registry-contract";
 import {
   AuthorizationRecordSchema,
   DecisionEvidenceSchema,
@@ -21,7 +21,7 @@ import {
   computeMerkleRootFromProof,
   issuerGovernedResourceId,
   requestGovernedResourceId,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import {
   assertDecisionEvidenceConsistentWithSuppliedContext,

@@ -1,4 +1,4 @@
-import { computeDeploymentBoundMaintainerActionDigest } from "@midnight-ntwrk/trust-registry-contract";
+import { computeDeploymentBoundMaintainerActionDigest } from "@midnightntwrk/trust-registry-contract";
 
 import { bytes32Commitment, bytes32Hex, hashHexToBytes32 } from "./utils.js";
 

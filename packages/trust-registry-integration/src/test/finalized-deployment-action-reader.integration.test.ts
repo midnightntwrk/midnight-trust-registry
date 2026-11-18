@@ -15,14 +15,14 @@ import type { PublicDataProvider } from "@midnight-ntwrk/midnight-js-types";
 import {
   bytes32Hex,
   prepareFinalizedDeploymentActionDigest,
-} from "@midnight-ntwrk/trust-registry-client";
+} from "@midnightntwrk/trust-registry-client";
 import {
   deriveJubjubPublicKeyFromSeed,
   encodeCompactActionKind,
-} from "@midnight-ntwrk/trust-registry-contract";
+} from "@midnightntwrk/trust-registry-contract";
 import {
   TrustRegistrySimulator,
-} from "@midnight-ntwrk/trust-registry-contract/testing";
+} from "@midnightntwrk/trust-registry-contract/testing";
 
 import { bytes32Commitment } from "../fixtures.js";
 import {

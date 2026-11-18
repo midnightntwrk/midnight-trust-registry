@@ -8,11 +8,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sampleSigningKey, signatureVerifyingKey } from "@midnight-ntwrk/compact-runtime";
 import { InsertVerifierKeyTxFailedError } from "@midnight-ntwrk/midnight-js-contracts";
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
-import { bytes32Commitment, bytes32Hex } from "@midnight-ntwrk/trust-registry-client";
+import { bytes32Commitment, bytes32Hex } from "@midnightntwrk/trust-registry-client";
 import {
   deriveJubjubPublicKeyFromSeed, MaintainerStatus,
   TrustRegistryContract, trustRegistryWitnesses,
-} from "@midnight-ntwrk/trust-registry-contract";
+} from "@midnightntwrk/trust-registry-contract";
 
 import type { FinalizedRegistryDeploymentImage } from "../finalized-deployment-action-reader.js";
 import {

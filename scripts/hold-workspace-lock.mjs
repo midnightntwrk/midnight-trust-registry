@@ -1,4 +1,4 @@
-import { withExclusiveWorkspaceWrite } from "@midnight-ntwrk/trust-registry-cli";
+import { withExclusiveWorkspaceWrite } from "@midnightntwrk/trust-registry-cli";
 
 const workspacePath = process.argv[2];
 if (workspacePath === undefined) throw new Error("workspace path is required");

@@ -4,8 +4,8 @@ import { open, rename, rm } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
-import { withExclusiveWorkspaceWrite, WorkspaceMutationLockedError } from "@midnight-ntwrk/trust-registry-cli";
-import { MAX_ACTOR_AUTHENTICATION_CHALLENGE_AGE_MS } from "@midnight-ntwrk/trust-registry-domain";
+import { withExclusiveWorkspaceWrite, WorkspaceMutationLockedError } from "@midnightntwrk/trust-registry-cli";
+import { MAX_ACTOR_AUTHENTICATION_CHALLENGE_AGE_MS } from "@midnightntwrk/trust-registry-domain";
 import { z } from "zod";
 
 import type { ActorAuthenticationChallengeStore } from "./actor-authentication.js";

@@ -1,4 +1,4 @@
-import { DecisionEvidenceSchema, type DecisionEvidenceSelection } from "@midnight-ntwrk/trust-registry-domain";
+import { DecisionEvidenceSchema, type DecisionEvidenceSelection } from "@midnightntwrk/trust-registry-domain";
 
 import {
   verifyDecisionEvidenceWithTrustedReaders,

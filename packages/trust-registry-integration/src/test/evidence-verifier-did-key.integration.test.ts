@@ -1,6 +1,6 @@
 import { MidnightNetwork } from "@midnight-ntwrk/midnight-did";
-import { deriveJubjubPublicKeyFromSeed } from "@midnight-ntwrk/trust-registry-contract";
-import { EvidenceVerifierKeyStatus } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+import { deriveJubjubPublicKeyFromSeed } from "@midnightntwrk/trust-registry-contract";
+import { EvidenceVerifierKeyStatus } from "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import { describe, expect, it } from "vitest";
 
 import { createMidnightDid, bytes32Commitment } from "../fixtures.js";

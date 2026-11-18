@@ -17,8 +17,8 @@ import {
   verifyMaintainerProposalEvidenceSignature,
   verifyRecognitionProposalEvidenceSignature,
   verifyVerifierProposalEvidenceSignature,
-} from "@midnight-ntwrk/trust-registry-contract";
-import { sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-contract";
+import { sha256Hex } from "@midnightntwrk/trust-registry-domain";
 
 import {
   GovernedProposalObservationSchema,

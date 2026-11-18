@@ -4,7 +4,7 @@ import {
   TrustRegistryApiApplicationMutationResponseSchema,
   type TrustRegistryApiApplicationMutationResponse,
   type TrustRegistryApiSummary,
-} from "@midnight-ntwrk/trust-registry-api";
+} from "@midnightntwrk/trust-registry-api";
 
 import {
   TARGET_OPTIONS,

@@ -9,13 +9,13 @@ import {
   selectRecognitionEntryAtTime,
   type AuthorizationTemporalEvaluation,
   type RecognitionTemporalEvaluation,
-} from "@midnight-ntwrk/trust-registry-client";
+} from "@midnightntwrk/trust-registry-client";
 import type {
   AuthorizationRecord,
   EpochCommitment,
   RecognitionRecord,
   TrustRegistryEvidenceBundle,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import {
   TrustRegistryOperatorSnapshotSchema,

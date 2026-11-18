@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 
-import type { ActorAuthenticationPurpose } from "@midnight-ntwrk/trust-registry-domain";
+import type { ActorAuthenticationPurpose } from "@midnightntwrk/trust-registry-domain";
 
 const SESSION_LIFETIME_MS = 15 * 60 * 1000;
 const MAX_SESSIONS = 1024;

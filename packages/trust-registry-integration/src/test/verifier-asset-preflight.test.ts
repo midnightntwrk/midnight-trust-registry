@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { TrustRegistryContract, trustRegistryWitnesses } from "@midnight-ntwrk/trust-registry-contract";
+import { TrustRegistryContract, trustRegistryWitnesses } from "@midnightntwrk/trust-registry-contract";
 
 import { readPinnedInstalledVerifierKey, verifyInstalledVerifierKeyAssets } from "../verifier-asset-preflight.js";
 

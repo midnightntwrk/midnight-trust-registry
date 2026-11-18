@@ -6,9 +6,9 @@ import {
   type ResolveMidnightDIDMethodBindingOptions,
 } from "@midnight-ntwrk/credential-did-midnight";
 import { MidnightNetwork, parseMidnightDID, parseMidnightDIDString } from "@midnight-ntwrk/midnight-did";
-import { bytes32Commitment } from "@midnight-ntwrk/trust-registry-client";
-import { isPrimeOrderJubjubPoint } from "@midnight-ntwrk/trust-registry-contract";
-import { EvidenceVerifierKeyStatus } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+import { bytes32Commitment } from "@midnightntwrk/trust-registry-client";
+import { isPrimeOrderJubjubPoint } from "@midnightntwrk/trust-registry-contract";
+import { EvidenceVerifierKeyStatus } from "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 
 type Resolver = ResolveMidnightDIDMethodBindingOptions["resolver"];
 

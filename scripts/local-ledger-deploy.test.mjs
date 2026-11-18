@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { FileDeploymentAttemptJournal } from "@midnight-ntwrk/trust-registry-integration";
+import { FileDeploymentAttemptJournal } from "@midnightntwrk/trust-registry-integration";
 
 import {
   loadApprovedMaintenanceMaterial, reconcileLocalDeployment, runLocalDeployment,

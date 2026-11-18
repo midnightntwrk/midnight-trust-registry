@@ -4,7 +4,7 @@ import type {
   AuthorizationRecord,
   EpochCommitment,
   RecognitionRecord,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import {
   evaluateAuthorizationRecordAtTime,

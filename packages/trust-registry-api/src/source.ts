@@ -19,26 +19,26 @@ import {
   type TrustRegistryOperatorSnapshot,
   type TrustRegistryRecognitionSnapshotEntry,
   type TrustRegistrySummary,
-} from "@midnight-ntwrk/trust-registry-cli";
-export { WorkspaceMutationLockedError } from "@midnight-ntwrk/trust-registry-cli";
+} from "@midnightntwrk/trust-registry-cli";
+export { WorkspaceMutationLockedError } from "@midnightntwrk/trust-registry-cli";
 import type {
   TrqpAuthorizationDecision,
   TrqpAuthorizationRequest,
   TrqpRecognitionDecision,
   TrqpRecognitionRequest,
   TrustRegistryTrqpSource,
-} from "@midnight-ntwrk/trust-registry-trqp-adapter";
+} from "@midnightntwrk/trust-registry-trqp-adapter";
 import {
   evaluateAuthorizationRecordAtTime,
   evaluateRecognitionRecordAtTime,
-} from "@midnight-ntwrk/trust-registry-client";
+} from "@midnightntwrk/trust-registry-client";
 import {
   canonicalizeJson,
   compareRfc3339Instants,
   type EpochCommitment,
   type RegistryRecord,
   type TrustRegistryEvidenceBundle,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import type {
   TrustRegistryApiAuthorizationListQuery,

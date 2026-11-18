@@ -6,7 +6,7 @@ import {
   IssuerScopeSchema,
   sha256Hex,
   type AuthorizationScope,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 const bytes32 = (hash: string): Uint8Array => Uint8Array.from(Buffer.from(hash.slice(2), "hex"));
 

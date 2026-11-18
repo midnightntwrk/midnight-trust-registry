@@ -11,7 +11,7 @@ import {
   sha256Hex,
   type GovernancePolicyRecord,
   type SignedRecognitionAuthorityAssertion,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import {
   verifyRecognitionAuthorityAssertion,
   verifyRecognitionAccreditationVp,
@@ -20,7 +20,7 @@ import {
   type RecognitionAccreditationSubmission,
   type VerifiedRecognitionAccreditation,
   type VerifiedRecognitionAuthorityAssertion,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 import { z } from "zod";
 
 import {

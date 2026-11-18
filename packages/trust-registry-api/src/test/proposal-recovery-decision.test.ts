@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { canonicalizeJson } from "@midnight-ntwrk/trust-registry-domain";
+import { canonicalizeJson } from "@midnightntwrk/trust-registry-domain";
 import { describe, expect, it } from "vitest";
 
 import { draftProposalRecoveryDecision, loadApprovedProposalRecoveryDecision,

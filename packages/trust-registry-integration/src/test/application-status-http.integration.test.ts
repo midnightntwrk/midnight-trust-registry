@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { createServer } from "node:http";
 
 import { signJubjubDigest } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
-import { encodeJubjubSignature } from "@midnight-ntwrk/trust-registry-contract";
+import { encodeJubjubSignature } from "@midnightntwrk/trust-registry-contract";
 import { describe, expect, it, vi } from "vitest";
 
 import { applicationStatusAttestationDigest } from "../application-status-attestation.js";

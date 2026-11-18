@@ -1,8 +1,8 @@
 import { Buffer } from "node:buffer";
 
 import { signJubjubDigest } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
-import { deriveJubjubPublicKey, encodeJubjubSignature } from "@midnight-ntwrk/trust-registry-contract";
-import { sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
+import { deriveJubjubPublicKey, encodeJubjubSignature } from "@midnightntwrk/trust-registry-contract";
+import { sha256Hex } from "@midnightntwrk/trust-registry-domain";
 import { describe, expect, it } from "vitest";
 
 import {

@@ -4,7 +4,7 @@ import type { ApiPromise } from "@polkadot/api";
 import type { ContractProviders } from "@midnight-ntwrk/midnight-js-contracts";
 import { indexerPublicDataProvider } from "@midnight-ntwrk/midnight-js-indexer-public-data-provider";
 import type { MidnightProvider } from "@midnight-ntwrk/midnight-js-types";
-import type { TrustRegistryContract, TrustRegistryPrivateState } from "@midnight-ntwrk/trust-registry-contract";
+import type { TrustRegistryContract, TrustRegistryPrivateState } from "@midnightntwrk/trust-registry-contract";
 
 import { localNetworkEndpoint } from "./local-network-endpoints.js";
 

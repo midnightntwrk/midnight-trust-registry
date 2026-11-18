@@ -10,8 +10,8 @@ import {
   syncWallet,
   waitForFunds,
 } from "@midnight-ntwrk/testkit-js";
-import { bytes32Commitment } from "@midnight-ntwrk/trust-registry-client";
-import { deriveJubjubPublicKeyFromSeed } from "@midnight-ntwrk/trust-registry-contract";
+import { bytes32Commitment } from "@midnightntwrk/trust-registry-client";
+import { deriveJubjubPublicKeyFromSeed } from "@midnightntwrk/trust-registry-contract";
 import { open, lstat, readFile, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -119,7 +119,7 @@ async function createLocalWalletMaterial({ network }, env = process.env) {
     if (fundedState.dust.balance(new Date()) <= 0n) {
       throw new Error("Public local smoke wallet has no spendable DUST");
     }
-    const contractDist = dirname(fileURLToPath(import.meta.resolve("@midnight-ntwrk/trust-registry-contract")));
+    const contractDist = dirname(fileURLToPath(import.meta.resolve("@midnightntwrk/trust-registry-contract")));
     const zkConfig = new NodeZkConfigProvider(join(contractDist, "managed", "trust-registry"));
     const providers = {
       privateStateProvider: inMemoryPrivateStateProvider(),

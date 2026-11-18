@@ -1,14 +1,14 @@
 import { Buffer } from "node:buffer";
 import { describe, expect, it } from "vitest";
 
-import { defaultSequenceToTimestamp } from "@midnight-ntwrk/trust-registry-client";
+import { defaultSequenceToTimestamp } from "@midnightntwrk/trust-registry-client";
 import {
   createIssuerScenarioFixture,
   createRecognitionScenarioFixture,
   createVerifierScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
   resolveCompactHistoricalEpochAnchor,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 
 import {
   verifyTrqpAuthorizationEvidenceFromApi,

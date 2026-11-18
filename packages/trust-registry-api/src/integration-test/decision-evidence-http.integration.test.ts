@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
+import { publishSimulatorSnapshot } from "@midnightntwrk/trust-registry-cli";
 import {
   DecisionEvidenceSchema,
   computeIssuerStatusPolicyBindingCommitment,
   issuerGovernedResourceId,
-} from "@midnight-ntwrk/trust-registry-domain";
-import { createIssuerScenarioFixture, LocalTrustRegistryIntegrationHarness } from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-domain";
+import { createIssuerScenarioFixture, LocalTrustRegistryIntegrationHarness } from "@midnightntwrk/trust-registry-integration";
 
 import { createTrustRegistryApiServer } from "../server.js";
 

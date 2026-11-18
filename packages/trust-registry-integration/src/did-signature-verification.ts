@@ -1,6 +1,6 @@
 import type { JubjubPoint } from "@midnight-ntwrk/compact-runtime";
 import { verifyJubjubDigest, type JubjubDigest } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
-import { decodeCanonicalJubjubSignatureHex, isPrimeOrderJubjubPoint } from "@midnight-ntwrk/trust-registry-contract";
+import { decodeCanonicalJubjubSignatureHex, isPrimeOrderJubjubPoint } from "@midnightntwrk/trust-registry-contract";
 
 /** DID method membership is insufficient when a malformed or low-order key makes Schnorr forgeable. */
 export const verifyDidJubjubSignature = (

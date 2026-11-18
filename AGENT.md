@@ -66,17 +66,17 @@ Do not use this repository for:
 
 | Path | Package | Responsibility |
 | --- | --- | --- |
-| `contracts/trust-registry` | `@midnight-ntwrk/trust-registry-contract` | Compact contract, generated managed artifacts, and contract-facing TS helpers. |
-| `packages/trust-registry-domain` | `@midnight-ntwrk/trust-registry-domain` | Registry state model, lifecycle rules, policy/evidence types, and canonical hashing inputs. |
-| `packages/trust-registry-client` | `@midnight-ntwrk/trust-registry-client` | Query helpers, evidence verification, and consumer-facing trust decision APIs. |
-| `packages/trust-registry-integration` | `@midnight-ntwrk/trust-registry-integration` | DID/VC-aware simulator and integration scenarios across repository boundaries. |
-| `packages/trust-registry-cli` | `@midnight-ntwrk/trust-registry-cli` | Local operator workflows, demo setup, audit reporting, and mutable workspace actions. |
-| `packages/trust-registry-api` | `@midnight-ntwrk/trust-registry-api` | Read/query and governed workflow HTTP surface for local operator and applicant flows. |
-| `packages/trust-registry-admin-console` | `@midnight-ntwrk/trust-registry-admin-console` | Operator-facing review and administration UI. |
-| `packages/trust-registry-applicant-portal` | `@midnight-ntwrk/trust-registry-applicant-portal` | Applicant-facing UI for issuer/verifier/auditor submissions. |
-| `adapters/trqp` | `@midnight-ntwrk/trust-registry-trqp-adapter` | TRQP-compatible registry and evidence projection. |
-| `adapters/openid-federation` | `@midnight-ntwrk/trust-registry-openid-federation-adapter` | OpenID Federation metadata and trust-chain projection experiments. |
-| `docs-site` | `@midnight-ntwrk/trust-registry-docs` | VitePress guide, diagrams, and OpenAPI artifact; not published to npm. |
+| `contracts/trust-registry` | `@midnightntwrk/trust-registry-contract` | Compact contract, generated managed artifacts, and contract-facing TS helpers. |
+| `packages/trust-registry-domain` | `@midnightntwrk/trust-registry-domain` | Registry state model, lifecycle rules, policy/evidence types, and canonical hashing inputs. |
+| `packages/trust-registry-client` | `@midnightntwrk/trust-registry-client` | Query helpers, evidence verification, and consumer-facing trust decision APIs. |
+| `packages/trust-registry-integration` | `@midnightntwrk/trust-registry-integration` | DID/VC-aware simulator and integration scenarios across repository boundaries. |
+| `packages/trust-registry-cli` | `@midnightntwrk/trust-registry-cli` | Local operator workflows, demo setup, audit reporting, and mutable workspace actions. |
+| `packages/trust-registry-api` | `@midnightntwrk/trust-registry-api` | Read/query and governed workflow HTTP surface for local operator and applicant flows. |
+| `packages/trust-registry-admin-console` | `@midnightntwrk/trust-registry-admin-console` | Operator-facing review and administration UI. |
+| `packages/trust-registry-applicant-portal` | `@midnightntwrk/trust-registry-applicant-portal` | Applicant-facing UI for issuer/verifier/auditor submissions. |
+| `adapters/trqp` | `@midnightntwrk/trust-registry-trqp-adapter` | TRQP-compatible registry and evidence projection. |
+| `adapters/openid-federation` | `@midnightntwrk/trust-registry-openid-federation-adapter` | OpenID Federation metadata and trust-chain projection experiments. |
+| `docs-site` | `@midnightntwrk/trust-registry-docs` | VitePress guide, diagrams, and OpenAPI artifact; not published to npm. |
 
 ## Current Layout
 

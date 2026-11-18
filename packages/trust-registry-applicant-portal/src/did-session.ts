@@ -4,7 +4,7 @@ import {
   type ActorDidSession,
   type ActorDidSigner,
   type SignInActorDidInput,
-} from "@midnight-ntwrk/trust-registry-client/browser-authentication";
+} from "@midnightntwrk/trust-registry-client/browser-authentication";
 
 export type ApplicantDidSigner = ActorDidSigner;
 export type ApplicantDidSession = ActorDidSession<"applicant-session">;

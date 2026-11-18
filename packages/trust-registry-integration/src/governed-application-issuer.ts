@@ -4,8 +4,8 @@ import { decodeJubjubJwkCoordinate } from "@midnight-ntwrk/midnight-did-domain";
 import {
   verifyDecisionEvidenceWithTrustedReaders,
   type TrustedDecisionEvidenceReaders,
-} from "@midnight-ntwrk/trust-registry-client";
-import type { AuthorizationScope, DecisionEvidenceSelection } from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-client";
+import type { AuthorizationScope, DecisionEvidenceSelection } from "@midnightntwrk/trust-registry-domain";
 
 import type { ApplicationVpFamilyAdapter } from "./application-vp-verifier.js";
 

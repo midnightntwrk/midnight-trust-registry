@@ -4,8 +4,8 @@ import {
   createIssuerScenarioFixture,
   createRecognitionScenarioFixture,
   createVerifierScenarioFixture,
-} from "@midnight-ntwrk/trust-registry-integration";
-import type { TrustRegistryEvidenceBundle } from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-integration";
+import type { TrustRegistryEvidenceBundle } from "@midnightntwrk/trust-registry-domain";
 
 import {
   TrustRegistryOperatorSnapshotSchema,

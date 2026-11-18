@@ -1,13 +1,13 @@
 import { createHash } from "node:crypto";
 import { dirname, isAbsolute, join } from "node:path";
 
-import type { SequenceToTimestamp } from "@midnight-ntwrk/trust-registry-client";
+import type { SequenceToTimestamp } from "@midnightntwrk/trust-registry-client";
 import {
   createLocalNetworkDeploymentActionReader,
   getLocalNetworkProfile,
   type FinalizedRegistryLedgerView,
   type LocalNetworkDeploymentActionReaderConfig,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 
 import { createLocalLedgerBoundSource, LocalLedgerSourceUnavailableError } from "./local-ledger-source.js";
 import { assertLocalApiTrustAnchor, verifyLocalApiApprovalChain } from "./local-approval-chain.js";

@@ -1,7 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import process from "node:process";
 
-import { withExclusiveWorkspaceWrite } from "@midnight-ntwrk/trust-registry-cli";
+import { withExclusiveWorkspaceWrite } from "@midnightntwrk/trust-registry-cli";
 
 const [journalPath, role, authorizationId, evidenceCommitment] = process.argv.slice(2);
 if (journalPath === undefined || role === undefined || authorizationId === undefined

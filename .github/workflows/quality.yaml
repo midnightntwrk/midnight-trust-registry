@@ -216,7 +216,7 @@ jobs:
         run: pnpm run check:compact-version
 
       - name: Generate contract ZKIR without proving keys
-        run: pnpm --filter @midnight-ntwrk/trust-registry-contract run compact:light
+        run: pnpm --filter @midnightntwrk/trust-registry-contract run compact:light
 
       - name: Restore shard proving keys
         id: proving-cache

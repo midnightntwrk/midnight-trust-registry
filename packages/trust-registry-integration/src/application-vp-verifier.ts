@@ -15,7 +15,7 @@ import {
   type ActorAuthenticationContext,
   type AuthorizationScope,
   type IssuerStatusPolicyBinding,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import { verifyMidnightVcVpProofs, type MidnightVcVpProofMaterial } from "./midnight-vc-vp-proof.js";
 

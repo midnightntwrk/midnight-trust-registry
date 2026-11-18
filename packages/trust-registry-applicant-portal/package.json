@@ -1,5 +1,5 @@
 {
-  "name": "@midnight-ntwrk/trust-registry-applicant-portal",
+  "name": "@midnightntwrk/trust-registry-applicant-portal",
   "version": "0.1.0",
   "private": true,
   "license": "Apache-2.0",
@@ -40,9 +40,9 @@
     "test:light": "pnpm run test"
   },
   "dependencies": {
-    "@midnight-ntwrk/trust-registry-api": "workspace:0.1.0",
-    "@midnight-ntwrk/trust-registry-client": "workspace:0.1.0",
-    "@midnight-ntwrk/trust-registry-domain": "workspace:0.1.0"
+    "@midnightntwrk/trust-registry-api": "workspace:0.1.0",
+    "@midnightntwrk/trust-registry-client": "workspace:0.1.0",
+    "@midnightntwrk/trust-registry-domain": "workspace:0.1.0"
   },
   "devDependencies": {
     "happy-dom": "21.0.4"

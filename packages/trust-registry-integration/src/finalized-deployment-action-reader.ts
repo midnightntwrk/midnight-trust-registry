@@ -3,12 +3,12 @@ import { createHash } from "node:crypto";
 
 import type { PublicDataProvider } from "@midnight-ntwrk/midnight-js-types";
 import type { ContractState, JubjubPoint } from "@midnight-ntwrk/compact-runtime";
-import type { Ledger } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+import type { Ledger } from "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import type {
   FinalizedDeploymentActionState,
   TrustedDeploymentActionReader,
-} from "@midnight-ntwrk/trust-registry-client";
-import { TrustRegistryContract, type MaintainerStatus } from "@midnight-ntwrk/trust-registry-contract/contract";
+} from "@midnightntwrk/trust-registry-client";
+import { TrustRegistryContract, type MaintainerStatus } from "@midnightntwrk/trust-registry-contract/contract";
 import { getLocalNetworkProfile } from "./network-profiles.js";
 
 export type FinalizedNetworkCheckpoint = {

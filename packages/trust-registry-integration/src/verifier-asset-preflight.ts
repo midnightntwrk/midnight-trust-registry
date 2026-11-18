@@ -4,13 +4,13 @@ import { lstat, open, readdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { TrustRegistryContract, trustRegistryWitnesses } from "@midnight-ntwrk/trust-registry-contract";
+import { TrustRegistryContract, trustRegistryWitnesses } from "@midnightntwrk/trust-registry-contract";
 
 import type { ReleaseVerifierKeyManifest } from "./public-network-deployment.js";
 import { hasExactFieldNames } from "./exact-field-names.js";
 
 const installedAssetsPath = resolve(
-  dirname(fileURLToPath(import.meta.resolve("@midnight-ntwrk/trust-registry-contract/contract"))),
+  dirname(fileURLToPath(import.meta.resolve("@midnightntwrk/trust-registry-contract/contract"))),
   "managed/trust-registry",
 );
 

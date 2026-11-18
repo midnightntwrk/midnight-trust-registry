@@ -15,10 +15,10 @@ test("publish gate checks one manifest-pinned tarball and rejects tampering", as
   const root = await mkdtemp(join(tmpdir(), "tr-publish-tarball-"));
   try {
     const manifestPath = join(root, "manifest.json");
-    const tarballPath = join(root, "midnight-ntwrk-trust-registry-api-0.1.0.tgz");
+    const tarballPath = join(root, "midnightntwrk-trust-registry-api-0.1.0.tgz");
     const bytes = Buffer.from("tested release bytes");
-    const entry = { name: "@midnight-ntwrk/trust-registry-api", version: "0.1.0",
-      filename: "midnight-ntwrk-trust-registry-api-0.1.0.tgz",
+    const entry = { name: "@midnightntwrk/trust-registry-api", version: "0.1.0",
+      filename: "midnightntwrk-trust-registry-api-0.1.0.tgz",
       sizeBytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
     await writeFile(tarballPath, bytes);
     await writeFile(manifestPath, JSON.stringify({ format: "tr-release-candidate-manifest-v2",

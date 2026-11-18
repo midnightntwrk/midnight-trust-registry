@@ -8,10 +8,10 @@ import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
   signDeploymentBoundMaintainerActionFromSeed,
-} from "@midnight-ntwrk/trust-registry-contract";
-import type { MaintainerCoAuthorizer } from "@midnight-ntwrk/trust-registry-contract/testing";
-import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client/simulator";
-import { sha256Hex, type RecognitionAuthorityAssertion } from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-contract";
+import type { MaintainerCoAuthorizer } from "@midnightntwrk/trust-registry-contract/testing";
+import { TrustRegistrySimulatorClient } from "@midnightntwrk/trust-registry-client/simulator";
+import { sha256Hex, type RecognitionAuthorityAssertion } from "@midnightntwrk/trust-registry-domain";
 
 import { createMidnightDidLedgerFixture, createMidnightDidResolver } from "../did-resolution.js";
 import {

@@ -3,7 +3,7 @@ import { z } from "zod";
 import {
   RegistryRecordSchema,
   TrustRegistryEvidenceBundleSchema,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 const NonEmptyStringSchema = z.string().trim().min(1);
 const TimestampSchema = z.string().datetime({ offset: true });

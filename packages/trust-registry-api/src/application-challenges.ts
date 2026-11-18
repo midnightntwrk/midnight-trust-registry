@@ -6,7 +6,7 @@ import {
   computeApplicationChallengeBindingHash,
   sha256Hex,
   type ApplicationChallengeBinding,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import { z } from "zod";
 
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;

@@ -10,7 +10,7 @@ import {
 import { getNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import type { SigningKey } from "@midnight-ntwrk/midnight-js-protocol/compact-runtime";
 import { createVerifierKey, type FinalizedTxData } from "@midnight-ntwrk/midnight-js-types";
-import { TrustRegistryContract, type TrustRegistryPrivateState } from "@midnight-ntwrk/trust-registry-contract";
+import { TrustRegistryContract, type TrustRegistryPrivateState } from "@midnightntwrk/trust-registry-contract";
 import { z } from "zod";
 
 import type { FinalizedRegistryDeploymentImage } from "./finalized-deployment-action-reader.js";

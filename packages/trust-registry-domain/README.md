@@ -1,4 +1,4 @@
-# `@midnight-ntwrk/trust-registry-domain`
+# `@midnightntwrk/trust-registry-domain`
 
 Typed domain model for `midnight-trust-registry`.
 

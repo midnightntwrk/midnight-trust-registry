@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   issuerGovernedResourceIdFromScopeCommitment,
   requestGovernedResourceIdFromScopeCommitment,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import {
   TrustRegistryApiEvaluateAuthorizationRequestSchema,

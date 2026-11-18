@@ -6,10 +6,10 @@ import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
   signDeploymentBoundMaintainerActionFromSeed,
-} from "@midnight-ntwrk/trust-registry-contract";
-import { createMaintainerFixture } from "@midnight-ntwrk/trust-registry-contract/testing";
-import { createDemoSnapshot } from "@midnight-ntwrk/trust-registry-cli";
-import { bytes32Commitment, LocalTrustRegistryIntegrationHarness } from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-contract";
+import { createMaintainerFixture } from "@midnightntwrk/trust-registry-contract/testing";
+import { createDemoSnapshot } from "@midnightntwrk/trust-registry-cli";
+import { bytes32Commitment, LocalTrustRegistryIntegrationHarness } from "@midnightntwrk/trust-registry-integration";
 
 import { type PreparedGovernedEpochPublication } from "../governed-epoch-publication.js";
 import { createTrustRegistryApiServer } from "../server.js";

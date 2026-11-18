@@ -9,7 +9,7 @@ import {
   encodeJubjubSignature,
   pureCircuits,
   signDeploymentBoundMaintainerActionFromSeed,
-} from "@midnight-ntwrk/trust-registry-contract";
+} from "@midnightntwrk/trust-registry-contract";
 
 import { assertDecisionEpochPublicationSignatures } from "../decision-epoch-signatures.js";
 import { bytes32Commitment, bytes32Hex, hashHexToBytes32 } from "../utils.js";

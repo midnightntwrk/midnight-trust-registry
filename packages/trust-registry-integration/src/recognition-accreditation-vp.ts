@@ -12,7 +12,7 @@ import {
   recognitionAccreditorAnchorCommitment,
   sha256Hex,
   type RecognitionAccreditorAnchor,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import { decodeApplicationVpProof } from "./application-vp-proof-json.js";
 import { verifyMidnightVcVpProofs } from "./midnight-vc-vp-proof.js";

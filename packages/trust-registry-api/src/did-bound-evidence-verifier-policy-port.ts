@@ -5,15 +5,15 @@ import {
   computeCreateEvidenceVerifierKeyPayloadHash,
   computeRotateEvidenceVerifierKeyPayloadHash,
   encodeCompactActionKind,
-} from "@midnight-ntwrk/trust-registry-contract";
-import { EvidenceVerifierKeyStatus } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
-import { bytes32Commitment } from "@midnight-ntwrk/trust-registry-client";
+} from "@midnightntwrk/trust-registry-contract";
+import { EvidenceVerifierKeyStatus } from "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+import { bytes32Commitment } from "@midnightntwrk/trust-registry-client";
 import {
   EvidenceVerifierDidKeyBindingError,
   verifyProposedEvidenceVerifierDidKeyBinding,
   type EvidenceVerifierDidKeyCandidate,
   type ProposedEvidenceVerifierDidKeyBindingInput,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 
 import {
   GovernedEvidenceVerifierRotationPrepareRequestSchema,

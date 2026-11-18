@@ -7,11 +7,11 @@ import {
   JUBJUB_ORDER,
   pureCircuits,
   verifyDeploymentBoundMaintainerAction,
-} from "@midnight-ntwrk/trust-registry-contract";
+} from "@midnightntwrk/trust-registry-contract";
 import {
   AcceptedDecisionEpochSchema,
   DecisionEvidenceEpochSchema,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import { bytes32Commitment, bytes32Hex, hashHexToBytes32, sameBytes32 } from "./utils.js";
 

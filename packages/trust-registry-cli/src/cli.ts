@@ -638,7 +638,7 @@ const runInspectDeployment = async (argv: readonly string[], io: CliIo): Promise
   });
   const address = requireStringOption(parsed.values.address, "--address");
   const { createPublicNetworkDeploymentActionReader, getNetworkProfile } = await import(
-    "@midnight-ntwrk/trust-registry-integration"
+    "@midnightntwrk/trust-registry-integration"
   );
   const profile = getNetworkProfile(requireStringOption(parsed.values.network, "--network"));
   if (profile.kind !== "public") throw new Error("inspect-deployment requires a public network profile");

@@ -8,7 +8,7 @@ import {
   type AcceptedDecisionEpoch,
   type DecisionEvidence,
   type TrustRegistryEvidenceBundle,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 export type DecisionEvidenceBuildInput = {
   bundle: TrustRegistryEvidenceBundle;

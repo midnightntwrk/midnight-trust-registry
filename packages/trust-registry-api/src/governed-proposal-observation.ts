@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ApplicationEvidenceSubmissionSchema } from "@midnight-ntwrk/trust-registry-domain";
+import { ApplicationEvidenceSubmissionSchema } from "@midnightntwrk/trust-registry-domain";
 
 const Bytes32Schema = z.string().regex(/^0x[0-9a-f]{64}$/u);
 

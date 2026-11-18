@@ -4,8 +4,8 @@ import {
   TrustRegistryOperatorWorkspaceOperationSchema,
   type TrustRegistryOperatorWorkspace,
   type TrustRegistryOperatorWorkspaceOperation,
-} from "@midnight-ntwrk/trust-registry-cli";
-import { MutationIntentSchema, sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-cli";
+import { MutationIntentSchema, sha256Hex } from "@midnightntwrk/trust-registry-domain";
 
 import { preflightMutationIntentActor } from "./mutation-intent-actor-binding.js";
 import type { MutationIntentActorFailure } from "./mutation-intent-actor-binding.js";

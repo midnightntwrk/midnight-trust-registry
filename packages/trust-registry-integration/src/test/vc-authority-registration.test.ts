@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   computeCreateVcAuthorityKeyPayloadHash,
   deriveJubjubPublicKeyFromSeed,
-} from "@midnight-ntwrk/trust-registry-contract";
+} from "@midnightntwrk/trust-registry-contract";
 
 import { bytes32Commitment, createMidnightDid } from "../fixtures.js";
 import { prepareVcAuthorityKeyRegistration } from "../vc-authority-registration.js";

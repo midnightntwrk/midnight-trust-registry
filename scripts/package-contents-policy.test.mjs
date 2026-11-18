@@ -76,7 +76,7 @@ test("publish workflow runs light tests before full build and package gate", () 
 test("full integration preserves full contract artifacts and checks package contents last", () => {
   const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const scripts = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")).scripts;
-  assert.match(scripts.integration, /turbo run build --filter=@midnight-ntwrk\/trust-registry-trqp-adapter/);
+  assert.match(scripts.integration, /turbo run build --filter=@midnightntwrk\/trust-registry-trqp-adapter/);
   assert.doesNotMatch(scripts.integration, /build:light/);
   assert.match(scripts.integration, /&& pnpm run contract:check-full-artifacts$/);
 });

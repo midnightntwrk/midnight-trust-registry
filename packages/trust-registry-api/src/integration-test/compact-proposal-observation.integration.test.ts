@@ -2,15 +2,15 @@ import { Buffer } from "node:buffer";
 import { encodeContractAddress } from "@midnight-ntwrk/compact-runtime";
 
 import { describe, expect, it } from "vitest";
-import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
+import { publishSimulatorSnapshot } from "@midnightntwrk/trust-registry-cli";
 import {
   computeCreateEvidenceVerifierKeyPayloadHash,
   computeRotateEvidenceVerifierKeyPayloadHash,
   deriveJubjubPublicKeyFromSeed,
   EvidenceVerifierKeyStatus,
   signDeploymentBoundMaintainerActionFromSeed,
-} from "@midnight-ntwrk/trust-registry-contract";
-import { labelToBytes32 } from "@midnight-ntwrk/trust-registry-contract/testing";
+} from "@midnightntwrk/trust-registry-contract";
+import { labelToBytes32 } from "@midnightntwrk/trust-registry-contract/testing";
 
 import {
   bytes32Commitment,
@@ -20,7 +20,7 @@ import {
   createRecognitionScenarioFixture,
   createVerifierScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 
 import {
   resolveCompactProposalEvidenceSnapshot,

@@ -4,10 +4,10 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { encodeCompactActionKind } from "@midnight-ntwrk/trust-registry-contract";
-import { WorkspaceMutationLockedError } from "@midnight-ntwrk/trust-registry-cli";
+import { encodeCompactActionKind } from "@midnightntwrk/trust-registry-contract";
+import { WorkspaceMutationLockedError } from "@midnightntwrk/trust-registry-cli";
 import { createMaintainerScenarioFixture, LocalTrustRegistryIntegrationHarness,
-  type FinalizedRegistryLedgerView } from "@midnight-ntwrk/trust-registry-integration";
+  type FinalizedRegistryLedgerView } from "@midnightntwrk/trust-registry-integration";
 import { describe, expect, it } from "vitest";
 
 import { assessProposalRecoveryCandidate } from "../proposal-recovery-candidate.js";

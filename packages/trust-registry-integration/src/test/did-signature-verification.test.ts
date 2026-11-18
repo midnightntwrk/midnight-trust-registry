@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 
 import { signJubjubDigestFromSeed, type JubjubDigest } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
-import { deriveJubjubPublicKey, deriveJubjubPublicKeyFromSeed, encodeJubjubSignature, JUBJUB_ORDER } from "@midnight-ntwrk/trust-registry-contract";
+import { deriveJubjubPublicKey, deriveJubjubPublicKeyFromSeed, encodeJubjubSignature, JUBJUB_ORDER } from "@midnightntwrk/trust-registry-contract";
 import { describe, expect, it } from "vitest";
 
 import { verifyDidJubjubSignature } from "../did-signature-verification.js";

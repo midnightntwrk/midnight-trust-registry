@@ -4,13 +4,13 @@ import type { JubjubPoint } from "@midnight-ntwrk/compact-runtime";
 import {
   MaintainerStatus,
   type Ledger,
-} from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+} from "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import {
   bytes32Commitment,
   bytes32Hex,
   type EpochAnchorVerificationContext,
   type SequenceToTimestamp,
-} from "@midnight-ntwrk/trust-registry-client";
+} from "@midnightntwrk/trust-registry-client";
 
 const POLICY_VERSION = /^v([1-9]\d*)$/u;
 const same = (left: Uint8Array, right: Uint8Array): boolean => Buffer.from(left).equals(Buffer.from(right));

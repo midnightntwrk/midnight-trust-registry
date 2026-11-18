@@ -6,7 +6,7 @@ import {
 } from "@midnight-ntwrk/credential-compact";
 import { resolveMidnightDIDMethodBinding } from "@midnight-ntwrk/credential-did-midnight";
 import { parseMidnightDIDString, type MidnightDIDResolverInterface } from "@midnight-ntwrk/midnight-did";
-import { sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
+import { sha256Hex } from "@midnightntwrk/trust-registry-domain";
 
 export type MidnightVcVpProofMaterial = {
   issuerDid: string;

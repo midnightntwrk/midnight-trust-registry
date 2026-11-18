@@ -7,8 +7,8 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 const readerMocks = vi.hoisted(() => ({ createReader: vi.fn() }));
-vi.mock("@midnight-ntwrk/trust-registry-integration", async (importOriginal) => ({
-  ...await importOriginal<typeof import("@midnight-ntwrk/trust-registry-integration")>(),
+vi.mock("@midnightntwrk/trust-registry-integration", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@midnightntwrk/trust-registry-integration")>(),
   createLocalNetworkDeploymentActionReader: readerMocks.createReader,
 }));
 

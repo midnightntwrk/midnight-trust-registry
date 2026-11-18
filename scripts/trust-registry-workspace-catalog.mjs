@@ -15,7 +15,7 @@ export const workspaceCatalog = [
     publishPackage: true,
     compactManagedDirectory: "trust-registry",
     manifest: {
-      name: "@midnight-ntwrk/trust-registry-contract",
+      name: "@midnightntwrk/trust-registry-contract",
       files: [
         "dist/**",
         "src/**/*.compact",
@@ -43,11 +43,11 @@ export const workspaceCatalog = [
         "dist/managed/trust-registry/contract/index.js",
       ],
       smokeImports: [
-        "@midnight-ntwrk/trust-registry-contract",
-        "@midnight-ntwrk/trust-registry-contract/contract",
-        "@midnight-ntwrk/trust-registry-contract/signing",
-        "@midnight-ntwrk/trust-registry-contract/testing",
-        "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js",
+        "@midnightntwrk/trust-registry-contract",
+        "@midnightntwrk/trust-registry-contract/contract",
+        "@midnightntwrk/trust-registry-contract/signing",
+        "@midnightntwrk/trust-registry-contract/testing",
+        "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js",
       ],
     },
   },
@@ -56,11 +56,11 @@ export const workspaceCatalog = [
     artifactPackage: true,
     publishPackage: true,
     manifest: {
-      name: "@midnight-ntwrk/trust-registry-domain",
+      name: "@midnightntwrk/trust-registry-domain",
       files: ["dist/**", "README.md"],
       exports: [".", "./browser"],
       requiredPackedPaths: ["README.md", "package.json", "dist/index.js", "dist/browser.js"],
-      smokeImports: ["@midnight-ntwrk/trust-registry-domain", "@midnight-ntwrk/trust-registry-domain/browser"],
+      smokeImports: ["@midnightntwrk/trust-registry-domain", "@midnightntwrk/trust-registry-domain/browser"],
     },
   },
   {
@@ -68,11 +68,11 @@ export const workspaceCatalog = [
     artifactPackage: true,
     publishPackage: true,
     manifest: {
-      name: "@midnight-ntwrk/trust-registry-client",
+      name: "@midnightntwrk/trust-registry-client",
       files: ["dist/**", "README.md"],
       exports: [".", "./simulator", "./browser-authentication"],
       requiredPackedPaths: ["README.md", "package.json", "dist/index.js", "dist/simulator-client.js", "dist/browser-authentication.js"],
-      smokeImports: ["@midnight-ntwrk/trust-registry-client", "@midnight-ntwrk/trust-registry-client/simulator", "@midnight-ntwrk/trust-registry-client/browser-authentication"],
+      smokeImports: ["@midnightntwrk/trust-registry-client", "@midnightntwrk/trust-registry-client/simulator", "@midnightntwrk/trust-registry-client/browser-authentication"],
     },
   },
   {
@@ -80,7 +80,7 @@ export const workspaceCatalog = [
     artifactPackage: true,
     publishPackage: false,
     manifest: {
-      name: "@midnight-ntwrk/trust-registry-integration",
+      name: "@midnightntwrk/trust-registry-integration",
       files: ["dist/**", "src/compact/vc-authority-consumer.compact", "README.md"],
       exports: [".", "./local-pinned-submission-provider", "./reviewer-signature-status",
         "./reviewer-signature-verifier",
@@ -92,10 +92,10 @@ export const workspaceCatalog = [
         "src/compact/vc-authority-consumer.compact",
       ],
       smokeImports: [
-        "@midnight-ntwrk/trust-registry-integration",
-        "@midnight-ntwrk/trust-registry-integration/local-pinned-submission-provider",
-        "@midnight-ntwrk/trust-registry-integration/reviewer-signature-status",
-        "@midnight-ntwrk/trust-registry-integration/reviewer-signature-verifier",
+        "@midnightntwrk/trust-registry-integration",
+        "@midnightntwrk/trust-registry-integration/local-pinned-submission-provider",
+        "@midnightntwrk/trust-registry-integration/reviewer-signature-status",
+        "@midnightntwrk/trust-registry-integration/reviewer-signature-verifier",
       ],
     },
   },
@@ -104,7 +104,7 @@ export const workspaceCatalog = [
     artifactPackage: true,
     publishPackage: false,
     manifest: {
-      name: "@midnight-ntwrk/trust-registry-cli",
+      name: "@midnightntwrk/trust-registry-cli",
       files: ["bin/trust-registry.mjs", "dist/**", "README.md"],
       exports: [".", "./cli"],
       bin: ["trust-registry"],
@@ -116,8 +116,8 @@ export const workspaceCatalog = [
         "dist/cli.js",
       ],
       smokeImports: [
-        "@midnight-ntwrk/trust-registry-cli",
-        "@midnight-ntwrk/trust-registry-cli/cli",
+        "@midnightntwrk/trust-registry-cli",
+        "@midnightntwrk/trust-registry-cli/cli",
       ],
     },
   },
@@ -126,11 +126,11 @@ export const workspaceCatalog = [
     artifactPackage: true,
     publishPackage: true,
     manifest: {
-      name: "@midnight-ntwrk/trust-registry-trqp-adapter",
+      name: "@midnightntwrk/trust-registry-trqp-adapter",
       files: ["dist/**", "README.md"],
       exports: ["."],
       requiredPackedPaths: ["README.md", "package.json", "dist/index.js"],
-      smokeImports: ["@midnight-ntwrk/trust-registry-trqp-adapter"],
+      smokeImports: ["@midnightntwrk/trust-registry-trqp-adapter"],
     },
   },
   {
@@ -138,7 +138,7 @@ export const workspaceCatalog = [
     artifactPackage: true,
     publishPackage: false,
     manifest: {
-      name: "@midnight-ntwrk/trust-registry-api",
+      name: "@midnightntwrk/trust-registry-api",
       files: ["bin/trust-registry-api.mjs", "dist/**", "README.md"],
       exports: [".", "./cli", "./server", "./browser-schemas"],
       bin: ["trust-registry-api"],
@@ -152,10 +152,10 @@ export const workspaceCatalog = [
         "dist/browser-schemas.js",
       ],
       smokeImports: [
-        "@midnight-ntwrk/trust-registry-api",
-        "@midnight-ntwrk/trust-registry-api/cli",
-        "@midnight-ntwrk/trust-registry-api/server",
-        "@midnight-ntwrk/trust-registry-api/browser-schemas",
+        "@midnightntwrk/trust-registry-api",
+        "@midnightntwrk/trust-registry-api/cli",
+        "@midnightntwrk/trust-registry-api/server",
+        "@midnightntwrk/trust-registry-api/browser-schemas",
       ],
     },
   },
@@ -164,11 +164,11 @@ export const workspaceCatalog = [
     artifactPackage: true,
     publishPackage: true,
     manifest: {
-      name: "@midnight-ntwrk/trust-registry-openid-federation-adapter",
+      name: "@midnightntwrk/trust-registry-openid-federation-adapter",
       files: ["dist/**", "README.md"],
       exports: ["."],
       requiredPackedPaths: ["README.md", "package.json", "dist/index.js"],
-      smokeImports: ["@midnight-ntwrk/trust-registry-openid-federation-adapter"],
+      smokeImports: ["@midnightntwrk/trust-registry-openid-federation-adapter"],
     },
   },
   {
@@ -176,11 +176,11 @@ export const workspaceCatalog = [
     artifactPackage: true,
     publishPackage: false,
     manifest: {
-      name: "@midnight-ntwrk/trust-registry-admin-console",
+      name: "@midnightntwrk/trust-registry-admin-console",
       files: ["dist/**", "README.md"],
       exports: ["./api"],
       requiredPackedPaths: ["README.md", "package.json", "dist/api.js", "dist/api.d.ts"],
-      smokeImports: ["@midnight-ntwrk/trust-registry-admin-console/api"],
+      smokeImports: ["@midnightntwrk/trust-registry-admin-console/api"],
     },
   },
   {
@@ -188,11 +188,11 @@ export const workspaceCatalog = [
     artifactPackage: true,
     publishPackage: false,
     manifest: {
-      name: "@midnight-ntwrk/trust-registry-applicant-portal",
+      name: "@midnightntwrk/trust-registry-applicant-portal",
       files: ["dist/**", "README.md"],
       exports: ["./api"],
       requiredPackedPaths: ["README.md", "package.json", "dist/api.js", "dist/api.d.ts"],
-      smokeImports: ["@midnight-ntwrk/trust-registry-applicant-portal/api"],
+      smokeImports: ["@midnightntwrk/trust-registry-applicant-portal/api"],
     },
   },
   {

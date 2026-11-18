@@ -61,7 +61,7 @@ node packages/trust-registry-api/bin/trust-registry-api.mjs serve \
   --unsafe-demo-mutations \
   --port 4400
 
-pnpm --filter @midnight-ntwrk/trust-registry-admin-console run serve -- --port 4173
+pnpm --filter @midnightntwrk/trust-registry-admin-console run serve -- --port 4173
 ```
 
 Open:

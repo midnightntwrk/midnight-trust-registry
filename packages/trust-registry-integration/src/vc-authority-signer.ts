@@ -4,12 +4,12 @@ import { pureCircuits } from "@midnight-ntwrk/credential-compact";
 import type { MidnightDIDMethodBinding } from "@midnight-ntwrk/credential-did-midnight";
 import { parseMidnightDIDDocument } from "@midnight-ntwrk/midnight-did";
 import { encodeJubjubJwkCoordinate } from "@midnight-ntwrk/midnight-did-domain";
-import type { DidStateObservation, TrustedDecisionEvidenceReaders } from "@midnight-ntwrk/trust-registry-client";
+import type { DidStateObservation, TrustedDecisionEvidenceReaders } from "@midnightntwrk/trust-registry-client";
 import {
   VcAuthorityKeyStatus,
   type VcAuthorityKeyRecord,
-} from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
-import type { DecisionEvidenceSelection } from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+import type { DecisionEvidenceSelection } from "@midnightntwrk/trust-registry-domain";
 
 import { createInactiveVcSignerCandidateFromTrustedDecision, createVcSignerCandidateFromTrustedDecision } from "./vc-signer-candidate.js";
 import {
