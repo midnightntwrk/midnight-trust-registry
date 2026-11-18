@@ -113,6 +113,37 @@ verifier catalog. It can take several minutes for all circuits. The output
 reports `keylessVerification: "streamed-keygen"` instead of `"full-output"`;
 neither mode qualifies a Linux release bundle or live actor journey.
 
+To **build** a keyless candidate on a clean Linux host without ever retaining
+all prover keys, use an isolated checkout and run the pinned Compact 0.36.0
+`compact:light` target there. Never run it in an artifact-bearing checkout:
+
+```sh
+pnpm --filter @midnightntwrk/trust-registry-contract run compact:light
+node scripts/keyless-zkir-bundle.mjs create-streaming \
+  contracts/trust-registry/src/managed/trust-registry \
+  "$NEW_KEYLESS_DIR" "$SIGNED_SOURCE_SHA" \
+  "$ZKIR_BIN" "$TRUSTED_ZKIR_BIN_SHA256"
+```
+
+The output directory must not exist. The builder checks the exact generated
+asset catalog, snapshots the digest-pinned generator, compiles one circuit at
+a time, and discards each generated key pair after recording its hashes. It
+rejects a source that retains proving keys or produces incomplete binary
+ZKIR. Record the returned manifest digest independently; the candidate is
+not a signed release artifact merely because the command succeeded. Compare
+its complete key inventory with the finalized deployment and an independently
+reviewed source/install inventory before claiming portability. A Darwin run
+does not substitute for a Linux run.
+
+The existing Quality workflow also has an opt-in `keyless_linux` manual input
+for the selected branch. It runs this builder on Ubuntu at `github.sha` and
+uploads the keyless directory plus its manifest digest for seven days. The
+ordinary PR checks do not run this additional 66-circuit job. Download the
+artifact by its exact workflow run, authenticate that run and source SHA, then
+compare its manifest assets and key hashes with the retained source-bound
+candidate and finalized verifier catalog. The workflow artifact is a
+development candidate, not an approved installation or signed release.
+
 ## Try the UI separately
 
 The [guided demo](quickstart.md#first-time-role-demo) serves a browser at

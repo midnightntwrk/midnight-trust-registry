@@ -47,6 +47,7 @@ async function directory(path) {
 
 /** @param {string} root @param {string} [prefix] @returns {Promise<string[]>} */
 async function filesBelow(root, prefix = "") {
+  await directory(join(root, prefix));
   /** @type {string[]} */
   const names = [];
   for (const entry of await readdir(join(root, prefix), { withFileTypes: true })) {
@@ -146,6 +147,90 @@ export async function createKeylessZkirBundle(fullManaged, target, revision, key
   });
   return { manifestSha256: createHash("sha256").update(manifestBytes).digest("hex"),
     circuitCount: names.length, sourceRevision: revision };
+}
+
+/** Build a keyless bundle from a clean --skip-zk compile without retaining proof keys.
+ * @param {string} lightManaged @param {string} target @param {string} revision
+ * @param {string} keygen @param {string} expectedKeygenSha256 */
+export async function createKeylessZkirBundleStreaming(lightManaged, target, revision, keygen,
+  expectedKeygenSha256) {
+  if (!REVISION.test(revision)) throw new Error("Source revision must be a full lowercase commit SHA");
+  if (!SHA256.test(expectedKeygenSha256)) throw new Error("Trusted key generator SHA-256 is required");
+  const source = await directory(resolve(lightManaged));
+  const info = JSON.parse(await readFile(await regularFile(join(source, BASE_ASSETS[0])), "utf8"));
+  const names = circuitNames(info);
+  if (names.length === 0) throw new Error("No proof circuits in Compact metadata");
+  const zkirNames = names.map((name) => `${name}.zkir`);
+  await directory(join(source, "zkir"));
+  const presentZkir = await filesBelow(join(source, "zkir"));
+  const hasBinaryZkir = presentZkir.includes(`${names[0]}.bzkir`);
+  exactNames(presentZkir, hasBinaryZkir
+    ? names.flatMap((name) => [`${name}.zkir`, `${name}.bzkir`]) : zkirNames, "ZKIR assets");
+  exactNames(await filesBelow(join(source, "compiler")), ["contract-info.json", "contract-manifest.json"],
+    "Compiler assets");
+  exactNames(await filesBelow(join(source, "contract")), BASE_ASSETS.filter((name) =>
+    name.startsWith("contract/")).map((name) => name.slice("contract/".length)), "Contract assets");
+  try {
+    await directory(join(source, "keys"));
+    if ((await filesBelow(join(source, "keys"))).length !== 0) {
+      throw new Error("Streaming source must not contain retained proving keys");
+    }
+  } catch (error) {
+    if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") throw error;
+  }
+  const generatorRoot = await mkdtemp(join(tmpdir(), "tr-zkir-create-"));
+  try {
+    const generator = join(generatorRoot, "zkir-v3");
+    await copyFile(await regularFile(resolve(keygen)), generator);
+    if (await hashFile(generator) !== expectedKeygenSha256) {
+      throw new Error("Key generator differs from the trusted binary digest");
+    }
+    return await stagedDirectory(target, async (stage) => {
+      await copyAssets(source, stage, [...BASE_ASSETS, ...zkirNames.map((name) => `zkir/${name}`)]);
+      /** @type {Record<string, string>} */
+      const keyHashes = {};
+      for (const name of names) {
+        const circuit = join(generatorRoot, name);
+        await mkdir(circuit);
+        try {
+          const input = join(circuit, `${name}.zkir`);
+          await copyFile(join(stage, "zkir", `${name}.zkir`), input);
+          await runFile(generator, ["compile", input, join(circuit, `${name}.prover`),
+            join(circuit, `${name}.verifier`)], { timeout: 60 * 60_000, maxBuffer: 1024 * 1024 });
+          exactNames(await filesBelow(circuit), [`${name}.zkir`, `${name}.bzkir`,
+            `${name}.prover`, `${name}.verifier`], `Generated files for ${name}`);
+          for (const extension of ["bzkir", "prover", "verifier"]) {
+            if ((await lstat(join(circuit, `${name}.${extension}`))).size === 0) {
+              throw new Error(`Generated output is empty: ${name}.${extension}`);
+            }
+          }
+          const binary = join(circuit, `${name}.bzkir`);
+          if (hasBinaryZkir && await hashFile(binary) !== await hashFile(join(source, "zkir", `${name}.bzkir`))) {
+            throw new Error(`Generated binary ZKIR differs from source: ${name}`);
+          }
+          await copyFile(binary, join(stage, "zkir", `${name}.bzkir`));
+          keyHashes[`${name}.prover`] = await hashFile(join(circuit, `${name}.prover`));
+          keyHashes[`${name}.verifier`] = await hashFile(join(circuit, `${name}.verifier`));
+        } finally {
+          await rm(circuit, { recursive: true, force: true });
+        }
+      }
+      const assets = assetNames(names);
+      const assetHashes = Object.fromEntries(await Promise.all(assets.map(async (name) =>
+        [name, await hashFile(await regularFile(join(stage, name)))])));
+      const manifest = { format: FORMAT, sourceRevision: revision,
+        compilerVersion: info["compiler-version"], platform: `${process.platform}/${process.arch}`,
+        keygenSha256: expectedKeygenSha256, assets: assetHashes, keys: keyHashes };
+      const manifestBytes = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`);
+      await writeFile(join(stage, "keyless-manifest.json"), manifestBytes, { mode: 0o600 });
+      const manifestSha256 = createHash("sha256").update(manifestBytes).digest("hex");
+      await verifyKeylessZkirBundle(stage, manifestSha256);
+      return { manifestSha256,
+        circuitCount: names.length, sourceRevision: revision };
+    });
+  } finally {
+    await rm(generatorRoot, { recursive: true, force: true });
+  }
 }
 
 /** The caller must supply a trusted manifest digest from the release channel. */
@@ -317,6 +402,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const [command, ...args] = process.argv.slice(2);
   const result = command === "create" && args.length === 4
     ? await createKeylessZkirBundle(args[0], args[1], args[2], args[3])
+    : command === "create-streaming" && args.length === 5
+      ? await createKeylessZkirBundleStreaming(args[0], args[1], args[2], args[3], args[4])
     : command === "verify" && args.length === 2
       ? await verifyKeylessZkirBundle(args[0], args[1]).then(({ manifest, names }) =>
         ({ sourceRevision: manifest.sourceRevision, circuitCount: names.length }))
@@ -326,6 +413,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
         ? await materializeKeylessZkirBundle(args[0], args[1], args[2], args[3],
           args[4] === undefined ? 1 : Number(args[4]))
         : null;
-  if (result === null) throw new Error("Usage: keyless-zkir-bundle.mjs create <full-managed> <keyless-dir> <source-sha> <zkir-bin> | verify <keyless-dir> <trusted-manifest-sha256> | verify-streaming <keyless-dir> <trusted-manifest-sha256> <zkir-bin> <trusted-zkir-bin-sha256> <source-sha> | materialize <keyless-dir> <destination> <zkir-bin> <trusted-manifest-sha256> [jobs: 1-4]");
+  if (result === null) throw new Error("Usage: keyless-zkir-bundle.mjs create <full-managed> <keyless-dir> <source-sha> <zkir-bin> | create-streaming <light-managed> <keyless-dir> <source-sha> <zkir-bin> <trusted-zkir-bin-sha256> | verify <keyless-dir> <trusted-manifest-sha256> | verify-streaming <keyless-dir> <trusted-manifest-sha256> <zkir-bin> <trusted-zkir-bin-sha256> <source-sha> | materialize <keyless-dir> <destination> <zkir-bin> <trusted-manifest-sha256> [jobs: 1-4]");
   console.log(JSON.stringify(result));
 }

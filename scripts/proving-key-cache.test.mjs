@@ -33,7 +33,12 @@ test("Quality covers every proving-key shard exactly once", () => {
   const verify = job.steps.find((step) => step.name === "Verify and complete shard proving keys");
   assert.equal(verify.run, `node scripts/proving-key-cache.mjs \${{ matrix.shard }} ${shards.length}`);
   assert.equal(job.needs, "quality");
-  assert.equal(job.if, "needs.quality.outputs.proving_required == 'true'");
+  assert.equal(job.if, "needs.quality.outputs.proving_required == 'true' && !inputs.keyless_linux");
+  const keyless = workflow.jobs["keyless-linux"];
+  assert.equal(keyless.needs, "quality");
+  assert.equal(keyless.if, "github.event_name == 'workflow_dispatch' && inputs.keyless_linux");
+  assert.match(keyless.steps.find((step) => step.name === "Create and verify keyless candidate").run,
+    /keyless-zkir-bundle\.mjs create-streaming/u);
 });
 
 test("reuses matching circuits and regenerates only changed or corrupted keys", () => {

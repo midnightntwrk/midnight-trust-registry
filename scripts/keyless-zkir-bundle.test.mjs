@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { createKeylessZkirBundle, materializeKeylessZkirBundle,
+import { createKeylessZkirBundle, createKeylessZkirBundleStreaming, materializeKeylessZkirBundle,
   verifyKeylessZkirAgainstFullSource,
   verifyKeylessZkirBundle, verifyKeylessZkirStreaming } from "./keyless-zkir-bundle.mjs";
 
@@ -54,6 +54,59 @@ test("keyless bundle excludes keys and regenerates only verified outputs", async
     "sample-zkir\n");
   assert.equal((await readFile(join(paths.restored, "keys/demoCircuit.verifier"), "utf8")),
     "sample-zkir\n");
+});
+
+test("streaming builder creates the same keyless inventory from a key-free compile", async (t) => {
+  const paths = await fixture(t);
+  await assert.rejects(createKeylessZkirBundleStreaming(paths.full, paths.keyless, revision,
+    paths.generator, sha256(await readFile(paths.generator))), /retained proving keys/u);
+  const light = join(paths.root, "light");
+  await mkdir(light);
+  for (const part of ["compiler", "contract", "zkir"]) {
+    await mkdir(join(light, part));
+  }
+  for (const name of ["compiler/contract-info.json", "compiler/contract-manifest.json",
+    "contract/index.js", "contract/index.js.map", "contract/index.d.ts", "zkir/demoCircuit.zkir"]) {
+    await writeFile(join(light, name), await readFile(join(paths.full, name)));
+  }
+  const script = "#!/bin/sh\n[ \"$1\" = compile ] || exit 2\ncp \"$2\" \"$3\"\ncp \"$2\" \"$4\"\nprintf 'sample-bzkir\\n' > \"${2%.zkir}.bzkir\"\n";
+  await writeFile(paths.generator, script);
+  await chmod(paths.generator, 0o700);
+  const result = await createKeylessZkirBundleStreaming(light, paths.keyless, revision,
+    paths.generator, sha256(script));
+  assert.equal(result.circuitCount, 1);
+  assert.equal((await readdir(paths.keyless)).includes("keys"), false);
+  await verifyKeylessZkirAgainstFullSource(paths.keyless, paths.full, result.manifestSha256, revision);
+  const streamed = await verifyKeylessZkirStreaming(paths.keyless, result.manifestSha256,
+    paths.generator, sha256(script), revision);
+  assert.equal(streamed.matched, true);
+  assert.deepEqual((await readdir(paths.root)).filter((name) => name.startsWith("keyless.partial-")), []);
+});
+
+test("streaming builder rejects wrong generator and incomplete later circuit atomically", async (t) => {
+  const paths = await fixture(t);
+  await writeFile(join(paths.full, "compiler/contract-info.json"), JSON.stringify({
+    "compiler-version": "0.31.1", circuits: [
+      { name: "demoCircuit", proof: true }, { name: "laterCircuit", proof: true },
+    ],
+  }));
+  await writeFile(join(paths.full, "zkir/laterCircuit.zkir"), "later-zkir\n");
+  await rm(join(paths.full, "keys"), { recursive: true });
+  await rm(join(paths.full, "zkir/demoCircuit.bzkir"));
+  const script = "#!/bin/sh\ncase \"$2\" in *laterCircuit*) exit 4;; esac\ncp \"$2\" \"$3\"\ncp \"$2\" \"$4\"\nprintf 'sample-bzkir\\n' > \"${2%.zkir}.bzkir\"\n";
+  await writeFile(paths.generator, script);
+  await chmod(paths.generator, 0o700);
+  await assert.rejects(createKeylessZkirBundleStreaming(paths.full, paths.keyless, revision,
+    paths.generator, "b".repeat(64)), /trusted binary digest/u);
+  await assert.rejects(createKeylessZkirBundleStreaming(paths.full, paths.keyless, revision,
+    paths.generator, sha256(script)));
+  await assert.rejects(lstat(paths.keyless), { code: "ENOENT" });
+  const emptyScript = "#!/bin/sh\n: > \"$3\"\ncp \"$2\" \"$4\"\nprintf 'sample-bzkir\\n' > \"${2%.zkir}.bzkir\"\n";
+  await writeFile(paths.generator, emptyScript);
+  await assert.rejects(createKeylessZkirBundleStreaming(paths.full, paths.keyless, revision,
+    paths.generator, sha256(emptyScript)), /Generated output is empty/u);
+  await assert.rejects(lstat(paths.keyless), { code: "ENOENT" });
+  assert.deepEqual((await readdir(paths.root)).filter((name) => name.startsWith("keyless.partial-")), []);
 });
 
 test("streaming verifier checks a pinned generator and discards per-circuit keys", async (t) => {
