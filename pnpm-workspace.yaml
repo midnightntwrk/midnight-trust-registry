@@ -10,6 +10,12 @@ blockExoticSubdeps: true
 minimumReleaseAge: 10080
 trustPolicy: no-downgrade
 
+# Temporary audit exception; mirrors osv-scanner.toml (which carries the
+# expiry date). Remove when a patched picomatch (> 4.0.7) is released.
+auditConfig:
+  ignoreGhsas:
+    - GHSA-fc5q-39xc-vjpf # picomatch ReDoS, no fix available; dev tooling only
+
 overrides:
   "@effect/platform": 0.97.1
   "@midnight-ntwrk/credential-compact": 0.2.0
