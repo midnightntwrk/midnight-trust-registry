@@ -283,6 +283,12 @@ jobs:
 
       - name: Publish packages to npm
         env:
+          # TEMPORARY - revert after the first publish. npm only accepts a
+          # Trusted Publisher for a package that already exists, and the
+          # @midnightntwrk/trust-registry-* packages are not on npmjs yet. The
+          # org token (read by setup-node's .npmrc) creates them on this one
+          # run; after that, publishing is OIDC only.
+          NODE_AUTH_TOKEN: ${{ secrets.MIDNIGHTCI_NPMJS_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
           NPM_TAG: next
           REGISTRY: https://registry.npmjs.org
