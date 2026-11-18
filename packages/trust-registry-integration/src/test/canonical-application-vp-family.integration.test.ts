@@ -136,6 +136,7 @@ describe("canonical application VP family", () => {
       subjectDid: input.expectedSubjectDid,
       scopeCommitment: binding.scopeCommitment,
     });
+    expect(verified.privateStatusWitness).toMatchObject({ nonce: input.nonce });
     const commitment = sha256Hex("canonical-application-vp-intake-evidence");
     const signature = await ports.signEvidence(commitment);
     expect(ports.verifyEvidenceSignature(commitment, signature, {
@@ -151,16 +152,33 @@ describe("canonical application VP family", () => {
 
   it("verifies published VC proofs over exact canonical bodies and host trust context", async () => {
     const { input, issuerEligibility, statusSource } = await signedSubmission();
-    await expect(verifyQualifiedApplicationVp(input)).resolves.toMatchObject({
+    const verified = await verifyQualifiedApplicationVp(input);
+    expect(verified).toMatchObject({
       subjectDid: input.expectedSubjectDid,
       nonce: input.nonce,
     });
+    expect(JSON.stringify(verified)).not.toContain("privateStatusWitness");
     expect(issuerEligibility).toHaveBeenCalledOnce();
     expect(statusSource).toHaveBeenCalledOnce();
     await expect(verifyQualifiedApplicationVp({
       ...input,
       trustContext: { ...input.trustContext, contractAddress: `0x${"f".repeat(64)}` },
     })).rejects.toMatchObject({ category: "invalid_presentation" });
+  });
+
+  it("rejects a status adapter that substitutes the signed decision commitment", async () => {
+    const { input } = await signedSubmission();
+    const assertStatusActive = input.family.assertStatusActive;
+    await expect(verifyQualifiedApplicationVp({
+      ...input,
+      family: {
+        ...input.family,
+        assertStatusActive: async (...args) => ({
+          ...await assertStatusActive(...args),
+          statusDecisionCommitment: sha256Hex("substituted-status-decision"),
+        }),
+      },
+    })).rejects.toMatchObject({ category: "ineligible" });
   });
 
   it("rejects changed credential linkage before issuer eligibility", async () => {

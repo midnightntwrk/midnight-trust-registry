@@ -99,7 +99,8 @@ export function createCanonicalApplicationVpFamilyAdapter(input: {
     binding: IssuerStatusPolicyBinding;
     nonce: string;
     evaluatedAtMs: number;
-  }) => Promise<{ validUntilMs: number; statusDecisionCommitment: string }>;
+  }) => Promise<{ validUntilMs: number; statusDecisionCommitment: string;
+    privateStatusWitness?: import("./application-status-attestation.js").PrivateApplicationStatusWitness }>;
 }): QualifiedApplicationVpFamilyAdapter<CanonicalApplicationVpSubmission> {
   const expectedSchemaId = IssuerScopeSchema.shape.schemaId.parse(input.expectedCredentialSchemaId);
   const expectedIssuerScopeCommitment = HashHexSchema.parse(input.expectedIssuerScopeCommitment);

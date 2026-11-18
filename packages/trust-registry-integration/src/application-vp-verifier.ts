@@ -18,6 +18,9 @@ import {
 } from "@midnight-ntwrk/trust-registry-domain";
 
 import { verifyMidnightVcVpProofs, type MidnightVcVpProofMaterial } from "./midnight-vc-vp-proof.js";
+import { PrivateApplicationStatusWitnessSchema,
+  verifyApplicationStatusDecisionWitness,
+  type PrivateApplicationStatusWitness } from "./application-status-attestation.js";
 
 const MAX_PRESENTATION_AGE_MS = 5 * 60_000;
 const MAX_FUTURE_CLOCK_SKEW_MS = 60_000;
@@ -38,6 +41,9 @@ export type ApplicationVpVerifierResult = {
   verifiedAt: string;
   expiresAt: string;
 };
+export type PrivateApplicationVpVerifierResult = ApplicationVpVerifierResult & {
+  privateStatusWitness?: PrivateApplicationStatusWitness;
+};
 
 /** Only trusted family code may construct proof body roots or make these eligibility assertions. */
 export type ApplicationVpFamilyAdapter<Submission> = {
@@ -50,7 +56,8 @@ export type ApplicationVpFamilyAdapter<Submission> = {
     material: ApplicationVpMaterial,
     binding: IssuerStatusPolicyBinding,
     context: { nonce: string; evaluatedAtMs: number },
-  ): Promise<{ validUntilMs: number; statusDecisionCommitment: string }>;
+  ): Promise<{ validUntilMs: number; statusDecisionCommitment: string;
+    privateStatusWitness?: PrivateApplicationStatusWitness }>;
   /** Return the scope commitment observed in verified claims, not one computed from requested scope. */
   assertRoleClaims(material: ApplicationVpMaterial): Promise<{
     claimsCommitment: string;
@@ -105,6 +112,15 @@ export function verifyQualifiedApplicationVp<Submission>(input: ApplicationVpInp
   expectedPolicyId: string;
   expectedPolicyVersion: string;
 }): Promise<ApplicationVpVerifierResult> {
+  return verifyQualifiedApplicationVpInternal(input, false);
+}
+
+function verifyQualifiedApplicationVpInternal<Submission>(input: ApplicationVpInput<Submission> & {
+  family: QualifiedApplicationVpFamilyAdapter<Submission>;
+  trustContext: QualifiedApplicationVpContext;
+  expectedPolicyId: string;
+  expectedPolicyVersion: string;
+}, retainPrivateStatusWitness: boolean): Promise<PrivateApplicationVpVerifierResult> {
   const trusted = ActorAuthenticationContextSchema.safeParse(input.trustContext);
   const policyId = ScopedIdentifierSchema.safeParse(input.expectedPolicyId);
   if (!trusted.success || !policyId.success || policyId.data !== policyId.data.toLowerCase()
@@ -114,12 +130,13 @@ export function verifyQualifiedApplicationVp<Submission>(input: ApplicationVpInp
   return verifyApplicationVpInternal(input, trusted.data, {
     policyId: policyId.data,
     policyVersion: input.expectedPolicyVersion,
-  });
+  }, retainPrivateStatusWitness);
 }
 
 async function verifyApplicationVpInternal<Submission>(input: ApplicationVpInput<Submission>,
   trustContext?: QualifiedApplicationVpContext,
-  expectedPolicy?: { policyId: string; policyVersion: string }): Promise<ApplicationVpVerifierResult> {
+  expectedPolicy?: { policyId: string; policyVersion: string },
+  retainPrivateStatusWitness = false): Promise<PrivateApplicationVpVerifierResult> {
   const scope = AuthorizationScopeSchema.safeParse(input.scope);
   if (!NONCE_PATTERN.test(input.nonce) || !validTime(input.evaluatedAtMs) || !scope.success) {
     throw new ApplicationVpVerificationError("invalid_presentation");
@@ -208,7 +225,8 @@ async function verifyApplicationVpInternal<Submission>(input: ApplicationVpInput
     throw new ApplicationVpVerificationError("invalid_presentation");
   }
 
-  let status: { validUntilMs: number; statusDecisionCommitment: string };
+  let status: { validUntilMs: number; statusDecisionCommitment: string;
+    privateStatusWitness?: PrivateApplicationStatusWitness };
   let statusDecisionCommitment: string;
   let claimsCommitment: string;
   try {
@@ -229,6 +247,20 @@ async function verifyApplicationVpInternal<Submission>(input: ApplicationVpInput
       throw new ApplicationVpVerificationError("expired");
     }
     statusDecisionCommitment = HashHexSchema.parse(status.statusDecisionCommitment).toLowerCase();
+    if (status.privateStatusWitness !== undefined) {
+      const witness = PrivateApplicationStatusWitnessSchema.parse(status.privateStatusWitness);
+      if (witness.nonce !== input.nonce) throw new ApplicationVpVerificationError("ineligible");
+      await verifyApplicationStatusDecisionWitness({
+        signed: witness.signed,
+        material,
+        binding,
+        nonce: witness.nonce,
+        expectedChallengeHash: `0x${expectedChallengeHash.toString("hex")}`,
+        expectedCommitment: statusDecisionCommitment,
+        evaluatedAtMs: input.evaluatedAtMs,
+        resolver: guardedResolver,
+      });
+    }
     const claims = await input.family.assertRoleClaims(material);
     claimsCommitment = HashHexSchema.parse(claims.claimsCommitment).toLowerCase();
     if (HashHexSchema.parse(claims.scopeCommitment).toLowerCase() !== computeAuthorizationScopeCommitment(scope.data)) {
@@ -255,6 +287,8 @@ async function verifyApplicationVpInternal<Submission>(input: ApplicationVpInput
     statusDecisionCommitment,
     verifiedAt: new Date(input.evaluatedAtMs).toISOString(),
     expiresAt: new Date(expiresAtMs).toISOString(),
+    ...(!retainPrivateStatusWitness || status.privateStatusWitness === undefined
+      ? {} : { privateStatusWitness: status.privateStatusWitness }),
   };
 }
 
@@ -295,7 +329,7 @@ export function createQualifiedApplicationVpIntakeVerifier<Submission>(config: {
   nonce: string;
   binding: ApplicationChallengeBinding;
   evaluatedAt: string;
-}) => Promise<ApplicationVpVerifierResult> {
+}) => Promise<PrivateApplicationVpVerifierResult> {
   const trusted = ActorAuthenticationContextSchema.parse(config.trustContext);
   return async (presentation, context) => {
     let binding: ApplicationChallengeBinding;
@@ -306,7 +340,7 @@ export function createQualifiedApplicationVpIntakeVerifier<Submission>(config: {
     } catch {
       throw new ApplicationVpVerificationError("invalid_presentation");
     }
-    return verifyQualifiedApplicationVp({
+    return verifyQualifiedApplicationVpInternal({
       resolver: config.resolver,
       family: config.family,
       trustContext: trusted,
@@ -317,7 +351,7 @@ export function createQualifiedApplicationVpIntakeVerifier<Submission>(config: {
       expectedSubjectDid: binding.subjectDid,
       scope: binding.scope,
       evaluatedAtMs: Date.parse(context.evaluatedAt),
-    });
+    }, true);
   };
 }
 

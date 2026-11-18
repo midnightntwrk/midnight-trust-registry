@@ -50,9 +50,11 @@ the status signature or decision commitment. The private
 and is never included in public admission reads. The HTTP intake forwards this
 record only when its trusted `verifyPresentation` callback supplies it, after
 checking the consumed challenge; it never returns the record over HTTP. The
-packaged qualified VP verifier does not construct the record automatically. A
-live host must capture it from verified VP material and a signed status decision
-or require a new applicant presentation, then verify it
+qualified VP verifier carries the record when its status adapter uses
+`createAttestedApplicationStatusSource` after DID-signature and governed-binding
+verification. The host must still provide an authenticated status endpoint,
+qualified issuer eligibility and private persistence, or require a new
+applicant presentation, then verify it
 against the accepted evidence and current governed status-policy binding.
 Do not infer current status from the old `statusDecisionCommitment`, persist raw
 VP claims in the public application record, or return a fabricated

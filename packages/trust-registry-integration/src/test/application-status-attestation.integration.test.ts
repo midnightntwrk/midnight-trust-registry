@@ -96,6 +96,7 @@ describe("DID-signed application status attestation", () => {
     await expect(source(request)).resolves.toMatchObject({
       validUntilMs: VP_FIXTURE_TIME_MS + 5 * 60_000,
       statusDecisionCommitment: applicationStatusDecisionCommitment(signed, didStateVersionId!, request.binding),
+      privateStatusWitness: { nonce: request.nonce, signed },
     });
   });
 

@@ -145,7 +145,8 @@ export function createAttestedApplicationStatusSource(input: {
   binding: IssuerStatusPolicyBinding;
   nonce: string;
   evaluatedAtMs: number;
-}) => Promise<{ validUntilMs: number; statusDecisionCommitment: string }> {
+}) => Promise<{ validUntilMs: number; statusDecisionCommitment: string;
+  privateStatusWitness: PrivateApplicationStatusWitness }> {
   return async ({ material, binding, nonce, evaluatedAtMs }) => {
     if (!/^0x[0-9a-f]{64}$/u.test(nonce) || !Number.isSafeInteger(evaluatedAtMs) || evaluatedAtMs < 0) {
       throw new Error("Application status context is invalid");
@@ -217,6 +218,7 @@ export function createAttestedApplicationStatusSource(input: {
     return {
       validUntilMs: expiresAtMs,
       statusDecisionCommitment: applicationStatusDecisionCommitment(signed, didStateVersionId, governedBinding),
+      privateStatusWitness: capturePrivateApplicationStatusWitness({ material, nonce, signed }),
     };
   };
 }
