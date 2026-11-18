@@ -1037,6 +1037,28 @@ and inclusion root are prerequisites for claiming a deployed actor E2E result.
 
 ## Execution order
 
+On 2026-11-18, the Ledger 9 migration was reconciled locally with
+`origin/develop` at `3bcf4ee1` in signed merge commit `5da0f8ee`. The
+`@midnightntwrk/trust-registry-*` package-scope rename and upstream publishing
+workflow were retained. A frozen install, workspace manifest gate, source
+lint, light build, light tests, light typecheck, and security-script typecheck
+passed in a separate disposable worktree. The read-only shared-stack attach
+observed node `2.1.101-86774edf`, indexer API v4, proof server `9.0.2`,
+matching genesis, and matching indexed/finalized head at height 14070. No
+shared-stack lifecycle operation or transaction was performed. This local
+merge has not been pushed or reviewed in CI.
+
+The artifact-bearing checkout's independent read-only query at indexed
+height 14098 still found all 66 verifier keys matching its pinned manifest,
+two active issuers, one active verifier, one active auditor, one active
+recognition, and one published epoch. The selected fixture issuer's lifecycle
+event root does not match that epoch's event root. The manifest identifies
+source revision `e51c6de`; the current merge has the same Compact source but
+changed TypeScript signing helper code. Therefore this is evidence about the
+existing development deployment and its original manifest, not an exact-head
+deployment of the reconciled branch or a qualified DID/VP actor journey. The
+guided UI on ports 4273 and 4500 remains a separate file-backed fixture demo.
+
 On 2026-11-18, the non-destructive `pnpm run integration:prebuilt` lane passed
 at signed/DCO code head `9655de46`: 66 full proof circuits were present before
 and after the run; installed VC Compact composition passed; integration, API,
