@@ -1,0 +1,8 @@
+# Temporary, dated exceptions for the osv-scanner step of the shared scan
+# action (midnightntwrk/upload-sarif-github-action). Each entry lapses on its
+# ignoreUntil date; remove it as soon as a patched release is available.
+
+[[IgnoredVulns]]
+id = "GHSA-fc5q-39xc-vjpf" # CVE-2026-112366, picomatch ReDoS, all versions <= 4.0.7
+ignoreUntil = 2026-12-18
+reason = "No patched picomatch release exists (4.0.7 is latest). Reached only via dev/build tooling (vitest, tinyglobby) on developer-controlled glob patterns; not in published package runtime. Re-check and pin the fix when released."
