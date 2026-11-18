@@ -1064,6 +1064,12 @@ runtime gate passed 22 tests for six DID/VC packages at Compact runtime
 recompiled only the disposable sync worktree, not the artifact-bearing
 checkout. It did not start Docker, submit a transaction, authenticate a live
 VC status authority, or qualify deployed DID/VP actors.
+The ten `@midnightntwrk/trust-registry-*` light packages passed the content
+policy, packed successfully, and installed into a clean consumer; the packed
+Ledger 9 VC fixture and package import smoke passed. The temporary tarballs
+were removed afterward. This proves package portability for the light
+fixture cohort, not a source-matched full-proof release bundle or npm
+publication.
 
 The artifact-bearing checkout's independent read-only query at indexed
 height 14098 still found all 66 verifier keys matching its pinned manifest,
