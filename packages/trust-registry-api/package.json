@@ -1,6 +1,6 @@
 {
   "name": "@midnightntwrk/trust-registry-api",
-  "version": "0.1.0",
+  "version": "0.1.0-rc3",
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
@@ -58,12 +58,12 @@
     "@midnight-ntwrk/midnight-did": "1.0.0-rc1",
     "@midnight-ntwrk/midnight-did-domain": "1.0.0-rc1",
     "@midnight-ntwrk/midnight-did-jubjub-schnorr": "1.0.0-rc1",
-    "@midnightntwrk/trust-registry-cli": "workspace:0.1.0",
-    "@midnightntwrk/trust-registry-client": "workspace:0.1.0",
-    "@midnightntwrk/trust-registry-contract": "workspace:0.1.0",
-    "@midnightntwrk/trust-registry-domain": "workspace:0.1.0",
-    "@midnightntwrk/trust-registry-integration": "workspace:0.1.0",
-    "@midnightntwrk/trust-registry-trqp-adapter": "workspace:0.1.0",
+    "@midnightntwrk/trust-registry-cli": "workspace:0.1.0-rc3",
+    "@midnightntwrk/trust-registry-client": "workspace:0.1.0-rc3",
+    "@midnightntwrk/trust-registry-contract": "workspace:0.1.0-rc3",
+    "@midnightntwrk/trust-registry-domain": "workspace:0.1.0-rc3",
+    "@midnightntwrk/trust-registry-integration": "workspace:0.1.0-rc3",
+    "@midnightntwrk/trust-registry-trqp-adapter": "workspace:0.1.0-rc3",
     "zod": "^4.6.6"
   },
   "devDependencies": {
