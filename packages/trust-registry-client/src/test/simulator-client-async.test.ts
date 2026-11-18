@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { TrustRegistrySimulator } from "@midnight-ntwrk/trust-registry-contract/testing";
+import type { TrustRegistrySimulator } from "@midnightntwrk/trust-registry-contract/testing";
 
 import { TrustRegistrySimulatorClient } from "../simulator-client.js";
 

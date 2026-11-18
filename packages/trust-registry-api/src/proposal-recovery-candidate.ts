@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 
-import { encodeCompactActionKind } from "@midnight-ntwrk/trust-registry-contract";
-import { getLocalNetworkProfile, type FinalizedRegistryLedgerView } from "@midnight-ntwrk/trust-registry-integration";
+import { encodeCompactActionKind } from "@midnightntwrk/trust-registry-contract";
+import { getLocalNetworkProfile, type FinalizedRegistryLedgerView } from "@midnightntwrk/trust-registry-integration";
 import { resolveCompactProposalObservation } from "./compact-proposal-observation.js";
 import { proposalAttemptDigest, type ProposalSubmissionAttempt } from "./proposal-submission-journal.js";
 

@@ -3,7 +3,7 @@ import { createHash, createPublicKey, randomBytes, verify as verifySignature } f
 
 import { parseMidnightDIDString, resolveLongFormOffchainMidnightDID } from "@midnight-ntwrk/midnight-did";
 import { verifyJubjubPayload } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
-import { decodeCanonicalJubjubSignatureHex, isPrimeOrderJubjubPoint } from "@midnight-ntwrk/trust-registry-contract";
+import { decodeCanonicalJubjubSignatureHex, isPrimeOrderJubjubPoint } from "@midnightntwrk/trust-registry-contract";
 import {
   ActorAuthenticationChallengeSchema,
   ActorAuthenticationContextSchema,
@@ -13,7 +13,7 @@ import {
   type ActorAuthenticationChallenge,
   type ActorAuthenticationContext,
   type ActorAuthenticationPurpose,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import { resolvedMidnightDidSigningKey, type MidnightAuthenticationResolver } from "./did-authentication-key.js";
 
 type MidnightResolver = MidnightAuthenticationResolver;

@@ -4,11 +4,11 @@ import {
   requestGovernedResourceId,
   type AuthorizationScope,
   type TrustRegistryEvidenceBundle,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import {
   AuthorizationStatus,
   type AuditorAuthorizationRecord,
-} from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+} from "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 
 import { verifyAuditorAuthorizationBundle, type BundleVerificationOptions } from "./evidence.js";
 import { bytes32Commitment, hashHexToBytes32, sameBytes32 } from "./utils.js";

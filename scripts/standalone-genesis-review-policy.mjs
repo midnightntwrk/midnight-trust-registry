@@ -1,4 +1,4 @@
-import { getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
+import { getLocalNetworkProfile } from "@midnightntwrk/trust-registry-integration";
 
 import { STANDALONE_IMAGE_REFERENCE } from "./standalone-image-reference.mjs";
 import { exactRecordFields as exactFields } from "./standalone-exact-fields-policy.mjs";

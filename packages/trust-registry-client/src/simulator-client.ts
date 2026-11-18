@@ -1,8 +1,8 @@
 import type { JubjubPoint } from "@midnight-ntwrk/compact-runtime";
 import {
   type IssuerResourceType,
-} from "@midnight-ntwrk/trust-registry-contract";
-import { TrustRegistrySimulator } from "@midnight-ntwrk/trust-registry-contract/testing";
+} from "@midnightntwrk/trust-registry-contract";
+import { TrustRegistrySimulator } from "@midnightntwrk/trust-registry-contract/testing";
 import type {
   AuditorAuthorizationRecord,
   EpochCommitmentRecord,
@@ -11,11 +11,11 @@ import type {
   MaintainerRecord,
   RecognitionRecord,
   VerifierAuthorizationRecord,
-} from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+} from "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import {
   TrustRegistryEvidenceBundleSchema,
   type TrustRegistryEvidenceBundle,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import {
   verifyAuditorAuthorizationBundle,
@@ -25,7 +25,7 @@ import {
   type BundleVerificationOptions,
 } from "./evidence.js";
 import { verifyAuditorRequestMandate, type AuditorMandate, type AuditorMandateOptions } from "./auditor-mandate.js";
-import type { AuthorizationScope } from "@midnight-ntwrk/trust-registry-domain";
+import type { AuthorizationScope } from "@midnightntwrk/trust-registry-domain";
 import { bytes32Commitment, bytes32Hex, defaultSequenceToTimestamp, hashHexToBytes32, sameBytes32 } from "./utils.js";
 
 type SimulatorBundleVerificationOptions = Omit<

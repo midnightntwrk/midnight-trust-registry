@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { DecisionEvidence } from "@midnight-ntwrk/trust-registry-domain";
+import type { DecisionEvidence } from "@midnightntwrk/trust-registry-domain";
 
 import { assertDecisionEvidenceDidMethodMatchesObservation } from "../did-observation.js";
 

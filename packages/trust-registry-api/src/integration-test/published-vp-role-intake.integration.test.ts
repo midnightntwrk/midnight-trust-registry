@@ -5,17 +5,17 @@ import { describe, expect, it, vi } from "vitest";
 import {
   deriveJubjubPublicKeyFromSeed,
   signDeploymentBoundMaintainerActionFromSeed,
-} from "@midnight-ntwrk/trust-registry-contract";
-import { AuthorizationStatus } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
-import type { MaintainerCoAuthorizer } from "@midnight-ntwrk/trust-registry-contract/testing";
-import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client/simulator";
+} from "@midnightntwrk/trust-registry-contract";
+import { AuthorizationStatus } from "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+import type { MaintainerCoAuthorizer } from "@midnightntwrk/trust-registry-contract/testing";
+import { TrustRegistrySimulatorClient } from "@midnightntwrk/trust-registry-client/simulator";
 import {
   ApplicationChallengeBindingSchema,
   computeAuthorizationScopeCommitment,
   createScopedIdentifier,
   sha256Hex,
   type ApplicationEvidenceSubmission,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import {
   createQualifiedApplicationVpIntakePorts,
   createApplicationVpScenarioFixture,
@@ -30,7 +30,7 @@ import {
   type MaintainerScenarioFixture,
   VP_FIXTURE_TIME_MS,
   VP_FIXTURE_TRUST_CONTEXT,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 
 import { ApplicationChallengeService, InMemoryApplicationChallengeStore } from "../application-challenges.js";
 import { consumeChallengeAndSubmitApplication } from "../application-intake.js";

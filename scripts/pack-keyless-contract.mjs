@@ -17,7 +17,7 @@ import { materializeKeylessZkirBundle, verifyKeylessZkirBundle } from "./keyless
 const runFile = promisify(execFile);
 const KEY_PREFIX = "dist/managed/trust-registry/keys/";
 const MANAGED_PREFIX = "dist/managed/trust-registry/";
-const CONTRACT_NAME = "@midnight-ntwrk/trust-registry-contract";
+const CONTRACT_NAME = "@midnightntwrk/trust-registry-contract";
 const SHA256 = /^[0-9a-f]{64}$/u;
 const repoLicense = resolve(dirname(fileURLToPath(import.meta.url)), "../LICENSE");
 

@@ -10,7 +10,7 @@ import {
   IssuerStatusPolicyBindingSchema,
   sha256Hex,
   type IssuerStatusPolicyBinding,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import { z } from "zod";
 
 import type { ApplicationVpMaterial } from "./application-vp-verifier.js";

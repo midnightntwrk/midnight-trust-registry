@@ -5,7 +5,7 @@ import {
   compareRfc3339Instants,
   type ApplicationEvidenceSubmission,
   type IssuerStatusPolicyBinding,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import {
   createAttestedApplicationStatusSource,

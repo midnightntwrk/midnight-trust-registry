@@ -15,11 +15,11 @@ import {
   type ApplicationEvidenceSignatureVerifier,
   type ApplicationEvidenceSubmission,
   type AuthorizedEvidenceVerifier,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import {
   PrivateApplicationStatusWitnessSchema,
   type PrivateApplicationStatusWitness,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 
 import { ApplicationChallengeService, hasMatchingApplicationChallengeHash } from "./application-challenges.js";
 

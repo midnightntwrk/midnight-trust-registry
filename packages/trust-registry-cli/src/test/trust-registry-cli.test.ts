@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
-import { TrustRegistryEvidenceBundleSchema } from "@midnight-ntwrk/trust-registry-domain";
+import { TrustRegistryEvidenceBundleSchema } from "@midnightntwrk/trust-registry-domain";
 
 import { runCli } from "../cli.js";
 import { createDemoSnapshot } from "../demo-snapshot.js";

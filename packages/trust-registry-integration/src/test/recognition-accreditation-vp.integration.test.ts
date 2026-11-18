@@ -1,12 +1,12 @@
 import { Buffer } from "node:buffer";
 
 import { signJubjubDigestFromSeed } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
-import { encodeJubjubSignature } from "@midnight-ntwrk/trust-registry-contract";
+import { encodeJubjubSignature } from "@midnightntwrk/trust-registry-contract";
 import {
   recognitionAccreditationClaimsCommitment,
   sha256Hex,
   type RecognitionAuthorityAssertion,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import { describe, expect, it, vi } from "vitest";
 
 import {

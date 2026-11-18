@@ -4,12 +4,12 @@ import {
   verifyDecisionEvidenceWithTrustedReaders,
   type DecisionEvidenceCandidate,
   type TrustedDecisionEvidenceReaders,
-} from "@midnight-ntwrk/trust-registry-client";
+} from "@midnightntwrk/trust-registry-client";
 import {
   DecisionEvidenceSchema,
   computeAuthorizationStatementLeafHash,
   type DecisionEvidenceSelection,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import { verifyEntityStatement } from "./statements.js";
 

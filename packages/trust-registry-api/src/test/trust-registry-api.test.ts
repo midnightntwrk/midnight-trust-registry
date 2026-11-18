@@ -17,14 +17,14 @@ import {
   type TrustRegistryAuthorizationSnapshotEntry,
   type TrustRegistryRecognitionSnapshotEntry,
   type TrustRegistryOperatorWorkspace,
-} from "@midnight-ntwrk/trust-registry-cli";
-import { requestGovernedResourceId } from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-cli";
+import { requestGovernedResourceId } from "@midnightntwrk/trust-registry-domain";
 import {
   LocalTrustRegistryIntegrationHarness,
   bytes32Commitment,
   createAuditorAuthorizationScopeFixture,
   createAuditorScenarioFixture,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 
 import {
   createInMemorySource,

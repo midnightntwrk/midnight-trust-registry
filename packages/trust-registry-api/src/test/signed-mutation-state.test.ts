@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 
-import { createOperatorWorkspace, MAX_CONSUMED_MUTATION_NONCES, MAX_CONSUMED_MUTATION_NONCES_PER_ACTOR } from "@midnight-ntwrk/trust-registry-cli";
+import { createOperatorWorkspace, MAX_CONSUMED_MUTATION_NONCES, MAX_CONSUMED_MUTATION_NONCES_PER_ACTOR } from "@midnightntwrk/trust-registry-cli";
 import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
@@ -12,12 +12,12 @@ import {
   mutationIntentDigestBytes,
   sha256Hex,
   type MutationIntent,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import {
   createMidnightDidLedgerFixture,
   createMidnightDidResolver,
   createIssuerScenarioFixture,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 import { describe, expect, it } from "vitest";
 
 import { MutationActorNonceCapacityExceededError, MutationIntentActorRejectedError, MutationNonceAlreadyUsedError, MutationNonceCapacityExceededError, MutationNonceClockRollbackError, transitionSignedMutationState } from "../signed-mutation-state.js";

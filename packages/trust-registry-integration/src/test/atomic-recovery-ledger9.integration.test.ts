@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   deriveJubjubPublicKeyFromSeed,
   signDeploymentBoundMaintainerActionFromSeed,
-} from "@midnight-ntwrk/trust-registry-contract";
-import { createMaintainerFixture } from "@midnight-ntwrk/trust-registry-contract/testing";
-import { AuthorizationStatus } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+} from "@midnightntwrk/trust-registry-contract";
+import { createMaintainerFixture } from "@midnightntwrk/trust-registry-contract/testing";
+import { AuthorizationStatus } from "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 
 import { bytes32Commitment, createMaintainerScenarioFixture } from "../fixtures.js";
 import { LocalTrustRegistryIntegrationHarness } from "../local-simulator-harness.js";

@@ -1,12 +1,12 @@
 import { TrustRegistryApplicantPortalApiError, TrustRegistryApplicantPortalClient, isCurrentlyActive, normalizeApiBaseUrl } from "./api.js";
 import { TARGET_OPTIONS, describeSubmission, toInspectionCards, type PortalSubmissionTarget, type PublicInspection } from "./model.js";
-import { TrustRegistryApiEvaluateRecognitionRequestSchema, TrustRegistryApiResolveRecognitionRequestSchema } from "@midnight-ntwrk/trust-registry-api/browser-schemas";
-import type { ApplicationChallengeBinding, ApplicationVpHttpIssueResult, ApplicationVpHttpSubmissionResult, PendingApplicationSummary, RecognitionAdmissionReceipt, TrustRegistryApiAuthorizationEvidenceEvaluationResponse, TrustRegistryApiAuthorizationListResponse, TrustRegistryApiEvaluateAuthorizationRequest, TrustRegistryApiEvaluateRecognitionRequest, TrustRegistryApiMutationContext, TrustRegistryApiRecognitionEvidenceEvaluationResponse, TrustRegistryApiRecognitionListResponse, TrustRegistryApiResolveAuthorizationRequest, TrustRegistryApiResolveRecognitionRequest, TrustRegistryApiSignedMutationRequest } from "@midnight-ntwrk/trust-registry-api";
-import { canonicalizeAuthorizationScope, computeAuthorizationScopeCommitment, type PendingApplicationPayload } from "@midnight-ntwrk/trust-registry-domain/browser";
+import { TrustRegistryApiEvaluateRecognitionRequestSchema, TrustRegistryApiResolveRecognitionRequestSchema } from "@midnightntwrk/trust-registry-api/browser-schemas";
+import type { ApplicationChallengeBinding, ApplicationVpHttpIssueResult, ApplicationVpHttpSubmissionResult, PendingApplicationSummary, RecognitionAdmissionReceipt, TrustRegistryApiAuthorizationEvidenceEvaluationResponse, TrustRegistryApiAuthorizationListResponse, TrustRegistryApiEvaluateAuthorizationRequest, TrustRegistryApiEvaluateRecognitionRequest, TrustRegistryApiMutationContext, TrustRegistryApiRecognitionEvidenceEvaluationResponse, TrustRegistryApiRecognitionListResponse, TrustRegistryApiResolveAuthorizationRequest, TrustRegistryApiResolveRecognitionRequest, TrustRegistryApiSignedMutationRequest } from "@midnightntwrk/trust-registry-api";
+import { canonicalizeAuthorizationScope, computeAuthorizationScopeCommitment, type PendingApplicationPayload } from "@midnightntwrk/trust-registry-domain/browser";
 import { prepareAuditorApplication, signPreparedAuditorApplication, type AuditorApplicationDraft, type PreparedAuditorApplication } from "./auditor-application.js";
 import { prepareIssuerApplication, prepareMaintainerApplication, prepareVerifierApplication, signPreparedMembershipApplication, type IssuerApplicationDraft, type MaintainerApplicationDraft, type PreparedMembershipApplication, type VerifierApplicationDraft } from "./membership-application.js";
 import { signInApplicantDid, signOutApplicantDid, type ApplicantDidSession, type ApplicantDidSigner } from "./did-session.js";
-import { isActorDidSigner, isSameOriginPrivateApi } from "@midnight-ntwrk/trust-registry-client/browser-authentication";
+import { isActorDidSigner, isSameOriginPrivateApi } from "@midnightntwrk/trust-registry-client/browser-authentication";
 
 const STORAGE_KEY = "trust-registry.portal.api-base";
 

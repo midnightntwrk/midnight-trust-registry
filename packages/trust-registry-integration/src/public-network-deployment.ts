@@ -4,8 +4,8 @@ import { fileURLToPath } from "node:url";
 import { CompiledContract } from "@midnight-ntwrk/compact-js";
 import { ContractState, type JubjubPoint, type SigningKey } from "@midnight-ntwrk/compact-runtime";
 import { deployContract, type ContractProviders } from "@midnight-ntwrk/midnight-js-contracts";
-import { bytes32Commitment, bytes32Hex } from "@midnight-ntwrk/trust-registry-client";
-import { MaintainerStatus, TrustRegistryContract, trustRegistryWitnesses, type TrustRegistryPrivateState } from "@midnight-ntwrk/trust-registry-contract";
+import { bytes32Commitment, bytes32Hex } from "@midnightntwrk/trust-registry-client";
+import { MaintainerStatus, TrustRegistryContract, trustRegistryWitnesses, type TrustRegistryPrivateState } from "@midnightntwrk/trust-registry-contract";
 
 import { hasExactFieldNames } from "./exact-field-names.js";
 import { maintenanceSigningKeyHex } from "./maintenance-verifying-key.js";
@@ -182,7 +182,7 @@ export const matchesPinnedRegistryImageWithKeySubset = (input: {
 };
 
 const contractAssetsPath = resolve(
-  dirname(fileURLToPath(import.meta.resolve("@midnight-ntwrk/trust-registry-contract/contract"))),
+  dirname(fileURLToPath(import.meta.resolve("@midnightntwrk/trust-registry-contract/contract"))),
   "managed/trust-registry",
 );
 

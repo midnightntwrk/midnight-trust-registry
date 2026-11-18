@@ -5,15 +5,15 @@ import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
   signDeploymentBoundMaintainerActionFromSeed,
-} from "@midnight-ntwrk/trust-registry-contract";
-import { EvidenceVerifierKeyStatus } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
-import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
+} from "@midnightntwrk/trust-registry-contract";
+import { EvidenceVerifierKeyStatus } from "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+import { publishSimulatorSnapshot } from "@midnightntwrk/trust-registry-cli";
 import {
   bytes32Commitment,
   createMidnightDidLedgerFixture,
   createMidnightDidResolver,
   LocalTrustRegistryIntegrationHarness,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 import { describe, expect, it } from "vitest";
 
 import {

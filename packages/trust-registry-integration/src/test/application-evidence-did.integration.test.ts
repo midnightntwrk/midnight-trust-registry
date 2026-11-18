@@ -7,7 +7,7 @@ import {
   deriveJubjubPublicKeyFromSeed,
   signApplicationEvidenceCommitmentFromSeed,
   verifyApplicationEvidenceCommitmentSignature,
-} from "@midnight-ntwrk/trust-registry-contract";
+} from "@midnightntwrk/trust-registry-contract";
 import { describe, expect, it } from "vitest";
 
 import { createMidnightDidLedgerFixture, createMidnightDidResolver } from "../did-resolution.js";

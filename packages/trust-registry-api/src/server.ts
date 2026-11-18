@@ -2,10 +2,10 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 
 import { z, ZodError } from "zod";
 
-import { buildSnapshotSummary } from "@midnight-ntwrk/trust-registry-cli";
-import { ActorAuthenticationChallengeSchema, DecisionEvidenceSchema, PendingApplicationRecordSchema, SignedPendingApplicationSchema } from "@midnight-ntwrk/trust-registry-domain";
-import { encodeCompactActionKind } from "@midnight-ntwrk/trust-registry-contract";
-import { EvidenceVerifierDidResolutionUnavailableError } from "@midnight-ntwrk/trust-registry-integration";
+import { buildSnapshotSummary } from "@midnightntwrk/trust-registry-cli";
+import { ActorAuthenticationChallengeSchema, DecisionEvidenceSchema, PendingApplicationRecordSchema, SignedPendingApplicationSchema } from "@midnightntwrk/trust-registry-domain";
+import { encodeCompactActionKind } from "@midnightntwrk/trust-registry-contract";
+import { EvidenceVerifierDidResolutionUnavailableError } from "@midnightntwrk/trust-registry-integration";
 import { LocalIssuerEvidenceTimeRejectedError } from "./local-issuer-proposal-port.js";
 import { ActorAuthenticationCapacityError, ActorAuthenticationResolverUnavailableError,
   InvalidActorAuthenticationIdentityError, type createActorAuthenticationService } from "./actor-authentication.js";
@@ -15,7 +15,7 @@ import {
   TrustRegistryTrqpAdapter,
   TrqpAuthorizationRequestSchema,
   TrqpRecognitionRequestSchema,
-} from "@midnight-ntwrk/trust-registry-trqp-adapter";
+} from "@midnightntwrk/trust-registry-trqp-adapter";
 
 import {
   applyMutationOperation,

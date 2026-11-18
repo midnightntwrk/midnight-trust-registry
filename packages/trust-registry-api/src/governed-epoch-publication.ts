@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { EpochCommitmentSchema, type EpochCommitment } from "@midnight-ntwrk/trust-registry-domain";
+import { EpochCommitmentSchema, type EpochCommitment } from "@midnightntwrk/trust-registry-domain";
 
 import {
   GovernedMembershipSignersSchema,

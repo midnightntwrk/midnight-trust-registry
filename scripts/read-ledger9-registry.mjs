@@ -238,9 +238,9 @@ export async function readLedger9Registry(args = process.argv.slice(2), env = pr
   const [{ bytes32Commitment }, { AuthorizationStatus, TrustRegistryContract, trustRegistryWitnesses },
     { createLocalNetworkDeploymentActionReader }] =
     await Promise.all([
-      import("@midnight-ntwrk/trust-registry-client"),
-      import("@midnight-ntwrk/trust-registry-contract"),
-      import("@midnight-ntwrk/trust-registry-integration"),
+      import("@midnightntwrk/trust-registry-client"),
+      import("@midnightntwrk/trust-registry-contract"),
+      import("@midnightntwrk/trust-registry-integration"),
     ]);
   const network = {
     networkId: "undeployed",

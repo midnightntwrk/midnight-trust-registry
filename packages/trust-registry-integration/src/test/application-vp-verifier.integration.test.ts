@@ -9,8 +9,8 @@ import {
   deriveJubjubPublicKey,
   deriveJubjubPublicKeyFromSeed,
   signApplicationEvidenceCommitmentFromSeed,
-} from "@midnight-ntwrk/trust-registry-contract";
-import { ApplicationChallengeBindingSchema, computeAuthorizationScopeCommitment, issuerGovernedResourceId, sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-contract";
+import { ApplicationChallengeBindingSchema, computeAuthorizationScopeCommitment, issuerGovernedResourceId, sha256Hex } from "@midnightntwrk/trust-registry-domain";
 import { describe, expect, it, vi } from "vitest";
 
 import {

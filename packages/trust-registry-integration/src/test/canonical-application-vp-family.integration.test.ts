@@ -7,8 +7,8 @@ import {
 } from "@midnight-ntwrk/credential-did-midnight";
 import { parseMidnightDIDString } from "@midnight-ntwrk/midnight-did";
 import { signJubjubDigest } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
-import { encodeJubjubSignature } from "@midnight-ntwrk/trust-registry-contract";
-import { canonicalizeJson, computeAuthorizationScopeCommitment, issuerGovernedResourceId, sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
+import { encodeJubjubSignature } from "@midnightntwrk/trust-registry-contract";
+import { canonicalizeJson, computeAuthorizationScopeCommitment, issuerGovernedResourceId, sha256Hex } from "@midnightntwrk/trust-registry-domain";
 import { describe, expect, it, vi } from "vitest";
 
 import { verifyQualifiedApplicationVp } from "../application-vp-verifier.js";

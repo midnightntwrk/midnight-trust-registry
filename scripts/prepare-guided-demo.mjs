@@ -23,7 +23,7 @@ if (existsSync(dist)) {
   process.exit(1);
 } else {
   process.stdout.write("First run: compiling the Compact contract. This may take several minutes; later starts reuse it.\n");
-  run("pnpm", ["--filter", "@midnight-ntwrk/trust-registry-contract", "run", "build"]);
+  run("pnpm", ["--filter", "@midnightntwrk/trust-registry-contract", "run", "build"]);
 }
 
 run("bash", ["scripts/build-prebuilt-runtime.sh"]);

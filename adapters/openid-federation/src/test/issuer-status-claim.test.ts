@@ -3,13 +3,13 @@ import { Buffer } from "node:buffer";
 import { describe, expect, it } from "vitest";
 import { exportJWK, generateKeyPair } from "jose";
 
-import { buildDecisionEvidenceClaim, type TrustedDecisionEvidenceReaders } from "@midnight-ntwrk/trust-registry-client";
-import { AcceptedDecisionEpochSchema, sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
+import { buildDecisionEvidenceClaim, type TrustedDecisionEvidenceReaders } from "@midnightntwrk/trust-registry-client";
+import { AcceptedDecisionEpochSchema, sha256Hex } from "@midnightntwrk/trust-registry-domain";
 import {
   bytes32Commitment,
   createIssuerScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 
 import {
   buildAuthorizationSubordinateStatementPayload,

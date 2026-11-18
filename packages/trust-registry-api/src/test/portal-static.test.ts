@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
-import { createDemoSnapshot } from "@midnight-ntwrk/trust-registry-cli";
+import { createDemoSnapshot } from "@midnightntwrk/trust-registry-cli";
 
 import { createPortalStaticHandler } from "../portal-static.js";
 import { createTrustRegistryApiServer } from "../server.js";

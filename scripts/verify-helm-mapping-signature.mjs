@@ -1,8 +1,8 @@
 import { constants, closeSync, fstatSync, openSync, readFileSync } from "node:fs";
 import { isAbsolute } from "node:path";
 
-import { assertStrictDetachedSignatureStatus } from "@midnight-ntwrk/trust-registry-integration/reviewer-signature-status";
-import { verifyDetachedReviewerBytes } from "@midnight-ntwrk/trust-registry-integration/reviewer-signature-verifier";
+import { assertStrictDetachedSignatureStatus } from "@midnightntwrk/trust-registry-integration/reviewer-signature-status";
+import { verifyDetachedReviewerBytes } from "@midnightntwrk/trust-registry-integration/reviewer-signature-verifier";
 
 const FINGERPRINT = /^[0-9A-F]{40}$/u;
 

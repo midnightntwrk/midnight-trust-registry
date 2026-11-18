@@ -8,18 +8,18 @@ import {
   type TrustRegistryOperatorWorkspace,
   withExclusiveWorkspaceWrite,
   WorkspaceMutationLockedError,
-} from "@midnight-ntwrk/trust-registry-cli";
+} from "@midnightntwrk/trust-registry-cli";
 import {
   ApplicationEvidenceSubmissionSchema,
   canonicalizeJson,
   sha256Hex,
   type ApplicationEvidenceSubmission,
   type SignedPendingApplication,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import {
   PrivateApplicationStatusWitnessSchema,
   type PrivateApplicationStatusWitness,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 import { z } from "zod";
 
 import { ApplicationVpReceiptSchema, type ApplicationVpReceipt } from "./application-vp-http.js";

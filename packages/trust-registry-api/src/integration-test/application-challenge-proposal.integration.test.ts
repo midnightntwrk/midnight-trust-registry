@@ -11,7 +11,7 @@ import {
   type ApplicationChallengeBinding,
   type ApplicationEvidenceSubmission,
   type AuthorizationScope,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import {
   createAuditorAuthorizationScopeFixture,
   createAuditorScenarioFixture,
@@ -23,7 +23,7 @@ import {
   createVerifierScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
   type SimulatorApplicationEvidenceExpectation,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 
 import { ApplicationChallengeService, InMemoryApplicationChallengeStore } from "../application-challenges.js";
 import { consumeChallengeAndSubmitApplication } from "../application-intake.js";

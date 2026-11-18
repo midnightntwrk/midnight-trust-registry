@@ -5,8 +5,8 @@ import { dirname, resolve } from "node:path";
 
 import type { SigningKey } from "@midnight-ntwrk/compact-runtime";
 import type { ContractProviders } from "@midnight-ntwrk/midnight-js-contracts";
-import { bytes32Commitment, bytes32Hex } from "@midnight-ntwrk/trust-registry-client";
-import { TrustRegistryContract, trustRegistryWitnesses, type TrustRegistryPrivateState } from "@midnight-ntwrk/trust-registry-contract";
+import { bytes32Commitment, bytes32Hex } from "@midnightntwrk/trust-registry-client";
+import { TrustRegistryContract, trustRegistryWitnesses, type TrustRegistryPrivateState } from "@midnightntwrk/trust-registry-contract";
 import { z } from "zod";
 
 import {

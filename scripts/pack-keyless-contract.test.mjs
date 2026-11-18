@@ -27,7 +27,7 @@ async function fixture(t) {
     await mkdir(join(full, part), { recursive: true });
   }
   await writeFile(join(source, "package.json"), JSON.stringify({
-    name: "@midnight-ntwrk/trust-registry-contract", version: "0.1.0-rc1",
+    name: "@midnightntwrk/trust-registry-contract", version: "0.1.0-rc1",
     files: ["dist/**"],
   }));
   await writeFile(join(source, "dist/index.js"), "export const packageReady = true;\n");
@@ -56,7 +56,7 @@ test("keyless contract package excludes keys and restores a verified local packa
   const paths = await fixture(t);
   const packed = await packKeylessContract(paths.source, paths.keyless,
     paths.manifestSha256, paths.tarball);
-  assert.equal(packed.name, "@midnight-ntwrk/trust-registry-contract");
+  assert.equal(packed.name, "@midnightntwrk/trust-registry-contract");
   const listing = execFileSync("tar", ["-tzf", paths.tarball], { encoding: "utf8" });
   assert.match(listing, /package\/dist\/managed\/trust-registry\/keyless-manifest\.json/u);
   assert.match(listing, /package\/dist\/managed\/trust-registry\/compiler\/contract-manifest\.json/u);

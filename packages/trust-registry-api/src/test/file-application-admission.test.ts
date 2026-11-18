@@ -3,10 +3,10 @@ import { chmod, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createOperatorWorkspace } from "@midnight-ntwrk/trust-registry-cli";
-import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client/simulator";
+import { createOperatorWorkspace } from "@midnightntwrk/trust-registry-cli";
+import { TrustRegistrySimulatorClient } from "@midnightntwrk/trust-registry-client/simulator";
 import { deriveJubjubPublicKeyFromSeed, encodeJubjubSignature, signJubjubDigest, signJubjubPayloadFromSeed } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
-import { bytes32Commitment } from "@midnight-ntwrk/trust-registry-client";
+import { bytes32Commitment } from "@midnightntwrk/trust-registry-client";
 import {
   computeAuthorizationScopeCommitment,
   computeApplicationEvidenceCommitment,
@@ -18,9 +18,9 @@ import {
   type ApplicationEvidenceSignatureVerifier,
   type ApplicationEvidenceSubmission,
   type MutationIntent,
-} from "@midnight-ntwrk/trust-registry-domain";
-import { decodeCanonicalJubjubSignatureHex, verifyApplicationEvidenceCommitmentSignature } from "@midnight-ntwrk/trust-registry-contract";
-import { createMaintainerFixture } from "@midnight-ntwrk/trust-registry-contract/testing";
+} from "@midnightntwrk/trust-registry-domain";
+import { decodeCanonicalJubjubSignatureHex, verifyApplicationEvidenceCommitmentSignature } from "@midnightntwrk/trust-registry-contract";
+import { createMaintainerFixture } from "@midnightntwrk/trust-registry-contract/testing";
 import {
   applicationStatusAttestationDigest,
   createIssuerAuthorizationScopeFixture,
@@ -34,7 +34,7 @@ import {
   LocalTrustRegistryIntegrationHarness,
   VP_FIXTURE_TIME_MS,
   VP_FIXTURE_NONCE,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { FileApplicationAdmissionStore } from "../file-application-admission.js";

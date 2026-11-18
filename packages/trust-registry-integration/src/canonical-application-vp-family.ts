@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 
 import { createMidnightDIDHolderBinding, resolveMidnightDIDMethodBinding } from "@midnight-ntwrk/credential-did-midnight";
 import { parseMidnightDIDString, type MidnightDIDResolverInterface } from "@midnight-ntwrk/midnight-did";
-import type { TrustedDecisionEvidenceReaders } from "@midnight-ntwrk/trust-registry-client";
+import type { TrustedDecisionEvidenceReaders } from "@midnightntwrk/trust-registry-client";
 import {
   AuthorizationScopeSchema,
   HashHexSchema,
@@ -14,7 +14,7 @@ import {
   type AuthorizationScope,
   type DecisionEvidenceSelection,
   type IssuerStatusPolicyBinding,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import { z } from "zod";
 
 import {

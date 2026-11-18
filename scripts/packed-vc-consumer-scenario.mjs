@@ -17,13 +17,13 @@ import {
   deriveJubjubPublicKeyFromSeed,
   normalizeScalar,
   seedBytesToJubjubSecretScalar,
-} from "@midnight-ntwrk/trust-registry-contract";
+} from "@midnightntwrk/trust-registry-contract";
 import {
   createMidnightDid,
   pinnedVcAuthority,
   vcAuthorityDomainCommitment,
   vcAuthorityDomainFields,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 
 const version = process.argv[2];
 if (!/^\d+\.\d+\.\d+$/u.test(version ?? "")) {
@@ -63,7 +63,7 @@ const fixtureProof = (seed, methodRef, bodyRoot, createdAt, challengeCircuit) =>
 };
 
 const fixture = fileURLToPath(import.meta.resolve(
-  "@midnight-ntwrk/trust-registry-integration/fixtures/vc-authority-consumer.compact",
+  "@midnightntwrk/trust-registry-integration/fixtures/vc-authority-consumer.compact",
 ));
 const vcCompactRoot = dirname(fileURLToPath(import.meta.resolve(
   "@midnight-ntwrk/credential-compact/credentials/composable.compact",

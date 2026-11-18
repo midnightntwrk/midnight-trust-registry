@@ -17,7 +17,7 @@ const fixture = () => {
   roots.push(root);
   const artifacts = join(root, "artifacts");
   mkdirSync(artifacts);
-  const filename = "midnight-ntwrk-trust-registry-contract-0.1.0.tgz";
+  const filename = "midnightntwrk-trust-registry-contract-0.1.0.tgz";
   const content = Buffer.from("verified-package-bytes\n");
   writeFileSync(join(artifacts, filename), content);
   const manifest = { packages: [{ filename, sizeBytes: content.length,

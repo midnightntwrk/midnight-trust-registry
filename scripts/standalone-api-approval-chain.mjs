@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
+import { getLocalNetworkProfile } from "@midnightntwrk/trust-registry-integration";
 
 const FINGERPRINT = /^[A-F0-9]{40}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;

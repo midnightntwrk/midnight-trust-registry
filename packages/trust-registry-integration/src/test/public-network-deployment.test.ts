@@ -3,9 +3,9 @@ import { createHash } from "node:crypto";
 
 import { ContractMaintenanceAuthority, ContractState, createConstructorContext,
   sampleRawTokenType, sampleSigningKey, signatureVerifyingKey } from "@midnight-ntwrk/compact-runtime";
-import { bytes32Commitment, bytes32Hex } from "@midnight-ntwrk/trust-registry-client";
-import { deriveJubjubPublicKeyFromSeed, TrustRegistryContract, trustRegistryWitnesses } from "@midnight-ntwrk/trust-registry-contract";
-import { TrustRegistrySimulator } from "@midnight-ntwrk/trust-registry-contract/testing";
+import { bytes32Commitment, bytes32Hex } from "@midnightntwrk/trust-registry-client";
+import { deriveJubjubPublicKeyFromSeed, TrustRegistryContract, trustRegistryWitnesses } from "@midnightntwrk/trust-registry-contract";
+import { TrustRegistrySimulator } from "@midnightntwrk/trust-registry-contract/testing";
 
 import {
   deployLocalTrustRegistry,

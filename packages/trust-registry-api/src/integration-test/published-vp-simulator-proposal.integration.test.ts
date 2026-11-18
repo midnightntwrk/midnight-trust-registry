@@ -6,9 +6,9 @@ import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
   signDeploymentBoundMaintainerActionFromSeed,
-} from "@midnight-ntwrk/trust-registry-contract";
-import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client/simulator";
-import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
+} from "@midnightntwrk/trust-registry-contract";
+import { TrustRegistrySimulatorClient } from "@midnightntwrk/trust-registry-client/simulator";
+import { publishSimulatorSnapshot } from "@midnightntwrk/trust-registry-cli";
 
 import {
   ApplicationChallengeBindingSchema,
@@ -16,7 +16,7 @@ import {
   createScopedIdentifier,
   sha256Hex,
   type ApplicationEvidenceSubmission,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import {
   createApplicationVpIntakePorts,
   createApplicationVpScenarioFixture,
@@ -26,7 +26,7 @@ import {
   LocalTrustRegistryIntegrationHarness,
   type MaintainerScenarioFixture,
   VP_FIXTURE_TIME_MS,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 
 import { ApplicationChallengeService, InMemoryApplicationChallengeStore } from "../application-challenges.js";
 import { consumeChallengeAndSubmitApplication } from "../application-intake.js";

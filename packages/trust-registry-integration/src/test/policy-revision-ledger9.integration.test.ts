@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { EvidenceVerifierKeyStatus } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
-import { createScopedIdentifier } from "@midnight-ntwrk/trust-registry-domain";
+import { EvidenceVerifierKeyStatus } from "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+import { createScopedIdentifier } from "@midnightntwrk/trust-registry-domain";
 
 import { bytes32Commitment } from "../fixtures.js";
 import { LocalTrustRegistryIntegrationHarness } from "../local-simulator-harness.js";

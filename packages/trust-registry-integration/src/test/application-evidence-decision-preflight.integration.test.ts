@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EvidenceVerifierKeyStatus } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+import { EvidenceVerifierKeyStatus } from "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 
 import {
   createAuditorScenarioFixture,

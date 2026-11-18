@@ -11,7 +11,7 @@ vi.mock("../local-trust-anchor-file.js", () => ({
 }));
 
 import { sampleSigningKey, signatureVerifyingKey } from "@midnight-ntwrk/compact-runtime";
-import { committeeMaintenanceUpdateSha256 } from "@midnight-ntwrk/trust-registry-integration";
+import { committeeMaintenanceUpdateSha256 } from "@midnightntwrk/trust-registry-integration";
 
 import { assertLocalApiTrustAnchor, verifyLocalApiApprovalChain } from "../local-approval-chain.js";
 import { loadApprovedLocalLedgerRuntimePlan } from "../local-ledger-runtime.js";

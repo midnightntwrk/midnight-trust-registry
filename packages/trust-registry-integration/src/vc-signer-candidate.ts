@@ -13,11 +13,11 @@ import {
   verifyInactiveDecisionEvidenceWithTrustedReaders,
   type DecisionEvidenceCandidate,
   type TrustedDecisionEvidenceReaders,
-} from "@midnight-ntwrk/trust-registry-client";
+} from "@midnightntwrk/trust-registry-client";
 import {
   sha256Hex,
   type DecisionEvidenceSelection,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import { assertVcIssuerSchemaGrant, vcScopeCommitmentFromRegistryScope } from "./vc-scope.js";
 
 const bytes32FromHex = (value: string, label: string): Uint8Array => {

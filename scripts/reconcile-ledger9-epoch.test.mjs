@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { bytes32Commitment } from "@midnight-ntwrk/trust-registry-client";
-import { computeCreateEpochCommitmentPayloadHash } from "@midnight-ntwrk/trust-registry-contract";
+import { bytes32Commitment } from "@midnightntwrk/trust-registry-client";
+import { computeCreateEpochCommitmentPayloadHash } from "@midnightntwrk/trust-registry-contract";
 
 import {
   assertEpochAttempt,

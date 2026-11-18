@@ -28,7 +28,7 @@ import {
   AuthorizationStatus,
   IssuerResourceType,
   VcAuthorityKeyStatus,
-} from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+} from "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import {
   buildDecisionEvidenceClaim,
   createVerifiedDecisionEvidenceSource,
@@ -37,11 +37,11 @@ import {
   verifyDecisionEvidenceWithTrustedReaders,
   type DecisionEvidenceSuppliedContext,
   type TrustedDecisionEvidenceReaders,
-} from "@midnight-ntwrk/trust-registry-client";
+} from "@midnightntwrk/trust-registry-client";
 import {
   AcceptedDecisionEpochSchema,
   sha256Hex,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import { createMidnightDidLedgerFixture, createMidnightDidResolver } from "../did-resolution.js";
 import {

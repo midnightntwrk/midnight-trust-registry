@@ -136,7 +136,7 @@ The fast GitHub CI lane also runs the focused DID/VC scenarios after
 `./run.sh --light`:
 
 ```bash
-pnpm --filter @midnight-ntwrk/trust-registry-integration run integration
+pnpm --filter @midnightntwrk/trust-registry-integration run integration
 ```
 
 Package artifact validation for downstream consumers:
@@ -153,25 +153,25 @@ the release gate requires proving keys and ZK IR in the contract package.
 Artifact tarballs are written to `artifacts/npm/`. The current local artifact
 set is:
 
-- `@midnight-ntwrk/trust-registry-contract`
-- `@midnight-ntwrk/trust-registry-domain`
-- `@midnight-ntwrk/trust-registry-client`
-- `@midnight-ntwrk/trust-registry-integration`
-- `@midnight-ntwrk/trust-registry-cli`
-- `@midnight-ntwrk/trust-registry-api`
-- `@midnight-ntwrk/trust-registry-trqp-adapter`
-- `@midnight-ntwrk/trust-registry-openid-federation-adapter`
+- `@midnightntwrk/trust-registry-contract`
+- `@midnightntwrk/trust-registry-domain`
+- `@midnightntwrk/trust-registry-client`
+- `@midnightntwrk/trust-registry-integration`
+- `@midnightntwrk/trust-registry-cli`
+- `@midnightntwrk/trust-registry-api`
+- `@midnightntwrk/trust-registry-trqp-adapter`
+- `@midnightntwrk/trust-registry-openid-federation-adapter`
 
 The remotely publishable core package subset is intentionally narrower:
 
-- `@midnight-ntwrk/trust-registry-contract`
-- `@midnight-ntwrk/trust-registry-domain`
-- `@midnight-ntwrk/trust-registry-client`
-- `@midnight-ntwrk/trust-registry-trqp-adapter`
-- `@midnight-ntwrk/trust-registry-openid-federation-adapter`
+- `@midnightntwrk/trust-registry-contract`
+- `@midnightntwrk/trust-registry-domain`
+- `@midnightntwrk/trust-registry-client`
+- `@midnightntwrk/trust-registry-trqp-adapter`
+- `@midnightntwrk/trust-registry-openid-federation-adapter`
 
-`@midnight-ntwrk/trust-registry-integration`, `@midnight-ntwrk/trust-registry-cli`,
-and `@midnight-ntwrk/trust-registry-api` remain local-only artifacts for now
+`@midnightntwrk/trust-registry-integration`, `@midnightntwrk/trust-registry-cli`,
+and `@midnightntwrk/trust-registry-api` remain local-only artifacts for now
 while their public packaging and deployment policy is finalized. Identity
 dependencies are installed from npm; local artifact smoke runs in a clean
 consumer without seeding vendored dependency tarballs.

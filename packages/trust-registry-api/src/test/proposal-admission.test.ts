@@ -7,19 +7,19 @@ import {
   issuerGovernedResourceId,
   type ApplicationChallengeBinding,
   type ApplicationEvidenceSubmission,
-} from "@midnight-ntwrk/trust-registry-domain";
-import { bytes32Commitment } from "@midnight-ntwrk/trust-registry-client";
+} from "@midnightntwrk/trust-registry-domain";
+import { bytes32Commitment } from "@midnightntwrk/trust-registry-client";
 import {
   deriveJubjubPublicKeyFromSeed,
   signDeploymentBoundMaintainerActionFromSeed,
   signIssuerProposalEvidenceFromSeed,
   TrustRegistryContract,
-} from "@midnight-ntwrk/trust-registry-contract";
+} from "@midnightntwrk/trust-registry-contract";
 import { describe, expect, it, vi } from "vitest";
 
 import { createTrustRegistryApiServer } from "../server.js";
 import { createInMemorySource } from "../source.js";
-import { createOperatorWorkspace } from "@midnight-ntwrk/trust-registry-cli";
+import { createOperatorWorkspace } from "@midnightntwrk/trust-registry-cli";
 import { InMemoryApplicationChallengeStore } from "../application-challenges.js";
 import {
   assertProposalAdmission,

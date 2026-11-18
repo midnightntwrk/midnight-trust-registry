@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
-import { canonicalizeJson } from "@midnight-ntwrk/trust-registry-domain";
-import { getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
+import { canonicalizeJson } from "@midnightntwrk/trust-registry-domain";
+import { getLocalNetworkProfile } from "@midnightntwrk/trust-registry-integration";
 import { z } from "zod";
 
 import { readBoundedLocalApprovalFile, verifyDetachedLocalReviewerSignature } from "./local-reviewer-signature.js";

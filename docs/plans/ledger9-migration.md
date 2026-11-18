@@ -131,7 +131,7 @@ In a checkout retaining full generated Compact artifacts, use
 validation. The ordinary root `typecheck` target follows Turbo build
 dependencies and recompiles the 66 circuits; light targets replace the full
 distribution output. Neither is appropriate for an artifact-bearing checkout.
-The `@midnight-ntwrk/trust-registry-integration` `test:light` check also
+The `@midnightntwrk/trust-registry-integration` `test:light` check also
 passes with the exact native Compact 0.36.0 compiler installed: it compiles
 the VC composition fixture and checks the credential/presentation envelope
 relation, including claim-root, issuer-method, and schema mismatches. It does

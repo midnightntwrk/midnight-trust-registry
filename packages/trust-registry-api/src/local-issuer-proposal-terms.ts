@@ -9,12 +9,12 @@ import {
   sha256Hex,
   type ApplicationEvidenceSubmission,
   type GovernancePolicySnapshot,
-} from "@midnight-ntwrk/trust-registry-domain";
-import { bytes32Commitment } from "@midnight-ntwrk/trust-registry-client";
-import { TrustRegistryContract } from "@midnight-ntwrk/trust-registry-contract";
-import { getLocalNetworkProfile, prepareUnsignedLocalIssuerProposalCall } from "@midnight-ntwrk/trust-registry-integration";
-import type { LocalIssuerProposalCall } from "@midnight-ntwrk/trust-registry-integration";
-import type { LocalIssuerProposalSigningContext } from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-domain";
+import { bytes32Commitment } from "@midnightntwrk/trust-registry-client";
+import { TrustRegistryContract } from "@midnightntwrk/trust-registry-contract";
+import { getLocalNetworkProfile, prepareUnsignedLocalIssuerProposalCall } from "@midnightntwrk/trust-registry-integration";
+import type { LocalIssuerProposalCall } from "@midnightntwrk/trust-registry-integration";
+import type { LocalIssuerProposalSigningContext } from "@midnightntwrk/trust-registry-integration";
 import { z } from "zod";
 
 import type { LocalLedgerRuntimePlan } from "./local-ledger-runtime.js";

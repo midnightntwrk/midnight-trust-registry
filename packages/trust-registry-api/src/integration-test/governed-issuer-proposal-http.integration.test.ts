@@ -11,8 +11,8 @@ import {
   signIssuerProposalEvidenceFromSeed,
   signDeploymentBoundMaintainerActionFromSeed,
   verifyIssuerProposalEvidenceSignature,
-} from "@midnight-ntwrk/trust-registry-contract";
-import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
+} from "@midnightntwrk/trust-registry-contract";
+import { publishSimulatorSnapshot } from "@midnightntwrk/trust-registry-cli";
 import {
   createIssuerAuthorizationScopeFixture,
   createIssuerScenarioFixture,
@@ -20,7 +20,7 @@ import {
   issuerResourceTypeDetails,
   LocalTrustRegistryIntegrationHarness,
   type MaintainerScenarioFixture,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 
 import {
   GovernedIssuerProposalRejectedError,

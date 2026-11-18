@@ -6,8 +6,8 @@ import {
   decodeCanonicalJubjubSignatureHex,
   encodeCompactActionKind,
   verifyDeploymentBoundMaintainerAction,
-} from "@midnight-ntwrk/trust-registry-contract";
-import type { EpochCommitmentRecord } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+} from "@midnightntwrk/trust-registry-contract";
+import type { EpochCommitmentRecord } from "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import {
   TrustRegistryEvidenceBundleSchema,
   compareRfc3339Instants,
@@ -19,7 +19,7 @@ import {
   deriveGovernancePolicySnapshot,
   type AuthorizationRecord,
   type TrustRegistryEvidenceBundle,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import {
   bytes32Commitment,

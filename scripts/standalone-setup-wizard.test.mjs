@@ -8,7 +8,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { sampleSigningKey, signatureVerifyingKey } from "@midnight-ntwrk/compact-runtime";
-import { VerifierKeyInsertionOutcomeUnknownError } from "@midnight-ntwrk/trust-registry-integration";
+import { VerifierKeyInsertionOutcomeUnknownError } from "@midnightntwrk/trust-registry-integration";
 
 import {
   assertUnusedStandaloneProject,

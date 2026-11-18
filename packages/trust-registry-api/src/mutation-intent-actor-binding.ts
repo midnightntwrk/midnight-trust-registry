@@ -1,5 +1,5 @@
-import type { TrustRegistryOperatorWorkspace } from "@midnight-ntwrk/trust-registry-cli";
-import type { MutationIntent } from "@midnight-ntwrk/trust-registry-domain";
+import type { TrustRegistryOperatorWorkspace } from "@midnightntwrk/trust-registry-cli";
+import type { MutationIntent } from "@midnightntwrk/trust-registry-domain";
 
 import {
   preflightMutationIntent,

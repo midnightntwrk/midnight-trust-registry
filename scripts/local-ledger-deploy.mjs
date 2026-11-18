@@ -12,12 +12,12 @@ import {
   FileDeploymentAttemptJournal,
   getLocalNetworkProfile,
   reconcileLocalStagedDeployment,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 import {
   GovernancePolicyRecordSchema,
   computeGovernancePolicySnapshotCommitment,
   deriveGovernancePolicySnapshot,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import { checkLocalLedgerPreflight } from "./local-ledger-preflight.mjs";
 import { loadRecheckedApprovedProvider, readApprovedProviderIdentity } from "./approved-provider-identity.mjs";

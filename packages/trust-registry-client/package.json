@@ -1,5 +1,5 @@
 {
-  "name": "@midnight-ntwrk/trust-registry-client",
+  "name": "@midnightntwrk/trust-registry-client",
   "version": "0.1.0",
   "license": "Apache-2.0",
   "private": false,
@@ -59,7 +59,7 @@
   "dependencies": {
     "@midnight-ntwrk/compact-runtime": "0.21.0",
     "@midnight-ntwrk/midnight-did": "1.0.0-rc1",
-    "@midnight-ntwrk/trust-registry-contract": "workspace:0.1.0",
-    "@midnight-ntwrk/trust-registry-domain": "workspace:0.1.0"
+    "@midnightntwrk/trust-registry-contract": "workspace:0.1.0",
+    "@midnightntwrk/trust-registry-domain": "workspace:0.1.0"
   }
 }

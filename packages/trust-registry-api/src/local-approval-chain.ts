@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { committeeMaintenanceUpdateSha256 } from "@midnight-ntwrk/trust-registry-integration";
+import { committeeMaintenanceUpdateSha256 } from "@midnightntwrk/trust-registry-integration";
 
 import { verifyDetachedLocalReviewerSignature } from "./local-reviewer-signature.js";
 

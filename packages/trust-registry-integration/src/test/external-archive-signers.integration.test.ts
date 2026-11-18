@@ -5,8 +5,8 @@ import { describe, expect, it } from "vitest";
 import {
   deriveJubjubPublicKeyFromSeed,
   signDeploymentBoundMaintainerActionFromSeed,
-} from "@midnight-ntwrk/trust-registry-contract";
-import type { MaintainerCoAuthorizer } from "@midnight-ntwrk/trust-registry-contract/testing";
+} from "@midnightntwrk/trust-registry-contract";
+import type { MaintainerCoAuthorizer } from "@midnightntwrk/trust-registry-contract/testing";
 
 import {
   createAuditorScenarioFixture,

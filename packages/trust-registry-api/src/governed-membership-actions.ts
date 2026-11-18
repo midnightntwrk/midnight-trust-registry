@@ -3,7 +3,7 @@ import {
   decodeCanonicalJubjubSignatureHex,
   verifyDeploymentBoundMaintainerAction,
   type TrustRegistryJubjubSignature,
-} from "@midnight-ntwrk/trust-registry-contract";
+} from "@midnightntwrk/trust-registry-contract";
 import { z } from "zod";
 
 const Bytes32Schema = z.string().regex(/^0x[0-9a-f]{64}$/u);

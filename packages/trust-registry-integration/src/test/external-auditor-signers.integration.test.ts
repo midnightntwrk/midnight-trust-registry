@@ -6,9 +6,9 @@ import {
   deriveJubjubPublicKeyFromSeed,
   signAuditorProposalEvidenceFromSeed,
   signDeploymentBoundMaintainerActionFromSeed,
-} from "@midnight-ntwrk/trust-registry-contract";
-import type { MaintainerCoAuthorizer } from "@midnight-ntwrk/trust-registry-contract/testing";
-import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client/simulator";
+} from "@midnightntwrk/trust-registry-contract";
+import type { MaintainerCoAuthorizer } from "@midnightntwrk/trust-registry-contract/testing";
+import { TrustRegistrySimulatorClient } from "@midnightntwrk/trust-registry-client/simulator";
 
 import {
   createAuditorAuthorizationScopeFixture,

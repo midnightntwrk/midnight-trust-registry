@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { computeAuthorizationScopeCommitment, requestGovernedResourceId } from "@midnight-ntwrk/trust-registry-domain";
+import { computeAuthorizationScopeCommitment, requestGovernedResourceId } from "@midnightntwrk/trust-registry-domain";
 import { describe, expect, it, vi } from "vitest";
 
 import { createApplicantPortalApp } from "../app.js";

@@ -8,7 +8,7 @@ import {
   loadWorkspaceFromFile,
   TrustRegistryOperatorWorkspaceSchema,
   writeWorkspaceToFile,
-} from "@midnight-ntwrk/trust-registry-cli";
+} from "@midnightntwrk/trust-registry-cli";
 import { describe, expect, it } from "vitest";
 
 import { computeOperatorWorkspaceCommitment } from "../workspace-commitment.js";

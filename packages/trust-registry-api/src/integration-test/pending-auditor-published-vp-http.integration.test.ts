@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import type { Server } from "node:http";
 
-import { createOperatorWorkspace } from "@midnight-ntwrk/trust-registry-cli";
+import { createOperatorWorkspace } from "@midnightntwrk/trust-registry-cli";
 import { encodeJubjubSignature, payloadToJubjubDigest, signJubjubDigest } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import {
   ActorAuthenticationChallengeSchema,
@@ -11,7 +11,7 @@ import {
   mutationIntentDigestBytes,
   requestGovernedResourceId,
   type MutationIntent,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import {
   createApplicationVpIntakePorts,
   createQualifiedApplicationVpIntakePorts,
@@ -19,7 +19,7 @@ import {
   createMidnightDid,
   VP_FIXTURE_TIME_MS,
   VP_FIXTURE_TRUST_CONTEXT,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createActorAuthenticationService } from "../actor-authentication.js";

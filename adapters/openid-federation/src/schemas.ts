@@ -8,7 +8,7 @@ import {
   RegistryRecordSchema,
   TrustRegistryEvidenceBundleSchema,
   assertIssuerStatusPolicyBindingMatchesAuthorization,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 const NonEmptyStringSchema = z.string().trim().min(1);
 const UnixTimestampSchema = z.number().int().nonnegative();

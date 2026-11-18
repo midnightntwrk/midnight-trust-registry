@@ -60,11 +60,11 @@ export function validateApiImageInput(baseImage, platform, outputDirectory,
 export async function assertLightApiPayload(directory) {
   const api = join(directory, "app");
   const manifest = JSON.parse(await readFile(join(api, "package.json"), "utf8"));
-  if (manifest.name !== "@midnight-ntwrk/trust-registry-api") {
+  if (manifest.name !== "@midnightntwrk/trust-registry-api") {
     throw new Error("Deployed API package identity is incorrect");
   }
   for (const path of ["bin/trust-registry-api.mjs", "dist/cli.js", "dist/local-ledger-runtime.js",
-    "node_modules/@midnight-ntwrk/trust-registry-contract/dist/managed/trust-registry/contract/index.js"]) {
+    "node_modules/@midnightntwrk/trust-registry-contract/dist/managed/trust-registry/contract/index.js"]) {
     if (!(await lstat(join(api, path))).isFile()) {
       throw new Error(`API runtime requires a regular file: ${path}`);
     }
@@ -245,11 +245,11 @@ export async function buildApiRuntimeImage(input) {
     const cpu = input.platform === "linux/amd64" ? "x64" : "arm64";
     run("pnpm", ["install", "--frozen-lockfile", "--ignore-scripts"], { cwd: source, env });
     run("pnpm", ["exec", "turbo", "run", "build:light", "--filter",
-      "@midnight-ntwrk/trust-registry-api", "--filter",
-      "@midnight-ntwrk/trust-registry-admin-console", "--filter",
-      "@midnight-ntwrk/trust-registry-applicant-portal", "--cache=local:w,remote:"], { cwd: source, env });
+      "@midnightntwrk/trust-registry-api", "--filter",
+      "@midnightntwrk/trust-registry-admin-console", "--filter",
+      "@midnightntwrk/trust-registry-applicant-portal", "--cache=local:w,remote:"], { cwd: source, env });
     run("pnpm", ["--config.inject-workspace-packages=true", "--filter",
-      "@midnight-ntwrk/trust-registry-api", "deploy", "--prod", "--frozen-lockfile",
+      "@midnightntwrk/trust-registry-api", "deploy", "--prod", "--frozen-lockfile",
       "--os", "linux", "--cpu", cpu, "--libc", "glibc", "--no-optional",
       "--ignore-scripts",
       join(context, "app")], { cwd: source, env });

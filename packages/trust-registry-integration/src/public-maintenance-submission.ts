@@ -7,7 +7,7 @@ import type { Signature } from "@midnightntwrk/ledger-v9";
 import { submitTxAsync, type ContractProviders } from "@midnight-ntwrk/midnight-js-contracts";
 import { LedgerTransaction } from "@midnight-ntwrk/midnight-js-types";
 import { z } from "zod";
-import { TrustRegistryContract, type TrustRegistryPrivateState } from "@midnight-ntwrk/trust-registry-contract";
+import { TrustRegistryContract, type TrustRegistryPrivateState } from "@midnightntwrk/trust-registry-contract";
 
 import {
   prepareLocalNetworkCommitteeTransition,

@@ -10,7 +10,7 @@ their bounded input reads, pinned public keyring, and fixed GPG execution.
 Passing this policy does not authenticate ledger finality or qualify a release.
 
 The local-only package exports its Ledger 9 consumer source as
-`@midnight-ntwrk/trust-registry-integration/fixtures/vc-authority-consumer.compact`.
+`@midnightntwrk/trust-registry-integration/fixtures/vc-authority-consumer.compact`.
 Compile it with the repository's pinned Compact compiler and published VC
 `1.0.0-rc1` package cohort. The
 packed-artifact smoke gate's `--vc-consumer` option tests that clean-install
@@ -111,7 +111,7 @@ Current coverage:
   submit external approval/activation signatures to this simulator path;
   proposal and production network submission still need a deployable adapter.
   Fixture-driven issuer helpers still sign internally.
-  Run `pnpm --filter @midnight-ntwrk/trust-registry-integration exec vitest run
+  Run `pnpm --filter @midnightntwrk/trust-registry-integration exec vitest run
   src/test/external-issuer-signers.integration.test.ts` to reproduce it.
 - `prepareVerifierProposalAction`/`executeVerifierProposalWithSignatures` and
   `prepareVerifierDecisionAction`/`executeVerifierDecisionWithSignatures` expose
@@ -300,7 +300,7 @@ Current coverage:
   outages produce a redacted `unavailable` result rather than an eligibility
   denial; adapters must signal their own infrastructure outages explicitly.
   Run its focused tests with
-  `pnpm --filter @midnight-ntwrk/trust-registry-integration exec vitest run src/test/application-vp-verifier.integration.test.ts`.
+  `pnpm --filter @midnightntwrk/trust-registry-integration exec vitest run src/test/application-vp-verifier.integration.test.ts`.
 - `createApplicationVpIntakePorts` supplies the existing API one-use intake
   with published VC/VP verification and DID-bound signing/verification
   callbacks. It matches the configured signer key to its Midnight DID

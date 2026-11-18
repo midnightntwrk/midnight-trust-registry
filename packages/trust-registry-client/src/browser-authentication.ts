@@ -12,7 +12,7 @@ import {
   type PendingApplicationSummary,
   type PendingApplicationRecord,
   type SignedPendingApplication,
-} from "@midnight-ntwrk/trust-registry-domain/browser";
+} from "@midnightntwrk/trust-registry-domain/browser";
 
 const TOKEN_PATTERN = /^trsa_[A-Za-z0-9_-]{43}$/u;
 const MAX_SESSION_AGE_MS = 15 * 60 * 1000;

@@ -6,7 +6,7 @@ import {
   canonicalizeJson,
   compareRfc3339Instants,
   type TrustRegistryEvidenceBundle,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import { verifyTrustRegistryEvidenceBundle, type EpochAnchorVerificationContext } from "./evidence.js";
 import {

@@ -29,11 +29,11 @@ test("API payload contains runtime code but no proving keys", async () => {
   const root = await mkdtemp(join(tmpdir(), "tr-api-payload-test-"));
   try {
     const app = join(root, "app");
-    const contract = join(app, "node_modules/@midnight-ntwrk/trust-registry-contract/dist/managed/trust-registry");
+    const contract = join(app, "node_modules/@midnightntwrk/trust-registry-contract/dist/managed/trust-registry");
     await mkdir(join(app, "bin"), { recursive: true });
     await mkdir(join(app, "dist"), { recursive: true });
     await mkdir(join(contract, "contract"), { recursive: true });
-    await writeFile(join(app, "package.json"), JSON.stringify({ name: "@midnight-ntwrk/trust-registry-api" }));
+    await writeFile(join(app, "package.json"), JSON.stringify({ name: "@midnightntwrk/trust-registry-api" }));
     for (const path of [join(app, "bin/trust-registry-api.mjs"), join(app, "dist/cli.js"),
       join(app, "dist/local-ledger-runtime.js"), join(contract, "contract/index.js")]) {
       await writeFile(path, "export {};\n");

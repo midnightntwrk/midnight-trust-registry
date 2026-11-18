@@ -3,8 +3,8 @@ import { createHash } from "node:crypto";
 import { once } from "node:events";
 import { isAbsolute, resolve } from "node:path";
 
-import { ensureWorkspaceInstanceId } from "@midnight-ntwrk/trust-registry-cli";
-import { createLocalNetworkDeploymentActionReader, getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
+import { ensureWorkspaceInstanceId } from "@midnightntwrk/trust-registry-cli";
+import { createLocalNetworkDeploymentActionReader, getLocalNetworkProfile } from "@midnightntwrk/trust-registry-integration";
 
 import {
   createSnapshotFileSource,

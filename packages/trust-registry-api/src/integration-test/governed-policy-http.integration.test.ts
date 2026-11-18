@@ -7,10 +7,10 @@ import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
   signDeploymentBoundMaintainerActionFromSeed,
-} from "@midnight-ntwrk/trust-registry-contract";
-import { createMaintainerFixture } from "@midnight-ntwrk/trust-registry-contract/testing";
-import { AuthorizationStatus, EvidenceVerifierKeyStatus } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
-import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
+} from "@midnightntwrk/trust-registry-contract";
+import { createMaintainerFixture } from "@midnightntwrk/trust-registry-contract/testing";
+import { AuthorizationStatus, EvidenceVerifierKeyStatus } from "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+import { publishSimulatorSnapshot } from "@midnightntwrk/trust-registry-cli";
 import {
   bytes32Commitment,
   createIssuerScenarioFixture,
@@ -18,7 +18,7 @@ import {
   LocalTrustRegistryIntegrationHarness,
   AtomicMaintainerRecoveryPrecheckError,
   type MaintainerScenarioFixture,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 
 import {
   GovernedPolicyActionRejectedError,

@@ -12,8 +12,8 @@ import {
   type ApplicationEvidenceSignatureVerifier,
   type ApplicationEvidenceSubmission,
   type AuthorizedEvidenceVerifier,
-} from "@midnight-ntwrk/trust-registry-domain";
-import type { PrivateApplicationStatusWitness } from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-domain";
+import type { PrivateApplicationStatusWitness } from "@midnightntwrk/trust-registry-integration";
 import { z } from "zod";
 
 import {

@@ -10,7 +10,7 @@ import {
   type Ledger9FinalizedMaintenanceTxData,
 } from "@midnight-ntwrk/midnight-js-contracts";
 import { createVerifierKey, type FinalizedTxRead } from "@midnight-ntwrk/midnight-js-types";
-import { TrustRegistryContract, type TrustRegistryPrivateState } from "@midnight-ntwrk/trust-registry-contract";
+import { TrustRegistryContract, type TrustRegistryPrivateState } from "@midnightntwrk/trust-registry-contract";
 import { z } from "zod";
 
 import type { FinalizedRegistryDeploymentImage } from "./finalized-deployment-action-reader.js";

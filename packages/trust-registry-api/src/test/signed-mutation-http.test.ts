@@ -16,7 +16,7 @@ import {
   writeWorkspaceToFile,
   type TrustRegistryOperatorWorkspace,
   type TrustRegistryOperatorWorkspaceOperation,
-} from "@midnight-ntwrk/trust-registry-cli";
+} from "@midnightntwrk/trust-registry-cli";
 import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
@@ -30,7 +30,7 @@ import {
   mutationIntentDigestBytes,
   sha256Hex,
   type MutationIntent,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import {
   createIssuerScenarioFixture,
   createVerifierScenarioFixture,
@@ -41,7 +41,7 @@ import {
   createMidnightDid,
   createMidnightDidLedgerFixture,
   createMidnightDidResolver,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createTrustRegistryApiServer } from "../server.js";

@@ -243,7 +243,9 @@ describe("RPC finalized checkpoint source", () => {
       .readCurrentFinalizedCheckpoint()).rejects.toThrow(/checkpoint hash mismatch/u);
     expect(calls.map(({ method }) => method)).toEqual(["chain_getBlockHash", "chain_getBlockHash"]);
     expect(() => createLocalRpcFinalizedCheckpointSource({
-      ...config, expectedCheckpointHash: undefined,
+      rpcUrl: config.rpcUrl, allowedHosts: config.allowedHosts,
+      expectedGenesisHash: config.expectedGenesisHash,
+      expectedCheckpointHeight: config.expectedCheckpointHeight,
     })).toThrow(/checkpoint requires/u);
     expect(() => createLocalRpcFinalizedCheckpointSource({
       ...config, expectedCheckpointHeight: 0,

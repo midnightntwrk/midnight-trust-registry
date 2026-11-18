@@ -46,9 +46,9 @@ test("release version update keeps root script links while pinning package depen
     for (const { workspace, manifest } of workspaceCatalog) {
       const packagePath = join(directory, workspace, "package.json");
       mkdirSync(dirname(packagePath), { recursive: true });
-      writeFileSync(packagePath, JSON.stringify({ name: manifest?.name ?? "@midnight-ntwrk/trust-registry-docs", version: "0.1.0",
+      writeFileSync(packagePath, JSON.stringify({ name: manifest?.name ?? "@midnightntwrk/trust-registry-docs", version: "0.1.0",
         dependencies: workspace === "packages/trust-registry-client"
-          ? { "@midnight-ntwrk/trust-registry-domain": "workspace:*" } : {},
+          ? { "@midnightntwrk/trust-registry-domain": "workspace:*" } : {},
       }));
     }
     const update = spawnSync(process.execPath,
@@ -56,9 +56,9 @@ test("release version update keeps root script links while pinning package depen
       { cwd: directory, encoding: "utf8" });
     assert.equal(update.status, 0, update.stderr);
     const updatedRoot = JSON.parse(readFileSync(join(directory, "package.json"), "utf8"));
-    assert.equal(updatedRoot.devDependencies["@midnight-ntwrk/trust-registry-domain"], "workspace:*");
+    assert.equal(updatedRoot.devDependencies["@midnightntwrk/trust-registry-domain"], "workspace:*");
     const client = JSON.parse(readFileSync(join(directory, "packages/trust-registry-client/package.json"), "utf8"));
-    assert.equal(client.dependencies["@midnight-ntwrk/trust-registry-domain"], `workspace:${releaseVersion}`);
+    assert.equal(client.dependencies["@midnightntwrk/trust-registry-domain"], `workspace:${releaseVersion}`);
     const check = spawnSync(process.execPath,
       [join(directory, "scripts/release-set-version.mjs"), "--version", releaseVersion, "--check"],
       { cwd: directory, encoding: "utf8" });
@@ -103,7 +103,7 @@ test("release bytes are prepared before the protected publish approval", () => {
   const publish = parsed.jobs.publish;
   assert.equal(prepare.environment, undefined);
   assert.equal(publish.needs, "prepare");
-  assert.equal(publish.environment.name, "npm-publish");
+  assert.equal(publish.environment.name, "npm-publish-stable");
   assert.match(prepare.outputs.manifest_sha256, /steps\.manifest\.outputs\.sha256/u);
   const preparedSteps = prepare.steps.map((step) => step.name);
   assert.ok(preparedSteps.indexOf("Record manifest digest for release review")

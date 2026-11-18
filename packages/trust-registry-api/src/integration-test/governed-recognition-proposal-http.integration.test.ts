@@ -14,9 +14,9 @@ import {
   signDeploymentBoundMaintainerActionFromSeed,
   signRecognitionProposalEvidenceFromSeed,
   verifyRecognitionProposalEvidenceSignature,
-} from "@midnight-ntwrk/trust-registry-contract";
-import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
-import { sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-contract";
+import { publishSimulatorSnapshot } from "@midnightntwrk/trust-registry-cli";
+import { sha256Hex } from "@midnightntwrk/trust-registry-domain";
 import {
   bytes32Commitment,
   createMaintainerScenarioFixture,
@@ -26,7 +26,7 @@ import {
   RECOGNITION_VP_FIXTURE_AUTHORITY_DID,
   RECOGNITION_VP_FIXTURE_TIME_MS,
   type MaintainerScenarioFixture,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 
 import { FileRecognitionAdmissionStore } from "../file-recognition-admission.js";
 import { resolveCompactProposalObservation } from "../compact-proposal-observation.js";

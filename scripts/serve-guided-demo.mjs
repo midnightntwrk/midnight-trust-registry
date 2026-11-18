@@ -3,7 +3,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { ensureWorkspaceInstanceId } from "@midnight-ntwrk/trust-registry-cli";
+import { ensureWorkspaceInstanceId } from "@midnightntwrk/trust-registry-cli";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const workspace = resolve(root, "artifacts/trust-registry/guided-role-demo-v2-workspace.json");

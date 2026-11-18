@@ -37,7 +37,7 @@ assert.equal(
 for (const workspace of artifactWorkspaces) {
   const manifest = packageManifestCatalog.get(workspace);
   assert.ok(manifest, `${workspace} must define artifact manifest expectations`);
-  assert.ok(manifest.name.startsWith("@midnight-ntwrk/"));
+  assert.ok(manifest.name.startsWith("@midnightntwrk/"));
   assert.ok(Array.isArray(manifest.files) && manifest.files.length > 0);
   assert.ok(Array.isArray(manifest.exports) && manifest.exports.length > 0);
   assert.ok(

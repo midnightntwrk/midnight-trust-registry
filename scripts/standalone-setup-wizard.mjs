@@ -14,7 +14,7 @@ import {
   reconcileLocalNetworkCommitteeTransition, submitLocalNetworkCommitteeTransition,
   getLocalNetworkProfile,
   VerifierKeyInsertionOutcomeUnknownError,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { pinnedKeylessApiImageTag, selectPinnedKeylessApiImageId } from "./standalone-keyless-api-image.mjs";

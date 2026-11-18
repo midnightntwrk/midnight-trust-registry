@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 
-import { deriveJubjubPublicKey, encodeJubjubSignature } from "@midnight-ntwrk/trust-registry-contract";
+import { deriveJubjubPublicKey, encodeJubjubSignature } from "@midnightntwrk/trust-registry-contract";
 import { describe, expect, it } from "vitest";
 
 import { createMidnightDidLedgerFixture, createMidnightDidResolver } from "../did-resolution.js";

@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { FileDeploymentAttemptJournal } from "@midnight-ntwrk/trust-registry-integration";
+import { FileDeploymentAttemptJournal } from "@midnightntwrk/trust-registry-integration";
 import { validateLocalDeploymentPlan } from "./local-deployment-plan-policy.mjs";
 
 const HASH = /^0x[0-9a-f]{64}$/u;

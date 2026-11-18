@@ -1,9 +1,9 @@
-import { withExclusiveWorkspaceWrite } from "@midnight-ntwrk/trust-registry-cli";
+import { withExclusiveWorkspaceWrite } from "@midnightntwrk/trust-registry-cli";
 import {
   HashHexSchema,
   resolveGovernedRecognitionAccreditorAnchor,
   type GovernancePolicyRecord,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import {
   RecognitionAdmissionReceiptSchema,

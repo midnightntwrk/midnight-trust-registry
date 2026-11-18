@@ -3,14 +3,14 @@ import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 
-import { TrustRegistryOperatorSnapshotSchema } from "@midnight-ntwrk/trust-registry-cli";
-import { bytes32Commitment, type SequenceToTimestamp } from "@midnight-ntwrk/trust-registry-client";
-import { deriveGovernancePolicySnapshot } from "@midnight-ntwrk/trust-registry-domain";
-import type { Ledger } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+import { TrustRegistryOperatorSnapshotSchema } from "@midnightntwrk/trust-registry-cli";
+import { bytes32Commitment, type SequenceToTimestamp } from "@midnightntwrk/trust-registry-client";
+import { deriveGovernancePolicySnapshot } from "@midnightntwrk/trust-registry-domain";
+import type { Ledger } from "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import type {
   FinalizedRegistryBootstrapReader,
-} from "@midnight-ntwrk/trust-registry-integration";
-import { getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
+import { getLocalNetworkProfile } from "@midnightntwrk/trust-registry-integration";
 
 import { assertLocalLedgerEvidenceMatchesSnapshot } from "./local-ledger-projection.js";
 import type { FinalizedProposalLedgerReader } from "./compact-proposal-observation.js";

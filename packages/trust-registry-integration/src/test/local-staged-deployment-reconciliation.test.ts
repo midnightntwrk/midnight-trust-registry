@@ -2,11 +2,11 @@ import { createHash } from "node:crypto";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { bytes32Commitment, bytes32Hex } from "@midnight-ntwrk/trust-registry-client";
+import { bytes32Commitment, bytes32Hex } from "@midnightntwrk/trust-registry-client";
 import {
   deriveJubjubPublicKeyFromSeed, MaintainerStatus,
   TrustRegistryContract, trustRegistryWitnesses,
-} from "@midnight-ntwrk/trust-registry-contract";
+} from "@midnightntwrk/trust-registry-contract";
 
 import { FinalizedDeploymentImageInvalidError } from "../finalized-deployment-action-reader.js";
 import type { FinalizedRegistryDeploymentImage } from "../finalized-deployment-action-reader.js";

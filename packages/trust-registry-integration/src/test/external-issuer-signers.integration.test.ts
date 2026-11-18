@@ -7,11 +7,11 @@ import {
   deriveJubjubPublicKeyFromSeed,
   signIssuerProposalEvidenceFromSeed,
   signDeploymentBoundMaintainerActionFromSeed,
-} from "@midnight-ntwrk/trust-registry-contract";
+} from "@midnightntwrk/trust-registry-contract";
 import {
   createMaintainerFixture,
   type MaintainerCoAuthorizer,
-} from "@midnight-ntwrk/trust-registry-contract/testing";
+} from "@midnightntwrk/trust-registry-contract/testing";
 
 import {
   createIssuerScenarioFixture,

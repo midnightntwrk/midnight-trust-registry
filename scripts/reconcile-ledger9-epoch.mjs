@@ -1,8 +1,8 @@
 import { lstat, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
-import { bytes32Commitment } from "@midnight-ntwrk/trust-registry-client";
-import { computeCreateEpochCommitmentPayloadHash } from "@midnight-ntwrk/trust-registry-contract";
+import { bytes32Commitment } from "@midnightntwrk/trust-registry-client";
+import { computeCreateEpochCommitmentPayloadHash } from "@midnightntwrk/trust-registry-contract";
 
 import { readLedger9Registry } from "./read-ledger9-registry.mjs";
 

@@ -2,7 +2,7 @@ import {
   ApplicationChallengeBindingSchema,
   type ApplicationChallengeBinding,
   type ApplicationEvidenceSubmission,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import type { ProposalAdmissionPort } from "../../proposal-admission.js";
 

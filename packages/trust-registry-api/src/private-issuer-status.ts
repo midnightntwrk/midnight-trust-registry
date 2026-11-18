@@ -6,11 +6,11 @@ import {
   type ApplicationEvidenceSubmission,
   type AuthorizedEvidenceVerifier,
   type IssuerStatusPolicyBinding,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import {
   materialFromPrivateApplicationStatusWitness,
   refreshCapturedApplicationStatus,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 
 import type { FileApplicationAdmissionStore } from "./file-application-admission.js";
 import { assertProposalAdmissionRecords, type ProposalAdmissionPort } from "./proposal-admission.js";

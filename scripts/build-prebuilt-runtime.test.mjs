@@ -60,11 +60,11 @@ test("demo E2E rebuilds current workspaces without a destructive Compact build",
     assert.equal(readFileSync(f.sourceManagedDeclaration, "utf8"), readFileSync(f.distManagedDeclaration, "utf8"));
     const calls = readFileSync(f.log, "utf8").trim().split("\n");
     assert.equal(calls.length, 2);
-    assert.equal(calls[0], "--filter @midnight-ntwrk/trust-registry-contract exec tsc -p tsconfig.build.json");
-    assert.match(calls[1], /^-r --filter @midnight-ntwrk\/trust-registry-domain /u);
-    assert.match(calls[1], /--filter @midnight-ntwrk\/trust-registry-api /u);
-    assert.match(calls[1], /--filter @midnight-ntwrk\/trust-registry-applicant-portal /u);
-    assert.match(calls[1], /--filter @midnight-ntwrk\/trust-registry-trqp-adapter /u);
+    assert.equal(calls[0], "--filter @midnightntwrk/trust-registry-contract exec tsc -p tsconfig.build.json");
+    assert.match(calls[1], /^-r --filter @midnightntwrk\/trust-registry-domain /u);
+    assert.match(calls[1], /--filter @midnightntwrk\/trust-registry-api /u);
+    assert.match(calls[1], /--filter @midnightntwrk\/trust-registry-applicant-portal /u);
+    assert.match(calls[1], /--filter @midnightntwrk\/trust-registry-trqp-adapter /u);
     assert.match(calls[1], / run build$/u);
     assert.doesNotMatch(calls.join(" "), /build:light|compact:light|clean/u);
   } finally {

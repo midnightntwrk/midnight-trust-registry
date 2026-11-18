@@ -7,9 +7,9 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { FileDeploymentAttemptJournal, LocalTrustRegistryIntegrationHarness } from "@midnight-ntwrk/trust-registry-integration";
+import { FileDeploymentAttemptJournal, LocalTrustRegistryIntegrationHarness } from "@midnightntwrk/trust-registry-integration";
 import { computeGovernancePolicySnapshotCommitment,
-  deriveGovernancePolicySnapshot } from "@midnight-ntwrk/trust-registry-domain";
+  deriveGovernancePolicySnapshot } from "@midnightntwrk/trust-registry-domain";
 
 import {
   loadApprovedMaintenanceMaterial, reconcileLocalDeployment, runLocalDeployment,

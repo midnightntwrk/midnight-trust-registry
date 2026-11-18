@@ -19,8 +19,8 @@ import type {
   PendingApplicationRecord,
   PendingApplicationSummary,
   RecognitionAdmissionReceipt,
-} from "@midnight-ntwrk/trust-registry-api";
-import { PendingApplicationListResponseSchema } from "@midnight-ntwrk/trust-registry-api/browser-schemas";
+} from "@midnightntwrk/trust-registry-api";
+import { PendingApplicationListResponseSchema } from "@midnightntwrk/trust-registry-api/browser-schemas";
 import type { PortalSubmissionTarget, PublicInspection } from "./model.js";
 
 type FetchLike = typeof fetch;

@@ -1,6 +1,6 @@
-import { applyWorkspaceOperation, createOperatorWorkspace, resolveWorkspaceOperationRecord } from "@midnight-ntwrk/trust-registry-cli";
-import { computeAuthorizationScopeCommitment, computeMutationPayloadCommitment, type MutationIntent } from "@midnight-ntwrk/trust-registry-domain";
-import { createIssuerScenarioFixture } from "@midnight-ntwrk/trust-registry-integration";
+import { applyWorkspaceOperation, createOperatorWorkspace, resolveWorkspaceOperationRecord } from "@midnightntwrk/trust-registry-cli";
+import { computeAuthorizationScopeCommitment, computeMutationPayloadCommitment, type MutationIntent } from "@midnightntwrk/trust-registry-domain";
+import { createIssuerScenarioFixture } from "@midnightntwrk/trust-registry-integration";
 import { describe, expect, it } from "vitest";
 
 import { applyIntentBoundWorkspaceOperation, preflightMutationIntent } from "../mutation-intent-preflight.js";

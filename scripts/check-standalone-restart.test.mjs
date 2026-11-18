@@ -4,7 +4,7 @@ import { chmod, link, mkdtemp, mkdir, readFile, realpath, rm, symlink, unlink, w
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
-import { getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
+import { getLocalNetworkProfile } from "@midnightntwrk/trust-registry-integration";
 
 import {
   captureStandaloneRestartBaseline,

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AuthorizationStatus,
   IssuerResourceType,
-} from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+} from "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 
 import { createIssuerScenarioFixture } from "../fixtures.js";
 import { LocalTrustRegistryIntegrationHarness } from "../local-simulator-harness.js";

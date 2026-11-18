@@ -307,30 +307,30 @@ The repository currently distinguishes between two artifact classes.
 
 Local artifact packages:
 
-- `@midnight-ntwrk/trust-registry-contract`
-- `@midnight-ntwrk/trust-registry-domain`
-- `@midnight-ntwrk/trust-registry-client`
-- `@midnight-ntwrk/trust-registry-integration`
-- `@midnight-ntwrk/trust-registry-cli`
-- `@midnight-ntwrk/trust-registry-api`
-- `@midnight-ntwrk/trust-registry-admin-console`
-- `@midnight-ntwrk/trust-registry-applicant-portal`
-- `@midnight-ntwrk/trust-registry-trqp-adapter`
-- `@midnight-ntwrk/trust-registry-openid-federation-adapter`
+- `@midnightntwrk/trust-registry-contract`
+- `@midnightntwrk/trust-registry-domain`
+- `@midnightntwrk/trust-registry-client`
+- `@midnightntwrk/trust-registry-integration`
+- `@midnightntwrk/trust-registry-cli`
+- `@midnightntwrk/trust-registry-api`
+- `@midnightntwrk/trust-registry-admin-console`
+- `@midnightntwrk/trust-registry-applicant-portal`
+- `@midnightntwrk/trust-registry-trqp-adapter`
+- `@midnightntwrk/trust-registry-openid-federation-adapter`
 
 Remotely publishable core packages:
 
-- `@midnight-ntwrk/trust-registry-contract`
-- `@midnight-ntwrk/trust-registry-domain`
-- `@midnight-ntwrk/trust-registry-client`
-- `@midnight-ntwrk/trust-registry-trqp-adapter`
-- `@midnight-ntwrk/trust-registry-openid-federation-adapter`
+- `@midnightntwrk/trust-registry-contract`
+- `@midnightntwrk/trust-registry-domain`
+- `@midnightntwrk/trust-registry-client`
+- `@midnightntwrk/trust-registry-trqp-adapter`
+- `@midnightntwrk/trust-registry-openid-federation-adapter`
 
 Local-only artifact packages for now:
 
-- `@midnight-ntwrk/trust-registry-integration`
-- `@midnight-ntwrk/trust-registry-cli`
-- `@midnight-ntwrk/trust-registry-api`
+- `@midnightntwrk/trust-registry-integration`
+- `@midnightntwrk/trust-registry-cli`
+- `@midnightntwrk/trust-registry-api`
 
 Those packages remain private, local-only artifacts while their public
 packaging and deployment policy is finalized. They are packed into
@@ -470,9 +470,13 @@ The repo currently exposes two manual GitHub Actions workflows:
 6. smoke-tests the published packages from the configured registry
 
 The publish workflow only runs from the `develop` branch and pauses at the
-protected `npm-publish` environment. Configure required reviewers and the
-`NPM_TOKEN` secret on that environment before using the workflow in a public
-repository.
+protected `npm-publish-stable` environment, whose required reviewers are
+managed in `midnightntwrk/midnight-iac`. The publish job authenticates with npm
+Trusted Publishing: there is no npm token, and npm exchanges the job's GitHub
+OIDC token (`id-token: write`) for a short-lived publish credential and emits
+provenance. Each published package has a Trusted Publisher on npmjs for
+`midnightntwrk/midnight-trust-registry`, workflow `publish.yml`, environment
+`npm-publish-stable`; renaming either breaks publishing.
 
 `Published Package Smoke` reruns only the final published-package import smoke
 for a specified version.
@@ -489,8 +493,8 @@ node scripts/release-candidate-manifest.mjs --artifact-dir artifacts/npm-release
 pnpm run published-artifacts:smoke -- --tarball-dir artifacts/npm-release --manifest artifacts/npm-release.manifest.json
 ```
 
-The publish workflow expects `NPM_TOKEN` to be configured as a repository
-secret. The default registry is `https://registry.npmjs.org`.
+The publish workflow needs no npm token secret. The default registry is
+`https://registry.npmjs.org`.
 The manifest is uploaded with the exact tarballs; it records the signed source,
 package and verifier-key digests. Runtime image digests and independent local
 deployment/security approval remain separate release evidence, not a result of

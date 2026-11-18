@@ -4,7 +4,7 @@ import {
   ApplicationChallengeBindingSchema,
   computeAuthorizationScopeCommitment,
   issuerGovernedResourceId,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import {
   createApplicationVpIntakePorts,
   createQualifiedApplicationVpIntakePorts,
@@ -16,7 +16,7 @@ import {
   createMidnightDid,
   VP_FIXTURE_TIME_MS,
   VP_FIXTURE_TRUST_CONTEXT,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 
 import { ApplicationChallengeService, InMemoryApplicationChallengeStore } from "../application-challenges.js";
 import { consumeChallengeAndSubmitApplication } from "../application-intake.js";

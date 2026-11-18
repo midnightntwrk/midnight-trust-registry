@@ -9,13 +9,13 @@ import {
   JUBJUB_ORDER,
   signApplicationEvidenceCommitmentFromSeed,
   signDeploymentBoundMaintainerActionFromSeed,
-} from "@midnight-ntwrk/trust-registry-contract";
+} from "@midnightntwrk/trust-registry-contract";
 import {
   AuthorizationStatus as ContractAuthorizationStatus,
   IssuerResourceType,
-} from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
-import { assertDecisionEpochPublicationSignatures } from "@midnight-ntwrk/trust-registry-client";
-import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client/simulator";
+} from "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+import { assertDecisionEpochPublicationSignatures } from "@midnightntwrk/trust-registry-client";
+import { TrustRegistrySimulatorClient } from "@midnightntwrk/trust-registry-client/simulator";
 import {
   AcceptedDecisionEpochSchema,
   computeApplicationEvidenceCommitment,
@@ -26,7 +26,7 @@ import {
   requestGovernedResourceId,
   resolveGovernancePolicyTemplate,
   sha256Hex,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import {
   bytes32Commitment,
   createIssuerAuthorizationScopeFixture,

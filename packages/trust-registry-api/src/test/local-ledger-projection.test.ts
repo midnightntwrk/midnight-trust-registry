@@ -12,15 +12,15 @@ import {
   collectDistinctEpochs,
   collectRecognitionRecord,
   writeSnapshotToFile,
-} from "@midnight-ntwrk/trust-registry-cli";
+} from "@midnightntwrk/trust-registry-cli";
 import {
   LocalTrustRegistryIntegrationHarness,
   createAuditorScenarioFixture,
   createIssuerScenarioFixture,
   createRecognitionScenarioFixture,
   createVerifierScenarioFixture,
-} from "@midnight-ntwrk/trust-registry-integration";
-import { deriveGovernancePolicySnapshot } from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-integration";
+import { deriveGovernancePolicySnapshot } from "@midnightntwrk/trust-registry-domain";
 
 import {
   assertCompletePolicyRevisionHistory,

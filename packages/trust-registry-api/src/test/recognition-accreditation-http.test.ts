@@ -5,16 +5,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { signJubjubDigestFromSeed } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
-import { createOperatorWorkspace } from "@midnight-ntwrk/trust-registry-cli";
+import { createOperatorWorkspace } from "@midnightntwrk/trust-registry-cli";
 import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
   signDeploymentBoundMaintainerActionFromSeed,
-} from "@midnight-ntwrk/trust-registry-contract";
+} from "@midnightntwrk/trust-registry-contract";
 import {
   sha256Hex,
   type RecognitionAuthorityAssertion,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import {
   createRecognitionAccreditationVpScenarioFixture,
   bytes32Commitment,
@@ -26,7 +26,7 @@ import {
   RECOGNITION_VP_FIXTURE_ANCHOR,
   RECOGNITION_VP_FIXTURE_AUTHORITY_DID,
   RECOGNITION_VP_FIXTURE_TIME_MS,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { FileRecognitionAdmissionStore } from "../file-recognition-admission.js";

@@ -14,8 +14,8 @@ import {
   type RecognitionScenarioFixture,
   type VerifierScenarioFixture,
   bytes32Commitment,
-} from "@midnight-ntwrk/trust-registry-integration";
-import { createScopedIdentifier, type EpochCommitment, type TrustRegistryEvidenceBundle } from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-integration";
+import { createScopedIdentifier, type EpochCommitment, type TrustRegistryEvidenceBundle } from "@midnightntwrk/trust-registry-domain";
 
 import {
   TrustRegistryOperatorWorkspaceSchema,

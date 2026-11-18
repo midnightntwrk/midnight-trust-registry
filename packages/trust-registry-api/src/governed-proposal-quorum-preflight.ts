@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 
-import { TrustRegistryContract } from "@midnight-ntwrk/trust-registry-contract";
-import { MaintainerStatus } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+import { TrustRegistryContract } from "@midnightntwrk/trust-registry-contract";
+import { MaintainerStatus } from "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 
 import type { FinalizedProposalLedgerReader } from "./compact-proposal-observation.js";
 import type { GovernedMembershipSigner } from "./governed-membership-actions.js";

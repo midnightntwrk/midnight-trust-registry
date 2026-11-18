@@ -1,5 +1,5 @@
 import { parseMidnightDIDDocument } from "@midnight-ntwrk/midnight-did";
-import type { DecisionEvidence } from "@midnight-ntwrk/trust-registry-domain";
+import type { DecisionEvidence } from "@midnightntwrk/trust-registry-domain";
 
 export type DidStateObservation = {
   networkId: string;

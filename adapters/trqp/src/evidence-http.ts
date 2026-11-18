@@ -1,4 +1,4 @@
-import type { EpochAnchorVerificationContext } from "@midnight-ntwrk/trust-registry-client";
+import type { EpochAnchorVerificationContext } from "@midnightntwrk/trust-registry-client";
 
 import {
   verifyTrqpAuthorizationEvidenceResponse,

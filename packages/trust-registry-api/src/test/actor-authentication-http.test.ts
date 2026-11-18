@@ -8,14 +8,14 @@ import {
   signJubjubPayloadFromSeed,
 } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import { createLongFormOffchainMidnightDIDString, CurveType, KeyType } from "@midnight-ntwrk/midnight-did-domain";
-import { createOperatorWorkspace } from "@midnight-ntwrk/trust-registry-cli";
+import { createOperatorWorkspace } from "@midnightntwrk/trust-registry-cli";
 import { actorAuthenticationDigestBytes, computeAuthorizationScopeCommitment,
-  computePendingApplicationPayloadCommitment, type ActorAuthenticationChallenge } from "@midnight-ntwrk/trust-registry-domain";
+  computePendingApplicationPayloadCommitment, type ActorAuthenticationChallenge } from "@midnightntwrk/trust-registry-domain";
 import {
   createMidnightDid,
   createMidnightDidLedgerFixture,
   createMidnightDidResolver,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createActorAuthenticationService, type ActorAuthenticationChallengeStore } from "../actor-authentication.js";

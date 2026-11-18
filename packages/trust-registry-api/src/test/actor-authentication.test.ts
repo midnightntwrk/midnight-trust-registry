@@ -15,12 +15,12 @@ import {
   ActorAuthenticationChallengeSchema,
   actorAuthenticationDigestBytes,
   type ActorAuthenticationChallenge,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import {
   createMidnightDid,
   createMidnightDidLedgerFixture,
   createMidnightDidResolver,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 import { describe, expect, it } from "vitest";
 
 import {

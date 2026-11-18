@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { FileVerifierKeyInsertionJournal } from "@midnight-ntwrk/trust-registry-integration";
+import { FileVerifierKeyInsertionJournal } from "@midnightntwrk/trust-registry-integration";
 
 import {
   runLocalVerifierKeyInsertion, validateLocalVerifierKeyInsertionPlan,

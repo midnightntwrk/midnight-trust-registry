@@ -1,7 +1,7 @@
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 
-import { buildSnapshotSummary, createDemoSnapshot } from "@midnight-ntwrk/trust-registry-cli";
+import { buildSnapshotSummary, createDemoSnapshot } from "@midnightntwrk/trust-registry-cli";
 import { describe, expect, it } from "vitest";
 
 import { localApiOrigin, observeLocalApiCurrentReads } from "../local-ledger-api-observation.js";

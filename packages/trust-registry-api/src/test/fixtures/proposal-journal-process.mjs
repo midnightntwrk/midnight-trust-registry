@@ -6,8 +6,8 @@ import {
   ProposalSubmissionAttributionRequiredError,
   ProposalSubmissionBlockedByReservationError,
   ProposalSubmissionOutcomeUnknownError,
-} from "@midnight-ntwrk/trust-registry-api";
-import { createPinnedLocalSubmissionProvider } from "@midnight-ntwrk/trust-registry-integration/local-pinned-submission-provider";
+} from "@midnightntwrk/trust-registry-api";
+import { createPinnedLocalSubmissionProvider } from "@midnightntwrk/trust-registry-integration/local-pinned-submission-provider";
 
 const [path, operation] = process.argv.slice(2);
 if (!path || !operation || typeof process.send !== "function") {

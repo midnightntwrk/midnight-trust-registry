@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { deriveJubjubPublicKeyFromSeed } from "@midnight-ntwrk/trust-registry-contract";
-import { VcAuthorityKeyStatus } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+import { deriveJubjubPublicKeyFromSeed } from "@midnightntwrk/trust-registry-contract";
+import { VcAuthorityKeyStatus } from "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 
 import { bytes32Commitment, createMidnightDid } from "../fixtures.js";
 import { LocalTrustRegistryIntegrationHarness } from "../local-simulator-harness.js";

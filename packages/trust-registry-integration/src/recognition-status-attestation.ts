@@ -11,7 +11,7 @@ import {
   type RecognitionStatusAttestation,
   type RecognitionAccreditorAnchor,
   type SignedRecognitionStatusAttestation,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import type { RecognitionAccreditationStatusSource, RecognitionStatusDecision } from "./recognition-accreditation-vp.js";
 import { verifyDidJubjubSignature } from "./did-signature-verification.js";

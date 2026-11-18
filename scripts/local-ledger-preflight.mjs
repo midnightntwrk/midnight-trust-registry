@@ -4,7 +4,7 @@ import { lstat, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { createLocalRpcFinalizedCheckpointSource, getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
+import { createLocalRpcFinalizedCheckpointSource, getLocalNetworkProfile } from "@midnightntwrk/trust-registry-integration";
 import { exactFields } from "./standalone-exact-fields-policy.mjs";
 
 const HASH = /^0x[0-9a-f]{64}$/u;

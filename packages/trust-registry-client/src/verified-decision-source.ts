@@ -1,4 +1,4 @@
-import type { DecisionEvidenceSelection, DecisionEvidence } from "@midnight-ntwrk/trust-registry-domain";
+import type { DecisionEvidenceSelection, DecisionEvidence } from "@midnightntwrk/trust-registry-domain";
 
 import { buildDecisionEvidenceClaim, type DecisionEvidenceBuildInput } from "./decision-evidence-builder.js";
 import { verifyDecisionEvidenceWithTrustedReaders, type TrustedDecisionEvidenceReaders } from "./decision-context.js";

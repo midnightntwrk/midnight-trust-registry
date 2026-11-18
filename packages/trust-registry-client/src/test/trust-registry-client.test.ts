@@ -5,7 +5,7 @@ import {
   computeGovernancePolicySnapshotCommitment,
   computeIssuerStatusPolicyBindingCommitment,
   deriveGovernancePolicySnapshot,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import {
   createAuditorAuthorizationScopeFixture,

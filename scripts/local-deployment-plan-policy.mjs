@@ -1,6 +1,6 @@
 import { isAbsolute } from "node:path";
 
-import { getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
+import { getLocalNetworkProfile } from "@midnightntwrk/trust-registry-integration";
 import { exactRecordFields as exactFields } from "./standalone-exact-fields-policy.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;

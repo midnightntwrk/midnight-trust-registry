@@ -5,7 +5,7 @@ import {
   resolveWorkspaceOperationRecord,
   type TrustRegistryOperatorWorkspace,
   type TrustRegistryOperatorWorkspaceOperation,
-} from "@midnight-ntwrk/trust-registry-cli";
+} from "@midnightntwrk/trust-registry-cli";
 import {
   computeAuthorizationScopeCommitment,
   computeMutationPayloadCommitment,
@@ -14,7 +14,7 @@ import {
   MutationIntentSchema,
   requestGovernedResourceIdFromScopeCommitment,
   type MutationIntent,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import { computeOperatorWorkspaceCommitment } from "./workspace-commitment.js";
 

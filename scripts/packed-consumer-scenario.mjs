@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 
-import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client/simulator";
+import { TrustRegistrySimulatorClient } from "@midnightntwrk/trust-registry-client/simulator";
 import {
   LocalTrustRegistryIntegrationHarness,
   createIssuerScenarioFixture,
   createVerifierScenarioFixture,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 
 const harness = new LocalTrustRegistryIntegrationHarness("packed-consumer");
 const client = new TrustRegistrySimulatorClient(harness.simulator);

@@ -80,34 +80,34 @@ importers:
       '@midnight-ntwrk/testkit-js':
         specifier: 5.0.1
         version: 5.0.1(@effect/platform@0.97.1(effect@3.22.3))(tar-stream@3.2.2)
-      '@midnight-ntwrk/trust-registry-admin-console':
+      '@midnightntwrk/trust-registry-admin-console':
         specifier: workspace:*
         version: link:packages/trust-registry-admin-console
-      '@midnight-ntwrk/trust-registry-api':
+      '@midnightntwrk/trust-registry-api':
         specifier: workspace:*
         version: link:packages/trust-registry-api
-      '@midnight-ntwrk/trust-registry-applicant-portal':
+      '@midnightntwrk/trust-registry-applicant-portal':
         specifier: workspace:*
         version: link:packages/trust-registry-applicant-portal
-      '@midnight-ntwrk/trust-registry-cli':
+      '@midnightntwrk/trust-registry-cli':
         specifier: workspace:*
         version: link:packages/trust-registry-cli
-      '@midnight-ntwrk/trust-registry-client':
+      '@midnightntwrk/trust-registry-client':
         specifier: workspace:*
         version: link:packages/trust-registry-client
-      '@midnight-ntwrk/trust-registry-contract':
+      '@midnightntwrk/trust-registry-contract':
         specifier: workspace:*
         version: link:contracts/trust-registry
-      '@midnight-ntwrk/trust-registry-domain':
+      '@midnightntwrk/trust-registry-domain':
         specifier: workspace:*
         version: link:packages/trust-registry-domain
-      '@midnight-ntwrk/trust-registry-integration':
+      '@midnightntwrk/trust-registry-integration':
         specifier: workspace:*
         version: link:packages/trust-registry-integration
-      '@midnight-ntwrk/trust-registry-openid-federation-adapter':
+      '@midnightntwrk/trust-registry-openid-federation-adapter':
         specifier: workspace:*
         version: link:adapters/openid-federation
-      '@midnight-ntwrk/trust-registry-trqp-adapter':
+      '@midnightntwrk/trust-registry-trqp-adapter':
         specifier: workspace:*
         version: link:adapters/trqp
       '@playwright/test':
@@ -155,10 +155,10 @@ importers:
 
   adapters/openid-federation:
     dependencies:
-      '@midnight-ntwrk/trust-registry-client':
+      '@midnightntwrk/trust-registry-client':
         specifier: workspace:0.1.0
         version: link:../../packages/trust-registry-client
-      '@midnight-ntwrk/trust-registry-domain':
+      '@midnightntwrk/trust-registry-domain':
         specifier: workspace:0.1.0
         version: link:../../packages/trust-registry-domain
       jose:
@@ -168,23 +168,23 @@ importers:
         specifier: ^4.6.6
         version: 4.6.6
     devDependencies:
-      '@midnight-ntwrk/trust-registry-integration':
+      '@midnightntwrk/trust-registry-integration':
         specifier: workspace:0.1.0
         version: link:../../packages/trust-registry-integration
 
   adapters/trqp:
     dependencies:
-      '@midnight-ntwrk/trust-registry-client':
+      '@midnightntwrk/trust-registry-client':
         specifier: workspace:0.1.0
         version: link:../../packages/trust-registry-client
-      '@midnight-ntwrk/trust-registry-domain':
+      '@midnightntwrk/trust-registry-domain':
         specifier: workspace:0.1.0
         version: link:../../packages/trust-registry-domain
       zod:
         specifier: ^4.6.6
         version: 4.6.6
     devDependencies:
-      '@midnight-ntwrk/trust-registry-integration':
+      '@midnightntwrk/trust-registry-integration':
         specifier: workspace:0.1.0
         version: link:../../packages/trust-registry-integration
 
@@ -211,10 +211,10 @@ importers:
 
   packages/trust-registry-admin-console:
     dependencies:
-      '@midnight-ntwrk/trust-registry-api':
+      '@midnightntwrk/trust-registry-api':
         specifier: workspace:0.1.0
         version: link:../trust-registry-api
-      '@midnight-ntwrk/trust-registry-client':
+      '@midnightntwrk/trust-registry-client':
         specifier: workspace:0.1.0
         version: link:../trust-registry-client
     devDependencies:
@@ -236,22 +236,22 @@ importers:
       '@midnight-ntwrk/midnight-did-jubjub-schnorr':
         specifier: 1.0.0-rc1
         version: 1.0.0-rc1
-      '@midnight-ntwrk/trust-registry-cli':
+      '@midnightntwrk/trust-registry-cli':
         specifier: workspace:0.1.0
         version: link:../trust-registry-cli
-      '@midnight-ntwrk/trust-registry-client':
+      '@midnightntwrk/trust-registry-client':
         specifier: workspace:0.1.0
         version: link:../trust-registry-client
-      '@midnight-ntwrk/trust-registry-contract':
+      '@midnightntwrk/trust-registry-contract':
         specifier: workspace:0.1.0
         version: link:../../contracts/trust-registry
-      '@midnight-ntwrk/trust-registry-domain':
+      '@midnightntwrk/trust-registry-domain':
         specifier: workspace:0.1.0
         version: link:../trust-registry-domain
-      '@midnight-ntwrk/trust-registry-integration':
+      '@midnightntwrk/trust-registry-integration':
         specifier: workspace:0.1.0
         version: link:../trust-registry-integration
-      '@midnight-ntwrk/trust-registry-trqp-adapter':
+      '@midnightntwrk/trust-registry-trqp-adapter':
         specifier: workspace:0.1.0
         version: link:../../adapters/trqp
       zod:
@@ -264,13 +264,13 @@ importers:
 
   packages/trust-registry-applicant-portal:
     dependencies:
-      '@midnight-ntwrk/trust-registry-api':
+      '@midnightntwrk/trust-registry-api':
         specifier: workspace:0.1.0
         version: link:../trust-registry-api
-      '@midnight-ntwrk/trust-registry-client':
+      '@midnightntwrk/trust-registry-client':
         specifier: workspace:0.1.0
         version: link:../trust-registry-client
-      '@midnight-ntwrk/trust-registry-domain':
+      '@midnightntwrk/trust-registry-domain':
         specifier: workspace:0.1.0
         version: link:../trust-registry-domain
     devDependencies:
@@ -280,13 +280,13 @@ importers:
 
   packages/trust-registry-cli:
     dependencies:
-      '@midnight-ntwrk/trust-registry-client':
+      '@midnightntwrk/trust-registry-client':
         specifier: workspace:0.1.0
         version: link:../trust-registry-client
-      '@midnight-ntwrk/trust-registry-domain':
+      '@midnightntwrk/trust-registry-domain':
         specifier: workspace:0.1.0
         version: link:../trust-registry-domain
-      '@midnight-ntwrk/trust-registry-integration':
+      '@midnightntwrk/trust-registry-integration':
         specifier: workspace:0.1.0
         version: link:../trust-registry-integration
       zod:
@@ -301,10 +301,10 @@ importers:
       '@midnight-ntwrk/midnight-did':
         specifier: 1.0.0-rc1
         version: 1.0.0-rc1
-      '@midnight-ntwrk/trust-registry-contract':
+      '@midnightntwrk/trust-registry-contract':
         specifier: workspace:0.1.0
         version: link:../../contracts/trust-registry
-      '@midnight-ntwrk/trust-registry-domain':
+      '@midnightntwrk/trust-registry-domain':
         specifier: workspace:0.1.0
         version: link:../trust-registry-domain
 
@@ -355,13 +355,13 @@ importers:
       '@midnight-ntwrk/midnight-js-types':
         specifier: 5.0.1
         version: 5.0.1
-      '@midnight-ntwrk/trust-registry-client':
+      '@midnightntwrk/trust-registry-client':
         specifier: workspace:0.1.0
         version: link:../trust-registry-client
-      '@midnight-ntwrk/trust-registry-contract':
+      '@midnightntwrk/trust-registry-contract':
         specifier: workspace:0.1.0
         version: link:../../contracts/trust-registry
-      '@midnight-ntwrk/trust-registry-domain':
+      '@midnightntwrk/trust-registry-domain':
         specifier: workspace:0.1.0
         version: link:../trust-registry-domain
       '@polkadot/api':

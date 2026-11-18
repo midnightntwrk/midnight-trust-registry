@@ -9,11 +9,11 @@ import {
   type RecognitionRecord,
   type RegistryRecord,
   type TrustRegistryEvidenceBundle,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import {
   evaluateAuthorizationRecordAtTime,
   evaluateRecognitionRecordAtTime,
-} from "@midnight-ntwrk/trust-registry-client";
+} from "@midnightntwrk/trust-registry-client";
 
 import {
   TrqpAuthorizationEvidenceResponseSchema,

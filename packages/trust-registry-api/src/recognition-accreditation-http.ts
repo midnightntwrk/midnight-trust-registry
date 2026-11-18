@@ -5,11 +5,11 @@ import {
   SignedRecognitionAuthorityAssertionSchema,
   resolveGovernedRecognitionAccreditorAnchor,
   type GovernancePolicyRecord,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import type {
   RecognitionAccreditationStatusSource,
   RecognitionAccreditationSubmission,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 import { z } from "zod";
 
 import type { ApplicationChallengeStore } from "./application-challenges.js";
