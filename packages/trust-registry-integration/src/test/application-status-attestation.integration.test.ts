@@ -64,8 +64,13 @@ describe("DID-signed application status attestation", () => {
   it("audits a private status witness against redacted evidence without accepting policy substitution", async () => {
     const { source, request, resolver, signed } = await fixture();
     const expectedCommitment = (await source(request)).statusDecisionCommitment;
-    const audit = { ...request, resolver, signed, expectedCommitment };
+    const expectedChallengeHash = sha256Hex(Buffer.from(request.nonce.slice(2), "hex"));
+    const audit = { ...request, resolver, signed, expectedCommitment, expectedChallengeHash };
     await expect(verifyApplicationStatusDecisionWitness(audit)).resolves.toBe(true);
+    await expect(verifyApplicationStatusDecisionWitness({
+      ...audit,
+      expectedChallengeHash: sha256Hex("another-application-challenge"),
+    })).rejects.toThrow(/accepted challenge/u);
     await expect(verifyApplicationStatusDecisionWitness({
       ...audit,
       binding: { ...request.binding, statusPolicyContentCommitment: sha256Hex("substituted-policy") },
@@ -103,6 +108,7 @@ describe("DID-signed application status attestation", () => {
     await expect(verifyApplicationStatusDecisionWitness({
       ...minimalRequest, resolver, signed,
       expectedCommitment: result.statusDecisionCommitment,
+      expectedChallengeHash: sha256Hex(Buffer.from(request.nonce.slice(2), "hex")),
     })).resolves.toBe(true);
     await expect(source({
       ...minimalRequest,

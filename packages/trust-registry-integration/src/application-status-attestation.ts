@@ -166,6 +166,7 @@ export function createAttestedApplicationStatusSource(input: {
 export async function verifyApplicationStatusDecisionWitness(input: {
   signed: unknown;
   expectedCommitment: string;
+  expectedChallengeHash: string;
   material: ApplicationStatusWitnessMaterial;
   binding: IssuerStatusPolicyBinding;
   nonce: string;
@@ -173,6 +174,9 @@ export async function verifyApplicationStatusDecisionWitness(input: {
   resolver: Pick<MidnightDIDResolverInterface, "resolveResult">;
 }): Promise<true> {
   const expectedCommitment = Hash.parse(input.expectedCommitment);
+  if (sha256Hex(Buffer.from(input.nonce.slice(2), "hex")) !== Hash.parse(input.expectedChallengeHash)) {
+    throw new Error("Application status witness does not match the accepted challenge");
+  }
   const source = createAttestedApplicationStatusSource({
     resolver: input.resolver,
     fetchAttestation: async () => input.signed,

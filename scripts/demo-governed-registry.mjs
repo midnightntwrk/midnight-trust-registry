@@ -889,6 +889,7 @@ try {
     const audit = {
       signed: statusWitness,
       expectedCommitment: submitted.evidence.envelope.statusDecisionCommitment,
+      expectedChallengeHash: submitted.evidence.envelope.challengeHash,
       material: proof.material,
       binding: proof.fixtureStatusPolicyBinding,
       nonce: challenge.nonce,

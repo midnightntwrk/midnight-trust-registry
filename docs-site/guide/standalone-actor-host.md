@@ -46,8 +46,8 @@ commitment, or signed status witness needed by
 accepts only the VP-derived credential body root and status binding (registry,
 authority-method reference, and handle commitment), not the entire VP proof.
 A live host must obtain those inputs from a separately protected, application-bound witness or
-from a new applicant presentation, then compare them with the accepted
-evidence and current governed status-policy binding. Do not infer current
+from a new applicant presentation, then verify the witness against the accepted
+evidence commitment and challenge hash and the current governed status-policy binding. Do not infer current
 status from the old `statusDecisionCommitment`, persist raw VP claims in the
 public application record, or return a fabricated
 `tr-live-issuer-evidence-verification-v1` result. Missing witness, unavailable
