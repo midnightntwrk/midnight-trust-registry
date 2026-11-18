@@ -114,16 +114,17 @@
     "@midnight-ntwrk/midnight-did-contract": "1.0.0-rc1",
     "@midnight-ntwrk/midnight-did-domain": "1.0.0-rc1",
     "@midnight-ntwrk/midnight-did-jubjub-schnorr": "1.0.0-rc1",
-    "@midnightntwrk/ledger-v9": "1.0.0"
+    "@midnightntwrk/ledger-v9": "1.0.2",
+    "@midnightntwrk/onchain-runtime-v4": "4.0.2"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",
     "@eslint/js": "^9.29.0",
-    "@midnight-ntwrk/midnight-js-http-client-proof-provider": "5.0.0",
-    "@midnight-ntwrk/midnight-js-indexer-public-data-provider": "5.0.0",
-    "@midnight-ntwrk/midnight-js-node-zk-config-provider": "5.0.0",
-    "@midnight-ntwrk/midnight-js-protocol": "5.0.0",
-    "@midnight-ntwrk/testkit-js": "5.0.0",
+    "@midnight-ntwrk/midnight-js-http-client-proof-provider": "5.0.1",
+    "@midnight-ntwrk/midnight-js-indexer-public-data-provider": "5.0.1",
+    "@midnight-ntwrk/midnight-js-node-zk-config-provider": "5.0.1",
+    "@midnight-ntwrk/midnight-js-protocol": "5.0.1",
+    "@midnight-ntwrk/testkit-js": "5.0.1",
     "@midnight-ntwrk/trust-registry-admin-console": "workspace:*",
     "@midnight-ntwrk/trust-registry-api": "workspace:*",
     "@midnight-ntwrk/trust-registry-applicant-portal": "workspace:*",

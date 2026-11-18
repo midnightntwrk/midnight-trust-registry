@@ -67,6 +67,6 @@
     "zod": "^4.6.6"
   },
   "devDependencies": {
-    "@midnight-ntwrk/midnight-js-contracts": "5.0.0"
+    "@midnight-ntwrk/midnight-js-contracts": "5.0.1"
   }
 }

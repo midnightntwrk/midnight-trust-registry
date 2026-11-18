@@ -9,15 +9,15 @@ qualification claim. The historical Ledger 8 source is the `ledger8` branch at
 | Component | Selected version | Current migration state |
 | --- | --- | --- |
 | Node | 2.1.101 | Live loopback check passes with `system_version` `2.1.101-86774edf` and runtime `specVersion` `2001100` |
-| Ledger | 9.1.0.1 | Official image cohort and protocol-version evidence; no independent crate-version attestation from RPC |
+| Ledger | 9.1.0.1 node; 9.1.0.2 client | Official node cohort and protocol-version evidence; no independent crate-version attestation from RPC. Client `@midnightntwrk/ledger-v9` 1.0.2 now matches the tested patch cohort |
 | Indexer standalone | 4.4.101 | Live indexed block and matching genesis check passes |
 | Proof server | 9.0.2 observed | Live loopback/version check passes; corrected Registry governance and issuer fixture calls proved, submitted, and finalized on the shared chain |
-| Compact compiler | 0.36.0 | Full source-matched compile generates all 66 circuits and prover/verifier keys |
+| Compact compiler | 0.36.0 retained | Full source-matched compile generated all 66 circuits and prover/verifier keys. The official 0.36.1 patch does not require rebuilding this deployed contract; a future recompile needs separate verifier-key qualification |
 | Compact runtime | 0.21.0 | Installed with exact DID RC1 and VC RC1 artifacts; simulator and deployed fixture issuer lifecycle pass, live VP journey unqualified |
-| Midnight.js / testkit-js | 5.0.0 | Installed; deployed fixture governance and issuer calls finalize, broader actor journey unqualified |
-| Compact.js | 3.0.0 | Locally installed; simulator, client, harness, and integration tests use awaited circuit/read APIs |
-| `@midnightntwrk/ledger-v9` | 1.0.0 | Required for new Ledger 9 transactions |
-| `@midnightntwrk/onchain-runtime-v4` | 4.0.0 | Required where directly consumed |
+| Midnight.js / testkit-js | 5.0.1 | Exact tested client patch installed; a fresh fixture issuer proposal finalized, broader actor journey unqualified |
+| Compact.js | 3.0.2 | Exact tested client patch installed; simulator, client, harness, and integration tests use awaited circuit/read APIs |
+| `@midnightntwrk/ledger-v9` | 1.0.2 | Client fee calculations aligned with the node's Ledger 9.1.0.1 rules |
+| `@midnightntwrk/onchain-runtime-v4` | 4.0.2 | Exact tested client patch installed |
 | Midnight DID | exact 1.0.0-rc1 cohort | Published and installed locally under four dated, exact-version age exceptions |
 | VC Compact and DID binding | published 1.0.0-rc1 | Exact versions installed from npm; packed Registry consumer and fixture journeys pass, deployed VP actor journey unqualified |
 
@@ -847,10 +847,9 @@ For future staged deployments, the new v2 plan pins the canonical policy
 record's bytes and requires the approved provider to bootstrap its exact
 derived snapshot commitment before any submission. The existing v1 plan and
 deployed fixture remain unchanged. The development-only policy-bound provider
-is available, but a fresh source-matched pack, independently reviewed policy
-record, approved private plan, separate deployment journal, and actual live
-readback are still missing. This preflight alone is not a deployed
-policy-qualified registry.
+now has a separate source-matched pack, private plan, deployment journal, and
+live readback, but its policy record is not independently reviewed or approved.
+It is not a release-qualified registry.
 Before using a contract for API qualification, establish an independently
 reviewable initial policy snapshot and exact next snapshot, update and finalize
 the threshold policy, then execute
@@ -860,6 +859,151 @@ in a separate one-shot journal with independent finalized readback. The
 development-only decision runner is not a production guarded membership API.
 Do not substitute fixture signatures for the future accepted VP or independent
 plan approval.
+
+On 2026-11-18, a separate development-only staged deployment was submitted to
+the same pinned shared Ledger 9 chain at
+`0x096394c984078c8c0ed0dc2393446b2b5752298cfd7c46ce832e007f11edad84`.
+Its source-matched v3 install manifest is from `3aae2acd`, and its initial
+governance policy commitment is derived from a canonical active v1 policy
+record rather than the older fixture's opaque policy label. The policy record
+is a development draft, not an independently approved release policy. An
+independent finalized read at indexed height 6495 matched all 66 verifier-key
+hashes and maintenance counter 65 against the manifest. The 65 post-deployment
+key insertions each have a successful one-shot receipt. Two receiptless
+transport attempts were independently reconciled as absent, remained absent
+after more finalized blocks with no pending node extrinsics, and were archived
+before explicit, successful development-only retries. The original reservations
+and recovery records are retained in private local evidence; neither retry is
+an automatic or release-qualified recovery procedure.
+
+The next development-only action registered one fixture evidence-verifier key
+on that policy-bound contract. A full proof reached a deliberately blocked
+broadcast guard before a separate one-shot submission. Independent finalized
+readback at indexed height 6637 reported governance action count 2, one active
+evidence-verifier key, and all 66 verifier-key hashes still matching source
+`3aae2acd`. This is deployed Ledger 9 proof, submission, and readback for a
+fixture governance action. It does not establish accepted DID/VP evidence,
+threshold-two policy, approved maintenance transition, a qualified epoch, or
+release readiness. Two more fixture maintainers were subsequently proposed,
+authorized, and activated through separate proof-only and one-shot submission
+journals. An independent finalized read at indexed height 6977 reported
+governance action count 8, three active maintainers with distinct DID
+commitments and JubJub public keys, one evidence-verifier key, and all 66
+verifier-key hashes still matching the source-matched manifest. A canonical v2
+development policy record was derived from the pinned v1 record and validated
+as the exact next snapshot. Its full threshold-revision proof reached a blocked
+broadcast guard; a separate one-shot journal then submitted the transaction.
+Independent finalized readback at indexed height 7047 reported governance
+action count 9, three active maintainers, a **two-of-three** default, emergency,
+and archival threshold, and all 66 verifier-key hashes still matching the
+manifest. The v2 policy commitment is
+`0xf32837e9b989905892312f6dc0a6ee915c1ba4f1125aa8b8220913e15e93d166`.
+These fixture identities are not independent operators. The policy records
+are development drafts, not independently approved release policy. These
+actions do not demonstrate accepted DID/VP evidence, an approved
+maintenance-authority transition, a published epoch, or release readiness.
+The older fixture contract and its journals remain separate and must not be
+replayed.
+
+A v2 fixture evidence-verifier key was then registered with two distinct
+active maintainer signatures. Its full proof passed a blocked-broadcast guard,
+and an independent finalized read confirmed the exact v2 key record, governance
+action count 10, and all 66 source-matched verifier keys. A schema-scoped issuer
+proposal using this key and two maintainer signatures also passed proof-only
+validation. Its first journaled submission was blocked locally before the
+provider transport by a misconfigured private broadcast guard. That journal
+was preserved. After finalized absence and an empty node pending pool were
+verified, one explicit development-only retry used a separate journal and
+reached the node, which rejected it with `Invalid Transaction: Custom error:
+138`. [Midnight's node error list](https://docs.midnight.network/nodes/error-codes)
+names 138 `BalanceCheckOverspend`: a negative balance in a transaction
+segment. This may involve fee balancing, but the exact failing segment is not
+yet established. The retry journal remains reserved with no submitted receipt;
+the finalized registry remains at action count 10 with zero issuers and no
+pending node extrinsics. Do not replay either journal or claim an issuer
+journey succeeded. Diagnose the transaction balance and reconcile the failed
+attempt before any new issuer submission. Even a successful fixture issuer
+proposal would not establish accepted VP admission.
+Issue [#323](https://github.com/midnightntwrk/midnight-trust-registry/issues/323)
+tracks the balance rejection and journal reconciliation under
+`milestone-0.2.0`. Two subsequent proof-only runs on the same pinned chain
+decoded the SDK-balanced Ledger 9 transaction before a deliberately blocked
+submission. Both contained two intent segments, one DUST spend with declared
+`vFee` `128168039079190`, and no imbalances reported by the ledger API when
+given the computed transaction fee (respectively `839600000000001` and
+`840600000000001`). These fresh balanced transactions were **not** submitted
+and do not prove the rejected transaction had the same inputs or that the
+node's error was transient. They only narrow the investigation: the prior
+error 138 is not explained by a basic imbalance in either fresh transaction.
+The private diagnostic receipts are retained locally; no new proposal journal
+was created. A later independent finalized read still found governance action
+count 10, zero active issuers, three active maintainers, threshold two, and 66
+source-matched verifier keys. Keep both original reservations untouched until
+the exact failed transport transaction and its chain-state inputs are
+reconciled. Do not automatically retry a shared public-seed wallet transaction.
+The owner-managed node advertises `system_dryRun` but rejects external calls
+with `RPC call is unsafe to be called externally`. A proof-only attempt to
+query it stopped without a diagnostic receipt or broadcast; do not change the
+shared node configuration merely for this test. A separate development issuer
+wallet was prepared locally with a private ignored seed, its own public
+address, and a pinned genesis/checkpoint receipt. A bounded funding transfer
+finalized as transaction
+`008e0249167215060eee5a5a80973ab8c1ec93932c7f142478e80cd9f7da5a38de`;
+independent recipient sync found `1000000000000` smallest NIGHT units on the
+pinned chain. The first funding attempt failed before transaction construction
+and is retained with its pre-broadcast recovery receipt. The successful
+transfer used a separate one-shot journal. A subsequent read-only sync found
+zero spendable DUST and one unregistered NIGHT output. The first registration
+attempt stopped during local generic validation, which reported zero DUST
+available for the still-unregistered output; no transaction bytes or submission
+receipt were written. That reservation and its pre-broadcast recovery receipt
+are retained. A separate guarded registration, following the SDK's own
+first-registration fee-coverage path, finalized as transaction
+`00373629ccb19683e509470b9943e7c3d933026f5300cdcb35ec56451343288580`.
+Independent recipient sync then found no unregistered NIGHT outputs and
+`6357034060231668571` spendable DUST units. The dedicated wallet has not
+submitted a registry action at that point. The old proposal reservations remain untouched.
+A fresh issuer proposal with the dedicated wallet passed full proof with its
+broadcast provider blocked. One separate journaled submission then reached
+the node and was rejected with the same `Invalid Transaction: Custom error:
+138` as the earlier public-wallet attempt. The dedicated proposal journal is
+reserved with no `.submitted` receipt. Independent finalized readback found
+governance action count 10, zero issuers, and all 66 source-matched verifier
+keys; the node's pending extrinsics list was empty. The rejection therefore
+persisted across a funded, DUST-registered, distinct wallet. None of the three
+old proposal journals was retried.
+
+The [official Ledger 9 compatibility matrix](https://docs.midnight.network/relnotes/support-matrix)
+then identified the 17 November client patch: Midnight.js/testkit 5.0.1,
+Compact.js 3.0.2, Wallet SDK 2.0.1, on-chain runtime 4.0.2, and client ledger-v9
+1.0.2. The [upgrade notes](https://docs.midnight.network/relnotes/ledger-9)
+document a `BalanceCheckOverspend` fee mismatch between node 2.1.101 and
+ledger-v9 1.0.0 for a state-deleting maintenance call; that is evidence for
+upgrading but not proof that the issuer proposal had exactly the same cause.
+The exact-version lockfile was updated and installed without rebuilding the
+deployed Compact artifacts. The identity runtime guard, prebuilt typecheck,
+249 local-ledger preflight tests, and 398 integration tests passed.
+The published DID Jubjub RC1 package still declares an exact transitive
+`@midnightntwrk/ledger-v9@1.0.0`, so the installed graph contains both that
+version and the Registry client's `1.0.2`. Its published JavaScript does not
+import the ledger transaction API; it uses Compact runtime and hash utilities
+for signing. This narrows the observed fee-compatibility concern to transaction
+construction, but does not prove the whole DID/VP actor path compatible. Do
+not override the published package's exact dependency without a separate DID
+qualification.
+
+With the patched client cohort and the same dedicated wallet, a new
+proof-only issuer call passed behind a blocked broadcast provider. A separate
+one-shot journaled submission then finalized. An independent read at indexed
+height 12504 found governance action count 11 and the issuer record in
+`proposed` status at sequence 10; its lifecycle event root matched the
+submission receipt, and all 66 verifier keys still matched the source-pinned
+manifest. The patched journal is `submitted`. This demonstrates a deployed
+fixture issuer proposal, not an accepted DID/VP admission, authorization,
+activation, epoch publication, or release qualification. The three older
+reserved proposal journals and their private evidence remain intact pending
+explicit reconciliation. The public smoke wallet is not an isolation boundary
+on a multi-user shared chain.
 
 ## Execution order
 
