@@ -71,7 +71,6 @@ async function runPublisher({ catalog = "populated", lookup = "missing", integri
         FAKE_CATALOG: catalog,
         FAKE_NPM_VIEW: lookup,
         FAKE_NPM_DIST: join(temp, "dist.json"),
-        NODE_AUTH_TOKEN: "offline-test-only",
         VERSION: "0.1.0",
         MANIFEST_PATH: join(temp, "manifest.json"),
         TARBALL_DIR: tarballDir,

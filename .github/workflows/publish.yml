@@ -283,7 +283,6 @@ jobs:
 
       - name: Publish packages to npm
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.MIDNIGHTCI_NPMJS_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
           NPM_TAG: next
           REGISTRY: https://registry.npmjs.org

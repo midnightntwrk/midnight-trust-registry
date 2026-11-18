@@ -471,12 +471,12 @@ The repo currently exposes two manual GitHub Actions workflows:
 
 The publish workflow only runs from the `develop` branch and pauses at the
 protected `npm-publish-stable` environment, whose required reviewers are
-managed in `midnightntwrk/midnight-iac`. The publish job authenticates with the
-org `MIDNIGHTCI_NPMJS_TOKEN` secret (passed as `NODE_AUTH_TOKEN`) and emits
-provenance through the job's OIDC token. `scripts/publish-npm-packages.sh`
-requires that token, so keep it in place. Moving to tokenless npm Trusted
-Publishing needs a script change first and is tracked in
-midnightntwrk/midnight-iac#541.
+managed in `midnightntwrk/midnight-iac`. The publish job authenticates with npm
+Trusted Publishing: there is no npm token, and npm exchanges the job's GitHub
+OIDC token (`id-token: write`) for a short-lived publish credential and emits
+provenance. Each published package has a Trusted Publisher on npmjs for
+`midnightntwrk/midnight-trust-registry`, workflow `publish.yml`, environment
+`npm-publish-stable`; renaming either breaks publishing.
 
 `Published Package Smoke` reruns only the final published-package import smoke
 for a specified version.
@@ -493,8 +493,8 @@ node scripts/release-candidate-manifest.mjs --artifact-dir artifacts/npm-release
 pnpm run published-artifacts:smoke -- --tarball-dir artifacts/npm-release --manifest artifacts/npm-release.manifest.json
 ```
 
-The publish workflow expects `NPM_TOKEN` to be configured as a repository
-secret. The default registry is `https://registry.npmjs.org`.
+The publish workflow needs no npm token secret. The default registry is
+`https://registry.npmjs.org`.
 The manifest is uploaded with the exact tarballs; it records the signed source,
 package and verifier-key digests. Runtime image digests and independent local
 deployment/security approval remain separate release evidence, not a result of
