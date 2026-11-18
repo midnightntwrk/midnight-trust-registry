@@ -94,6 +94,27 @@ it does not authenticate Git history or transform an older deployment into an
 exact-head one. The current reconciled branch intentionally fails this guard
 against the older `e51c6de` deployment manifest.
 
+The API can opt into phase-0 off-chain DID challenge-response while serving an
+approved local-ledger plan on loopback:
+
+```sh
+TR_API_TRUST_ANCHOR_PATH=/private/first-run-anchor.json \
+  trust-registry-api serve --local-ledger-plan /private/api-plan.json \
+  --local-ledger-signature /private/api-plan.sig \
+  --local-ledger-keyring /private/reviewer-keyring \
+  --local-ledger-reviewer <reviewer-fingerprint> \
+  --local-offchain-auth-store /private/actor-challenges.json \
+  --host 127.0.0.1 --port 4400
+```
+
+Keep the challenge file separate from the signed plan, signature, trust anchor,
+and reviewer keyring on a trusted private filesystem. This authenticates
+control of an off-chain DID against the plan's registry, genesis, contract,
+and HTTP origin; it does not authorize a role, verify a VC/VP, enable writes,
+or qualify a deployed actor journey. Cluster binding is intentionally excluded
+because sessions are process-local. A source-matched approved plan and a live
+VC-owned status authority are still needed for #322.
+
 Run any shared-stack development workload through
 `pnpm localnet:run -- <command> [args...]`. This wrapper performs the same
 read-only discovery before spawning the command; on failure it reports the

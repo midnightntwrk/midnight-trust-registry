@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
-import { isAbsolute, resolve } from "node:path";
+import { isAbsolute, resolve, sep } from "node:path";
 
 import { ensureWorkspaceInstanceId } from "@midnightntwrk/trust-registry-cli";
 import { createLocalNetworkDeploymentActionReader, getLocalNetworkProfile } from "@midnightntwrk/trust-registry-integration";
@@ -43,6 +43,7 @@ const HELP_TEXT = `Usage:
     [--serve-portals]
     [--unsafe-demo-mutations]
     [--fixture-offchain-auth-store ABSOLUTE_PATH]
+    [--local-offchain-auth-store ABSOLUTE_PATH]
     [--fixture-portal-root ABSOLUTE_PATH]
   trust-registry-api check-local-ledger-plan --local-ledger-plan PATH --local-ledger-signature PATH
     --local-ledger-keyring DIRECTORY --local-ledger-reviewer FINGERPRINT
@@ -81,6 +82,9 @@ Snapshot and workspace modes are fixture-only and require a loopback host.
 --fixture-offchain-auth-store enables off-chain DID sign-in only for a local
 workspace. It creates a private one-use challenge store; its synthetic binding
 is not a chain deployment, role grant, VP decision, or release evidence.
+--local-offchain-auth-store enables off-chain DID sign-in on a signed, loopback
+local-ledger API. Challenges bind the approved registry, genesis, contract, and
+origin. Sign-in grants no registry role or VP eligibility; cluster mode is excluded.
 --fixture-portal-root serves built admin/applicant assets from that same
 loopback origin; it requires --fixture-offchain-auth-store.
 Cluster binding requires signed local-ledger mode; it is not release qualification.
@@ -133,6 +137,7 @@ export type TrustRegistryApiCliOptions = {
   servePortals?: boolean;
   unsafeDemoMutations?: boolean;
   fixtureOffchainAuthStorePath?: string;
+  localOffchainAuthStorePath?: string;
   fixturePortalRoot?: string;
 };
 
@@ -294,6 +299,14 @@ export const parseTrustRegistryApiCliArgs = (
         options.fixtureOffchainAuthStorePath = path;
         break;
       }
+      case "--local-offchain-auth-store": {
+        const path = args.shift();
+        if (path === undefined || !isAbsolute(path)) {
+          throw new Error(`--local-offchain-auth-store requires an absolute path\n\n${HELP_TEXT}`);
+        }
+        options.localOffchainAuthStorePath = path;
+        break;
+      }
       case "--fixture-portal-root": {
         const path = args.shift();
         if (path === undefined || !isAbsolute(path)) {
@@ -409,6 +422,18 @@ export const parseTrustRegistryApiCliArgs = (
       || options.unsafeDemoMutations === true
       || resolve(options.fixtureOffchainAuthStorePath) === resolve(options.workspacePath))) {
     throw new Error("Fixture off-chain sign-in requires a workspace and a separate private challenge store; demo mutations are forbidden");
+  }
+  if (options.localOffchainAuthStorePath !== undefined
+    && (options.localLedgerPlanPath === undefined || command !== "serve"
+      || options.clusterBind === true || options.fixtureOffchainAuthStorePath !== undefined
+      || [options.localLedgerPlanPath, options.localLedgerSignaturePath,
+        process.env.TR_API_TRUST_ANCHOR_PATH].some((path) => path !== undefined
+          && resolve(path) === resolve(options.localOffchainAuthStorePath!))
+      || (options.localLedgerKeyringDirectory !== undefined
+        && (resolve(options.localOffchainAuthStorePath) === resolve(options.localLedgerKeyringDirectory)
+          || resolve(options.localOffchainAuthStorePath)
+            .startsWith(`${resolve(options.localLedgerKeyringDirectory)}${sep}`))))) {
+    throw new Error("Local off-chain sign-in requires a loopback signed plan and a separate private challenge store");
   }
   if (options.fixturePortalRoot !== undefined && options.fixtureOffchainAuthStorePath === undefined) {
     throw new Error("Fixture portal assets require fixture off-chain sign-in");
@@ -685,6 +710,7 @@ export const runTrustRegistryApiCli = async (
     : undefined;
   let readFinalizedProposalLedger: FinalizedProposalLedgerReader | undefined;
   let localPlanSha256: string | undefined;
+  let localActorBinding: { registryId: string; genesisHash: string; contractAddress: string } | undefined;
   const source = options.localLedgerPlanPath !== undefined
     ? await (async () => {
       const approved = await loadApprovedLocalLedgerRuntimePlanWithDigest({
@@ -701,7 +727,14 @@ export const runTrustRegistryApiCli = async (
         await assertLocalApiImageSourceRevision(plan.sourceRevision);
       }
       const localSource = await createApprovedLocalLedgerRuntimeSource(plan);
-      await localSource.loadSnapshot();
+      const snapshot = await localSource.loadSnapshot();
+      if (options.localOffchainAuthStorePath !== undefined) {
+        localActorBinding = {
+          registryId: snapshot.registry.registryId,
+          genesisHash: plan.expectedGenesisHash,
+          contractAddress: plan.contractAddress,
+        };
+      }
       readFinalizedProposalLedger = localSource.readFinalizedProposalLedger;
       return localSource;
     })()
@@ -731,9 +764,27 @@ export const runTrustRegistryApiCli = async (
       };
     })();
 
+  const localActorAuthentication = options.localOffchainAuthStorePath === undefined
+    ? undefined
+    : (() => {
+      if (localActorBinding === undefined) throw new Error("Approved local actor binding is unavailable");
+      const host = options.host === "::1" ? "[::1]" : options.host;
+      const clock = Date.now;
+      return {
+        challenges: createActorAuthenticationService({
+          context: { ...localActorBinding, origin: `http://${host}:${options.port}` },
+          store: new FileActorAuthenticationChallengeStore(options.localOffchainAuthStorePath!, clock),
+          allowedModes: "offchain-only",
+          clock,
+        }),
+        sessions: createActorSessionService(clock),
+      };
+    })();
+
   const server = createTrustRegistryApiServer({
     source,
     ...(fixtureActorAuthentication === undefined ? {} : { actorAuthentication: fixtureActorAuthentication }),
+    ...(localActorAuthentication === undefined ? {} : { actorAuthentication: localActorAuthentication }),
     ...(localPlanSha256 === undefined ? {} : { localPlanSha256 }),
     ...(readFinalizedProposalLedger === undefined ? {} : { readFinalizedProposalLedger }),
     ...(portalHandler === undefined ? {} : { nonApiGetHandler: portalHandler }),
@@ -756,6 +807,9 @@ export const runTrustRegistryApiCli = async (
   );
   if (fixtureActorAuthentication !== undefined) {
     process.stdout.write("Fixture off-chain DID sign-in enabled; no registry role or deployed binding is implied.\n");
+  }
+  if (localActorAuthentication !== undefined) {
+    process.stdout.write("Local-ledger off-chain DID sign-in enabled; no registry role or VP eligibility is implied.\n");
   }
 
   const shutdown = async (): Promise<void> => {
