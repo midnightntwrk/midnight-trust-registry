@@ -65,6 +65,10 @@ sequence, role status, and lifecycle event root with the one-shot submission
 receipt. A numeric key count or API health response is not source or finality
 evidence. Preserve the private plan, source SHA, manifest, chain pin, proof,
 reservation, transaction, and independent readback together.
+The readback reader rechecks the private genesis and non-genesis checkpoint
+against the node before each finalized-state query; discovery alone is not a
+durable chain-identity check. The node remains a trusted local input, not an
+independent cryptographic finality proof.
 
 On 18 November 2026, read-only observation at indexed height 13372 found 66
 verifier keys matching the selected source manifest, two active issuers, one

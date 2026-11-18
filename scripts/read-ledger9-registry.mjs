@@ -244,7 +244,9 @@ export async function readLedger9Registry(args = process.argv.slice(2), env = pr
     ]);
   const network = {
     networkId: "undeployed",
-    expectedGenesisHash: attached.genesisHash,
+    expectedGenesisHash: env.TR_EXPECTED_GENESIS_HASH,
+    expectedCheckpointHeight: Number(env.TR_EXPECTED_CHECKPOINT_HEIGHT),
+    expectedCheckpointHash: env.TR_EXPECTED_CHECKPOINT_HASH,
     rpcUrl: attached.urls.nodeRpcUrl,
     indexerHttpUrl: attached.urls.indexerHttpUrl,
     indexerWsUrl: attached.urls.indexerWsUrl,

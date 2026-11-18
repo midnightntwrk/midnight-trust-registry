@@ -211,6 +211,45 @@ describe("RPC finalized checkpoint source", () => {
     await expect(wrong.readCurrentFinalizedCheckpoint()).rejects.toThrow(/genesis hash mismatch/u);
   });
 
+  it("rechecks a non-genesis local checkpoint on every finalized read", async () => {
+    const checkpoint = `0x${"c".repeat(64)}`;
+    const { calls, fetchImpl } = fixture(Array.from({ length: 2 }, () => [
+      response({ jsonrpc: "2.0", id: 1, result: GENESIS }),
+      response({ jsonrpc: "2.0", id: 1, result: checkpoint }),
+      response({ jsonrpc: "2.0", id: 1, result: FINALIZED }),
+    ]).flat());
+    const source = createLocalRpcFinalizedCheckpointSource({
+      rpcUrl: "http://node:9944", allowedHosts: ["node"],
+      expectedGenesisHash: GENESIS, expectedCheckpointHeight: 12,
+      expectedCheckpointHash: checkpoint, fetchImpl,
+    });
+    await source.readCurrentFinalizedCheckpoint();
+    await source.readCurrentFinalizedCheckpoint();
+    expect(calls.map(({ method, params }) => [method, params])).toEqual(Array.from({ length: 2 }, () => [
+      ["chain_getBlockHash", [0]], ["chain_getBlockHash", [12]], ["chain_getFinalizedHead", []],
+    ]).flat());
+  });
+
+  it("stops before finality when the local checkpoint differs or its pin is incomplete", async () => {
+    const checkpoint = `0x${"c".repeat(64)}`;
+    const { calls, fetchImpl } = fixture([
+      response({ jsonrpc: "2.0", id: 1, result: GENESIS }),
+      response({ jsonrpc: "2.0", id: 1, result: `0x${"d".repeat(64)}` }),
+    ]);
+    const config = { rpcUrl: "http://node:9944", allowedHosts: ["node"],
+      expectedGenesisHash: GENESIS, expectedCheckpointHeight: 12,
+      expectedCheckpointHash: checkpoint };
+    await expect(createLocalRpcFinalizedCheckpointSource({ ...config, fetchImpl })
+      .readCurrentFinalizedCheckpoint()).rejects.toThrow(/checkpoint hash mismatch/u);
+    expect(calls.map(({ method }) => method)).toEqual(["chain_getBlockHash", "chain_getBlockHash"]);
+    expect(() => createLocalRpcFinalizedCheckpointSource({
+      ...config, expectedCheckpointHash: undefined,
+    })).toThrow(/checkpoint requires/u);
+    expect(() => createLocalRpcFinalizedCheckpointSource({
+      ...config, expectedCheckpointHeight: 0,
+    })).toThrow(/checkpoint requires/u);
+  });
+
   it("refuses an RPC redirect instead of following it outside the local allowlist", async () => {
     const redirectedFetch: typeof fetch = async (_url, init) => {
       expect(init?.redirect).toBe("error");

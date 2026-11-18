@@ -67,7 +67,11 @@ The optional `--issuer-resource-id` takes a canonical
 `tr:issuer-resource:v1:<64 lowercase hex>` ID together with `--issuer-label`.
 It compares that ID's commitment with the finalized issuer record and reports
 `canonicalResourceIdCommitmentMatches`. This is a read-only preflight, not a
-decision verdict. The output reports the observed chain identity, finalized block hash, verifier
+decision verdict. The reader rechecks the private genesis and non-genesis
+checkpoint at every finalized-state query, so a changed shared development
+chain cannot pass only because an earlier discovery succeeded. This still
+trusts the pinned local node; it is not independent finality. The output
+reports the observed chain identity, finalized block hash, verifier
 key count, governance counters, active maintainer count, required epoch-publish
 signer count, and selected issuer lifecycle. The signer count is a policy
 threshold, not proof that those signers or their private keys are available. It does not

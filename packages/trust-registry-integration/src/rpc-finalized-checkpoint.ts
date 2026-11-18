@@ -74,6 +74,8 @@ export type RpcFinalizedCheckpointConfig = {
 export type LocalRpcFinalizedCheckpointConfig = {
   rpcUrl: string;
   expectedGenesisHash: string;
+  expectedCheckpointHeight?: number;
+  expectedCheckpointHash?: string;
   allowedHosts: readonly string[];
   fetchImpl?: typeof fetch;
 };
@@ -97,10 +99,18 @@ export function createLocalRpcFinalizedCheckpointSource(
 }
 
 function createPinnedCheckpointSource(
-  config: { networkId: string; expectedGenesisHash: string; fetchImpl?: typeof fetch },
+  config: { networkId: string; expectedGenesisHash: string; expectedCheckpointHeight?: number;
+    expectedCheckpointHash?: string; fetchImpl?: typeof fetch },
   endpoint: URL,
 ): TrustedFinalizedCheckpointSource {
   const expectedGenesisHash = canonicalHash(config.expectedGenesisHash, "Expected genesis hash");
+  const hasCheckpoint = config.expectedCheckpointHeight !== undefined || config.expectedCheckpointHash !== undefined;
+  if (hasCheckpoint && (!Number.isSafeInteger(config.expectedCheckpointHeight)
+    || config.expectedCheckpointHeight! < 1 || config.expectedCheckpointHash === undefined)) {
+    throw new Error("Finality checkpoint requires a positive height and block hash");
+  }
+  const expectedCheckpointHash = hasCheckpoint
+    ? canonicalHash(config.expectedCheckpointHash, "Expected checkpoint hash") : undefined;
   const fetchImpl = config.fetchImpl ?? fetch;
 
   const call = async (method: string, params: readonly unknown[]): Promise<string> => {
@@ -129,6 +139,10 @@ function createPinnedCheckpointSource(
     async readCurrentFinalizedCheckpoint(): Promise<FinalizedNetworkCheckpoint> {
       const genesis = await call("chain_getBlockHash", [0]);
       if (genesis !== expectedGenesisHash) throw new Error("Finality RPC genesis hash mismatch");
+      if (expectedCheckpointHash !== undefined) {
+        const checkpoint = await call("chain_getBlockHash", [config.expectedCheckpointHeight]);
+        if (checkpoint !== expectedCheckpointHash) throw new Error("Finality RPC checkpoint hash mismatch");
+      }
       const head = await call("chain_getFinalizedHead", []);
       return { networkId: config.networkId, blockHash: head.slice(2) };
     },
