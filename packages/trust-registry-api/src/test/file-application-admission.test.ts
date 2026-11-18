@@ -5,17 +5,23 @@ import { join } from "node:path";
 
 import { createOperatorWorkspace } from "@midnight-ntwrk/trust-registry-cli";
 import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client/simulator";
-import { deriveJubjubPublicKeyFromSeed, encodeJubjubSignature, signJubjubPayloadFromSeed } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
+import { deriveJubjubPublicKeyFromSeed, encodeJubjubSignature, signJubjubDigest, signJubjubPayloadFromSeed } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
+import { bytes32Commitment } from "@midnight-ntwrk/trust-registry-client";
 import {
   computeAuthorizationScopeCommitment,
   computeApplicationEvidenceCommitment,
   computePendingApplicationPayloadCommitment,
   createScopedIdentifier,
   mutationIntentDigestBytes,
+  sha256Hex,
+  type ApplicationEvidenceSignatureVerifier,
   type ApplicationEvidenceSubmission,
   type MutationIntent,
 } from "@midnight-ntwrk/trust-registry-domain";
+import { decodeCanonicalJubjubSignatureHex, verifyApplicationEvidenceCommitmentSignature } from "@midnight-ntwrk/trust-registry-contract";
+import { createMaintainerFixture } from "@midnight-ntwrk/trust-registry-contract/testing";
 import {
+  applicationStatusAttestationDigest,
   createIssuerAuthorizationScopeFixture,
   capturePrivateApplicationStatusWitness,
   createApplicationVpScenarioFixture,
@@ -31,6 +37,7 @@ import {
 import { afterEach, describe, expect, it } from "vitest";
 
 import { FileApplicationAdmissionStore } from "../file-application-admission.js";
+import { verifyCapturedIssuerStatus } from "../private-issuer-status.js";
 import { computeOperatorWorkspaceCommitment } from "../workspace-commitment.js";
 
 const label = "file-admission";
@@ -224,6 +231,60 @@ describe("file application admission store", () => {
       privateStatusWitness: witness,
     });
     expect(privateCapture).not.toBeNull();
+    const freshNonce = `0x${"44".repeat(32)}`;
+    const freshStatement = {
+      ...scenario.signedStatusAttestation.statement,
+      challengeHash: sha256Hex(Buffer.from(freshNonce.slice(2), "hex")),
+    };
+    const freshSigned = {
+      statement: freshStatement,
+      proof: {
+        ...scenario.signedStatusAttestation.proof,
+        signature: `0x${Buffer.from(encodeJubjubSignature(signJubjubDigest(
+          19n, applicationStatusAttestationDigest(freshStatement),
+        ))).toString("hex")}`,
+      },
+    };
+    const verifierPublicKey = deriveJubjubPublicKeyFromSeed(createMaintainerFixture("evidence-verifier", 41).seed);
+    const verifyEvidenceSignature: ApplicationEvidenceSignatureVerifier = (value, signature, verifier) => {
+      if (signature.algorithm !== "jubjub-schnorr" || verifier.did !== harness.evidenceVerifier.did
+        || !verifier.keyIds.includes(signature.keyId)) return false;
+      try {
+        return verifyApplicationEvidenceCommitmentSignature(
+          verifierPublicKey,
+          bytes32Commitment(signature.keyId),
+          Buffer.from(value.slice(2), "hex"),
+          decodeCanonicalJubjubSignatureHex(signature.value),
+        );
+      } catch {
+        return false;
+      }
+    };
+    const refreshInput = {
+      captured: privateCapture!,
+      submittedEvidence: signedEvidence,
+      authorizationId: issuer.authorizationId,
+      authorizedVerifiers: [harness.evidenceVerifier],
+      verifyEvidenceSignature,
+      statusPolicyBinding: scenario.fixtureStatusPolicyBinding,
+      resolver: scenario.input.resolver,
+      fetchFreshAttestation: async () => freshSigned,
+      freshNonce,
+      trustedTimeMs: VP_FIXTURE_TIME_MS,
+    };
+    const refreshed = await verifyCapturedIssuerStatus(refreshInput);
+    expect(refreshed.statusDecisionCommitment).toMatch(/^0x[0-9a-f]{64}$/u);
+    expect(JSON.stringify(refreshed)).not.toContain("privateStatusWitness");
+    await expect(verifyCapturedIssuerStatus({
+      ...refreshInput, verifyEvidenceSignature: () => false,
+    })).rejects.toThrow(/signature/u);
+    await expect(verifyCapturedIssuerStatus({
+      ...refreshInput,
+      statusPolicyBinding: {
+        ...scenario.fixtureStatusPolicyBinding,
+        statusPolicyContentCommitment: sha256Hex("substituted-status-policy"),
+      },
+    })).rejects.toThrow(/private witness/u);
     privateCapture!.privateStatusWitness.nonce = `0x${"33".repeat(32)}`;
     expect((await reopened.readCapturedPrivateAdmission(applicationId, commitment))?.privateStatusWitness).toEqual(witness);
     expect(await reopened.readCapturedPrivateAdmission(applicationId, original.commitment)).toBeNull();

@@ -3,6 +3,7 @@ export * from "./recognition-authority-challenges.js";
 export * from "./recognition-accreditation-http.js";
 export * from "./file-application-challenges.js";
 export * from "./file-application-admission.js";
+export * from "./private-issuer-status.js";
 export * from "./file-recognition-admission.js";
 export * from "./recognition-proposal-admission.js";
 export * from "./governed-recognition-proposals.js";

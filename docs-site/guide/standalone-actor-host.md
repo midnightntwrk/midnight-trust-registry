@@ -47,9 +47,9 @@ body root, status binding, nonce, and signed status decision. The store checks
 its internal consistency and accepted challenge hash; it does **not** verify
 the status signature or decision commitment. The private
 `readCapturedPrivateAdmission` method requires an independently pinned accepted
-evidence commitment
-and returns the pending record, accepted evidence, and witness from one private
-state revision. Public admission reads remain redacted. The HTTP intake forwards this
+evidence commitment and returns the pending record, accepted evidence, and
+witness from one private state revision. Public admission reads remain
+redacted. The HTTP intake forwards this
 record only when its trusted `verifyPresentation` callback supplies it, after
 checking the consumed challenge; it never returns the record over HTTP. The
 qualified VP verifier carries the record when its status adapter uses
@@ -71,6 +71,13 @@ status attestation at trusted time. Its validity never exceeds the accepted
 evidence expiry. It does not authenticate the accepted
 application, select a governed issuer, or authorize a
 registry mutation; those remain host responsibilities.
+`verifyCapturedIssuerStatus` adds the issuer admission-pair check, evidence
+signature verification against the host's authenticated authorized-verifier
+set, and private-witness status refresh in one read-only call. It returns only
+the fresh decision and validity. The host must still authenticate that
+verifier set, the private file, governed status binding, DID state, trusted
+time, finalized deployment, and provider code before using the result in the
+opt-in writer; this helper does not grant a role or submit a transaction.
 
 ## Run the acceptance case
 
