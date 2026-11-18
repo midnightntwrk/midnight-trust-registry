@@ -1032,6 +1032,21 @@ and inclusion root are prerequisites for claiming a deployed actor E2E result.
 
 ## Execution order
 
+On 2026-11-18, the current local branch passed the installed identity/runtime
+gate (22 tests; six DID identity packages on runtime 0.21.0), the full-artifact
+inventory check (66 proof circuits), and the published-VP intake cone (6 tests).
+The read-only, genesis/checkpoint-pinned shared-chain query at indexed height
+13549 found 66 verifier keys matching the source manifest, two active issuers,
+one published epoch, and an active fixture issuer whose lifecycle event root
+still differs from that epoch's event root. None of these checks is a deployed
+DID/VP actor journey. Signed local commits `e0a104bb` and `73046372` add a
+private-witness status refresh that rechecks the accepted evidence signature
+and rejects a private admission snapshot differing from the proposal's public
+snapshot. The host still needs a live VC-owned status authority, authenticated
+DID/VP and finalized-state adapters, approved writer inputs, and an actual
+one-shot actor submission before #322 can pass. No shared-chain transaction or
+container lifecycle action was performed for this check.
+
 1. Keep the `ledger8` source branch only as a historical reference. Ledger 9
    replaces the default standalone Compose stack; there is no parallel Ledger 8
    runtime profile. Remove old node/indexer volumes only after confirming they
