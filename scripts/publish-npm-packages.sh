@@ -7,10 +7,8 @@ version="${VERSION:-}"
 tarball_dir="${TARBALL_DIR:-artifacts/npm-release}"
 manifest_path="${MANIFEST_PATH:-}"
 
-if [[ -z "${NODE_AUTH_TOKEN:-${NPM_TOKEN:-}}" ]]; then
-  echo "::error::NODE_AUTH_TOKEN or NPM_TOKEN is required to publish packages." >&2
-  exit 1
-fi
+# Auth is npm Trusted Publishing: npm (>= 11.5.1) exchanges the job's GitHub
+# OIDC id-token for a short-lived publish credential, so no token is needed.
 
 if [[ -z "${version}" ]]; then
   echo "::error::VERSION is required to publish packages." >&2
