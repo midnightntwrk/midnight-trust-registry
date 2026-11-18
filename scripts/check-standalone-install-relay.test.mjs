@@ -127,7 +127,7 @@ test("relay identity, mount, network, and effective ports fail closed", () => {
   const publicLedger = structuredClone(containers);
   publicLedger[0].NetworkSettings.Networks.external = { NetworkID: "outside" };
   assert.throws(() => checkStandaloneInstallRelay(network, publicLedger, relay, config, bundle),
-    /non-internal network attachment/u);
+    /non-internal or unexpected network attachment/u);
   for (const [change, pattern] of [
     [(candidate) => { candidate.Name = "/other-install-relay"; }, /identity or entrypoint/u],
     [(candidate) => { candidate.State.Running = false; }, /identity or entrypoint/u],
