@@ -1055,6 +1055,16 @@ matching genesis, and matching indexed/finalized head at height 14070. No
 shared-stack lifecycle operation or transaction was performed. This local
 merge has not been pushed or reviewed in CI.
 
+At local head `f4334c78`, `pnpm run integration:light` passed across the
+reconciled `@midnightntwrk/trust-registry-*` workspace, including 114 API
+integration tests, governed simulator journeys, signed membership fixture
+journeys, and the private VC composition fixtures. The installed identity
+runtime gate passed 22 tests for six DID/VC packages at Compact runtime
+`0.21.0`; `test:local-ledger-preflight` passed 249 tests. The light lane
+recompiled only the disposable sync worktree, not the artifact-bearing
+checkout. It did not start Docker, submit a transaction, authenticate a live
+VC status authority, or qualify deployed DID/VP actors.
+
 The artifact-bearing checkout's independent read-only query at indexed
 height 14098 still found all 66 verifier keys matching its pinned manifest,
 two active issuers, one active verifier, one active auditor, one active
