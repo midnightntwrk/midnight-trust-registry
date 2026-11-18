@@ -86,6 +86,13 @@ issuer does not satisfy the governed VP decision-evidence path merely because
 a registry snapshot epoch has been published.
 The command also exposes the finalized issuer status-policy binding commitment;
 the caller must independently match it to a governed VC-owned status binding.
+For exact-head qualification, add `--expect-source-revision <40-character-sha>`
+alongside `--manifest`, with the expected SHA obtained independently from the
+selected source checkout. The command fails if the manifest names another
+revision. This checks the operator-supplied expectation against the manifest;
+it does not authenticate Git history or transform an older deployment into an
+exact-head one. The current reconciled branch intentionally fails this guard
+against the older `e51c6de` deployment manifest.
 
 Run any shared-stack development workload through
 `pnpm localnet:run -- <command> [args...]`. This wrapper performs the same

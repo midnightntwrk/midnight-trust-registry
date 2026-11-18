@@ -15,7 +15,7 @@ test("registry read requires an exact address and non-genesis chain pin", () => 
     contractAddress: address, issuerLabel: "issuer:example", issuerResourceId: undefined,
     verifierLabel: undefined, auditorLabel: undefined,
     recognitionLabel: undefined,
-    manifestPath: undefined, epochId: undefined,
+    manifestPath: undefined, expectedSourceRevision: undefined, epochId: undefined,
   });
   assert.equal(parseRegistryReadArgs(["--address", address, "--verifier-label", "verifier:example"], env)
     .verifierLabel, "verifier:example");
@@ -28,11 +28,19 @@ test("registry read requires an exact address and non-genesis chain pin", () => 
     "--issuer-resource-id", canonicalResourceId], env).issuerResourceId, canonicalResourceId);
   assert.equal(parseRegistryReadArgs(["--address", address, "--manifest", "release.json"], env).manifestPath,
     "release.json");
+  assert.equal(parseRegistryReadArgs(["--address", address, "--manifest", "release.json",
+    "--expect-source-revision", "a".repeat(40)], env).expectedSourceRevision, "a".repeat(40));
   assert.equal(parseRegistryReadArgs(["--address", address, "--epoch-id", address], env).epochId, address);
   assert.throws(() => parseRegistryReadArgs(["--address", address], {}), /Pin TR_EXPECTED/u);
   assert.throws(() => parseRegistryReadArgs(["--address", `0x${"0".repeat(64)}`], env), /nonzero/u);
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--address", address], env), /Duplicate/u);
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--manifest", "a", "--manifest", "b"], env), /Duplicate/u);
+  assert.throws(() => parseRegistryReadArgs(["--address", address,
+    "--expect-source-revision", "a".repeat(40)], env), /requires a manifest/u);
+  assert.throws(() => parseRegistryReadArgs(["--address", address, "--manifest", "release.json",
+    "--expect-source-revision", "A".repeat(40)], env), /exact lowercase/u);
+  assert.throws(() => parseRegistryReadArgs(["--address", address, "--manifest", "release.json",
+    "--expect-source-revision", "a".repeat(40), "--expect-source-revision", "a".repeat(40)], env), /Duplicate/u);
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--issuer-label", "x\0y"], env), /invalid/u);
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--verifier-label", "x\0y"], env), /invalid/u);
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--auditor-label", "x\0y"], env), /invalid/u);
@@ -56,6 +64,11 @@ test("registry read requires every finalized verifier key to match the source ma
   assert.deepEqual(assertFinalizedVerifierKeyCatalog(image, manifest, ["first", "second"]), {
     sourceRevision: manifest.sourceRevision, verifierKeyCatalogMatched: true,
   });
+  assert.deepEqual(assertFinalizedVerifierKeyCatalog(image, manifest, ["first", "second"], "a".repeat(40)), {
+    sourceRevision: manifest.sourceRevision, verifierKeyCatalogMatched: true,
+  });
+  assert.throws(() => assertFinalizedVerifierKeyCatalog(image, manifest, ["first", "second"], "d".repeat(40)),
+    /source revision disagrees/u);
   assert.throws(() => assertFinalizedVerifierKeyCatalog(image,
     { ...manifest, verifierKeySha256: { first: "b".repeat(64) } }, ["first", "second"]), /incomplete/u);
   assert.throws(() => assertFinalizedVerifierKeyCatalog(image,

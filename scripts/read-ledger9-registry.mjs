@@ -20,12 +20,13 @@ export function parseRegistryReadArgs(args, env = process.env) {
   let auditorLabel;
   let recognitionLabel;
   let manifestPath;
+  let expectedSourceRevision;
   let epochId;
   for (let index = 0; index < args.length; index += 2) {
     const flag = args[index];
     const value = args[index + 1];
-    if (!value || !["--address", "--issuer-label", "--issuer-resource-id", "--verifier-label", "--auditor-label", "--recognition-label", "--manifest", "--epoch-id"].includes(flag)) {
-      throw new Error("Usage: read-ledger9-registry.mjs --address 0x... [--issuer-label label --issuer-resource-id canonical-id] [--verifier-label label] [--auditor-label label] [--recognition-label label] [--manifest path] [--epoch-id 0x...]");
+    if (!value || !["--address", "--issuer-label", "--issuer-resource-id", "--verifier-label", "--auditor-label", "--recognition-label", "--manifest", "--expect-source-revision", "--epoch-id"].includes(flag)) {
+      throw new Error("Usage: read-ledger9-registry.mjs --address 0x... [--issuer-label label --issuer-resource-id canonical-id] [--verifier-label label] [--auditor-label label] [--recognition-label label] [--manifest path --expect-source-revision SHA] [--epoch-id 0x...]");
     }
     if (flag === "--address" && contractAddress === undefined) contractAddress = value;
     else if (flag === "--issuer-label" && issuerLabel === undefined) issuerLabel = value;
@@ -34,6 +35,7 @@ export function parseRegistryReadArgs(args, env = process.env) {
     else if (flag === "--auditor-label" && auditorLabel === undefined) auditorLabel = value;
     else if (flag === "--recognition-label" && recognitionLabel === undefined) recognitionLabel = value;
     else if (flag === "--manifest" && manifestPath === undefined) manifestPath = value;
+    else if (flag === "--expect-source-revision" && expectedSourceRevision === undefined) expectedSourceRevision = value;
     else if (flag === "--epoch-id" && epochId === undefined) epochId = value;
     else throw new Error(`Duplicate option: ${flag}`);
   }
@@ -63,6 +65,10 @@ export function parseRegistryReadArgs(args, env = process.env) {
   if (epochId !== undefined && (!ADDRESS.test(epochId) || /^0x0{64}$/u.test(epochId))) {
     throw new Error("Epoch id must be a nonzero lowercase bytes32 commitment");
   }
+  if (expectedSourceRevision !== undefined
+    && (manifestPath === undefined || !/^[0-9a-f]{40}$/u.test(expectedSourceRevision))) {
+    throw new Error("Expected source revision requires a manifest and an exact lowercase 40-character Git SHA");
+  }
   if (!ADDRESS.test(env.TR_EXPECTED_GENESIS_HASH ?? "")
     || !ADDRESS.test(env.TR_EXPECTED_CHECKPOINT_HASH ?? "")
     || !Number.isSafeInteger(Number(env.TR_EXPECTED_CHECKPOINT_HEIGHT))
@@ -70,10 +76,10 @@ export function parseRegistryReadArgs(args, env = process.env) {
     throw new Error("Pin TR_EXPECTED_GENESIS_HASH and a non-genesis checkpoint height/hash before reading registry state");
   }
   return { contractAddress, issuerLabel, issuerResourceId, verifierLabel, auditorLabel, recognitionLabel,
-    manifestPath, epochId };
+    manifestPath, expectedSourceRevision, epochId };
 }
 
-export function assertFinalizedVerifierKeyCatalog(image, manifest, circuitNames) {
+export function assertFinalizedVerifierKeyCatalog(image, manifest, circuitNames, expectedSourceRevision) {
   const hashes = manifest?.verifierKeySha256;
   const expected = [...circuitNames].sort();
   if (!["tr-release-candidate-manifest-v2", "tr-release-candidate-manifest-v3"].includes(manifest?.format)
@@ -87,6 +93,9 @@ export function assertFinalizedVerifierKeyCatalog(image, manifest, circuitNames)
   if (!sameNames(Object.keys(image.verifierKeySha256), expected)
     || expected.some((name) => image.verifierKeySha256[name] !== hashes[name])) {
     throw new Error("Finalized verifier keys disagree with the source-matched release manifest");
+  }
+  if (expectedSourceRevision !== undefined && manifest.sourceRevision !== expectedSourceRevision) {
+    throw new Error("Release manifest source revision disagrees with the expected checkout");
   }
   return { sourceRevision: manifest.sourceRevision, verifierKeyCatalogMatched: true };
 }
@@ -233,7 +242,7 @@ export function summarizeFinalizedRegistry(image, attached, contractAddress, iss
 
 export async function readLedger9Registry(args = process.argv.slice(2), env = process.env) {
   const { contractAddress, issuerLabel, issuerResourceId, verifierLabel, auditorLabel, recognitionLabel,
-    manifestPath, epochId } = parseRegistryReadArgs(args, env);
+    manifestPath, expectedSourceRevision, epochId } = parseRegistryReadArgs(args, env);
   const attached = await checkLedger9LocalStack(localnetInputFromEnvironment(env));
   const [{ bytes32Commitment }, { AuthorizationStatus, TrustRegistryContract, trustRegistryWitnesses },
     { createLocalNetworkDeploymentActionReader }] =
@@ -271,6 +280,7 @@ export async function readLedger9Registry(args = process.argv.slice(2), env = pr
     image,
     await readBoundedManifest(manifestPath),
     Object.keys(new TrustRegistryContract.Contract(trustRegistryWitnesses).provableCircuits),
+    expectedSourceRevision,
   );
   return { ...summarizeFinalizedRegistry(image, attached, contractAddress, issuerSelection, epochId, verifierSelection,
     auditorSelection, recognitionSelection),
