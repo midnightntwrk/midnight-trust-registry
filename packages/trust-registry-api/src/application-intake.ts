@@ -16,6 +16,10 @@ import {
   type ApplicationEvidenceSubmission,
   type AuthorizedEvidenceVerifier,
 } from "@midnight-ntwrk/trust-registry-domain";
+import {
+  PrivateApplicationStatusWitnessSchema,
+  type PrivateApplicationStatusWitness,
+} from "@midnight-ntwrk/trust-registry-integration";
 
 import { ApplicationChallengeService, hasMatchingApplicationChallengeHash } from "./application-challenges.js";
 
@@ -28,11 +32,14 @@ export type VerifiedApplicationPresentation = {
   statusDecisionCommitment: string;
   verifiedAt: string;
   expiresAt: string;
+  /** Private VP-derived record, supplied only by a trusted verifier after proof/status checks. */
+  privateStatusWitness?: PrivateApplicationStatusWitness;
 };
 
 export type ApplicationProposalInput = {
   binding: ApplicationChallengeBinding;
   evidence: ApplicationEvidenceSubmission;
+  privateStatusWitness?: PrivateApplicationStatusWitness;
 };
 
 export type ApplicationPresentationContext = {
@@ -95,6 +102,13 @@ export async function consumeChallengeAndSubmitApplication<Result>(input: {
   ) {
     throw new Error("Presentation does not match the application challenge, subject DID, or scope");
   }
+  const privateStatusWitness = verified.privateStatusWitness === undefined ? undefined
+    : PrivateApplicationStatusWitnessSchema.parse(verified.privateStatusWitness);
+  if (privateStatusWitness !== undefined
+    && (privateStatusWitness.nonce !== input.nonce
+      || privateStatusWitness.signed.statement.challengeHash !== challengeHash)) {
+    throw new Error("Private status witness does not match the application challenge");
+  }
 
   const envelope = ApplicationEvidenceEnvelopeSchema.parse({
     version: "tr-application-evidence-v1",
@@ -153,5 +167,6 @@ export async function consumeChallengeAndSubmitApplication<Result>(input: {
     authorizedVerifiers,
     input.verifyEvidenceSignature,
   );
-  return input.propose({ binding: expectedBinding, evidence });
+  return input.propose({ binding: expectedBinding, evidence,
+    ...(privateStatusWitness === undefined ? {} : { privateStatusWitness }) });
 }

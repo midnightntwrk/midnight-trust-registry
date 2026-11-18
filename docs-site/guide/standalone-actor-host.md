@@ -47,9 +47,12 @@ body root, status binding, nonce, and signed status decision. The store checks
 its internal consistency and accepted challenge hash; it does **not** verify
 the status signature or decision commitment. The private
 `readCapturedStatusWitness` method requires the accepted evidence commitment
-and is never included in public admission reads. The packaged VP intake does
-not yet supply this optional record automatically. A live host must capture it
-at verified intake or require a new applicant presentation, then verify it
+and is never included in public admission reads. The HTTP intake forwards this
+record only when its trusted `verifyPresentation` callback supplies it, after
+checking the consumed challenge; it never returns the record over HTTP. The
+packaged qualified VP verifier does not construct the record automatically. A
+live host must capture it from verified VP material and a signed status decision
+or require a new applicant presentation, then verify it
 against the accepted evidence and current governed status-policy binding.
 Do not infer current status from the old `statusDecisionCommitment`, persist raw
 VP claims in the public application record, or return a fabricated

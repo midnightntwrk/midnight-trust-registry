@@ -13,6 +13,7 @@ import {
   type ApplicationEvidenceSubmission,
   type AuthorizedEvidenceVerifier,
 } from "@midnight-ntwrk/trust-registry-domain";
+import type { PrivateApplicationStatusWitness } from "@midnight-ntwrk/trust-registry-integration";
 import { z } from "zod";
 
 import {
@@ -58,7 +59,8 @@ export interface ApplicationVpHttpPort {
   verifyPresentation(presentation: unknown, context: ApplicationPresentationContext): Promise<VerifiedApplicationPresentation>;
   signEvidence(commitment: string): Promise<ApplicationEvidenceSignature>;
   verifyEvidenceSignature: ApplicationEvidenceSignatureVerifier;
-  persistRedactedEvidence(applicationId: string, evidence: ApplicationEvidenceSubmission): Promise<ApplicationVpReceipt>;
+  persistRedactedEvidence(applicationId: string, evidence: ApplicationEvidenceSubmission,
+    privateStatusWitness?: PrivateApplicationStatusWitness): Promise<ApplicationVpReceipt>;
   /** Read trusted redacted acceptance after a lost HTTP response; never repeat VP verification or consume a nonce. */
   resolveAcceptedEvidence?(applicationId: string): Promise<ApplicationVpHttpSubmissionResult | null>;
 }
@@ -165,10 +167,12 @@ export function createApplicationVpHttpService(port: ApplicationVpHttpPort, cloc
           authorizedVerifiers: current.authorizedVerifiers,
           verifyEvidenceSignature: port.verifyEvidenceSignature,
           evaluatedAt: new Date(clock()).toISOString(),
-          propose: async ({ evidence }) => {
+          propose: async ({ evidence, privateStatusWitness }) => {
             const latest = await resolve(port, applicationId);
             if (!samePolicy(current, latest)) throw new ApplicationVpHttpError("stale-policy");
-            const receipt = ApplicationVpReceiptSchema.parse(await port.persistRedactedEvidence(applicationId, evidence));
+            const receipt = ApplicationVpReceiptSchema.parse(await port.persistRedactedEvidence(
+              applicationId, evidence, privateStatusWitness,
+            ));
             if (receipt.evidenceCommitment !== evidence.commitment) throw new ApplicationVpHttpError("rejected");
             persisted = receipt;
             signedEvidence = evidence;
