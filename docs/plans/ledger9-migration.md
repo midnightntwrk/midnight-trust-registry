@@ -1033,6 +1033,17 @@ and inclusion root are prerequisites for claiming a deployed actor E2E result.
 
 ## Execution order
 
+On 2026-11-18, the non-destructive `pnpm run integration:prebuilt` lane passed
+at signed/DCO code head `9655de46`: 66 full proof circuits were present before
+and after the run; installed VC Compact composition passed; integration, API,
+applicant-portal, and admin-console suites passed 405, 113, 72, and 31 tests
+respectively. The governed, auditor, membership, and signed demo journeys also
+completed. These are simulator and file-backed regression results, not shared-
+chain DID/VP admission or finalized actor E2E. At the same code head, a pinned
+read-only attach confirmed that the indexer's current block was at the node-
+reported finalized height and hash. This confirms consistency with the
+attached node, not independent finality or a release approval.
+
 On 2026-11-18, the current local branch passed the installed identity/runtime
 gate (22 tests; six DID identity packages on runtime 0.21.0), the full-artifact
 inventory check (66 proof circuits), and the published-VP intake cone (6 tests).
