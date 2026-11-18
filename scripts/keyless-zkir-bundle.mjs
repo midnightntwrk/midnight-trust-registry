@@ -224,34 +224,41 @@ export async function verifyKeylessZkirStreaming(bundle, expectedManifestSha256,
   if (manifest.sourceRevision !== expectedRevision) {
     throw new Error("Keyless manifest source revision differs from expected source");
   }
-  const generator = await regularFile(resolve(keygen));
-  if (await hashFile(generator) !== expectedKeygenSha256) {
-    throw new Error("Key generator differs from the trusted binary digest");
-  }
-  for (const name of names) {
-    const stage = await mkdtemp(join(tmpdir(), "tr-zkir-stream-"));
-    try {
-      const input = join(stage, `${name}.zkir`);
-      await copyFile(await regularFile(join(resolve(bundle), "zkir", `${name}.zkir`)), input);
-      if (await hashFile(input) !== manifest.assets[`zkir/${name}.zkir`]) {
-        throw new Error(`Copied ZKIR asset hash mismatch: ${name}`);
-      }
-      await runFile(generator, ["compile", input, join(stage, `${name}.prover`),
-        join(stage, `${name}.verifier`)], { timeout: 60 * 60_000, maxBuffer: 1024 * 1024 });
-      exactNames(await filesBelow(stage), [`${name}.zkir`, `${name}.bzkir`,
-        `${name}.prover`, `${name}.verifier`], `Generated files for ${name}`);
-      for (const [file, hash] of [
-        [`${name}.bzkir`, manifest.assets[`zkir/${name}.bzkir`]],
-        [`${name}.prover`, manifest.keys[`${name}.prover`]],
-        [`${name}.verifier`, manifest.keys[`${name}.verifier`]],
-      ]) {
-        if (await hashFile(await regularFile(join(stage, file))) !== hash) {
-          throw new Error(`Regenerated key or binary ZKIR hash mismatch: ${file}`);
-        }
-      }
-    } finally {
-      await rm(stage, { recursive: true, force: true });
+  const stageRoot = await mkdtemp(join(tmpdir(), "tr-zkir-stream-"));
+  try {
+    const generator = join(stageRoot, "zkir-v3");
+    await copyFile(await regularFile(resolve(keygen)), generator);
+    if (await hashFile(generator) !== expectedKeygenSha256) {
+      throw new Error("Key generator differs from the trusted binary digest");
     }
+    for (const name of names) {
+      const stage = join(stageRoot, name);
+      await mkdir(stage);
+      try {
+        const input = join(stage, `${name}.zkir`);
+        await copyFile(await regularFile(join(resolve(bundle), "zkir", `${name}.zkir`)), input);
+        if (await hashFile(input) !== manifest.assets[`zkir/${name}.zkir`]) {
+          throw new Error(`Copied ZKIR asset hash mismatch: ${name}`);
+        }
+        await runFile(generator, ["compile", input, join(stage, `${name}.prover`),
+          join(stage, `${name}.verifier`)], { timeout: 60 * 60_000, maxBuffer: 1024 * 1024 });
+        exactNames(await filesBelow(stage), [`${name}.zkir`, `${name}.bzkir`,
+          `${name}.prover`, `${name}.verifier`], `Generated files for ${name}`);
+        for (const [file, hash] of [
+          [`${name}.bzkir`, manifest.assets[`zkir/${name}.bzkir`]],
+          [`${name}.prover`, manifest.keys[`${name}.prover`]],
+          [`${name}.verifier`, manifest.keys[`${name}.verifier`]],
+        ]) {
+          if (await hashFile(await regularFile(join(stage, file))) !== hash) {
+            throw new Error(`Regenerated key or binary ZKIR hash mismatch: ${file}`);
+          }
+        }
+      } finally {
+        await rm(stage, { recursive: true, force: true });
+      }
+    }
+  } finally {
+    await rm(stageRoot, { recursive: true, force: true });
   }
   return { sourceRevision: expectedRevision, circuitCount: names.length,
     sourcePlatform: manifest.platform, generatorPlatform: `${process.platform}/${process.arch}`,

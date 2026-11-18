@@ -107,7 +107,8 @@ On a clean host without the full prover-key tree, add
 `--keyless-generator "$ZKIR_BIN" --keyless-generator-sha256 "$ZKIR_BIN_SHA256"`
 to the same readback command. The binary digest must come from an independently
 trusted input. This mode regenerates and compares each binary ZKIR and key pair
-one circuit at a time, removes its temporary keys, then checks the finalized
+one circuit at a time from a verified private snapshot of the generator,
+removes its temporary keys, then checks the finalized
 verifier catalog. It can take several minutes for all circuits. The output
 reports `keylessVerification: "streamed-keygen"` instead of `"full-output"`;
 neither mode qualifies a Linux release bundle or live actor journey.

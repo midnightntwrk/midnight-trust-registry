@@ -111,7 +111,8 @@ keys, use `node scripts/keyless-zkir-bundle.mjs verify-streaming <keyless-dir>
 <expected-source-sha>`. The command verifies the complete source-bound keyless
 manifest, compiles each circuit in a private temporary directory, compares its
 binary ZKIR and prover/verifier hashes with the manifest, then removes that
-circuit's temporary keys before continuing. Supply the manifest and binary
+circuit's temporary keys before continuing. It executes a digest-checked
+private copy of the key generator, not a mutable original pathname. Supply the manifest and binary
 digests from independently reviewed inputs, not from an untrusted transport.
 This is a portability check only: success on Darwin does not qualify a Linux
 bundle, approve the source or deployment, or establish a live actor journey.

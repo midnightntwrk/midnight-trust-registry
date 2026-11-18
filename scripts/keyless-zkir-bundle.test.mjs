@@ -79,6 +79,37 @@ test("streaming verifier checks a pinned generator and discards per-circuit keys
     paths.generator, sha256(corrupted), revision), /Regenerated key or binary ZKIR hash mismatch/u);
 });
 
+test("streaming verifier executes its pinned snapshot after the original generator changes", async (t) => {
+  const paths = await fixture(t);
+  await writeFile(join(paths.full, "compiler/contract-info.json"), JSON.stringify({
+    "compiler-version": "0.31.1", circuits: [
+      { name: "demoCircuit", proof: true }, { name: "laterCircuit", proof: true },
+    ],
+  }));
+  await writeFile(join(paths.full, "zkir/laterCircuit.zkir"), "later-zkir\n");
+  await writeFile(join(paths.full, "zkir/laterCircuit.bzkir"), "later-bzkir\n");
+  await writeFile(join(paths.full, "keys/laterCircuit.prover"), "later-zkir\n");
+  await writeFile(join(paths.full, "keys/laterCircuit.verifier"), "later-zkir\n");
+  const created = await createKeylessZkirBundle(paths.full, paths.keyless, revision, paths.generator);
+  const script = `#!/bin/sh
+[ "$1" = compile ] || exit 2
+cp "$2" "$3"
+cp "$2" "$4"
+case "$2" in
+  *demoCircuit*)
+    printf 'sample-bzkir\\n' > "\${2%.zkir}.bzkir"
+    printf '#!/bin/sh\\nexit 7\\n' > ${JSON.stringify(paths.generator)}
+    ;;
+  *laterCircuit*) printf 'later-bzkir\\n' > "\${2%.zkir}.bzkir" ;;
+esac
+`;
+  await writeFile(paths.generator, script);
+  const result = await verifyKeylessZkirStreaming(paths.keyless, created.manifestSha256,
+    paths.generator, sha256(script), revision);
+  assert.equal(result.circuitCount, 2);
+  assert.match(await readFile(paths.generator, "utf8"), /exit 7/u);
+});
+
 test("trusted digest and ZKIR mutations fail before materialization", async (t) => {
   const paths = await fixture(t);
   const created = await createKeylessZkirBundle(paths.full, paths.keyless, revision, paths.generator);
