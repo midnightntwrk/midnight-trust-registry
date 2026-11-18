@@ -63,15 +63,17 @@ receipt. A numeric key count or API health response is not source or finality
 evidence. Preserve the private plan, source SHA, manifest, chain pin, proof,
 reservation, transaction, and independent readback together.
 
-As of 18 November 2026, one **fixture-labeled** issuer in the policy-bound
-development registry passed proposal, two-maintainer authorization, and
-activation. Readback found governance sequence 13, one active issuer, 66
-source-matched keys, and zero published epochs. Its proposal used a raw schema
-label and placeholder status-policy commitment, not an accepted VP and
-canonical issuer resource/status binding. It is not a trusted issuer and
-cannot support an authentic authorization evidence bundle. Exact private
-trial receipts are documented in `docs/plans/ledger9-migration.md` in the
-source checkout.
+On 18 November 2026, read-only observation at indexed height 13372 found 66
+verifier keys matching the selected source manifest, two active issuers, one
+active verifier, auditor, and recognition, and one published epoch. The
+selected **fixture-labeled** issuer was active, but its lifecycle event root
+did **not** match that epoch's event root. The shared chain contains work from
+other sessions; these counts do not attribute actions or prove a VP-qualified
+issuer. The earlier fixture proposal used a raw schema label and placeholder
+status-policy commitment, not an accepted VP and canonical issuer
+resource/status binding. It cannot support an authentic authorization evidence
+bundle. Re-run the pinned query for current state; exact private trial receipts
+are documented in `docs/plans/ledger9-migration.md` in the source checkout.
 
 ## Try the UI separately
 
