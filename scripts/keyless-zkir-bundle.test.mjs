@@ -69,6 +69,16 @@ test("streaming builder creates the same keyless inventory from a key-free compi
     "contract/index.js", "contract/index.js.map", "contract/index.d.ts", "zkir/demoCircuit.zkir"]) {
     await writeFile(join(light, name), await readFile(join(paths.full, name)));
   }
+  const lightJs = "export const expectedVk = {};\n";
+  const sourceMapComment = "//# sourceMappingURL=index.js.map\n";
+  await writeFile(join(light, "contract/index.js"), lightJs);
+  await writeFile(join(light, "contract/index.js.map"), '{\n  "mappings": "AAAA;"\n}\n');
+  await writeFile(join(light, "compiler/contract-manifest.json"), `${JSON.stringify({
+    "manifest-version": "1", contract: { type: "directory", "index.js": {
+      type: "file", size: (lightJs + sourceMapComment).length, hash: sha256(lightJs + sourceMapComment),
+    } },
+    zkir: { type: "directory", "demoCircuit.zkir": { type: "file" } },
+  }, null, 2)}\n`);
   const script = "#!/bin/sh\n[ \"$1\" = compile ] || exit 2\ncp \"$2\" \"$3\"\ncp \"$2\" \"$4\"\nprintf 'sample-bzkir\\n' > \"${2%.zkir}.bzkir\"\n";
   await writeFile(paths.generator, script);
   await chmod(paths.generator, 0o700);
@@ -76,7 +86,15 @@ test("streaming builder creates the same keyless inventory from a key-free compi
     paths.generator, sha256(script));
   assert.equal(result.circuitCount, 1);
   assert.equal((await readdir(paths.keyless)).includes("keys"), false);
-  await verifyKeylessZkirAgainstFullSource(paths.keyless, paths.full, result.manifestSha256, revision);
+  const fullJs = await readFile(join(paths.keyless, "contract/index.js"), "utf8");
+  assert.match(fullJs,
+    new RegExp(`'demoCircuit': '${sha256("sample-zkir\n")}'`, "u"));
+  assert.equal(await readFile(join(paths.keyless, "contract/index.js.map"), "utf8"),
+    '{\n  "mappings": "AAAA;;;"\n}\n');
+  const compiled = JSON.parse(await readFile(join(paths.keyless, "compiler/contract-manifest.json")));
+  assert.equal(compiled.contract["index.js"].hash, sha256(fullJs + sourceMapComment));
+  assert.equal(compiled.keys["demoCircuit.verifier"].hash, sha256("sample-zkir\n"));
+  assert.equal(compiled.zkir["demoCircuit.bzkir"].hash, sha256("sample-bzkir\n"));
   const streamed = await verifyKeylessZkirStreaming(paths.keyless, result.manifestSha256,
     paths.generator, sha256(script), revision);
   assert.equal(streamed.matched, true);

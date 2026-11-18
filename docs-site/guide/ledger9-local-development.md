@@ -127,13 +127,17 @@ node scripts/keyless-zkir-bundle.mjs create-streaming \
 
 The output directory must not exist. The builder checks the exact generated
 asset catalog, snapshots the digest-pinned generator, compiles one circuit at
-a time, and discards each generated key pair after recording its hashes. It
+a time, and discards each generated key pair after recording its hashes and
+sizes. Compact's light build leaves the runtime verifier-key table empty. The
+builder reconstructs that table, the corresponding source-map lines, and the
+compiler inventory from the streamed outputs before writing the bundle. It
 rejects a source that retains proving keys or produces incomplete binary
 ZKIR. Record the returned manifest digest independently; the candidate is
 not a signed release artifact merely because the command succeeded. Compare
-its complete key inventory with the finalized deployment and an independently
-reviewed source/install inventory before claiming portability. A Darwin run
-does not substitute for a Linux run.
+its complete asset and key inventory with an independently retained full build
+of the same source, and compare the verifier catalog with the finalized
+deployment before claiming portability. A Darwin run does not substitute for
+a Linux run.
 
 The existing Quality workflow also has an opt-in `keyless_linux` manual input
 for the selected branch. It runs this builder on Ubuntu at `github.sha` and

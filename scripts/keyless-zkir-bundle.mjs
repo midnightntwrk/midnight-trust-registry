@@ -95,6 +95,67 @@ async function copyAssets(from, to, names) {
   }
 }
 
+/** Recreate the metadata that Compact omits under --skip-zk from streamed key outputs.
+ * @param {string} stage @param {readonly string[]} names
+ * @param {Record<string, {type: string, size: number, hash: string}>} keyFiles */
+export async function completeLightCompile(stage, names, keyFiles) {
+  const jsPath = join(stage, "contract/index.js");
+  const lightJs = await readFile(jsPath, "utf8");
+  const marker = "export const expectedVk = {};";
+  if (lightJs.split(marker).length !== 2) throw new Error("Unexpected light Compact verifier table");
+  const entries = names.map((name) => `  '${name}': '${keyFiles[`${name}.verifier`].hash}',`);
+  const fullJs = lightJs.replace(marker, `export const expectedVk = {\n${entries.join("\n")}\n};`);
+  await writeFile(jsPath, fullJs);
+
+  const mapPath = join(stage, "contract/index.js.map");
+  const map = await readFile(mapPath, "utf8");
+  const mapping = /^  "mappings": "([A-Za-z0-9+/;,]*)"$/mu;
+  if (!mapping.test(map) || typeof JSON.parse(map).mappings !== "string") {
+    throw new Error("Unexpected Compact source map");
+  }
+  await writeFile(mapPath, map.replace(mapping, (_, value) =>
+    `  "mappings": "${value}${";".repeat(names.length + 1)}"`));
+
+  const manifestPath = join(stage, "compiler/contract-manifest.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  if (manifest["manifest-version"] !== "1" || manifest.keys !== undefined
+    || manifest.zkir?.type !== "directory" || manifest.contract?.type !== "directory") {
+    throw new Error("Unexpected light Compact contract manifest");
+  }
+  // The repo strips this comment after Compact has recorded the original JS hash.
+  const sourceMapComment = "//# sourceMappingURL=index.js.map\n";
+  const recordedJs = manifest.contract["index.js"];
+  const sourceSuffix = ["", sourceMapComment].find((suffix) => {
+    const bytes = Buffer.from(lightJs + suffix);
+    return recordedJs?.type === "file" && recordedJs.size === bytes.length
+      && recordedJs.hash === createHash("sha256").update(bytes).digest("hex");
+  });
+  if (sourceSuffix === undefined) throw new Error("Light Compact JavaScript does not match its manifest");
+  const zkir = { type: "directory" };
+  const keys = { type: "directory" };
+  for (const name of names) {
+    const source = manifest.zkir[`${name}.zkir`];
+    if (source?.type !== "file") throw new Error(`Missing light ZKIR manifest entry: ${name}`);
+    const binary = join(stage, "zkir", `${name}.bzkir`);
+    zkir[`${name}.bzkir`] = { type: "file", size: (await lstat(binary)).size,
+      hash: await hashFile(binary) };
+    zkir[`${name}.zkir`] = source;
+    for (const extension of ["prover", "verifier"]) {
+      keys[`${name}.${extension}`] = keyFiles[`${name}.${extension}`];
+    }
+  }
+  exactNames(Object.keys(manifest.zkir), ["type", ...names.map((name) => `${name}.zkir`)],
+    "Light Compact ZKIR manifest");
+  manifest.zkir = zkir;
+  const compilerJs = Buffer.from(fullJs + sourceSuffix);
+  manifest.contract["index.js"] = { type: "file", size: compilerJs.length,
+    hash: createHash("sha256").update(compilerJs).digest("hex") };
+  manifest.contract["index.js.map"] = { type: "file", size: (await lstat(mapPath)).size,
+    hash: await hashFile(mapPath) };
+  manifest.keys = keys;
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
 /** @template T @param {string} target @param {(stage: string) => Promise<T>} operation */
 async function stagedDirectory(target, operation) {
   const absolute = resolve(target);
@@ -189,6 +250,8 @@ export async function createKeylessZkirBundleStreaming(lightManaged, target, rev
       await copyAssets(source, stage, [...BASE_ASSETS, ...zkirNames.map((name) => `zkir/${name}`)]);
       /** @type {Record<string, string>} */
       const keyHashes = {};
+      /** @type {Record<string, {type: string, size: number, hash: string}>} */
+      const keyFiles = {};
       for (const name of names) {
         const circuit = join(generatorRoot, name);
         await mkdir(circuit);
@@ -209,12 +272,18 @@ export async function createKeylessZkirBundleStreaming(lightManaged, target, rev
             throw new Error(`Generated binary ZKIR differs from source: ${name}`);
           }
           await copyFile(binary, join(stage, "zkir", `${name}.bzkir`));
-          keyHashes[`${name}.prover`] = await hashFile(join(circuit, `${name}.prover`));
-          keyHashes[`${name}.verifier`] = await hashFile(join(circuit, `${name}.verifier`));
+          for (const extension of ["prover", "verifier"]) {
+            const path = join(circuit, `${name}.${extension}`);
+            const hash = await hashFile(path);
+            keyHashes[`${name}.${extension}`] = hash;
+            keyFiles[`${name}.${extension}`] = { type: "file", size: (await lstat(path)).size,
+              hash };
+          }
         } finally {
           await rm(circuit, { recursive: true, force: true });
         }
       }
+      await completeLightCompile(stage, names, keyFiles);
       const assets = assetNames(names);
       const assetHashes = Object.fromEntries(await Promise.all(assets.map(async (name) =>
         [name, await hashFile(await regularFile(join(stage, name)))])));
