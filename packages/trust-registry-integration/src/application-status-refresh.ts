@@ -71,5 +71,8 @@ export async function refreshCapturedApplicationStatus(input: {
     nonce: input.freshNonce,
     evaluatedAtMs: input.trustedTimeMs,
   });
-  return { ...current, validUntilMs: Math.min(current.validUntilMs, Date.parse(expiresAt)) };
+  return {
+    validUntilMs: Math.min(current.validUntilMs, Date.parse(expiresAt)),
+    statusDecisionCommitment: current.statusDecisionCommitment,
+  };
 }

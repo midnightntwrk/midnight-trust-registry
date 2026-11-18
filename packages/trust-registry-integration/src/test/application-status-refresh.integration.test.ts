@@ -70,10 +70,12 @@ async function fixture() {
 describe("private application status refresh", () => {
   it("verifies the accepted witness before a fresh signed authority decision", async () => {
     const { input, fetchFreshAttestation } = await fixture();
-    await expect(refreshCapturedApplicationStatus(input)).resolves.toMatchObject({
+    const result = await refreshCapturedApplicationStatus(input);
+    expect(result).toEqual({
       validUntilMs: Date.parse(input.acceptedEnvelope.expiresAt),
       statusDecisionCommitment: expect.stringMatching(/^0x[0-9a-f]{64}$/u),
     });
+    expect(JSON.stringify(result)).not.toContain("privateStatusWitness");
     expect(fetchFreshAttestation).toHaveBeenCalledExactlyOnceWith({
       statusRegistryId: input.binding.statusRegistryId,
       statusHandleCommitment: input.witness.signed.statement.statusHandleCommitment,
