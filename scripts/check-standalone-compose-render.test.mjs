@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
+import yaml from "js-yaml";
 
 import { checkRenderedStandaloneCompose, ledger9Images, syntheticRenderEnvironment } from "./check-standalone-compose-render.mjs";
 
-const internalLedgerNodeUrl = "ws://node:9944"; // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket -- synthetic isolated Docker ledger bridge with no external route
+const composePath = fileURLToPath(new URL("../deploy/standalone/compose.yml", import.meta.url));
+const internalLedgerNodeUrl = yaml.load(readFileSync(composePath, "utf8"))
+  .services.indexer.environment.APP__INFRA__NODE__URL;
 
 const base = () => ({
   name: "tr-standalone-local-rendercheck",

@@ -6,7 +6,22 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
 
-import { synchronizeProvingKeys } from "./proving-key-cache.mjs";
+import { findZkirBinary, synchronizeProvingKeys } from "./proving-key-cache.mjs";
+
+test("finds the pinned Ledger 9 ZKIR binary and rejects ambiguous installs", () => {
+  const root = mkdtempSync(join(tmpdir(), "tr-zkir-binary-"));
+  try {
+    const platform = join(root, "versions", "0.36.0", "x86_64-linux");
+    mkdirSync(platform, { recursive: true });
+    const binary = join(platform, "zkir-v3");
+    writeFileSync(binary, "fixture");
+    assert.equal(findZkirBinary("0.36.0", root), binary);
+    writeFileSync(join(platform, "zkir"), "ambiguous");
+    assert.throws(() => findZkirBinary("0.36.0", root), /Expected one pinned zkir binary/u);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("Quality covers every proving-key shard exactly once", () => {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
