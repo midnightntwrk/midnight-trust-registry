@@ -6,6 +6,7 @@ import console from "node:console";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { copyFile, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import process from "node:process";
 import { promisify } from "node:util";
@@ -212,6 +213,51 @@ export async function verifyKeylessZkirAgainstFullSource(bundle, fullManaged, ex
   return verified;
 }
 
+/** Verify key portability without retaining all prover keys on the target platform.
+ * @param {string} bundle @param {string} expectedManifestSha256 @param {string} keygen
+ * @param {string} expectedKeygenSha256 @param {string} expectedRevision */
+export async function verifyKeylessZkirStreaming(bundle, expectedManifestSha256, keygen,
+  expectedKeygenSha256, expectedRevision) {
+  if (!SHA256.test(expectedKeygenSha256)) throw new Error("Trusted key generator SHA-256 is required");
+  if (!REVISION.test(expectedRevision)) throw new Error("Expected source revision is invalid");
+  const { manifest, names } = await verifyKeylessZkirBundle(bundle, expectedManifestSha256);
+  if (manifest.sourceRevision !== expectedRevision) {
+    throw new Error("Keyless manifest source revision differs from expected source");
+  }
+  const generator = await regularFile(resolve(keygen));
+  if (await hashFile(generator) !== expectedKeygenSha256) {
+    throw new Error("Key generator differs from the trusted binary digest");
+  }
+  for (const name of names) {
+    const stage = await mkdtemp(join(tmpdir(), "tr-zkir-stream-"));
+    try {
+      const input = join(stage, `${name}.zkir`);
+      await copyFile(await regularFile(join(resolve(bundle), "zkir", `${name}.zkir`)), input);
+      if (await hashFile(input) !== manifest.assets[`zkir/${name}.zkir`]) {
+        throw new Error(`Copied ZKIR asset hash mismatch: ${name}`);
+      }
+      await runFile(generator, ["compile", input, join(stage, `${name}.prover`),
+        join(stage, `${name}.verifier`)], { timeout: 60 * 60_000, maxBuffer: 1024 * 1024 });
+      exactNames(await filesBelow(stage), [`${name}.zkir`, `${name}.bzkir`,
+        `${name}.prover`, `${name}.verifier`], `Generated files for ${name}`);
+      for (const [file, hash] of [
+        [`${name}.bzkir`, manifest.assets[`zkir/${name}.bzkir`]],
+        [`${name}.prover`, manifest.keys[`${name}.prover`]],
+        [`${name}.verifier`, manifest.keys[`${name}.verifier`]],
+      ]) {
+        if (await hashFile(await regularFile(join(stage, file))) !== hash) {
+          throw new Error(`Regenerated key or binary ZKIR hash mismatch: ${file}`);
+        }
+      }
+    } finally {
+      await rm(stage, { recursive: true, force: true });
+    }
+  }
+  return { sourceRevision: expectedRevision, circuitCount: names.length,
+    sourcePlatform: manifest.platform, generatorPlatform: `${process.platform}/${process.arch}`,
+    keygenSha256: expectedKeygenSha256, matched: true };
+}
+
 /** Generate keys before use; a failed or interrupted build never becomes the destination. */
 /** @param {string} bundle @param {string} destination @param {string} keygen
  * @param {string} expectedManifestSha256 @param {number} [jobs] */
@@ -267,10 +313,12 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     : command === "verify" && args.length === 2
       ? await verifyKeylessZkirBundle(args[0], args[1]).then(({ manifest, names }) =>
         ({ sourceRevision: manifest.sourceRevision, circuitCount: names.length }))
+      : command === "verify-streaming" && args.length === 5
+        ? await verifyKeylessZkirStreaming(args[0], args[1], args[2], args[3], args[4])
       : command === "materialize" && (args.length === 4 || args.length === 5)
         ? await materializeKeylessZkirBundle(args[0], args[1], args[2], args[3],
           args[4] === undefined ? 1 : Number(args[4]))
         : null;
-  if (result === null) throw new Error("Usage: keyless-zkir-bundle.mjs create <full-managed> <keyless-dir> <source-sha> <zkir-bin> | verify <keyless-dir> <trusted-manifest-sha256> | materialize <keyless-dir> <destination> <zkir-bin> <trusted-manifest-sha256> [jobs: 1-4]");
+  if (result === null) throw new Error("Usage: keyless-zkir-bundle.mjs create <full-managed> <keyless-dir> <source-sha> <zkir-bin> | verify <keyless-dir> <trusted-manifest-sha256> | verify-streaming <keyless-dir> <trusted-manifest-sha256> <zkir-bin> <trusted-zkir-bin-sha256> <source-sha> | materialize <keyless-dir> <destination> <zkir-bin> <trusted-manifest-sha256> [jobs: 1-4]");
   console.log(JSON.stringify(result));
 }

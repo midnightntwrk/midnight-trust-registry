@@ -7,7 +7,7 @@ import test from "node:test";
 
 import { createKeylessZkirBundle, materializeKeylessZkirBundle,
   verifyKeylessZkirAgainstFullSource,
-  verifyKeylessZkirBundle } from "./keyless-zkir-bundle.mjs";
+  verifyKeylessZkirBundle, verifyKeylessZkirStreaming } from "./keyless-zkir-bundle.mjs";
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const revision = "a".repeat(40);
@@ -54,6 +54,29 @@ test("keyless bundle excludes keys and regenerates only verified outputs", async
     "sample-zkir\n");
   assert.equal((await readFile(join(paths.restored, "keys/demoCircuit.verifier"), "utf8")),
     "sample-zkir\n");
+});
+
+test("streaming verifier checks a pinned generator and discards per-circuit keys", async (t) => {
+  const paths = await fixture(t);
+  const created = await createKeylessZkirBundle(paths.full, paths.keyless, revision, paths.generator);
+  const script = "#!/bin/sh\n[ \"$1\" = compile ] || exit 2\ncp \"$2\" \"$3\"\ncp \"$2\" \"$4\"\nprintf 'sample-bzkir\\n' > \"${2%.zkir}.bzkir\"\n";
+  await writeFile(paths.generator, script);
+  const generatorHash = sha256(script);
+  const result = await verifyKeylessZkirStreaming(paths.keyless, created.manifestSha256,
+    paths.generator, generatorHash, revision);
+  assert.equal(result.circuitCount, 1);
+  assert.equal(result.matched, true);
+  assert.equal(result.sourceRevision, revision);
+  assert.equal(result.keygenSha256, generatorHash);
+  assert.deepEqual(await readdir(join(paths.keyless, "zkir")), ["demoCircuit.bzkir", "demoCircuit.zkir"]);
+  await assert.rejects(verifyKeylessZkirStreaming(paths.keyless, created.manifestSha256,
+    paths.generator, "b".repeat(64), revision), /trusted binary digest/u);
+  await assert.rejects(verifyKeylessZkirStreaming(paths.keyless, created.manifestSha256,
+    paths.generator, generatorHash, "b".repeat(40)), /source revision/u);
+  const corrupted = script.replace("cp \"$2\" \"$4\"", "printf wrong > \"$4\"");
+  await writeFile(paths.generator, corrupted);
+  await assert.rejects(verifyKeylessZkirStreaming(paths.keyless, created.manifestSha256,
+    paths.generator, sha256(corrupted), revision), /Regenerated key or binary ZKIR hash mismatch/u);
 });
 
 test("trusted digest and ZKIR mutations fail before materialization", async (t) => {
