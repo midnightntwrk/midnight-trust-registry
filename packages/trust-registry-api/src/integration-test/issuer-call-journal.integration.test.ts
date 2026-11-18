@@ -26,6 +26,7 @@ import {
 import {
   FileProposalSubmissionJournal,
   ProposalSubmissionAlreadyPendingError,
+  ProposalSubmissionBlockedByReservationError,
   ProposalSubmissionConflictError,
   ProposalSubmissionOutcomeUnknownError,
 } from "../proposal-submission-journal.js";
@@ -195,6 +196,32 @@ describe("issuer SDK handoff with private journal", () => {
     expect((await reopened.read("issuer", authorizationLabel))?.reservationContext).toBeDefined();
     await expect(submitLocalIssuerProposalCall(input(reopened)))
       .rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
+    expect(mocks.submitCallTx).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a Ledger 9 balance rejection reserved and blocks all further proposals", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    await journal.bindDeployment(registryLabel, contractAddress, genesisHash);
+    const balanceFailure = new Error("Custom error: 138: BalanceCheckOverspend");
+    mocks.submitCallTx.mockRejectedValueOnce(balanceFailure);
+
+    const outcome = await submitLocalIssuerProposalCall(input(journal)).catch((error: unknown) => error);
+    expect(outcome).toBeInstanceOf(ProposalSubmissionOutcomeUnknownError);
+    expect((outcome as ProposalSubmissionOutcomeUnknownError).cause).toBe(balanceFailure);
+    expect(await journal.read("issuer", authorizationLabel)).toMatchObject({
+      state: "reserved", eventHash: null,
+      reservationContext: { actionSequence: "3" },
+    });
+
+    const reopened = new FileProposalSubmissionJournal(path);
+    await reopened.assertDeploymentBinding(registryLabel, contractAddress, genesisHash);
+    await expect(submitLocalIssuerProposalCall(input(reopened)))
+      .rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
+    await expect(reopened.executeOnce(
+      "issuer", "issuer:another-proposal", `0x${"1".repeat(64)}`,
+      async () => { throw new Error("must not submit"); },
+      { actionSequence: "3", actionKind: `0x${"2".repeat(64)}`, actionPayloadHash: `0x${"3".repeat(64)}` },
+    )).rejects.toBeInstanceOf(ProposalSubmissionBlockedByReservationError);
     expect(mocks.submitCallTx).toHaveBeenCalledOnce();
   });
 
