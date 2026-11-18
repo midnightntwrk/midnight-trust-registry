@@ -443,6 +443,51 @@ export function verifyReleaseCandidateArtifacts(manifest, artifactDir, workspace
   return manifest.packages.map(({ filename }) => join(artifactDir, filename));
 }
 
+/** Verify approved bytes against the checked-out signed source without regenerating proof keys.
+ * @param {{manifest: unknown, repoRoot: string, artifactDir: string, revision: string,
+ *   workspaces?: readonly string[], publish?: readonly string[]}} input */
+export function verifyPreparedReleaseCandidate(input) {
+  const { manifest, repoRoot, artifactDir, revision, workspaces = artifactWorkspaces,
+    publish = publishWorkspaces } = input;
+  if (!isRecord(manifest) || manifest.format !== "tr-release-candidate-manifest-v2"
+    || manifest.sourceRevision !== revision || !Array.isArray(manifest.packages)
+    || manifest.packages.length !== workspaces.length) {
+    throw new Error("Prepared release is not a full package set for the exact source revision");
+  }
+  const packageRoot = json(join(repoRoot, "package.json"));
+  if (!isRecord(packageRoot) || typeof packageRoot.version !== "string"
+    || typeof packageRoot.packageManager !== "string") {
+    throw new Error("Prepared release root package identity is invalid");
+  }
+  const dependencies = isRecord(packageRoot.dependencies) ? packageRoot.dependencies : {};
+  const identityDependencies = Object.fromEntries(Object.entries(dependencies)
+    .filter(([name]) => name.startsWith("@midnight-ntwrk/midnight-did")
+      || name.startsWith("@midnight-ntwrk/credential-"))
+    .sort(([left], [right]) => left.localeCompare(right)));
+  if (manifest.packageVersion !== packageRoot.version
+    || manifest.packageManager !== packageRoot.packageManager
+    || manifest.compactCompilerVersion !== readFileSync(join(repoRoot, ".compact-version"), "utf8").trim()
+    || manifest.lockfileSha256 !== sha256(join(repoRoot, "pnpm-lock.yaml"))
+    || manifest.contractSourceSha256 !== sha256(join(repoRoot,
+      "contracts/trust-registry/src/trust-registry.compact"))
+    || !isDeepStrictEqual(manifest.identityDependencies, identityDependencies)) {
+    throw new Error("Prepared release identity differs from the exact source checkout");
+  }
+  for (const entry of manifest.packages) {
+    if (!isRecord(entry) || typeof entry.workspace !== "string"
+      || !workspaces.includes(entry.workspace)) {
+      throw new Error("Prepared package workspace is not in the release catalog");
+    }
+    const source = json(join(repoRoot, entry.workspace, "package.json"));
+    if (!isRecord(source)) throw new Error("Prepared package source manifest is invalid");
+    if (source.name !== entry.name || source.version !== entry.version
+      || entry.publication !== (publish.includes(entry.workspace) ? "npm" : "local-only")) {
+      throw new Error("Prepared package identity or publication differs from the source catalog");
+    }
+  }
+  return verifyReleaseCandidateArtifacts(manifest, artifactDir, workspaces);
+}
+
 /** @param {string} command @param {string[]} args @param {boolean} [trim] */
 const run = (command, args, trim = true) => {
   const result = spawnSync(command, args, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
@@ -489,20 +534,25 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   let artifactDir = join(root, artifactDirectory);
   let output;
   let verifyPath;
+  let verifyPreparedPath;
   let keylessManifestSha256;
   for (let index = 2; index < process.argv.length; index += 1) {
     const option = process.argv[index];
-    if (!["--artifact-dir", "--output", "--verify", "--keyless-manifest-sha256"].includes(option)
+    if (!["--artifact-dir", "--output", "--verify", "--verify-prepared", "--keyless-manifest-sha256"].includes(option)
       || !process.argv[index + 1]) {
-      throw new Error("Usage: release-candidate-manifest.mjs [--artifact-dir dir] [--keyless-manifest-sha256 sha256] [--output file | --verify file]");
+      throw new Error("Usage: release-candidate-manifest.mjs [--artifact-dir dir] [--keyless-manifest-sha256 sha256] [--output file | --verify file | --verify-prepared file]");
     }
     const value = process.argv[++index];
     if (option === "--artifact-dir") artifactDir = resolve(value);
     else if (option === "--output") output = resolve(value);
     else if (option === "--verify") verifyPath = resolve(value);
+    else if (option === "--verify-prepared") verifyPreparedPath = resolve(value);
     else keylessManifestSha256 = value;
   }
-  if (output && verifyPath) throw new Error("Choose manifest output or verification, not both");
+  if ([output, verifyPath, verifyPreparedPath].filter(Boolean).length > 1
+    || (verifyPreparedPath && keylessManifestSha256)) {
+    throw new Error("Choose one manifest output or verification mode");
+  }
   if (run("git", ["status", "--porcelain", "--untracked-files=normal"]) !== "") {
     throw new Error("Release candidate source tree must be clean");
   }
@@ -511,24 +561,28 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   if (!/^Signed-off-by: .+ <[^>]+>$/mu.test(run("git", ["log", "-1", "--format=%B"]))) {
     throw new Error("Release source commit must carry a DCO sign-off");
   }
-  run("node", ["scripts/check-full-contract-artifacts.mjs"]);
-  const manifest = buildReleaseCandidateManifest({
-    repoRoot: root,
-    artifactDir,
-    revision,
-    keylessManifestSha256,
-  });
-  verifyReleaseCandidateArtifacts(manifest, artifactDir);
-  if (verifyPath) {
-    const approved = json(verifyPath);
-    if (!isDeepStrictEqual(approved, manifest)) {
-      throw new Error("Release candidate manifest differs from the exact signed source and packed bytes");
-    }
-    process.stdout.write(`Verified release candidate manifest: ${verifyPath}\n`);
+  if (verifyPreparedPath) {
+    verifyPreparedReleaseCandidate({
+      manifest: json(verifyPreparedPath), repoRoot: root, artifactDir, revision,
+    });
+    process.stdout.write(`Verified prepared release candidate: ${verifyPreparedPath}\n`);
   } else {
-    const destination = output ?? join(root, "artifacts/release-candidate", revision, "manifest.json");
-    mkdirSync(dirname(destination), { recursive: true });
-    writeFileSync(destination, `${JSON.stringify(manifest, null, 2)}\n`, { flag: "w", mode: 0o600 });
-    process.stdout.write(`Release candidate manifest: ${destination}\n`);
+    run("node", ["scripts/check-full-contract-artifacts.mjs"]);
+    const manifest = buildReleaseCandidateManifest({
+      repoRoot: root, artifactDir, revision, keylessManifestSha256,
+    });
+    verifyReleaseCandidateArtifacts(manifest, artifactDir);
+    if (verifyPath) {
+      const approved = json(verifyPath);
+      if (!isDeepStrictEqual(approved, manifest)) {
+        throw new Error("Release candidate manifest differs from the exact signed source and packed bytes");
+      }
+      process.stdout.write(`Verified release candidate manifest: ${verifyPath}\n`);
+    } else {
+      const destination = output ?? join(root, "artifacts/release-candidate", revision, "manifest.json");
+      mkdirSync(dirname(destination), { recursive: true });
+      writeFileSync(destination, `${JSON.stringify(manifest, null, 2)}\n`, { flag: "w", mode: 0o600 });
+      process.stdout.write(`Release candidate manifest: ${destination}\n`);
+    }
   }
 }
