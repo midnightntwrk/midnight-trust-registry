@@ -262,6 +262,7 @@ describe("file application admission store", () => {
     };
     const refreshInput = {
       captured: privateCapture!,
+      expectedAdmission: await reopened.readCapturedAdmission(applicationId),
       submittedEvidence: signedEvidence,
       authorizationId: issuer.authorizationId,
       authorizedVerifiers: [harness.evidenceVerifier],
@@ -278,6 +279,10 @@ describe("file application admission store", () => {
     await expect(verifyCapturedIssuerStatus({
       ...refreshInput, verifyEvidenceSignature: () => false,
     })).rejects.toThrow(/signature/u);
+    await expect(verifyCapturedIssuerStatus({
+      ...refreshInput,
+      expectedAdmission: { ...refreshInput.expectedAdmission, accepted: null },
+    })).rejects.toThrow(/differs from the proposal/u);
     await expect(verifyCapturedIssuerStatus({
       ...refreshInput,
       statusPolicyBinding: {

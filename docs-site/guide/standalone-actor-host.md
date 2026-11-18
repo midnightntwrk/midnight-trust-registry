@@ -73,7 +73,9 @@ application, select a governed issuer, or authorize a
 registry mutation; those remain host responsibilities.
 `verifyCapturedIssuerStatus` adds the issuer admission-pair check, evidence
 signature verification against the host's authenticated authorized-verifier
-set, and private-witness status refresh in one read-only call. It returns only
+set, and private-witness status refresh in one read-only call. Pass the same
+public admission pair used to prepare the proposal as `expectedAdmission`; the
+helper rejects a private witness read from a different admission revision. It returns only
 the fresh decision and validity. The host must still authenticate that
 verifier set, the private file, governed status binding, DID state, trusted
 time, finalized deployment, and provider code before using the result in the

@@ -1,5 +1,6 @@
 import {
   assertValidApplicationEvidence,
+  canonicalizeJson,
   type ApplicationEvidenceSignatureVerifier,
   type ApplicationEvidenceSubmission,
   type AuthorizedEvidenceVerifier,
@@ -11,13 +12,15 @@ import {
 } from "@midnight-ntwrk/trust-registry-integration";
 
 import type { FileApplicationAdmissionStore } from "./file-application-admission.js";
-import { assertProposalAdmissionRecords } from "./proposal-admission.js";
+import { assertProposalAdmissionRecords, type ProposalAdmissionPort } from "./proposal-admission.js";
 
 type PrivateAdmission = NonNullable<Awaited<ReturnType<FileApplicationAdmissionStore["readCapturedPrivateAdmission"]>>>;
+type PublicAdmission = Awaited<ReturnType<NonNullable<ProposalAdmissionPort["readCapturedAdmission"]>>>;
 
 /** Read-only status check; the caller must authenticate the policy, resolver, time, and admission file. */
 export async function verifyCapturedIssuerStatus(input: {
   captured: PrivateAdmission;
+  expectedAdmission: PublicAdmission;
   submittedEvidence: ApplicationEvidenceSubmission;
   authorizationId: string;
   authorizedVerifiers: readonly AuthorizedEvidenceVerifier[];
@@ -29,6 +32,9 @@ export async function verifyCapturedIssuerStatus(input: {
   trustedTimeMs: number;
 }): Promise<{ validUntilMs: number; statusDecisionCommitment: string }> {
   const { pending, accepted, privateStatusWitness } = input.captured;
+  if (canonicalizeJson({ pending, accepted }) !== canonicalizeJson(input.expectedAdmission)) {
+    throw new Error("Private issuer admission differs from the proposal's captured admission");
+  }
   assertProposalAdmissionRecords(pending, accepted, "issuer", input.authorizationId, input.submittedEvidence);
   const binding = pending.binding;
   const evidence = accepted.evidence;
