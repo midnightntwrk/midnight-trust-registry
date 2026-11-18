@@ -6,7 +6,7 @@ import { delimiter, dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
-import { checkCompactVersion } from "./check-compact-version.mjs";
+import { checkCompactVersion, matchesInstalledVersion } from "./check-compact-version.mjs";
 
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const pinnedVersion = readFileSync(join(sourceRoot, ".compact-version"), "utf8").trim();
@@ -23,6 +23,16 @@ const paths = [
 
 test("all Compact consumers use the shared version", () => {
   assert.equal(checkCompactVersion(), pinnedVersion);
+});
+
+test("Linux Nix workflow uses the strict installed-version matcher", () => {
+  const workflow = yaml.load(readFileSync(join(sourceRoot, ".github/workflows/compact-nix-hash.yaml"), "utf8"));
+  const step = workflow.jobs["linux-hash"].steps.find((candidate) =>
+    candidate.name === "Build and verify pinned Linux compiler");
+  assert.match(step.run, /matchesInstalledVersion\(actual, expected\)/u);
+  assert.equal(matchesInstalledVersion(`${pinnedVersion} (b5d9e4dfc 2026-11-03)`, pinnedVersion), true);
+  assert.equal(matchesInstalledVersion(`${pinnedVersion}-rc1`, pinnedVersion), false);
+  assert.equal(matchesInstalledVersion(`${pinnedVersion} (untrusted)`, pinnedVersion), false);
 });
 
 test("cached Compact setup authenticates its release query in every workflow", () => {

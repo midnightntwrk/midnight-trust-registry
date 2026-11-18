@@ -57,12 +57,16 @@ jobs:
         run: |
           set -euo pipefail
           toolchain="$(nix build --no-link --print-out-paths .#compact-toolchain)"
-          expected="$(cat .compact-version)"
-          actual="$("$toolchain/bin/compactc" --version)"
-          if [[ "$actual" != "$expected" ]]; then
-            echo "::error::Nix Compact compiler is $actual, but .compact-version requires $expected. Update the Linux fetch hash in nix/packages/compact-toolchain.nix for this release."
-            exit 1
-          fi
+          export TR_NIX_COMPACT_VERSION="$("$toolchain/bin/compactc" --version)"
+          node --input-type=module -e '
+            import { matchesInstalledVersion, readCompactPin } from "./scripts/check-compact-version.mjs";
+            const actual = process.env.TR_NIX_COMPACT_VERSION;
+            const expected = readCompactPin();
+            if (!matchesInstalledVersion(actual, expected)) {
+              console.error(`::error::Nix Compact compiler is ${actual}, but .compact-version requires ${expected}. Verify the Linux fetch hash in nix/packages/compact-toolchain.nix.`);
+              process.exitCode = 1;
+            }
+          '
       - name: Build additional Compact package and verify its version
         shell: bash
         run: |

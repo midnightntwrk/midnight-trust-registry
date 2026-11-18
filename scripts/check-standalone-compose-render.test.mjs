@@ -3,6 +3,8 @@ import { test } from "node:test";
 
 import { checkRenderedStandaloneCompose, ledger9Images, syntheticRenderEnvironment } from "./check-standalone-compose-render.mjs";
 
+const internalLedgerNodeUrl = "ws://node:9944"; // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket -- synthetic isolated Docker ledger bridge with no external route
+
 const base = () => ({
   name: "tr-standalone-local-rendercheck",
   networks: {
@@ -15,8 +17,8 @@ const base = () => ({
     return [name, { networks: { ledger: null, "host-access": null }, ports: [{ host_ip: "127.0.0.1",
       target, published, protocol: "tcp" }], pull_policy: "never",
     image: `tr-standalone/${name}:synthetic-render-only`,
-    environment: name === "indexer" ? { APP__INFRA__NODE__URL: "ws://node:9944",
-      APP__INFRA__SPO_NODE__URL: "ws://node:9944" } : {} }];
+    environment: name === "indexer" ? { APP__INFRA__NODE__URL: internalLedgerNodeUrl,
+      APP__INFRA__SPO_NODE__URL: internalLedgerNodeUrl } : {} }];
   })),
 });
 

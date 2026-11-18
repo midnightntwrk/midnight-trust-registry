@@ -14,6 +14,7 @@ import { KEYLESS_KEYGEN_PARAMETER_PATHS, PROTOCOL_KEY_PATHS, STANDALONE_PROOF_PA
 import { buildReleaseCandidateManifest } from "./release-candidate-manifest.mjs";
 import { artifactWorkspaces, packageManifestCatalog } from "./trust-registry-workspace-catalog.mjs";
 import { verifyKeylessZkirAgainstFullSource } from "./keyless-zkir-bundle.mjs";
+import { pinnedStandaloneInventoryImages } from "./standalone-install-image-inventory-policy.mjs";
 
 export { pinnedStandaloneImages } from "./check-standalone-install.mjs";
 
@@ -209,7 +210,8 @@ export function preflightStandaloneInstall(options = {}, inspectImage) {
   return validateStandaloneInstallInputs(options, sourceRevision, inspectImage);
 }
 
-/** Only source-independent pinned image archives may be reused from an older install. */
+/** Only source-independent pinned image archives may be reused from an older install.
+ * @param {string} bundlePath */
 async function reusableImages(bundlePath) {
   if (!isAbsolute(bundlePath)) throw new Error("Verified image bundle path must be absolute");
   const verified = await verifyStandaloneInstallBundle(bundlePath);
@@ -218,22 +220,23 @@ async function reusableImages(bundlePath) {
     throw new Error("Verified image bundle inventory changed after verification");
   }
   const inventory = JSON.parse(inventoryBytes.toString("utf8"));
+  const images = pinnedStandaloneInventoryImages(inventory.images);
   const pinned = pinnedStandaloneImages(readFileSync(join(root, "deploy/standalone/compose.yml"), "utf8"));
   if (pinned.some(({ role, reference }) => !verified.images.some((image) =>
     image.role === role && image.reference === reference))
-    || inventory.images.length !== pinned.length
-    || inventory.images.some((image) => !pinned.some(({ role, reference }) =>
+    || images.length !== pinned.length
+    || images.some((image) => !pinned.some(({ role, reference }) =>
       image.role === role && image.reference === reference))) {
     throw new Error("Verified image bundle does not match current Compose role and digest pins");
   }
-  return { root: bundlePath, images: inventory.images };
+  return { root: bundlePath, images };
 }
 
 /** @param {StandaloneInstallBuildOptions} options */
 async function preparedInstall(options) {
   const reuse = options.reuseVerifiedImageBundle === undefined
     ? null : await reusableImages(options.reuseVerifiedImageBundle);
-  const inspectImage = reuse === null ? undefined : (reference) =>
+  const inspectImage = reuse === null ? undefined : (/** @type {string} */ reference) =>
     reuse.images.some((image) => image.reference === reference) ? [reference] : [];
   return { plan: preflightStandaloneInstall(options, inspectImage), reuse };
 }

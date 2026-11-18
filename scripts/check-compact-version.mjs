@@ -102,11 +102,10 @@ export function readCompactPin(directory = root) {
   return pin.trimEnd();
 }
 
-function matchesInstalledVersion(installed, version) {
+export function matchesInstalledVersion(installed, version) {
   if (installed === version) return true;
-  const escapedVersion = version.replaceAll(".", "\\.");
-  return new RegExp(`^${escapedVersion} \\([0-9a-f]{9,40} \\d{4}-\\d{2}-\\d{2}\\)$`, "u")
-    .test(installed);
+  const annotated = /^(\d+\.\d+\.\d+) \([0-9a-f]{9,40} \d{4}-\d{2}-\d{2}\)$/u.exec(installed);
+  return annotated?.[1] === version;
 }
 
 export function checkCompactVersion(directory = root) {
