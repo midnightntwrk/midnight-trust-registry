@@ -1013,6 +1013,23 @@ temporary target was removed after the test; the source-matched deployment
 bundle and private journals were retained. This is package portability and
 fixture evidence, not a finalized DID/VP actor journey.
 
+On the pinned shared chain, a two-maintainer fixture authorization proved
+behind a blocked broadcast provider and then finalized as transaction
+`00f66228d0909ab94ae84247e69719fe20b8b9ab6506b43e9429fe1616ff8e0d0a`.
+Independent readback found the issuer `authorized` at governance sequence 12
+and matched event root
+`0xe00d7b3a07299cef627fa907e46e67cb8c1585d2eeb00907f0ef5d58a9ff7173`.
+A separate proof-only activation and one-shot submission finalized as
+`008efc51058b33c1f679e19e703988279b8fee706a002d97253c26b1747a4545bc`.
+Independent readback at indexed height 12794 found the issuer `active`, active
+issuer count one, governance sequence 13, and lifecycle event root
+`0xb3df7f19ba5a64c97aa6c4035ff9488bbdc858d2c8ed90f2ca01b61ba5d19a6b`;
+all 66 verifier keys still matched the source-pinned manifest. The private
+proof, reservation, and submission receipts are preserved. These actions used
+explicitly labeled fixture evidence, not an accepted VP, and no epoch was
+published. A real DID/VP admission and a defensible authorization statement
+and inclusion root are prerequisites for claiming a deployed actor E2E result.
+
 ## Execution order
 
 1. Keep the `ledger8` source branch only as a historical reference. Ledger 9
