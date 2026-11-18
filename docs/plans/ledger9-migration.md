@@ -1090,8 +1090,10 @@ patched-client attempt share the same authorization ID, evidence commitment,
 and action context. A finalized proposal cannot identify which journal attempt
 landed from those fields. The local journal now refuses to mark a reservation
 with no recorded event hash `observed` merely because such a proposal appears;
-the original files remain quarantined. A regression covers this exact
-cross-journal attribution case. This is a fail-closed guard, not disposition
+the original files remain quarantined. A four-journal regression using three
+identical reserved attempts and one submitted attempt confirms that only the
+submitted journal can observe the matching finalized proposal, without changing
+the reserved files. This is a fail-closed guard, not disposition
 of the old reservations: #323 still needs independently attributable
 transaction evidence or an approved recovery path.
 

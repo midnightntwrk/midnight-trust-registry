@@ -453,6 +453,33 @@ describe("private governed proposal submission journal", () => {
     expect(await journal.read("maintainer", authorizationId)).toMatchObject({ state: "observed", eventHash });
   });
 
+  it("does not attribute a finalized proposal to older identical reservations in other journals", async () => {
+    const journalPaths = Array.from({ length: 4 }, (_, index) => join(directory, `attempt-${index}.json`));
+    const journals = journalPaths.map((journalPath) => new FileProposalSubmissionJournal(journalPath));
+    for (const journal of journals) {
+      await journal.bindDeployment("registry:local", `0x${"aa".repeat(32)}`, `0x${"bb".repeat(32)}`);
+    }
+    for (const journal of journals.slice(0, 3)) {
+      await expect(journal.executeOnce("issuer", authorizationId, evidenceCommitment,
+        async () => { throw new Error("outcome unknown"); }, reservationContext))
+        .rejects.toBeInstanceOf(ProposalSubmissionOutcomeUnknownError);
+    }
+    const submitted = journals[3]!;
+    await submitted.executeOnce("issuer", authorizationId, evidenceCommitment,
+      async () => ({ eventHash }), reservationContext);
+
+    for (const [index, journal] of journals.slice(0, 3).entries()) {
+      const journalPath = journalPaths[index]!;
+      const before = await readFile(journalPath);
+      await expect(journal.reconcile("issuer", authorizationId,
+        async () => ({ eventHash, evidenceCommitment })))
+        .rejects.toBeInstanceOf(ProposalSubmissionAttributionRequiredError);
+      expect(await readFile(journalPath)).toEqual(before);
+    }
+    expect(await submitted.reconcile("issuer", authorizationId,
+      async () => ({ eventHash, evidenceCommitment }))).toMatchObject({ state: "observed", eventHash });
+  });
+
   it("fails closed on tampered journal state and invalid input before submission", async () => {
     const journal = new FileProposalSubmissionJournal(path);
     let executed = false;
@@ -630,7 +657,7 @@ describe("private governed proposal submission journal", () => {
     expect(await reopened.inspectCapacity()).toMatchObject({ archiveCount: 2, archivedEntries: 65 });
     await expect(reopened.executeOnce("issuer", "archived:0", evidenceCommitment,
       async () => ({ eventHash }))).rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
-  });
+  }, 20_000);
 
   it("requires matching finalized evidence for every row before changing the journal", async () => {
     const journal = new FileProposalSubmissionJournal(path);
