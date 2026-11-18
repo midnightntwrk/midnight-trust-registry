@@ -1,6 +1,7 @@
 import {
   assertValidApplicationEvidence,
   canonicalizeJson,
+  computeIssuerStatusPolicyBindingCommitment,
   type ApplicationEvidenceSignatureVerifier,
   type ApplicationEvidenceSubmission,
   type AuthorizedEvidenceVerifier,
@@ -13,6 +14,7 @@ import {
 
 import type { FileApplicationAdmissionStore } from "./file-application-admission.js";
 import { assertProposalAdmissionRecords, type ProposalAdmissionPort } from "./proposal-admission.js";
+import type { FinalizedIssuerSnapshot, LocalIssuerProposalPortDependencies } from "./local-issuer-proposal-port.js";
 
 type PrivateAdmission = NonNullable<Awaited<ReturnType<FileApplicationAdmissionStore["readCapturedPrivateAdmission"]>>>;
 type PublicAdmission = Awaited<ReturnType<NonNullable<ProposalAdmissionPort["readCapturedAdmission"]>>>;
@@ -63,4 +65,49 @@ export async function verifyCapturedIssuerStatus(input: {
     freshNonce: input.freshNonce,
     trustedTimeMs: input.trustedTimeMs,
   });
+}
+
+/** Compose the protected intake witness and fresh status check for the opt-in issuer writer. */
+export function createCapturedIssuerLiveEvidenceVerifier(input: {
+  sourceRevision: string;
+  readCapturedPrivateAdmission: FileApplicationAdmissionStore["readCapturedPrivateAdmission"];
+  readAuthorizedVerifiers(snapshot: FinalizedIssuerSnapshot): Promise<readonly AuthorizedEvidenceVerifier[]>;
+  verifyEvidenceSignature: ApplicationEvidenceSignatureVerifier;
+  resolver: Parameters<typeof refreshCapturedApplicationStatus>[0]["resolver"];
+  fetchFreshAttestation: Parameters<typeof refreshCapturedApplicationStatus>[0]["fetchFreshAttestation"];
+  readFreshNonce(): Promise<string>;
+}): LocalIssuerProposalPortDependencies["verifyLiveEvidence"] {
+  return async ({ terms, pending, accepted, submittedEvidence, snapshot, trustedTimeMs }) => {
+    const captured = await input.readCapturedPrivateAdmission(terms.applicationId, submittedEvidence.commitment);
+    if (captured === null) throw new Error("Issuer private status witness is unavailable");
+    const verified = await verifyCapturedIssuerStatus({
+      captured,
+      expectedAdmission: { pending, accepted },
+      submittedEvidence,
+      authorizationId: terms.authorizationId,
+      authorizedVerifiers: await input.readAuthorizedVerifiers(snapshot),
+      verifyEvidenceSignature: input.verifyEvidenceSignature,
+      statusPolicyBinding: terms.statusPolicyBinding,
+      resolver: input.resolver,
+      fetchFreshAttestation: input.fetchFreshAttestation,
+      freshNonce: await input.readFreshNonce(),
+      trustedTimeMs,
+    });
+    if (verified.validUntilMs <= trustedTimeMs) {
+      throw new Error("Refreshed issuer status is not current at trusted time");
+    }
+    return {
+      format: "tr-live-issuer-evidence-verification-v1",
+      sourceRevision: input.sourceRevision,
+      networkId: terms.networkId,
+      contractAddress: terms.contractAddress,
+      finalizedBlockHash: snapshot.finalizedBlockHash,
+      applicationId: terms.applicationId,
+      evidenceCommitment: submittedEvidence.commitment,
+      statusPolicyBindingCommitment: computeIssuerStatusPolicyBindingCommitment(terms.statusPolicyBinding),
+      statusRegistryId: terms.statusPolicyBinding.statusRegistryId,
+      statusAuthorityVerificationMethod: terms.statusPolicyBinding.statusAuthorityVerificationMethod,
+      trustedTimeMs,
+    };
+  };
 }

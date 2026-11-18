@@ -80,6 +80,14 @@ the fresh decision and validity. The host must still authenticate that
 verifier set, the private file, governed status binding, DID state, trusted
 time, finalized deployment, and provider code before using the result in the
 opt-in writer; this helper does not grant a role or submit a transaction.
+`createCapturedIssuerLiveEvidenceVerifier` composes that helper with the
+protected file read for the opt-in issuer port. It retrieves the witness by
+application ID and accepted evidence commitment, rechecks it against the exact
+public admission pair, obtains the host's authorized-verifier set and a new
+nonce, and fails closed if the witness or fresh status is unavailable. Its
+deployment-bound result is still only as trustworthy as the host's DID
+resolver, VC-owned status authority, verifier-set source, time, and finalized
+snapshot. Fixture callbacks do not turn it into a live actor qualification.
 
 ## Run the acceptance case
 

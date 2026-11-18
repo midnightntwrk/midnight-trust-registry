@@ -10,6 +10,7 @@ import { bytes32Commitment } from "@midnight-ntwrk/trust-registry-client";
 import {
   computeAuthorizationScopeCommitment,
   computeApplicationEvidenceCommitment,
+  computeIssuerStatusPolicyBindingCommitment,
   computePendingApplicationPayloadCommitment,
   createScopedIdentifier,
   mutationIntentDigestBytes,
@@ -37,7 +38,9 @@ import {
 import { afterEach, describe, expect, it } from "vitest";
 
 import { FileApplicationAdmissionStore } from "../file-application-admission.js";
-import { verifyCapturedIssuerStatus } from "../private-issuer-status.js";
+import type { FinalizedIssuerSnapshot } from "../local-issuer-proposal-port.js";
+import type { LocalIssuerProposalTerms } from "../local-issuer-proposal-terms.js";
+import { createCapturedIssuerLiveEvidenceVerifier, verifyCapturedIssuerStatus } from "../private-issuer-status.js";
 import { computeOperatorWorkspaceCommitment } from "../workspace-commitment.js";
 
 const label = "file-admission";
@@ -276,6 +279,50 @@ describe("file application admission store", () => {
     const refreshed = await verifyCapturedIssuerStatus(refreshInput);
     expect(refreshed.statusDecisionCommitment).toMatch(/^0x[0-9a-f]{64}$/u);
     expect(JSON.stringify(refreshed)).not.toContain("privateStatusWitness");
+    const terms: LocalIssuerProposalTerms = {
+      format: "tr-local-issuer-proposal-terms-v1",
+      networkId: "undeployed",
+      contractAddress: `0x${"ab".repeat(32)}`,
+      expectedGenesisHash: `0x${"cd".repeat(32)}`,
+      applicationId,
+      authorizationId: issuer.authorizationId,
+      evidenceCommitment: commitment,
+      trustLevel: "approved",
+      statusPolicyBinding: scenario.fixtureStatusPolicyBinding,
+    };
+    const snapshot = { finalizedBlockHash: `0x${"ef".repeat(32)}` } as FinalizedIssuerSnapshot;
+    const verifierDependencies = {
+      sourceRevision: "a".repeat(40),
+      readCapturedPrivateAdmission: (id, evidenceCommitment) =>
+        reopened.readCapturedPrivateAdmission(id, evidenceCommitment),
+      readAuthorizedVerifiers: async () => [harness.evidenceVerifier],
+      verifyEvidenceSignature,
+      resolver: scenario.input.resolver,
+      fetchFreshAttestation: async () => freshSigned,
+      readFreshNonce: async () => freshNonce,
+    } satisfies Parameters<typeof createCapturedIssuerLiveEvidenceVerifier>[0];
+    const verifier = createCapturedIssuerLiveEvidenceVerifier(verifierDependencies);
+    const verificationInput = {
+      terms,
+      ...refreshInput.expectedAdmission,
+      submittedEvidence: signedEvidence,
+      snapshot,
+      trustedTimeMs: VP_FIXTURE_TIME_MS,
+    };
+    await expect(verifier(verificationInput)).resolves.toMatchObject({
+      format: "tr-live-issuer-evidence-verification-v1",
+      sourceRevision: "a".repeat(40),
+      contractAddress: terms.contractAddress,
+      finalizedBlockHash: snapshot.finalizedBlockHash,
+      evidenceCommitment: commitment,
+      statusPolicyBindingCommitment: computeIssuerStatusPolicyBindingCommitment(terms.statusPolicyBinding),
+    });
+    await expect(verifier({ ...verificationInput, submittedEvidence: original })).rejects
+      .toThrow(/private status witness is unavailable/u);
+    await expect(createCapturedIssuerLiveEvidenceVerifier({
+      ...verifierDependencies,
+      fetchFreshAttestation: async () => { throw new Error("VC status authority unavailable"); },
+    })(verificationInput)).rejects.toThrow(/VC status authority unavailable/u);
     await expect(verifyCapturedIssuerStatus({
       ...refreshInput, verifyEvidenceSignature: () => false,
     })).rejects.toThrow(/signature/u);
