@@ -109,7 +109,7 @@ for (const { role, responseLost } of [
   ...["issuer", "verifier", "auditor", "maintainer"].map((role) => ({ role, responseLost: true })),
   { role: "issuer", responseLost: false },
 ]) test(responseLost
-  ? `admin recovers an accepted ${role} proposal after its HTTP response is lost`
+  ? `admin quarantines an accepted ${role} proposal after its HTTP response is lost`
   : `admin receives an accepted ${role} proposal receipt from external quorum`, async ({ page, allowedLocalOrigins }) => {
   const harness = new LocalTrustRegistryIntegrationHarness(`admin-browser-${role}-proposal-recovery`);
   const second = createMaintainerScenarioFixture("admin-browser-second");
@@ -220,8 +220,10 @@ for (const { role, responseLost } of [
       await expect(page.locator("body")).toContainText("Proposal not observed");
       finalizedLedger = await harness.simulator.getLedger();
       await page.locator("[data-proposal-resolve]").click();
-      await expect(page.locator("body")).toContainText(`Compact ${role} proposal observed`);
-      expect((await journal.read(role, scenario.id))?.state).toBe("observed");
+      await expect(page.locator("body")).toContainText(
+        "finalized proposal cannot be attributed to this reserved attempt",
+      );
+      expect((await journal.read(role, scenario.id))?.state).toBe("reserved");
     } else {
       await expect(page.locator(".alert.success")).toContainText(`Compact ${role} proposal accepted`);
       await expect(page.locator(".alert.success")).toContainText("Network finality is not implied");
