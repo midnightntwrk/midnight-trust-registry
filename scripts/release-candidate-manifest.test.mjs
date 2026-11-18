@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { linkSync, mkdtempSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, linkSync, mkdtempSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, test } from "node:test";
@@ -13,6 +13,7 @@ import {
   buildReleaseCandidateManifest,
   hashPackedTarEntry,
   packedEntries,
+  verifyPreparedReleaseCandidate,
   verifyReleaseCandidateArtifacts,
 } from "./release-candidate-manifest.mjs";
 
@@ -210,6 +211,22 @@ test("candidate manifest binds signed source inputs and exact package bytes", ()
   assert.equal(manifest.packages[0].sha256,
     createHash("sha256").update(readFileSync(contractTarball)).digest("hex"));
   assert.equal(verifyReleaseCandidateArtifacts(manifest, input.artifactDir, input.workspaces).length, 2);
+  const prepared = (candidate) => verifyPreparedReleaseCandidate({
+    manifest: candidate, repoRoot: root, artifactDir: input.artifactDir,
+    revision: input.revision, workspaces: input.workspaces, publish: input.publish,
+  });
+  cpSync(join(root, "contracts/trust-registry/dist"), join(root, "saved-dist"), { recursive: true });
+  rmSync(join(root, "contracts/trust-registry/dist"), { recursive: true });
+  assert.equal(prepared(manifest).length, 2, "approval verification must not require generated build output");
+  assert.throws(() => prepared({ ...manifest, sourceRevision: "b".repeat(40) }), /exact source revision/u);
+  assert.throws(() => prepared({ ...manifest, packages: manifest.packages.map((entry, index) =>
+    index === 0 ? { ...entry, publication: "local-only" } : entry) }), /publication differs/u);
+  assert.throws(() => prepared({ ...manifest, packages: [{ ...manifest.packages[0],
+    workspace: "../../outside" }, manifest.packages[1]] }), /not in the release catalog/u);
+  put(root, "pnpm-lock.yaml", "changed-lock\n");
+  assert.throws(() => prepared(manifest), /identity differs/u);
+  put(root, "pnpm-lock.yaml", "lock-test\n");
+  cpSync(join(root, "saved-dist"), join(root, "contracts/trust-registry/dist"), { recursive: true });
   const retainedTarball = join(root, "artifacts/retained-contract.tar");
   renameSync(contractTarball, retainedTarball);
   for (const linkTarball of [symlinkSync, linkSync]) {

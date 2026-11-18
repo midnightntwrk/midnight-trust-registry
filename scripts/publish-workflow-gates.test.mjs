@@ -113,7 +113,6 @@ test("release bytes are prepared before the protected publish approval", () => {
     "Download reviewed release tarballs",
     "Match reviewed manifest digest",
     "Verify manifest and exact release tarballs after approval",
-    "Smoke test downloaded release tarballs",
     "Publish packages to npm",
   ];
   let previous = -1;
@@ -125,9 +124,9 @@ test("release bytes are prepared before the protected publish approval", () => {
   assert.match(publish.steps.find((step) => step.name === "Match reviewed manifest digest").run,
     /check-reviewed-manifest-digest\.mjs artifacts\/npm-release\.manifest\.json/u);
   assert.match(publish.steps.find((step) => step.name === "Verify manifest and exact release tarballs after approval").run,
-    /--verify artifacts\/npm-release\.manifest\.json/u);
-  assert.match(publish.steps.find((step) => step.name === "Rebuild full Compact artifacts for source verification").run,
-    /pnpm run build/u);
+    /--verify-prepared artifacts\/npm-release\.manifest\.json/u);
+  assert.ok(publish.steps.every((step) => !/pnpm run (?:build|test)|compact:light/u.test(step.run ?? "")));
+  assert.ok(prepare.steps.some((step) => step.name === "Require green exact-source CI, Quality, and Scan"));
 });
 
 test("protected publish rejects a changed reviewed manifest digest", () => {
