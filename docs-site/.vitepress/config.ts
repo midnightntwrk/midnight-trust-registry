@@ -41,6 +41,7 @@ export default defineConfig({
         { text: "Start here: try, then qualify", link: "/guide/adoption" },
         { text: "Quickstart and demo", link: "/guide/quickstart" },
         { text: "Self-hosted standalone", link: "/guide/standalone" },
+        { text: "Ledger 9 local development", link: "/guide/ledger9-local-development" },
         { text: "End-to-end testing", link: "/guide/end-to-end-testing" },
         { text: "Local UI acceptance", link: "/guide/ui-acceptance" },
         { text: "Standalone actor host", link: "/guide/standalone-actor-host" },
