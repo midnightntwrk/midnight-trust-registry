@@ -1,11 +1,11 @@
 import type { Server } from "node:http";
 
-import { createOperatorWorkspace } from "@midnight-ntwrk/trust-registry-cli";
+import { createOperatorWorkspace } from "@midnightntwrk/trust-registry-cli";
 import {
   computeAuthorizationScopeCommitment,
   issuerGovernedResourceId,
   type ApplicationChallengeBinding,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { InMemoryApplicationChallengeStore } from "../application-challenges.js";

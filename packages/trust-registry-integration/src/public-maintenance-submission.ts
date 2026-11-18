@@ -6,7 +6,7 @@ import { dirname, resolve } from "node:path";
 import { submitTxAsync, type ContractProviders } from "@midnight-ntwrk/midnight-js-contracts";
 import type { Signature } from "@midnight-ntwrk/midnight-js-protocol/ledger";
 import { z } from "zod";
-import { TrustRegistryContract, type TrustRegistryPrivateState } from "@midnight-ntwrk/trust-registry-contract";
+import { TrustRegistryContract, type TrustRegistryPrivateState } from "@midnightntwrk/trust-registry-contract";
 
 import {
   prepareLocalNetworkCommitteeTransition,

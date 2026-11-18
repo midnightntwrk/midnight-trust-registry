@@ -64,8 +64,8 @@ jobs:
       - run: pnpm install --frozen-lockfile --prefer-offline
       - run: pnpm run check:compact-version
       - run: ./run.sh --light
-      - run: pnpm --filter @midnight-ntwrk/trust-registry-integration run integration
-      - run: pnpm --filter @midnight-ntwrk/trust-registry-api run integration
+      - run: pnpm --filter @midnightntwrk/trust-registry-integration run integration
+      - run: pnpm --filter @midnightntwrk/trust-registry-api run integration
       - run: pnpm run demo:smoke
       - name: Install pinned Playwright Chromium for fixture browser journeys
         run: pnpm exec playwright install --with-deps chromium

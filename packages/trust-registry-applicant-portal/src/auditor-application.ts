@@ -1,5 +1,5 @@
-import type { TrustRegistryApiMutationContext } from "@midnight-ntwrk/trust-registry-api";
-import { AuditorScopeSchema, requestGovernedResourceId } from "@midnight-ntwrk/trust-registry-domain/browser";
+import type { TrustRegistryApiMutationContext } from "@midnightntwrk/trust-registry-api";
+import { AuditorScopeSchema, requestGovernedResourceId } from "@midnightntwrk/trust-registry-domain/browser";
 
 import {
   prepareMembershipApplication,

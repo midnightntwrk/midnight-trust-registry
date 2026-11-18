@@ -4,7 +4,7 @@ import {
   bytes32Commitment,
   createIssuerScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 
 import { publishSimulatorSnapshot } from "../workspace.js";
 

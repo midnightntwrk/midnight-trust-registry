@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 
-import { createOperatorWorkspace } from "@midnight-ntwrk/trust-registry-cli";
+import { createOperatorWorkspace } from "@midnightntwrk/trust-registry-cli";
 import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
@@ -10,12 +10,12 @@ import {
   computeMutationPayloadCommitment,
   mutationIntentDigestBytes,
   type MutationIntent,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import {
   createMidnightDid,
   createMidnightDidLedgerFixture,
   createMidnightDidResolver,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 import { describe, expect, it } from "vitest";
 
 import { preflightMutationIntentActor } from "../mutation-intent-actor-binding.js";

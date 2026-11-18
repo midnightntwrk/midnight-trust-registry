@@ -307,30 +307,30 @@ The repository currently distinguishes between two artifact classes.
 
 Local artifact packages:
 
-- `@midnight-ntwrk/trust-registry-contract`
-- `@midnight-ntwrk/trust-registry-domain`
-- `@midnight-ntwrk/trust-registry-client`
-- `@midnight-ntwrk/trust-registry-integration`
-- `@midnight-ntwrk/trust-registry-cli`
-- `@midnight-ntwrk/trust-registry-api`
-- `@midnight-ntwrk/trust-registry-admin-console`
-- `@midnight-ntwrk/trust-registry-applicant-portal`
-- `@midnight-ntwrk/trust-registry-trqp-adapter`
-- `@midnight-ntwrk/trust-registry-openid-federation-adapter`
+- `@midnightntwrk/trust-registry-contract`
+- `@midnightntwrk/trust-registry-domain`
+- `@midnightntwrk/trust-registry-client`
+- `@midnightntwrk/trust-registry-integration`
+- `@midnightntwrk/trust-registry-cli`
+- `@midnightntwrk/trust-registry-api`
+- `@midnightntwrk/trust-registry-admin-console`
+- `@midnightntwrk/trust-registry-applicant-portal`
+- `@midnightntwrk/trust-registry-trqp-adapter`
+- `@midnightntwrk/trust-registry-openid-federation-adapter`
 
 Remotely publishable core packages:
 
-- `@midnight-ntwrk/trust-registry-contract`
-- `@midnight-ntwrk/trust-registry-domain`
-- `@midnight-ntwrk/trust-registry-client`
-- `@midnight-ntwrk/trust-registry-trqp-adapter`
-- `@midnight-ntwrk/trust-registry-openid-federation-adapter`
+- `@midnightntwrk/trust-registry-contract`
+- `@midnightntwrk/trust-registry-domain`
+- `@midnightntwrk/trust-registry-client`
+- `@midnightntwrk/trust-registry-trqp-adapter`
+- `@midnightntwrk/trust-registry-openid-federation-adapter`
 
 Local-only artifact packages for now:
 
-- `@midnight-ntwrk/trust-registry-integration`
-- `@midnight-ntwrk/trust-registry-cli`
-- `@midnight-ntwrk/trust-registry-api`
+- `@midnightntwrk/trust-registry-integration`
+- `@midnightntwrk/trust-registry-cli`
+- `@midnightntwrk/trust-registry-api`
 
 Those packages remain private, local-only artifacts while their public
 packaging and deployment policy is finalized. They are packed into

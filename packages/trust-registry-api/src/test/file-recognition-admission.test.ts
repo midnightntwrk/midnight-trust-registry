@@ -2,8 +2,8 @@ import { chmod, link, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } f
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
-import { withExclusiveWorkspaceWrite, WorkspaceMutationLockedError } from "@midnight-ntwrk/trust-registry-cli";
+import { sha256Hex } from "@midnightntwrk/trust-registry-domain";
+import { withExclusiveWorkspaceWrite, WorkspaceMutationLockedError } from "@midnightntwrk/trust-registry-cli";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { ApplicationChallengeRecord } from "../application-challenges.js";

@@ -3,8 +3,8 @@ import { chmod, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createOperatorWorkspace } from "@midnight-ntwrk/trust-registry-cli";
-import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client/simulator";
+import { createOperatorWorkspace } from "@midnightntwrk/trust-registry-cli";
+import { TrustRegistrySimulatorClient } from "@midnightntwrk/trust-registry-client/simulator";
 import { deriveJubjubPublicKeyFromSeed, encodeJubjubSignature, signJubjubPayloadFromSeed } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import {
   computeAuthorizationScopeCommitment,
@@ -13,7 +13,7 @@ import {
   mutationIntentDigestBytes,
   type ApplicationEvidenceSubmission,
   type MutationIntent,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import {
   createIssuerAuthorizationScopeFixture,
   createIssuerScenarioFixture,
@@ -22,7 +22,7 @@ import {
   createMidnightDidResolver,
   LocalTrustRegistryIntegrationHarness,
   VP_FIXTURE_TIME_MS,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { FileApplicationAdmissionStore } from "../file-application-admission.js";

@@ -11,14 +11,14 @@ import {
   signMaintainerProposalEvidenceFromSeed,
   signDeploymentBoundMaintainerActionFromSeed,
   verifyMaintainerProposalEvidenceSignature,
-} from "@midnight-ntwrk/trust-registry-contract";
-import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
+} from "@midnightntwrk/trust-registry-contract";
+import { publishSimulatorSnapshot } from "@midnightntwrk/trust-registry-cli";
 import {
   createMaintainerAuthorizationScopeFixture,
   createMaintainerScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
   type MaintainerScenarioFixture,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 
 import {
   GovernedMaintainerProposalRejectedError,

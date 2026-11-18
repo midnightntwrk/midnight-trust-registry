@@ -8,14 +8,14 @@ import {
 } from "@midnight-ntwrk/credential-did-midnight";
 import { parseMidnightDIDString } from "@midnight-ntwrk/midnight-did";
 import { signJubjubDigest } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
-import { deriveJubjubPublicKey, deriveJubjubPublicKeyFromSeed, encodeJubjubSignature, signApplicationEvidenceCommitmentFromSeed } from "@midnight-ntwrk/trust-registry-contract";
+import { deriveJubjubPublicKey, deriveJubjubPublicKeyFromSeed, encodeJubjubSignature, signApplicationEvidenceCommitmentFromSeed } from "@midnightntwrk/trust-registry-contract";
 import {
   AuthorizationScopeSchema,
   computeAuthorizationScopeCommitment,
   sha256Hex,
   type AuthorizationScope,
   type IssuerStatusPolicyBinding,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import { type ApplicationVpMaterial, type QualifiedApplicationVpContext, type QualifiedApplicationVpFamilyAdapter } from "./application-vp-verifier.js";
 import { applicationStatusAttestationDigest, createAttestedApplicationStatusSource, type SignedApplicationStatusStatement } from "./application-status-attestation.js";

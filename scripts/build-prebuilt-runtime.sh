@@ -35,17 +35,17 @@ if ! diff -qr "$source_managed" "$dist_managed" >/dev/null; then
 fi
 
 # Compile contract TypeScript helpers in place without invoking its Compact build.
-pnpm --filter @midnight-ntwrk/trust-registry-contract exec tsc -p tsconfig.build.json
+pnpm --filter @midnightntwrk/trust-registry-contract exec tsc -p tsconfig.build.json
 
 # Rebuild downstream TypeScript and UI workspaces; never replace generated Compact keys.
 pnpm -r \
-  --filter @midnight-ntwrk/trust-registry-domain \
-  --filter @midnight-ntwrk/trust-registry-client \
-  --filter @midnight-ntwrk/trust-registry-integration \
-  --filter @midnight-ntwrk/trust-registry-cli \
-  --filter @midnight-ntwrk/trust-registry-api \
-  --filter @midnight-ntwrk/trust-registry-admin-console \
-  --filter @midnight-ntwrk/trust-registry-applicant-portal \
-  --filter @midnight-ntwrk/trust-registry-trqp-adapter \
-  --filter @midnight-ntwrk/trust-registry-openid-federation-adapter \
+  --filter @midnightntwrk/trust-registry-domain \
+  --filter @midnightntwrk/trust-registry-client \
+  --filter @midnightntwrk/trust-registry-integration \
+  --filter @midnightntwrk/trust-registry-cli \
+  --filter @midnightntwrk/trust-registry-api \
+  --filter @midnightntwrk/trust-registry-admin-console \
+  --filter @midnightntwrk/trust-registry-applicant-portal \
+  --filter @midnightntwrk/trust-registry-trqp-adapter \
+  --filter @midnightntwrk/trust-registry-openid-federation-adapter \
   run build

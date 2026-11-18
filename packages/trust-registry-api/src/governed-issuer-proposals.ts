@@ -3,11 +3,11 @@ import { z } from "zod";
 import {
   decodeCanonicalJubjubSignatureHex,
   type TrustRegistryJubjubSignature,
-} from "@midnight-ntwrk/trust-registry-contract";
+} from "@midnightntwrk/trust-registry-contract";
 import {
   ApplicationEvidenceSubmissionSchema,
   type ApplicationEvidenceSubmission,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import {
   GovernedMembershipSignersSchema,

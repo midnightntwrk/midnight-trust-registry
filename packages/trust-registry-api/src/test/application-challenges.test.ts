@@ -5,7 +5,7 @@ import {
   computeAuthorizationScopeCommitment,
   issuerGovernedResourceId,
   requestGovernedResourceId,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import {
   ApplicationChallengeService,

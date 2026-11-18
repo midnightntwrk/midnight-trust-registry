@@ -1,8 +1,8 @@
 import { Buffer } from "node:buffer";
 
 import { signJubjubDigestFromSeed } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
-import { deriveJubjubPublicKey, deriveJubjubPublicKeyFromSeed, encodeJubjubSignature } from "@midnight-ntwrk/trust-registry-contract";
-import { RecognitionAuthorityAssertionSchema, sha256Hex, type RecognitionAuthorityAssertion } from "@midnight-ntwrk/trust-registry-domain";
+import { deriveJubjubPublicKey, deriveJubjubPublicKeyFromSeed, encodeJubjubSignature } from "@midnightntwrk/trust-registry-contract";
+import { RecognitionAuthorityAssertionSchema, sha256Hex, type RecognitionAuthorityAssertion } from "@midnightntwrk/trust-registry-domain";
 import { describe, expect, it } from "vitest";
 
 import { createMidnightDidLedgerFixture, createMidnightDidResolver } from "../did-resolution.js";

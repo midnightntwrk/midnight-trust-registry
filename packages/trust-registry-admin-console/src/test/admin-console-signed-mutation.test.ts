@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   TrustRegistryApiSignedMutationRequestSchema,
   type TrustRegistryApiSignedMutationRequest,
-} from "@midnight-ntwrk/trust-registry-api";
+} from "@midnightntwrk/trust-registry-api";
 import { TrustRegistryAdminConsoleApiError, TrustRegistryAdminConsoleClient } from "../api.js";
 
 const did = `did:midnight:undeployed:${"2".repeat(64)}`;

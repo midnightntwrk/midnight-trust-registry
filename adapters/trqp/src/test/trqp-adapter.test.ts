@@ -3,11 +3,11 @@ import { describe, expect, it } from "vitest";
 import type {
   RegistryRecord,
   TrustRegistryEvidenceBundle,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import {
   evaluateAuthorizationRecordAtTime,
   evaluateRecognitionRecordAtTime,
-} from "@midnight-ntwrk/trust-registry-client";
+} from "@midnightntwrk/trust-registry-client";
 
 import {
   createIssuerScenarioFixture,
@@ -17,7 +17,7 @@ import {
   type IssuerScenarioFixture,
   type RecognitionScenarioFixture,
   type VerifierScenarioFixture,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 import {
   TrustRegistryTrqpAdapter,
   type TrqpAdapterResult,

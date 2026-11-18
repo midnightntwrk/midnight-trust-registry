@@ -8,9 +8,9 @@ import {
 } from "@midnight-ntwrk/credential-compact";
 import { midnightDIDMethodId, type MidnightDIDMethodBinding } from "@midnight-ntwrk/credential-did-midnight";
 import { parseMidnightDID, parseMidnightDIDString } from "@midnight-ntwrk/midnight-did-domain";
-import { pureCircuits as registryPureCircuits } from "@midnight-ntwrk/trust-registry-contract";
-import type { TrustedDecisionEvidenceReaders } from "@midnight-ntwrk/trust-registry-client";
-import { sha256Hex, type DecisionEvidenceSelection } from "@midnight-ntwrk/trust-registry-domain";
+import { pureCircuits as registryPureCircuits } from "@midnightntwrk/trust-registry-contract";
+import type { TrustedDecisionEvidenceReaders } from "@midnightntwrk/trust-registry-client";
+import { sha256Hex, type DecisionEvidenceSelection } from "@midnightntwrk/trust-registry-domain";
 
 import {
   createInactiveVcSignerCandidateFromTrustedDecision,

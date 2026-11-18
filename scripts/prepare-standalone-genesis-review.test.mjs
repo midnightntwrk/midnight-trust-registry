@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
+import { getLocalNetworkProfile } from "@midnightntwrk/trust-registry-integration";
 
 import { prepareStandaloneGenesisReviewPacket, renderGenesisReviewPacket,
   validateGenesisReviewEvidence } from "./prepare-standalone-genesis-review.mjs";

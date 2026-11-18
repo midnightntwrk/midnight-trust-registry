@@ -4,7 +4,7 @@ import {
   computeAuthorizationScopeCommitment,
   computePendingApplicationPayloadCommitment,
   computeSignedPendingApplicationCommitment,
-} from "@midnight-ntwrk/trust-registry-domain/browser";
+} from "@midnightntwrk/trust-registry-domain/browser";
 
 import { runCli } from "../cli.js";
 

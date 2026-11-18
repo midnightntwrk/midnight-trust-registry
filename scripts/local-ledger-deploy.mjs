@@ -13,7 +13,7 @@ import {
   FileDeploymentAttemptJournal,
   getLocalNetworkProfile,
   reconcileLocalStagedDeployment,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 
 import { checkLocalLedgerPreflight } from "./local-ledger-preflight.mjs";
 import { loadRecheckedApprovedProvider, readApprovedProviderIdentity } from "./approved-provider-identity.mjs";

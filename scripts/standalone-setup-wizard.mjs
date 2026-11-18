@@ -14,7 +14,7 @@ import {
   reconcileLocalNetworkCommitteeTransition, submitLocalNetworkCommitteeTransition,
   getLocalNetworkProfile,
   VerifierKeyInsertionOutcomeUnknownError,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";

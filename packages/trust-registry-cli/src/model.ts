@@ -19,7 +19,7 @@ import {
   type RecognitionRecord,
   type RegistryRecord,
   type TrustRegistryEvidenceBundle,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 const SnapshotEntryLabelSchema = z.string().trim().min(1);
 const WorkspaceTargetIdSchema = z.string().trim().min(1);

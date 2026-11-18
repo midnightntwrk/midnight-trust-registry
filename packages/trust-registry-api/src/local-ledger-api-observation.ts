@@ -1,8 +1,8 @@
 import { isDeepStrictEqual } from "node:util";
 import { createHash, randomUUID } from "node:crypto";
 
-import { buildSnapshotSummary } from "@midnight-ntwrk/trust-registry-cli";
-import { canonicalizeJson } from "@midnight-ntwrk/trust-registry-domain";
+import { buildSnapshotSummary } from "@midnightntwrk/trust-registry-cli";
+import { canonicalizeJson } from "@midnightntwrk/trust-registry-domain";
 
 import type { TrustRegistryApiStateSource } from "./source.js";
 

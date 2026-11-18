@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 
-import { sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
+import { sha256Hex } from "@midnightntwrk/trust-registry-domain";
 
 const DEFAULT_BASE_TIMESTAMP_MS = Date.parse("2026-05-20T00:00:00Z");
 

@@ -6,9 +6,9 @@ import {
   deriveJubjubPublicKeyFromSeed,
   signMaintainerProposalEvidenceFromSeed,
   signDeploymentBoundMaintainerActionFromSeed,
-} from "@midnight-ntwrk/trust-registry-contract";
-import type { MaintainerCoAuthorizer } from "@midnight-ntwrk/trust-registry-contract/testing";
-import { AuthorizationStatus } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+} from "@midnightntwrk/trust-registry-contract";
+import type { MaintainerCoAuthorizer } from "@midnightntwrk/trust-registry-contract/testing";
+import { AuthorizationStatus } from "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 
 import {
   createIssuerScenarioFixture,

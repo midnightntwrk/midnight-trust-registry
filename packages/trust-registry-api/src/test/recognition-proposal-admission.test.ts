@@ -2,14 +2,14 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { withExclusiveWorkspaceWrite, WorkspaceMutationLockedError } from "@midnight-ntwrk/trust-registry-cli";
+import { withExclusiveWorkspaceWrite, WorkspaceMutationLockedError } from "@midnightntwrk/trust-registry-cli";
 import {
   computeGovernancePolicySnapshotCommitment,
   deriveGovernancePolicySnapshot,
   GovernancePolicyRecordSchema,
   recognitionAccreditorAnchorCommitment,
   sha256Hex,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { RecognitionAdmissionReceipt } from "../file-recognition-admission.js";

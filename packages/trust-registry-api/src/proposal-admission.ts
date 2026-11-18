@@ -5,7 +5,7 @@ import {
   computeApplicationEvidenceCommitment,
   type ApplicationEvidenceSubmission,
   type ApplicationEvidenceRole,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import { ApplicationVpReceiptSchema, type ApplicationVpReceipt } from "./application-vp-http.js";
 import type { PendingApplicationRecord } from "./pending-application-registration.js";

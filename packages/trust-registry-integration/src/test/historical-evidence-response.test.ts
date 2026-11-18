@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 import { describe, expect, it } from "vitest";
-import type { Ledger } from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+import type { Ledger } from "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 
 import {
   bytes32Commitment,
@@ -10,7 +10,7 @@ import {
   verifyHistoricalRecognitionEvidenceFromApi,
   verifyHistoricalRecognitionEvidenceResponse,
   verifyTrustRegistryEvidenceBundle,
-} from "@midnight-ntwrk/trust-registry-client";
+} from "@midnightntwrk/trust-registry-client";
 import { resolveCompactHistoricalEpochAnchor } from "../compact-historical-anchor.js";
 import { createIssuerScenarioFixture, createRecognitionScenarioFixture } from "../fixtures.js";
 import { LocalTrustRegistryIntegrationHarness } from "../local-simulator-harness.js";

@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 
-import { createOperatorWorkspace } from "@midnight-ntwrk/trust-registry-cli";
+import { createOperatorWorkspace } from "@midnightntwrk/trust-registry-cli";
 import { deriveJubjubPublicKeyFromSeed, encodeJubjubSignature, signJubjubPayloadFromSeed } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import {
   computeAuthorizationScopeCommitment,
@@ -12,8 +12,8 @@ import {
   type AuthorizationScope,
   type GovernedResource,
   type MutationIntent,
-} from "@midnight-ntwrk/trust-registry-domain";
-import { createMidnightDid, createMidnightDidLedgerFixture, createMidnightDidResolver } from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-domain";
+import { createMidnightDid, createMidnightDidLedgerFixture, createMidnightDidResolver } from "@midnightntwrk/trust-registry-integration";
 import { describe, expect, it } from "vitest";
 
 import {

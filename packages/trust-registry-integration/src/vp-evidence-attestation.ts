@@ -8,12 +8,12 @@ import {
   encodeJubjubSignature,
   verifyApplicationEvidenceCommitmentSignature,
   type TrustRegistryJubjubSignature,
-} from "@midnight-ntwrk/trust-registry-contract";
-import { bytes32Commitment } from "@midnight-ntwrk/trust-registry-client";
+} from "@midnightntwrk/trust-registry-contract";
+import { bytes32Commitment } from "@midnightntwrk/trust-registry-client";
 import type {
   ApplicationEvidenceSignature,
   ApplicationEvidenceSignatureVerifier,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import {
   createApplicationVpIntakeVerifier,

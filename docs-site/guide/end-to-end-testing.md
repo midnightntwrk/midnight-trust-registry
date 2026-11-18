@@ -17,7 +17,7 @@ evidence. Passing the demo path does not advance the standalone release gate.
 | Exercise both browser sign-in flows against the real local HTTP API | `pnpm exec playwright test browser-tests/did-auth-live-http.spec.mjs` | The built applicant and admin apps share a loopback origin with the real challenge/session API and a fixture DID resolver. A bad applicant signature shows an error without signing in; retry with the valid external test signer succeeds. The applicant's private request list loads through an applicant-purpose bearer and opens exact-ID evidence continuation. Both apps sign out; purpose-isolated bearers never appear in the page or trigger a governance mutation. This is not a deployed DID provider, VP check, role grant, or ledger test. |
 | Isolate the loopback fixture smoke after that build | `pnpm run test:e2e:headless:fixture` | Runs only the API/UI fixture portion above. Fixture approval is not governed membership. |
 | Exercise the demo in a browser | `pnpm run test:e2e:demo:browser` | The same demo plus applicant/admin Playwright flows completed against fixture services; the test context blocked and reported non-loopback browser requests. |
-| Check submission restart quarantine without a live network | `pnpm --filter @midnight-ntwrk/trust-registry-api run test:light` | The journal write, mocked-node/provider restart, and fixture API-listener restart tests passed; this is not deployed-ledger recovery evidence. |
+| Check submission restart quarantine without a live network | `pnpm --filter @midnightntwrk/trust-registry-api run test:light` | The journal write, mocked-node/provider restart, and fixture API-listener restart tests passed; this is not deployed-ledger recovery evidence. |
 | Check a real standalone candidate before actor testing | `node scripts/check-standalone-journey-prerequisites.mjs "$SETUP" "$SOURCE_SHA"` | Exit 0: the wizard recorded the prerequisite ledger observations for this exact source. Exit 2: stop and follow `nextActions`. |
 | Record a deployed candidate's operator-reviewed cases | `node scripts/check-standalone-acceptance-evidence.mjs "$ACCEPTANCE" "$SOURCE_SHA"` | Exit 0: all cases have a current decision-backed operator `pass`; exit 2: a case is failed, not run, or needs a fresh decision. Inspect `operatorFailedCases`, `notRunCases`, and `decisionBackedCases`; receipt authenticity, finality, and the security verdict still need independent review. |
 
@@ -235,7 +235,7 @@ When a reviewed v3 API plan and immutable provider installation exist, draft
 the issuer-writer approval for the embedding host in a private directory:
 
 ```sh
-pnpm --filter @midnight-ntwrk/trust-registry-api build
+pnpm --filter @midnightntwrk/trust-registry-api build
 node scripts/prepare-local-issuer-writer-review.mjs \
   "$PRIVATE_REVIEW_DIR" "$SIGNED_PLAN" "$PLAN_SIGNATURE" "$REVIEWER_KEYRING" \
   "$REVIEWER_FINGERPRINT" "$INSTALLED_PROVIDER_ROOT" \

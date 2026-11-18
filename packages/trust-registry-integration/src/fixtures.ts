@@ -13,10 +13,10 @@ import {
   type AuthorizationScope,
   type AuthorizationRecord,
   type IssuerGovernedResourceType,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import {
   IssuerResourceType,
-} from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+} from "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 
 export const issuerResourceTypeDetails = {
   [IssuerResourceType.credentialFamily]: { governedType: "credentialFamily", recordType: "credential-family" },

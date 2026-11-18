@@ -5,7 +5,7 @@ import type {
   TrustRegistryApiHealthResponse,
   TrustRegistryApiRecognitionListResponse,
   TrustRegistryApiSummary,
-} from "@midnight-ntwrk/trust-registry-api";
+} from "@midnightntwrk/trust-registry-api";
 
 export type ApplicantTarget = TrustRegistryApiApplicationTarget;
 export type PortalSubmissionTarget = Exclude<ApplicantTarget, "auditor">;

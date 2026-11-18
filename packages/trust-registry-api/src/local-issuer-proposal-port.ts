@@ -3,15 +3,15 @@ import {
   computeIssuerStatusPolicyBindingCommitment,
   type ApplicationEvidenceSubmission,
   type GovernancePolicySnapshot,
-} from "@midnight-ntwrk/trust-registry-domain";
-import type { TrustRegistryJubjubSignature } from "@midnight-ntwrk/trust-registry-contract";
+} from "@midnightntwrk/trust-registry-domain";
+import type { TrustRegistryJubjubSignature } from "@midnightntwrk/trust-registry-contract";
 import {
   executeLocalIssuerProposalAfterReservation,
   preflightLocalIssuerProposalSubmission,
   type FinalizedRegistryLedgerView,
   type LocalIssuerProposalCall,
   type LocalIssuerProposalSubmissionInput,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 
 import {
   sameGovernedIssuerProposal,

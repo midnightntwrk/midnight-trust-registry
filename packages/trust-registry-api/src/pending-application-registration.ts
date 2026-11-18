@@ -1,4 +1,4 @@
-import type { TrustRegistryOperatorWorkspace } from "@midnight-ntwrk/trust-registry-cli";
+import type { TrustRegistryOperatorWorkspace } from "@midnightntwrk/trust-registry-cli";
 import {
   ApplicationChallengeBindingSchema,
   PendingApplicationRecordSchema,
@@ -9,7 +9,7 @@ import {
   pendingApplicationMutationPayload,
   type SignedPendingApplication,
   type PendingApplicationRecord,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import { z } from "zod";
 
 import { preflightMutationIntentActor } from "./mutation-intent-actor-binding.js";

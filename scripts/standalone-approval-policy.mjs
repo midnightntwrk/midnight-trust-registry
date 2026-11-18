@@ -1,4 +1,4 @@
-import { validateMaintenancePolicy } from "@midnight-ntwrk/trust-registry-integration";
+import { validateMaintenancePolicy } from "@midnightntwrk/trust-registry-integration";
 import { ContractMaintenanceAuthority } from "@midnight-ntwrk/midnight-js-protocol/ledger";
 
 import { exactFields } from "./standalone-exact-fields-policy.mjs";

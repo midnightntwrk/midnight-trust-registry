@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ createSource: vi.fn(), createReader: vi.fn() }));
-vi.mock("@midnight-ntwrk/trust-registry-integration", async (importOriginal) => ({
-  ...await importOriginal<typeof import("@midnight-ntwrk/trust-registry-integration")>(),
+vi.mock("@midnightntwrk/trust-registry-integration", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@midnightntwrk/trust-registry-integration")>(),
   createLocalNetworkDeploymentActionReader: mocks.createReader,
 }));
 vi.mock("../local-ledger-source.js", async (importOriginal) => ({

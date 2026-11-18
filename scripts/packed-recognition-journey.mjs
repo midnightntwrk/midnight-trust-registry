@@ -6,10 +6,10 @@ import {
   deriveJubjubPublicKeyFromSeed,
   encodeJubjubSignature,
   signDeploymentBoundMaintainerActionFromSeed,
-} from "@midnight-ntwrk/trust-registry-contract";
-import { bytes32Commitment } from "@midnight-ntwrk/trust-registry-client";
-import { TrustRegistrySimulatorClient } from "@midnight-ntwrk/trust-registry-client/simulator";
-import { publishSimulatorSnapshot } from "@midnight-ntwrk/trust-registry-cli";
+} from "@midnightntwrk/trust-registry-contract";
+import { bytes32Commitment } from "@midnightntwrk/trust-registry-client";
+import { TrustRegistrySimulatorClient } from "@midnightntwrk/trust-registry-client/simulator";
+import { publishSimulatorSnapshot } from "@midnightntwrk/trust-registry-cli";
 import {
   createMaintainerScenarioFixture,
   createMidnightDid,
@@ -20,14 +20,14 @@ import {
   recognitionAccreditationSubmissionCommitment,
   recognitionAuthorityAssertionDigest,
   VP_FIXTURE_TIME_MS,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 import {
   createTrustRegistryApiServer,
   InMemoryApplicationChallengeStore,
   RecognitionAccreditationAuthorizationDeniedError,
   RecognitionAuthorityChallengeService,
   resolveCompactProposalEvidenceSnapshot,
-} from "@midnight-ntwrk/trust-registry-api";
+} from "@midnightntwrk/trust-registry-api";
 
 const hex = (value) => `0x${Buffer.from(value).toString("hex")}`;
 const bytes = (value) => Buffer.from(value.slice(2), "hex");

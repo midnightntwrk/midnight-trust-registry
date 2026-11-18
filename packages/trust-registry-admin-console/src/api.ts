@@ -25,7 +25,7 @@ import type {
   TrustRegistryApiHealthResponse,
   TrustRegistryApiMutationContext,
   TrustRegistryApiSignedMutationRequest,
-} from "@midnight-ntwrk/trust-registry-api";
+} from "@midnightntwrk/trust-registry-api";
 
 import { toAuthorizationReviewCard, toRecognitionReviewCard,
   type ReviewBoard, type ReviewCard, type ReviewTarget } from "./model.js";

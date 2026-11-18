@@ -7,14 +7,14 @@ import type {
   PreparedGovernedMembershipAction,
   PreparedGovernedPolicyAction,
   TrustRegistryApiApplicationAction,
-} from "@midnight-ntwrk/trust-registry-api";
+} from "@midnightntwrk/trust-registry-api";
 import {
   signInActorDid,
   signOutActorDid,
   isActorDidSigner,
   type ActorDidSession,
   type ActorDidSigner,
-} from "@midnight-ntwrk/trust-registry-client/browser-authentication";
+} from "@midnightntwrk/trust-registry-client/browser-authentication";
 
 import {
   TrustRegistryAdminConsoleApiError,

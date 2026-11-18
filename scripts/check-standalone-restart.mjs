@@ -11,7 +11,7 @@ import { promisify } from "node:util";
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { verifyMaterializedProtocolProofParams } from "./materialize-standalone-proof-params.mjs";
 import { observeStandaloneTopology, standaloneStackConfig } from "./check-standalone-topology.mjs";
-import { getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
+import { getLocalNetworkProfile } from "@midnightntwrk/trust-registry-integration";
 
 const run = promisify(execFile);
 const SHA256 = /^[0-9a-f]{64}$/u;

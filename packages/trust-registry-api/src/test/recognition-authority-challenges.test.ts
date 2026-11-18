@@ -1,8 +1,8 @@
 import { Buffer } from "node:buffer";
 
 import { signJubjubDigestFromSeed } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
-import { deriveJubjubPublicKeyFromSeed, encodeJubjubSignature } from "@midnight-ntwrk/trust-registry-contract";
-import { sha256Hex, type RecognitionAccreditorAnchor, type RecognitionAuthorityAssertion } from "@midnight-ntwrk/trust-registry-domain";
+import { deriveJubjubPublicKeyFromSeed, encodeJubjubSignature } from "@midnightntwrk/trust-registry-contract";
+import { sha256Hex, type RecognitionAccreditorAnchor, type RecognitionAuthorityAssertion } from "@midnightntwrk/trust-registry-domain";
 import {
   createMidnightDid,
   createMidnightDidLedgerFixture,
@@ -11,11 +11,11 @@ import {
   recognitionAccreditationSubmissionCommitment,
   LocalTrustRegistryIntegrationHarness,
   verifyRecognitionAccreditationVp,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@midnight-ntwrk/trust-registry-integration", async (importOriginal) => ({
-  ...await importOriginal<typeof import("@midnight-ntwrk/trust-registry-integration")>(),
+vi.mock("@midnightntwrk/trust-registry-integration", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@midnightntwrk/trust-registry-integration")>(),
   verifyRecognitionAccreditationVp: vi.fn(),
 }));
 

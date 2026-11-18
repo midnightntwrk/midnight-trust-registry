@@ -7,12 +7,12 @@ import {
   encodeJubjubSignature,
   signJubjubPayloadFromSeed,
 } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
-import { mutationIntentDigestBytes, type MutationIntent } from "@midnight-ntwrk/trust-registry-domain";
+import { mutationIntentDigestBytes, type MutationIntent } from "@midnightntwrk/trust-registry-domain";
 import {
   createMidnightDid,
   createMidnightDidLedgerFixture,
   createMidnightDidResolver,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 import { describe, expect, it } from "vitest";
 
 import { MutationIntentDidResolutionUnavailableError, verifyMutationIntentDidSignature } from "../mutation-intent-verifier.js";

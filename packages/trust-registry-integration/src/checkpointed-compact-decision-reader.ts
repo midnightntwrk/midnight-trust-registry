@@ -1,8 +1,8 @@
 import type {
   FinalizedRegistryDecisionSnapshot,
   TrustedDecisionEvidenceReaders,
-} from "@midnight-ntwrk/trust-registry-client";
-import type { DecisionEvidenceSelection } from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-client";
+import type { DecisionEvidenceSelection } from "@midnightntwrk/trust-registry-domain";
 
 import { createCompactLedgerDecisionReaders } from "./compact-decision-reader.js";
 import type { FinalizedRegistryLedgerView } from "./finalized-deployment-action-reader.js";

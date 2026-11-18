@@ -2,8 +2,8 @@ import { constants } from "node:fs";
 import { lstat, open, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import { assertStrictDetachedSignatureStatus } from "@midnight-ntwrk/trust-registry-integration/reviewer-signature-status";
-import { verifyDetachedReviewerBytes } from "@midnight-ntwrk/trust-registry-integration/reviewer-signature-verifier";
+import { assertStrictDetachedSignatureStatus } from "@midnightntwrk/trust-registry-integration/reviewer-signature-status";
+import { verifyDetachedReviewerBytes } from "@midnightntwrk/trust-registry-integration/reviewer-signature-verifier";
 
 import { regularBytes } from "./standalone-private-file-bytes.mjs";
 

@@ -6,7 +6,7 @@ import {
   computeAuthorizationScopeCommitment,
   computePendingApplicationPayloadCommitment,
   computeSignedPendingApplicationCommitment,
-} from "@midnight-ntwrk/trust-registry-domain/browser";
+} from "@midnightntwrk/trust-registry-domain/browser";
 
 import { isActorDidSigner, isSameOriginPrivateApi, listApplicantApplications, reconcileApplicantApplication, registerApplicantApplication, signInActorDid, signOutActorDid } from "../browser-authentication.js";
 

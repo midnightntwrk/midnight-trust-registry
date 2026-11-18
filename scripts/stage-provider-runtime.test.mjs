@@ -134,7 +134,7 @@ for (const loadedImageKind of ["index", "config", "unrelated"]) test(`keyless pr
       mkdirSync(join(stage, "materialized-contract", "dist/managed/trust-registry/keys"),
         { recursive: true });
       writeFileSync(join(stage, "materialized-contract/package.json"),
-        "{\"name\":\"@midnight-ntwrk/trust-registry-contract\"}\n");
+        "{\"name\":\"@midnightntwrk/trust-registry-contract\"}\n");
       writeFileSync(join(stage, "materialized-contract/dist/managed/trust-registry/keys/demo.prover"),
         "generated-and-checked\n");
       regenerated = true;

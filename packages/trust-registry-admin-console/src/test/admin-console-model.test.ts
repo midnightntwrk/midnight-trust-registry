@@ -16,7 +16,7 @@ import {
 import type {
   TrustRegistryApiAuthorizationListResponse,
   TrustRegistryApiRecognitionListResponse,
-} from "@midnight-ntwrk/trust-registry-api";
+} from "@midnightntwrk/trust-registry-api";
 
 type AuthorizationEntry = TrustRegistryApiAuthorizationListResponse["entries"][number];
 type RecognitionEntry = TrustRegistryApiRecognitionListResponse["entries"][number];

@@ -11,7 +11,7 @@ import {
   TrustRegistryOperatorWorkspaceOperationSchema,
   TrustRegistryAuthorizationSnapshotEntrySchema,
   TrustRegistryRecognitionSnapshotEntrySchema,
-} from "@midnight-ntwrk/trust-registry-cli";
+} from "@midnightntwrk/trust-registry-cli";
 import {
   AuthorizationRecordSchema,
   EpochCommitmentSchema,
@@ -23,7 +23,7 @@ import {
   RecognitionRecordSchema,
   RegistryRecordSchema,
   TrustRegistryEvidenceBundleSchema,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 const NonEmptyStringSchema = z.string().trim().min(1);
 export const TimestampSchema = z.string().datetime({ offset: true });

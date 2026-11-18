@@ -40,13 +40,13 @@ import {
   type TrustRegistryJubjubSignature,
   verifyApplicationEvidenceCommitmentSignature,
   verifyDeploymentBoundMaintainerAction,
-} from "@midnight-ntwrk/trust-registry-contract";
+} from "@midnightntwrk/trust-registry-contract";
 import {
   createMaintainerFixture,
   labelToBytes32,
   type MaintainerCoAuthorizer,
   TrustRegistrySimulator,
-} from "@midnight-ntwrk/trust-registry-contract/testing";
+} from "@midnightntwrk/trust-registry-contract/testing";
 import {
   AuthorizationStatus as ContractAuthorizationStatus,
   EvidenceVerifierKeyStatus,
@@ -57,7 +57,7 @@ import {
   type IssuerAuthorizationRecord as ContractIssuerAuthorizationRecord,
   type RecognitionRecord as ContractRecognitionRecord,
   type VerifierAuthorizationRecord as ContractVerifierAuthorizationRecord,
-} from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+} from "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import {
   AuthorizationRecordSchema,
   AuthorizationScopeSchema,
@@ -98,7 +98,7 @@ import {
   requestGovernedResourceId,
   resolveGovernedRecognitionAccreditorAnchor,
   sha256Hex,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import {
   type AuditorScenarioFixture,
   bytes32Commitment,

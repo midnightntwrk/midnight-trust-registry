@@ -363,7 +363,7 @@ must be regenerated; the unreleased format has no legacy-field fallback.
 Run locally against a saved workspace:
 
 ```bash
-pnpm --filter @midnight-ntwrk/trust-registry-api run build
+pnpm --filter @midnightntwrk/trust-registry-api run build
 npx trust-registry-api serve --workspace ./tmp/operator-workspace.json --port 4400
 ```
 
@@ -800,7 +800,7 @@ Run the reference challenge-to-Compact proposal scenarios without adding
 their simulator cost to the light gate:
 
 ```bash
-pnpm --filter @midnight-ntwrk/trust-registry-api integration
+pnpm --filter @midnightntwrk/trust-registry-api integration
 ```
 
 The focused published-VC fixture test now continues one consumed challenge
@@ -813,9 +813,9 @@ adapter and local DID fixtures, not a production status verifier or
 authenticated HTTP VP intake. Run just this journey with:
 
 ```bash
-pnpm --filter @midnight-ntwrk/trust-registry-integration build
-pnpm --filter @midnight-ntwrk/trust-registry-cli build
-pnpm --filter @midnight-ntwrk/trust-registry-api exec vitest run src/integration-test/published-vp-simulator-proposal.integration.test.ts --testTimeout 120000
+pnpm --filter @midnightntwrk/trust-registry-integration build
+pnpm --filter @midnightntwrk/trust-registry-cli build
+pnpm --filter @midnightntwrk/trust-registry-api exec vitest run src/integration-test/published-vp-simulator-proposal.integration.test.ts --testTimeout 120000
 ```
 
 The governed-action HTTP integration test covers externally signed 2-of-3

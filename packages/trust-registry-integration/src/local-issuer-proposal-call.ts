@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 
 import { submitCallTx, type ContractProviders } from "@midnight-ntwrk/midnight-js-contracts";
 import { getNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
-import { bytes32Commitment } from "@midnight-ntwrk/trust-registry-client";
+import { bytes32Commitment } from "@midnightntwrk/trust-registry-client";
 import {
   buildCanonicalMaintainerAuthorizationBundle,
   computeCreateIssuerAuthorizationPayloadHash,
@@ -16,7 +16,7 @@ import {
   TrustRegistryContract,
   type TrustRegistryJubjubSignature,
   type TrustRegistryPrivateState,
-} from "@midnight-ntwrk/trust-registry-contract";
+} from "@midnightntwrk/trust-registry-contract";
 
 import { compiledStagedVerifierKeyContract } from "./public-network-deployment.js";
 

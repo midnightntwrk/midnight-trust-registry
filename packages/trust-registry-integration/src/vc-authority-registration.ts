@@ -1,7 +1,7 @@
 import {
   computeCreateVcAuthorityKeyPayloadHash,
   deriveJubjubPublicKeyFromSeed,
-} from "@midnight-ntwrk/trust-registry-contract";
+} from "@midnightntwrk/trust-registry-contract";
 
 import {
   vcAuthorityDomainCommitment,

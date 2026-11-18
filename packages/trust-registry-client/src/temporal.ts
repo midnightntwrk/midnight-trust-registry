@@ -2,8 +2,8 @@ import type {
   AuthorizationRecord,
   EpochCommitment,
   RecognitionRecord,
-} from "@midnight-ntwrk/trust-registry-domain";
-import { compareRfc3339Instants } from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
+import { compareRfc3339Instants } from "@midnightntwrk/trust-registry-domain";
 
 export type AuthorizationTemporalEvaluation = {
   evaluatedAt: string;

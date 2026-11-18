@@ -3,7 +3,7 @@ import {
   computePendingApplicationPayloadCommitment,
   issuerGovernedResourceId,
   requestGovernedResourceId,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import { describe, expect, it } from "vitest";
 
 import {

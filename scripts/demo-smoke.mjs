@@ -276,10 +276,10 @@ let primaryError;
 const cleanupProblems = [];
 let retainedWorkspacePath;
 try {
-run("pnpm", ["--filter", "@midnight-ntwrk/trust-registry-cli", "run", "build"]);
-run("pnpm", ["--filter", "@midnight-ntwrk/trust-registry-api", "run", "build"]);
-run("pnpm", ["--filter", "@midnight-ntwrk/trust-registry-admin-console", "run", "build"]);
-run("pnpm", ["--filter", "@midnight-ntwrk/trust-registry-applicant-portal", "run", "build"]);
+run("pnpm", ["--filter", "@midnightntwrk/trust-registry-cli", "run", "build"]);
+run("pnpm", ["--filter", "@midnightntwrk/trust-registry-api", "run", "build"]);
+run("pnpm", ["--filter", "@midnightntwrk/trust-registry-admin-console", "run", "build"]);
+run("pnpm", ["--filter", "@midnightntwrk/trust-registry-applicant-portal", "run", "build"]);
 
 run("node", [
   "packages/trust-registry-cli/bin/trust-registry.mjs",

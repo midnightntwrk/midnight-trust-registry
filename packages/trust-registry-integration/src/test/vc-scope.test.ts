@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { pureCircuits } from "@midnight-ntwrk/credential-compact";
-import { computeAuthorizationScopeCommitment, sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
+import { computeAuthorizationScopeCommitment, sha256Hex } from "@midnightntwrk/trust-registry-domain";
 
 import {
   createIssuerScenarioFixture,

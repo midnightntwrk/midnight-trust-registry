@@ -4,10 +4,10 @@ import { link, lstat, mkdir, open, readdir, rename, rm } from "node:fs/promises"
 import { basename, dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
-import { withExclusiveWorkspaceWrite, WorkspaceMutationLockedError } from "@midnight-ntwrk/trust-registry-cli";
-import { canonicalizeJson, sha256Hex } from "@midnight-ntwrk/trust-registry-domain";
-import { getLocalNetworkProfile } from "@midnight-ntwrk/trust-registry-integration";
-import type { FinalizedRegistryLedgerView } from "@midnight-ntwrk/trust-registry-integration";
+import { withExclusiveWorkspaceWrite, WorkspaceMutationLockedError } from "@midnightntwrk/trust-registry-cli";
+import { canonicalizeJson, sha256Hex } from "@midnightntwrk/trust-registry-domain";
+import { getLocalNetworkProfile } from "@midnightntwrk/trust-registry-integration";
+import type { FinalizedRegistryLedgerView } from "@midnightntwrk/trust-registry-integration";
 import { z } from "zod";
 
 import { GovernedMembershipActionReceiptSchema, type GovernedMembershipActionReceipt } from "./governed-membership-actions.js";

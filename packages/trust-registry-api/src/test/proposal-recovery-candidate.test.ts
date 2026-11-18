@@ -2,12 +2,12 @@ import { Buffer } from "node:buffer";
 
 import { describe, expect, it } from "vitest";
 
-import { encodeCompactActionKind } from "@midnight-ntwrk/trust-registry-contract";
+import { encodeCompactActionKind } from "@midnightntwrk/trust-registry-contract";
 import {
   createIssuerScenarioFixture,
   createMaintainerScenarioFixture,
   LocalTrustRegistryIntegrationHarness,
-} from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-integration";
 
 import { resolveCompactProposalObservation } from "../compact-proposal-observation.js";
 import { assessProposalRecoveryCandidate } from "../proposal-recovery-candidate.js";

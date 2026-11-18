@@ -1,4 +1,4 @@
-import type { TrustRegistryApiMutationContext } from "@midnight-ntwrk/trust-registry-api";
+import type { TrustRegistryApiMutationContext } from "@midnightntwrk/trust-registry-api";
 import {
   IssuerGovernedResourceTypeSchema,
   IssuerScopeSchema,
@@ -16,7 +16,7 @@ import {
   type PendingApplicationPayload,
   type MutationIntent,
   type SignedPendingApplication,
-} from "@midnight-ntwrk/trust-registry-domain/browser";
+} from "@midnightntwrk/trust-registry-domain/browser";
 
 export type MembershipApplicationIdentity = {
   applicationId: string;

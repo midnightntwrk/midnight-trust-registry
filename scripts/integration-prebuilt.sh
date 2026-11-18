@@ -9,10 +9,10 @@ pnpm run contract:check-full-artifacts
 
 bash scripts/build-prebuilt-runtime.sh
 
-pnpm --filter @midnight-ntwrk/trust-registry-integration run integration
-pnpm --filter @midnight-ntwrk/trust-registry-api run integration
-pnpm --filter @midnight-ntwrk/trust-registry-applicant-portal run integration
-pnpm --filter @midnight-ntwrk/trust-registry-admin-console run integration
+pnpm --filter @midnightntwrk/trust-registry-integration run integration
+pnpm --filter @midnightntwrk/trust-registry-api run integration
+pnpm --filter @midnightntwrk/trust-registry-applicant-portal run integration
+pnpm --filter @midnightntwrk/trust-registry-admin-console run integration
 
 node scripts/demo-governed-registry.mjs
 node scripts/demo-auditor-admission.mjs smoke

@@ -33,7 +33,7 @@ const packContract = (root, verifier = "verifier-a\n",
   const info = JSON.stringify({ "compiler-version": compilerVersion,
     circuits: ["proveB", "proveA"].map((name) => ({ name, proof: true })) });
   put(root, "packed-contract/package/package.json", JSON.stringify({
-    name: "@midnight-ntwrk/trust-registry-contract", version: "0.1.0",
+    name: "@midnightntwrk/trust-registry-contract", version: "0.1.0",
   }));
   put(root, "packed-contract/package/src/trust-registry.compact", source);
   for (const path of ["README.md", "dist/index.js", "dist/contract.js",
@@ -50,7 +50,7 @@ const packContract = (root, verifier = "verifier-a\n",
     }
     put(root, `packed-contract/${prefix}/zkir/${name}.zkir`, "zkir-a\n");
   }
-  const tarball = join(root, "artifacts/npm/midnight-ntwrk-trust-registry-contract-0.1.0.tgz");
+  const tarball = join(root, "artifacts/npm/midnightntwrk-trust-registry-contract-0.1.0.tgz");
   mkdirSync(dirname(tarball), { recursive: true });
   const packed = spawnSync("tar", ["-czf", tarball, "package"], {
     cwd: join(root, "packed-contract"), encoding: "utf8",
@@ -59,7 +59,7 @@ const packContract = (root, verifier = "verifier-a\n",
   return tarball;
 };
 
-const packDomain = (root, includeAlias = false, name = "@midnight-ntwrk/trust-registry-domain") => {
+const packDomain = (root, includeAlias = false, name = "@midnightntwrk/trust-registry-domain") => {
   put(root, "packed-domain/package/package.json", JSON.stringify({
     name, version: "0.1.0",
   }));
@@ -67,7 +67,7 @@ const packDomain = (root, includeAlias = false, name = "@midnight-ntwrk/trust-re
     put(root, `packed-domain/package/${path}`, "fixture\n");
   }
   if (includeAlias) put(root, "packed-domain/x/package.json", "shadowed-domain\n");
-  const tarball = join(root, "artifacts/npm/midnight-ntwrk-trust-registry-domain-0.1.0.tgz");
+  const tarball = join(root, "artifacts/npm/midnightntwrk-trust-registry-domain-0.1.0.tgz");
   mkdirSync(dirname(tarball), { recursive: true });
   const packed = spawnSync("tar", ["-czf", tarball, "package", ...(includeAlias ? ["x"] : [])], {
     cwd: join(root, "packed-domain"), encoding: "utf8",
@@ -111,7 +111,7 @@ test("v3 candidate binds all keyless assets, key expectations, and local-only pu
   put(root, ".compact-version", "0.31.1\n");
   put(root, "pnpm-lock.yaml", "lock-test\n");
   put(root, "contracts/trust-registry/package.json", JSON.stringify({
-    name: "@midnight-ntwrk/trust-registry-contract", version: "0.1.0",
+    name: "@midnightntwrk/trust-registry-contract", version: "0.1.0",
   }));
   put(root, "contracts/trust-registry/src/trust-registry.compact", "contract-test\n");
   put(root, `contracts/trust-registry/${prefix}/compiler/contract-info.json`, info);
@@ -119,7 +119,7 @@ test("v3 candidate binds all keyless assets, key expectations, and local-only pu
   put(root, `contracts/trust-registry/${prefix}/keys/proveA.prover`, "prover-test\n");
   put(root, `contracts/trust-registry/${prefix}/keys/proveA.verifier`, "verifier-test\n");
   put(root, "packed/package/package.json", JSON.stringify({
-    name: "@midnight-ntwrk/trust-registry-contract", version: "0.1.0",
+    name: "@midnightntwrk/trust-registry-contract", version: "0.1.0",
   }));
   put(root, "packed/package/src/trust-registry.compact", "contract-test\n");
   for (const name of ["README.md", "dist/index.js", "dist/contract.js",
@@ -128,7 +128,7 @@ test("v3 candidate binds all keyless assets, key expectations, and local-only pu
     put(root, `packed/package/${prefix}/${name}`, bytes);
   }
   put(root, `packed/package/${prefix}/keyless-manifest.json`, keylessBytes);
-  const tarball = join(root, "artifacts/npm/midnight-ntwrk-trust-registry-contract-0.1.0.tgz");
+  const tarball = join(root, "artifacts/npm/midnightntwrk-trust-registry-contract-0.1.0.tgz");
   mkdirSync(dirname(tarball), { recursive: true });
   const pack = () => spawnSync("tar", ["-czf", tarball, "package"], {
     cwd: join(root, "packed"), encoding: "utf8",
@@ -183,10 +183,10 @@ test("candidate manifest binds signed source inputs and exact package bytes", ()
   put(root, "contracts/trust-registry/src/trust-registry.compact", "contract-test\n");
   put(root, "contracts/trust-registry/dist/managed/trust-registry/contract/index.js", "generated-test\n");
   put(root, "contracts/trust-registry/package.json", JSON.stringify({
-    name: "@midnight-ntwrk/trust-registry-contract", version: "0.1.0",
+    name: "@midnightntwrk/trust-registry-contract", version: "0.1.0",
   }));
   put(root, "packages/trust-registry-domain/package.json", JSON.stringify({
-    name: "@midnight-ntwrk/trust-registry-domain", version: "0.1.0",
+    name: "@midnightntwrk/trust-registry-domain", version: "0.1.0",
   }));
   const contractTarball = packContract(root);
   const domainTarball = packDomain(root);
@@ -328,7 +328,7 @@ test("candidate manifest binds signed source inputs and exact package bytes", ()
   assert.throws(() => buildReleaseCandidateManifest(input), /unlisted/u);
   assert.throws(() => verifyReleaseCandidateArtifacts(manifest, input.artifactDir, input.workspaces), /unlisted/u);
   rmSync(join(root, "artifacts/npm/unlisted-0.1.0.tgz"));
-  put(root, "artifacts/npm/midnight-ntwrk-trust-registry-contract-0.1.0.tgz", "tampered-tarball");
+  put(root, "artifacts/npm/midnightntwrk-trust-registry-contract-0.1.0.tgz", "tampered-tarball");
   assert.throws(() => verifyReleaseCandidateArtifacts(manifest, input.artifactDir, input.workspaces), /hash or size mismatch/u);
   packContract(root, "changed-verifier\n");
   const changedPackage = { ...manifest.packages[0], sizeBytes: statSync(contractTarball).size,
@@ -339,7 +339,7 @@ test("candidate manifest binds signed source inputs and exact package bytes", ()
   put(root, "contracts/trust-registry/dist/managed/trust-registry/keys/proveA.verifier", "verifier-a\n");
   assert.throws(() => buildReleaseCandidateManifest(input), /Packed verifier key does not match/u);
   assert.throws(() => buildReleaseCandidateManifest({ ...input, revision: "short" }), /full Git commit SHA/u);
-  rmSync(join(root, "artifacts/npm/midnight-ntwrk-trust-registry-domain-0.1.0.tgz"));
+  rmSync(join(root, "artifacts/npm/midnightntwrk-trust-registry-domain-0.1.0.tgz"));
   assert.throws(() => buildReleaseCandidateManifest(input), /missing or empty/u);
 });
 

@@ -3,21 +3,21 @@ import { Buffer } from "node:buffer";
 import {
   computeIssuerAuthorizationScopeKey,
   computeVerifierAuthorizationScopeKey,
-} from "@midnight-ntwrk/trust-registry-contract";
+} from "@midnightntwrk/trust-registry-contract";
 import {
   AuthorizationStatus,
   IssuerResourceType,
   type Ledger,
-} from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+} from "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import type {
   FinalizedRegistryDecisionSnapshot,
   TrustedDecisionEvidenceReaders,
-} from "@midnight-ntwrk/trust-registry-client";
+} from "@midnightntwrk/trust-registry-client";
 import {
   sha256Hex,
   compareRfc3339Instants,
   type DecisionEvidenceSelection,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 type Selection = Omit<DecisionEvidenceSelection, "evaluationTime">;
 

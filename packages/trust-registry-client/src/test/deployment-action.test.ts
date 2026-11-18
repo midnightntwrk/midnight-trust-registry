@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   computeDeploymentBoundMaintainerActionDigest,
   encodeCompactActionKind,
-} from "@midnight-ntwrk/trust-registry-contract";
+} from "@midnightntwrk/trust-registry-contract";
 
 import {
   prepareFinalizedDeploymentActionDigest,

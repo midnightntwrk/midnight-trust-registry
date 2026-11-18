@@ -1,7 +1,7 @@
 import { parseArgs } from "node:util";
 
-import { listApplicantApplications, reconcileApplicantApplication, registerApplicantApplication } from "@midnight-ntwrk/trust-registry-client/browser-authentication";
-import { SignedPendingApplicationSchema } from "@midnight-ntwrk/trust-registry-domain/browser";
+import { listApplicantApplications, reconcileApplicantApplication, registerApplicantApplication } from "@midnightntwrk/trust-registry-client/browser-authentication";
+import { SignedPendingApplicationSchema } from "@midnightntwrk/trust-registry-domain/browser";
 import { z } from "zod";
 
 import { serializeJson } from "./model.js";

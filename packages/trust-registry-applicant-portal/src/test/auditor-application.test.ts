@@ -1,4 +1,4 @@
-import { computeAuthorizationScopeCommitment, computePendingApplicationPayloadCommitment, requestGovernedResourceId } from "@midnight-ntwrk/trust-registry-domain";
+import { computeAuthorizationScopeCommitment, computePendingApplicationPayloadCommitment, requestGovernedResourceId } from "@midnightntwrk/trust-registry-domain";
 import { describe, expect, it } from "vitest";
 
 import { prepareAuditorApplication, signPreparedAuditorApplication, type AuditorApplicationDraft } from "../auditor-application.js";

@@ -3,29 +3,29 @@ import { Buffer } from "node:buffer";
 import {
   TrustRegistryOperatorSnapshotSchema,
   type TrustRegistryOperatorSnapshot,
-} from "@midnight-ntwrk/trust-registry-cli";
+} from "@midnightntwrk/trust-registry-cli";
 import {
   bytes32Commitment,
   verifyTrustRegistryEvidenceBundle,
   type SequenceToTimestamp,
-} from "@midnight-ntwrk/trust-registry-client";
+} from "@midnightntwrk/trust-registry-client";
 import {
   computeAuditorAuthorizationScopeKey,
   computeIssuerAuthorizationScopeKey,
   computeRecognitionScopeKey,
   computeVerifierAuthorizationScopeKey,
-} from "@midnight-ntwrk/trust-registry-contract";
+} from "@midnightntwrk/trust-registry-contract";
 import {
   AuthorizationStatus,
   IssuerResourceType,
   type Ledger,
-} from "@midnight-ntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
+} from "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import {
   canonicalizeJson,
   computeGovernancePolicySnapshotCommitment,
   deriveGovernancePolicySnapshot,
-} from "@midnight-ntwrk/trust-registry-domain";
-import { getLocalNetworkProfile, resolveCompactHistoricalEpochAnchor } from "@midnight-ntwrk/trust-registry-integration";
+} from "@midnightntwrk/trust-registry-domain";
+import { getLocalNetworkProfile, resolveCompactHistoricalEpochAnchor } from "@midnightntwrk/trust-registry-integration";
 
 const hex = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString("hex")}`;
 const commitment = (value: string): string => hex(bytes32Commitment(value));

@@ -15,7 +15,7 @@ import {
   type ApplicationEvidenceSignatureVerifier,
   type ApplicationEvidenceSubmission,
   type AuthorizedEvidenceVerifier,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import { ApplicationChallengeService, hasMatchingApplicationChallengeHash } from "./application-challenges.js";
 

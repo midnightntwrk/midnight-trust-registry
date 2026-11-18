@@ -7,7 +7,7 @@ import {
   type AcceptedDecisionEpoch,
   type DecisionEvidence,
   type DecisionEvidenceSelection,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 
 import { assertDecisionEpochPublicationSignatures, type ActivePublicationMaintainer } from "./decision-epoch-signatures.js";
 import { assertDecisionEvidenceDidMethodMatchesObservation, type DidStateObservation } from "./did-observation.js";

@@ -2,7 +2,7 @@ import {
   canonicalizeJson,
   compareRfc3339Instants,
   type TrustRegistryEvidenceBundle,
-} from "@midnight-ntwrk/trust-registry-domain";
+} from "@midnightntwrk/trust-registry-domain";
 import {
   evaluateAuthorizationRecordAtTime,
   evaluateRecognitionRecordAtTime,
@@ -10,7 +10,7 @@ import {
   verifyRecognitionBundle,
   verifyVerifierAuthorizationBundle,
   type EpochAnchorVerificationContext,
-} from "@midnight-ntwrk/trust-registry-client";
+} from "@midnightntwrk/trust-registry-client";
 
 import {
   TrqpAuthorizationEvidenceResponseSchema,

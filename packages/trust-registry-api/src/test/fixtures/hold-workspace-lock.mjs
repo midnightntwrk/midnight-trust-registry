@@ -1,4 +1,4 @@
-import { withExclusiveWorkspaceWrite } from "@midnight-ntwrk/trust-registry-cli";
+import { withExclusiveWorkspaceWrite } from "@midnightntwrk/trust-registry-cli";
 import process from "node:process";
 
 const workspacePath = process.argv[2];
