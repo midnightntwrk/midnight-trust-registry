@@ -22,6 +22,7 @@ const BASE_ASSETS = ["compiler/contract-info.json", "compiler/contract-manifest.
   "contract/index.d.ts", "contract/index.js",
   "contract/index.js.map"];
 const FORMAT = "tr-keyless-zkir-v1";
+/** @typedef {{type: "file", size: number, hash: string}} CompilerFile */
 /** @typedef {{format: string, sourceRevision: string, compilerVersion: string,
  * platform: string, keygenSha256: string, assets: Record<string, string>,
  * keys: Record<string, string>}} KeylessManifest */
@@ -97,7 +98,7 @@ async function copyAssets(from, to, names) {
 
 /** Recreate the metadata that Compact omits under --skip-zk from streamed key outputs.
  * @param {string} stage @param {readonly string[]} names
- * @param {Record<string, {type: string, size: number, hash: string}>} keyFiles */
+ * @param {Record<string, CompilerFile>} keyFiles */
 export async function completeLightCompile(stage, names, keyFiles) {
   const jsPath = join(stage, "contract/index.js");
   const lightJs = await readFile(jsPath, "utf8");
@@ -131,7 +132,9 @@ export async function completeLightCompile(stage, names, keyFiles) {
       && recordedJs.hash === createHash("sha256").update(bytes).digest("hex");
   });
   if (sourceSuffix === undefined) throw new Error("Light Compact JavaScript does not match its manifest");
+  /** @type {Record<string, CompilerFile | "directory">} */
   const zkir = { type: "directory" };
+  /** @type {Record<string, CompilerFile | "directory">} */
   const keys = { type: "directory" };
   for (const name of names) {
     const source = manifest.zkir[`${name}.zkir`];
@@ -250,7 +253,7 @@ export async function createKeylessZkirBundleStreaming(lightManaged, target, rev
       await copyAssets(source, stage, [...BASE_ASSETS, ...zkirNames.map((name) => `zkir/${name}`)]);
       /** @type {Record<string, string>} */
       const keyHashes = {};
-      /** @type {Record<string, {type: string, size: number, hash: string}>} */
+      /** @type {Record<string, CompilerFile>} */
       const keyFiles = {};
       for (const name of names) {
         const circuit = join(generatorRoot, name);
