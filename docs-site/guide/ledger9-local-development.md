@@ -70,22 +70,44 @@ against the node before each finalized-state query; discovery alone is not a
 durable chain-identity check. The node remains a trusted local input, not an
 independent cryptographic finality proof.
 
-On 18 November 2026, read-only observation at indexed height 13372 found 66
-verifier keys matching the selected source manifest, two active issuers, one
-active verifier, auditor, and recognition, and one published epoch. The
-selected **fixture-labeled** issuer was active, but its lifecycle event root
-did **not** match that epoch's event root. The shared chain contains work from
-other sessions; these counts do not attribute actions or prove a VP-qualified
-issuer. The earlier fixture proposal used a raw schema label and placeholder
-status-policy commitment, not an accepted VP and canonical issuer
-resource/status binding. It cannot support an authentic authorization evidence
-bundle. Re-run the pinned query for current state; exact private trial receipts
-are documented in `docs/plans/ledger9-migration.md` in the source checkout.
+For a development checkout that retains full generated Compact artifacts but
+has no Linux release manifest, build a source-bound keyless candidate from
+those artifacts with the exact signed source SHA and pinned Compact 0.36.0
+`zkir-v3` binary. Use a new, empty destination for each source revision:
+
+```sh
+node scripts/keyless-zkir-bundle.mjs create \
+  contracts/trust-registry/src/managed/trust-registry \
+  "$KEYLESS_DIR" "$SIGNED_SOURCE_SHA" "$ZKIR_BIN"
+```
+
+Record the resulting manifest digest separately, then read the same finalized contract
+with `--keyless-dir`, `--keyless-manifest-sha256`, and
+`--expect-source-revision` in place of `--manifest`:
+
+```sh
+node --env-file=artifacts/ledger9-current-chain.env scripts/read-ledger9-registry.mjs \
+  --address "$CONTRACT_ADDRESS" \
+  --keyless-dir "$KEYLESS_DIR" \
+  --keyless-manifest-sha256 "$KEYLESS_MANIFEST_SHA256" \
+  --expect-source-revision "$SIGNED_SOURCE_SHA" \
+  --issuer-label "$ISSUER_LABEL"
+```
+
+This rechecks the candidate against retained full outputs and compares all
+finalized verifier-key hashes. Its `local-keyless-candidate` result has
+`releaseQualified: false`: it does not authenticate the Git history, approve
+the deployment, or establish actor evidence. See the dated observation in
+[#321](https://github.com/midnightntwrk/midnight-trust-registry/issues/321)
+rather than treating one shared-chain snapshot as permanent setup data. A
+fixture-labeled active record whose `epochEventRootMatchesLifecycle` is false
+cannot support an epoch-backed authorization claim.
 
 ## Try the UI separately
 
-The [guided demo](quickstart.md#first-time-role-demo) serves a browser and
-file-backed API on loopback; it does **not** query this deployed contract.
+The [guided demo](quickstart.md#first-time-role-demo) serves a browser at
+`http://127.0.0.1:4273/demo.html?apiBase=http%3A%2F%2F127.0.0.1%3A4500`
+and a file-backed API on loopback; it does **not** query this deployed contract.
 Persona votes are browser-local practice state, not maintainer signatures.
 The [E2E test guide](end-to-end-testing.md) has headless and Playwright
 fixture commands. Label their reports `fixture`; do not combine a demo
