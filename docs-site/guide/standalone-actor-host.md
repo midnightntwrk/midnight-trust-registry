@@ -54,6 +54,13 @@ public application record, or return a fabricated
 status authority, or changed binding must stop the proposal before its journal
 reservation. This witness lifecycle and the VC-owned status service remain
 implementation work for the Ledger 9 actor qualification issue.
+`refreshCapturedApplicationStatus` is a read-only building block for that host:
+it first audits the private intake witness against the accepted challenge and
+status-decision commitment, then checks a distinct-nonce, current signed
+status attestation at trusted time. Its validity never exceeds the accepted
+evidence expiry. It does not authenticate the accepted
+application, store the witness, select a governed issuer, or authorize a
+registry mutation; those remain host responsibilities.
 
 ## Run the acceptance case
 

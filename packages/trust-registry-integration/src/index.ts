@@ -3,6 +3,7 @@ export * from "./evidence-verifier-did-key.js";
 export * from "./application-vp-verifier.js";
 export * from "./canonical-application-vp-family.js";
 export * from "./application-status-attestation.js";
+export * from "./application-status-refresh.js";
 export * from "./application-status-http.js";
 export * from "./governed-application-issuer.js";
 export * from "./vp-evidence-attestation.js";
