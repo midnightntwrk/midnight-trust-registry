@@ -17,6 +17,7 @@ test("registry read requires an exact address and non-genesis chain pin", () => 
     verifierLabel: undefined, auditorLabel: undefined,
     recognitionLabel: undefined,
     manifestPath: undefined, keylessDir: undefined, keylessManifestSha256: undefined,
+    keylessGenerator: undefined, keylessGeneratorSha256: undefined,
     expectedSourceRevision: undefined, epochId: undefined,
   });
   assert.equal(parseRegistryReadArgs(["--address", address, "--verifier-label", "verifier:example"], env)
@@ -35,6 +36,10 @@ test("registry read requires an exact address and non-genesis chain pin", () => 
   assert.equal(parseRegistryReadArgs(["--address", address, "--keyless-dir", "local-candidate",
     "--keyless-manifest-sha256", "b".repeat(64), "--expect-source-revision", "a".repeat(40)], env)
     .keylessDir, "local-candidate");
+  assert.equal(parseRegistryReadArgs(["--address", address, "--keyless-dir", "local-candidate",
+    "--keyless-manifest-sha256", "b".repeat(64), "--expect-source-revision", "a".repeat(40),
+    "--keyless-generator", "/pinned/zkir-v3", "--keyless-generator-sha256", "c".repeat(64)], env)
+    .keylessGenerator, "/pinned/zkir-v3");
   assert.equal(parseRegistryReadArgs(["--address", address, "--epoch-id", address], env).epochId, address);
   assert.throws(() => parseRegistryReadArgs(["--address", address], {}), /Pin TR_EXPECTED/u);
   assert.throws(() => parseRegistryReadArgs(["--address", `0x${"0".repeat(64)}`], env), /nonzero/u);
@@ -53,6 +58,18 @@ test("registry read requires an exact address and non-genesis chain pin", () => 
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--manifest", "release.json",
     "--keyless-dir", "local-candidate", "--keyless-manifest-sha256", "b".repeat(64),
     "--expect-source-revision", "a".repeat(40)], env), /mutually exclusive/u);
+  for (const extra of [
+    ["--keyless-generator", "/pinned/zkir-v3"],
+    ["--keyless-generator-sha256", "c".repeat(64)],
+    ["--keyless-generator", "/pinned/zkir-v3", "--keyless-generator-sha256", "bad"],
+  ]) {
+    assert.throws(() => parseRegistryReadArgs(["--address", address, "--keyless-dir", "local-candidate",
+      "--keyless-manifest-sha256", "b".repeat(64), "--expect-source-revision", "a".repeat(40),
+      ...extra], env), /Streaming keyless readback/u);
+  }
+  assert.throws(() => parseRegistryReadArgs(["--address", address, "--manifest", "release.json",
+    "--keyless-generator", "/pinned/zkir-v3", "--keyless-generator-sha256", "c".repeat(64)], env),
+  /Streaming keyless readback/u);
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--issuer-label", "x\0y"], env), /invalid/u);
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--verifier-label", "x\0y"], env), /invalid/u);
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--auditor-label", "x\0y"], env), /invalid/u);

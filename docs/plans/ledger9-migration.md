@@ -115,6 +115,12 @@ circuit's temporary keys before continuing. Supply the manifest and binary
 digests from independently reviewed inputs, not from an untrusted transport.
 This is a portability check only: success on Darwin does not qualify a Linux
 bundle, approve the source or deployment, or establish a live actor journey.
+The read-only `read-ledger9-registry.mjs` command can use the same bounded
+regeneration on a host without retained full keys by adding
+`--keyless-generator <pinned-binary> --keyless-generator-sha256 <trusted-digest>`
+to its keyless-candidate arguments. It then rechecks the manifest digest and
+compares all generated verifier hashes to finalized state. The output labels
+the path `streamed-keygen` and remains `releaseQualified: false`.
 
 The API can opt into phase-0 off-chain DID challenge-response while serving an
 approved local-ledger plan on loopback:

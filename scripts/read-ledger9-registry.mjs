@@ -3,7 +3,8 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { checkLedger9LocalStack, localnetInputFromEnvironment } from "./check-ledger9-local-stack.mjs";
-import { verifyKeylessZkirAgainstFullSource } from "./keyless-zkir-bundle.mjs";
+import { verifyKeylessZkirAgainstFullSource, verifyKeylessZkirBundle,
+  verifyKeylessZkirStreaming } from "./keyless-zkir-bundle.mjs";
 
 const ADDRESS = /^0x[0-9a-f]{64}$/u;
 const CANONICAL_ISSUER_RESOURCE_ID = /^tr:issuer-resource:v1:[0-9a-f]{64}$/u;
@@ -24,13 +25,15 @@ export function parseRegistryReadArgs(args, env = process.env) {
   let manifestPath;
   let keylessDir;
   let keylessManifestSha256;
+  let keylessGenerator;
+  let keylessGeneratorSha256;
   let expectedSourceRevision;
   let epochId;
   for (let index = 0; index < args.length; index += 2) {
     const flag = args[index];
     const value = args[index + 1];
-    if (!value || !["--address", "--issuer-label", "--issuer-resource-id", "--verifier-label", "--auditor-label", "--recognition-label", "--manifest", "--keyless-dir", "--keyless-manifest-sha256", "--expect-source-revision", "--epoch-id"].includes(flag)) {
-      throw new Error("Usage: read-ledger9-registry.mjs --address 0x... [--issuer-label label --issuer-resource-id canonical-id] [--verifier-label label] [--auditor-label label] [--recognition-label label] [--manifest path | --keyless-dir path --keyless-manifest-sha256 SHA256 --expect-source-revision SHA] [--epoch-id 0x...]");
+    if (!value || !["--address", "--issuer-label", "--issuer-resource-id", "--verifier-label", "--auditor-label", "--recognition-label", "--manifest", "--keyless-dir", "--keyless-manifest-sha256", "--keyless-generator", "--keyless-generator-sha256", "--expect-source-revision", "--epoch-id"].includes(flag)) {
+      throw new Error("Usage: read-ledger9-registry.mjs --address 0x... [--issuer-label label --issuer-resource-id canonical-id] [--verifier-label label] [--auditor-label label] [--recognition-label label] [--manifest path | --keyless-dir path --keyless-manifest-sha256 SHA256 --expect-source-revision SHA [--keyless-generator path --keyless-generator-sha256 SHA256]] [--epoch-id 0x...]");
     }
     if (flag === "--address" && contractAddress === undefined) contractAddress = value;
     else if (flag === "--issuer-label" && issuerLabel === undefined) issuerLabel = value;
@@ -41,6 +44,8 @@ export function parseRegistryReadArgs(args, env = process.env) {
     else if (flag === "--manifest" && manifestPath === undefined) manifestPath = value;
     else if (flag === "--keyless-dir" && keylessDir === undefined) keylessDir = value;
     else if (flag === "--keyless-manifest-sha256" && keylessManifestSha256 === undefined) keylessManifestSha256 = value;
+    else if (flag === "--keyless-generator" && keylessGenerator === undefined) keylessGenerator = value;
+    else if (flag === "--keyless-generator-sha256" && keylessGeneratorSha256 === undefined) keylessGeneratorSha256 = value;
     else if (flag === "--expect-source-revision" && expectedSourceRevision === undefined) expectedSourceRevision = value;
     else if (flag === "--epoch-id" && epochId === undefined) epochId = value;
     else throw new Error(`Duplicate option: ${flag}`);
@@ -80,6 +85,11 @@ export function parseRegistryReadArgs(args, env = process.env) {
     : keylessManifestSha256 !== undefined) {
     throw new Error("Local keyless readback requires its exact manifest SHA-256 and source revision");
   }
+  if ((keylessGenerator === undefined) !== (keylessGeneratorSha256 === undefined)
+    || (keylessGenerator !== undefined && (keylessDir === undefined
+      || !/^[0-9a-f]{64}$/u.test(keylessGeneratorSha256)))) {
+    throw new Error("Streaming keyless readback requires a keyless candidate, generator, and exact trusted generator SHA-256");
+  }
   if (expectedSourceRevision !== undefined
     && ((manifestPath === undefined && keylessDir === undefined)
       || !/^[0-9a-f]{40}$/u.test(expectedSourceRevision))) {
@@ -92,7 +102,8 @@ export function parseRegistryReadArgs(args, env = process.env) {
     throw new Error("Pin TR_EXPECTED_GENESIS_HASH and a non-genesis checkpoint height/hash before reading registry state");
   }
   return { contractAddress, issuerLabel, issuerResourceId, verifierLabel, auditorLabel, recognitionLabel,
-    manifestPath, keylessDir, keylessManifestSha256, expectedSourceRevision, epochId };
+    manifestPath, keylessDir, keylessManifestSha256, keylessGenerator, keylessGeneratorSha256,
+    expectedSourceRevision, epochId };
 }
 
 export function assertFinalizedVerifierKeyCatalog(image, manifest, circuitNames, expectedSourceRevision) {
@@ -148,6 +159,17 @@ async function readBoundedManifest(path) {
     throw new Error("Release manifest must be a bounded regular file");
   }
   return JSON.parse(await readFile(path, "utf8"));
+}
+
+async function verifiedKeylessManifest(keylessDir, manifestSha256, sourceRevision,
+  generator, generatorSha256) {
+  if (generator === undefined) {
+    return (await verifyKeylessZkirAgainstFullSource(keylessDir,
+      resolve(dirname(fileURLToPath(import.meta.url)), "../contracts/trust-registry/src/managed/trust-registry"),
+      manifestSha256, sourceRevision)).manifest;
+  }
+  await verifyKeylessZkirStreaming(keylessDir, manifestSha256, generator, generatorSha256, sourceRevision);
+  return (await verifyKeylessZkirBundle(keylessDir, manifestSha256)).manifest;
 }
 
 function summarizeEpoch(ledger, id) {
@@ -280,7 +302,8 @@ export function summarizeFinalizedRegistry(image, attached, contractAddress, iss
 
 export async function readLedger9Registry(args = process.argv.slice(2), env = process.env) {
   const { contractAddress, issuerLabel, issuerResourceId, verifierLabel, auditorLabel, recognitionLabel,
-    manifestPath, keylessDir, keylessManifestSha256, expectedSourceRevision, epochId } = parseRegistryReadArgs(args, env);
+    manifestPath, keylessDir, keylessManifestSha256, keylessGenerator, keylessGeneratorSha256,
+    expectedSourceRevision, epochId } = parseRegistryReadArgs(args, env);
   const attached = await checkLedger9LocalStack(localnetInputFromEnvironment(env));
   const [{ bytes32Commitment }, { AuthorizationStatus, TrustRegistryContract, trustRegistryWitnesses },
     { createLocalNetworkDeploymentActionReader }] =
@@ -320,14 +343,15 @@ export async function readLedger9Registry(args = process.argv.slice(2), env = pr
       expectedSourceRevision)
     : keylessDir !== undefined
       ? assertFinalizedKeylessVerifierKeyCatalog(image,
-        (await verifyKeylessZkirAgainstFullSource(keylessDir,
-          resolve(dirname(fileURLToPath(import.meta.url)), "../contracts/trust-registry/src/managed/trust-registry"),
-          keylessManifestSha256, expectedSourceRevision)).manifest,
+        await verifiedKeylessManifest(keylessDir, keylessManifestSha256, expectedSourceRevision,
+          keylessGenerator, keylessGeneratorSha256),
         circuitNames, expectedSourceRevision)
       : {};
   return { ...summarizeFinalizedRegistry(image, attached, contractAddress, issuerSelection, epochId, verifierSelection,
     auditorSelection, recognitionSelection),
-    ...catalog };
+    ...catalog,
+    ...(keylessDir === undefined ? {} : { keylessVerification: keylessGenerator === undefined
+      ? "full-output" : "streamed-keygen" }) };
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
