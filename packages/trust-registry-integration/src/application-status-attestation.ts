@@ -16,6 +16,10 @@ import { z } from "zod";
 import type { ApplicationVpMaterial } from "./application-vp-verifier.js";
 import { verifyDidJubjubSignature } from "./did-signature-verification.js";
 
+/** Private VP-derived fields needed for a fresh status check; not proof of VP acceptance by itself. */
+export type ApplicationStatusWitnessMaterial = Pick<ApplicationVpMaterial,
+  "credentialBodyRoot" | "statusBinding">;
+
 const Hash = z.string().regex(/^0x[0-9a-f]{64}$/u);
 const Timestamp = z.string().datetime({ offset: true });
 const Statement = z.strictObject({
@@ -78,7 +82,7 @@ export function createAttestedApplicationStatusSource(input: {
     challengeHash: string;
   }) => Promise<unknown>;
 }): (request: {
-  material: ApplicationVpMaterial;
+  material: ApplicationStatusWitnessMaterial;
   binding: IssuerStatusPolicyBinding;
   nonce: string;
   evaluatedAtMs: number;
@@ -162,7 +166,7 @@ export function createAttestedApplicationStatusSource(input: {
 export async function verifyApplicationStatusDecisionWitness(input: {
   signed: unknown;
   expectedCommitment: string;
-  material: ApplicationVpMaterial;
+  material: ApplicationStatusWitnessMaterial;
   binding: IssuerStatusPolicyBinding;
   nonce: string;
   evaluatedAtMs: number;

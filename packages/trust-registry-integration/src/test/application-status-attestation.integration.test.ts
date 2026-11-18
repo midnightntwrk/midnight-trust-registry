@@ -10,6 +10,7 @@ import {
   applicationStatusDecisionCommitment,
   createAttestedApplicationStatusSource,
   verifyApplicationStatusDecisionWitness,
+  type ApplicationStatusWitnessMaterial,
   type SignedApplicationStatusStatement,
 } from "../application-status-attestation.js";
 import { createMidnightDidLedgerFixture, createMidnightDidResolver } from "../did-resolution.js";
@@ -89,6 +90,24 @@ describe("DID-signed application status attestation", () => {
       validUntilMs: VP_FIXTURE_TIME_MS + 5 * 60_000,
       statusDecisionCommitment: applicationStatusDecisionCommitment(signed, didStateVersionId!, request.binding),
     });
+  });
+
+  it("refreshes signed status using only a private VP-derived status witness", async () => {
+    const { source, request, resolver, signed } = await fixture();
+    const material: ApplicationStatusWitnessMaterial = {
+      credentialBodyRoot: request.material.credentialBodyRoot,
+      statusBinding: request.material.statusBinding,
+    };
+    const minimalRequest = { ...request, material };
+    const result = await source(minimalRequest);
+    await expect(verifyApplicationStatusDecisionWitness({
+      ...minimalRequest, resolver, signed,
+      expectedCommitment: result.statusDecisionCommitment,
+    })).resolves.toBe(true);
+    await expect(source({
+      ...minimalRequest,
+      material: { ...material, credentialBodyRoot: new Uint8Array(32).fill(7) },
+    })).rejects.toThrow();
   });
 
   it("accepts an exactly five-minute signed window with fractional timestamps", async () => {

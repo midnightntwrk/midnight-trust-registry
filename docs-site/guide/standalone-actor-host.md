@@ -42,8 +42,10 @@ and failure behavior require separate implementation and review.
 The accepted application file intentionally retains only redacted evidence and
 its receipt. It does not retain the credential body root, status-handle
 commitment, or signed status witness needed by
-`createHttpApplicationStatusSource` for a fresh status check. A live host must
-obtain those inputs from a separately protected, application-bound witness or
+`createHttpApplicationStatusSource` for a fresh status check. The status source
+accepts only the VP-derived credential body root and status binding (registry,
+authority-method reference, and handle commitment), not the entire VP proof.
+A live host must obtain those inputs from a separately protected, application-bound witness or
 from a new applicant presentation, then compare them with the accepted
 evidence and current governed status-policy binding. Do not infer current
 status from the old `statusDecisionCommitment`, persist raw VP claims in the
