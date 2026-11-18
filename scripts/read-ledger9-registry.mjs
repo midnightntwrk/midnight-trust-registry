@@ -1,7 +1,9 @@
 import { lstat, readFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { checkLedger9LocalStack, localnetInputFromEnvironment } from "./check-ledger9-local-stack.mjs";
+import { verifyKeylessZkirAgainstFullSource } from "./keyless-zkir-bundle.mjs";
 
 const ADDRESS = /^0x[0-9a-f]{64}$/u;
 const CANONICAL_ISSUER_RESOURCE_ID = /^tr:issuer-resource:v1:[0-9a-f]{64}$/u;
@@ -20,13 +22,15 @@ export function parseRegistryReadArgs(args, env = process.env) {
   let auditorLabel;
   let recognitionLabel;
   let manifestPath;
+  let keylessDir;
+  let keylessManifestSha256;
   let expectedSourceRevision;
   let epochId;
   for (let index = 0; index < args.length; index += 2) {
     const flag = args[index];
     const value = args[index + 1];
-    if (!value || !["--address", "--issuer-label", "--issuer-resource-id", "--verifier-label", "--auditor-label", "--recognition-label", "--manifest", "--expect-source-revision", "--epoch-id"].includes(flag)) {
-      throw new Error("Usage: read-ledger9-registry.mjs --address 0x... [--issuer-label label --issuer-resource-id canonical-id] [--verifier-label label] [--auditor-label label] [--recognition-label label] [--manifest path --expect-source-revision SHA] [--epoch-id 0x...]");
+    if (!value || !["--address", "--issuer-label", "--issuer-resource-id", "--verifier-label", "--auditor-label", "--recognition-label", "--manifest", "--keyless-dir", "--keyless-manifest-sha256", "--expect-source-revision", "--epoch-id"].includes(flag)) {
+      throw new Error("Usage: read-ledger9-registry.mjs --address 0x... [--issuer-label label --issuer-resource-id canonical-id] [--verifier-label label] [--auditor-label label] [--recognition-label label] [--manifest path | --keyless-dir path --keyless-manifest-sha256 SHA256 --expect-source-revision SHA] [--epoch-id 0x...]");
     }
     if (flag === "--address" && contractAddress === undefined) contractAddress = value;
     else if (flag === "--issuer-label" && issuerLabel === undefined) issuerLabel = value;
@@ -35,6 +39,8 @@ export function parseRegistryReadArgs(args, env = process.env) {
     else if (flag === "--auditor-label" && auditorLabel === undefined) auditorLabel = value;
     else if (flag === "--recognition-label" && recognitionLabel === undefined) recognitionLabel = value;
     else if (flag === "--manifest" && manifestPath === undefined) manifestPath = value;
+    else if (flag === "--keyless-dir" && keylessDir === undefined) keylessDir = value;
+    else if (flag === "--keyless-manifest-sha256" && keylessManifestSha256 === undefined) keylessManifestSha256 = value;
     else if (flag === "--expect-source-revision" && expectedSourceRevision === undefined) expectedSourceRevision = value;
     else if (flag === "--epoch-id" && epochId === undefined) epochId = value;
     else throw new Error(`Duplicate option: ${flag}`);
@@ -65,8 +71,18 @@ export function parseRegistryReadArgs(args, env = process.env) {
   if (epochId !== undefined && (!ADDRESS.test(epochId) || /^0x0{64}$/u.test(epochId))) {
     throw new Error("Epoch id must be a nonzero lowercase bytes32 commitment");
   }
+  if (manifestPath !== undefined && keylessDir !== undefined) {
+    throw new Error("Release and local keyless manifests are mutually exclusive");
+  }
+  if (keylessDir !== undefined
+    ? (keylessManifestSha256 === undefined || !/^[0-9a-f]{64}$/u.test(keylessManifestSha256)
+      || expectedSourceRevision === undefined)
+    : keylessManifestSha256 !== undefined) {
+    throw new Error("Local keyless readback requires its exact manifest SHA-256 and source revision");
+  }
   if (expectedSourceRevision !== undefined
-    && (manifestPath === undefined || !/^[0-9a-f]{40}$/u.test(expectedSourceRevision))) {
+    && ((manifestPath === undefined && keylessDir === undefined)
+      || !/^[0-9a-f]{40}$/u.test(expectedSourceRevision))) {
     throw new Error("Expected source revision requires a manifest and an exact lowercase 40-character Git SHA");
   }
   if (!ADDRESS.test(env.TR_EXPECTED_GENESIS_HASH ?? "")
@@ -76,7 +92,7 @@ export function parseRegistryReadArgs(args, env = process.env) {
     throw new Error("Pin TR_EXPECTED_GENESIS_HASH and a non-genesis checkpoint height/hash before reading registry state");
   }
   return { contractAddress, issuerLabel, issuerResourceId, verifierLabel, auditorLabel, recognitionLabel,
-    manifestPath, expectedSourceRevision, epochId };
+    manifestPath, keylessDir, keylessManifestSha256, expectedSourceRevision, epochId };
 }
 
 export function assertFinalizedVerifierKeyCatalog(image, manifest, circuitNames, expectedSourceRevision) {
@@ -98,6 +114,28 @@ export function assertFinalizedVerifierKeyCatalog(image, manifest, circuitNames,
     throw new Error("Release manifest source revision disagrees with the expected checkout");
   }
   return { sourceRevision: manifest.sourceRevision, verifierKeyCatalogMatched: true };
+}
+
+/** Compare a verified local keyless candidate to finalized keys; it is not a release manifest. */
+export function assertFinalizedKeylessVerifierKeyCatalog(image, manifest, circuitNames, expectedSourceRevision) {
+  const expected = [...circuitNames].sort();
+  const keys = manifest?.keys;
+  if (manifest?.format !== "tr-keyless-zkir-v1"
+    || manifest.sourceRevision !== expectedSourceRevision
+    || !/^[0-9a-f]{40}$/u.test(expectedSourceRevision)
+    || keys === null || typeof keys !== "object" || Array.isArray(keys)
+    || expected.length === 0 || new Set(expected).size !== expected.length
+    || !sameNames(Object.keys(keys), expected.flatMap((name) => [`${name}.prover`, `${name}.verifier`]))
+    || expected.some((name) => !/^[0-9a-f]{64}$/u.test(keys[`${name}.prover`])
+      || !/^[0-9a-f]{64}$/u.test(keys[`${name}.verifier`]))) {
+    throw new Error("Local keyless candidate has an invalid source or incomplete key catalog");
+  }
+  if (!sameNames(Object.keys(image.verifierKeySha256), expected)
+    || expected.some((name) => image.verifierKeySha256[name] !== keys[`${name}.verifier`])) {
+    throw new Error("Finalized verifier keys disagree with the local keyless candidate");
+  }
+  return { sourceRevision: expectedSourceRevision, verifierKeyCatalogMatched: true,
+    evidenceKind: "local-keyless-candidate", releaseQualified: false };
 }
 
 function sameNames(left, right) {
@@ -242,7 +280,7 @@ export function summarizeFinalizedRegistry(image, attached, contractAddress, iss
 
 export async function readLedger9Registry(args = process.argv.slice(2), env = process.env) {
   const { contractAddress, issuerLabel, issuerResourceId, verifierLabel, auditorLabel, recognitionLabel,
-    manifestPath, expectedSourceRevision, epochId } = parseRegistryReadArgs(args, env);
+    manifestPath, keylessDir, keylessManifestSha256, expectedSourceRevision, epochId } = parseRegistryReadArgs(args, env);
   const attached = await checkLedger9LocalStack(localnetInputFromEnvironment(env));
   const [{ bytes32Commitment }, { AuthorizationStatus, TrustRegistryContract, trustRegistryWitnesses },
     { createLocalNetworkDeploymentActionReader }] =
@@ -276,12 +314,17 @@ export async function readLedger9Registry(args = process.argv.slice(2), env = pr
   const recognitionSelection = recognitionLabel === undefined ? undefined : {
     label: recognitionLabel, id: bytes32Commitment(recognitionLabel), statusNames: AuthorizationStatus,
   };
-  const catalog = manifestPath === undefined ? {} : assertFinalizedVerifierKeyCatalog(
-    image,
-    await readBoundedManifest(manifestPath),
-    Object.keys(new TrustRegistryContract.Contract(trustRegistryWitnesses).provableCircuits),
-    expectedSourceRevision,
-  );
+  const circuitNames = Object.keys(new TrustRegistryContract.Contract(trustRegistryWitnesses).provableCircuits);
+  const catalog = manifestPath !== undefined
+    ? assertFinalizedVerifierKeyCatalog(image, await readBoundedManifest(manifestPath), circuitNames,
+      expectedSourceRevision)
+    : keylessDir !== undefined
+      ? assertFinalizedKeylessVerifierKeyCatalog(image,
+        (await verifyKeylessZkirAgainstFullSource(keylessDir,
+          resolve(dirname(fileURLToPath(import.meta.url)), "../contracts/trust-registry/src/managed/trust-registry"),
+          keylessManifestSha256, expectedSourceRevision)).manifest,
+        circuitNames, expectedSourceRevision)
+      : {};
   return { ...summarizeFinalizedRegistry(image, attached, contractAddress, issuerSelection, epochId, verifierSelection,
     auditorSelection, recognitionSelection),
     ...catalog };

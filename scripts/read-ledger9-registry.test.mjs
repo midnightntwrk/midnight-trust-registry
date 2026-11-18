@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { assertFinalizedVerifierKeyCatalog, parseRegistryReadArgs, summarizeFinalizedRegistry } from "./read-ledger9-registry.mjs";
+import { assertFinalizedKeylessVerifierKeyCatalog, assertFinalizedVerifierKeyCatalog,
+  parseRegistryReadArgs, summarizeFinalizedRegistry } from "./read-ledger9-registry.mjs";
 
 const address = `0x${"a".repeat(64)}`;
 const env = {
@@ -15,7 +16,8 @@ test("registry read requires an exact address and non-genesis chain pin", () => 
     contractAddress: address, issuerLabel: "issuer:example", issuerResourceId: undefined,
     verifierLabel: undefined, auditorLabel: undefined,
     recognitionLabel: undefined,
-    manifestPath: undefined, expectedSourceRevision: undefined, epochId: undefined,
+    manifestPath: undefined, keylessDir: undefined, keylessManifestSha256: undefined,
+    expectedSourceRevision: undefined, epochId: undefined,
   });
   assert.equal(parseRegistryReadArgs(["--address", address, "--verifier-label", "verifier:example"], env)
     .verifierLabel, "verifier:example");
@@ -30,6 +32,9 @@ test("registry read requires an exact address and non-genesis chain pin", () => 
     "release.json");
   assert.equal(parseRegistryReadArgs(["--address", address, "--manifest", "release.json",
     "--expect-source-revision", "a".repeat(40)], env).expectedSourceRevision, "a".repeat(40));
+  assert.equal(parseRegistryReadArgs(["--address", address, "--keyless-dir", "local-candidate",
+    "--keyless-manifest-sha256", "b".repeat(64), "--expect-source-revision", "a".repeat(40)], env)
+    .keylessDir, "local-candidate");
   assert.equal(parseRegistryReadArgs(["--address", address, "--epoch-id", address], env).epochId, address);
   assert.throws(() => parseRegistryReadArgs(["--address", address], {}), /Pin TR_EXPECTED/u);
   assert.throws(() => parseRegistryReadArgs(["--address", `0x${"0".repeat(64)}`], env), /nonzero/u);
@@ -41,6 +46,13 @@ test("registry read requires an exact address and non-genesis chain pin", () => 
     "--expect-source-revision", "A".repeat(40)], env), /exact lowercase/u);
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--manifest", "release.json",
     "--expect-source-revision", "a".repeat(40), "--expect-source-revision", "a".repeat(40)], env), /Duplicate/u);
+  assert.throws(() => parseRegistryReadArgs(["--address", address, "--keyless-dir", "local-candidate"], env),
+    /keyless readback requires/u);
+  assert.throws(() => parseRegistryReadArgs(["--address", address, "--keyless-manifest-sha256", "b".repeat(64)], env),
+    /keyless readback requires/u);
+  assert.throws(() => parseRegistryReadArgs(["--address", address, "--manifest", "release.json",
+    "--keyless-dir", "local-candidate", "--keyless-manifest-sha256", "b".repeat(64),
+    "--expect-source-revision", "a".repeat(40)], env), /mutually exclusive/u);
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--issuer-label", "x\0y"], env), /invalid/u);
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--verifier-label", "x\0y"], env), /invalid/u);
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--auditor-label", "x\0y"], env), /invalid/u);
@@ -52,6 +64,29 @@ test("registry read requires an exact address and non-genesis chain pin", () => 
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--epoch-id", "0xA"], env), /Epoch id/u);
   assert.throws(() => parseRegistryReadArgs(["--address", address, "--epoch-id", address,
     "--epoch-id", address], env), /Duplicate/u);
+});
+
+test("local keyless readback matches every deployed verifier without becoming release evidence", () => {
+  const manifest = { format: "tr-keyless-zkir-v1", sourceRevision: "a".repeat(40), keys: {
+    "first.prover": "c".repeat(64), "first.verifier": "d".repeat(64),
+    "second.prover": "e".repeat(64), "second.verifier": "f".repeat(64),
+  } };
+  const image = { verifierKeySha256: { first: "d".repeat(64), second: "f".repeat(64) } };
+  assert.deepEqual(assertFinalizedKeylessVerifierKeyCatalog(image, manifest, ["first", "second"], "a".repeat(40)), {
+    sourceRevision: "a".repeat(40), verifierKeyCatalogMatched: true,
+    evidenceKind: "local-keyless-candidate", releaseQualified: false,
+  });
+  assert.throws(() => assertFinalizedKeylessVerifierKeyCatalog(image, manifest, ["first", "second"], "b".repeat(40)),
+    /invalid source/u);
+  assert.throws(() => assertFinalizedKeylessVerifierKeyCatalog(image, { ...manifest, keys: {
+    "first.prover": "c".repeat(64), "first.verifier": "d".repeat(64),
+  } }, ["first", "second"], "a".repeat(40)), /incomplete/u);
+  assert.throws(() => assertFinalizedKeylessVerifierKeyCatalog(image, { ...manifest, keys: {
+    ...manifest.keys, "second.prover": "not-a-hash",
+  } }, ["first", "second"], "a".repeat(40)), /invalid source/u);
+  assert.throws(() => assertFinalizedKeylessVerifierKeyCatalog({ verifierKeySha256: {
+    first: "d".repeat(64), second: "0".repeat(64),
+  } }, manifest, ["first", "second"], "a".repeat(40)), /disagree/u);
 });
 
 test("registry read requires every finalized verifier key to match the source manifest", () => {

@@ -94,6 +94,17 @@ it does not authenticate Git history or transform an older deployment into an
 exact-head one. The current reconciled branch intentionally fails this guard
 against the older `e51c6de` deployment manifest.
 
+For a development checkout that has full generated Compact output but no
+Linux release bundle, `read-ledger9-registry.mjs` also accepts
+`--keyless-dir <candidate> --keyless-manifest-sha256 <pinned-digest>
+--expect-source-revision <exact-signed-head>` instead of `--manifest`.
+It verifies every candidate asset and expected key against the retained full
+output before comparing all deployed verifier-key hashes. The result labels
+itself `local-keyless-candidate` and `releaseQualified: false`. This can
+establish a current-source key match for development readback; it cannot
+authenticate the Git commit, approve the source, establish DID/VP intake, or
+replace a Linux release manifest and signed local API plan.
+
 The API can opt into phase-0 off-chain DID challenge-response while serving an
 approved local-ledger plan on loopback:
 
