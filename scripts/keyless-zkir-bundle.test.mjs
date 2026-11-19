@@ -56,7 +56,35 @@ test("keyless bundle excludes keys and regenerates only verified outputs", async
     "sample-zkir\n");
 });
 
-test("streaming builder creates the same keyless inventory from a key-free compile", async (t) => {
+const lightJs = "export const expectedVk = {};\n";
+const sourceMapComment = "//# sourceMappingURL=index.js.map\n";
+const sourceMap = (mappings) => `{\n  "mappings": "${mappings}"\n}\n`;
+const streamingInfo = (names) => JSON.stringify({
+  "compiler-version": "0.36.0", circuits: names.map((name) => ({ name, proof: true })),
+});
+
+async function writeCompactInventory(root, zkir, keys) {
+  const inventory = async (part, files) => {
+    const result = { type: "directory" };
+    for (const name of files) {
+      const file = await readFile(join(root, part, name));
+      const bytes = part === "contract" && name === "index.js"
+        ? Buffer.concat([file, Buffer.from(sourceMapComment)]) : file;
+      result[name] = { type: "file", size: bytes.length, hash: sha256(bytes) };
+    }
+    return result;
+  };
+  const manifest = {
+    "manifest-version": "1", "compiler-version": "0.36.0",
+    compiler: await inventory("compiler", ["contract-info.json"]),
+    contract: await inventory("contract", ["index.d.ts", "index.js", "index.js.map"]),
+    zkir: await inventory("zkir", zkir),
+    ...(keys ? { keys: await inventory("keys", keys) } : {}),
+  };
+  await writeFile(join(root, "compiler/contract-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
+test("streaming output matches an independent two-circuit full-build inventory", async (t) => {
   const paths = await fixture(t);
   await assert.rejects(createKeylessZkirBundleStreaming(paths.full, paths.keyless, revision,
     paths.generator, sha256(await readFile(paths.generator))), /retained proving keys/u);
@@ -65,35 +93,36 @@ test("streaming builder creates the same keyless inventory from a key-free compi
   for (const part of ["compiler", "contract", "zkir"]) {
     await mkdir(join(light, part));
   }
-  for (const name of ["compiler/contract-info.json", "compiler/contract-manifest.json",
-    "contract/index.js", "contract/index.js.map", "contract/index.d.ts", "zkir/demoCircuit.zkir"]) {
+  await writeFile(join(paths.full, "compiler/contract-info.json"), streamingInfo(["laterCircuit", "demoCircuit"]));
+  await writeFile(join(paths.full, "zkir/laterCircuit.zkir"), "later-zkir\n");
+  for (const name of ["compiler/contract-info.json", "contract/index.d.ts",
+    "zkir/demoCircuit.zkir", "zkir/laterCircuit.zkir"]) {
     await writeFile(join(light, name), await readFile(join(paths.full, name)));
   }
-  const lightJs = "export const expectedVk = {};\n";
-  const sourceMapComment = "//# sourceMappingURL=index.js.map\n";
   await writeFile(join(light, "contract/index.js"), lightJs);
-  await writeFile(join(light, "contract/index.js.map"), '{\n  "mappings": "AAAA;"\n}\n');
-  await writeFile(join(light, "compiler/contract-manifest.json"), `${JSON.stringify({
-    "manifest-version": "1", contract: { type: "directory", "index.js": {
-      type: "file", size: (lightJs + sourceMapComment).length, hash: sha256(lightJs + sourceMapComment),
-    } },
-    zkir: { type: "directory", "demoCircuit.zkir": { type: "file" } },
-  }, null, 2)}\n`);
+  await writeFile(join(light, "contract/index.js.map"), sourceMap("AAAA;"));
+  await writeCompactInventory(light, ["demoCircuit.zkir", "laterCircuit.zkir"]);
+  await writeFile(join(paths.full, "contract/index.js"), [
+    "export const expectedVk = {",
+    `  'demoCircuit': '${sha256("sample-zkir\n")}',`,
+    `  'laterCircuit': '${sha256("later-zkir\n")}',`,
+    "};", "",
+  ].join("\n"));
+  await writeFile(join(paths.full, "contract/index.js.map"), sourceMap("AAAA;;;;"));
+  await writeFile(join(paths.full, "zkir/laterCircuit.bzkir"), "sample-bzkir\n");
+  await writeFile(join(paths.full, "keys/laterCircuit.prover"), "later-zkir\n");
+  await writeFile(join(paths.full, "keys/laterCircuit.verifier"), "later-zkir\n");
+  await writeCompactInventory(paths.full,
+    ["demoCircuit.bzkir", "demoCircuit.zkir", "laterCircuit.bzkir", "laterCircuit.zkir"],
+    ["demoCircuit.prover", "demoCircuit.verifier", "laterCircuit.prover", "laterCircuit.verifier"]);
   const script = "#!/bin/sh\n[ \"$1\" = compile ] || exit 2\ncp \"$2\" \"$3\"\ncp \"$2\" \"$4\"\nprintf 'sample-bzkir\\n' > \"${2%.zkir}.bzkir\"\n";
   await writeFile(paths.generator, script);
   await chmod(paths.generator, 0o700);
   const result = await createKeylessZkirBundleStreaming(light, paths.keyless, revision,
     paths.generator, sha256(script));
-  assert.equal(result.circuitCount, 1);
+  assert.equal(result.circuitCount, 2);
   assert.equal((await readdir(paths.keyless)).includes("keys"), false);
-  const fullJs = await readFile(join(paths.keyless, "contract/index.js"), "utf8");
-  assert.ok(fullJs.includes(`'demoCircuit': '${sha256("sample-zkir\n")}'`));
-  assert.equal(await readFile(join(paths.keyless, "contract/index.js.map"), "utf8"),
-    '{\n  "mappings": "AAAA;;;"\n}\n');
-  const compiled = JSON.parse(await readFile(join(paths.keyless, "compiler/contract-manifest.json")));
-  assert.equal(compiled.contract["index.js"].hash, sha256(fullJs + sourceMapComment));
-  assert.equal(compiled.keys["demoCircuit.verifier"].hash, sha256("sample-zkir\n"));
-  assert.equal(compiled.zkir["demoCircuit.bzkir"].hash, sha256("sample-bzkir\n"));
+  await verifyKeylessZkirAgainstFullSource(paths.keyless, paths.full, result.manifestSha256, revision);
   const streamed = await verifyKeylessZkirStreaming(paths.keyless, result.manifestSha256,
     paths.generator, sha256(script), revision);
   assert.equal(streamed.matched, true);
@@ -102,14 +131,13 @@ test("streaming builder creates the same keyless inventory from a key-free compi
 
 test("streaming builder rejects wrong generator and incomplete later circuit atomically", async (t) => {
   const paths = await fixture(t);
-  await writeFile(join(paths.full, "compiler/contract-info.json"), JSON.stringify({
-    "compiler-version": "0.31.1", circuits: [
-      { name: "demoCircuit", proof: true }, { name: "laterCircuit", proof: true },
-    ],
-  }));
+  await writeFile(join(paths.full, "compiler/contract-info.json"), streamingInfo(["demoCircuit", "laterCircuit"]));
   await writeFile(join(paths.full, "zkir/laterCircuit.zkir"), "later-zkir\n");
   await rm(join(paths.full, "keys"), { recursive: true });
   await rm(join(paths.full, "zkir/demoCircuit.bzkir"));
+  await writeFile(join(paths.full, "contract/index.js"), lightJs);
+  await writeFile(join(paths.full, "contract/index.js.map"), sourceMap("AAAA;"));
+  await writeCompactInventory(paths.full, ["demoCircuit.zkir", "laterCircuit.zkir"]);
   const script = "#!/bin/sh\ncase \"$2\" in *laterCircuit*) exit 4;; esac\ncp \"$2\" \"$3\"\ncp \"$2\" \"$4\"\nprintf 'sample-bzkir\\n' > \"${2%.zkir}.bzkir\"\n";
   await writeFile(paths.generator, script);
   await chmod(paths.generator, 0o700);
@@ -124,6 +152,27 @@ test("streaming builder rejects wrong generator and incomplete later circuit ato
     paths.generator, sha256(emptyScript)), /Generated output is empty/u);
   await assert.rejects(lstat(paths.keyless), { code: "ENOENT" });
   assert.deepEqual((await readdir(paths.root)).filter((name) => name.startsWith("keyless.partial-")), []);
+});
+
+test("streaming builder rejects stale compiler assets before invoking the generator", async (t) => {
+  const paths = await fixture(t);
+  await rm(join(paths.full, "keys"), { recursive: true });
+  await rm(join(paths.full, "zkir/demoCircuit.bzkir"));
+  await writeFile(join(paths.full, "compiler/contract-info.json"), streamingInfo(["demoCircuit"]));
+  await writeFile(join(paths.full, "contract/index.js"), lightJs);
+  await writeFile(join(paths.full, "contract/index.js.map"), sourceMap("AAAA;"));
+  await writeCompactInventory(paths.full, ["demoCircuit.zkir"]);
+  const keygenHash = sha256(await readFile(paths.generator));
+  for (const path of ["compiler/contract-info.json", "contract/index.d.ts", "contract/index.js.map",
+    "zkir/demoCircuit.zkir"]) {
+    const file = join(paths.full, path);
+    const original = await readFile(file, "utf8");
+    await writeFile(file, `${original} `);
+    await assert.rejects(createKeylessZkirBundleStreaming(paths.full, paths.keyless, revision,
+      paths.generator, keygenHash), { message: `Light Compact asset does not match its manifest: ${path}` });
+    await assert.rejects(lstat(paths.keyless), { code: "ENOENT" });
+    await writeFile(file, original);
+  }
 });
 
 test("streaming verifier checks a pinned generator and discards per-circuit keys", async (t) => {

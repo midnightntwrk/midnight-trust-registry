@@ -96,49 +96,76 @@ async function copyAssets(from, to, names) {
   }
 }
 
-/** Recreate the metadata that Compact omits under --skip-zk from streamed key outputs.
- * @param {string} stage @param {readonly string[]} names
- * @param {Record<string, CompilerFile>} keyFiles */
-export async function completeLightCompile(stage, names, keyFiles) {
-  const jsPath = join(stage, "contract/index.js");
-  const lightJs = await readFile(jsPath, "utf8");
-  const marker = "export const expectedVk = {};";
-  if (lightJs.split(marker).length !== 2) throw new Error("Unexpected light Compact verifier table");
-  const entries = names.map((name) => `  '${name}': '${keyFiles[`${name}.verifier`].hash}',`);
-  const fullJs = lightJs.replace(marker, `export const expectedVk = {\n${entries.join("\n")}\n};`);
-  await writeFile(jsPath, fullJs);
+const LIGHT_VERIFIER_TABLE = "export const expectedVk = {};";
+const COMPACT_MAPPINGS = /^  "mappings": "([A-Za-z0-9+/;,]*)"$/mu;
 
-  const mapPath = join(stage, "contract/index.js.map");
-  const map = await readFile(mapPath, "utf8");
-  const mapping = /^  "mappings": "([A-Za-z0-9+/;,]*)"$/mu;
-  if (!mapping.test(map) || typeof JSON.parse(map).mappings !== "string") {
-    throw new Error("Unexpected Compact source map");
-  }
-  await writeFile(mapPath, map.replace(mapping, (_, value) =>
-    `  "mappings": "${value}${";".repeat(names.length + 1)}"`));
+/** @param {CompilerFile | undefined} entry @param {Buffer} bytes */
+function matchesCompilerFile(entry, bytes) {
+  return entry?.type === "file" && entry.size === bytes.length
+    && entry.hash === createHash("sha256").update(bytes).digest("hex");
+}
 
-  const manifestPath = join(stage, "compiler/contract-manifest.json");
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-  if (manifest["manifest-version"] !== "1" || manifest.keys !== undefined
-    || manifest.zkir?.type !== "directory" || manifest.contract?.type !== "directory") {
+/** Validate the staged Compact output before generating any keys.
+ * @param {string} stage @param {readonly string[]} names @param {string} compilerVersion */
+async function inspectLightCompile(stage, names, compilerVersion) {
+  const manifest = JSON.parse(await readFile(join(stage, "compiler/contract-manifest.json"), "utf8"));
+  if (typeof compilerVersion !== "string" || !compilerVersion
+    || manifest?.["manifest-version"] !== "1" || manifest.keys !== undefined
+    || manifest["compiler-version"] !== compilerVersion) {
     throw new Error("Unexpected light Compact contract manifest");
   }
+  const inventories = {
+    compiler: ["contract-info.json"],
+    contract: ["index.d.ts", "index.js", "index.js.map"],
+    zkir: names.map((name) => `${name}.zkir`),
+  };
+  for (const [part, files] of Object.entries(inventories)) {
+    const inventory = manifest[part];
+    if (inventory?.type !== "directory") throw new Error(`Missing Compact manifest directory: ${part}`);
+    exactNames(Object.keys(inventory), ["type", ...files], `Light Compact ${part} manifest`);
+    for (const file of files) {
+      const path = `${part}/${file}`;
+      if (path !== "contract/index.js"
+        && !matchesCompilerFile(inventory[file], await readFile(join(stage, path)))) {
+        throw new Error(`Light Compact asset does not match its manifest: ${path}`);
+      }
+    }
+  }
+  const stagedInfo = JSON.parse(await readFile(join(stage, "compiler/contract-info.json"), "utf8"));
+  exactNames(circuitNames(stagedInfo), names, "Staged proof circuits");
+  if (stagedInfo["compiler-version"] !== compilerVersion) throw new Error("Staged Compact version changed");
+
+  const lightJs = await readFile(join(stage, "contract/index.js"), "utf8");
+  if (lightJs.split(LIGHT_VERIFIER_TABLE).length !== 2) throw new Error("Unexpected light Compact verifier table");
   // The repo strips this comment after Compact has recorded the original JS hash.
   const sourceMapComment = "//# sourceMappingURL=index.js.map\n";
-  const recordedJs = manifest.contract["index.js"];
-  const sourceSuffix = ["", sourceMapComment].find((suffix) => {
-    const bytes = Buffer.from(lightJs + suffix);
-    return recordedJs?.type === "file" && recordedJs.size === bytes.length
-      && recordedJs.hash === createHash("sha256").update(bytes).digest("hex");
-  });
+  const sourceSuffix = ["", sourceMapComment].find((suffix) =>
+    matchesCompilerFile(manifest.contract["index.js"], Buffer.from(lightJs + suffix)));
   if (sourceSuffix === undefined) throw new Error("Light Compact JavaScript does not match its manifest");
+  const map = await readFile(join(stage, "contract/index.js.map"), "utf8");
+  if (!COMPACT_MAPPINGS.test(map) || typeof JSON.parse(map).mappings !== "string") {
+    throw new Error("Unexpected Compact source map");
+  }
+  return { manifest, lightJs, sourceSuffix, map };
+}
+
+/** @param {string} stage @param {readonly string[]} names
+ * @param {Record<string, CompilerFile>} keyFiles
+ * @param {Awaited<ReturnType<typeof inspectLightCompile>>} compile */
+async function completeLightCompile(stage, names, keyFiles, compile) {
+  const { manifest, lightJs, sourceSuffix, map } = compile;
+  const entries = names.map((name) => `  '${name}': '${keyFiles[`${name}.verifier`].hash}',`);
+  const fullJs = lightJs.replace(LIGHT_VERIFIER_TABLE, `export const expectedVk = {\n${entries.join("\n")}\n};`);
+  await writeFile(join(stage, "contract/index.js"), fullJs);
+  const mapPath = join(stage, "contract/index.js.map");
+  await writeFile(mapPath, map.replace(COMPACT_MAPPINGS, (_, value) =>
+    `  "mappings": "${value}${";".repeat(names.length + 1)}"`));
   /** @type {Record<string, CompilerFile | "directory">} */
   const zkir = { type: "directory" };
   /** @type {Record<string, CompilerFile | "directory">} */
   const keys = { type: "directory" };
   for (const name of names) {
     const source = manifest.zkir[`${name}.zkir`];
-    if (source?.type !== "file") throw new Error(`Missing light ZKIR manifest entry: ${name}`);
     const binary = join(stage, "zkir", `${name}.bzkir`);
     zkir[`${name}.bzkir`] = { type: "file", size: (await lstat(binary)).size,
       hash: await hashFile(binary) };
@@ -147,8 +174,6 @@ export async function completeLightCompile(stage, names, keyFiles) {
       keys[`${name}.${extension}`] = keyFiles[`${name}.${extension}`];
     }
   }
-  exactNames(Object.keys(manifest.zkir), ["type", ...names.map((name) => `${name}.zkir`)],
-    "Light Compact ZKIR manifest");
   manifest.zkir = zkir;
   const compilerJs = Buffer.from(fullJs + sourceSuffix);
   manifest.contract["index.js"] = { type: "file", size: compilerJs.length,
@@ -156,7 +181,7 @@ export async function completeLightCompile(stage, names, keyFiles) {
   manifest.contract["index.js.map"] = { type: "file", size: (await lstat(mapPath)).size,
     hash: await hashFile(mapPath) };
   manifest.keys = keys;
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  await writeFile(join(stage, "compiler/contract-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
 /** @template T @param {string} target @param {(stage: string) => Promise<T>} operation */
@@ -251,6 +276,7 @@ export async function createKeylessZkirBundleStreaming(lightManaged, target, rev
     }
     return await stagedDirectory(target, async (stage) => {
       await copyAssets(source, stage, [...BASE_ASSETS, ...zkirNames.map((name) => `zkir/${name}`)]);
+      const compile = await inspectLightCompile(stage, names, info["compiler-version"]);
       /** @type {Record<string, string>} */
       const keyHashes = {};
       /** @type {Record<string, CompilerFile>} */
@@ -286,7 +312,7 @@ export async function createKeylessZkirBundleStreaming(lightManaged, target, rev
           await rm(circuit, { recursive: true, force: true });
         }
       }
-      await completeLightCompile(stage, names, keyFiles);
+      await completeLightCompile(stage, names, keyFiles, compile);
       const assets = assetNames(names);
       const assetHashes = Object.fromEntries(await Promise.all(assets.map(async (name) =>
         [name, await hashFile(await regularFile(join(stage, name)))])));
