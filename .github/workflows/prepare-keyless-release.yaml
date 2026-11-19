@@ -7,6 +7,7 @@ on:
       - ".github/workflows/prepare-keyless-release.yaml"
       - "scripts/prepare-cached-keyless-release.mjs"
       - "scripts/download-keyless-release-reference.sh"
+      - "scripts/package-contents-policy.test.mjs"
   workflow_dispatch: {}
 
 permissions:
