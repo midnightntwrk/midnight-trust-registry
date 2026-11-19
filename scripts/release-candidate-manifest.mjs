@@ -497,15 +497,25 @@ const run = (command, args, trim = true) => {
   return trim ? result.stdout.trim() : result.stdout;
 };
 
-/** @param {string} revision */
-export function verifySignedHead(revision) {
+/** @param {string} revision @param {boolean} [allowPullRequestPreparation] */
+export function verifySignedHead(revision, allowPullRequestPreparation = false) {
   if (process.env.TR_MANIFEST_GITHUB_VERIFIED_COMMIT !== "true") {
     run("git", ["verify-commit", "HEAD"]);
     return;
   }
   const repository = process.env.GITHUB_REPOSITORY;
+  let expectedRevision = process.env.GITHUB_SHA;
+  if (allowPullRequestPreparation && process.env.GITHUB_EVENT_NAME === "pull_request") {
+    const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH ?? "", "utf8"));
+    if (event.pull_request?.head?.repo?.full_name !== repository
+      || event.pull_request?.base?.repo?.full_name !== repository
+      || event.pull_request?.base?.ref !== "develop") {
+      throw new Error("Only same-repository develop pull requests can prepare keyless artifacts");
+    }
+    expectedRevision = event.pull_request.head.sha;
+  }
   if (process.env.GITHUB_ACTIONS !== "true"
-    || process.env.GITHUB_SHA !== revision
+    || expectedRevision !== revision
     || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(repository ?? "")
     || !process.env.GH_TOKEN) {
     throw new Error("GitHub signature verification requires the exact Actions checkout and token");

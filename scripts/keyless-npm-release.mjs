@@ -102,7 +102,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
       || !/^Signed-off-by: .+ <[^>]+>$/mu.test(git(["log", "-1", "--format=%B"]))) {
       throw new Error("Keyless release requires a clean DCO-signed source checkout");
     }
-    verifySignedHead(revision);
+    verifySignedHead(revision, mode === "create");
     const manifest = await buildKeylessNpmRelease(directory, revision);
     if (mode === "create") {
       await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { flag: "wx" });
