@@ -424,14 +424,20 @@ export async function verifyKeylessZkirAgainstFullSource(bundle, fullManaged, ex
 
 /** Verify key portability without retaining all prover keys on the target platform.
  * @param {string} bundle @param {string} expectedManifestSha256 @param {string} keygen
- * @param {string} expectedKeygenSha256 @param {string} expectedRevision */
+ * @param {string} expectedKeygenSha256 @param {string} expectedRevision
+ * @param {readonly string[]} [selectedCircuits] */
 export async function verifyKeylessZkirStreaming(bundle, expectedManifestSha256, keygen,
-  expectedKeygenSha256, expectedRevision) {
+  expectedKeygenSha256, expectedRevision, selectedCircuits) {
   if (!SHA256.test(expectedKeygenSha256)) throw new Error("Trusted key generator SHA-256 is required");
   if (!REVISION.test(expectedRevision)) throw new Error("Expected source revision is invalid");
   const { manifest, names } = await verifyKeylessZkirBundle(bundle, expectedManifestSha256);
   if (manifest.sourceRevision !== expectedRevision) {
     throw new Error("Keyless manifest source revision differs from expected source");
+  }
+  const circuits = selectedCircuits ?? names;
+  if (circuits.length === 0 || new Set(circuits).size !== circuits.length
+    || circuits.some((name) => !names.includes(name))) {
+    throw new Error("Regeneration requires distinct circuits from the verified catalog");
   }
   const stageRoot = await mkdtemp(join(tmpdir(), "tr-zkir-stream-"));
   try {
@@ -440,7 +446,7 @@ export async function verifyKeylessZkirStreaming(bundle, expectedManifestSha256,
     if (await hashFile(generator) !== expectedKeygenSha256) {
       throw new Error("Key generator differs from the trusted binary digest");
     }
-    for (const name of names) {
+    for (const name of circuits) {
       const stage = join(stageRoot, name);
       await mkdir(stage);
       try {
@@ -469,7 +475,7 @@ export async function verifyKeylessZkirStreaming(bundle, expectedManifestSha256,
   } finally {
     await rm(stageRoot, { recursive: true, force: true });
   }
-  return { sourceRevision: expectedRevision, circuitCount: names.length,
+  return { sourceRevision: expectedRevision, circuitCount: circuits.length,
     sourcePlatform: manifest.platform, generatorPlatform: `${process.platform}/${process.arch}`,
     keygenSha256: expectedKeygenSha256, matched: true };
 }

@@ -8,6 +8,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
 import { workspaceCatalog } from "./trust-registry-workspace-catalog.mjs";
+import { validatePrepareRun } from "./resolve-keyless-prepare-run.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const workflow = readFileSync(join(root, ".github/workflows/publish.yml"), "utf8");
@@ -78,10 +79,10 @@ test("publish workflow binds signed source, manifest verification and tested tar
   const required = [
     "select-publish-version.mjs --github-output",
     "release-set-version.mjs --version \"$VERSION\" --check",
-    "--artifact-dir artifacts/npm-release",
-    "--output artifacts/npm-release.manifest.json",
-    "--verify artifacts/npm-release.manifest.json",
-    "--manifest artifacts/npm-release.manifest.json",
+    "Require green exact-source CI, Quality, and Scan",
+    "Download previously tested release tarballs",
+    "Verify manifest and exact release tarballs",
+    "Record manifest digest for release review",
     "Publish packages to npm",
   ];
   let previous = -1;
@@ -91,7 +92,8 @@ test("publish workflow binds signed source, manifest verification and tested tar
     previous = position;
   }
   assert.doesNotMatch(workflow, /run: node scripts\/release-set-version\.mjs --version "\$VERSION"\s*$/mu);
-  assert.match(workflow, /MANIFEST_PATH: artifacts\/npm-release\.manifest\.json/u);
+  assert.match(workflow, /export MANIFEST_PATH="\$TARBALL_DIR\/npm-release\.manifest\.json"/u);
+  assert.match(workflow, /KEYLESS_NPM_REQUIRED: "true"/u);
   assert.match(publisher, /node scripts\/check-publish-tarball\.mjs "\$\{manifest_path\}" "\$\{tarball\}"/u);
   assert.match(publisher, /npm view "\$\{package_name\}@\$\{version\}" dist --json/u);
   assert.match(publisher, /node scripts\/check-published-package-integrity\.mjs "\$\{tarball\}" "\$\{published_dist\}"/u);
@@ -106,8 +108,8 @@ test("release bytes are prepared before the protected publish approval", () => {
   assert.equal(publish.environment.name, "npm-publish-stable");
   assert.match(prepare.outputs.manifest_sha256, /steps\.manifest\.outputs\.sha256/u);
   const preparedSteps = prepare.steps.map((step) => step.name);
-  assert.ok(preparedSteps.indexOf("Record manifest digest for release review")
-    < preparedSteps.indexOf("Upload release tarballs"));
+  assert.ok(preparedSteps.indexOf("Verify manifest and exact release tarballs")
+    < preparedSteps.indexOf("Record manifest digest for release review"));
   const publishSteps = publish.steps.map((step) => step.name);
   const required = [
     "Download reviewed release tarballs",
@@ -122,10 +124,11 @@ test("release bytes are prepared before the protected publish approval", () => {
     previous = position;
   }
   assert.match(publish.steps.find((step) => step.name === "Match reviewed manifest digest").run,
-    /check-reviewed-manifest-digest\.mjs artifacts\/npm-release\.manifest\.json/u);
+    /check-reviewed-manifest-digest\.mjs "\$RUNNER_TEMP\/npm-release\/npm-release\.manifest\.json"/u);
   assert.match(publish.steps.find((step) => step.name === "Verify manifest and exact release tarballs after approval").run,
-    /--verify-prepared artifacts\/npm-release\.manifest\.json/u);
-  assert.ok(publish.steps.every((step) => !/pnpm run (?:build|test)|compact:light/u.test(step.run ?? "")));
+    /keyless-npm-release\.mjs verify/u);
+  assert.ok([...prepare.steps, ...publish.steps].every((step) =>
+    !/pnpm (?:run|exec|install)|compact:light|npm (?:install|pack)/u.test(step.run ?? "")));
   assert.ok(prepare.steps.some((step) => step.name === "Require green exact-source CI, Quality, and Scan"));
 });
 
@@ -174,7 +177,8 @@ test("manual package workflows cannot redirect credentials or select uncommitted
 
 test("publication is opt-in and preparation cannot obtain npm credentials", () => {
   const parsed = yaml.load(workflow);
-  assert.deepEqual(Object.keys(parsed.on.workflow_dispatch.inputs), ["publish"]);
+  assert.deepEqual(Object.keys(parsed.on.workflow_dispatch.inputs), ["prepare_run_id", "publish"]);
+  assert.equal(parsed.on.workflow_dispatch.inputs.prepare_run_id.required, true);
   assert.equal(parsed.on.workflow_dispatch.inputs.publish.type, "boolean");
   assert.equal(parsed.on.workflow_dispatch.inputs.publish.default, false);
   assert.equal(parsed.jobs.prepare.if, "github.ref == 'refs/heads/develop'");
@@ -233,4 +237,28 @@ test("keyless prepare verifies twelve exact cache hits and has no publish job", 
   const workflowText = JSON.stringify(candidate);
   assert.doesNotMatch(workflowText, /secrets\.|id-token|npm publish|proving-key-cache\.mjs/u);
   assert.match(workflowText, /--keyless-manifest-sha256/u);
+  assert.match(workflowText, /--keyless-regeneration/u);
+  assert.match(workflowText, /keyless-npm-release\.mjs create/u);
+});
+
+test("publish only accepts a successful exact-source manual preparation and an immutable artifact digest", () => {
+  const repository = "midnightntwrk/midnight-trust-registry";
+  const revision = "a".repeat(40);
+  const run = { id: 123, path: ".github/workflows/prepare-keyless-release.yaml",
+    repository: { full_name: repository }, head_repository: { full_name: repository },
+    event: "workflow_dispatch", head_branch: "develop", head_sha: revision,
+    status: "completed", conclusion: "success" };
+  const artifact = { id: 234, name: "trust-registry-keyless-prepare-only",
+    expired: false, digest: `sha256:${"b".repeat(64)}` };
+  const check = (input, list = [artifact]) => validatePrepareRun(input, { artifacts: list }, repository, "123", revision);
+  assert.deepEqual(check(run), { id: 234, sha256: "b".repeat(64) });
+  for (const changes of [{ id: 122 }, { path: ".github/workflows/ci.yaml" }, { event: "pull_request" },
+    { head_branch: "main" }, { head_sha: "b".repeat(40) }, { conclusion: "failure" },
+    { head_repository: { full_name: "fork/registry" } }]) {
+    assert.throws(() => check({ ...run, ...changes }), /successful manual/u);
+  }
+  for (const list of [[], [artifact, artifact], [{ ...artifact, expired: true }],
+    [{ ...artifact, digest: "missing" }]]) {
+    assert.throws(() => check(run, list), /unexpired, digest-pinned/u);
+  }
 });

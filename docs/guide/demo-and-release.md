@@ -454,42 +454,32 @@ tracks the remaining public-network qualification and recovery model. Until its
 criteria are met, this repository's 0.1.0 result is a simulator-validated
 reference implementation, not a public-network security claim.
 
-The repo currently exposes two manual GitHub Actions workflows:
-
-- `Publish Packages`
-- `Published Package Smoke`
-
-`Publish Packages` performs the following sequence:
-
-1. requires the requested version to be committed at the signed/DCO source SHA
-2. requires successful CI, Quality, and Scan push runs for that exact source SHA
-3. builds full contract artifacts, checks package contents, and packs release tarballs
-4. generates and verifies the release manifest, then runs a clean-consumer smoke
-5. with the `publish` input explicitly enabled, pauses for approval and verifies
-   the downloaded manifest and tarballs against the signed source
-6. publishes the approved packages without rebuilding them
-
-The full artifact build is still a long-running release-preparation step. Follow
-[#329](https://github.com/midnightntwrk/midnight-trust-registry/issues/329) for
-the bounded, separately observable build pipeline. `Published Package Smoke`
-runs the post-publication check separately.
-
-Run `Publish Packages` on `develop` with its default `publish: false` to test
-release preparation without requesting npm access or uploading to npm. CI runs
-on every push to `develop`, including docs-only changes, so preparation can
-require trusted push results for the exact candidate commit.
-
-`Prepare Keyless Release` is the separate cache-only Ledger 9 pilot. It
-restores the 12 exact `fa52b240` shards and compares every pair to the
+`Prepare Keyless Release` restores the 12 exact Ledger 9 shards and compares every pair to the
 digest-pinned Linux inventory from run 44442954026. A missing shard, different
 key, expired reference, or changed Compact output fails rather than
-regenerating keys. The workflow uploads the keyless tarballs, SHA-256 sums and
-the cache verification receipt, not proving keys. These packages are for
-local validation only; the workflow cannot publish to npm. Refresh the
-reference through a new reviewed Linux generation when updating contract
-inputs or when the reference expires.
+regenerating cache entries. A clean consumer installs the packed tarballs,
+checks VC interoperability, and independently regenerates and compares the
+prover/verifier keys for one governance write and one read circuit. The
+uploaded artifact contains the tarballs, SHA-256 sums, verification receipts,
+and the npm release manifest, but no prover or verifier keys. Refresh the
+reference through a new reviewed Linux generation if the contract inputs
+change or the reference expires.
 
-A separate run with `publish: true` pauses at the protected
+1. Manually run `Prepare Keyless Release` on `develop`. Record its run ID
+   and wait for success. Pull-request preparation is not eligible for publish.
+2. On the same `develop` commit, run `Publish Packages` with that
+   `prepare_run_id` and `publish: false`. It checks the signed/DCO source,
+   successful exact-source CI, Quality, and Scan push runs, and the downloaded
+   artifact and manifest. It requests no npm credentials and uploads nothing
+   to npm.
+3. Review the source SHA, package version, preparation run, and manifest
+   SHA-256 in the summary. Dispatch again with the same `prepare_run_id` and
+   `publish: true`. The protected job downloads and verifies the exact same
+   bytes again after approval; it never rebuilds or repacks. If `develop`
+   advances, prepare a new candidate. The workflow publishes only packages
+   marked for npm in the manifest, to the `next` dist-tag.
+
+The publishing job pauses at the protected
 `npm-publish-stable` environment, whose required reviewers are managed in
 `midnightntwrk/midnight-iac`. The first publication uses the
 temporary `MIDNIGHTCI_NPMJS_TOKEN` secret to create the packages. After npm
@@ -500,23 +490,20 @@ credential. The workflow requests provenance in either case.
 `Published Package Smoke` reruns only the final published-package import smoke
 for a specified version.
 
-Local helpers used by the workflow:
+To prepare a version bump in source:
 
 ```bash
-node scripts/release-set-version.mjs --version 0.1.0-rc2
+node scripts/release-set-version.mjs --version <version>
 pnpm install --lockfile-only
 # Review and commit the version/lockfile changes with GPG and DCO before publishing.
-node scripts/release-set-version.mjs --version 0.1.0-rc2 --check
-node scripts/release-candidate-manifest.mjs --artifact-dir artifacts/npm-release --output artifacts/npm-release.manifest.json
-node scripts/release-candidate-manifest.mjs --artifact-dir artifacts/npm-release --verify artifacts/npm-release.manifest.json
-pnpm run published-artifacts:smoke -- --tarball-dir artifacts/npm-release --manifest artifacts/npm-release.manifest.json
+node scripts/release-set-version.mjs --version <version> --check
 ```
 
 The first publication needs the npm token secret; later tokenless publication
 requires the Trusted Publisher setup. The default registry is
 `https://registry.npmjs.org`.
-The manifest is uploaded with the exact tarballs; it records the signed source,
-package and verifier-key digests. Runtime image digests and independent local
+The keyless manifest binds the exact tested tarballs to the signed source and
+the embedded keyless circuit inventory. Runtime image digests and independent local
 deployment/security approval remain separate release evidence, not a result of
 publishing npm packages.
 

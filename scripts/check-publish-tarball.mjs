@@ -21,7 +21,8 @@ export async function checkPublishTarball(manifestPath, tarballPath, name, versi
   const matches = packages.filter((entry) => isRecord(entry)
     && entry.name === name && entry.version === version);
   const match = matches.length === 1 && isRecord(matches[0]) ? matches[0] : null;
-  if (!isRecord(manifest) || manifest.format !== "tr-release-candidate-manifest-v2"
+  if (!isRecord(manifest) || !(manifest.format === "tr-release-candidate-manifest-v2"
+    || (manifest.format === "tr-keyless-npm-release-v1" && match?.publication === "npm"))
     || match === null || match.filename !== basename(tarballPath)
     || typeof match.sha256 !== "string" || !SHA256.test(match.sha256)
     || typeof match.sizeBytes !== "number"

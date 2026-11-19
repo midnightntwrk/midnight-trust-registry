@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -13,6 +14,9 @@ import {
 } from "./trust-registry-workspace-catalog.mjs";
 import { verifyReleaseCandidateArtifacts } from "./release-candidate-manifest.mjs";
 import { snapshotReleaseTarballs } from "./snapshot-release-tarballs.mjs";
+import { findZkirBinary } from "./proving-key-cache.mjs";
+import { verifyKeylessZkirBundle, verifyKeylessZkirStreaming } from "./keyless-zkir-bundle.mjs";
+import { REGENERATION_CIRCUITS } from "./keyless-npm-release.mjs";
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -21,6 +25,7 @@ const parseArgs = () => {
     artifactsDir: artifactDirectory,
     actorJourney: false,
     vcConsumer: false,
+    keylessRegeneration: false,
   };
   const args = process.argv.slice(2);
 
@@ -41,6 +46,9 @@ const parseArgs = () => {
       case "--vc-consumer":
         options.vcConsumer = true;
         break;
+      case "--keyless-regeneration":
+        options.keylessRegeneration = true;
+        break;
       case "--help":
         console.log(
           [
@@ -51,6 +59,7 @@ const parseArgs = () => {
             "  --manifest <path>     Verify the candidate manifest before installing any tarball.",
             "  --actor-journey       Run four signed HTTP journeys and the recognition VC/VP scenario from packed packages.",
             "  --vc-consumer         Compile the packed Ledger 9 consumer fixture and check its pinned authority domain.",
+            "  --keyless-regeneration Regenerate representative keys from the clean installed contract.",
           ].join("\n"),
         );
         process.exit(0);
@@ -97,7 +106,7 @@ const ensureArtifacts = (artifactsPath) => {
   });
 };
 
-const { artifactsDir, manifest, actorJourney, vcConsumer } = parseArgs();
+const { artifactsDir, manifest, actorJourney, vcConsumer, keylessRegeneration } = parseArgs();
 const resolvedArtifactsDir = path.resolve(repoRoot, artifactsDir);
 let tarballPaths;
 let candidateManifest;
@@ -109,7 +118,7 @@ if (manifest !== undefined) {
   tarballPaths = verifyReleaseCandidateArtifacts(candidateManifest, resolvedArtifactsDir);
 } else {
   fs.mkdirSync(resolvedArtifactsDir, { recursive: true });
-  ensureArtifacts(resolvedArtifactsDir);
+  if (!keylessRegeneration) ensureArtifacts(resolvedArtifactsDir);
   tarballPaths = fs.readdirSync(resolvedArtifactsDir)
     .filter((fileName) => fileName.endsWith(".tgz"))
     .sort()
@@ -176,6 +185,27 @@ try {
     const compactVersion = fs.readFileSync(path.join(repoRoot, ".compact-version"), "utf8").trim();
     run("node", ["packed-vc-consumer-scenario.mjs", compactVersion], { cwd: smokeRoot });
     console.log("[smoke-packed-artifacts] Packed Ledger 9 consumer fixture passed.");
+  }
+  if (keylessRegeneration) {
+    const cache = JSON.parse(fs.readFileSync(path.join(resolvedArtifactsDir, "cache-receipt.json"), "utf8"));
+    const contract = tarballPaths.find((file) => path.basename(file).startsWith("midnightntwrk-trust-registry-contract-"));
+    if (!contract) throw new Error("Missing keyless contract tarball for regeneration");
+    const managed = path.join(smokeRoot,
+      "node_modules/@midnightntwrk/trust-registry-contract/dist/managed/trust-registry");
+    const { manifest: installed } = await verifyKeylessZkirBundle(managed, cache.manifestSha256);
+    if (installed.platform !== `${process.platform}/${process.arch}`) {
+      throw new Error("Regeneration runner does not match the keyless release platform");
+    }
+    const evidence = await verifyKeylessZkirStreaming(managed, cache.manifestSha256,
+      findZkirBinary(installed.compilerVersion), installed.keygenSha256, cache.sourceRevision,
+      REGENERATION_CIRCUITS);
+    fs.writeFileSync(path.join(resolvedArtifactsDir, "key-regeneration.json"), `${JSON.stringify({
+      sourceRevision: evidence.sourceRevision,
+      contractTarballSha256: createHash("sha256").update(fs.readFileSync(contract)).digest("hex"),
+      manifestSha256: cache.manifestSha256, keygenSha256: evidence.keygenSha256,
+      platform: evidence.generatorPlatform, circuits: REGENERATION_CIRCUITS,
+    }, null, 2)}\n`, { flag: "wx" });
+    console.log(`[smoke-packed-artifacts] Regenerated and matched ${evidence.circuitCount} installed proof-key pairs.`);
   }
   if (actorJourney) {
     for (const script of [

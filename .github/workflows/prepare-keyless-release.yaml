@@ -8,6 +8,9 @@ on:
       - "scripts/prepare-cached-keyless-release.mjs"
       - "scripts/download-keyless-release-reference.sh"
       - "scripts/package-contents-policy.test.mjs"
+      - "scripts/keyless-npm-release.mjs"
+      - "scripts/smoke-packed-artifacts.mjs"
+      - ".github/workflows/publish.yml"
   workflow_dispatch: {}
 
 permissions:
@@ -150,6 +153,9 @@ jobs:
           path: ${{ runner.temp }}/receipts
 
       - name: Assemble and verify keyless package tarballs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TR_MANIFEST_GITHUB_VERIFIED_COMMIT: "true"
         run: |
           set -euo pipefail
           mkdir -p artifacts/keyless-prepare
@@ -171,10 +177,13 @@ jobs:
             fi
           done
           sha256sum artifacts/keyless-prepare/*.tgz > artifacts/keyless-prepare/SHA256SUMS
-          pnpm run packed-artifacts:smoke -- --artifacts-dir artifacts/keyless-prepare --vc-consumer
+          pnpm run packed-artifacts:smoke -- --artifacts-dir artifacts/keyless-prepare \
+            --vc-consumer --keyless-regeneration
+          node scripts/keyless-npm-release.mjs create artifacts/keyless-prepare \
+            artifacts/keyless-prepare/npm-release.manifest.json
           cat artifacts/keyless-prepare/cache-receipt.json >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload local-only release candidate
+      - name: Upload tested keyless release candidate
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: trust-registry-keyless-prepare-only

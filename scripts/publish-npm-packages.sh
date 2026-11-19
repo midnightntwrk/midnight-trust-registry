@@ -19,7 +19,11 @@ if [[ -z "${manifest_path}" || ! -f "${manifest_path}" ]]; then
   echo "::error::A verified release manifest is required to publish packages." >&2
   exit 1
 fi
-node scripts/release-candidate-manifest.mjs --artifact-dir "${tarball_dir}" --verify-prepared "${manifest_path}"
+if [[ "${KEYLESS_NPM_REQUIRED:-}" == "true" ]]; then
+  node scripts/keyless-npm-release.mjs verify "${tarball_dir}" "${manifest_path}"
+else
+  node scripts/release-candidate-manifest.mjs --artifact-dir "${tarball_dir}" --verify-prepared "${manifest_path}"
+fi
 node --input-type=module -e '
   import { readFileSync } from "node:fs";
   const [path, version] = process.argv.slice(1);

@@ -56,24 +56,20 @@ test("full release circuit inventory comes from validated Compact metadata", () 
   assert.throws(() => proofCircuitNames({ circuits: [{ proof: true, name: 7 }] }), /valid/);
 });
 
-test("publish workflow gates on exact-source CI and builds only before approval", () => {
+test("publish workflow gates on exact-source CI and never rebuilds prepared bytes", () => {
   const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const workflow = yaml.load(readFileSync(path.join(root, ".github/workflows/publish.yml"), "utf8"));
   const commands = workflow.jobs.prepare.steps.map((step) => step.run ?? "");
   const ciGate = commands.findIndex((command) => command.includes("gh run list")
     && command.includes("scripts/check-release-push-run.mjs"));
-  const fullBuild = commands.indexOf("pnpm exec turbo run build --continue --log-order=stream");
-  const fullGate = commands.indexOf("pnpm run packages:check-contents");
-  const pack = commands.findIndex((command) => command.startsWith("pnpm run artifacts:pack"));
-  assert.ok(ciGate >= 0 && ciGate < fullBuild && fullBuild < fullGate && fullGate < pack);
-  assert.ok(commands.every((command) => !command.includes("pnpm run test:light")));
-  assert.ok(commands.slice(fullBuild + 1, pack).every((command) =>
-    !command.includes("build:light") && !command.includes("test:light")));
+  const download = commands.findIndex((command) => command.includes("download-keyless-npm-artifact.sh"));
+  const verifyCandidate = commands.findIndex((command) => command.includes("keyless-npm-release.mjs verify"));
+  assert.ok(ciGate >= 0 && ciGate < download && download < verifyCandidate);
   const publishCommands = workflow.jobs.publish.steps.map((step) => step.run ?? "");
-  const verify = publishCommands.findIndex((command) => command.includes("--verify-prepared artifacts/npm-release.manifest.json"));
+  const verify = publishCommands.findIndex((command) => command.includes("keyless-npm-release.mjs verify"));
   assert.ok(verify >= 0);
-  assert.ok(publishCommands.every((command) => !command.includes("pnpm run build")
-    && !command.includes("pnpm run test")));
+  assert.ok([...commands, ...publishCommands].every((command) =>
+    !/pnpm (?:run|exec|install)|npm (?:install|pack)|compact:light/u.test(command)));
 });
 
 test("full integration preserves full contract artifacts and checks package contents last", () => {

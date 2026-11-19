@@ -10,7 +10,6 @@ const requiredWorkflows = [
   ".github/workflows/ci.yaml",
   ".github/workflows/milestone-light.yaml",
   ".github/workflows/quality.yaml",
-  ".github/workflows/publish.yml",
 ];
 const outputReference = "${{ steps.compact-version.outputs.version }}";
 const pinCommand = "node scripts/check-compact-version.mjs --github-output";
