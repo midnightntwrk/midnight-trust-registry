@@ -87,8 +87,7 @@ test("streaming builder creates the same keyless inventory from a key-free compi
   assert.equal(result.circuitCount, 1);
   assert.equal((await readdir(paths.keyless)).includes("keys"), false);
   const fullJs = await readFile(join(paths.keyless, "contract/index.js"), "utf8");
-  assert.match(fullJs,
-    new RegExp(`'demoCircuit': '${sha256("sample-zkir\n")}'`, "u"));
+  assert.ok(fullJs.includes(`'demoCircuit': '${sha256("sample-zkir\n")}'`));
   assert.equal(await readFile(join(paths.keyless, "contract/index.js.map"), "utf8"),
     '{\n  "mappings": "AAAA;;;"\n}\n');
   const compiled = JSON.parse(await readFile(join(paths.keyless, "compiler/contract-manifest.json")));

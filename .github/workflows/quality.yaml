@@ -319,9 +319,11 @@ jobs:
 
       - name: Create and verify keyless candidate
         shell: bash
+        env:
+          COMPACT_VERSION: ${{ steps.compact-version.outputs.version }}
         run: |
           set -euo pipefail
-          ZKIR_BIN="$(node --input-type=module -e 'import {findZkirBinary} from "./scripts/proving-key-cache.mjs"; process.stdout.write(findZkirBinary(process.argv[1]))' "${{ steps.compact-version.outputs.version }}")"
+          ZKIR_BIN="$(node --input-type=module -e 'import {findZkirBinary} from "./scripts/proving-key-cache.mjs"; process.stdout.write(findZkirBinary(process.argv[1]))' "$COMPACT_VERSION")"
           ZKIR_SHA256="$(sha256sum "$ZKIR_BIN" | cut -d' ' -f1)"
           mkdir -p artifacts
           node scripts/keyless-zkir-bundle.mjs create-streaming \

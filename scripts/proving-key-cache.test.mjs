@@ -37,8 +37,11 @@ test("Quality covers every proving-key shard exactly once", () => {
   const keyless = workflow.jobs["keyless-linux"];
   assert.equal(keyless.needs, "quality");
   assert.equal(keyless.if, "github.event_name == 'workflow_dispatch' && inputs.keyless_linux");
-  assert.match(keyless.steps.find((step) => step.name === "Create and verify keyless candidate").run,
-    /keyless-zkir-bundle\.mjs create-streaming/u);
+  const generate = keyless.steps.find((step) => step.name === "Create and verify keyless candidate");
+  assert.match(generate.run, /keyless-zkir-bundle\.mjs create-streaming/u);
+  assert.equal(generate.env.COMPACT_VERSION, "${{ steps.compact-version.outputs.version }}");
+  assert.ok(generate.run.includes('"$COMPACT_VERSION"'));
+  assert.ok(!generate.run.includes("${{"));
 });
 
 test("reuses matching circuits and regenerates only changed or corrupted keys", () => {
