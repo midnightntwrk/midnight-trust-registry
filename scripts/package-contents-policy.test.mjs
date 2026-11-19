@@ -61,7 +61,7 @@ test("publish workflow gates on exact-source CI and builds only before approval"
   const workflow = yaml.load(readFileSync(path.join(root, ".github/workflows/publish.yml"), "utf8"));
   const commands = workflow.jobs.prepare.steps.map((step) => step.run ?? "");
   const ciGate = commands.findIndex((command) => command.includes("gh run list")
-    && command.includes("CI Quality Scan"));
+    && command.includes("scripts/check-release-push-run.mjs"));
   const fullBuild = commands.indexOf("pnpm exec turbo run build --continue --log-order=stream");
   const fullGate = commands.indexOf("pnpm run packages:check-contents");
   const pack = commands.findIndex((command) => command.startsWith("pnpm run artifacts:pack"));

@@ -465,17 +465,33 @@ The repo currently exposes two manual GitHub Actions workflows:
 2. requires successful CI, Quality, and Scan push runs for that exact source SHA
 3. builds full contract artifacts, checks package contents, and packs release tarballs
 4. generates and verifies the release manifest, then runs a clean-consumer smoke
-5. pauses for approval and verifies the downloaded manifest and tarballs against the signed source
-6. publishes the approved core packages without rebuilding them
+5. with the `publish` input explicitly enabled, pauses for approval and verifies
+   the downloaded manifest and tarballs against the signed source
+6. publishes the approved packages without rebuilding them
 
 The full artifact build is still a long-running release-preparation step. Follow
 [#329](https://github.com/midnightntwrk/midnight-trust-registry/issues/329) for
 the bounded, separately observable build pipeline. `Published Package Smoke`
 runs the post-publication check separately.
 
-The publish workflow only runs from the `develop` branch and pauses at the
-protected `npm-publish-stable` environment, whose required reviewers are
-managed in `midnightntwrk/midnight-iac`. The first publication uses the
+Run `Publish Packages` on `develop` with its default `publish: false` to test
+release preparation without requesting npm access or uploading to npm. CI runs
+on every push to `develop`, including docs-only changes, so preparation can
+require trusted push results for the exact candidate commit.
+
+`Prepare Keyless Release` is the separate cache-only Ledger 9 pilot. It
+restores the 12 exact `fa52b240` shards and compares every pair to the
+digest-pinned Linux inventory from run 44442954026. A missing shard, different
+key, expired reference, or changed Compact output fails rather than
+regenerating keys. The workflow uploads the keyless tarballs, SHA-256 sums and
+the cache verification receipt, not proving keys. These packages are for
+local validation only; the workflow cannot publish to npm. Refresh the
+reference through a new reviewed Linux generation when updating contract
+inputs or when the reference expires.
+
+A separate run with `publish: true` pauses at the protected
+`npm-publish-stable` environment, whose required reviewers are managed in
+`midnightntwrk/midnight-iac`. The first publication uses the
 temporary `MIDNIGHTCI_NPMJS_TOKEN` secret to create the packages. After npm
 Trusted Publishers are configured for the packages, the token can be removed
 and npm can exchange the job's OIDC token (`id-token: write`) for a publish

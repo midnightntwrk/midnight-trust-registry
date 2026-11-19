@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { createKeylessZkirBundle, createKeylessZkirBundleStreaming, materializeKeylessZkirBundle,
-  verifyKeylessZkirAgainstFullSource,
+  reuseKeylessZkirReference, verifyKeylessZkirAgainstFullSource,
   verifyKeylessZkirBundle, verifyKeylessZkirStreaming } from "./keyless-zkir-bundle.mjs";
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -126,6 +126,14 @@ test("streaming output matches an independent two-circuit full-build inventory",
   const streamed = await verifyKeylessZkirStreaming(paths.keyless, result.manifestSha256,
     paths.generator, sha256(script), revision);
   assert.equal(streamed.matched, true);
+  const rebound = join(paths.root, "rebound");
+  const nextRevision = "b".repeat(40);
+  const digest = await reuseKeylessZkirReference(light, paths.keyless, result.manifestSha256,
+    rebound, nextRevision);
+  await verifyKeylessZkirAgainstFullSource(rebound, paths.full, digest, nextRevision);
+  await writeFile(join(light, "contract/index.d.ts"), "stale declaration\n");
+  await assert.rejects(reuseKeylessZkirReference(light, paths.keyless, result.manifestSha256,
+    join(paths.root, "bad-rebound"), nextRevision), /does not match its manifest/u);
   assert.deepEqual((await readdir(paths.root)).filter((name) => name.startsWith("keyless.partial-")), []);
 });
 

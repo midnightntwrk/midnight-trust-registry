@@ -370,6 +370,32 @@ export async function verifyKeylessZkirBundle(bundle, expectedManifestSha256) {
   return { manifest, names, assets, keys };
 }
 
+/** Reconstruct an authenticated full-output inventory without generating or copying keys.
+ * @param {string} light @param {string} reference @param {string} referenceDigest
+ * @param {string} target @param {string} revision */
+export async function reuseKeylessZkirReference(light, reference, referenceDigest, target, revision) {
+  if (!REVISION.test(revision)) throw new Error("Source revision must be a full lowercase commit SHA");
+  const { manifest, names, assets } = await verifyKeylessZkirBundle(reference, referenceDigest);
+  const compact = JSON.parse(await readFile(join(reference, "compiler/contract-manifest.json"), "utf8"));
+  return stagedDirectory(target, async (stage) => {
+    const zkir = names.map((name) => `zkir/${name}.zkir`);
+    await copyAssets(light, stage, [...BASE_ASSETS, ...zkir]);
+    const compile = await inspectLightCompile(stage, names, manifest.compilerVersion);
+    await copyAssets(reference, stage, names.map((name) => `zkir/${name}.bzkir`));
+    await completeLightCompile(stage, names, compact.keys, compile);
+    for (const asset of assets) {
+      if (await hashFile(join(stage, asset)) !== manifest.assets[asset]) {
+        throw new Error(`Fresh Compact output differs from the trusted reference: ${asset}`);
+      }
+    }
+    const bytes = `${JSON.stringify({ ...manifest, sourceRevision: revision }, null, 2)}\n`;
+    const digest = createHash("sha256").update(bytes).digest("hex");
+    await writeFile(join(stage, "keyless-manifest.json"), bytes, { mode: 0o600 });
+    await verifyKeylessZkirBundle(stage, digest);
+    return digest;
+  });
+}
+
 /** Bind a transported keyless manifest to the full outputs retained by the release builder. */
 /** @param {string} bundle @param {string} fullManaged @param {string} expectedManifestSha256
  * @param {string} expectedRevision */
