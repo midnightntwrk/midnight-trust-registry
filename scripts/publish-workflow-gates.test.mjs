@@ -163,11 +163,74 @@ test("protected publish rejects a changed reviewed manifest digest", () => {
 
 test("manual package workflows cannot redirect credentials or select uncommitted release bytes", () => {
   for (const source of [workflow, smokeWorkflow]) {
-    assert.match(source, /workflow_dispatch: \{\}/u);
-    assert.doesNotMatch(source, /\binputs\.|github\.event\.inputs|registry:\s*\$\{\{/u);
+    assert.ok(yaml.load(source).on.workflow_dispatch);
+    assert.doesNotMatch(source, /github\.event\.inputs|registry:\s*\$\{\{/u);
     assert.match(source, /select-publish-version\.mjs --github-output/u);
     assert.match(source, /REGISTRY: https:\/\/registry\.npmjs\.org/u);
   }
   assert.match(workflow, /NPM_TAG: next/u);
   assert.match(workflow, /registry-url: https:\/\/registry\.npmjs\.org/u);
+});
+
+test("publication is opt-in and preparation cannot obtain npm credentials", () => {
+  const parsed = yaml.load(workflow);
+  assert.deepEqual(Object.keys(parsed.on.workflow_dispatch.inputs), ["publish"]);
+  assert.equal(parsed.on.workflow_dispatch.inputs.publish.type, "boolean");
+  assert.equal(parsed.on.workflow_dispatch.inputs.publish.default, false);
+  assert.equal(parsed.jobs.prepare.if, "github.ref == 'refs/heads/develop'");
+  assert.equal(parsed.jobs.publish.if, "github.ref == 'refs/heads/develop' && inputs.publish == true");
+  assert.equal(parsed.permissions["id-token"], undefined);
+  assert.equal(parsed.jobs.prepare.permissions?.["id-token"], undefined);
+  const prepare = JSON.stringify(parsed.jobs.prepare);
+  assert.doesNotMatch(prepare, /NODE_AUTH_TOKEN|secrets\.|npm publish|publish-npm-packages/u);
+});
+
+test("release gate queries trusted workflows and CI covers docs-only develop pushes", () => {
+  const ci = yaml.load(readFileSync(join(root, ".github/workflows/ci.yaml"), "utf8"));
+  assert.ok(ci.on.push.branches.includes("develop"));
+  assert.equal(ci.on.push.paths, undefined);
+  assert.equal(ci.on.push["paths-ignore"], undefined);
+  const command = yaml.load(workflow).jobs.prepare.steps
+    .find((step) => step.name === "Require green exact-source CI, Quality, and Scan").run;
+  assert.match(command, /set -euo pipefail/u);
+  assert.match(command, /for workflow in ci\.yaml quality\.yaml scan\.yaml/u);
+  assert.match(command, /--workflow "\$workflow" --branch develop/u);
+  assert.match(command, /--event push --commit "\$GITHUB_SHA"/u);
+});
+
+test("release gate requires a successful push for the exact develop commit", () => {
+  const revision = "a".repeat(40);
+  const matching = { event: "push", headBranch: "develop", headSha: revision, conclusion: "success" };
+  const check = (input) => spawnSync(process.execPath,
+    [join(root, "scripts/check-release-push-run.mjs"), revision, "ci.yaml"],
+    { encoding: "utf8", input });
+  assert.equal(check(JSON.stringify([matching])).status, 0);
+  for (const runs of [
+    [],
+    [{ ...matching, headSha: "b".repeat(40) }],
+    [{ ...matching, event: "workflow_dispatch" }],
+    [{ ...matching, event: "pull_request" }],
+    [{ ...matching, headBranch: "main" }],
+    [{ ...matching, conclusion: "failure" }],
+  ]) {
+    const result = check(JSON.stringify(runs));
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Successful ci\.yaml push run on develop/u);
+  }
+  assert.equal(check("{malformed").status, 1);
+});
+
+test("keyless prepare verifies twelve exact cache hits and has no publish job", () => {
+  const candidate = yaml.load(readFileSync(join(root, ".github/workflows/prepare-keyless-release.yaml"), "utf8"));
+  assert.deepEqual(Object.keys(candidate.jobs), ["restore", "prepare"]);
+  assert.deepEqual(candidate.permissions, { contents: "read", actions: "read" });
+  assert.deepEqual(candidate.jobs.restore.strategy.matrix.shard, Array.from({ length: 12 }, (_, i) => i));
+  const restore = candidate.jobs.restore.steps.find((step) => step.id === "proving-cache");
+  assert.equal(restore.with["fail-on-cache-miss"], true);
+  assert.equal(restore.with["restore-keys"], undefined);
+  assert.equal(candidate.jobs.prepare.needs, "restore");
+  assert.ok(candidate.jobs.restore.steps.some((step) => step.name === "Upload shard receipt only"));
+  const workflowText = JSON.stringify(candidate);
+  assert.doesNotMatch(workflowText, /secrets\.|id-token|npm publish|proving-key-cache\.mjs/u);
+  assert.match(workflowText, /--keyless-manifest-sha256/u);
 });

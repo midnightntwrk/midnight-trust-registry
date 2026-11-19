@@ -96,6 +96,14 @@ test("untrusted archive, manifest, or keygen cannot produce an accepted package"
   await assert.rejects(lstat(paths.restored), { code: "ENOENT" });
 });
 
+test("packs a staged contract tree that already excludes every key", async (t) => {
+  const paths = await fixture(t);
+  await rm(join(paths.source, "dist/managed/trust-registry/keys"), { recursive: true });
+  const packed = await packKeylessContract(paths.source, paths.keyless,
+    paths.manifestSha256, paths.tarball);
+  await verifyKeylessContractPackage(paths.tarball, packed.tarballSha256, paths.manifestSha256);
+});
+
 test("a modified package archive fails before extraction", async (t) => {
   const paths = await fixture(t);
   const packed = await packKeylessContract(paths.source, paths.keyless,

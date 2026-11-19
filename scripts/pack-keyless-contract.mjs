@@ -74,7 +74,7 @@ export async function packKeylessContract(packageDirectory, keylessDirectory,
   assertCanonicalPackedPaths(files.map((file) => `package/${file}`));
   const packedKeys = files.filter((file) => file.startsWith(KEY_PREFIX));
   const expectedKeys = keys.map((name) => `${KEY_PREFIX}${name}`);
-  if (JSON.stringify(packedKeys.sort()) !== JSON.stringify(expectedKeys.sort())
+  if ((packedKeys.length !== 0 && JSON.stringify(packedKeys.sort()) !== JSON.stringify(expectedKeys.sort()))
     || files.some((file) => /\.(?:prover|verifier)$/u.test(file) && !file.startsWith(KEY_PREFIX))) {
     throw new Error("Contract package key list differs from the trusted circuit catalog");
   }

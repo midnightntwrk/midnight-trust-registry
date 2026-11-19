@@ -1,7 +1,13 @@
 name: Publish Packages
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Request protected npm publication after preparation (off for testing)
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -109,14 +115,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          runs="$(gh run list -R "$GITHUB_REPOSITORY" --commit "$GITHUB_SHA" --limit 100 --json name,event,headSha,conclusion)"
-          for workflow in CI Quality Scan; do
-            if ! jq -e --arg name "$workflow" --arg sha "$GITHUB_SHA" \
-              'any(.[]; .name == $name and .event == "push" and .headSha == $sha and .conclusion == "success")' \
-              <<< "$runs" >/dev/null; then
-              echo "::error::Successful $workflow push run for $GITHUB_SHA is required before release preparation."
-              exit 1
-            fi
+          set -euo pipefail
+          for workflow in ci.yaml quality.yaml scan.yaml; do
+            gh run list -R "$GITHUB_REPOSITORY" --workflow "$workflow" --branch develop \
+              --event push --commit "$GITHUB_SHA" --limit 100 --json event,headBranch,headSha,conclusion \
+              | node scripts/check-release-push-run.mjs "$GITHUB_SHA" "$workflow"
           done
 
       - name: Build full release artifacts
@@ -177,7 +180,7 @@ jobs:
   publish:
     name: Publish reviewed core packages
     needs: prepare
-    if: github.ref == 'refs/heads/develop'
+    if: github.ref == 'refs/heads/develop' && inputs.publish == true
     environment:
       name: npm-publish-stable
       url: https://www.npmjs.com/

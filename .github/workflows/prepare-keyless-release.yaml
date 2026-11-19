@@ -1,0 +1,181 @@
+name: Prepare Keyless Release
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - ".github/workflows/prepare-keyless-release.yaml"
+      - "scripts/prepare-cached-keyless-release.mjs"
+      - "scripts/download-keyless-release-reference.sh"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  restore:
+    name: Restore and verify shard ${{ matrix.shard }}
+    if: github.ref == 'refs/heads/develop' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Restore verified develop cache generation
+        id: proving-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: contracts/trust-registry/src/managed/trust-registry/sharded-keys/12/${{ matrix.shard }}
+          key: tr-proving-shard-v1-${{ runner.os }}-${{ runner.arch }}-compact-0.36.0-12-${{ matrix.shard }}-fa52b240be0f6644436da67a90e83daa90033fc3
+          fail-on-cache-miss: true
+
+      - name: Download authenticated Linux keyless reference
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/download-keyless-release-reference.sh "$RUNNER_TEMP/reference"
+
+      - name: Verify every restored key without regeneration
+        env:
+          SHARD: ${{ matrix.shard }}
+          CACHE_HIT: ${{ steps.proving-cache.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+          test "$CACHE_HIT" = true
+          node scripts/prepare-cached-keyless-release.mjs shard \
+            "$RUNNER_TEMP/reference/ledger9-linux-keyless" "$SHARD" \
+            "contracts/trust-registry/src/managed/trust-registry/sharded-keys/12/$SHARD" \
+            "$RUNNER_TEMP/shard-$SHARD.json"
+
+      - name: Upload shard receipt only
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: keyless-cache-receipt-${{ matrix.shard }}
+          path: ${{ runner.temp }}/shard-${{ matrix.shard }}.json
+          if-no-files-found: error
+
+  prepare:
+    name: Pack and smoke keyless release candidate
+    needs: restore
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Read checked-in Compact version
+        id: compact-version
+        run: node scripts/check-compact-version.mjs --github-output
+
+      - name: Restore pinned Compact installation
+        id: compact-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.local/bin/compact
+            ~/.compact/
+          key: tr-compact-v3-ubuntu24.04-setup836895c8-${{ runner.os }}-${{ runner.arch }}-${{ steps.compact-version.outputs.version }}
+
+      - name: Set up Compact toolchain
+        if: steps.compact-cache.outputs.cache-hit != 'true'
+        uses: midnightntwrk/setup-compact-action@836895c8fffbbea6bd986af2b17e8941ff29d1f8 # v1
+        with:
+          compact-version: ${{ steps.compact-version.outputs.version }}
+          cache-enabled: 'false'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Add cached Compact to PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Verify Compact installation
+        run: node scripts/check-compact-version.mjs --check-installed
+        env:
+          TR_COMPACT_CACHE_HIT: ${{ steps.compact-cache.outputs.cache-hit }}
+
+      - name: Verify Compact cache paths
+        if: steps.compact-cache.outputs.cache-hit != 'true'
+        run: test -x "$HOME/.local/bin/compact" && test -x "$HOME/.compact/bin/compactc"
+
+      - name: Save verified Compact installation
+        if: steps.compact-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.local/bin/compact
+            ~/.compact/
+          key: tr-compact-v3-ubuntu24.04-setup836895c8-${{ runner.os }}-${{ runner.arch }}-${{ steps.compact-version.outputs.version }}
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: Validate Compact workflow semantics
+        run: pnpm run check:compact-version
+
+      - name: Build without keys
+        run: pnpm run build:light
+
+      - name: Download authenticated Linux keyless reference
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/download-keyless-release-reference.sh "$RUNNER_TEMP/reference"
+
+      - name: Download all twelve verification receipts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: keyless-cache-receipt-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/receipts
+
+      - name: Assemble and verify keyless package tarballs
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/keyless-prepare
+          contract="contracts/trust-registry"
+          candidate="$RUNNER_TEMP/keyless-candidate"
+          node scripts/prepare-cached-keyless-release.mjs assemble \
+            "$RUNNER_TEMP/reference/ledger9-linux-keyless" "$RUNNER_TEMP/receipts" \
+            "$contract/src/managed/trust-registry" "$candidate" "$(git rev-parse HEAD)" \
+            | tee artifacts/keyless-prepare/cache-receipt.json
+          digest="$(node -p 'require("./artifacts/keyless-prepare/cache-receipt.json").manifestSha256')"
+          cp -R "$candidate"/{compiler,contract,zkir} "$contract/dist/managed/trust-registry/"
+          pnpm run artifacts:pack -- --output-dir artifacts/keyless-prepare \
+            --keyless-dir "$candidate" --keyless-manifest-sha256 "$digest"
+          for archive in artifacts/keyless-prepare/*.tgz; do
+            tar -tzf "$archive" > "$RUNNER_TEMP/packed-files"
+            if grep -E '\.(prover|verifier)$' "$RUNNER_TEMP/packed-files"; then
+              echo 'Unexpected key file in release tarball' >&2
+              exit 1
+            fi
+          done
+          sha256sum artifacts/keyless-prepare/*.tgz > artifacts/keyless-prepare/SHA256SUMS
+          pnpm run packed-artifacts:smoke -- --artifacts-dir artifacts/keyless-prepare --vc-consumer
+          cat artifacts/keyless-prepare/cache-receipt.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload local-only release candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: trust-registry-keyless-prepare-only
+          path: artifacts/keyless-prepare/
+          if-no-files-found: error

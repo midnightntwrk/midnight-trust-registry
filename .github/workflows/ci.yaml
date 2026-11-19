@@ -4,24 +4,6 @@ permissions: {}
 on:
   push:
     branches: [develop, main, milestone-0.1.0]
-    paths:
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - ".nvmrc"
-      - "turbo.json"
-      - "tsconfig.base.json"
-      - "eslint.config.mjs"
-      - "run.sh"
-      - ".compact-version"
-      - "scripts/**"
-      - "browser-tests/**"
-      - "playwright.config.mjs"
-      - "contracts/**"
-      - "packages/**"
-      - "adapters/**"
-      - "libs/**"
-      - ".github/workflows/ci.yaml"
   pull_request:
     branches-ignore: [milestone-0.1.0]
     paths:
