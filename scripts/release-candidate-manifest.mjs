@@ -498,7 +498,7 @@ const run = (command, args, trim = true) => {
 };
 
 /** @param {string} revision */
-function verifySignedHead(revision) {
+export function verifySignedHead(revision) {
   if (process.env.TR_MANIFEST_GITHUB_VERIFIED_COMMIT !== "true") {
     run("git", ["verify-commit", "HEAD"]);
     return;
