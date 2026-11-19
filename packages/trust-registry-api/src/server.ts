@@ -178,6 +178,7 @@ import {
 import {
   InvalidProposalSubmissionJournalError,
   ProposalSubmissionAlreadyPendingError,
+  ProposalSubmissionAttributionRequiredError,
   ProposalSubmissionBlockedByReservationError,
   ProposalSubmissionCapacityError,
   ProposalSubmissionConflictError,
@@ -974,6 +975,11 @@ export const createTrustRegistryApiServer = (
       throw jsonProblem(problemBaseUri, "proposal-submission-uncertain", 409,
         "proposal submission requires reconciliation",
         "An earlier submission may have reached Compact. Resolve against a finalized ledger view; do not retry automatically.");
+    }
+    if (error instanceof ProposalSubmissionAttributionRequiredError) {
+      throw jsonProblem(problemBaseUri, "proposal-submission-attribution-required", 409,
+        "finalized proposal cannot be attributed to this reserved attempt",
+        "Keep the reservation quarantined; a matching authorization and evidence commitment do not prove which attempt landed.");
     }
     if (error instanceof ProposalSubmissionBlockedByReservationError) {
       throw jsonProblem(problemBaseUri, "proposal-submission-blocked", 409,

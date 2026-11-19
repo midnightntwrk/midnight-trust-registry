@@ -5,7 +5,6 @@ import { lstat, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import {
   createLocalNetworkDeploymentActionReader,
   FileDeploymentAttemptJournal,
@@ -77,7 +76,6 @@ export async function runLocalVerifierKeyInsertion(plan, dependencies = {}, mode
     const tree = assertApprovedProviderTree(plan.providerModulePath, process.env.TR_IMMUTABLE_PROVIDER_ROOT);
     assertApprovedProviderImportBoundary(tree.root);
   }
-  setNetworkId(getLocalNetworkProfile().networkId);
   await (dependencies.validateEndpoints ?? createLocalNetworkDeploymentActionReader)(plan.network);
   await (dependencies.observe ?? checkLocalLedgerPreflight)({
     format: "tr-local-ledger-pin-v1",

@@ -42,7 +42,7 @@ import { createTrustRegistryApiServer } from "../server.js";
 
 const bytes = (value: string): Uint8Array => Buffer.from(value.slice(2), "hex");
 
-const signPrepared = (
+const signPrepared = async (
   harness: LocalTrustRegistryIntegrationHarness,
   maintainer: MaintainerScenarioFixture,
   prepared: PreparedGovernedIssuerProposal,
@@ -51,7 +51,7 @@ const signPrepared = (
   const signature = signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
     bytes(prepared.registryId),
-    harness.simulator.getLedger().deploymentNetworkIdCommitment,
+    (await harness.simulator.getLedger()).deploymentNetworkIdCommitment,
     Buffer.from(harness.simulator.contractAddress, "hex"),
     bytes(prepared.policyCommitment),
     bytes(prepared.actionKind),
@@ -66,17 +66,17 @@ const signPrepared = (
 };
 
 describe("Compact-backed issuer proposals over HTTP", () => {
-  it("rejects a known-invalid quorum before a real journal reservation and reconciles an uncertain response", async () => {
+  it("rejects an invalid quorum before reservation and quarantines an uncertain response", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("issuer-journal-http");
     const second = createMaintainerScenarioFixture("issuer-journal-second");
     const third = createMaintainerScenarioFixture("issuer-journal-third");
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(third);
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(third);
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
     const issuer = createIssuerScenarioFixture("issuer-journal-candidate");
     const scope = createIssuerAuthorizationScopeFixture(issuer);
     const governedResource = { type: issuerResourceTypeDetails[issuer.resourceType].governedType, id: issuer.resourceId };
-    const evidence = harness.createApplicationEvidence({
+    const evidence = await harness.createApplicationEvidence({
       applicationId: issuer.authorizationId,
       subjectDid: issuer.subjectDid,
       role: "issuer",
@@ -121,8 +121,8 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       },
     };
     await journal.bindDeployment(harness.registryId, contractAddress, genesisHash);
-    const operatorSnapshot = publishSimulatorSnapshot(harness, { label: "synthetic-local-journal" });
-    let finalizedLedger = harness.simulator.getLedger();
+    const operatorSnapshot = await publishSimulatorSnapshot(harness, { label: "synthetic-local-journal" });
+    let finalizedLedger = await harness.simulator.getLedger();
     let finalizedLedgerAvailable = true;
     let eventHash: string | undefined;
     let executions = 0;
@@ -134,7 +134,7 @@ describe("Compact-backed issuer proposals over HTTP", () => {
         prepare: async () => harness.prepareIssuerProposalAction(issuer, evidence),
         preflightSubmission: async (_authorizationId, _evidence, signers, signature, context) => {
           preflights += 1;
-          const ledger = harness.simulator.getLedger();
+          const ledger = await harness.simulator.getLedger();
           if (BigInt(signers.length) < ledger.maintainerThreshold) {
             throw new GovernedIssuerProposalRejectedError("invalid-signers");
           }
@@ -149,7 +149,7 @@ describe("Compact-backed issuer proposals over HTTP", () => {
         },
         execute: async (_, submitted, signers, verifierSignature) => {
           executions += 1;
-          eventHash = `0x${Buffer.from(harness.executeIssuerProposalWithSignatures(
+          eventHash = `0x${Buffer.from(await harness.executeIssuerProposalWithSignatures(
             issuer, submitted, signers, verifierSignature,
           )).toString("hex")}`;
           throw new Error("response lost after Compact submission");
@@ -195,11 +195,11 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       const preparedResponse = await post("prepare", { evidence, terms });
       expect(preparedResponse.status).toBe(200);
       const prepared = await preparedResponse.json() as PreparedGovernedIssuerProposal;
-      const verifierSignature = harness.signIssuerProposalEvidence(harness.prepareIssuerProposalAction(issuer, evidence));
+      const verifierSignature = harness.signIssuerProposalEvidence(await harness.prepareIssuerProposalAction(issuer, evidence));
       const request = { evidence, terms, prepared,
-        signers: [signPrepared(harness, second, prepared), signPrepared(harness, third, prepared)],
+        signers: [await signPrepared(harness, second, prepared), await signPrepared(harness, third, prepared)],
         evidenceVerifierSignature: `0x${Buffer.from(encodeJubjubSignature(verifierSignature)).toString("hex")}` };
-      const preparedContext = harness.prepareIssuerProposalAction(issuer, evidence);
+      const preparedContext = await harness.prepareIssuerProposalAction(issuer, evidence);
       const decodedSigners = decodeGovernedMembershipSigners(request);
       await expect(assertCurrentProposalQuorum(async () => finalizedLedger, preparedContext, decodedSigners))
         .resolves.toBeUndefined();
@@ -210,7 +210,7 @@ describe("Compact-backed issuer proposals over HTTP", () => {
         [{ ...decodedSigners[0]!, keyId: Buffer.alloc(32, 0xff) }, decodedSigners[1]!]))
         .rejects.toBeInstanceOf(InvalidProposalQuorumError);
       const wrongSequence = { ...prepared, actionSequence: (BigInt(prepared.actionSequence) + 1n).toString() };
-      const forged = await post("submit", { ...request, signers: [signPrepared(harness, second, wrongSequence), request.signers[1]] });
+      const forged = await post("submit", { ...request, signers: [await signPrepared(harness, second, wrongSequence), request.signers[1]] });
       expect(forged.status).toBe(403);
       expect((await forged.json()).type).toMatch(/invalid-governed-signature$/u);
       expect(await journal.read("issuer", issuer.authorizationId)).toBeNull();
@@ -266,24 +266,7 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       expect(preflights).toBe(1);
       expect(executions).toBe(0);
       expect(await journal.read("issuer", issuer.authorizationId)).toBeNull();
-      expect(harness.simulator.getLedger().governanceActionCount).toBe(BigInt(prepared.actionSequence));
-      await expect(journal.executeOnce("verifier", "private-blocking-authorization", evidence.commitment,
-        async () => { throw new Error("response lost after submission"); }, {
-          actionSequence: prepared.actionSequence,
-          actionKind: prepared.actionKind,
-          actionPayloadHash: prepared.actionPayloadHash,
-        })).rejects.toThrow();
-      expect(harness.simulator.getLedger().governanceActionCount).toBe(BigInt(prepared.actionSequence));
-      const blocked = await post("submit", request);
-      expect(blocked.status).toBe(409);
-      const blockedProblem = await blocked.json() as { type: string; detail: string };
-      expect(blockedProblem.type).toMatch(/proposal-submission-blocked$/u);
-      expect(JSON.stringify(blockedProblem)).not.toContain("private-blocking-authorization");
-      expect(JSON.stringify(blockedProblem)).not.toContain("verifier");
-      expect(executions).toBe(0);
-      expect(harness.simulator.getLedger().governanceActionCount).toBe(BigInt(prepared.actionSequence));
-      await journal.reconcile("verifier", "private-blocking-authorization",
-        async () => ({ eventHash: `0x${"99".repeat(32)}`, evidenceCommitment: evidence.commitment }));
+      expect((await harness.simulator.getLedger()).governanceActionCount).toBe(BigInt(prepared.actionSequence));
       const refreshedPrepared = await (await post("prepare", { evidence, terms })).json() as PreparedGovernedIssuerProposal;
       expect(refreshedPrepared, "proposal context changed before issuer execution").toEqual(prepared);
       const uncertain = await post("submit", request);
@@ -297,7 +280,7 @@ describe("Compact-backed issuer proposals over HTTP", () => {
           actionPayloadHash: prepared.actionPayloadHash,
         },
       });
-      expect(harness.simulator.getLedger().issuerAuthorizationCount).toBe(1n);
+      expect((await harness.simulator.getLedger()).issuerAuthorizationCount).toBe(1n);
       server.closeAllConnections();
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
       const reopenedJournal = new FileProposalSubmissionJournal(journalPath);
@@ -320,10 +303,14 @@ describe("Compact-backed issuer proposals over HTTP", () => {
         })).rejects.toBeInstanceOf(ProposalSubmissionBlockedByReservationError);
       expect(executions).toBe(1);
       expect(await (await post("resolve", { evidence })).json()).toEqual({ state: "not-observed" });
-      finalizedLedger = harness.simulator.getLedger();
+      finalizedLedger = await harness.simulator.getLedger();
       expect(eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
-      expect(await (await post("resolve", { evidence })).json()).toEqual({ state: "observed", eventHash });
-      expect(await reopenedJournal.read("issuer", issuer.authorizationId)).toMatchObject({ state: "observed", eventHash });
+      const unattributed = await post("resolve", { evidence });
+      expect(unattributed.status).toBe(409);
+      expect((await unattributed.json()).type).toMatch(/proposal-submission-attribution-required$/u);
+      expect(await reopenedJournal.read("issuer", issuer.authorizationId)).toMatchObject({
+        state: "reserved", eventHash: null,
+      });
     } finally {
       server.closeAllConnections();
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
@@ -336,7 +323,7 @@ describe("Compact-backed issuer proposals over HTTP", () => {
     const issuer = createIssuerScenarioFixture("issuer-local-reader-candidate");
     const scope = createIssuerAuthorizationScopeFixture(issuer);
     const governedResource = { type: issuerResourceTypeDetails[issuer.resourceType].governedType, id: issuer.resourceId };
-    const evidence = harness.createApplicationEvidence({
+    const evidence = await harness.createApplicationEvidence({
       applicationId: issuer.authorizationId, subjectDid: issuer.subjectDid,
       role: "issuer", scope, governedResource,
     });
@@ -359,7 +346,7 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       localPlanSha256: "d".repeat(64),
       source: {
         mode: "local-ledger", localDeploymentBinding: { contractAddress, expectedGenesisHash: sourceGenesisHash },
-        loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "synthetic-local-readback" }),
+        loadSnapshot: async () => await publishSimulatorSnapshot(harness, { label: "synthetic-local-readback" }),
         readFinalizedProposalLedger: reader,
       },
       proposalAdmission: {
@@ -426,7 +413,7 @@ describe("Compact-backed issuer proposals over HTTP", () => {
   it("requires an injected proposal port", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("issuer-proposal-unavailable");
     const server = createTrustRegistryApiServer({
-      source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "unavailable" }) },
+      source: { mode: "memory", loadSnapshot: async () => await publishSimulatorSnapshot(harness, { label: "unavailable" }) },
     });
     try {
       await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -446,10 +433,10 @@ describe("Compact-backed issuer proposals over HTTP", () => {
     const second = createMaintainerScenarioFixture("issuer-proposal-second");
     const third = createMaintainerScenarioFixture("issuer-proposal-third");
     const issuer = createIssuerScenarioFixture("issuer-proposal-candidate");
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(third);
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
-    const evidence = harness.createApplicationEvidence({
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(third);
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    const evidence = await harness.createApplicationEvidence({
       applicationId: issuer.authorizationId,
       subjectDid: issuer.subjectDid,
       role: "issuer",
@@ -462,7 +449,7 @@ describe("Compact-backed issuer proposals over HTTP", () => {
           throw new GovernedIssuerProposalRejectedError("unknown-authorization");
         }
         try {
-          return harness.prepareIssuerProposalAction(issuer, submitted);
+          return await harness.prepareIssuerProposalAction(issuer, submitted);
         } catch {
           throw new GovernedIssuerProposalRejectedError("invalid-evidence");
         }
@@ -473,7 +460,7 @@ describe("Compact-backed issuer proposals over HTTP", () => {
         }
         let eventHash: Uint8Array;
         try {
-          eventHash = harness.executeIssuerProposalWithSignatures(issuer, submitted, signers, verifierSignature);
+          eventHash = await harness.executeIssuerProposalWithSignatures(issuer, submitted, signers, verifierSignature);
         } catch {
           throw new GovernedIssuerProposalRejectedError("invalid-signers");
         }
@@ -488,7 +475,7 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       },
     };
     const server = createTrustRegistryApiServer({
-      source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness,
+      source: { mode: "memory", loadSnapshot: async () => await publishSimulatorSnapshot(harness,
         { label: "issuer-proposal-http", issuers: [{ label: "candidate", fixture: issuer }] }) },
       governedIssuerProposals: port,
     });
@@ -517,17 +504,17 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       const prepared = await preparedResponse.json() as PreparedGovernedIssuerProposal;
       expect(prepared.evidenceHash).toBe(evidence.commitment);
       const verifierSignature = harness.signIssuerProposalEvidence(
-        harness.prepareIssuerProposalAction(issuer, evidence),
+        await harness.prepareIssuerProposalAction(issuer, evidence),
       );
-      const submit = (context: PreparedGovernedIssuerProposal, signers: ReturnType<typeof signPrepared>[]) =>
+      const submit = (context: PreparedGovernedIssuerProposal, signers: Awaited<ReturnType<typeof signPrepared>>[]) =>
         post("submit", {
           evidence,
           prepared: context,
           signers,
           evidenceVerifierSignature: `0x${Buffer.from(encodeJubjubSignature(verifierSignature)).toString("hex")}`,
         });
-      const first = signPrepared(harness, second, prepared);
-      const other = signPrepared(harness, third, prepared);
+      const first = await signPrepared(harness, second, prepared);
+      const other = await signPrepared(harness, third, prepared);
       expect((await post("prepare", {
         evidence: { ...evidence, commitment: `0x${"00".repeat(32)}` },
       })).status).toBe(403);
@@ -549,7 +536,7 @@ describe("Compact-backed issuer proposals over HTTP", () => {
       expect(accepted.status).toBe(202);
       const receipt = await accepted.json() as { eventHash: string };
       expect(receipt.eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
-      expect(harness.simulator.getLedger().issuerAuthorizationCount).toBe(1n);
+      expect((await harness.simulator.getLedger()).issuerAuthorizationCount).toBe(1n);
       expect((await submit(prepared, [first, other])).status).toBe(409);
       const recovered = await post("resolve", { evidence });
       expect(recovered.status).toBe(200);

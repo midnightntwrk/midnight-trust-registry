@@ -83,7 +83,7 @@ export async function runOtherTemporalLifecycles(adversarialMatrix, {
         body: JSON.stringify(selection),
       }), 200);
       const anchor = resolveCompactHistoricalEpochAnchor({
-        ledger: harness.simulator.getLedger(), registryId: harness.registryId,
+        ledger: await harness.simulator.getLedger(), registryId: harness.registryId,
         expectedNetworkId: harness.registryDid.split(":")[2],
         contractAddress: Buffer.from(harness.simulator.contractAddress, "hex"),
         ...trustedRecognitionEpoch,
@@ -122,7 +122,7 @@ export async function runOtherTemporalLifecycles(adversarialMatrix, {
     const activeBundle = await expectHttp(await fetch(`${base}${target.path}`), 200);
     const roleActiveAt = recognitionTarget
       ? activeBundle.recognition.effectiveFrom : activeBundle.authorization.activeFrom;
-    target.verify(activeBundle, { expectedRegistryId: harness.registryId, evaluationTime: roleActiveAt });
+    await target.verify(activeBundle, { expectedRegistryId: harness.registryId, evaluationTime: roleActiveAt });
     const active = await expectHttp(await evaluateAt(roleActiveAt), 200);
     assert.equal(active.trustedAtTime, true, `${target.role} must be trusted at activation`);
     adversarialMatrix.expectDecision(active, {
@@ -132,12 +132,12 @@ export async function runOtherTemporalLifecycles(adversarialMatrix, {
     });
     await expectTrqpDecision(roleActiveAt, "active", active.trustedAtTime);
 
-    target.suspend();
-    publishSnapshot();
+    await target.suspend();
+    await publishSnapshot();
     const suspendedBundle = await expectHttp(await fetch(`${base}${target.path}`), 200);
     assert.equal(statusRecord(suspendedBundle).status, "suspended");
     if (target.role === "auditor") {
-      assert.throws(() => client.verifyAuditorRequestMandate(
+      await assert.rejects(() => client.verifyAuditorRequestMandate(
         suspendedBundle, createAuditorAuthorizationScopeFixture(auditor),
         {
           expectedRegistryId: harness.registryId,
@@ -159,7 +159,7 @@ export async function runOtherTemporalLifecycles(adversarialMatrix, {
       });
       verifierLifecycle.push(verifierJourney.report);
     }
-    assert.throws(() => target.verify(suspendedBundle, {
+    await assert.rejects(() => target.verify(suspendedBundle, {
       expectedRegistryId: harness.registryId,
     }), /not active/i);
     const suspended = await expectHttp(await evaluateAt(statusRecord(suspendedBundle).suspendedAt), 200);
@@ -179,7 +179,7 @@ export async function runOtherTemporalLifecycles(adversarialMatrix, {
     });
     await expectTrqpDecision(roleActiveAt, "historical-after-suspension", historicalAfterSuspension.trustedAtTime);
     await verifyNativeRecognitionAt(roleActiveAt);
-    adversarialMatrix.expectVerified(() => target.verify(activeBundle, {
+    await adversarialMatrix.expectVerifiedAsync(() => target.verify(activeBundle, {
       expectedRegistryId: harness.registryId,
       evaluationTime: roleActiveAt,
     }), {
@@ -188,12 +188,12 @@ export async function runOtherTemporalLifecycles(adversarialMatrix, {
       boundary: "client",
     });
 
-    target.revoke();
-    publishSnapshot();
+    await target.revoke();
+    await publishSnapshot();
     const revokedBundle = await expectHttp(await fetch(`${base}${target.path}`), 200);
     assert.equal(statusRecord(revokedBundle).status, "revoked");
     if (target.role === "auditor") {
-      assert.throws(() => client.verifyAuditorRequestMandate(
+      await assert.rejects(() => client.verifyAuditorRequestMandate(
         revokedBundle, createAuditorAuthorizationScopeFixture(auditor),
         {
           expectedRegistryId: harness.registryId,
@@ -215,7 +215,7 @@ export async function runOtherTemporalLifecycles(adversarialMatrix, {
       });
       verifierLifecycle.push(verifierJourney.report);
     }
-    assert.throws(() => target.verify(revokedBundle, {
+    await assert.rejects(() => target.verify(revokedBundle, {
       expectedRegistryId: harness.registryId,
     }), /not active/i);
     const revoked = await expectHttp(await evaluateAt(statusRecord(revokedBundle).revokedAt), 200);
@@ -235,7 +235,7 @@ export async function runOtherTemporalLifecycles(adversarialMatrix, {
     });
     await expectTrqpDecision(roleActiveAt, "historical-after-revocation", historicalAfterRevocation.trustedAtTime);
     await verifyNativeRecognitionAt(roleActiveAt);
-    adversarialMatrix.expectVerified(() => target.verify(activeBundle, {
+    await adversarialMatrix.expectVerifiedAsync(() => target.verify(activeBundle, {
       expectedRegistryId: harness.registryId,
       evaluationTime: roleActiveAt,
     }), {

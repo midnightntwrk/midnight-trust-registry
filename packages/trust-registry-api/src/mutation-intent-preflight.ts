@@ -102,12 +102,12 @@ export function preflightMutationIntent(
 }
 
 /** Use inside an atomic write boundary after signature authorization; repeats context/payload preflight. */
-export function applyIntentBoundWorkspaceOperation(
+export async function applyIntentBoundWorkspaceOperation(
   intentInput: MutationIntent,
   workspace: TrustRegistryOperatorWorkspace,
   operationInput: TrustRegistryOperatorWorkspaceOperation,
   now: Date,
-): TrustRegistryOperatorWorkspace {
+): Promise<TrustRegistryOperatorWorkspace> {
   const intent = MutationIntentSchema.parse(intentInput);
   const operation = TrustRegistryOperatorWorkspaceOperationSchema.parse(operationInput);
   const target = operation.operation === "publish-epoch" ? "epoch" : operation.target;
@@ -126,7 +126,7 @@ export function applyIntentBoundWorkspaceOperation(
 
   let nextWorkspace: TrustRegistryOperatorWorkspace;
   try {
-    nextWorkspace = applyWorkspaceOperation(workspace, operation);
+    nextWorkspace = await applyWorkspaceOperation(workspace, operation);
   } catch {
     throw new MutationIntentOperationMismatchError();
   }

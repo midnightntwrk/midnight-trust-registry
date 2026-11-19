@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { checkStandaloneTopology, standaloneStackConfig } from "./check-standalone-topology.mjs";
 
-const project = "tr-standalone-local-smoke";
+const project = "tr-standalone-ledger9-local";
 const ledger = `${project}_ledger`;
 const expected = { proofParamsDir: "/private/verified/proof-params",
   indexerPassword: "test-password", indexerSecret: "test-secret" };
@@ -51,6 +51,29 @@ test("reports only topology, never offline qualification", () => {
     internalNetworkOnly: true, proofParameterCacheReadOnly: true,
     egressDenied: "not-verified", actorJourneys: "not-run",
   });
+});
+
+test("observes the dedicated Docker Desktop bridge without claiming internal-only networking", () => {
+  const hostName = `${project}_host-access`;
+  const hostNetwork = {
+    Name: hostName, Id: "host-access-id", Internal: false, Driver: "bridge", EnableIPv6: false,
+    Labels: { "com.docker.compose.project": project },
+    Containers: Object.fromEntries(containers.map((item) => [item.Id, {}])),
+  };
+  const bridged = structuredClone(containers);
+  for (const item of bridged) {
+    item.NetworkSettings.Networks[hostName] = { NetworkID: hostNetwork.Id };
+  }
+  const observation = checkStandaloneTopology(network, bridged, standaloneStackConfig({}), undefined, hostNetwork);
+  assert.equal(observation.internalNetworkOnly, false);
+  assert.equal(observation.hostAccessBridge, hostName);
+  assert.equal(observation.egressDenied, "not-verified");
+  const unexpected = structuredClone(bridged);
+  unexpected[0].NetworkSettings.Networks.bridge = { NetworkID: "outside" };
+  assert.throws(() => checkStandaloneTopology(network, unexpected, standaloneStackConfig({}), undefined,
+    hostNetwork), /unexpected network attachment/u);
+  assert.throws(() => checkStandaloneTopology(network, bridged, standaloneStackConfig({}), undefined,
+    { ...hostNetwork, Internal: true }), /host-access network differs/u);
 });
 
 test("rejects external attachment and network drift", () => {

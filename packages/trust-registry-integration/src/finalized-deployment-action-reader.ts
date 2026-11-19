@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 
 import type { PublicDataProvider } from "@midnight-ntwrk/midnight-js-types";
-import type { ContractState, JubjubPoint } from "@midnight-ntwrk/compact-runtime";
+import { ContractState, type JubjubPoint } from "@midnight-ntwrk/compact-runtime";
 import type { Ledger } from "@midnightntwrk/trust-registry-contract/managed/trust-registry/contract/index.js";
 import type {
   FinalizedDeploymentActionState,
@@ -10,6 +10,7 @@ import type {
 } from "@midnightntwrk/trust-registry-client";
 import { TrustRegistryContract, type MaintainerStatus } from "@midnightntwrk/trust-registry-contract/contract";
 import { getLocalNetworkProfile } from "./network-profiles.js";
+import { maintenanceVerifyingKeyHex } from "./maintenance-verifying-key.js";
 
 export type FinalizedNetworkCheckpoint = {
   networkId: string;
@@ -104,7 +105,7 @@ const deploymentImage = (state: ContractState) => {
   return {
     verifierKeySha256: Object.fromEntries(entries),
     maintenanceAuthority: {
-      committee: authority.committee.map((key) => `0x${key.toLowerCase()}`),
+      committee: authority.committee.map(maintenanceVerifyingKeyHex),
       threshold: authority.threshold,
       counter: authority.counter,
     },
@@ -147,7 +148,11 @@ function createDeploymentActionReader(input: {
       { type: "blockHash", blockHash: checkpoint.blockHash.toLowerCase() },
     );
     if (state === null) return null;
-    const ledger = TrustRegistryContract.ledger(state.data);
+    if (state.contractState.era !== "v9") {
+      throw new FinalizedDeploymentImageInvalidError("Finalized Trust Registry state is not Ledger 9");
+    }
+    const contractState = state.contractState.deserialize({ v9: ContractState });
+    const ledger = TrustRegistryContract.ledger(contractState.data);
     if (!ledger.initialized || ledger.contractVersion === 0n) {
       throw new Error("Finalized Trust Registry deployment is not initialized");
     }
@@ -160,7 +165,7 @@ function createDeploymentActionReader(input: {
       governancePolicyCommitment: bytes32Hex(ledger.governancePolicyCommitment),
       governanceActionSequence: ledger.governanceActionCount,
     };
-    return { actionState, ledger, contractState: state };
+    return { actionState, ledger, contractState };
   };
   const readBootstrapState = async (contractAddress: string, bootstrapMaintainerKeyId: Uint8Array) => {
     if (bootstrapMaintainerKeyId.length !== 32) {

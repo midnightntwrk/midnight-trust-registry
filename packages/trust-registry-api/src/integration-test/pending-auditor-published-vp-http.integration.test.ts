@@ -64,7 +64,7 @@ describe("auditor signed apply through published DID/VC/VP HTTP intake", () => {
   });
 
   it("registers a DID applicant and accepts one genuinely signed, policy-scoped VP without exposing claims", async () => {
-    const workspace = createOperatorWorkspace({ label: "auditor-published-vp-http" });
+    const workspace = await createOperatorWorkspace({ label: "auditor-published-vp-http" });
     const fixtureContext = { ...VP_FIXTURE_TRUST_CONTEXT, registryId: workspace.snapshot.registry.registryId };
     const fixture = await createApplicationVpScenarioFixture(undefined, {
       scope, subjectDid, evidenceVerifierDid, trustContext: fixtureContext,

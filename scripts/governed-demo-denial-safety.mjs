@@ -10,7 +10,7 @@ import {
 } from "../packages/trust-registry-integration/dist/index.js";
 
 /** Keeps proposal denial and replacement on an isolated fixture ledger. */
-export function runDenialSafetyScenario(matrix, signCompact) {
+export async function runDenialSafetyScenario(matrix, signCompact) {
   const denialHarness = new LocalTrustRegistryIntegrationHarness("governed-demo-denial");
   const denialSecond = createMaintainerScenarioFixture("governed-demo-denial-second");
   const denialThird = createMaintainerScenarioFixture("governed-demo-denial-third");
@@ -20,21 +20,21 @@ export function runDenialSafetyScenario(matrix, signCompact) {
     authorizationId: `${deniedIssuer.authorizationId}:replacement`,
     authorizationIdCommitment: bytes32Commitment(`${deniedIssuer.authorizationId}:replacement`),
   };
-  denialHarness.authorizeMaintainer(denialSecond);
-  denialHarness.authorizeMaintainer(denialThird);
-  denialHarness.proposeIssuer(deniedIssuer);
-  matrix.expectThrown(() => denialHarness.proposeIssuer(replacementIssuer), {
+  await denialHarness.authorizeMaintainer(denialSecond);
+  await denialHarness.authorizeMaintainer(denialThird);
+  await denialHarness.proposeIssuer(deniedIssuer);
+  await matrix.expectRejected(() => denialHarness.proposeIssuer(replacementIssuer), {
     id: "denied-proposal-blocks-live-scope-reuse",
     invariant: "A second application cannot claim the same scope while a proposal remains live",
     boundary: "compact",
     messagePattern: /live authorization/iu,
     category: "duplicate-live-scope-rejected",
   });
-  denialHarness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
-  const denialPrepared = denialHarness.prepareIssuerDecisionAction(deniedIssuer, "archive");
-  const denialActionCount = denialHarness.simulator.getLedger().governanceActionCount;
-  matrix.expectThrown(() => denialHarness.executeIssuerDecisionWithSignatures(
-    deniedIssuer, "archive", [signCompact(denialSecond, denialPrepared, denialHarness)],
+  await denialHarness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+  const denialPrepared = await denialHarness.prepareIssuerDecisionAction(deniedIssuer, "archive");
+  const denialActionCount = (await denialHarness.simulator.getLedger()).governanceActionCount;
+  await matrix.expectRejected(async () => denialHarness.executeIssuerDecisionWithSignatures(
+    deniedIssuer, "archive", [await signCompact(denialSecond, denialPrepared, denialHarness)],
   ), {
     id: "denied-proposal-requires-quorum",
     invariant: "Archiving a pending issuer proposal requires the current maintainer quorum",
@@ -42,17 +42,17 @@ export function runDenialSafetyScenario(matrix, signCompact) {
     messagePattern: /threshold|quorum|signer|authorization/iu,
     category: "insufficient-archive-quorum",
   });
-  assert.equal(denialHarness.simulator.getLedger().governanceActionCount, denialActionCount);
-  const denialEventHash = denialHarness.executeIssuerDecisionWithSignatures(
-    deniedIssuer, "archive", [signCompact(denialSecond, denialPrepared, denialHarness), signCompact(denialThird, denialPrepared, denialHarness)],
+  assert.equal((await denialHarness.simulator.getLedger()).governanceActionCount, denialActionCount);
+  const denialEventHash = await denialHarness.executeIssuerDecisionWithSignatures(
+    deniedIssuer, "archive", [await signCompact(denialSecond, denialPrepared, denialHarness), await signCompact(denialThird, denialPrepared, denialHarness)],
   );
-  assert.equal(denialHarness.simulator.getIssuerAuthorization(deniedIssuer.authorizationIdCommitment).status,
+  assert.equal((await denialHarness.simulator.getIssuerAuthorization(deniedIssuer.authorizationIdCommitment)).status,
     AuthorizationStatus.archived);
-  const deniedBundle = denialHarness.buildIssuerHistoricalEvidence(deniedIssuer);
+  const deniedBundle = await denialHarness.buildIssuerHistoricalEvidence(deniedIssuer);
   assert.equal(deniedBundle.authorization?.status, "archived");
   assert.equal(deniedBundle.authorization?.authorizedAt, undefined);
   assert.equal(deniedBundle.authorization?.activeFrom, undefined);
-  matrix.expectThrown(() => new TrustRegistrySimulatorClient(denialHarness.simulator)
+  await matrix.expectRejected(() => new TrustRegistrySimulatorClient(denialHarness.simulator)
     .verifyIssuerAuthorizationBundle(deniedBundle, {}), {
     id: "denied-proposal-is-not-trust",
     invariant: "Historical evidence for an archived proposal cannot authorize a current issuer",
@@ -60,10 +60,10 @@ export function runDenialSafetyScenario(matrix, signCompact) {
     messagePattern: /not active/iu,
     category: "archived-issuer-not-active",
   });
-  const replacementProposalEventHash = denialHarness.proposeIssuer(replacementIssuer, [denialSecond]);
-  assert.equal(denialHarness.simulator.getIssuerAuthorization(replacementIssuer.authorizationIdCommitment).status,
+  const replacementProposalEventHash = await denialHarness.proposeIssuer(replacementIssuer, [denialSecond]);
+  assert.equal((await denialHarness.simulator.getIssuerAuthorization(replacementIssuer.authorizationIdCommitment)).status,
     AuthorizationStatus.proposed);
-  assert.equal(denialHarness.simulator.getIssuerAuthorization(deniedIssuer.authorizationIdCommitment).status,
+  assert.equal((await denialHarness.simulator.getIssuerAuthorization(deniedIssuer.authorizationIdCommitment)).status,
     AuthorizationStatus.archived);
   return { denialEventHash, deniedIssuer, deniedBundle, replacementIssuer, replacementProposalEventHash };
 }

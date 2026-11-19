@@ -158,6 +158,7 @@ describe("published VC proof and DID application verifier port", () => {
     await expect(verifyApplicationStatusDecisionWitness({
       signed,
       expectedCommitment: result.statusDecisionCommitment,
+      expectedChallengeHash: challengeHash,
       material: scenario.material,
       binding: scenario.fixtureStatusPolicyBinding,
       nonce: scenario.input.nonce,

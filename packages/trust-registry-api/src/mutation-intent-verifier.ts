@@ -1,7 +1,3 @@
-import {
-  resolveMidnightDIDMethodBinding,
-  type ResolveMidnightDIDMethodBindingOptions,
-} from "@midnight-ntwrk/credential-did-midnight";
 import { parseMidnightDIDString } from "@midnight-ntwrk/midnight-did";
 import { verifyJubjubPayload } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
 import { decodeCanonicalJubjubSignatureHex, isPrimeOrderJubjubPoint } from "@midnightntwrk/trust-registry-contract";
@@ -10,8 +6,9 @@ import {
   MutationIntentSignatureSchema,
   mutationIntentDigestBytes,
 } from "@midnightntwrk/trust-registry-domain";
+import { resolvedMidnightDidSigningKey, type MidnightAuthenticationResolver } from "./did-authentication-key.js";
 
-type MidnightResolver = ResolveMidnightDIDMethodBindingOptions["resolver"];
+type MidnightResolver = MidnightAuthenticationResolver;
 
 const isDeterministicDidResolutionError = (error: unknown): boolean => {
   if (!(error instanceof Error) || !(
@@ -56,16 +53,12 @@ export async function verifyMutationIntentDidSignature(
   }
 
   try {
-    const method = await resolveMidnightDIDMethodBinding({
-      resolver: { resolveResult: async () => resolved },
-      did,
-      verificationMethodId: `#${intent.data.actorKeyId.split("#")[1]}`,
-      relationship: intent.data.actorRole === "applicant" ? "authentication" : "capabilityInvocation",
-    });
-    if (!isPrimeOrderJubjubPoint(method.publicKey)) return false;
+    const publicKey = resolvedMidnightDidSigningKey(resolved!, did, intent.data.actorKeyId,
+      intent.data.actorRole === "applicant" ? "authentication" : "capabilityInvocation");
+    if (!isPrimeOrderJubjubPoint(publicKey)) return false;
     const digest = mutationIntentDigestBytes(intent.data);
     return verifyJubjubPayload(
-      method.publicKey,
+      publicKey,
       digest,
       decodeCanonicalJubjubSignatureHex(signature.data.value),
     );

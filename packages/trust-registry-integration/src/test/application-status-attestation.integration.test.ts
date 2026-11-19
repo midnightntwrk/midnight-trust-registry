@@ -8,8 +8,11 @@ import { describe, expect, it } from "vitest";
 import {
   applicationStatusAttestationDigest,
   applicationStatusDecisionCommitment,
+  capturePrivateApplicationStatusWitness,
   createAttestedApplicationStatusSource,
+  materialFromPrivateApplicationStatusWitness,
   verifyApplicationStatusDecisionWitness,
+  type ApplicationStatusWitnessMaterial,
   type SignedApplicationStatusStatement,
 } from "../application-status-attestation.js";
 import { createMidnightDidLedgerFixture, createMidnightDidResolver } from "../did-resolution.js";
@@ -63,8 +66,13 @@ describe("DID-signed application status attestation", () => {
   it("audits a private status witness against redacted evidence without accepting policy substitution", async () => {
     const { source, request, resolver, signed } = await fixture();
     const expectedCommitment = (await source(request)).statusDecisionCommitment;
-    const audit = { ...request, resolver, signed, expectedCommitment };
+    const expectedChallengeHash = sha256Hex(Buffer.from(request.nonce.slice(2), "hex"));
+    const audit = { ...request, resolver, signed, expectedCommitment, expectedChallengeHash };
     await expect(verifyApplicationStatusDecisionWitness(audit)).resolves.toBe(true);
+    await expect(verifyApplicationStatusDecisionWitness({
+      ...audit,
+      expectedChallengeHash: sha256Hex("another-application-challenge"),
+    })).rejects.toThrow(/accepted challenge/u);
     await expect(verifyApplicationStatusDecisionWitness({
       ...audit,
       binding: { ...request.binding, statusPolicyContentCommitment: sha256Hex("substituted-policy") },
@@ -88,7 +96,50 @@ describe("DID-signed application status attestation", () => {
     await expect(source(request)).resolves.toMatchObject({
       validUntilMs: VP_FIXTURE_TIME_MS + 5 * 60_000,
       statusDecisionCommitment: applicationStatusDecisionCommitment(signed, didStateVersionId!, request.binding),
+      privateStatusWitness: { nonce: request.nonce, signed },
     });
+  });
+
+  it("refreshes signed status using only a private VP-derived status witness", async () => {
+    const { source, request, resolver, signed } = await fixture();
+    const material: ApplicationStatusWitnessMaterial = {
+      credentialBodyRoot: request.material.credentialBodyRoot,
+      statusBinding: request.material.statusBinding,
+    };
+    const minimalRequest = { ...request, material };
+    const result = await source(minimalRequest);
+    await expect(verifyApplicationStatusDecisionWitness({
+      ...minimalRequest, resolver, signed,
+      expectedCommitment: result.statusDecisionCommitment,
+      expectedChallengeHash: sha256Hex(Buffer.from(request.nonce.slice(2), "hex")),
+    })).resolves.toBe(true);
+    await expect(source({
+      ...minimalRequest,
+      material: { ...material, credentialBodyRoot: new Uint8Array(32).fill(7) },
+    })).rejects.toThrow();
+  });
+
+  it("round-trips a bounded private status witness without raw VP claims", async () => {
+    const { source, request, resolver, signed } = await fixture();
+    const record = capturePrivateApplicationStatusWitness({
+      material: request.material, nonce: request.nonce, signed,
+    });
+    const stored = JSON.parse(JSON.stringify(record));
+    expect(JSON.stringify(stored)).not.toContain("rawCredentialBody");
+    const material = materialFromPrivateApplicationStatusWitness(stored);
+    await expect(source({ ...request, material })).resolves.toMatchObject({
+      statusDecisionCommitment: (await source(request)).statusDecisionCommitment,
+    });
+    await expect(verifyApplicationStatusDecisionWitness({
+      signed: stored.signed, material, resolver,
+      binding: request.binding, nonce: stored.nonce,
+      expectedChallengeHash: sha256Hex(Buffer.from(stored.nonce.slice(2), "hex")),
+      expectedCommitment: (await source(request)).statusDecisionCommitment,
+      evaluatedAtMs: request.evaluatedAtMs,
+    })).resolves.toBe(true);
+    expect(() => capturePrivateApplicationStatusWitness({
+      material: request.material, nonce: `0x${"22".repeat(32)}`, signed,
+    })).toThrow(/differs/u);
   });
 
   it("accepts an exactly five-minute signed window with fractional timestamps", async () => {

@@ -101,15 +101,15 @@ const requestFor = (
   };
 };
 
-const initialState = (): PendingApplicationRegistrationState => ({
-  workspace: createOperatorWorkspace({ label: "pending-application-registration" }),
+const initialState = async (): Promise<PendingApplicationRegistrationState> => ({
+  workspace: await createOperatorWorkspace({ label: "pending-application-registration" }),
   applications: [],
   consumedNonces: [],
 });
 
 describe("pending application registration transition", () => {
   it("serializes concurrent applications for one scope without consuming two nonces", async () => {
-    const state = initialState();
+    const state = await initialState();
     const port = new InMemoryPendingApplicationRegistrationPort(state, evidenceVerifierDid, resolver);
     const first = requestFor(state);
     const outcomes = await Promise.allSettled([
@@ -123,7 +123,7 @@ describe("pending application registration transition", () => {
   });
 
   it("lists only redacted requests for the exact applicant DID", async () => {
-    const state = initialState();
+    const state = await initialState();
     const port = new InMemoryPendingApplicationRegistrationPort(state, evidenceVerifierDid, resolver);
     const accepted = await port.register(requestFor(state), now);
     expect(await port.listForSubjectDid(applicantDid)).toEqual([{
@@ -141,7 +141,7 @@ describe("pending application registration transition", () => {
   });
 
   it("authenticates the applicant DID and binds the complete request scope to current policy", async () => {
-    const initial = initialState();
+    const initial = await initialState();
     const request = requestFor(initial);
     const next = await transitionPendingApplicationRegistration(initial, request, evidenceVerifierDid, now, resolver);
     expect(initial.applications).toHaveLength(0);
@@ -169,7 +169,7 @@ describe("pending application registration transition", () => {
   });
 
   it("rejects replay, duplicate ID or authorization target, duplicate exact scope, and invalid signatures", async () => {
-    const initial = initialState();
+    const initial = await initialState();
     const first = requestFor(initial);
     const accepted = await transitionPendingApplicationRegistration(initial, first, evidenceVerifierDid, now, resolver);
     const cases = [
@@ -188,7 +188,7 @@ describe("pending application registration transition", () => {
   });
 
   it("releases only a verified archived scope while retaining old IDs and nonces", async () => {
-    const initial = initialState();
+    const initial = await initialState();
     const first = requestFor(initial);
     const pending = await transitionPendingApplicationRegistration(initial, first, evidenceVerifierDid, now, resolver);
     const record = pending.applications[0]!;
@@ -231,7 +231,7 @@ describe("pending application registration transition", () => {
   });
 
   it("rejects expired, stale, and substituted application contexts", async () => {
-    const state = initialState();
+    const state = await initialState();
     const request = requestFor(state);
     await expect(transitionPendingApplicationRegistration(
       state, request, evidenceVerifierDid, new Date("2026-10-13T00:05:00.000Z"), resolver,
@@ -268,7 +268,7 @@ describe("pending application registration transition", () => {
         resource: { type: "registry" as const, id: registryId },
       })],
     ] as const) {
-      const state = initialState();
+      const state = await initialState();
       const { scope: candidateScope, resource } = create(state.workspace.snapshot.registry.registryId);
       const request = requestFor(state, {
         applicationId: `application:${role}:company:v1`, candidateScope, governedResource: resource,

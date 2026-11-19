@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
 import { pinnedStandaloneImages } from "./check-standalone-install.mjs";
@@ -8,7 +9,13 @@ const digest = "a".repeat(64);
 const image = (role) => `example.test/${role}@sha256:${digest}`;
 const services = Object.fromEntries(["node", "indexer", "proof-server"]
   .map((role) => [role, { image: image(role) }]));
-const compose = { name: "${TR_STACK_NAME:-tr-standalone-local-smoke}", services };
+const compose = { name: "${TR_STACK_NAME:-tr-standalone-ledger9-local}", services };
+
+test("the checked-in Ledger 9 Compose images satisfy the install policy", async () => {
+  const source = await readFile(new URL("../deploy/standalone/compose.yml", import.meta.url), "utf8");
+  assert.deepEqual(pinnedStandaloneImages(source).map(({ role }) => role),
+    ["node", "indexer", "proof-server"]);
+});
 
 test("accepts exactly the three digest-pinned standalone services", () => {
   const expected = ["node", "indexer", "proof-server"]

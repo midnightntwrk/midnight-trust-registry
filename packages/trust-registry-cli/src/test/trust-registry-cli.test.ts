@@ -35,8 +35,9 @@ const captureCli = async (argv: readonly string[]) => {
 };
 
 describe("trust registry operator CLI", () => {
-  it("validates bounded version-3 actor nonce history and clock", () => {
-    const workspace = createOperatorWorkspace({ label: "nonce-schema" });
+  it("validates bounded version-3 actor nonce history and clock", async () => {
+    const workspace = await createOperatorWorkspace({ label: "nonce-schema" });
+    expect(TrustRegistryOperatorWorkspaceSchema.safeParse(workspace).success).toBe(true);
     const expiry = "2026-10-10T00:05:00.000Z";
     const actorKey = `0x${"11".repeat(32)}`;
     const entry = { actorKey, expiresAt: expiry };
@@ -69,8 +70,8 @@ describe("trust registry operator CLI", () => {
     }).success).toBe(false);
   }, CLI_TEST_TIMEOUT_MS);
 
-  it("rejects auditor snapshot rows with a substituted role or evidence record", () => {
-    const snapshot = createDemoSnapshot({ label: "auditor-snapshot-boundary" });
+  it("rejects auditor snapshot rows with a substituted role or evidence record", async () => {
+    const snapshot = await createDemoSnapshot({ label: "auditor-snapshot-boundary" });
     const auditor = snapshot.auditorEntries[0];
     const otherAuditor = snapshot.auditorEntries[1];
     const verifier = snapshot.verifierEntries[0];
@@ -570,7 +571,7 @@ describe("trust registry operator CLI", () => {
   it("uses the API workspace lock and rejects the pre-release workspace format", async () => {
     const directory = await mkdtemp(join(tmpdir(), "tr-cli-shared-lock-"));
     const workspacePath = join(directory, "workspace.json");
-    await writeWorkspaceToFile(workspacePath, createOperatorWorkspace({ label: "shared-lock" }));
+    await writeWorkspaceToFile(workspacePath, await createOperatorWorkspace({ label: "shared-lock" }));
     const stored = JSON.parse(await readFile(workspacePath, "utf8")) as Record<string, unknown>;
     stored.workspaceVersion = "1";
     await writeFile(workspacePath, JSON.stringify(stored));
@@ -578,7 +579,7 @@ describe("trust registry operator CLI", () => {
     stored.workspaceVersion = "2";
     await writeFile(workspacePath, JSON.stringify(stored));
     await expect(loadWorkspaceFromFile(workspacePath)).rejects.toThrow(/Workspace version 2 is unsupported/u);
-    await writeWorkspaceToFile(workspacePath, createOperatorWorkspace({ label: "shared-lock" }));
+    await writeWorkspaceToFile(workspacePath, await createOperatorWorkspace({ label: "shared-lock" }));
 
     await writeFile(`${workspacePath}.lock`, "other writer", { flag: "wx" });
     try {
@@ -599,21 +600,21 @@ describe("trust registry operator CLI", () => {
   }, CLI_TEST_TIMEOUT_MS);
 
   it("retains prior issuer evidence and epoch commitments across workspace writes", async () => {
-    let workspace = createOperatorWorkspace({ label: "issuer-archive" });
-    workspace = applyWorkspaceOperation(workspace, {
+    let workspace = await createOperatorWorkspace({ label: "issuer-archive" });
+    workspace = await applyWorkspaceOperation(workspace, {
       operation: "submit", target: "issuer", label: "degree-archive",
     });
     const id = workspace.snapshot.issuerEntries[0]?.authorization.authorizationId;
     if (id === undefined) throw new Error("expected submitted issuer");
-    workspace = applyWorkspaceOperation(workspace, {
+    workspace = await applyWorkspaceOperation(workspace, {
       operation: "approve", target: "issuer", id,
     });
-    workspace = applyWorkspaceOperation(workspace, {
+    workspace = await applyWorkspaceOperation(workspace, {
       operation: "activate", target: "issuer", id,
     });
     const activeEvidence = workspace.snapshot.issuerEntries[0]?.evidence;
     if (activeEvidence === undefined) throw new Error("expected active issuer evidence");
-    workspace = applyWorkspaceOperation(workspace, {
+    workspace = await applyWorkspaceOperation(workspace, {
       operation: "revoke", target: "issuer", id,
     });
     expect(workspace.snapshot.issuerEntries[0]?.authorization.status).toBe("revoked");
@@ -624,7 +625,7 @@ describe("trust registry operator CLI", () => {
     const path = join(directory, "workspace.json");
     await writeWorkspaceToFile(path, workspace);
     const loaded = await loadWorkspaceFromFile(path);
-    const archived = applyWorkspaceOperation(loaded, {
+    const archived = await applyWorkspaceOperation(loaded, {
       operation: "archive", target: "issuer", id,
     });
     expect(archived.snapshot.evidenceArchive).toContainEqual(activeEvidence);
@@ -640,7 +641,7 @@ describe("trust registry operator CLI", () => {
       evidenceArchive: archived.snapshot.evidenceArchive.map((bundle, index) =>
         index === 0 ? { ...bundle, registryId: "registry:foreign:v1" } : bundle),
     }).success).toBe(false);
-    const recognition = createDemoSnapshot({ label: "archive-dual-statement" })
+    const recognition = (await createDemoSnapshot({ label: "archive-dual-statement" }))
       .recognitionEntries[0]?.recognition;
     if (recognition === undefined) throw new Error("expected demo recognition");
     const dualBundle = {

@@ -168,7 +168,7 @@ export async function materializeStandaloneProofParams(bundle, destination, keyg
       await mkdir(dirname(join(stage, name)), { recursive: true });
       await copyFile(file, join(stage, name));
     }
-    for (const name of ["dust/9/spend", "zswap/9/spend", "zswap/9/output", "zswap/9/sign"]) {
+    for (const name of ["dust/10/spend", "zswap/10/spend", "zswap/10/output", "zswap/10/sign"]) {
       await runFile(keygen, ["compile", join(stage, `${name}.bzkir`),
         join(stage, `${name}.prover`), join(stage, `${name}.verifier`)],
       { timeout: 60 * 60_000, maxBuffer: 1024 * 1024 });

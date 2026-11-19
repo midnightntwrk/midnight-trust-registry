@@ -81,7 +81,7 @@ try {
     schema: { ...schema, schemaId: bytes(10) },
   }), /schema reference/i);
   // Holder binding belongs to the application evidence profile, not this generic relation.
-  console.log("Published VC Compact composition and envelope-relation checks passed");
+  console.log("Installed VC Compact composition and envelope-relation checks passed");
 } finally {
   await rm(output, { recursive: true, force: true });
 }

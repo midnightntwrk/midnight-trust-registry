@@ -2,7 +2,6 @@ import { sampleSigningKey } from "@midnight-ntwrk/compact-runtime";
 import { httpClientProofProvider } from "@midnight-ntwrk/midnight-js-http-client-proof-provider";
 import { indexerPublicDataProvider } from "@midnight-ntwrk/midnight-js-indexer-public-data-provider";
 import { NodeZkConfigProvider } from "@midnight-ntwrk/midnight-js-node-zk-config-provider";
-import { DustSecretKey, ZswapSecretKeys } from "@midnight-ntwrk/midnight-js-protocol/ledger";
 import {
   FluentWalletBuilder,
   inMemoryPrivateStateProvider,
@@ -71,7 +70,7 @@ export async function loadOrCreateSmokeMaintenanceKey(directory) {
   }
   if (file) {
     try {
-      await file.writeFile(`${sampleSigningKey()}\n`);
+      await file.writeFile(`${sampleSigningKey().value}\n`);
       await file.sync();
     } finally {
       await file.close();
@@ -85,6 +84,19 @@ export async function loadOrCreateSmokeMaintenanceKey(directory) {
   const key = (await readFile(path, "utf8")).trim();
   if (!KEY.test(key)) throw new Error("Smoke maintenance key is malformed");
   return key;
+}
+
+export function smokeMaintenanceSigningKey(hex) {
+  if (!KEY.test(hex)) throw new Error("Smoke maintenance signing key is malformed");
+  return { tag: "schnorr", value: hex };
+}
+
+export async function connectSmokeWallet(logger, environment, built, withWallet = MidnightWalletProvider.withWallet) {
+  return withWallet(logger, environment, built.wallet, built.seeds, built.keystore);
+}
+
+export function localSmokeMidnightConfig(network) {
+  return { networkId: network.networkId, ttlSeconds: 3600 };
 }
 
 async function createLocalWalletMaterial({ network }, env = process.env) {
@@ -104,12 +116,7 @@ async function createLocalWalletMaterial({ network }, env = process.env) {
   globalThis.WebSocket = WebSocket;
   const built = await FluentWalletBuilder.forEnvironment(walletEnvironment)
     .withSeed(config.walletSeed).buildWithoutStarting();
-  const wallet = await MidnightWalletProvider.withWallet(
-    SILENT_LOGGER, walletEnvironment, built.wallet,
-    ZswapSecretKeys.fromSeed(built.seeds.shielded),
-    DustSecretKey.fromSeed(built.seeds.dust),
-    built.keystore,
-  );
+  const wallet = await connectSmokeWallet(SILENT_LOGGER, walletEnvironment, built);
   try {
     await wallet.start(false);
     await syncWallet(wallet.wallet, 1_000, 300_000);
@@ -122,6 +129,7 @@ async function createLocalWalletMaterial({ network }, env = process.env) {
     const contractDist = dirname(fileURLToPath(import.meta.resolve("@midnightntwrk/trust-registry-contract")));
     const zkConfig = new NodeZkConfigProvider(join(contractDist, "managed", "trust-registry"));
     const providers = {
+      config: localSmokeMidnightConfig(network),
       privateStateProvider: inMemoryPrivateStateProvider(),
       publicDataProvider: indexerPublicDataProvider(network.indexerHttpUrl, network.indexerWsUrl),
       zkConfigProvider: zkConfig,
@@ -160,6 +168,6 @@ export async function createLocalDeploymentMaterial(input, env = process.env) {
       maintainerPublicKey: deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(19)),
       maintainerThreshold: 1n,
     },
-    contractMaintenanceSigningKey: maintenanceKey,
+    contractMaintenanceSigningKey: smokeMaintenanceSigningKey(maintenanceKey),
   };
 }

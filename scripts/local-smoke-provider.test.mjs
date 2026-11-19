@@ -5,10 +5,56 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import {
+  connectSmokeWallet,
+  localSmokeMidnightConfig,
   loadOrCreateSmokeMaintenanceKey,
+  smokeMaintenanceSigningKey,
   PUBLIC_LOCAL_SMOKE_SEED,
   validateLocalSmokeEnvironment,
 } from "./local-smoke-provider.mjs";
+import { createLocalDeploymentMaterial as createPolicyBoundMaterial,
+  policyBoundSmokeBootstrap } from "./local-policy-bound-smoke-provider.mjs";
+import { signatureVerifyingKey } from "@midnight-ntwrk/compact-runtime";
+
+test("Ledger 9 smoke provider passes WalletSeeds to testkit-js v5", async () => {
+  const logger = { marker: "logger" };
+  const env = { marker: "environment" };
+  const built = { wallet: { marker: "wallet" }, seeds: { marker: "seeds" }, keystore: { marker: "keystore" } };
+  const connected = { marker: "connected" };
+  const result = await connectSmokeWallet(logger, env, built, async (...args) => {
+    assert.deepEqual(args, [logger, env, built.wallet, built.seeds, built.keystore]);
+    return connected;
+  });
+  assert.equal(result, connected);
+});
+
+test("Ledger 9 smoke provider pins the local network and transaction TTL", () => {
+  assert.deepEqual(localSmokeMidnightConfig(network), { networkId: "undeployed", ttlSeconds: 3600 });
+});
+
+test("Ledger 9 smoke maintenance key uses the tagged Compact signing-key shape", () => {
+  const key = smokeMaintenanceSigningKey("1".repeat(64));
+  assert.deepEqual(key, { tag: "schnorr", value: "1".repeat(64) });
+  assert.equal(signatureVerifyingKey(key).tag, "schnorr");
+  assert.throws(() => smokeMaintenanceSigningKey("not-hex"), /malformed/u);
+});
+
+test("policy-bound development provider requires approved canonical policy input", async () => {
+  await assert.rejects(createPolicyBoundMaterial({}), /approved canonical policy input/u);
+  await assert.rejects(createPolicyBoundMaterial({ approvedPolicy: { registryId: "registry:local",
+    commitment: "bad" } }), /approved canonical policy input/u);
+  const oldCommitment = Buffer.alloc(32, 3);
+  const original = { registryId: "registry:old", governancePolicyCommitment: oldCommitment,
+    maintainerThreshold: 1n };
+  const result = policyBoundSmokeBootstrap(original,
+    { registryId: "registry:midnight:local:v1", commitment: `0x${"a".repeat(64)}` });
+  assert.equal(result.registryId, "registry:midnight:local:v1");
+  assert.equal(Buffer.from(result.governancePolicyCommitment).toString("hex"), "a".repeat(64));
+  assert.equal(result.maintainerThreshold, 1n);
+  assert.equal(original.governancePolicyCommitment, oldCommitment);
+  assert.throws(() => policyBoundSmokeBootstrap(original,
+    { registryId: "registry:midnight:local:v1", commitment: "not-a-hash" }), /approved canonical/u);
+});
 
 const network = {
   networkId: "undeployed",

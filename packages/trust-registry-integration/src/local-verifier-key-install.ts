@@ -3,13 +3,13 @@ import { constants } from "node:fs";
 import { lstat, open } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
-import { signatureVerifyingKey } from "@midnight-ntwrk/compact-runtime";
+import type { Contract } from "@midnight-ntwrk/compact-js";
+import { ContractState, type SigningKey } from "@midnight-ntwrk/compact-runtime";
 import {
-  InsertVerifierKeyTxFailedError, submitInsertVerifierKeyTx, type ContractProviders,
+  submitInsertVerifierKeyTx, type TxFailedError, type ContractProviders,
+  type Ledger9FinalizedMaintenanceTxData,
 } from "@midnight-ntwrk/midnight-js-contracts";
-import { getNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
-import type { SigningKey } from "@midnight-ntwrk/midnight-js-protocol/compact-runtime";
-import { createVerifierKey, type FinalizedTxData } from "@midnight-ntwrk/midnight-js-types";
+import { createVerifierKey, type FinalizedTxRead } from "@midnight-ntwrk/midnight-js-types";
 import { TrustRegistryContract, type TrustRegistryPrivateState } from "@midnightntwrk/trust-registry-contract";
 import { z } from "zod";
 
@@ -23,6 +23,7 @@ import {
   type ReleaseVerifierKeyManifest,
 } from "./public-network-deployment.js";
 import { readPinnedInstalledVerifierKey } from "./verifier-asset-preflight.js";
+import { maintenanceSigningKeyHex } from "./maintenance-verifying-key.js";
 
 type RegistryContract = TrustRegistryContract.Contract<TrustRegistryPrivateState>;
 const Hex32 = z.string().regex(/^0x[0-9a-f]{64}$/u);
@@ -85,6 +86,11 @@ export class VerifierKeyInsertionJournalInvalidError extends Error {
   }
 }
 
+const isFailedVerifierKeyInsertion = (error: unknown): error is TxFailedError =>
+  error !== null && typeof error === "object"
+  && Reflect.get(error, "code") === "MIDNIGHT_JS_C_TX_FAILED"
+  && Reflect.get(error, "operation") === "insert-verifier-key";
+
 /** Durable single-host reservation for one circuit update; never auto-retries an unknown result. */
 export class FileVerifierKeyInsertionJournal {
   private readonly path: string;
@@ -115,19 +121,19 @@ export class FileVerifierKeyInsertionJournal {
 
   async executeOnce(
     plan: LocalVerifierKeyInsertionPlan,
-    submit: () => Promise<FinalizedTxData>,
+    submit: () => Promise<Ledger9FinalizedMaintenanceTxData>,
   ): Promise<LocalVerifierKeyInsertionReceipt> {
     if (await this.inspect() !== null) throw new VerifierKeyInsertionAlreadyReservedError();
     const reservation = Reservation.parse({ version: 1, ...plan, reservedAt: new Date().toISOString() });
     await this.writeNew(this.path, reservation, true);
-    let finalized: FinalizedTxData;
+    let finalized: Ledger9FinalizedMaintenanceTxData;
     try {
       finalized = await submit();
     } catch (error) {
-      if (error instanceof InsertVerifierKeyTxFailedError) {
+      if (isFailedVerifierKeyInsertion(error)) {
         let receipt: LocalVerifierKeyInsertionReceipt;
         try {
-          receipt = this.parseReceipt(error.finalizedTxData, "failed");
+          receipt = this.parseReceipt(error.record, "failed");
         } catch (parseError) {
           throw new VerifierKeyInsertionOutcomeUnknownError(parseError);
         }
@@ -142,7 +148,7 @@ export class FileVerifierKeyInsertionJournal {
     }
     let receipt: LocalVerifierKeyInsertionReceipt;
     try {
-      receipt = this.parseReceipt(finalized, "succeeded");
+      receipt = this.parseReceipt(finalized.public, "succeeded");
     } catch (error) {
       throw new VerifierKeyInsertionOutcomeUnknownError(error);
     }
@@ -155,9 +161,12 @@ export class FileVerifierKeyInsertionJournal {
   }
 
   private parseReceipt(
-    finalized: FinalizedTxData,
+    finalized: FinalizedTxRead,
     outcome: "succeeded" | "failed",
   ): LocalVerifierKeyInsertionReceipt {
+    if (finalized.era !== "v9") {
+      throw new Error("Verifier-key insertion finalized on an unexpected ledger era");
+    }
     const receipt = {
       outcome,
       txId: finalized.txId,
@@ -233,7 +242,7 @@ export function planLocalVerifierKeyInsertion(input: {
   bootstrapMaintenanceVerifyingKey: string;
   circuitName: string;
 }, image: FinalizedRegistryDeploymentImage): LocalVerifierKeyInsertionPlan {
-  if (input.network.networkId !== "undeployed" || getNetworkId() !== "undeployed"
+  if (input.network.networkId !== "undeployed"
     || input.receipt.networkId !== "undeployed") {
     throw new Error("Verifier-key insertion requires the undeployed local network");
   }
@@ -328,7 +337,7 @@ export async function reconcileLocalVerifierKeyInsertion(input: {
   circuitName: string;
   journal: FileVerifierKeyInsertionJournal;
 }): Promise<LocalVerifierKeyInsertionReadback> {
-  if (input.network.networkId !== "undeployed" || getNetworkId() !== "undeployed") {
+  if (input.network.networkId !== "undeployed") {
     throw new Error("Verifier-key reconciliation requires the undeployed local network");
   }
   const entry = await input.journal.inspect();
@@ -378,6 +387,9 @@ export async function submitLocalVerifierKeyInsertion(input: {
   providers: ContractProviders<RegistryContract>;
   contractMaintenanceSigningKey: SigningKey;
 }): Promise<{ receipt: LocalVerifierKeyInsertionReceipt; readback: "verified" | "pending" | "absent" | "mismatch" }> {
+  if (input.providers.config.networkId !== input.network.networkId) {
+    throw new Error("Verifier-key providers do not match the approved network");
+  }
   const reader = await createLocalNetworkDeploymentActionReader(input.network);
   const before = await reader.readCurrentFinalizedDeploymentImage(
     input.receipt.contractAddress, input.bootstrap.maintainerKeyId,
@@ -387,14 +399,14 @@ export async function submitLocalVerifierKeyInsertion(input: {
   const key = await readPinnedInstalledVerifierKey(input.releaseManifest, input.circuitName);
   const compiledContract = compiledStagedVerifierKeyContract(input.circuitName);
   const verifierKey = createVerifierKey(key);
-  const expectedKey = input.bootstrapMaintenanceVerifyingKey.slice(2);
-  if (signatureVerifyingKey(input.contractMaintenanceSigningKey).toLowerCase() !== expectedKey) {
+  const expectedKey = input.bootstrapMaintenanceVerifyingKey;
+  if (maintenanceSigningKeyHex(input.contractMaintenanceSigningKey) !== expectedKey) {
     throw new Error("Insertion signing key disagrees with the pinned bootstrap authority");
   }
   const address = input.receipt.contractAddress.slice(2);
   const priorSigningKey = await input.providers.privateStateProvider.getSigningKey(address);
   if (priorSigningKey !== null
-    && signatureVerifyingKey(priorSigningKey).toLowerCase() !== expectedKey) {
+    && maintenanceSigningKeyHex(priorSigningKey) !== expectedKey) {
     throw new Error("Provider has a different contract maintenance signing key");
   }
   if (priorSigningKey === null) {
@@ -402,18 +414,22 @@ export async function submitLocalVerifierKeyInsertion(input: {
   }
   const installedSigningKey = await input.providers.privateStateProvider.getSigningKey(address);
   if (installedSigningKey === null
-    || signatureVerifyingKey(installedSigningKey).toLowerCase() !== expectedKey) {
+    || maintenanceSigningKeyHex(installedSigningKey) !== expectedKey) {
     throw new Error("Provider cannot read back the approved maintenance signing key");
   }
   const providerState = await input.providers.publicDataProvider.queryContractState(address);
-  if (providerState === null || providerState.operation(input.circuitName) !== undefined
-    || providerState.maintenanceAuthority.counter !== BigInt(plan.currentAuthorityCounter)) {
+  if (providerState === null || providerState.contractState.era !== "v9") {
+    throw new Error("Provider state is missing or is not Ledger 9");
+  }
+  const decodedProviderState = providerState.contractState.deserialize({ v9: ContractState });
+  if (decodedProviderState.operation(input.circuitName) !== undefined
+    || decodedProviderState.maintenanceAuthority.counter !== BigInt(plan.currentAuthorityCounter)) {
     throw new Error("Provider state disagrees with the finalized key absence or maintenance counter");
   }
   const finalized = await input.journal.executeOnce(plan, () => submitInsertVerifierKeyTx(
     input.providers, compiledContract,
     address,
-    input.circuitName as Parameters<typeof submitInsertVerifierKeyTx<RegistryContract>>[3],
+    input.circuitName as Contract.ProvableCircuitId<RegistryContract>,
     verifierKey,
   ));
   let after: FinalizedRegistryDeploymentImage | null;

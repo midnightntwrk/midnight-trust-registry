@@ -9,6 +9,7 @@ const HASH = /^0x[0-9a-f]{64}$/u;
 const PLAN_FIELDS = ["format", "journalPath", "network", "providerModulePath",
   "providerModuleSha256", "releaseManifestPath", "sourceRevision"];
 const STAGED_PLAN_FIELDS = [...PLAN_FIELDS, "initialVerifierKeyName"];
+const POLICY_STAGED_PLAN_FIELDS = [...STAGED_PLAN_FIELDS, "policyRecordPath", "policyRecordSha256"];
 const NETWORK_FIELDS = ["allowedHosts", "expectedGenesisHash", "indexerHttpUrl",
   "indexerWsUrl", "networkId", "rpcUrl"];
 
@@ -19,7 +20,9 @@ const NETWORK_FIELDS = ["allowedHosts", "expectedGenesisHash", "indexerHttpUrl",
  * sourceRevision: string}} LocalDeploymentPlanBase */
 /** @typedef {LocalDeploymentPlanBase & (
  * {format: "tr-local-deployment-plan-v1"} |
- * {format: "tr-local-staged-deployment-plan-v1", initialVerifierKeyName: string}
+ * {format: "tr-local-staged-deployment-plan-v1", initialVerifierKeyName: string} |
+ * {format: "tr-local-staged-deployment-plan-v2", initialVerifierKeyName: string,
+ * policyRecordPath: string, policyRecordSha256: string}
  * )} LocalDeploymentPlan */
 
 /** @param {unknown} value @returns {value is Record<string, unknown>} */
@@ -34,8 +37,14 @@ export function validateLocalDeploymentPlan(candidate) {
     throw new Error("Local deployment requires an exact source, genesis, endpoint, and provider approval plan");
   }
   const full = exactFields(candidate, PLAN_FIELDS) && candidate.format === "tr-local-deployment-plan-v1";
-  const staged = exactFields(candidate, STAGED_PLAN_FIELDS)
-    && candidate.format === "tr-local-staged-deployment-plan-v1"
+  const stagedV1 = exactFields(candidate, STAGED_PLAN_FIELDS)
+    && candidate.format === "tr-local-staged-deployment-plan-v1";
+  const stagedV2 = exactFields(candidate, POLICY_STAGED_PLAN_FIELDS)
+    && candidate.format === "tr-local-staged-deployment-plan-v2"
+    && absolutePath(candidate.policyRecordPath)
+    && typeof candidate.policyRecordSha256 === "string"
+    && SHA256.test(candidate.policyRecordSha256);
+  const staged = (stagedV1 || stagedV2)
     && typeof candidate.initialVerifierKeyName === "string"
     && /^[A-Za-z][A-Za-z0-9_]{0,127}$/u.test(candidate.initialVerifierKeyName);
   const network = candidate.network;

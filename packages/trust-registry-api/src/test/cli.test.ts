@@ -35,6 +35,22 @@ describe("API CLI binding", () => {
     "--local-ledger-keyring", "/run/keyring",
     "--local-ledger-reviewer", "A".repeat(40)];
 
+  it("binds off-chain sign-in only to a loopback approved local ledger", () => {
+    const args = [...localArgs, "--local-offchain-auth-store", "/run/private/challenges.json"];
+    expect(parseTrustRegistryApiCliArgs(args).localOffchainAuthStorePath)
+      .toBe("/run/private/challenges.json");
+    expect(parseTrustRegistryApiCliArgs([...args, "--host", "::1"]).host).toBe("::1");
+    for (const invalid of [
+      [...localArgs, "--local-offchain-auth-store", "relative.json"],
+      [...localArgs, "--local-offchain-auth-store", "/run/api-plan.json"],
+      [...localArgs, "--local-offchain-auth-store", "/run/api-plan.sig"],
+      [...localArgs, "--local-offchain-auth-store", "/run/keyring/reviewer.asc"],
+      [...args, "--host", "0.0.0.0", "--cluster-bind"],
+      ["serve", "--workspace", "/tmp/workspace.json", "--local-offchain-auth-store", "/tmp/challenges.json"],
+      ["check-local-ledger-plan", ...args.slice(1)],
+    ]) expect(() => parseTrustRegistryApiCliArgs(invalid)).toThrow();
+  });
+
   it("requires complete local reviewer evidence and never combines local mode with demo files", () => {
     expect(parseTrustRegistryApiCliArgs(localArgs).localLedgerPlanPath).toBe("/run/api-plan.json");
     for (const args of [

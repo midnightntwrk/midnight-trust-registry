@@ -23,7 +23,7 @@ import { describe, expect, it } from "vitest";
 import { MutationActorNonceCapacityExceededError, MutationIntentActorRejectedError, MutationNonceAlreadyUsedError, MutationNonceCapacityExceededError, MutationNonceClockRollbackError, transitionSignedMutationState } from "../signed-mutation-state.js";
 import { computeOperatorWorkspaceCommitment } from "../workspace-commitment.js";
 
-const workspace = createOperatorWorkspace({ label: "signed-transition" });
+const workspace = await createOperatorWorkspace({ label: "signed-transition" });
 const fixture = createIssuerScenarioFixture("example");
 const actorDid = fixture.subjectDid;
 const actorKey = sha256Hex(JSON.stringify(["tr:mutation:actor:v1", workspace.snapshot.registry.registryId, actorDid]));

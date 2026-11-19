@@ -14,12 +14,14 @@ import { KEYLESS_KEYGEN_PARAMETER_PATHS, PROTOCOL_KEY_PATHS, STANDALONE_PROOF_PA
 import { buildReleaseCandidateManifest } from "./release-candidate-manifest.mjs";
 import { artifactWorkspaces, packageManifestCatalog } from "./trust-registry-workspace-catalog.mjs";
 import { verifyKeylessZkirAgainstFullSource } from "./keyless-zkir-bundle.mjs";
+import { pinnedStandaloneInventoryImages } from "./standalone-install-image-inventory-policy.mjs";
 
 export { pinnedStandaloneImages } from "./check-standalone-install.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-/** @typedef {{outputRoot?: string, proofSource?: string, apiImageDirectory?: string,
+/** @typedef {{outputRoot?: string, proofSource?: string, reuseVerifiedImageBundle?: string,
+ * apiImageDirectory?: string,
  * adminImageDirectory?: string, applicantImageDirectory?: string,
  * keylessDirectory?: string, keylessManifestSha256?: string, keygenBinary?: string}} StandaloneInstallBuildOptions */
 
@@ -130,7 +132,13 @@ export async function stageStaticRuntimeImage(inputDirectory, destination, role,
 export function validateStandaloneInstallInputs(options, sourceRevision, inspectImage = (reference) =>
   JSON.parse(command("docker", ["image", "inspect", reference, "--format", "{{json .RepoDigests}}"]))) {
   const { apiImageDirectory, adminImageDirectory, applicantImageDirectory,
-    keylessDirectory, keylessManifestSha256, keygenBinary } = options;
+    keylessDirectory, keylessManifestSha256, keygenBinary, reuseVerifiedImageBundle } = options;
+  if (reuseVerifiedImageBundle !== undefined
+    && (!isAbsolute(reuseVerifiedImageBundle) || apiImageDirectory !== undefined
+      || adminImageDirectory !== undefined || applicantImageDirectory !== undefined
+      || keylessDirectory !== undefined)) {
+    throw new Error("Verified image reuse requires an absolute bundle path and a v3 package-only install");
+  }
   if ([keylessDirectory, keylessManifestSha256, keygenBinary].some((value) => value !== undefined)) {
     if (!keylessDirectory || !keylessManifestSha256 || !keygenBinary
       || !isAbsolute(keylessDirectory) || !isAbsolute(keygenBinary)
@@ -191,19 +199,55 @@ export function validateStandaloneInstallInputs(options, sourceRevision, inspect
     keylessDirectory, keylessManifestSha256, keygenBinary };
 }
 
-/** @param {StandaloneInstallBuildOptions} [options] */
-export function preflightStandaloneInstall(options = {}) {
+/** @param {StandaloneInstallBuildOptions} [options]
+ * @param {(reference: string) => unknown} [inspectImage] */
+export function preflightStandaloneInstall(options = {}, inspectImage) {
+  if (options.reuseVerifiedImageBundle !== undefined && inspectImage === undefined) {
+    throw new Error("Verified image reuse requires the asynchronous bundle verification path");
+  }
   const sourceRevision = verifiedSourceRevision();
   assertRequiredWorkspaceFiles(root);
-  return validateStandaloneInstallInputs(options, sourceRevision);
+  return validateStandaloneInstallInputs(options, sourceRevision, inspectImage);
+}
+
+/** Only source-independent pinned image archives may be reused from an older install.
+ * @param {string} bundlePath */
+async function reusableImages(bundlePath) {
+  if (!isAbsolute(bundlePath)) throw new Error("Verified image bundle path must be absolute");
+  const verified = await verifyStandaloneInstallBundle(bundlePath);
+  const inventoryBytes = readFileSync(join(bundlePath, "install-inventory.json"));
+  if (createHash("sha256").update(inventoryBytes).digest("hex") !== verified.inventorySha256) {
+    throw new Error("Verified image bundle inventory changed after verification");
+  }
+  const inventory = JSON.parse(inventoryBytes.toString("utf8"));
+  const images = pinnedStandaloneInventoryImages(inventory.images);
+  const pinned = pinnedStandaloneImages(readFileSync(join(root, "deploy/standalone/compose.yml"), "utf8"));
+  if (pinned.some(({ role, reference }) => !verified.images.some((image) =>
+    image.role === role && image.reference === reference))
+    || images.length !== pinned.length
+    || images.some((image) => !pinned.some(({ role, reference }) =>
+      image.role === role && image.reference === reference))) {
+    throw new Error("Verified image bundle does not match current Compose role and digest pins");
+  }
+  return { root: bundlePath, images };
+}
+
+/** @param {StandaloneInstallBuildOptions} options */
+async function preparedInstall(options) {
+  const reuse = options.reuseVerifiedImageBundle === undefined
+    ? null : await reusableImages(options.reuseVerifiedImageBundle);
+  const inspectImage = reuse === null ? undefined : (/** @type {string} */ reference) =>
+    reuse.images.some((image) => image.reference === reference) ? [reference] : [];
+  return { plan: preflightStandaloneInstall(options, inspectImage), reuse };
 }
 
 /** Creates a fresh bundle only; failed output is retained for inspection. */
 /** @param {StandaloneInstallBuildOptions} [options] */
 export async function buildStandaloneInstall(options = {}) {
+  const { plan, reuse } = await preparedInstall(options);
   const { sourceRevision, outputRoot, proofSource, destination, pinned,
     apiImageDirectory, adminImageDirectory, applicantImageDirectory,
-    keylessDirectory, keylessManifestSha256, keygenBinary } = preflightStandaloneInstall(options);
+    keylessDirectory, keylessManifestSha256, keygenBinary } = plan;
   let keyless = null;
   if (keylessDirectory !== undefined && keylessManifestSha256 !== undefined
     && keygenBinary !== undefined) {
@@ -266,14 +310,25 @@ export async function buildStandaloneInstall(options = {}) {
   }
   mkdirSync(join(destination, "images"));
   for (const { role, reference } of pinned) {
-    const digests = JSON.parse(command("docker", ["image", "inspect", reference,
-      "--format", "{{json .RepoDigests}}"]));
-    if (!Array.isArray(digests) || !digests.includes(reference)) {
-      throw new Error(`Local image does not retain approved repository digest: ${role}`);
-    }
     const archive = `images/${role}.tar`;
     const partial = join(destination, `${archive}.partial`);
-    command("docker", ["save", "--output", partial, reference]);
+    if (reuse === null) {
+      const digests = JSON.parse(command("docker", ["image", "inspect", reference,
+        "--format", "{{json .RepoDigests}}"]));
+      if (!Array.isArray(digests) || !digests.includes(reference)) {
+        throw new Error(`Local image does not retain approved repository digest: ${role}`);
+      }
+      command("docker", ["save", "--output", partial, reference]);
+    } else {
+      const image = reuse.images.find((item) => item.role === role && item.reference === reference);
+      if (!image || image.archive !== archive || !lstatSync(join(reuse.root, archive)).isFile()) {
+        throw new Error(`Verified reusable image archive is missing: ${role}`);
+      }
+      copyFileSync(join(reuse.root, archive), partial, fsConstants.COPYFILE_EXCL);
+      if (await sha256(partial) !== image.archiveSha256) {
+        throw new Error(`Reusable image archive changed after verification: ${role}`);
+      }
+    }
     renameSync(partial, join(destination, archive));
     images.push({ role, reference, archive, archiveSha256: await sha256(join(destination, archive)) });
   }
@@ -339,17 +394,20 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const preflight = args[0] === "--preflight";
   if (preflight) args.shift();
   if (args.length !== 0 && (args.length !== 2 || args[0] !== "--api-image-dir")
+    && (args.length !== 2 || args[0] !== "--reuse-image-bundle")
     && (args.length !== 6 || args[0] !== "--api-image-dir"
       || args[2] !== "--admin-image-dir" || args[4] !== "--applicant-image-dir")
     && (args.length !== 12 || args[0] !== "--api-image-dir"
       || args[2] !== "--admin-image-dir" || args[4] !== "--applicant-image-dir"
       || args[6] !== "--keyless-dir" || args[8] !== "--keyless-manifest-sha256"
       || args[10] !== "--keygen-bin")) {
-    throw new Error("Usage: node scripts/build-standalone-install.mjs [--preflight] [--api-image-dir <dir> --admin-image-dir <dir> --applicant-image-dir <dir> [--keyless-dir <dir> --keyless-manifest-sha256 <sha256> --keygen-bin <linux-arm64-zkir>]]");
+    throw new Error("Usage: node scripts/build-standalone-install.mjs [--preflight] [--reuse-image-bundle <verified-install-dir> | --api-image-dir <dir> --admin-image-dir <dir> --applicant-image-dir <dir> [--keyless-dir <dir> --keyless-manifest-sha256 <sha256> --keygen-bin <linux-arm64-zkir>]]");
   }
-  const options = { apiImageDirectory: args[1], adminImageDirectory: args[3],
+  const reuseImageBundle = args[0] === "--reuse-image-bundle";
+  const options = { apiImageDirectory: reuseImageBundle ? undefined : args[1], adminImageDirectory: args[3],
     applicantImageDirectory: args[5], keylessDirectory: args[7],
-    keylessManifestSha256: args[9], keygenBinary: args[11] };
-  console.log(JSON.stringify(preflight ? preflightStandaloneInstall(options)
+    keylessManifestSha256: args[9], keygenBinary: args[11],
+    reuseVerifiedImageBundle: reuseImageBundle ? args[1] : undefined };
+  console.log(JSON.stringify(preflight ? (await preparedInstall(options)).plan
     : await buildStandaloneInstall(options)));
 }

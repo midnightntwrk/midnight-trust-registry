@@ -16,17 +16,17 @@ import {
   type PreparedRegistryEpochPublicationAction,
 } from "../local-simulator-harness.js";
 
-const signPrepared = (
+const signPrepared = async (
   harness: LocalTrustRegistryIntegrationHarness,
   maintainer: MaintainerScenarioFixture,
   prepared: PreparedRegistryEpochPublicationAction,
-): MaintainerCoAuthorizer => ({
+): Promise<MaintainerCoAuthorizer> => ({
   keyId: maintainer.keyId,
   publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
   signature: signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
     prepared.registryId,
-    harness.simulator.getLedger().deploymentNetworkIdCommitment,
+    (await harness.simulator.getLedger()).deploymentNetworkIdCommitment,
     Buffer.from(harness.simulator.contractAddress, "hex"),
     prepared.policyCommitment,
     prepared.actionKind,
@@ -36,49 +36,49 @@ const signPrepared = (
 });
 
 describe("externally signed registry epoch publication", () => {
-  it("requires current, distinct maintainer quorum and records the canonical first signer", () => {
+  it("requires current, distinct maintainer quorum and records the canonical first signer", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("external-epoch");
     const second = createMaintainerScenarioFixture("epoch-second");
     const third = createMaintainerScenarioFixture("epoch-third");
     const outsider = createMaintainerScenarioFixture("epoch-outsider");
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(third);
-    harness.updateMaintainerThresholdPolicy(2n, 2n, 2n);
-    const prepared = harness.prepareRegistryEpochPublicationAction("external-quorum");
-    const secondSignature = signPrepared(harness, second, prepared);
-    const thirdSignature = signPrepared(harness, third, prepared);
-    const before = harness.simulator.getLedger().governanceActionCount;
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(third);
+    await harness.updateMaintainerThresholdPolicy(2n, 2n, 2n);
+    const prepared = await harness.prepareRegistryEpochPublicationAction("external-quorum");
+    const secondSignature = await signPrepared(harness, second, prepared);
+    const thirdSignature = await signPrepared(harness, third, prepared);
+    const before = (await harness.simulator.getLedger()).governanceActionCount;
 
-    expect(() => harness.executeRegistryEpochPublicationWithSignatures(
+    await expect(harness.executeRegistryEpochPublicationWithSignatures(
       "external-quorum", [secondSignature],
-    )).toThrow();
-    expect(() => harness.executeRegistryEpochPublicationWithSignatures(
+    )).rejects.toThrow();
+    await expect(harness.executeRegistryEpochPublicationWithSignatures(
       "external-quorum", [secondSignature, secondSignature],
-    )).toThrow();
-    expect(() => harness.executeRegistryEpochPublicationWithSignatures(
-      "external-quorum", [secondSignature, signPrepared(harness, outsider, prepared)],
-    )).toThrow();
-    expect(() => harness.executeRegistryEpochPublicationWithSignatures(
+    )).rejects.toThrow();
+    await expect(harness.executeRegistryEpochPublicationWithSignatures(
+      "external-quorum", [secondSignature, await signPrepared(harness, outsider, prepared)],
+    )).rejects.toThrow();
+    await expect(harness.executeRegistryEpochPublicationWithSignatures(
       "external-quorum", [
-        signPrepared(harness, second, { ...prepared, policyCommitment: new Uint8Array(32) }),
+        await signPrepared(harness, second, { ...prepared, policyCommitment: new Uint8Array(32).fill(1) }),
         thirdSignature,
       ],
-    )).toThrow();
-    expect(() => harness.executeRegistryEpochPublicationWithSignatures(
+    )).rejects.toThrow();
+    await expect(harness.executeRegistryEpochPublicationWithSignatures(
       "wrong-label", [secondSignature, thirdSignature],
-    )).toThrow();
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
+    )).rejects.toThrow();
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before);
 
     const sorted = [second, third].sort((left, right) =>
       compareMaintainerKeyIds(left.keyId, right.keyId));
     const noncanonicalInput = sorted.map((signer) =>
       signer === second ? secondSignature : thirdSignature).reverse();
-    const epoch = harness.executeRegistryEpochPublicationWithSignatures(
+    const epoch = await harness.executeRegistryEpochPublicationWithSignatures(
       "external-quorum", noncanonicalInput,
     );
     expect(epoch.epochId).toBe(prepared.epochId);
     expect(epoch.maintainerSignatures[0]?.keyId).toBe(`${sorted[0]!.subjectDid}#key-1`);
-    const witness = harness.getEpochPublicationWitness(epoch.epochId);
+    const witness = await harness.getEpochPublicationWitness(epoch.epochId);
     expect(witness.signatures.map((signer) => signer.keyId)).toEqual(
       sorted.map((signer) => `${signer.subjectDid}#key-1`),
     );
@@ -86,7 +86,7 @@ describe("externally signed registry epoch publication", () => {
     const signerSetHash = pureCircuits.maintainerSignerSetHash(
       2n, sorted[0]!.keyId, sorted[1]!.keyId, zero, zero, zero,
     );
-    expect(harness.simulator.getLedger().lastAuthorizedSignerSetHash).toEqual(signerSetHash);
+    expect((await harness.simulator.getLedger()).lastAuthorizedSignerSetHash).toEqual(signerSetHash);
     const expectedEventHash = pureCircuits.governanceEventHash(
       prepared.registryId,
       prepared.networkIdCommitment,
@@ -98,10 +98,10 @@ describe("externally signed registry epoch publication", () => {
       prepared.actionSequence,
     );
     expect(witness.eventHash).toBe(`0x${Buffer.from(expectedEventHash).toString("hex")}`);
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(before + 1n);
-    expect(() => harness.executeRegistryEpochPublicationWithSignatures(
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before + 1n);
+    await expect(harness.executeRegistryEpochPublicationWithSignatures(
       "external-quorum", [secondSignature, thirdSignature],
-    )).toThrow();
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(before + 1n);
+    )).rejects.toThrow();
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before + 1n);
   });
 });

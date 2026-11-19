@@ -4,9 +4,9 @@ import { test } from "node:test";
 import { AdversarialMatrix } from "./adversarial-matrix.mjs";
 import { runApplicationEvidenceSafetyScenarios } from "./governed-demo-application-evidence-safety.mjs";
 
-test("runs signed application-evidence safety cases independently of the governed demo", () => {
+test("runs signed application-evidence safety cases independently of the governed demo", async () => {
   const matrix = new AdversarialMatrix();
-  runApplicationEvidenceSafetyScenarios(matrix);
+  await runApplicationEvidenceSafetyScenarios(matrix);
   assert.deepEqual(matrix.report().summary, { total: 2, passed: 2, failed: 0 });
   assert.deepEqual(matrix.report().cases.map(({ id }) => id), [
     "issuer-signed-wrong-policy-id",
@@ -192,6 +192,20 @@ test("does not record a rejected historical verification", () => {
     boundary: "client",
   }), /invalid proof/u);
   assert.deepEqual(matrix.report().cases, []);
+});
+
+test("awaits historical verification before recording success", async () => {
+  const matrix = new AdversarialMatrix({ collectFailures: true });
+  await matrix.expectVerifiedAsync(async () => { throw new Error("private proof failure"); }, {
+    id: "rejected-history", invariant: "Historical proof must verify", boundary: "client",
+  });
+  await matrix.expectVerifiedAsync(async () => true, {
+    id: "verified-history", invariant: "A valid historical proof remains accepted", boundary: "client",
+  });
+  assert.deepEqual(matrix.report().cases.map(({ id, status }) => [id, status]), [
+    ["rejected-history", "failed"], ["verified-history", "passed"],
+  ]);
+  assert.equal(JSON.stringify(matrix.report()).includes("private"), false);
 });
 
 test("records API and TRQP temporal decisions only when outcomes agree", () => {

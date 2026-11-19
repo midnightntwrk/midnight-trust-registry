@@ -6,7 +6,7 @@ import { delimiter, dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
-import { checkCompactVersion } from "./check-compact-version.mjs";
+import { checkCompactVersion, matchesInstalledVersion } from "./check-compact-version.mjs";
 
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const pinnedVersion = readFileSync(join(sourceRoot, ".compact-version"), "utf8").trim();
@@ -23,6 +23,16 @@ const paths = [
 
 test("all Compact consumers use the shared version", () => {
   assert.equal(checkCompactVersion(), pinnedVersion);
+});
+
+test("Linux Nix workflow uses the strict installed-version matcher", () => {
+  const workflow = yaml.load(readFileSync(join(sourceRoot, ".github/workflows/compact-nix-hash.yaml"), "utf8"));
+  const step = workflow.jobs["linux-hash"].steps.find((candidate) =>
+    candidate.name === "Build and verify pinned Linux compiler");
+  assert.match(step.run, /matchesInstalledVersion\(actual, expected\)/u);
+  assert.equal(matchesInstalledVersion(`${pinnedVersion} (b5d9e4dfc 2026-11-03)`, pinnedVersion), true);
+  assert.equal(matchesInstalledVersion(`${pinnedVersion}-rc1`, pinnedVersion), false);
+  assert.equal(matchesInstalledVersion(`${pinnedVersion} (untrusted)`, pinnedVersion), false);
 });
 
 test("cached Compact setup authenticates its release query in every workflow", () => {
@@ -156,6 +166,33 @@ test("installed check supports Nix and upstream COMPACT_DIRECTORY layouts", () =
       "--check-installed",
     ], { encoding: "utf8", env });
     assert.equal(matching.status, 0, matching.stderr);
+
+    writeFileSync(compact, `#!/bin/sh\necho '${pinnedVersion} (b5d9e4dfc 2026-11-03)'\n`);
+    writeFileSync(compiler, `#!/bin/sh\necho '${pinnedVersion} (b5d9e4dfc 2026-11-03)'\n`);
+    const annotated = spawnSync(process.execPath, [
+      join(sourceRoot, "scripts/check-compact-version.mjs"),
+      "--check-installed",
+    ], { encoding: "utf8", env });
+    assert.equal(annotated.status, 0, annotated.stderr);
+
+    writeFileSync(compiler, `#!/bin/sh\necho '${pinnedVersion} (untrusted)'\n`);
+    const malformedAnnotation = spawnSync(process.execPath, [
+      join(sourceRoot, "scripts/check-compact-version.mjs"),
+      "--check-installed",
+    ], { encoding: "utf8", env });
+    assert.notEqual(malformedAnnotation.status, 0);
+    assert.match(malformedAnnotation.stderr, /compiler .* does not match pin/u);
+
+    writeFileSync(compiler, `#!/bin/sh\necho ${pinnedVersion}\n`);
+    writeFileSync(compact, `#!/bin/sh\necho '${pinnedVersion}-rc1'\n`);
+    const prerelease = spawnSync(process.execPath, [
+      join(sourceRoot, "scripts/check-compact-version.mjs"),
+      "--check-installed",
+    ], { encoding: "utf8", env });
+    assert.notEqual(prerelease.status, 0);
+    assert.match(prerelease.stderr, /Installed Compact .* does not match pin/u);
+
+    writeFileSync(compact, `#!/bin/sh\necho ${pinnedVersion}\n`);
 
     rmSync(compiler);
     const upstreamLayout = spawnSync(process.execPath, [

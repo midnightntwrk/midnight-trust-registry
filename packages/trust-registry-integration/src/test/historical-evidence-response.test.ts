@@ -16,12 +16,12 @@ import { createIssuerScenarioFixture, createRecognitionScenarioFixture } from ".
 import { LocalTrustRegistryIntegrationHarness } from "../local-simulator-harness.js";
 
 describe("historical native evidence responses", () => {
-  it("rejects substituted finalized Compact format, policy, and publication signer", () => {
+  it("rejects substituted finalized Compact format, policy, and publication signer", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("historical-anchor-ledger");
     const issuer = createIssuerScenarioFixture("historical-anchor-ledger");
-    harness.authorizeIssuer(issuer);
-    const bundle = harness.evaluateCurrentIssuerDecision(issuer);
-    const ledger = harness.simulator.getLedger();
+    await harness.authorizeIssuer(issuer);
+    const bundle = await harness.evaluateCurrentIssuerDecision(issuer);
+    const ledger = await harness.simulator.getLedger();
     const epoch = ledger.epochCommitmentRecords.lookup(bytes32Commitment(bundle.epoch.epochId));
     const signer = ledger.maintainerRecords.lookup(epoch.maintainerKeyId);
     const input = {
@@ -79,12 +79,12 @@ describe("historical native evidence responses", () => {
   it("verifies an archived issuer claim against an independent signed epoch anchor", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("historical-native-issuer");
     const issuer = createIssuerScenarioFixture("degree");
-    harness.authorizeIssuer(issuer);
-    const bundle = harness.evaluateCurrentIssuerDecision(issuer);
+    await harness.authorizeIssuer(issuer);
+    const bundle = await harness.evaluateCurrentIssuerDecision(issuer);
     if (bundle.authorization === undefined) throw new Error("expected issuer bundle");
     const authorization = bundle.authorization;
     const anchorInput = {
-      ledger: harness.simulator.getLedger(), registryId: harness.registryId,
+      ledger: await harness.simulator.getLedger(), registryId: harness.registryId,
       epochId: bundle.epoch.epochId, policyVersion: bundle.policy.version,
       sequenceToTimestamp: defaultSequenceToTimestamp,
       expectedNetworkId: harness.registryDid.split(":")[2]!,
@@ -157,10 +157,10 @@ describe("historical native evidence responses", () => {
         ...bundle.epoch.maintainerSignatures[0]!, keyId: "did:midnight:substituted#key-1",
       }] },
     }, selection, anchor)).toThrow(/response epoch mismatch/u);
-    harness.suspendIssuer(issuer);
-    const laterBundle = harness.buildIssuerHistoricalEvidence(issuer);
+    await harness.suspendIssuer(issuer);
+    const laterBundle = await harness.buildIssuerHistoricalEvidence(issuer);
     const laterAnchor = resolveCompactHistoricalEpochAnchor({
-      ledger: harness.simulator.getLedger(), registryId: harness.registryId,
+      ledger: await harness.simulator.getLedger(), registryId: harness.registryId,
       epochId: laterBundle.epoch.epochId, policyVersion: laterBundle.policy.version,
       sequenceToTimestamp: defaultSequenceToTimestamp,
       expectedNetworkId: harness.registryDid.split(":")[2]!,
@@ -224,12 +224,12 @@ describe("historical native evidence responses", () => {
   it("verifies an exact-scope recognition claim and rejects registry substitution", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("historical-native-recognition");
     const recognition = createRecognitionScenarioFixture("gaia-x");
-    harness.authorizeRecognition(recognition);
-    const bundle = harness.evaluateCurrentRecognitionDecision(recognition);
+    await harness.authorizeRecognition(recognition);
+    const bundle = await harness.evaluateCurrentRecognitionDecision(recognition);
     if (bundle.recognition === undefined) throw new Error("expected recognition bundle");
     const record = bundle.recognition;
     const anchor = resolveCompactHistoricalEpochAnchor({
-      ledger: harness.simulator.getLedger(), registryId: harness.registryId,
+      ledger: await harness.simulator.getLedger(), registryId: harness.registryId,
       epochId: bundle.epoch.epochId, policyVersion: bundle.policy.version,
       sequenceToTimestamp: defaultSequenceToTimestamp,
       expectedNetworkId: harness.registryDid.split(":")[2]!,

@@ -11,19 +11,19 @@ const harness = new LocalTrustRegistryIntegrationHarness("packed-consumer");
 const client = new TrustRegistrySimulatorClient(harness.simulator);
 
 const issuer = createIssuerScenarioFixture("packed-consumer-issuer");
-harness.authorizeIssuer(issuer);
-const issuerEvidence = harness.evaluateCurrentIssuerDecision(issuer, {
+await harness.authorizeIssuer(issuer);
+const issuerEvidence = await harness.evaluateCurrentIssuerDecision(issuer, {
   expectedRegistryId: harness.registryId,
 });
 assert.equal(issuerEvidence.authorization?.status, "active");
 assert.equal(issuerEvidence.authorization?.authorizationId, issuer.authorizationId);
 assert.equal(
-  client.verifyIssuerAuthorizationBundle(issuerEvidence, {
+  (await client.verifyIssuerAuthorizationBundle(issuerEvidence, {
     expectedResourceId: issuer.resourceId,
-  }).authorization?.authorizationId,
+  })).authorization?.authorizationId,
   issuer.authorizationId,
 );
-assert.throws(
+await assert.rejects(
   () => client.verifyIssuerAuthorizationBundle(issuerEvidence, {
     expectedResourceId: "schema:unrelated",
   }),
@@ -31,16 +31,16 @@ assert.throws(
 );
 
 const verifier = createVerifierScenarioFixture("packed-consumer-verifier");
-harness.authorizeVerifier(verifier);
-const verifierEvidence = harness.evaluateCurrentVerifierDecision(verifier, {
+await harness.authorizeVerifier(verifier);
+const verifierEvidence = await harness.evaluateCurrentVerifierDecision(verifier, {
   expectedRegistryId: harness.registryId,
 });
 assert.equal(verifierEvidence.authorization?.status, "active");
 assert.equal(verifierEvidence.authorization?.authorizationId, verifier.authorizationId);
 assert.equal(
-  client.verifyVerifierAuthorizationBundle(verifierEvidence, {
+  (await client.verifyVerifierAuthorizationBundle(verifierEvidence, {
     expectedResourceId: verifier.scopeResourceId,
-  }).authorization?.authorizationId,
+  })).authorization?.authorizationId,
   verifier.authorizationId,
 );
 

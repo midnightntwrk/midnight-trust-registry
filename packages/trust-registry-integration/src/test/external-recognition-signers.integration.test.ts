@@ -31,14 +31,14 @@ const signPrepared = (
   harness: LocalTrustRegistryIntegrationHarness,
   maintainer: MaintainerScenarioFixture,
   action: Pick<PreparedRecognitionAction,
-    "registryId" | "policyCommitment" | "actionKind" | "actionPayloadHash" | "actionSequence">,
+    "registryId" | "networkIdCommitment" | "policyCommitment" | "actionKind" | "actionPayloadHash" | "actionSequence">,
 ): MaintainerCoAuthorizer => ({
   keyId: maintainer.keyId,
   publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
   signature: signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
     action.registryId,
-    harness.simulator.getLedger().deploymentNetworkIdCommitment,
+    action.networkIdCommitment,
     Buffer.from(harness.simulator.contractAddress, "hex"),
     action.policyCommitment,
     action.actionKind,
@@ -48,26 +48,26 @@ const signPrepared = (
 });
 
 describe("externally signed Compact authority recognition", () => {
-  it("archives a proposed recognition with a fresh external quorum", () => {
+  it("archives a proposed recognition with a fresh external quorum", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("denied-recognition");
     const second = createMaintainerScenarioFixture("denial-second");
     const third = createMaintainerScenarioFixture("denial-third");
     const recognition = createRecognitionScenarioFixture("denied-authority");
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(third);
-    harness.proposeRecognition(recognition);
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(third);
+    await harness.proposeRecognition(recognition);
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
 
-    const prepared = harness.prepareRecognitionDecisionAction(recognition, "archive");
+    const prepared = await harness.prepareRecognitionDecisionAction(recognition, "archive");
     const signers = [signPrepared(harness, second, prepared), signPrepared(harness, third, prepared)];
-    expect(() => harness.executeRecognitionDecisionWithSignatures(
+    await expect(harness.executeRecognitionDecisionWithSignatures(
       recognition, "archive", signers.slice(0, 1),
-    )).toThrow();
-    harness.executeRecognitionDecisionWithSignatures(recognition, "archive", signers);
-    expect(harness.readRecognitionStatus(recognition)).toBe("archived");
-    expect(() => harness.executeRecognitionDecisionWithSignatures(
+    )).rejects.toThrow();
+    await harness.executeRecognitionDecisionWithSignatures(recognition, "archive", signers);
+    expect(await harness.readRecognitionStatus(recognition)).toBe("archived");
+    await expect(harness.executeRecognitionDecisionWithSignatures(
       recognition, "archive", signers,
-    )).toThrow();
+    )).rejects.toThrow();
   });
 
   it("commits a DID-verified authority statement rather than fixture evidence", async () => {
@@ -121,7 +121,8 @@ describe("externally signed Compact authority recognition", () => {
       evaluatedAtMs: Date.parse("2026-05-20T00:10:00.000Z"),
       resolver,
     });
-    const before = harness.simulator.getLedger().governanceActionCount;
+    await harness.ready;
+    const before = (await harness.simulator.getLedger()).governanceActionCount;
     await expect(prepare({
       ...signed,
       statement: { ...statement, recognizedRegistryId: "registry:substituted:v1" },
@@ -130,95 +131,95 @@ describe("externally signed Compact authority recognition", () => {
       ...signed,
       proof: { ...signed.proof, signature: `0x${"00".repeat(96)}` },
     })).rejects.toThrow();
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before);
 
     const prepared = await prepare();
     expect(prepared.evidenceHash).not.toEqual(bytes32Commitment(`${recognition.recognitionId}:propose`));
     const second = createMaintainerScenarioFixture("did-recognition-second");
     const third = createMaintainerScenarioFixture("did-recognition-third");
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(third);
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(third);
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
     const current = await prepare();
     const evidenceSignature = harness.signRecognitionProposalEvidence(current);
     const signers = [signPrepared(harness, second, current), signPrepared(harness, third, current)];
-    expect(() => harness.executeRecognitionProposalWithSignatures(
+    await expect(harness.executeRecognitionProposalWithSignatures(
       recognition, signers, evidenceSignature, prepared,
-    )).toThrow(/stale or substituted/u);
-    const eventHash = harness.executeRecognitionProposalWithSignatures(
+    )).rejects.toThrow(/stale or substituted/u);
+    const eventHash = await harness.executeRecognitionProposalWithSignatures(
       recognition, signers, evidenceSignature, current,
     );
-    const evidence = harness.simulator.getRecognitionProposalEvidence(recognition.recognitionIdCommitment);
+    const evidence = await harness.simulator.getRecognitionProposalEvidence(recognition.recognitionIdCommitment);
     expect(Buffer.from(evidence.evidenceCommitment)).toEqual(Buffer.from(current.evidenceHash));
     expect(Buffer.from(evidence.proposalGovernanceEventHash)).toEqual(Buffer.from(eventHash));
-    harness.approveRecognition(recognition);
-    harness.activateRecognition(recognition);
-    const bundle = harness.evaluateCurrentRecognitionDecision(recognition, {
+    await harness.approveRecognition(recognition);
+    await harness.activateRecognition(recognition);
+    const bundle = await harness.evaluateCurrentRecognitionDecision(recognition, {
       expectedRegistryId: harness.registryId,
     });
     expect(bundle.recognition?.status).toBe("active");
     expect(bundle.authorization).toBeUndefined();
   });
 
-  it("binds external authority and scope across 2-of-3 proposal, approval, and activation", () => {
+  it("binds external authority and scope across 2-of-3 proposal, approval, and activation", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("external-recognition");
     const second = createMaintainerScenarioFixture("recognition-second");
     const third = createMaintainerScenarioFixture("recognition-third");
     const recognition = createRecognitionScenarioFixture("recognized-authority");
     const substituted = createRecognitionScenarioFixture("other-authority");
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(third);
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
-    const proposal = harness.prepareRecognitionProposalAction(recognition);
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(third);
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    const proposal = await harness.prepareRecognitionProposalAction(recognition);
     const evidenceSignature = harness.signRecognitionProposalEvidence(proposal);
-    const initial = harness.simulator.getLedger().governanceActionCount;
+    const initial = (await harness.simulator.getLedger()).governanceActionCount;
     const signers = [signPrepared(harness, second, proposal), signPrepared(harness, third, proposal)];
-    expect(() => harness.executeRecognitionProposalWithSignatures(
+    await expect(harness.executeRecognitionProposalWithSignatures(
       recognition, signers.slice(0, 1), evidenceSignature,
-    )).toThrow();
-    expect(() => harness.executeRecognitionProposalWithSignatures(
+    )).rejects.toThrow();
+    await expect(harness.executeRecognitionProposalWithSignatures(
       recognition, [signers[0]!, signers[0]!], evidenceSignature,
-    )).toThrow();
-    expect(() => harness.executeRecognitionProposalWithSignatures(
+    )).rejects.toThrow();
+    await expect(harness.executeRecognitionProposalWithSignatures(
       substituted, signers, evidenceSignature,
-    )).toThrow();
-    expect(() => harness.executeRecognitionProposalWithSignatures(
+    )).rejects.toThrow();
+    await expect(harness.executeRecognitionProposalWithSignatures(
       recognition, signers, { ...evidenceSignature, response: 0n },
-    )).toThrow(/invalid jubjub schnorr signature/i);
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(initial);
-    harness.executeRecognitionProposalWithSignatures(recognition, signers, evidenceSignature);
+    )).rejects.toThrow(/invalid jubjub schnorr signature/i);
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(initial);
+    await harness.executeRecognitionProposalWithSignatures(recognition, signers, evidenceSignature);
 
-    const approval = harness.prepareRecognitionDecisionAction(recognition, "approve");
-    expect(() => harness.prepareRecognitionDecisionAction(recognition, "unsupported" as "approve"))
-      .toThrow(/Unsupported recognition decision action/u);
-    const beforeApproval = harness.simulator.getLedger().governanceActionCount;
-    expect(() => harness.executeRecognitionDecisionWithSignatures(recognition, "approve", [
-      signPrepared(harness, second, { ...approval, policyCommitment: new Uint8Array(32) }),
+    const approval = await harness.prepareRecognitionDecisionAction(recognition, "approve");
+    await expect(harness.prepareRecognitionDecisionAction(recognition, "unsupported" as "approve"))
+      .rejects.toThrow(/Unsupported recognition decision action/u);
+    const beforeApproval = (await harness.simulator.getLedger()).governanceActionCount;
+    await expect(harness.executeRecognitionDecisionWithSignatures(recognition, "approve", [
+      signPrepared(harness, second, { ...approval, policyCommitment: new Uint8Array(32).fill(1) }),
       signPrepared(harness, third, approval),
-    ])).toThrow();
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeApproval);
-    harness.executeRecognitionDecisionWithSignatures(recognition, "approve", [
+    ])).rejects.toThrow();
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(beforeApproval);
+    await harness.executeRecognitionDecisionWithSignatures(recognition, "approve", [
       signPrepared(harness, second, approval), signPrepared(harness, third, approval),
     ]);
 
-    const activation = harness.prepareRecognitionDecisionAction(recognition, "activate");
-    const beforeActivation = harness.simulator.getLedger().governanceActionCount;
-    expect(() => harness.executeRecognitionDecisionWithSignatures(recognition, "activate", [
+    const activation = await harness.prepareRecognitionDecisionAction(recognition, "activate");
+    const beforeActivation = (await harness.simulator.getLedger()).governanceActionCount;
+    await expect(harness.executeRecognitionDecisionWithSignatures(recognition, "activate", [
       signPrepared(harness, second, approval), signPrepared(harness, third, approval),
-    ])).toThrow();
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeActivation);
-    harness.executeRecognitionDecisionWithSignatures(recognition, "activate", [
+    ])).rejects.toThrow();
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(beforeActivation);
+    await harness.executeRecognitionDecisionWithSignatures(recognition, "activate", [
       signPrepared(harness, second, activation), signPrepared(harness, third, activation),
     ]);
 
-    const bundle = harness.evaluateCurrentRecognitionDecision(recognition, {
+    const bundle = await harness.evaluateCurrentRecognitionDecision(recognition, {
       expectedRegistryId: harness.registryId,
     });
     expect(bundle.recognition?.status).toBe("active");
     expect(bundle.recognition?.recognizedRegistryId).toBe(recognition.recognizedRegistryId);
     expect(bundle.recognition?.scope.resourceId).toBe(recognition.scopeResourceId);
     expect(bundle.authorization).toBeUndefined();
-    expect(() => new TrustRegistrySimulatorClient(harness.simulator)
-      .verifyRecognitionBundle(bundle, {})).not.toThrow();
+    await expect(new TrustRegistrySimulatorClient(harness.simulator)
+      .verifyRecognitionBundle(bundle, {})).resolves.toBeDefined();
   });
 });

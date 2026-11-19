@@ -87,10 +87,10 @@ describe("trust registry OpenID Federation adapter", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("degree-status-hint");
     const registryKeys = await createSigningFixture("registry-key-1");
-    harness.authorizeIssuer(issuer);
+    await harness.authorizeIssuer(issuer);
 
     const bundle = {
-      ...harness.evaluateCurrentIssuerDecision(issuer),
+      ...(await harness.evaluateCurrentIssuerDecision(issuer)),
       referencedStatusRegistryId: "status-registry:attacker:v1",
     };
     const payload = buildAuthorizationSubordinateStatementPayload({
@@ -125,11 +125,11 @@ describe("trust registry OpenID Federation adapter", () => {
     expect(metadata.authorization_bundle).not.toHaveProperty("referencedStatusRegistryId");
   });
 
-  it("rejects a substituted status-policy preimage before federation publication", () => {
+  it("rejects a substituted status-policy preimage before federation publication", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("degree-status-substitution");
-    harness.authorizeIssuer(issuer);
-    const bundle = harness.evaluateCurrentIssuerDecision(issuer);
+    await harness.authorizeIssuer(issuer);
+    const bundle = await harness.evaluateCurrentIssuerDecision(issuer);
     if (bundle.statusPolicyBinding === undefined) throw new Error("expected issuer status binding");
     const substituted = {
       ...bundle,
@@ -162,12 +162,12 @@ describe("trust registry OpenID Federation adapter", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("degree-status-metadata-tamper");
     const keys = await createSigningFixture("registry-key-metadata-tamper");
-    harness.authorizeIssuer(issuer);
+    await harness.authorizeIssuer(issuer);
     const payload = buildAuthorizationSubordinateStatementPayload({
       issuerEntityId: harness.registryRecord.serviceEndpoint,
       sourceEndpoint: `${harness.registryRecord.serviceEndpoint}/federation/fetch`,
       subjectPublicJwks: keys.publicJwks,
-      bundle: harness.evaluateCurrentIssuerDecision(issuer),
+      bundle: await harness.evaluateCurrentIssuerDecision(issuer),
     });
     const metadata = payload.metadata?.midnight_trust_registry;
     if (metadata?.statement_kind !== "authorization") throw new Error("Expected authorization metadata");
@@ -189,11 +189,11 @@ describe("trust registry OpenID Federation adapter", () => {
       .rejects.toThrow(/authorization metadata does not match its governed evidence bundle/i);
   });
 
-  it("does not turn verifier authorization into an issuer status-policy claim", () => {
+  it("does not turn verifier authorization into an issuer status-policy claim", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const verifier = createVerifierScenarioFixture("verifier-no-status-claim");
-    harness.authorizeVerifier(verifier);
-    const bundle = harness.evaluateCurrentVerifierDecision(verifier);
+    await harness.authorizeVerifier(verifier);
+    const bundle = await harness.evaluateCurrentVerifierDecision(verifier);
     const payload = buildAuthorizationSubordinateStatementPayload({
       issuerEntityId: harness.registryRecord.serviceEndpoint,
       sourceEndpoint: `${harness.registryRecord.serviceEndpoint}/federation/fetch`,
@@ -216,8 +216,8 @@ describe("trust registry OpenID Federation adapter", () => {
     const registryEntityId = harness.registryRecord.serviceEndpoint;
     const anchorEntityId = "https://trust-anchor.example";
 
-    harness.authorizeIssuer(issuer);
-    const bundle = harness.evaluateCurrentIssuerDecision(issuer);
+    await harness.authorizeIssuer(issuer);
+    const bundle = await harness.evaluateCurrentIssuerDecision(issuer);
 
     const leafPayload = {
       ...buildTrustRegistryEntityConfigurationPayload({
@@ -331,8 +331,8 @@ describe("trust registry OpenID Federation adapter", () => {
     const registryEntityId = harness.registryRecord.serviceEndpoint;
     const anchorEntityId = "https://trust-anchor.example";
 
-    harness.authorizeRecognition(recognition);
-    const bundle = harness.evaluateCurrentRecognitionDecision(recognition);
+    await harness.authorizeRecognition(recognition);
+    const bundle = await harness.evaluateCurrentRecognitionDecision(recognition);
 
     const leafPayload = {
       ...buildTrustRegistryEntityConfigurationPayload({
@@ -416,8 +416,8 @@ describe("trust registry OpenID Federation adapter", () => {
     const registryEntityId = harness.registryRecord.serviceEndpoint;
     const anchorEntityId = "https://trust-anchor.example";
 
-    harness.authorizeIssuer(issuer);
-    const bundle = harness.evaluateCurrentIssuerDecision(issuer);
+    await harness.authorizeIssuer(issuer);
+    const bundle = await harness.evaluateCurrentIssuerDecision(issuer);
 
     const malformedLeaf = buildFederationLeafConfigurationPayload({
       entityId: registryEntityId,

@@ -40,18 +40,18 @@ type ServerHarness = {
   url: string;
 };
 
-const applyOperation = (
+const applyOperation = async (
   workspace: TrustRegistryOperatorWorkspace,
   operation:
     Parameters<typeof applyWorkspaceOperation>[1],
-): {
+): Promise<{
   nextWorkspace: TrustRegistryOperatorWorkspace;
   record:
     | TrustRegistryAuthorizationSnapshotEntry
     | TrustRegistryRecognitionSnapshotEntry
     | TrustRegistryOperatorWorkspace["snapshot"]["currentEpoch"];
-} => {
-  const nextWorkspace = applyWorkspaceOperation(workspace, operation);
+}> => {
+  const nextWorkspace = await applyWorkspaceOperation(workspace, operation);
   return {
     nextWorkspace,
     record: resolveWorkspaceOperationRecord(nextWorkspace, operation),
@@ -129,7 +129,7 @@ describe("trust registry api", () => {
 
   it("reports the current mutable workspace instance in health", async () => {
     const workspacePath = join(tempDir, "guided.json");
-    await writeWorkspaceToFile(workspacePath, createOperatorWorkspace({ label: "guided-role-demo" }));
+    await writeWorkspaceToFile(workspacePath, await createOperatorWorkspace({ label: "guided-role-demo" }));
     const firstId = await ensureWorkspaceInstanceId(workspacePath);
     const server = await startServer(createWorkspaceFileSource(workspacePath));
     try {
@@ -137,7 +137,7 @@ describe("trust registry api", () => {
       expect(first.status).toBe(200);
       expect((await first.json()).workspaceInstanceId).toBe(firstId);
 
-      await writeWorkspaceToFile(workspacePath, createOperatorWorkspace({ label: "guided-role-demo" }));
+      await writeWorkspaceToFile(workspacePath, await createOperatorWorkspace({ label: "guided-role-demo" }));
       const secondId = await ensureWorkspaceInstanceId(workspacePath);
       const second = await fetch(`${server.url}/health`);
       expect((await second.json()).workspaceInstanceId).toBe(secondId);
@@ -148,7 +148,7 @@ describe("trust registry api", () => {
   });
 
   it("omits wildcard CORS when the private-listener policy is selected", async () => {
-    const server = await startServer(createInMemorySource(createDemoSnapshot()), undefined, "none");
+    const server = await startServer(createInMemorySource(await createDemoSnapshot()), undefined, "none");
     try {
       for (const method of ["GET", "OPTIONS"]) {
         const response = await fetch(`${server.url}/health`, {
@@ -163,7 +163,7 @@ describe("trust registry api", () => {
 
   it("serves a non-cacheable mutation context only for a mutable workspace", async () => {
     const workspacePath = join(tempDir, "mutation-context.json");
-    const workspace = createOperatorWorkspace({ label: "mutation-context" });
+    const workspace = await createOperatorWorkspace({ label: "mutation-context" });
     await writeWorkspaceToFile(workspacePath, workspace);
     const evaluatedAt = "2026-10-15T05:00:00.000Z";
     const server = await startServer(createWorkspaceFileSource(workspacePath), () => evaluatedAt);
@@ -180,7 +180,7 @@ describe("trust registry api", () => {
       });
       expect(JSON.stringify(firstContext)).not.toContain("operations");
 
-      const next = applyWorkspaceOperation(workspace, { operation: "submit", target: "issuer", label: "context-issuer" });
+      const next = await applyWorkspaceOperation(workspace, { operation: "submit", target: "issuer", label: "context-issuer" });
       await writeWorkspaceToFile(workspacePath, next);
       const second = await fetch(`${server.url}/v1/registry/mutation-context`);
       expect(second.status).toBe(200);
@@ -206,7 +206,7 @@ describe("trust registry api", () => {
   });
 
   it("keeps auditor current and historical lookups role-disjoint and scope-bound", async () => {
-    const snapshot = createDemoSnapshot({ label: "auditor-query" });
+    const snapshot = await createDemoSnapshot({ label: "auditor-query" });
     const [active, archived] = snapshot.auditorEntries;
     if (active === undefined || archived === undefined) {
       throw new Error("expected active and archived auditor fixtures");
@@ -261,7 +261,7 @@ describe("trust registry api", () => {
 
   it("returns a conflict rather than an internal error for duplicate auditor submissions", async () => {
     const workspacePath = join(tempDir, "auditor-workspace.json");
-    await writeWorkspaceToFile(workspacePath, createOperatorWorkspace({ label: "auditor-duplicate" }));
+    await writeWorkspaceToFile(workspacePath, await createOperatorWorkspace({ label: "auditor-duplicate" }));
     const server = await startServer(createWorkspaceFileSource(workspacePath));
     const submit = () => fetch(`${server.url}/v1/applications`, {
       method: "POST",
@@ -299,14 +299,14 @@ describe("trust registry api", () => {
     expect(second.requestProfileId).toBe(first.requestProfileId);
     expect(second.scopeResourceId).not.toBe(first.scopeResourceId);
 
-    harness.authorizeAuditor(first);
-    harness.authorizeAuditor(second);
-    harness.suspendAuditor(second);
-    harness.revokeAuditor(second);
-    harness.archiveAuditor(second);
-    const activeEvidence = harness.evaluateCurrentAuditorDecision(first);
-    const historicalEvidence = harness.buildAuditorHistoricalEvidence(second);
-    const currentEpoch = harness.publishRegistryEpoch("auditor-query-current");
+    await harness.authorizeAuditor(first);
+    await harness.authorizeAuditor(second);
+    await harness.suspendAuditor(second);
+    await harness.revokeAuditor(second);
+    await harness.archiveAuditor(second);
+    const activeEvidence = await harness.evaluateCurrentAuditorDecision(first);
+    const historicalEvidence = await harness.buildAuditorHistoricalEvidence(second);
+    const currentEpoch = await harness.publishRegistryEpoch("auditor-query-current");
     const epochs = collectDistinctEpochs([activeEvidence, historicalEvidence]);
     if (!epochs.some((epoch) => epoch.epochId === currentEpoch.epochId)) {
       epochs.push(currentEpoch);
@@ -363,9 +363,9 @@ describe("trust registry api", () => {
   });
 
   it("serves registry summary, scoped authorization resolution, and evidence from a workspace file", async () => {
-    let workspace = createOperatorWorkspace({ label: "midnight-api" });
+    let workspace = await createOperatorWorkspace({ label: "midnight-api" });
 
-    const issuerSubmit = applyOperation(workspace, {
+    const issuerSubmit = await applyOperation(workspace, {
       operation: "submit",
       target: "issuer",
       label: "degree",
@@ -375,7 +375,7 @@ describe("trust registry api", () => {
       issuerSubmit.record,
     ).authorization.authorizationId;
 
-    const verifierSubmit = applyOperation(workspace, {
+    const verifierSubmit = await applyOperation(workspace, {
       operation: "submit",
       target: "verifier",
       label: "age-gate",
@@ -407,7 +407,7 @@ describe("trust registry api", () => {
         id: verifierId,
       },
     ]) {
-      workspace = applyWorkspaceOperation(workspace, operation);
+      workspace = await applyWorkspaceOperation(workspace, operation);
     }
 
     const workspacePath = join(tempDir, "operator-workspace.json");
@@ -592,7 +592,7 @@ describe("trust registry api", () => {
   });
 
   it("uses a record-specific evidence epoch despite another overlapping epoch", async () => {
-    const snapshot = createDemoSnapshot({ label: "epoch-mismatch" });
+    const snapshot = await createDemoSnapshot({ label: "epoch-mismatch" });
     const entry = snapshot.issuerEntries.find((candidate) => candidate.authorization.status === "active");
     if (entry === undefined) throw new Error("expected an active issuer");
     const evidenceEpoch = entry.evidence.epoch;
@@ -641,7 +641,7 @@ describe("trust registry api", () => {
   });
 
   it("uses the same instant for implicit and explicit TRQP requests without overstating an unaccepted root", async () => {
-    const snapshot = createDemoSnapshot({ label: "trqp-current-projection" });
+    const snapshot = await createDemoSnapshot({ label: "trqp-current-projection" });
     const entry = snapshot.issuerEntries.find((candidate) => candidate.authorization.status === "active");
     if (entry === undefined) throw new Error("expected an active issuer");
     const at = entry.evidence.epoch.validFrom;
@@ -723,7 +723,7 @@ describe("trust registry api", () => {
   });
 
   it("does not project an expired active authorization as trusted at snapshot time", async () => {
-    const snapshot = createDemoSnapshot({ label: "expired-current-trqp" });
+    const snapshot = await createDemoSnapshot({ label: "expired-current-trqp" });
     const entry = snapshot.issuerEntries.find((candidate) => candidate.authorization.status === "active");
     if (entry?.authorization.activeFrom === undefined) throw new Error("expected active issuer");
     const effectiveUntil = new Date(Date.parse(entry.authorization.activeFrom) + 1).toISOString();
@@ -769,7 +769,7 @@ describe("trust registry api", () => {
   });
 
   it("rejects epoch evidence one microsecond after validUntil", async () => {
-    const snapshot = createDemoSnapshot({ label: "submillisecond-evidence-expiry" });
+    const snapshot = await createDemoSnapshot({ label: "submillisecond-evidence-expiry" });
     const entry = snapshot.issuerEntries.find((candidate) => candidate.authorization.status === "active");
     if (entry === undefined) throw new Error("expected an active issuer");
     const justAfter = new Date(Date.parse(entry.evidence.epoch.validUntil)).toISOString().replace(/Z$/, "001Z");
@@ -792,7 +792,7 @@ describe("trust registry api", () => {
   });
 
   it("selects the newest authorization epoch beyond millisecond precision", async () => {
-    const snapshot = createDemoSnapshot({ label: "fractional-epoch-order" });
+    const snapshot = await createDemoSnapshot({ label: "fractional-epoch-order" });
     const entry = snapshot.issuerEntries.find((candidate) => candidate.authorization.status === "active");
     if (entry === undefined) throw new Error("expected active issuer evidence");
     const start = new Date(Date.parse(entry.evidence.epoch.validFrom) + 1).toISOString().slice(0, -1);
@@ -825,7 +825,7 @@ describe("trust registry api", () => {
   });
 
   it("selects the newest recognition epoch beyond millisecond precision", async () => {
-    const snapshot = createDemoSnapshot({ label: "fractional-recognition-epoch-order" });
+    const snapshot = await createDemoSnapshot({ label: "fractional-recognition-epoch-order" });
     const entry = snapshot.recognitionEntries[0];
     if (entry === undefined) throw new Error("expected recognition evidence");
     const start = new Date(Date.parse(entry.evidence.epoch.validFrom) + 1).toISOString().slice(0, -1);
@@ -859,7 +859,7 @@ describe("trust registry api", () => {
   });
 
   it("requires exact recognition context rather than treating omission as a wildcard", async () => {
-    const snapshot = createDemoSnapshot({ label: "recognition-context-lookup" });
+    const snapshot = await createDemoSnapshot({ label: "recognition-context-lookup" });
     const original = snapshot.recognitionEntries[0];
     if (original === undefined) throw new Error("expected recognition fixture");
     if (original.evidence.recognition === undefined) throw new Error("expected recognition evidence");
@@ -916,7 +916,7 @@ describe("trust registry api", () => {
   });
 
   it("reports the proved statement epoch when an unrelated epoch overlaps the instant", async () => {
-    const snapshot = createDemoSnapshot({ label: "overlapping-evidence-epoch" });
+    const snapshot = await createDemoSnapshot({ label: "overlapping-evidence-epoch" });
     const entry = snapshot.issuerEntries.find((candidate) => candidate.authorization.status === "active");
     if (entry === undefined) throw new Error("expected an active issuer");
     const at = new Date(Date.parse(entry.evidence.epoch.validFrom) + 1_000).toISOString();
@@ -954,21 +954,21 @@ describe("trust registry api", () => {
   });
 
   it("serves archived issuer evidence for its epoch after a later revocation", async () => {
-    let workspace = createOperatorWorkspace({ label: "trqp-issuer-archive" });
-    const submitted = applyOperation(workspace, {
+    let workspace = await createOperatorWorkspace({ label: "trqp-issuer-archive" });
+    const submitted = await applyOperation(workspace, {
       operation: "submit", target: "issuer", label: "archived-degree",
     });
     workspace = submitted.nextWorkspace;
     const authorizationId = asAuthorizationRecord(submitted.record).authorization.authorizationId;
-    workspace = applyWorkspaceOperation(workspace, {
+    workspace = await applyWorkspaceOperation(workspace, {
       operation: "approve", target: "issuer", id: authorizationId,
     });
-    const activeWorkspace = applyWorkspaceOperation(workspace, {
+    const activeWorkspace = await applyWorkspaceOperation(workspace, {
       operation: "activate", target: "issuer", id: authorizationId,
     });
     const activeBundle = activeWorkspace.snapshot.issuerEntries[0]?.evidence;
     if (activeBundle?.authorization === undefined) throw new Error("expected active issuer evidence");
-    const revokedWorkspace = applyWorkspaceOperation(activeWorkspace, {
+    const revokedWorkspace = await applyWorkspaceOperation(activeWorkspace, {
       operation: "revoke", target: "issuer", id: authorizationId,
     });
     const snapshot = revokedWorkspace.snapshot;
@@ -1053,21 +1053,21 @@ describe("trust registry api", () => {
   });
 
   it("serves archived recognition evidence without using its later revoked bundle", async () => {
-    let workspace = createOperatorWorkspace({ label: "trqp-recognition-archive" });
-    const submitted = applyOperation(workspace, {
+    let workspace = await createOperatorWorkspace({ label: "trqp-recognition-archive" });
+    const submitted = await applyOperation(workspace, {
       operation: "submit", target: "recognition", label: "archived-registry",
     });
     workspace = submitted.nextWorkspace;
     const recognitionId = asRecognitionRecord(submitted.record).recognition.recognitionId;
-    workspace = applyWorkspaceOperation(workspace, {
+    workspace = await applyWorkspaceOperation(workspace, {
       operation: "approve", target: "recognition", id: recognitionId,
     });
-    const activeWorkspace = applyWorkspaceOperation(workspace, {
+    const activeWorkspace = await applyWorkspaceOperation(workspace, {
       operation: "activate", target: "recognition", id: recognitionId,
     });
     const activeBundle = activeWorkspace.snapshot.recognitionEntries[0]?.evidence;
     if (activeBundle?.recognition === undefined) throw new Error("expected active recognition evidence");
-    const revokedWorkspace = applyWorkspaceOperation(activeWorkspace, {
+    const revokedWorkspace = await applyWorkspaceOperation(activeWorkspace, {
       operation: "revoke", target: "recognition", id: recognitionId,
     });
     const snapshot = revokedWorkspace.snapshot;
@@ -1127,7 +1127,7 @@ describe("trust registry api", () => {
       await server.close();
     }
 
-    const verifier = createDemoSnapshot({ label: "dual-recognition-proof" })
+    const verifier = (await createDemoSnapshot({ label: "dual-recognition-proof" }))
       .verifierEntries[0]?.authorization;
     if (verifier === undefined) throw new Error("expected demo verifier");
     const dualBundle = {
@@ -1177,7 +1177,7 @@ describe("trust registry api", () => {
   });
 
   it("submits and governs application workflows through workspace-backed write routes", async () => {
-    const workspace = createOperatorWorkspace({ label: "midnight-write-api" });
+    const workspace = await createOperatorWorkspace({ label: "midnight-write-api" });
     const workspacePath = join(tempDir, "write-workspace.json");
     await writeWorkspaceToFile(workspacePath, workspace);
 
@@ -1318,7 +1318,7 @@ describe("trust registry api", () => {
   }, 90_000);
 
   it("returns structured mutation problems and accepts epoch publish without a body", async () => {
-    const workspace = createOperatorWorkspace({ label: "midnight-write-errors" });
+    const workspace = await createOperatorWorkspace({ label: "midnight-write-errors" });
     const workspacePath = join(tempDir, "write-errors-workspace.json");
     await writeWorkspaceToFile(workspacePath, workspace);
 
@@ -1391,9 +1391,9 @@ describe("trust registry api", () => {
   });
 
   it("serves recognition and TRQP routes from a snapshot file", async () => {
-    let workspace = createOperatorWorkspace({ label: "midnight-trqp" });
+    let workspace = await createOperatorWorkspace({ label: "midnight-trqp" });
 
-    const recognitionSubmit = applyOperation(workspace, {
+    const recognitionSubmit = await applyOperation(workspace, {
       operation: "submit",
       target: "recognition",
       label: "gaia-x",
@@ -1415,7 +1415,7 @@ describe("trust registry api", () => {
         id: recognitionId,
       },
     ]) {
-      workspace = applyWorkspaceOperation(workspace, operation);
+      workspace = await applyWorkspaceOperation(workspace, operation);
     }
 
     const snapshotPath = join(tempDir, "snapshot.json");
@@ -1522,8 +1522,8 @@ describe("trust registry api", () => {
   });
 
   it("reloads workspace-backed state between requests and returns structured problems", async () => {
-    let workspace = createOperatorWorkspace({ label: "midnight-reload" });
-    const submitResult = applyOperation(workspace, {
+    let workspace = await createOperatorWorkspace({ label: "midnight-reload" });
+    const submitResult = await applyOperation(workspace, {
       operation: "submit",
       target: "issuer",
       label: "passport",
@@ -1544,12 +1544,12 @@ describe("trust registry api", () => {
       const firstList = await firstResponse.json();
       expect(firstList.total).toBe(0);
 
-      workspace = applyWorkspaceOperation(workspace, {
+      workspace = await applyWorkspaceOperation(workspace, {
         operation: "approve",
         target: "issuer",
         id: issuerId,
       });
-      workspace = applyWorkspaceOperation(workspace, {
+      workspace = await applyWorkspaceOperation(workspace, {
         operation: "activate",
         target: "issuer",
         id: issuerId,
@@ -1608,7 +1608,7 @@ describe("trust registry api", () => {
   });
 
   it("serves the same routes from an in-memory source", async () => {
-    const workspace = createOperatorWorkspace({ label: "midnight-memory" });
+    const workspace = await createOperatorWorkspace({ label: "midnight-memory" });
     const server = await startServer(createInMemorySource(workspace.snapshot));
     try {
       const preflightResponse = await fetch(`${server.url}/v1/applications`, {
@@ -1633,7 +1633,7 @@ describe("trust registry api", () => {
   });
 
   it("rejects workspace mutation routes for non-workspace sources", async () => {
-    const workspace = createOperatorWorkspace({ label: "midnight-readonly" });
+    const workspace = await createOperatorWorkspace({ label: "midnight-readonly" });
     const snapshotPath = join(tempDir, "readonly-snapshot.json");
     await writeSnapshotToFile(snapshotPath, workspace.snapshot);
 

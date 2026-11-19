@@ -28,14 +28,14 @@ const signPreparedAction = (
   harness: LocalTrustRegistryIntegrationHarness,
   maintainer: MaintainerScenarioFixture,
   prepared: Pick<PreparedIssuerDecisionAction,
-    "registryId" | "policyCommitment" | "actionKind" | "actionPayloadHash" | "actionSequence">,
+    "registryId" | "networkIdCommitment" | "policyCommitment" | "actionKind" | "actionPayloadHash" | "actionSequence">,
 ): MaintainerCoAuthorizer => ({
   keyId: maintainer.keyId,
   publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
   signature: signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
     prepared.registryId,
-    harness.simulator.getLedger().deploymentNetworkIdCommitment,
+    prepared.networkIdCommitment,
     Buffer.from(harness.simulator.contractAddress, "hex"),
     prepared.policyCommitment,
     prepared.actionKind,
@@ -45,23 +45,23 @@ const signPreparedAction = (
 });
 
 describe("externally signed Compact issuer governance", () => {
-  it("requires two distinct active maintainers for proposal, approval, and activation", () => {
+  it("requires two distinct active maintainers for proposal, approval, and activation", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("external-signers");
     const second = createMaintainerScenarioFixture("external-second");
     const third = createMaintainerScenarioFixture("external-third");
     const issuer = createIssuerScenarioFixture("external-issuer");
 
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(third);
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
-    const evidence = harness.createApplicationEvidence({
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(third);
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    const evidence = await harness.createApplicationEvidence({
       applicationId: issuer.authorizationId,
       subjectDid: issuer.subjectDid,
       role: "issuer",
       scope: createIssuerAuthorizationScopeFixture(issuer),
       governedResource: { type: "credentialFamily", id: issuer.resourceId },
     });
-    const proposal = harness.prepareIssuerProposalAction(issuer, evidence);
+    const proposal = await harness.prepareIssuerProposalAction(issuer, evidence);
     const verifierSeed = createMaintainerFixture("evidence-verifier", 41).seed;
     const verifierSignature = signIssuerProposalEvidenceFromSeed(
       verifierSeed,
@@ -72,25 +72,25 @@ describe("externally signed Compact issuer governance", () => {
       proposal.actionPayloadHash,
     );
     const proposalSigners = [signPreparedAction(harness, second, proposal), signPreparedAction(harness, third, proposal)];
-    const beforeProposal = harness.simulator.getLedger().governanceActionCount;
-    expect(() => harness.executeIssuerProposalWithSignatures(
+    const beforeProposal = (await harness.simulator.getLedger()).governanceActionCount;
+    await expect(harness.executeIssuerProposalWithSignatures(
       issuer, evidence, [proposalSigners[0]!], verifierSignature,
-    )).toThrow();
-    expect(() => harness.executeIssuerProposalWithSignatures(
+    )).rejects.toThrow();
+    await expect(harness.executeIssuerProposalWithSignatures(
       issuer, evidence, proposalSigners,
       signIssuerProposalEvidenceFromSeed(
         new Uint8Array(32).fill(99), proposal.registryId,
         proposal.networkIdCommitment, proposal.contractAddress,
         proposal.evidenceVerifierKeyIdCommitment, proposal.actionPayloadHash,
       ),
-    )).toThrow();
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeProposal);
-    harness.executeIssuerProposalWithSignatures(issuer, evidence, proposalSigners, verifierSignature);
-    expect(() => harness.executeIssuerProposalWithSignatures(
+    )).rejects.toThrow();
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(beforeProposal);
+    await harness.executeIssuerProposalWithSignatures(issuer, evidence, proposalSigners, verifierSignature);
+    await expect(harness.executeIssuerProposalWithSignatures(
       issuer, evidence, proposalSigners, verifierSignature,
-    )).toThrow();
+    )).rejects.toThrow();
 
-    const approval = harness.prepareIssuerDecisionAction(issuer, "approve");
+    const approval = await harness.prepareIssuerDecisionAction(issuer, "approve");
     expect(approval.actionPayloadHash).toEqual(computeUpdateIssuerAuthorizationPayloadHash(
       approval.authorizationId,
       approval.previousLifecycleEventHash,
@@ -98,57 +98,57 @@ describe("externally signed Compact issuer governance", () => {
     ));
     const firstSignature = signPreparedAction(harness, second, approval);
     const secondSignature = signPreparedAction(harness, third, approval);
-    const beforeApproval = harness.simulator.getLedger().governanceActionCount;
+    const beforeApproval = (await harness.simulator.getLedger()).governanceActionCount;
 
-    expect(() => harness.executeIssuerDecisionWithSignatures(
+    await expect(harness.executeIssuerDecisionWithSignatures(
       issuer, "approve", [firstSignature],
-    )).toThrow();
-    expect(() => harness.executeIssuerDecisionWithSignatures(
+    )).rejects.toThrow();
+    await expect(harness.executeIssuerDecisionWithSignatures(
       issuer, "approve", [firstSignature, firstSignature],
-    )).toThrow();
-    expect(() => harness.executeIssuerDecisionWithSignatures(
+    )).rejects.toThrow();
+    await expect(harness.executeIssuerDecisionWithSignatures(
       issuer, "approve", [
         firstSignature,
         signPreparedAction(harness, createMaintainerScenarioFixture("unknown-signer"), approval),
       ],
-    )).toThrow();
-    expect(() => harness.prepareIssuerDecisionAction(issuer, "unknown" as "approve")).toThrow(
+    )).rejects.toThrow();
+    await expect(harness.prepareIssuerDecisionAction(issuer, "unknown" as "approve")).rejects.toThrow(
       /Unsupported issuer decision action/,
     );
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeApproval);
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(beforeApproval);
 
-    harness.executeIssuerDecisionWithSignatures(issuer, "approve", [firstSignature, secondSignature]);
-    const activation = harness.prepareIssuerDecisionAction(issuer, "activate");
-    const beforeActivation = harness.simulator.getLedger().governanceActionCount;
-    expect(() => harness.executeIssuerDecisionWithSignatures(
+    await harness.executeIssuerDecisionWithSignatures(issuer, "approve", [firstSignature, secondSignature]);
+    const activation = await harness.prepareIssuerDecisionAction(issuer, "activate");
+    const beforeActivation = (await harness.simulator.getLedger()).governanceActionCount;
+    await expect(harness.executeIssuerDecisionWithSignatures(
       issuer, "activate", [firstSignature, secondSignature],
-    )).toThrow();
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeActivation);
+    )).rejects.toThrow();
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(beforeActivation);
 
-    harness.executeIssuerDecisionWithSignatures(issuer, "activate", [
+    await harness.executeIssuerDecisionWithSignatures(issuer, "activate", [
       signPreparedAction(harness, second, activation),
       signPreparedAction(harness, third, activation),
     ]);
-    expect(harness.evaluateCurrentIssuerDecision(issuer).authorization?.status).toBe("active");
+    expect((await harness.evaluateCurrentIssuerDecision(issuer)).authorization?.status).toBe("active");
   });
 
-  it("rejects a policy-substituted signature without changing the proposal", () => {
+  it("rejects a policy-substituted signature without changing the proposal", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("external-policy");
     const issuer = createIssuerScenarioFixture("external-policy-issuer");
     const second = createMaintainerScenarioFixture("external-policy-second");
     const third = createMaintainerScenarioFixture("external-policy-third");
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(third);
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
-    harness.proposeIssuer(issuer, [second]);
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(third);
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    await harness.proposeIssuer(issuer, [second]);
 
-    const prepared = harness.prepareIssuerDecisionAction(issuer, "approve");
-    const altered = { ...prepared, policyCommitment: new Uint8Array(32) };
-    const before = harness.simulator.getLedger().governanceActionCount;
-    expect(() => harness.executeIssuerDecisionWithSignatures(issuer, "approve", [
+    const prepared = await harness.prepareIssuerDecisionAction(issuer, "approve");
+    const altered = { ...prepared, policyCommitment: new Uint8Array(32).fill(1) };
+    const before = (await harness.simulator.getLedger()).governanceActionCount;
+    await expect(harness.executeIssuerDecisionWithSignatures(issuer, "approve", [
       signPreparedAction(harness, second, altered),
       signPreparedAction(harness, third, prepared),
-    ])).toThrow();
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
+    ])).rejects.toThrow();
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before);
   });
 });

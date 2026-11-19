@@ -37,13 +37,13 @@ export async function runGovernedRecognitionFlow(matrix, {
     ...RECOGNITION_VP_FIXTURE_ANCHOR,
     targetRegistryId: harness.registryId,
     policyId: harness.policyId,
-    policyVersion: `v${(harness.simulator.getLedger().governancePolicyVersion + 1n).toString()}`,
+    policyVersion: `v${((await harness.simulator.getLedger()).governancePolicyVersion + 1n).toString()}`,
     recognizedRegistryId: recognition.recognizedRegistryId,
     scopeResourceType: recognition.scopeResourceType,
     scopeResourceId: recognition.scopeResourceId,
   };
-  harness.governRecognitionAccreditorAnchor(recognitionAnchor, [second]);
-  harness.registerVcAuthorityKey({
+  await harness.governRecognitionAccreditorAnchor(recognitionAnchor, [second]);
+  await harness.registerVcAuthorityKey({
     domain: vcAuthorityAnchor.domain,
     keyIdCommitment: vcAuthorityKeyIdCommitment,
     publicKey: vcAuthorityAnchor.publicKey,
@@ -52,7 +52,7 @@ export async function runGovernedRecognitionFlow(matrix, {
   const recognitionEvaluationMs = Math.max(
     VP_FIXTURE_TIME_MS, Date.parse(harness.policyRecord.effectiveFrom) + 60_000,
   );
-  const governedRecognitionAnchor = harness.resolveCurrentRecognitionAccreditorAnchor({
+  const governedRecognitionAnchor = await harness.resolveCurrentRecognitionAccreditorAnchor({
     recognizedRegistryId: recognition.recognizedRegistryId,
     scopeResourceType: recognition.scopeResourceType,
     scopeResourceId: recognition.scopeResourceId,
@@ -98,29 +98,29 @@ export async function runGovernedRecognitionFlow(matrix, {
       accreditation: recognitionAccreditationFixture.input.submission,
       readCurrentGovernance: async () => ({
         governancePolicy: harness.policyRecord,
-        activePolicyCommitment: asHex(harness.simulator.getLedger().governancePolicyCommitment),
+        activePolicyCommitment: asHex((await harness.simulator.getLedger()).governancePolicyCommitment),
       }),
       resolver: recognitionAccreditationFixture.input.resolver,
       statusSource: recognitionAccreditationFixture.input.statusSource,
       ...overrides,
     });
-  const recognitionSequenceBefore = harness.simulator.getLedger().governanceActionCount;
+  const recognitionSequenceBefore = (await harness.simulator.getLedger()).governanceActionCount;
   await runRecognitionIntakeSafetyScenarios(matrix, {
     verifyRecognitionChallenge, recognitionAssertion, recognitionStatement,
     recognitionAuthoritySeed, recognitionMethodId, recognitionAuthorityDid,
     recognitionAccreditationFixture, harness,
   });
-  assert.equal(harness.simulator.getLedger().governanceActionCount, recognitionSequenceBefore);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, recognitionSequenceBefore);
   const verifiedRecognition = await verifyRecognitionChallenge(recognitionAssertion);
   await assert.rejects(verifyRecognitionChallenge(recognitionAssertion), /already consumed/u);
-  const recognitionPrepared = harness.prepareRecognitionProposalAction(
+  const recognitionPrepared = await harness.prepareRecognitionProposalAction(
     recognition, fromHex(verifiedRecognition.evidenceCommitment),
   );
   assert.equal(asHex(recognitionPrepared.evidenceHash), verifiedRecognition.evidenceCommitment);
-  const recognitionEvidenceSignature = harness.signRecognitionProposalEvidence(recognitionPrepared);
+  const recognitionEvidenceSignature = await harness.signRecognitionProposalEvidence(recognitionPrepared);
   const recognitionSigners = [
-    signCompact(second, recognitionPrepared, harness),
-    signCompact(third, recognitionPrepared, harness),
+    await signCompact(second, recognitionPrepared, harness),
+    await signCompact(third, recognitionPrepared, harness),
   ];
   const proposeRecognitionWithChangedScope = (registryIdCommitment, resourceIdCommitment) =>
     harness.simulator.proposeRecognition(
@@ -140,7 +140,7 @@ export async function runGovernedRecognitionFlow(matrix, {
       recognitionEvidenceSignature,
       recognitionSigners.slice(1),
     );
-  matrix.expectThrown(() => proposeRecognitionWithChangedScope(
+  await matrix.expectRejected(() => proposeRecognitionWithChangedScope(
     bytes32Commitment("registry:external:substituted:v1"), recognition.scopeResourceIdCommitment,
   ), {
     id: "compact-recognition-external-registry-substitution",
@@ -148,7 +148,7 @@ export async function runGovernedRecognitionFlow(matrix, {
     boundary: "compact", messagePattern: /signature|payload/iu,
     category: "recognition-scope-signature-rejected",
   });
-  matrix.expectThrown(() => proposeRecognitionWithChangedScope(
+  await matrix.expectRejected(() => proposeRecognitionWithChangedScope(
     recognition.recognizedRegistryIdCommitment, bytes32Commitment("credential-family:substituted:v1"),
   ), {
     id: "compact-recognition-resource-substitution",
@@ -156,21 +156,21 @@ export async function runGovernedRecognitionFlow(matrix, {
     boundary: "compact", messagePattern: /signature|payload/iu,
     category: "recognition-scope-signature-rejected",
   });
-  assert.equal(harness.simulator.getLedger().governanceActionCount, recognitionSequenceBefore);
-  assert.throws(() => harness.executeRecognitionProposalWithSignatures(
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, recognitionSequenceBefore);
+  await assert.rejects(harness.executeRecognitionProposalWithSignatures(
     recognition,
     recognitionSigners.slice(0, 1),
     recognitionEvidenceSignature,
     recognitionPrepared,
   ), /action threshold/u);
-  const recognitionProposalEventHash = harness.executeRecognitionProposalWithSignatures(
+  const recognitionProposalEventHash = await harness.executeRecognitionProposalWithSignatures(
     recognition,
     recognitionSigners,
     recognitionEvidenceSignature,
     recognitionPrepared,
   );
-  assert.equal(asHex(harness.simulator.getRecognitionProposalEvidence(
+  assert.equal(asHex((await harness.simulator.getRecognitionProposalEvidence(
     recognition.recognitionIdCommitment,
-  ).evidenceCommitment), verifiedRecognition.evidenceCommitment);
+  )).evidenceCommitment), verifiedRecognition.evidenceCommitment);
   return { verifiedRecognition, recognitionProposalEventHash };
 }

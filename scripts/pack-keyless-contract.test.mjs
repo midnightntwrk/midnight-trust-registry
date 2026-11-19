@@ -34,6 +34,7 @@ async function fixture(t) {
   await writeFile(join(full, "compiler/contract-info.json"), JSON.stringify({
     "compiler-version": "0.31.1", circuits: [{ name: "demoCircuit", proof: true }],
   }));
+  await writeFile(join(full, "compiler/contract-manifest.json"), "{\"manifest-version\":\"1\"}\n");
   await writeFile(join(full, "contract/index.js"), "export const demo = true;\n");
   if (process.platform === "darwin") {
     execFileSync("xattr", ["-w", "com.example.keyless-test", "metadata",
@@ -58,6 +59,7 @@ test("keyless contract package excludes keys and restores a verified local packa
   assert.equal(packed.name, "@midnightntwrk/trust-registry-contract");
   const listing = execFileSync("tar", ["-tzf", paths.tarball], { encoding: "utf8" });
   assert.match(listing, /package\/dist\/managed\/trust-registry\/keyless-manifest\.json/u);
+  assert.match(listing, /package\/dist\/managed\/trust-registry\/compiler\/contract-manifest\.json/u);
   assert.match(listing, /package\/LICENSE/u);
   assert.doesNotMatch(listing, /\.prover|\.verifier/u);
   const rawArchive = gunzipSync(await readFile(paths.tarball));

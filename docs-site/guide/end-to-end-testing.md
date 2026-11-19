@@ -5,6 +5,9 @@ checkout and exercises the user-facing flows with fixtures and a Compact
 simulator. The **standalone acceptance path** requires one independently
 approved local ledger deployment, live DID/VC/status services, and operator
 evidence. Passing the demo path does not advance the standalone release gate.
+For the owner-managed shared Ledger 9 chain, use the separate
+[local development guide](ledger9-local-development.md); it does not replace
+the historical Ledger 8 standalone release procedure below.
 
 ## Choose the test you need
 

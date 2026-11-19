@@ -96,7 +96,9 @@ not store the statement or VP.
 An auditor with the private signed statement, the pinned credential body and
 status binding, original challenge, evaluation instant, and authenticated
 historical DID state MAY recompute this value using the integration package's
-`verifyApplicationStatusDecisionWitness` helper. A public envelope alone is
+`verifyApplicationStatusDecisionWitness` helper. The caller must provide the
+accepted envelope's `challengeHash`; the helper rejects a private witness
+whose nonce does not match it. A public envelope alone is
 not enough to reproduce the status decision. The historical DID resolver and
 governed issuer binding must be independently authenticated, not supplied by
 the same unauthenticated response being audited.

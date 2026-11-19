@@ -63,7 +63,8 @@ const verifierScope = {
   allowedAttributes: ["attribute:age"], allowedPredicates: ["predicate:over-18"],
   disclosureLevel: "minimal",
 };
-export const demoRegistryId = createOperatorWorkspace({ label: "auditor-admission-demo" }).snapshot.registry.registryId;
+export const demoRegistryId = (await createOperatorWorkspace({ label: "auditor-admission-demo" }))
+  .snapshot.registry.registryId;
 const maintainerScope = { version: "tr-scope-v1", role: "maintainer", registryId: demoRegistryId };
 const scopes = { auditor: scope, issuer: issuerScope, verifier: verifierScope, maintainer: maintainerScope };
 export const applicationDraft = {
@@ -135,7 +136,7 @@ function signedApplication(workspace, role = "auditor") {
 
 export async function startHost(port, staticDir = fileURLToPath(new URL("../packages/trust-registry-applicant-portal/dist", import.meta.url)), applicationScope = scope) {
   const fixture = await createApplicationVpScenarioFixture(undefined, { scope: applicationScope, subjectDid, evidenceVerifierDid });
-  const workspace = createOperatorWorkspace({ label: "auditor-admission-demo" });
+  const workspace = await createOperatorWorkspace({ label: "auditor-admission-demo" });
   const registration = new InMemoryPendingApplicationRegistrationPort({
     workspace, applications: [], consumedNonces: [],
   }, evidenceVerifierDid, fixture.input.resolver);
@@ -335,7 +336,7 @@ export async function presentationForNonce(nonce, applicationScope = scope) {
 if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   if (command === "application") {
     const role = requestedRole(process.argv[3] ?? "auditor");
-    process.stdout.write(`${JSON.stringify(signedApplication(createOperatorWorkspace({ label: "auditor-admission-demo" }), role))}\n`);
+    process.stdout.write(`${JSON.stringify(signedApplication(await createOperatorWorkspace({ label: "auditor-admission-demo" }), role))}\n`);
   } else if (command === "sign-digest") {
     process.stdout.write(`${signDigest(process.argv[3])}\n`);
   } else if (command === "vp") {

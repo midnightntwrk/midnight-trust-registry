@@ -27,6 +27,7 @@ function fixture() {
     put("contracts/trust-registry/package.json", { dependencies: { [runtime]: pin } });
     put("pnpm-workspace.yaml", `overrides:\n${Object.entries(overrides)
       .map(([name, version]) => `  "${name}": ${version}`).join("\n")}\n`);
+    put("pnpm-lock.yaml", { packages: {} });
     put(`node_modules/${leaf}/package.json`, leafManifest);
     put(`node_modules/${leaf}/index.js`, "module.exports = {};\n");
     put(`node_modules/${leaf}/node_modules/${runtime}/package.json`, { name: runtime, version: pin });
@@ -68,6 +69,12 @@ test("semantic YAML override drift fails", () => withFixture(({ root, save, over
   overrides[leaf] = "0.7.1";
   save();
   assert.throws(() => checkInstalledIdentityRuntime(root), /override 0\.7\.1 does not match 0\.7\.0/);
+}));
+
+test("local identity tarball overrides are rejected", () => withFixture(({ root, put }) => {
+  const archive = "file:artifacts/credential-compact-0.7.0.tgz";
+  put("pnpm-workspace.yaml", `overrides:\n  "${leaf}": ${archive}\n  "${umbrella}": 0.7.0\n`);
+  assert.throws(() => checkInstalledIdentityRuntime(root), /override file:.* does not match 0\.7\.0/);
 }));
 
 test("Compact runtime override drift fails", () => withFixture(({ root, put }) => {

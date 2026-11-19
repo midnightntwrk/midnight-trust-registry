@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { FinalizedTransaction } from "@midnight-ntwrk/midnight-js-protocol/ledger";
+import { LedgerTransaction, type FinalizedTx } from "@midnight-ntwrk/midnight-js-types";
 
 import { createPinnedLocalSubmissionProvider } from "../local-pinned-submission-provider.js";
 
@@ -29,8 +29,10 @@ let config = {
 };
 let setupNumber = 0;
 const transaction = {
-  identifiers: () => ["tx-issuer"], serialize: () => new Uint8Array([1, 2, 3]),
-} as unknown as FinalizedTransaction;
+  era: "v9", stage: "Finalized",
+  deserialize: () => ({ identifiers: () => ["tx-issuer"] }),
+  serialize: () => new Uint8Array([1, 2, 3]),
+} as unknown as FinalizedTx;
 
 describe("pinned local submission provider", () => {
   let observedGenesis: string;
@@ -42,6 +44,7 @@ describe("pinned local submission provider", () => {
   let connected: boolean;
 
   beforeEach(() => {
+    vi.spyOn(LedgerTransaction, "require").mockImplementation((value) => value as never);
     genesisHash = `0x${(++setupNumber).toString(16).padStart(64, "b")}`;
     config = { ...config, expectedGenesisHash: genesisHash };
     observedGenesis = genesisHash;
@@ -67,7 +70,7 @@ describe("pinned local submission provider", () => {
       disconnect: mocks.disconnect,
     }));
   });
-  afterEach(() => { vi.unstubAllGlobals(); });
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
   it("rejects nonlocal endpoints and malformed pins", () => {
     expect(() => createPinnedLocalSubmissionProvider({
@@ -86,6 +89,7 @@ describe("pinned local submission provider", () => {
 
   it("authenticates the exact provider pair against node and indexer genesis", async () => {
     const pinned = createPinnedLocalSubmissionProvider(config);
+    expect(pinned.midnightProvider.supportedEras).toEqual(["v9"]);
     await expect(pinned.readSubmissionProviderIdentity({
       midnightProvider: pinned.midnightProvider, publicDataProvider: pinned.publicDataProvider,
     } as never)).resolves.toEqual({ contractAddress, genesisHash });
@@ -257,7 +261,25 @@ describe("pinned local submission provider", () => {
     await expect(pinned.midnightProvider.submitTx(transaction)).rejects.toThrow(/disconnected/u);
     expect(sendMnTransaction).not.toHaveBeenCalled();
     await expect(pinned.midnightProvider.submitTx({
-      identifiers: () => [], serialize: () => new Uint8Array([1]),
-    } as unknown as FinalizedTransaction)).rejects.toThrow(/no identifier/u);
+      ...transaction,
+      deserialize: () => ({ identifiers: () => [] }),
+    } as unknown as FinalizedTx)).rejects.toThrow(/no identifier/u);
+  });
+
+  it("rejects an invalid transaction handle before transport", async () => {
+    vi.mocked(LedgerTransaction.require).mockRestore();
+    const pinned = createPinnedLocalSubmissionProvider(config);
+    await expect(pinned.midnightProvider.submitTx({} as FinalizedTx)).rejects.toThrow();
+    expect(sendMnTransaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects an older-era transaction before decoding or transport", async () => {
+    const pinned = createPinnedLocalSubmissionProvider(config);
+    const deserialize = vi.fn();
+    await expect(pinned.midnightProvider.submitTx({
+      ...transaction, era: "v8", deserialize,
+    } as unknown as FinalizedTx)).rejects.toThrow(/Ledger 9 transaction/u);
+    expect(deserialize).not.toHaveBeenCalled();
+    expect(sendMnTransaction).not.toHaveBeenCalled();
   });
 });

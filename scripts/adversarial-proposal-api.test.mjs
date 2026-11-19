@@ -57,8 +57,8 @@ const roles = [
     rejected: GovernedMaintainerProposalRejectedError },
 ];
 
-const sign = (harness, maintainer, prepared) => {
-  const ledger = harness.simulator.getLedger();
+const sign = async (harness, maintainer, prepared) => {
+  const ledger = await harness.simulator.getLedger();
   const publicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
   const signature = signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed, ledger.registryId, ledger.deploymentNetworkIdCommitment,
@@ -77,19 +77,19 @@ const startCase = async (context, role, label) => {
   const second = createMaintainerScenarioFixture(`${label}-second`);
   const third = createMaintainerScenarioFixture(`${label}-third`);
   const target = role.fixture(`${label}-target`);
-  harness.authorizeMaintainer(second);
-  harness.authorizeMaintainer(third);
-  harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
-  const evidence = harness.createApplicationEvidence({
+  await harness.authorizeMaintainer(second);
+  await harness.authorizeMaintainer(third);
+  await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+  const evidence = await harness.createApplicationEvidence({
     applicationId: role.id(target), subjectDid: target.subjectDid, role: role.name,
     scope: role.scope(harness, target), governedResource: role.resource(harness, target),
   });
-  const snapshot = publishSimulatorSnapshot(harness, { label });
+  const snapshot = await publishSimulatorSnapshot(harness, { label });
   const port = {
     async prepare(id, submitted) {
       if (id !== role.id(target)) throw new role.rejected("unknown-authorization");
       try {
-        return harness[role.prepare](target, submitted);
+        return await harness[role.prepare](target, submitted);
       } catch {
         throw new role.rejected("invalid-evidence");
       }
@@ -97,7 +97,7 @@ const startCase = async (context, role, label) => {
     async execute(id, submitted, signers, verifierSignature) {
       if (id !== role.id(target)) throw new role.rejected("unknown-authorization");
       try {
-        const eventHash = harness[role.execute](target, submitted, signers, verifierSignature);
+        const eventHash = await harness[role.execute](target, submitted, signers, verifierSignature);
         return { eventHash: asHex(eventHash) };
       } catch {
         throw new role.rejected("invalid-signers");
@@ -129,9 +129,9 @@ const startCase = async (context, role, label) => {
   const preparedResponse = await post("prepare", { evidence });
   assert.equal(preparedResponse.status, 200, JSON.stringify(preparedResponse.body));
   const prepared = preparedResponse.body;
-  const signers = [sign(harness, second, prepared), sign(harness, third, prepared)];
+  const signers = [await sign(harness, second, prepared), await sign(harness, third, prepared)];
   const verifierSignature = asHex(encodeJubjubSignature(
-    harness[role.signEvidence](harness[role.prepare](target, evidence)),
+    await harness[role.signEvidence](await harness[role.prepare](target, evidence)),
   ));
   const submit = (candidateSigners) => post("submit", {
     evidence, prepared, signers: candidateSigners, evidenceVerifierSignature: verifierSignature,
@@ -144,16 +144,16 @@ for (const role of roles) {
     test(`${role.name}-proposal-${rejection}`, async (context) => {
       const { harness, submit, signers } = await startCase(context, role,
         `isolated-${role.name}-proposal-api-${rejection}`);
-      const before = harness.simulator.getLedger().governanceActionCount;
+      const before = (await harness.simulator.getLedger()).governanceActionCount;
       const rejected = await submit(rejection === "insufficient-quorum"
         ? signers.slice(0, 1) : [signers[0], signers[0]]);
       assert.equal(rejected.status, 403, JSON.stringify(rejected.body));
       assert.equal(rejected.body.type.slice(rejected.body.type.lastIndexOf("/") + 1),
         rejection === "duplicate-signer" ? "invalid-governed-signature" : "governed-proposal-rejected");
-      assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+      assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
       const accepted = await submit(signers);
       assert.equal(accepted.status, 202, JSON.stringify(accepted.body));
-      assert.equal(harness.simulator.getLedger().governanceActionCount, before + 1n);
+      assert.equal((await harness.simulator.getLedger()).governanceActionCount, before + 1n);
     });
   }
 }

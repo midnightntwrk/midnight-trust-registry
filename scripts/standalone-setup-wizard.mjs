@@ -15,7 +15,6 @@ import {
   getLocalNetworkProfile,
   VerifierKeyInsertionOutcomeUnknownError,
 } from "@midnightntwrk/trust-registry-integration";
-import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 
 import { verifyStandaloneInstallBundle } from "./check-standalone-install.mjs";
 import { pinnedKeylessApiImageTag, selectPinnedKeylessApiImageId } from "./standalone-keyless-api-image.mjs";
@@ -1180,7 +1179,8 @@ export async function attemptStandaloneDeployment(directory, planPath, dependenc
       state: "reserved",
       planSha256: sha256(planBytes),
       journalPath: plan.journalPath,
-      stagedPlan: plan.format === "tr-local-staged-deployment-plan-v1" ? {
+      stagedPlan: (plan.format === "tr-local-staged-deployment-plan-v1"
+        || plan.format === "tr-local-staged-deployment-plan-v2") ? {
         initialVerifierKeyName: plan.initialVerifierKeyName,
         network: plan.network,
         providerModulePath: plan.providerModulePath,
@@ -1218,7 +1218,8 @@ export async function reconcileStandaloneDeployment(directory, planPath, depende
     }
     const planBytes = await regularBytes(resolve(planPath));
     const plan = validateLocalDeploymentPlan(parseJsonBytes(planBytes));
-    if (plan.format !== "tr-local-staged-deployment-plan-v1"
+    if ((plan.format !== "tr-local-staged-deployment-plan-v1"
+      && plan.format !== "tr-local-staged-deployment-plan-v2")
       || sha256(planBytes) !== record.deployment.planSha256
       || plan.journalPath !== record.deployment.journalPath
       || plan.sourceRevision !== record.sourceRevision
@@ -1609,7 +1610,6 @@ async function approvedStandaloneCommitteeTransition(root, record, requestPath, 
     );
     await requireCurrentApprovedAccess(root, record, verified,
       { network: approval.network }, dependencies);
-    setNetworkId(STANDALONE_PROFILE.networkId);
     const prepared = await (dependencies.prepareTransition ?? prepareLocalNetworkCommitteeTransition)(approval);
     await requireCurrentApprovedAccess(root, record, verified,
       { network: approval.network }, dependencies);
@@ -1824,7 +1824,6 @@ export async function reconcileStandaloneCommitteeTransition(
       await requireCurrentApprovedAccess(root, record, verified,
         { network: approval.network }, dependencies);
     }
-    setNetworkId(STANDALONE_PROFILE.networkId);
     const result = await (dependencies.reconcile ?? reconcileLocalNetworkCommitteeTransition)({
       approval,
       journal: new FileMaintenanceTransitionJournal(attempt.journalPath),
@@ -1932,7 +1931,6 @@ export async function approveStandaloneCommitteeRecovery(
     }
     await requireCurrentApprovedAccess(root, record, verified,
       { network: approval.network }, dependencies);
-    setNetworkId(STANDALONE_PROFILE.networkId);
     const freshApproval = { ...approval, expiresAt: new Date(now + 5 * 60_000) };
     const fresh = await (dependencies.prepareTransition ?? prepareLocalNetworkCommitteeTransition)(freshApproval);
     await requireCurrentApprovedAccess(root, record, verified,

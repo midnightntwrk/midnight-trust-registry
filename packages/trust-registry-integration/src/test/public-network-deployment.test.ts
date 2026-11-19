@@ -1,8 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 
-import { sampleSigningKey, signatureVerifyingKey } from "@midnight-ntwrk/compact-runtime";
-import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
+import { ContractMaintenanceAuthority, ContractState, createConstructorContext,
+  sampleRawTokenType, sampleSigningKey, signatureVerifyingKey } from "@midnight-ntwrk/compact-runtime";
 import { bytes32Commitment, bytes32Hex } from "@midnightntwrk/trust-registry-client";
 import { deriveJubjubPublicKeyFromSeed, TrustRegistryContract, trustRegistryWitnesses } from "@midnightntwrk/trust-registry-contract";
 import { TrustRegistrySimulator } from "@midnightntwrk/trust-registry-contract/testing";
@@ -13,8 +13,10 @@ import {
   deployPublicTrustRegistry,
   readPostDeploymentLocalTrustRegistry,
   readPostDeploymentPublicTrustRegistry,
+  selectStagedInitialOperation,
   stagedBootstrapContract,
 } from "../public-network-deployment.js";
+import { maintenanceVerifyingKeyHex } from "../maintenance-verifying-key.js";
 
 const mocks = vi.hoisted(() => ({
   deployContract: vi.fn(),
@@ -83,11 +85,13 @@ let observedMissingOperation = false;
 let observedExtraOperation = false;
 let observedDuplicateOperation = false;
 let observedEmptyVerifierKey = false;
-let observedAuthorityOverride: string | null = null;
-let observedAuthorityCommittee: string[] | null = null;
+let observedAuthorityOverride: ReturnType<typeof signatureVerifyingKey> | null = null;
+let observedAuthorityCommittee: Array<ReturnType<typeof signatureVerifyingKey>> | null = null;
 let observedAuthorityThreshold = 1;
 let observedAuthorityCounter = 0n;
 let observedCircuitNames = circuitNames;
+let providerNetworkId: "preview" | "preprod" | "undeployed" = "preview";
+const providers = () => ({ config: { networkId: providerNetworkId } }) as never;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -104,7 +108,7 @@ beforeEach(() => {
   observedAuthorityThreshold = 1;
   observedAuthorityCounter = 0n;
   observedCircuitNames = circuitNames;
-  setNetworkId("preview");
+  providerNetworkId = "preview";
   mocks.indexerPublicDataProvider.mockReturnValue({ queryContractState: mocks.queryContractState });
   mocks.deployContract.mockImplementation(async (_providers, options) => {
     const simulator = new TrustRegistrySimulator({
@@ -119,36 +123,39 @@ beforeEach(() => {
       networkIdCommitment: options.args[8],
       contractAddress: address,
     });
-    mocks.queryContractState.mockImplementation(async () => ({
-      data: simulator.circuitContext.currentQueryContext.state,
-      operations: () => observedMissingOperation ? observedCircuitNames.slice(1)
-        : observedExtraOperation ? [...observedCircuitNames, "__proto__"]
-          : observedDuplicateOperation ? [...observedCircuitNames, observedCircuitNames[0]] : observedCircuitNames,
-      operation: (name: string) => ({
-        verifierKey: name === circuitNames[0] && observedEmptyVerifierKey ? Buffer.alloc(0)
-          : name === "__proto__" ? Buffer.from("unexpected-verifier-key")
-          : name === circuitNames[0] && observedVerifierKeyOverride !== null
-            ? observedVerifierKeyOverride : verifierKeys[name],
+    await simulator.ready;
+    mocks.queryContractState.mockImplementation(async () => ({ contractState: {
+      era: "v9",
+      // Deployment-policy tests vary verifier-key bytes; real v9 decoding is covered by the reader suite.
+      deserialize: () => ({
+        data: simulator.circuitContext.callContext.currentQueryContext.state,
+        operations: () => observedMissingOperation ? observedCircuitNames.slice(1)
+          : observedExtraOperation ? [...observedCircuitNames, "__proto__"]
+            : observedDuplicateOperation ? [...observedCircuitNames, observedCircuitNames[0]] : observedCircuitNames,
+        operation: (name: string) => ({
+          verifierKey: name === circuitNames[0] && observedEmptyVerifierKey ? Buffer.alloc(0)
+            : name === "__proto__" ? Buffer.from("unexpected-verifier-key")
+              : name === circuitNames[0] && observedVerifierKeyOverride !== null
+                ? observedVerifierKeyOverride : verifierKeys[name],
+        }),
+        maintenanceAuthority: {
+          committee: observedAuthorityCommittee
+            ?? [observedAuthorityOverride ?? signatureVerifyingKey(options.signingKey)],
+          threshold: observedAuthorityThreshold,
+          counter: observedAuthorityCounter,
+        },
       }),
-      maintenanceAuthority: {
-        committee: observedAuthorityCommittee
-          ?? [observedAuthorityOverride ?? signatureVerifyingKey(options.signingKey)],
-        threshold: observedAuthorityThreshold,
-        counter: observedAuthorityCounter,
-      },
-    }));
+    } }));
     return { deployTxData: { public: receipt, private: { neverSerialize: true } } };
   });
 });
-
-afterEach(() => setNetworkId("undeployed"));
 
 const deploy = (overrides: Partial<typeof network> = {}, input = bootstrap, manifest = releaseManifest) =>
   deployPublicTrustRegistry({
     network: { ...network, ...overrides },
     bootstrap: input,
     releaseManifest: manifest,
-    providers: {} as never,
+    providers: providers(),
     contractMaintenanceSigningKey: maintenanceSigningKey,
   });
 
@@ -169,19 +176,53 @@ const deployLocal = (overrides: Partial<typeof localNetwork> = {}) => deployLoca
     maintainerDidCommitment: bytes32Commitment("did:midnight:undeployed:maintainer"),
   },
   releaseManifest,
-  providers: {} as never,
+  providers: providers(),
   contractMaintenanceSigningKey: maintenanceSigningKey,
 });
 
 describe("isolated local Trust Registry deployment", () => {
   it("stages only the approved initial verifier key and leaves release gates pending", async () => {
-    setNetworkId("undeployed");
+    providerNetworkId = "undeployed";
     const initialVerifierKeyName = circuitNames[0]!;
     observedCircuitNames = [initialVerifierKeyName];
     const staged = stagedBootstrapContract(initialVerifierKeyName);
     expect(Object.keys(new staged(trustRegistryWitnesses).provableCircuits)).toEqual([initialVerifierKeyName]);
     expect(Object.keys(new TrustRegistryContract.Contract(trustRegistryWitnesses).provableCircuits))
       .toHaveLength(circuitNames.length);
+    const constructorArgs = [
+      bytes32Commitment(bootstrap.registryId), bootstrap.registryDidCommitment,
+      bootstrap.governancePolicyCommitment, bootstrap.maintainerId,
+      bootstrap.maintainerDidCommitment, bootstrap.maintainerKeyId,
+      bootstrap.maintainerPublicKey, bootstrap.maintainerThreshold,
+      bytes32Commitment("undeployed"),
+    ] as const;
+    const stagedInitial = await new staged(trustRegistryWitnesses).initialState(
+      createConstructorContext({}, "0".repeat(64)), ...constructorArgs,
+    );
+    const fullInitial = await new TrustRegistryContract.Contract(trustRegistryWitnesses).initialState(
+      createConstructorContext({}, "0".repeat(64)), ...constructorArgs,
+    );
+    expect(fullInitial.currentContractState.operations()).toHaveLength(circuitNames.length);
+    expect(stagedInitial.currentContractState.operations()).toEqual([initialVerifierKeyName]);
+    expect(ContractState.deserialize(stagedInitial.currentContractState.serialize()).operations())
+      .toEqual([initialVerifierKeyName]);
+    expect(stagedInitial.currentContractState.data.toString())
+      .toEqual(fullInitial.currentContractState.data.toString());
+    expect(stagedInitial.currentContractState.maintenanceAuthority.serialize())
+      .toEqual(fullInitial.currentContractState.maintenanceAuthority.serialize());
+    expect(stagedInitial.currentContractState.balance)
+      .toEqual(fullInitial.currentContractState.balance);
+    const nonDefaultState = ContractState.deserialize(fullInitial.currentContractState.serialize());
+    nonDefaultState.maintenanceAuthority = new ContractMaintenanceAuthority(
+      [signatureVerifyingKey(sampleSigningKey())], 1,
+    );
+    nonDefaultState.balance = new Map([[{ tag: "unshielded", raw: sampleRawTokenType() }, 7n]]);
+    const retained = ContractState.deserialize(
+      selectStagedInitialOperation(nonDefaultState, initialVerifierKeyName).serialize(),
+    );
+    expect(retained.operations()).toEqual([initialVerifierKeyName]);
+    expect(retained.maintenanceAuthority.serialize()).toEqual(nonDefaultState.maintenanceAuthority.serialize());
+    expect(retained.balance).toEqual(nonDefaultState.balance);
     const result = await deployLocalTrustRegistryStaged({
       network: localNetwork,
       bootstrap: {
@@ -190,7 +231,7 @@ describe("isolated local Trust Registry deployment", () => {
         maintainerDidCommitment: bytes32Commitment("did:midnight:undeployed:maintainer"),
       },
       releaseManifest,
-      providers: {} as never,
+      providers: providers(),
       contractMaintenanceSigningKey: maintenanceSigningKey,
       initialVerifierKeyName,
     });
@@ -205,13 +246,13 @@ describe("isolated local Trust Registry deployment", () => {
   });
 
   it("rejects changed installed verifier assets before submitting", async () => {
-    setNetworkId("undeployed");
+    providerNetworkId = "undeployed";
     mocks.verifyInstalledVerifierKeyAssets.mockRejectedValueOnce(new Error("verifier mismatch"));
     await expect(deployLocal()).rejects.toThrow(/verifier mismatch/u);
     expect(mocks.deployContract).not.toHaveBeenCalled();
   });
   it("deploys with the undeployed domain and reads back finalized constructor and key hashes", async () => {
-    setNetworkId("undeployed");
+    providerNetworkId = "undeployed";
     const result = await deployLocal();
     expect(mocks.deployContract).toHaveBeenCalledOnce();
     expect(mocks.deployContract.mock.calls[0]?.[1].args[8]).toEqual(bytes32Commitment("undeployed"));
@@ -227,7 +268,7 @@ describe("isolated local Trust Registry deployment", () => {
   });
 
   it("rejects wrong genesis, unsafe endpoints, and public network relabeling before submit", async () => {
-    setNetworkId("undeployed");
+    providerNetworkId = "undeployed";
     await expect(deployLocal({ expectedGenesisHash: `0x${"d".repeat(64)}` }))
       .rejects.toThrow(/genesis hash mismatch/u);
     await expect(deployLocal({ rpcUrl: "http://public.example:9944" }))
@@ -240,7 +281,7 @@ describe("isolated local Trust Registry deployment", () => {
       .rejects.toThrow(/allowlist/u);
     await expect(deployLocal({ networkId: "preprod" as never }))
       .rejects.toThrow(/standalone network profile/u);
-    setNetworkId("preprod");
+    providerNetworkId = "preprod";
     await expect(deployLocal()).rejects.toThrow(/network does not match/u);
     await expect(deploy({ networkId: "undeployed" as never }))
       .rejects.toThrow(/Unsupported public Midnight network/u);
@@ -248,15 +289,15 @@ describe("isolated local Trust Registry deployment", () => {
   });
 
   it("keeps local post-deployment readback on the local reader and rejects SDK relabeling", async () => {
-    setNetworkId("undeployed");
+    providerNetworkId = "undeployed";
     const deployed = await deployLocal();
     const localBootstrap = {
       ...bootstrap,
       registryDidCommitment: bytes32Commitment("did:midnight:undeployed:registry"),
       maintainerDidCommitment: bytes32Commitment("did:midnight:undeployed:maintainer"),
     };
-    const readback = () => readPostDeploymentLocalTrustRegistry({
-      network: localNetwork,
+    const readback = (currentNetwork: typeof localNetwork = localNetwork) => readPostDeploymentLocalTrustRegistry({
+      network: currentNetwork,
       receipt: deployed.receipt,
       bootstrap: localBootstrap,
       releaseManifest,
@@ -271,8 +312,8 @@ describe("isolated local Trust Registry deployment", () => {
     observedAuthorityCommittee = [];
     observedAuthorityCounter = 1n;
     expect((await readback()).status).toBe("verified");
-    setNetworkId("preprod");
-    await expect(readback()).rejects.toThrow(/standalone network profile/u);
+    await expect(readback({ ...localNetwork, networkId: "preprod" as never }))
+      .rejects.toThrow(/standalone network profile/u);
     await expect(readPostDeploymentPublicTrustRegistry({
       network: { ...network, networkId: "preprod" },
       receipt: deployed.receipt,
@@ -327,15 +368,16 @@ describe("public Trust Registry deployment", () => {
         .toBe(bytes32Hex(bootstrap.maintainerDidCommitment));
       expect(result.readback.state.verifierKeySha256).toEqual(releaseManifest.verifierKeySha256);
       expect(result.readback.state.maintenanceAuthority).toEqual({
-        committee: [`0x${signatureVerifyingKey(maintenanceSigningKey)}`], threshold: 1, counter: 0n,
+        committee: [maintenanceVerifyingKeyHex(signatureVerifyingKey(maintenanceSigningKey))],
+        threshold: 1, counter: 0n,
       });
     }
   });
 
   it("refuses wrong SDK network, genesis, or indexer endpoint before deployment", async () => {
-    setNetworkId("preprod");
+    providerNetworkId = "preprod";
     await expect(deploy()).rejects.toThrow("network does not match");
-    setNetworkId("preview");
+    providerNetworkId = "preview";
     await expect(deploy({ expectedGenesisHash: `0x${"d".repeat(64)}` }))
       .rejects.toThrow("genesis hash mismatch");
     await expect(deploy({ indexerHttpUrl: "http://indexer.example.test/graphql" }))
@@ -459,7 +501,7 @@ describe("public Trust Registry deployment", () => {
     expect((await readback()).status).toBe("unsafe-maintenance-authority");
     observedAuthorityThreshold = 1;
     expect((await readback()).status).toBe("verified");
-    observedAuthorityCommittee = [`0x${"1".repeat(64)}`];
+    observedAuthorityCommittee = [signatureVerifyingKey(sampleSigningKey())];
     observedAuthorityThreshold = 1;
     expect((await readback()).status).toBe("unsafe-maintenance-authority");
     observedAuthorityCommittee = [];
@@ -473,9 +515,9 @@ describe("public Trust Registry deployment", () => {
 
   it("rejects a stale governance image despite a matching multi-party authority", async () => {
     const deployed = await deploy();
-    const verifyingKeys = [
-      `0x${"1".repeat(64)}`, `0x${"2".repeat(64)}`, `0x${"3".repeat(64)}`,
-    ];
+    const authorityKeys = [sampleSigningKey(), sampleSigningKey(), sampleSigningKey()]
+      .map(signatureVerifyingKey);
+    const verifyingKeys = authorityKeys.map(maintenanceVerifyingKeyHex);
     const governance = {
       policyCommitment: bootstrap.governancePolicyCommitment,
       policyVersion: 1n, actionSequence: 1n,
@@ -486,7 +528,7 @@ describe("public Trust Registry deployment", () => {
       governance: pin,
       maintenancePolicy: { mode: "committee", verifyingKeys, threshold: 2 },
     });
-    observedAuthorityCommittee = verifyingKeys;
+    observedAuthorityCommittee = authorityKeys;
     observedAuthorityThreshold = 2;
     observedAuthorityCounter = 1n;
     expect((await readback()).status).toBe("mismatch");

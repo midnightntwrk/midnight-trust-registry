@@ -13,7 +13,7 @@ for (const target of ["issuer", "recognition"]) {
     const workspacePath = join(directory, "workspace.json");
     let server;
     try {
-      await writeWorkspaceToFile(workspacePath, createOperatorWorkspace({ label: "Browser workspace handoff" }));
+      await writeWorkspaceToFile(workspacePath, await createOperatorWorkspace({ label: "Browser workspace handoff" }));
       const staticHandlers = {
         applicant: createStaticAssetHandler({
           distDir: resolve("packages/trust-registry-applicant-portal/dist"), name: "workspace-handoff-applicant",

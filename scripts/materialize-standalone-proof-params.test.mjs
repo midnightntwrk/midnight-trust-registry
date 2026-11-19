@@ -22,7 +22,7 @@ test("v7 generation publishes only complete pinned protocol keys", async () => {
     try {
       await mkdir(join(bundle, "proof-params"), { recursive: true });
       const script = `#!/bin/sh\n[ "$1" = compile ] || exit 2\ncp "$2" "$3"\n${scenario === "partial-failure"
-        ? 'case "$2" in *zswap/9/spend.bzkir) exit 7;; esac\n' : ""}cp "$2" "$4"\n`;
+        ? 'case "$2" in *zswap/10/spend.bzkir) exit 7;; esac\n' : ""}cp "$2" "$4"\n`;
       await writeFile(generator, script, { mode: 0o700 });
       const base = [];
       for (const name of KEYLESS_KEYGEN_PARAMETER_PATHS) {

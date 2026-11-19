@@ -290,7 +290,7 @@ export const applyMutationOperation = (
   operation: TrustRegistryOperatorWorkspaceOperation,
 ): Promise<TrustRegistryApiMutationResult> => enqueueMutation(source, async () => {
     const workspace = await source.loadWorkspace();
-    const nextWorkspace = applyWorkspaceOperation(workspace, operation);
+    const nextWorkspace = await applyWorkspaceOperation(workspace, operation);
     await source.writeWorkspace(nextWorkspace);
     const record = resolveWorkspaceOperationRecord(nextWorkspace, operation);
 

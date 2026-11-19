@@ -24,7 +24,7 @@ const fileHash = (path) => sha256(readFileSync(path));
 export const findZkirBinary = (pin, compactDirectory = process.env.COMPACT_DIRECTORY ?? join(homedir(), ".compact")) => {
   const versionDirectory = join(compactDirectory, "versions", pin);
   const binaries = readdirSync(versionDirectory)
-    .map((target) => join(versionDirectory, target, "zkir"))
+    .flatMap((target) => ["zkir-v3", "zkir"].map((name) => join(versionDirectory, target, name)))
     .filter((path) => existsSync(path));
   if (binaries.length !== 1) throw new Error(`Expected one pinned zkir binary in ${versionDirectory}`);
   return binaries[0];

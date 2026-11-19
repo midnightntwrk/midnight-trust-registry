@@ -23,6 +23,7 @@ The default identity profile is `did:midnight` with contract-facing JubJub Schno
 
 - [Start with the adoption guide](./adoption.md) to choose between a runnable demo and a qualified self-hosted install.
 - [Run the guided role demo](./quickstart.md#first-time-role-demo) for a single-command, fixture-backed UI journey.
+- [Attach to Ledger 9 local development](./ledger9-local-development.md) to inspect a finalized contract without mistaking fixture actions for live DID/VP admission.
 - [Explore technical and signed simulator demos](./quickstart.md) separately from the guided UI.
 - [Read the actor matrix](./use-cases.md) before designing an integration.
 - [Inspect the domain model](../model/index.md) for exact scope and lifecycle rules.

@@ -96,7 +96,7 @@ export class AdversarialMatrix {
 
   async expectRejected(operation, { id, invariant, boundary, messagePattern, category }) {
     try {
-      assert.ok(["integration", "client", "adapter"].includes(boundary));
+      assert.ok(["compact", "integration", "client", "adapter"].includes(boundary));
       assert.ok(messagePattern instanceof RegExp);
       assert.match(category, /^[a-z][a-z0-9-]+$/u);
       let failure;
@@ -117,6 +117,18 @@ export class AdversarialMatrix {
     try {
       assert.ok(["integration", "client", "adapter"].includes(boundary));
       const value = operation();
+      assert.ok(value, "Expected a verified result");
+      this.#record({ id, invariant, boundary, expected: "accepted", observed: "accepted", status: "passed" });
+      return value;
+    } catch (error) {
+      return this.#failure({ id, invariant, boundary }, "accepted", "verification-assertion-failed", error);
+    }
+  }
+
+  async expectVerifiedAsync(operation, { id, invariant, boundary }) {
+    try {
+      assert.ok(["integration", "client", "adapter"].includes(boundary));
+      const value = await operation();
       assert.ok(value, "Expected a verified result");
       this.#record({ id, invariant, boundary, expected: "accepted", observed: "accepted", status: "passed" });
       return value;

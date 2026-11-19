@@ -35,9 +35,9 @@ const harness = new LocalTrustRegistryIntegrationHarness("packed-recognition");
 const client = new TrustRegistrySimulatorClient(harness.simulator);
 const second = createMaintainerScenarioFixture("packed-recognition-second");
 const third = createMaintainerScenarioFixture("packed-recognition-third");
-harness.authorizeMaintainer(second);
-harness.authorizeMaintainer(third);
-harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+await harness.authorizeMaintainer(second);
+await harness.authorizeMaintainer(third);
+await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
 
 const authoritySeed = new Uint8Array(32).fill(116);
 const authorityDid = createMidnightDid("packed-recognition-authority");
@@ -46,7 +46,7 @@ const anchor = {
   ...RECOGNITION_VP_FIXTURE_ANCHOR,
   targetRegistryId: harness.registryId,
   policyId: harness.policyId,
-  policyVersion: `v${(harness.simulator.getLedger().governancePolicyVersion + 1n).toString()}`,
+  policyVersion: `v${((await harness.simulator.getLedger()).governancePolicyVersion + 1n).toString()}`,
 };
 const recognition = {
   ...base,
@@ -59,7 +59,7 @@ const recognition = {
   scopeResourceId: anchor.scopeResourceId,
   scopeResourceIdCommitment: bytes32Commitment(anchor.scopeResourceId),
 };
-harness.governRecognitionAccreditorAnchor(anchor, [second]);
+await harness.governRecognitionAccreditorAnchor(anchor, [second]);
 harness.advanceEvidenceTimeBy(60_000);
 const evaluatedAtMs = Math.max(VP_FIXTURE_TIME_MS, Date.parse(harness.policyRecord.effectiveFrom) + 60_000);
 const binding = {
@@ -74,7 +74,7 @@ const challengeService = new RecognitionAuthorityChallengeService(
   new InMemoryApplicationChallengeStore(), () => evaluatedAtMs,
 );
 const challenge = await challengeService.issue(binding);
-const governedAnchor = harness.resolveCurrentRecognitionAccreditorAnchor({
+const governedAnchor = await harness.resolveCurrentRecognitionAccreditorAnchor({
   recognizedRegistryId: recognition.recognizedRegistryId,
   scopeResourceType: recognition.scopeResourceType,
   scopeResourceId: recognition.scopeResourceId,
@@ -116,7 +116,7 @@ const verifyAccreditation = (assertion, overrides = {}) =>
     accreditation: accreditation.input.submission,
     readCurrentGovernance: async () => ({
       governancePolicy: harness.policyRecord,
-      activePolicyCommitment: hex(harness.simulator.getLedger().governancePolicyCommitment),
+      activePolicyCommitment: hex((await harness.simulator.getLedger()).governancePolicyCommitment),
     }),
     resolver: accreditation.input.resolver,
     statusSource: accreditation.input.statusSource,
@@ -150,9 +150,9 @@ await assert.rejects(verifyAccreditation(signed, {
 const verified = await verifyAccreditation(signed);
 await assert.rejects(verifyAccreditation(signed), /already consumed/u);
 
-const prepared = harness.prepareRecognitionProposalAction(recognition, bytes(verified.evidenceCommitment));
-const signMaintainer = (maintainer) => {
-  const ledger = harness.simulator.getLedger();
+const prepared = await harness.prepareRecognitionProposalAction(recognition, bytes(verified.evidenceCommitment));
+const signMaintainer = async (maintainer) => {
+  const ledger = await harness.simulator.getLedger();
   return {
     keyId: maintainer.keyId,
     publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
@@ -168,17 +168,17 @@ const signMaintainer = (maintainer) => {
     ),
   };
 };
-const signers = [signMaintainer(second), signMaintainer(third)];
+const signers = [await signMaintainer(second), await signMaintainer(third)];
 const verifierSignature = harness.signRecognitionProposalEvidence(prepared);
-assert.throws(() => harness.executeRecognitionProposalWithSignatures(
+await assert.rejects(harness.executeRecognitionProposalWithSignatures(
   recognition, signers.slice(0, 1), verifierSignature, prepared,
 ), /action threshold/u);
-const proposalEventHash = harness.executeRecognitionProposalWithSignatures(
+const proposalEventHash = await harness.executeRecognitionProposalWithSignatures(
   recognition, signers, verifierSignature, prepared,
 );
-assert.equal(hex(harness.simulator.getRecognitionProposalEvidence(
+assert.equal(hex((await harness.simulator.getRecognitionProposalEvidence(
   recognition.recognitionIdCommitment,
-).evidenceCommitment), verified.evidenceCommitment);
+)).evidenceCommitment), verified.evidenceCommitment);
 const proposalSnapshot = await resolveCompactProposalEvidenceSnapshot(
   async () => harness.simulator.getLedger(), harness.registryId, "recognition", recognition.recognitionId,
   Buffer.from(harness.simulator.contractAddress, "hex"),
@@ -201,7 +201,7 @@ const recognitionAccreditationPort = {
   resolveCurrentContext: async (recognitionId) => recognitionId === recognition.recognitionId ? {
     binding,
     governancePolicy: harness.policyRecord,
-    activePolicyCommitment: hex(harness.simulator.getLedger().governancePolicyCommitment),
+    activePolicyCommitment: hex((await harness.simulator.getLedger()).governancePolicyCommitment),
     resolver: accreditation.input.resolver,
     statusSource: accreditation.input.statusSource,
   } : null,
@@ -268,19 +268,19 @@ try {
 } finally {
   await new Promise((resolve, reject) => missingLedgerApi.close((error) => error ? reject(error) : resolve()));
 }
-harness.approveRecognition(recognition);
-harness.activateRecognition(recognition);
-const bundle = harness.evaluateCurrentRecognitionDecision(recognition, { expectedRegistryId: harness.registryId });
-assert.equal(client.verifyRecognitionBundle(bundle, {
+await harness.approveRecognition(recognition);
+await harness.activateRecognition(recognition);
+const bundle = await harness.evaluateCurrentRecognitionDecision(recognition, { expectedRegistryId: harness.registryId });
+assert.equal((await client.verifyRecognitionBundle(bundle, {
   expectedRecognizedRegistryId: recognition.recognizedRegistryId,
   expectedResourceId: recognition.scopeResourceId,
-}).recognition?.status, "active");
-assert.throws(() => client.verifyRecognitionBundle(bundle, {
+})).recognition?.status, "active");
+await assert.rejects(client.verifyRecognitionBundle(bundle, {
   expectedRecognizedRegistryId: "registry:external:substituted:v1",
 }), /registry mismatch/u);
-harness.suspendRecognition(recognition);
-assert.throws(() => harness.evaluateCurrentRecognitionDecision(recognition), /not active/i);
-assert.equal(harness.simulator.getLedger().issuerAuthorizationCount, 0n);
+await harness.suspendRecognition(recognition);
+await assert.rejects(harness.evaluateCurrentRecognitionDecision(recognition), /not active/i);
+assert.equal((await harness.simulator.getLedger()).issuerAuthorizationCount, 0n);
 assert.match(hex(proposalEventHash), /^0x[0-9a-f]{64}$/u);
 process.stdout.write(`${JSON.stringify({
   demo: "packed-recognition-journey",

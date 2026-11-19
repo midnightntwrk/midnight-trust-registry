@@ -58,14 +58,15 @@ const candidate = (label: string, seedByte: number) => ({
   consumerContractAddress: labelToBytes32("consumer:vc-proof"),
 });
 
-const register = (
+const register = async (
   registry: ReturnType<typeof fixture>,
   key: ReturnType<typeof candidate>,
   payloadOverride?: Uint8Array,
 ) => {
   const { simulator, registryId, maintainer, maintainerPublicKey } = registry;
-  const policy = simulator.getLedger().governancePolicyCommitment;
-  const policyVersion = simulator.getLedger().governancePolicyVersion;
+  const state = await simulator.getLedger();
+  const policy = state.governancePolicyCommitment;
+  const policyVersion = state.governancePolicyVersion;
   const domain = pureCircuits.createVcAuthorityDomainCommitment(
     key.networkIdCommitment,
     key.consumerContractAddress,
@@ -91,7 +92,7 @@ const register = (
     policy,
     REGISTER,
     payloadOverride ?? payload,
-    simulator.getLedger().governanceActionCount,
+    state.governanceActionCount,
   );
   return simulator.registerVcAuthorityKey(
     maintainer.keyId,
@@ -108,32 +109,33 @@ const register = (
   );
 };
 
-const update = (
+const update = async (
   registry: ReturnType<typeof fixture>,
   keyIdCommitment: Uint8Array,
   kind: "suspend" | "revoke",
   reasonHash: Uint8Array,
 ) => {
   const { simulator, registryId, maintainer, maintainerPublicKey } = registry;
+  const state = await simulator.getLedger();
   const payload = computeUpdateVcAuthorityKeyPayloadHash(
     keyIdCommitment,
-    simulator.getVcAuthorityKey(keyIdCommitment).lifecycleEventHash,
+    (await simulator.getVcAuthorityKey(keyIdCommitment)).lifecycleEventHash,
     reasonHash,
   );
   const signature = signFixtureDeploymentBoundActionFromSeed(simulator,
     maintainer.seed,
     registryId,
-    simulator.getLedger().governancePolicyCommitment,
+    state.governancePolicyCommitment,
     kind === "suspend" ? SUSPEND : REVOKE,
     payload,
-    simulator.getLedger().governanceActionCount,
+    state.governanceActionCount,
   );
   return kind === "suspend"
     ? simulator.suspendVcAuthorityKey(maintainer.keyId, maintainerPublicKey, signature, keyIdCommitment, reasonHash)
     : simulator.revokeVcAuthorityKey(maintainer.keyId, maintainerPublicKey, signature, keyIdCommitment, reasonHash);
 };
 
-const rotate = (
+const rotate = async (
   registry: ReturnType<typeof fixture>,
   oldKeyIdCommitment: Uint8Array,
   replacement: ReturnType<typeof candidate>,
@@ -141,7 +143,8 @@ const rotate = (
   payloadOverride?: Uint8Array,
 ) => {
   const { simulator, registryId, maintainer, maintainerPublicKey } = registry;
-  const old = simulator.getVcAuthorityKey(oldKeyIdCommitment);
+  const old = await simulator.getVcAuthorityKey(oldKeyIdCommitment);
+  const state = await simulator.getLedger();
   const newDomain = pureCircuits.createVcAuthorityDomainCommitment(
     old.networkIdCommitment,
     old.consumerContractAddress,
@@ -158,8 +161,8 @@ const rotate = (
     old.networkIdCommitment,
     old.consumerContractAddress,
     newDomain,
-    simulator.getLedger().governancePolicyCommitment,
-    simulator.getLedger().governancePolicyVersion,
+    state.governancePolicyCommitment,
+    state.governancePolicyVersion,
   );
   const payload = computeRotateVcAuthorityKeyPayloadHash(
     oldKeyIdCommitment,
@@ -170,10 +173,10 @@ const rotate = (
   const signature = signFixtureDeploymentBoundActionFromSeed(simulator,
     maintainer.seed,
     registryId,
-    simulator.getLedger().governancePolicyCommitment,
+    state.governancePolicyCommitment,
     ROTATE,
     payloadOverride ?? payload,
-    simulator.getLedger().governanceActionCount,
+    state.governanceActionCount,
   );
   return simulator.rotateVcAuthorityKey(
     maintainer.keyId,
@@ -195,12 +198,12 @@ describe("governed VC authority keys", () => {
     expect(pureCircuits.actionScopedMaintainerThreshold(ROTATE, 2n, 1n, 3n)).toBe(2n);
   });
 
-  it("registers an exact DID/method/consumer-bound key with committed event evidence", () => {
+  it("registers an exact DID/method/consumer-bound key with committed event evidence", async () => {
     const registry = fixture();
     const key = candidate("one", 41);
-    const eventHash = register(registry, key);
-    const record = registry.simulator.getVcAuthorityKey(key.keyIdCommitment);
-    const current = registry.simulator.getCurrentVcAuthorityKey(key.consumerContractAddress);
+    const eventHash = await register(registry, key);
+    const record = await registry.simulator.getVcAuthorityKey(key.keyIdCommitment);
+    const current = await registry.simulator.getCurrentVcAuthorityKey(key.consumerContractAddress);
     expect(current.status).toBe(VcAuthorityKeyStatus.active);
     expect(Buffer.from(current.keyIdCommitment)).toEqual(Buffer.from(key.keyIdCommitment));
     expect(Buffer.from(record.authorityDidCommitment)).toEqual(Buffer.from(key.authorityDidCommitment));
@@ -219,16 +222,16 @@ describe("governed VC authority keys", () => {
     ));
   });
 
-  it("rejects reused key ids and a second live key for the same consumer", () => {
+  it("rejects reused key ids and a second live key for the same consumer", async () => {
     const registry = fixture();
     const first = candidate("one", 41);
-    register(registry, first);
-    expect(() => register(registry, first)).toThrow();
-    expect(() => register(registry, candidate("two", 42))).toThrow();
-    expect(() => registry.simulator.getCurrentVcAuthorityKey(labelToBytes32("consumer:unknown"))).toThrow();
+    await register(registry, first);
+    await expect(register(registry, first)).rejects.toThrow();
+    await expect(register(registry, candidate("two", 42))).rejects.toThrow();
+    await expect(registry.simulator.getCurrentVcAuthorityKey(labelToBytes32("consumer:unknown"))).rejects.toThrow();
   });
 
-  it("rejects substituted consumer/domain payload and authority self-approval", () => {
+  it("rejects substituted consumer/domain payload and authority self-approval", async () => {
     const registry = fixture();
     const first = candidate("one", 41);
     const wrongConsumer = { ...first, consumerContractAddress: labelToBytes32("consumer:other") };
@@ -251,47 +254,47 @@ describe("governed VC authority keys", () => {
       registry.policyCommitment,
       1n,
     );
-    expect(() => register(registry, first, wrongPayload)).toThrow();
-    expect(() => register(registry, {
+    await expect(register(registry, first, wrongPayload)).rejects.toThrow();
+    await expect(register(registry, {
       ...first,
       authorityDidCommitment: registry.maintainer.didCommitment,
-    })).toThrow();
+    })).rejects.toThrow();
   });
 
-  it("suspends and revokes a key without erasing historical evidence, then admits a successor", () => {
+  it("suspends and revokes a key without erasing historical evidence, then admits a successor", async () => {
     const registry = fixture();
     const first = candidate("one", 41);
-    register(registry, first);
-    const suspendedEvent = update(registry, first.keyIdCommitment, "suspend", labelToBytes32("reason:suspend"));
-    expect(registry.simulator.getVcAuthorityKey(first.keyIdCommitment).status).toBe(VcAuthorityKeyStatus.suspended);
-    expect(Buffer.from(registry.simulator.getVcAuthorityKey(first.keyIdCommitment).lifecycleEventHash))
+    await register(registry, first);
+    const suspendedEvent = await update(registry, first.keyIdCommitment, "suspend", labelToBytes32("reason:suspend"));
+    expect((await registry.simulator.getVcAuthorityKey(first.keyIdCommitment)).status).toBe(VcAuthorityKeyStatus.suspended);
+    expect(Buffer.from((await registry.simulator.getVcAuthorityKey(first.keyIdCommitment)).lifecycleEventHash))
       .toEqual(Buffer.from(suspendedEvent));
-    expect(() => registry.simulator.getCurrentVcAuthorityKey(first.consumerContractAddress)).toThrow();
-    expect(() => register(registry, candidate("two", 42))).toThrow();
-    expect(() => update(registry, first.keyIdCommitment, "suspend", labelToBytes32("reason:again"))).toThrow();
+    await expect(registry.simulator.getCurrentVcAuthorityKey(first.consumerContractAddress)).rejects.toThrow();
+    await expect(register(registry, candidate("two", 42))).rejects.toThrow();
+    await expect(update(registry, first.keyIdCommitment, "suspend", labelToBytes32("reason:again"))).rejects.toThrow();
 
-    const revokedEvent = update(registry, first.keyIdCommitment, "revoke", labelToBytes32("reason:revoke"));
-    const historical = registry.simulator.getVcAuthorityKey(first.keyIdCommitment);
+    const revokedEvent = await update(registry, first.keyIdCommitment, "revoke", labelToBytes32("reason:revoke"));
+    const historical = await registry.simulator.getVcAuthorityKey(first.keyIdCommitment);
     expect(historical.status).toBe(VcAuthorityKeyStatus.revoked);
     expect(Buffer.from(historical.lifecycleEventHash)).toEqual(Buffer.from(revokedEvent));
-    expect(() => registry.simulator.getCurrentVcAuthorityKey(first.consumerContractAddress)).toThrow();
-    expect(() => update(registry, first.keyIdCommitment, "revoke", labelToBytes32("reason:again"))).toThrow();
+    await expect(registry.simulator.getCurrentVcAuthorityKey(first.consumerContractAddress)).rejects.toThrow();
+    await expect(update(registry, first.keyIdCommitment, "revoke", labelToBytes32("reason:again"))).rejects.toThrow();
 
     const successor = candidate("two", 42);
-    register(registry, successor);
-    expect(Buffer.from(registry.simulator.getCurrentVcAuthorityKey(successor.consumerContractAddress).keyIdCommitment))
+    await register(registry, successor);
+    expect(Buffer.from((await registry.simulator.getCurrentVcAuthorityKey(successor.consumerContractAddress)).keyIdCommitment))
       .toEqual(Buffer.from(successor.keyIdCommitment));
-    expect(registry.simulator.getVcAuthorityKey(first.keyIdCommitment).status).toBe(VcAuthorityKeyStatus.revoked);
+    expect((await registry.simulator.getVcAuthorityKey(first.keyIdCommitment)).status).toBe(VcAuthorityKeyStatus.revoked);
   });
 
-  it("atomically retires an active key and links the current replacement", () => {
+  it("atomically retires an active key and links the current replacement", async () => {
     const registry = fixture();
     const first = candidate("one", 41);
     const replacement = candidate("two", 42);
-    register(registry, first);
-    const eventHash = rotate(registry, first.keyIdCommitment, replacement, labelToBytes32("reason:rotate"));
-    const retired = registry.simulator.getVcAuthorityKey(first.keyIdCommitment);
-    const current = registry.simulator.getCurrentVcAuthorityKey(first.consumerContractAddress);
+    await register(registry, first);
+    const eventHash = await rotate(registry, first.keyIdCommitment, replacement, labelToBytes32("reason:rotate"));
+    const retired = await registry.simulator.getVcAuthorityKey(first.keyIdCommitment);
+    const current = await registry.simulator.getCurrentVcAuthorityKey(first.consumerContractAddress);
     expect(retired.status).toBe(VcAuthorityKeyStatus.retired);
     expect(retired.retiredAtSequence).toBe(current.registeredAtSequence);
     expect(Buffer.from(retired.lifecycleEventHash)).toEqual(Buffer.from(eventHash));
@@ -300,36 +303,36 @@ describe("governed VC authority keys", () => {
     expect(Buffer.from(current.authorityDidCommitment)).toEqual(Buffer.from(first.authorityDidCommitment));
     expect(Buffer.from(current.authorityMethodIdCommitment)).toEqual(Buffer.from(replacement.authorityMethodIdCommitment));
     expect(Buffer.from(current.lifecycleEventHash)).toEqual(Buffer.from(eventHash));
-    expect(() => rotate(registry, first.keyIdCommitment, candidate("three", 43), labelToBytes32("reason:again")))
-      .toThrow();
+    await expect(rotate(registry, first.keyIdCommitment, candidate("three", 43), labelToBytes32("reason:again")))
+      .rejects.toThrow();
   });
 
-  it("does not reactivate a suspended authority through ordinary key rotation", () => {
+  it("does not reactivate a suspended authority through ordinary key rotation", async () => {
     const registry = fixture();
     const first = candidate("one", 41);
-    register(registry, first);
-    update(registry, first.keyIdCommitment, "suspend", labelToBytes32("reason:suspend"));
-    const actionCount = registry.simulator.getLedger().governanceActionCount;
-    expect(() => rotate(registry, first.keyIdCommitment, candidate("two", 42), labelToBytes32("reason:rotate")))
-      .toThrow(/must be active to rotate/u);
-    expect(registry.simulator.getVcAuthorityKey(first.keyIdCommitment).status).toBe(VcAuthorityKeyStatus.suspended);
-    expect(registry.simulator.getLedger().governanceActionCount).toBe(actionCount);
-    expect(() => registry.simulator.getCurrentVcAuthorityKey(first.consumerContractAddress)).toThrow();
+    await register(registry, first);
+    await update(registry, first.keyIdCommitment, "suspend", labelToBytes32("reason:suspend"));
+    const actionCount = (await registry.simulator.getLedger()).governanceActionCount;
+    await expect(rotate(registry, first.keyIdCommitment, candidate("two", 42), labelToBytes32("reason:rotate")))
+      .rejects.toThrow(/must be active to rotate/u);
+    expect((await registry.simulator.getVcAuthorityKey(first.keyIdCommitment)).status).toBe(VcAuthorityKeyStatus.suspended);
+    expect((await registry.simulator.getLedger()).governanceActionCount).toBe(actionCount);
+    await expect(registry.simulator.getCurrentVcAuthorityKey(first.consumerContractAddress)).rejects.toThrow();
   });
 
-  it("rejects a substituted rotation payload and keeps the old key current", () => {
+  it("rejects a substituted rotation payload and keeps the old key current", async () => {
     const registry = fixture();
     const first = candidate("one", 41);
-    register(registry, first);
+    await register(registry, first);
     const replacement = candidate("two", 42);
-    expect(() => rotate(
+    await expect(rotate(
       registry,
       first.keyIdCommitment,
       replacement,
       labelToBytes32("reason:rotate"),
       labelToBytes32("wrong:rotation-payload"),
-    )).toThrow();
-    expect(Buffer.from(registry.simulator.getCurrentVcAuthorityKey(first.consumerContractAddress).keyIdCommitment))
+    )).rejects.toThrow();
+    expect(Buffer.from((await registry.simulator.getCurrentVcAuthorityKey(first.consumerContractAddress)).keyIdCommitment))
       .toEqual(Buffer.from(first.keyIdCommitment));
   });
 });

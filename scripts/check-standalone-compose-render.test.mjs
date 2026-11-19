@@ -1,24 +1,44 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
+import yaml from "js-yaml";
 
-import { checkRenderedStandaloneCompose, syntheticRenderEnvironment } from "./check-standalone-compose-render.mjs";
+import { checkRenderedStandaloneCompose, ledger9Images, syntheticRenderEnvironment } from "./check-standalone-compose-render.mjs";
+
+const composePath = fileURLToPath(new URL("../deploy/standalone/compose.yml", import.meta.url));
+const internalLedgerNodeUrl = yaml.load(readFileSync(composePath, "utf8"))
+  .services.indexer.environment.APP__INFRA__NODE__URL;
 
 const base = () => ({
   name: "tr-standalone-local-rendercheck",
-  networks: { ledger: { internal: true, name: "tr-standalone-local-rendercheck_ledger" } },
+  networks: {
+    ledger: { internal: true, name: "tr-standalone-local-rendercheck_ledger" },
+    "host-access": { name: "tr-standalone-local-rendercheck_host-access" },
+  },
   services: Object.fromEntries(["indexer", "node", "proof-server"].map((name) => {
     const [target, published] = { indexer: [8088, "28088"], node: [9944, "29944"],
       "proof-server": [6300, "26300"] }[name];
-    return [name, { networks: { ledger: null }, ports: [{ host_ip: "127.0.0.1",
+    return [name, { networks: { ledger: null, "host-access": null }, ports: [{ host_ip: "127.0.0.1",
       target, published, protocol: "tcp" }], pull_policy: "never",
     image: `tr-standalone/${name}:synthetic-render-only`,
-    environment: name === "indexer" ? { APP__INFRA__NODE__URL: "ws://node:9944",
-      APP__INFRA__SPO_NODE__URL: "ws://node:9944" } : {} }];
+    environment: name === "indexer" ? { APP__INFRA__NODE__URL: internalLedgerNodeUrl,
+      APP__INFRA__SPO_NODE__URL: internalLedgerNodeUrl } : {} }];
   })),
 });
 
-test("render policy accepts the isolated offline topology", () => {
+test("render policy accepts an isolated ledger and localhost infrastructure bridge", () => {
   checkRenderedStandaloneCompose(base(), true);
+});
+
+test("base stack uses the pinned Ledger 9 image cohort", () => {
+  const config = base();
+  for (const [service, image] of Object.entries(ledger9Images)) {
+    config.services[service].image = image;
+  }
+  checkRenderedStandaloneCompose(config, false);
+  config.services.node.image = "midnightntwrk/midnight-node@sha256:" + "a".repeat(64);
+  assert.throws(() => checkRenderedStandaloneCompose(config, false));
 });
 
 test("synthetic render inputs ignore inherited project and ports", () => {
@@ -42,6 +62,12 @@ test("render policy rejects an extra peer, public port, or external bridge", () 
   const external = base();
   external.networks.ledger.internal = false;
   assert.throws(() => checkRenderedStandaloneCompose(external, true));
+  const missingAccess = base();
+  delete missingAccess.services.node.networks["host-access"];
+  assert.throws(() => checkRenderedStandaloneCompose(missingAccess, true));
+  const sharedAccess = base();
+  sharedAccess.networks["host-access"].external = true;
+  assert.throws(() => checkRenderedStandaloneCompose(sharedAccess, true));
 });
 
 test("render policy rejects an offline pull or external indexer endpoint", () => {

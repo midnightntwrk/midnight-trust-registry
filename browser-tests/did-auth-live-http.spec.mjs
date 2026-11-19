@@ -34,7 +34,7 @@ test("both browser apps use real same-origin DID HTTP sessions without a role gr
   const seed = new Uint8Array(32).fill(86);
   const actorDid = createMidnightDid("browser-did-authentication");
   const actorKeyId = `${actorDid}#auth-1`;
-  const workspace = createOperatorWorkspace({ label: "browser-did-auth" });
+  const workspace = await createOperatorWorkspace({ label: "browser-did-auth" });
   const options = { source: createInMemorySource(workspace.snapshot) };
   const sessions = createActorSessionService(Date.now);
   const api = createTrustRegistryApiServer(options);
@@ -261,7 +261,7 @@ test("off-chain DID signs in to both portals without gaining a registry role", a
     service: [],
   });
   const actorKeyId = `${actorDid}/keys#auth`;
-  const workspace = createOperatorWorkspace({ label: "browser-offchain-auth" });
+  const workspace = await createOperatorWorkspace({ label: "browser-offchain-auth" });
   const options = { source: createInMemorySource(workspace.snapshot) };
   const api = createTrustRegistryApiServer(options);
   const staticHandlers = new Map([

@@ -39,8 +39,8 @@ function scenario(role: Role, harness: LocalTrustRegistryIntegrationHarness) {
   let subjectDid: string;
   let scope: AuthorizationScope;
   let governedResource: { type: string; id: string };
-  let propose: (evidence: ApplicationEvidenceSubmission, expected: SimulatorApplicationEvidenceExpectation) => Uint8Array;
-  let completeIssuerLifecycle: (() => void) | undefined;
+  let propose: (evidence: ApplicationEvidenceSubmission, expected: SimulatorApplicationEvidenceExpectation) => Promise<Uint8Array>;
+  let completeIssuerLifecycle: (() => Promise<void>) | undefined;
 
   switch (role) {
     case "issuer": {
@@ -50,9 +50,9 @@ function scenario(role: Role, harness: LocalTrustRegistryIntegrationHarness) {
       scope = createIssuerAuthorizationScopeFixture(fixture);
       governedResource = { type: "credentialFamily", id: fixture.resourceId };
       propose = (evidence, expected) => harness.proposeIssuerWithApplicationEvidence(fixture, evidence, [], expected);
-      completeIssuerLifecycle = () => {
-        harness.approveIssuer(fixture);
-        harness.activateIssuer(fixture);
+      completeIssuerLifecycle = async () => {
+        await harness.approveIssuer(fixture);
+        await harness.activateIssuer(fixture);
       };
       break;
     }
@@ -128,6 +128,15 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
       expect(evidence.envelope.challengeHash).toBe(issued.challengeHash);
       return propose(evidence, expected);
     });
+    const verifiedSignatures = new Map<string, string>();
+    const signEvidence = async (commitment: string) => {
+      const signature = harness.signApplicationEvidenceCommitment(commitment);
+      if (!await harness.verifyApplicationEvidenceSignature(commitment, signature, harness.evidenceVerifier)) {
+        throw new Error("Fixture evidence signature is invalid");
+      }
+      verifiedSignatures.set(commitment, JSON.stringify(signature));
+      return signature;
+    };
     const input = {
       challengeService: service,
       binding,
@@ -136,10 +145,11 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
       challengeHash: issued.challengeHash,
       presentation: { privateVp: "holder-secret-not-for-ledger", proofNonce: issued.nonce, proofSubjectDid: binding.subjectDid },
       verifyPresentation,
-      signEvidence: async (commitment: string) => harness.signApplicationEvidenceCommitment(commitment),
+      signEvidence,
       authorizedVerifiers: [harness.evidenceVerifier],
       verifyEvidenceSignature: (commitment: string, signature: Parameters<typeof harness.verifyApplicationEvidenceSignature>[1], verifier: Parameters<typeof harness.verifyApplicationEvidenceSignature>[2]) =>
-        harness.verifyApplicationEvidenceSignature(commitment, signature, verifier),
+        verifier.did === harness.evidenceVerifier.did
+          && verifiedSignatures.get(commitment) === JSON.stringify(signature),
       evaluatedAt: VERIFIED_AT,
       propose: proposeWithEvidence,
     };
@@ -217,29 +227,29 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
       : binding.scope.role === "maintainer"
         ? { ...binding.scope, registryId: "registry:other:trusted" }
         : { ...binding.scope, requestProfileId: "request-profile:other" };
-    expect(() => propose(signedEvidence, { ...expected, scope: wrongResourceScope })).toThrow(/proposal scope does not match/);
+    await expect(propose(signedEvidence, { ...expected, scope: wrongResourceScope })).rejects.toThrow(/proposal scope does not match/);
     if (role === "issuer" && binding.scope.role === "issuer") {
       const substitutedResourceId = issuerGovernedResourceId(
         { ...binding.scope, credentialFamilyId: "credential-family:substituted" },
         "credentialFamily",
       );
       const crossTypeResourceId = issuerGovernedResourceId(binding.scope, "schemaVersion");
-      expect(() => propose(signedEvidence, {
+      await expect(propose(signedEvidence, {
         ...expected,
         governedResource: { type: "credentialFamily", id: substitutedResourceId },
-      })).toThrow(/proposal scope does not match/);
-      expect(() => propose(signedEvidence, {
+      })).rejects.toThrow(/proposal scope does not match/);
+      await expect(propose(signedEvidence, {
         ...expected,
         governedResource: {
           type: "schemaVersion",
           id: crossTypeResourceId,
         },
-      })).toThrow(/proposal scope does not match/);
+      })).rejects.toThrow(/proposal scope does not match/);
     }
     if (role === "issuer" && binding.scope.role === "issuer") {
       for (const field of ["schemaId", "credentialDefinitionId"] as const) {
         const scope = { ...binding.scope, [field]: `${field}:substituted` };
-        expect(() => propose(signedEvidence, { ...expected, scope })).toThrow(/proposal scope does not match/);
+        await expect(propose(signedEvidence, { ...expected, scope })).rejects.toThrow(/proposal scope does not match/);
       }
     }
     if ((role === "verifier" || role === "auditor") && binding.scope.role === role) {
@@ -247,7 +257,7 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
         { ...binding.scope, purpose: "substituted-purpose" },
         { ...binding.scope, credentialScopeCommitment: `0x${"a".repeat(64)}` },
       ]) {
-        expect(() => propose(signedEvidence, { ...expected, scope })).toThrow(/proposal scope does not match/);
+        await expect(propose(signedEvidence, { ...expected, scope })).rejects.toThrow(/proposal scope does not match/);
       }
     }
     for (const [field, value, message] of [
@@ -261,7 +271,7 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
         continue;
       }
       const evidenceCommitment = computeApplicationEvidenceCommitment(envelope);
-      expect(() => harness.assertApplicationEvidence({
+      await expect(harness.assertApplicationEvidence({
         evidence: {
           envelope,
           commitment: evidenceCommitment,
@@ -271,11 +281,11 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
         subjectDid: binding.subjectDid,
         role,
         ...expected,
-      })).toThrow(message);
+      })).rejects.toThrow(message);
     }
-    completeIssuerLifecycle?.();
+    await completeIssuerLifecycle?.();
     await expect(consumeChallengeAndSubmitApplication(input)).rejects.toThrow(/already consumed/);
-    const serializedLedger = JSON.stringify(harness.simulator.getLedger(), (_key, value: unknown) =>
+    const serializedLedger = JSON.stringify(await harness.simulator.getLedger(), (_key, value: unknown) =>
       typeof value === "bigint" ? value.toString() : value);
     const serializedProposal = JSON.stringify(proposeWithEvidence.mock.calls);
     expect(serializedLedger).not.toContain("holder-secret-not-for-ledger");
@@ -326,8 +336,7 @@ describe("canonical challenge-to-Compact proposal bridge", () => {
       }),
       signEvidence: async (commitment) => harness.signApplicationEvidenceCommitment(commitment),
       authorizedVerifiers: [harness.evidenceVerifier],
-      verifyEvidenceSignature: (commitment, signature, verifier) =>
-        harness.verifyApplicationEvidenceSignature(commitment, signature, verifier),
+      verifyEvidenceSignature: () => true,
       evaluatedAt: VERIFIED_AT,
       propose: async ({ evidence }) => propose(evidence, {
         scope: schemaBinding.scope,

@@ -44,6 +44,7 @@ const packContract = (root, verifier = "verifier-a\n",
   put(root, `packed-contract/${prefix}/contract/index.js`, generated);
   put(root, "contracts/trust-registry/dist/managed/trust-registry/compiler/contract-info.json", info);
   put(root, `packed-contract/${prefix}/compiler/contract-info.json`, info);
+  put(root, `packed-contract/${prefix}/compiler/contract-manifest.json`, "{\"manifest-version\":\"1\"}\n");
   for (const name of ["proveB", "proveA"]) {
     put(root, `contracts/trust-registry/dist/managed/trust-registry/keys/${name}.verifier`, verifier);
     for (const [extension, content] of [["verifier", verifier], ["prover", "prover-a\n"]]) {
@@ -96,6 +97,7 @@ test("v3 candidate binds all keyless assets, key expectations, and local-only pu
     circuits: [{ name: "proveA", proof: true }] });
   const assetBytes = {
     "compiler/contract-info.json": info,
+    "compiler/contract-manifest.json": "{\"manifest-version\":\"1\"}\n",
     "contract/index.js": "generated-test\n",
     "contract/index.js.map": "{}\n",
     "contract/index.d.ts": "export {};\n",
@@ -380,6 +382,7 @@ test("packed Compact contract must contain every ZKIR and prover/verifier pair",
   const prefix = "package/dist/managed/trust-registry";
   const paths = [
     `${prefix}/compiler/contract-info.json`,
+    `${prefix}/compiler/contract-manifest.json`,
     `${prefix}/zkir/proveA.zkir`,
     `${prefix}/keys/proveA.prover`,
     `${prefix}/keys/proveA.verifier`,
@@ -392,6 +395,8 @@ test("packed Compact contract must contain every ZKIR and prover/verifier pair",
   assert.throws(() => assertFullPackedContract(paths.map((path) => path.replace("proveA.verifier", "renamed.verifier")), info),
     /verification key for proveA/u);
   assert.throws(() => assertFullPackedContract(paths.slice(1), info), /contract-info/u);
+  assert.throws(() => assertFullPackedContract(paths.filter((path) =>
+    !path.endsWith("contract-manifest.json")), info), /contract-manifest/u);
   assert.throws(() => assertFullPackedContract([...paths, paths.at(-1)], info), /duplicate archive paths/u);
   for (const alias of ["x/src/trust-registry.compact", "./package/src/trust-registry.compact",
     "package/./src/trust-registry.compact", "package/src/../src/trust-registry.compact",

@@ -16,6 +16,10 @@ import {
   type ApplicationEvidenceSubmission,
   type SignedPendingApplication,
 } from "@midnightntwrk/trust-registry-domain";
+import {
+  PrivateApplicationStatusWitnessSchema,
+  type PrivateApplicationStatusWitness,
+} from "@midnightntwrk/trust-registry-integration";
 import { z } from "zod";
 
 import { ApplicationVpReceiptSchema, type ApplicationVpReceipt } from "./application-vp-http.js";
@@ -42,6 +46,7 @@ const AcceptedSchema = z.strictObject({
   applicationId: z.string().trim().min(1).max(256),
   evidence: ApplicationEvidenceSubmissionSchema,
   receipt: ApplicationVpReceiptSchema,
+  privateStatusWitness: PrivateApplicationStatusWitnessSchema.optional(),
 });
 const StateSchema = z.strictObject({
   version: z.literal(1),
@@ -65,7 +70,10 @@ const StateSchema = z.strictObject({
   for (const [index, record] of state.accepted.entries()) {
     if (accepted.has(record.applicationId) || !applications.has(record.applicationId)
       || record.evidence.envelope.applicationId !== record.applicationId
-      || record.receipt.evidenceCommitment !== record.evidence.commitment) {
+      || record.receipt.evidenceCommitment !== record.evidence.commitment
+      || (record.privateStatusWitness !== undefined
+        && sha256Hex(Buffer.from(record.privateStatusWitness.nonce.slice(2), "hex"))
+          !== record.evidence.envelope.challengeHash)) {
       context.addIssue({ code: "custom", path: ["accepted", index], message: "Invalid accepted evidence" });
     }
     accepted.add(record.applicationId);
@@ -185,10 +193,34 @@ export class FileApplicationAdmissionStore implements PendingApplicationRegistra
     };
   }
 
+  /** One private host read binds the witness to the accepted evidence and pending application. */
+  async readCapturedPrivateAdmission(
+    applicationId: string,
+    expectedEvidenceCommitment: string,
+  ): Promise<{
+    pending: PendingApplicationRecord;
+    accepted: AcceptedApplicationEvidence;
+    privateStatusWitness: PrivateApplicationStatusWitness;
+  } | null> {
+    const state = await this.readState();
+    const pending = state.applications.find(
+      (entry) => entry.binding.applicationId === applicationId && entry.status === "pending",
+    );
+    const record = state.accepted.find((entry) => entry.applicationId === applicationId);
+    if (pending === undefined || record === undefined || record.privateStatusWitness === undefined
+      || record.evidence.commitment !== expectedEvidenceCommitment) return null;
+    return structuredClone({
+      pending,
+      accepted: { evidence: record.evidence, receipt: record.receipt },
+      privateStatusWitness: record.privateStatusWitness,
+    });
+  }
+
   async acceptEvidence(
     applicationId: string,
     submittedEvidence: ApplicationEvidenceSubmission,
     now: Date,
+    privateStatusWitness?: PrivateApplicationStatusWitness,
   ): Promise<ApplicationVpReceipt> {
     return this.withWrite(async () => {
       const state = await this.readState();
@@ -206,6 +238,12 @@ export class FileApplicationAdmissionStore implements PendingApplicationRegistra
         throw new ApplicationAdmissionStoreRejectedError("stale-policy");
       }
       const evidence = ApplicationEvidenceSubmissionSchema.parse(submittedEvidence);
+      const witness = privateStatusWitness === undefined ? undefined
+        : PrivateApplicationStatusWitnessSchema.parse(privateStatusWitness);
+      if (witness !== undefined
+        && sha256Hex(Buffer.from(witness.nonce.slice(2), "hex")) !== evidence.envelope.challengeHash) {
+        throw new ApplicationAdmissionStoreRejectedError("mismatched-evidence");
+      }
       const receipt = ApplicationVpReceiptSchema.parse({
         receiptId: sha256Hex(canonicalizeJson({ applicationId, commitment: evidence.commitment, at: now.toISOString() })),
         evidenceCommitment: evidence.commitment,
@@ -224,7 +262,8 @@ export class FileApplicationAdmissionStore implements PendingApplicationRegistra
         throw new ApplicationAdmissionStoreRejectedError("stale-policy");
       }
       await this.writeState(StateSchema.parse({
-        ...state, accepted: [...state.accepted, { applicationId, evidence, receipt }],
+        ...state, accepted: [...state.accepted, { applicationId, evidence, receipt,
+          ...(witness === undefined ? {} : { privateStatusWitness: witness }) }],
       }));
       return structuredClone(receipt);
     });

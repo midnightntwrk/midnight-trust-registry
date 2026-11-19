@@ -1,5 +1,3 @@
-import { getNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
-
 import { FinalizedDeploymentImageInvalidError } from "./finalized-deployment-action-reader.js";
 import {
   createLocalNetworkDeploymentActionReader,
@@ -26,7 +24,7 @@ export async function reconcileLocalStagedDeployment(input: {
   initialVerifierKeyName: string;
   bootstrapMaintenanceVerifyingKey: string;
 }): Promise<LocalStagedDeploymentReconciliation> {
-  if (getNetworkId() !== "undeployed" || input.network.networkId !== "undeployed"
+  if (input.network.networkId !== "undeployed"
     || input.receipt.networkId !== "undeployed"
     || !/^0x[0-9a-f]{64}$/u.test(input.receipt.contractAddress)
     || /^0x0{64}$/u.test(input.receipt.contractAddress)

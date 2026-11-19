@@ -8,11 +8,11 @@ import {
 } from "../packages/trust-registry-integration/dist/index.js";
 
 /** Runs signed-evidence rejections against a ledger fixture independent of the main journey. */
-export function runApplicationEvidenceSafetyScenarios(matrix) {
+export async function runApplicationEvidenceSafetyScenarios(matrix) {
   const harness = new LocalTrustRegistryIntegrationHarness("governed-demo-evidence-boundaries");
   const policyIdIssuer = createIssuerScenarioFixture("governed-demo-wrong-policy-id");
   const expiringIssuer = createIssuerScenarioFixture("governed-demo-expired-evidence");
-  const policyIdEvidence = harness.createApplicationEvidence({
+  const policyIdEvidence = await harness.createApplicationEvidence({
     applicationId: policyIdIssuer.authorizationId,
     subjectDid: policyIdIssuer.subjectDid,
     role: "issuer",
@@ -26,13 +26,13 @@ export function runApplicationEvidenceSafetyScenarios(matrix) {
     commitment: wrongPolicyCommitment,
     signature: harness.signApplicationEvidenceCommitment(wrongPolicyCommitment),
   };
-  assert.equal(harness.verifyApplicationEvidenceSignature(
+  assert.equal(await harness.verifyApplicationEvidenceSignature(
     wrongPolicyEvidence.commitment,
     wrongPolicyEvidence.signature,
     harness.evidenceVerifier,
   ), true);
-  const actionsBeforeRejections = harness.simulator.getLedger().governanceActionCount;
-  matrix.expectThrown(() => harness.proposeIssuerWithApplicationEvidence(
+  const actionsBeforeRejections = (await harness.simulator.getLedger()).governanceActionCount;
+  await matrix.expectRejected(() => harness.proposeIssuerWithApplicationEvidence(
     policyIdIssuer, wrongPolicyEvidence,
   ), {
     id: "issuer-signed-wrong-policy-id",
@@ -41,7 +41,7 @@ export function runApplicationEvidenceSafetyScenarios(matrix) {
     messagePattern: /policyId does not match/iu,
     category: "policy-id-mismatch",
   });
-  const expiringEvidence = harness.createApplicationEvidence({
+  const expiringEvidence = await harness.createApplicationEvidence({
     applicationId: expiringIssuer.authorizationId,
     subjectDid: expiringIssuer.subjectDid,
     role: "issuer",
@@ -49,7 +49,7 @@ export function runApplicationEvidenceSafetyScenarios(matrix) {
     governedResource: { type: "credentialFamily", id: expiringIssuer.resourceId },
   });
   harness.advanceEvidenceTimeBy(24 * 60 * 60 * 1000 + 1);
-  matrix.expectThrown(() => harness.proposeIssuerWithApplicationEvidence(
+  await matrix.expectRejected(() => harness.proposeIssuerWithApplicationEvidence(
     expiringIssuer, expiringEvidence,
   ), {
     id: "issuer-expired-signed-application-evidence",
@@ -58,5 +58,5 @@ export function runApplicationEvidenceSafetyScenarios(matrix) {
     messagePattern: /evidence is expired/iu,
     category: "expired-application-evidence",
   });
-  assert.equal(harness.simulator.getLedger().governanceActionCount, actionsBeforeRejections);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, actionsBeforeRejections);
 }

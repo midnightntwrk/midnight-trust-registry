@@ -18,7 +18,7 @@ describe("application evidence DID assertion-key fixture", () => {
   it("resolves the verifier's native assertion key and verifies its signed commitment", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("did-attestation");
-    const evidence = harness.createApplicationEvidence({
+    const evidence = await harness.createApplicationEvidence({
       applicationId: issuer.authorizationId,
       subjectDid: issuer.subjectDid,
       role: "issuer",
@@ -63,7 +63,7 @@ describe("application evidence DID assertion-key fixture", () => {
   it("selects the named assertion key and rejects a retired key after rotation", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("did-key-rotation");
-    const evidence = harness.createApplicationEvidence({
+    const evidence = await harness.createApplicationEvidence({
       applicationId: issuer.authorizationId,
       subjectDid: issuer.subjectDid,
       role: "issuer",

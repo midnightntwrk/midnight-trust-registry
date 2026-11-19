@@ -16,6 +16,10 @@ import { z } from "zod";
 import type { ApplicationVpMaterial } from "./application-vp-verifier.js";
 import { verifyDidJubjubSignature } from "./did-signature-verification.js";
 
+/** Private VP-derived fields needed for a fresh status check; not proof of VP acceptance by itself. */
+export type ApplicationStatusWitnessMaterial = Pick<ApplicationVpMaterial,
+  "credentialBodyRoot" | "statusBinding">;
+
 const Hash = z.string().regex(/^0x[0-9a-f]{64}$/u);
 const Timestamp = z.string().datetime({ offset: true });
 const Statement = z.strictObject({
@@ -37,9 +41,29 @@ const SignedStatement = z.strictObject({
     signature: z.string().regex(/^0x[0-9a-f]+$/u),
   }),
 });
+export const PrivateApplicationStatusWitnessSchema = z.strictObject({
+  format: z.literal("tr-private-application-status-witness-v1"),
+  nonce: Hash,
+  signed: SignedStatement,
+  credentialBodyRoot: Hash,
+  statusRegistryId: Hash,
+  statusHandleCommitment: Hash,
+  authorityControllerAddress: Hash,
+  authorityMethodId: Hash,
+}).superRefine((record, context) => {
+  if (record.signed.statement.challengeHash !== sha256Hex(Buffer.from(record.nonce.slice(2), "hex"))
+    || record.signed.statement.credentialBodyRoot !== record.credentialBodyRoot
+    || record.signed.statement.statusRegistryId !== record.statusRegistryId
+    || record.signed.statement.statusHandleCommitment !== record.statusHandleCommitment
+    || record.signed.proof.verificationMethodId !== record.signed.statement.statusAuthorityMethodId
+    || record.signed.proof.signature.length > 1026) {
+    context.addIssue({ code: "custom", message: "Private application status witness differs from its signed statement" });
+  }
+});
 
 export type ApplicationStatusStatement = z.infer<typeof Statement>;
 export type SignedApplicationStatusStatement = z.infer<typeof SignedStatement>;
+export type PrivateApplicationStatusWitness = z.infer<typeof PrivateApplicationStatusWitnessSchema>;
 
 export function applicationStatusDecisionCommitment(
   signed: SignedApplicationStatusStatement,
@@ -57,6 +81,45 @@ export function applicationStatusDecisionCommitment(
 
 const field = (value: string): bigint => BigInt(`0x${sha256Hex(value).slice(2, 64)}`);
 const hex = (value: Uint8Array): string => `0x${Buffer.from(value).toString("hex")}`;
+
+/** Serialize only VP-derived status commitments and the signed decision, never raw claims. */
+export function capturePrivateApplicationStatusWitness(input: {
+  material: ApplicationStatusWitnessMaterial;
+  nonce: string;
+  signed: unknown;
+}): PrivateApplicationStatusWitness {
+  const record = PrivateApplicationStatusWitnessSchema.parse({
+    format: "tr-private-application-status-witness-v1",
+    nonce: input.nonce,
+    signed: input.signed,
+    credentialBodyRoot: hex(input.material.credentialBodyRoot),
+    statusRegistryId: hex(input.material.statusBinding.registryRef.registryId),
+    statusHandleCommitment: hex(input.material.statusBinding.statusHandleCommitment),
+    authorityControllerAddress: hex(input.material.statusBinding.registryRef
+      .authorityVerificationMethodRef.controllerAddress.bytes),
+    authorityMethodId: hex(input.material.statusBinding.registryRef.authorityVerificationMethodRef.methodId),
+  });
+  return record;
+}
+
+export function materialFromPrivateApplicationStatusWitness(
+  input: PrivateApplicationStatusWitness,
+): ApplicationStatusWitnessMaterial {
+  const record = PrivateApplicationStatusWitnessSchema.parse(input);
+  return {
+    credentialBodyRoot: Buffer.from(record.credentialBodyRoot.slice(2), "hex"),
+    statusBinding: {
+      registryRef: {
+        registryId: Buffer.from(record.statusRegistryId.slice(2), "hex"),
+        authorityVerificationMethodRef: {
+          controllerAddress: { bytes: Buffer.from(record.authorityControllerAddress.slice(2), "hex") },
+          methodId: Buffer.from(record.authorityMethodId.slice(2), "hex"),
+        },
+      },
+      statusHandleCommitment: Buffer.from(record.statusHandleCommitment.slice(2), "hex"),
+    },
+  };
+}
 
 export function applicationStatusAttestationDigest(statement: ApplicationStatusStatement): JubjubDigest {
   const parsed = Statement.parse(statement);
@@ -78,11 +141,12 @@ export function createAttestedApplicationStatusSource(input: {
     challengeHash: string;
   }) => Promise<unknown>;
 }): (request: {
-  material: ApplicationVpMaterial;
+  material: ApplicationStatusWitnessMaterial;
   binding: IssuerStatusPolicyBinding;
   nonce: string;
   evaluatedAtMs: number;
-}) => Promise<{ validUntilMs: number; statusDecisionCommitment: string }> {
+}) => Promise<{ validUntilMs: number; statusDecisionCommitment: string;
+  privateStatusWitness: PrivateApplicationStatusWitness }> {
   return async ({ material, binding, nonce, evaluatedAtMs }) => {
     if (!/^0x[0-9a-f]{64}$/u.test(nonce) || !Number.isSafeInteger(evaluatedAtMs) || evaluatedAtMs < 0) {
       throw new Error("Application status context is invalid");
@@ -154,6 +218,7 @@ export function createAttestedApplicationStatusSource(input: {
     return {
       validUntilMs: expiresAtMs,
       statusDecisionCommitment: applicationStatusDecisionCommitment(signed, didStateVersionId, governedBinding),
+      privateStatusWitness: capturePrivateApplicationStatusWitness({ material, nonce, signed }),
     };
   };
 }
@@ -162,13 +227,17 @@ export function createAttestedApplicationStatusSource(input: {
 export async function verifyApplicationStatusDecisionWitness(input: {
   signed: unknown;
   expectedCommitment: string;
-  material: ApplicationVpMaterial;
+  expectedChallengeHash: string;
+  material: ApplicationStatusWitnessMaterial;
   binding: IssuerStatusPolicyBinding;
   nonce: string;
   evaluatedAtMs: number;
   resolver: Pick<MidnightDIDResolverInterface, "resolveResult">;
 }): Promise<true> {
   const expectedCommitment = Hash.parse(input.expectedCommitment);
+  if (sha256Hex(Buffer.from(input.nonce.slice(2), "hex")) !== Hash.parse(input.expectedChallengeHash)) {
+    throw new Error("Application status witness does not match the accepted challenge");
+  }
   const source = createAttestedApplicationStatusSource({
     resolver: input.resolver,
     fetchAttestation: async () => input.signed,

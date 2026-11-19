@@ -24,8 +24,8 @@ const fromHex = (hex) => Buffer.from(hex.slice(2), "hex");
 const thresholds = { default: "3", emergency: "1", archival: "2" };
 const recoveryThresholds = { default: "2", emergency: "1", archival: "2" };
 
-const sign = (harness, maintainer, prepared) => {
-  const ledger = harness.simulator.getLedger();
+const sign = async (harness, maintainer, prepared) => {
+  const ledger = await harness.simulator.getLedger();
   const publicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
   const signature = signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed, ledger.registryId, ledger.deploymentNetworkIdCommitment,
@@ -44,15 +44,15 @@ const startCase = async (context, label) => {
   const second = createMaintainerScenarioFixture(`${label}-second`);
   const third = createMaintainerScenarioFixture(`${label}-third`);
   const candidate = createMaintainerScenarioFixture(`${label}-candidate`);
-  harness.authorizeMaintainer(second);
-  harness.authorizeMaintainer(third);
-  harness.authorizeMaintainer(candidate);
-  harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
-  const snapshot = publishSimulatorSnapshot(harness, { label });
+  await harness.authorizeMaintainer(second);
+  await harness.authorizeMaintainer(third);
+  await harness.authorizeMaintainer(candidate);
+  await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+  const snapshot = await publishSimulatorSnapshot(harness, { label });
   const port = {
     async prepareThresholds(value) {
       try {
-        return harness.prepareThresholdPolicyRevisionAction(
+        return await harness.prepareThresholdPolicyRevisionAction(
           BigInt(value.default), BigInt(value.emergency), BigInt(value.archival),
         );
       } catch {
@@ -61,7 +61,7 @@ const startCase = async (context, label) => {
     },
     async executeThresholds(value, signers) {
       try {
-        return { eventHash: asHex(harness.executeThresholdPolicyRevisionWithSignatures(
+        return { eventHash: asHex(await harness.executeThresholdPolicyRevisionWithSignatures(
           BigInt(value.default), BigInt(value.emergency), BigInt(value.archival), signers,
         )) };
       } catch {
@@ -69,11 +69,11 @@ const startCase = async (context, label) => {
       }
     },
     async prepareEvidenceVerifier() {
-      return harness.prepareEvidenceVerifierRegistrationAction();
+      return await harness.prepareEvidenceVerifierRegistrationAction();
     },
     async executeEvidenceVerifier(signers) {
       try {
-        return { eventHash: asHex(harness.executeEvidenceVerifierRegistrationWithSignatures(signers)) };
+        return { eventHash: asHex(await harness.executeEvidenceVerifierRegistrationWithSignatures(signers)) };
       } catch {
         throw new GovernedPolicyActionRejectedError();
       }
@@ -81,7 +81,7 @@ const startCase = async (context, label) => {
     async prepareMaintainerRecovery(id, evidenceHash, value) {
       if (id !== asHex(candidate.maintainerIdCommitment)) throw new GovernedPolicyActionRejectedError();
       try {
-        return harness.prepareAtomicMaintainerRecoveryAction(candidate, fromHex(evidenceHash),
+        return await harness.prepareAtomicMaintainerRecoveryAction(candidate, fromHex(evidenceHash),
           BigInt(value.default), BigInt(value.emergency), BigInt(value.archival));
       } catch {
         throw new GovernedPolicyActionRejectedError();
@@ -90,7 +90,7 @@ const startCase = async (context, label) => {
     async executeMaintainerRecovery(id, evidenceHash, value, signers) {
       if (id !== asHex(candidate.maintainerIdCommitment)) throw new GovernedPolicyActionRejectedError();
       try {
-        return { eventHash: asHex(harness.executeAtomicMaintainerRecoveryWithSignatures(
+        return { eventHash: asHex(await harness.executeAtomicMaintainerRecoveryWithSignatures(
           candidate, fromHex(evidenceHash), BigInt(value.default), BigInt(value.emergency),
           BigInt(value.archival), signers,
         )) };
@@ -125,7 +125,7 @@ const startCase = async (context, label) => {
   const revise = async () => {
     const prepared = await post("thresholds/prepare", { thresholds });
     assert.equal(prepared.status, 200, JSON.stringify(prepared.body));
-    const signers = [sign(harness, second, prepared.body), sign(harness, third, prepared.body)];
+    const signers = [await sign(harness, second, prepared.body), await sign(harness, third, prepared.body)];
     const accepted = await post("thresholds/submit", { thresholds, prepared: prepared.body, signers });
     assert.equal(accepted.status, 202, JSON.stringify(accepted.body));
     return { prepared: prepared.body, signers };
@@ -133,7 +133,8 @@ const startCase = async (context, label) => {
   const register = async () => {
     const prepared = await post("evidence-verifier/prepare", {});
     assert.equal(prepared.status, 200, JSON.stringify(prepared.body));
-    const signers = [second, third, candidate].map((maintainer) => sign(harness, maintainer, prepared.body));
+    const signers = await Promise.all([second, third, candidate].map((maintainer) =>
+      sign(harness, maintainer, prepared.body)));
     const accepted = await post("evidence-verifier/submit", { prepared: prepared.body, signers });
     assert.equal(accepted.status, 202, JSON.stringify(accepted.body));
   };
@@ -147,11 +148,11 @@ const assertProblem = (response, status, type) => {
 
 test("policy-revision-no-recovery-headroom", async (context) => {
   const { harness, post, revise } = await startCase(context, "isolated-policy-no-headroom");
-  const before = harness.simulator.getLedger().governanceActionCount;
+  const before = (await harness.simulator.getLedger()).governanceActionCount;
   assertProblem(await post("thresholds/prepare", {
     thresholds: { default: "4", emergency: "1", archival: "2" },
   }), 403, "governed-policy-rejected");
-  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
   await revise();
 });
 
@@ -159,21 +160,21 @@ test("policy-revision-one-signer", async (context) => {
   const { harness, post, second, revise } = await startCase(context, "isolated-policy-one-signer");
   const prepared = await post("thresholds/prepare", { thresholds });
   assert.equal(prepared.status, 200, JSON.stringify(prepared.body));
-  const before = harness.simulator.getLedger().governanceActionCount;
+  const before = (await harness.simulator.getLedger()).governanceActionCount;
   assertProblem(await post("thresholds/submit", {
-    thresholds, prepared: prepared.body, signers: [sign(harness, second, prepared.body)],
+    thresholds, prepared: prepared.body, signers: [await sign(harness, second, prepared.body)],
   }), 403, "governed-policy-rejected");
-  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
   await revise();
 });
 
 test("policy-revision-stale-replay", async (context) => {
   const { harness, post, revise } = await startCase(context, "isolated-policy-stale-replay");
   const { prepared, signers } = await revise();
-  const before = harness.simulator.getLedger().governanceActionCount;
+  const before = (await harness.simulator.getLedger()).governanceActionCount;
   assertProblem(await post("thresholds/submit", { thresholds, prepared, signers }),
     409, "stale-governed-policy");
-  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
 });
 
 test("new-policy-registration-two-signers", async (context) => {
@@ -182,12 +183,12 @@ test("new-policy-registration-two-signers", async (context) => {
   await revise();
   const prepared = await post("evidence-verifier/prepare", {});
   assert.equal(prepared.status, 200, JSON.stringify(prepared.body));
-  const before = harness.simulator.getLedger().governanceActionCount;
+  const before = (await harness.simulator.getLedger()).governanceActionCount;
   assertProblem(await post("evidence-verifier/submit", {
     prepared: prepared.body,
-    signers: [second, third].map((maintainer) => sign(harness, maintainer, prepared.body)),
+    signers: await Promise.all([second, third].map((maintainer) => sign(harness, maintainer, prepared.body))),
   }), 403, "governed-policy-rejected");
-  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
   await register();
 });
 
@@ -203,16 +204,18 @@ test("atomic-recovery-target-self-vote", async (context) => {
   };
   const prepared = await post("maintainer-recovery/prepare", request);
   assert.equal(prepared.status, 200, JSON.stringify(prepared.body));
-  const before = harness.simulator.getLedger().governanceActionCount;
+  const before = (await harness.simulator.getLedger()).governanceActionCount;
   assertProblem(await post("maintainer-recovery/submit", {
     ...request, prepared: prepared.body,
-    signers: [bootstrap, second, candidate].map((maintainer) => sign(harness, maintainer, prepared.body)),
+    signers: await Promise.all([bootstrap, second, candidate].map((maintainer) =>
+      sign(harness, maintainer, prepared.body))),
   }), 403, "governed-policy-rejected");
-  assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+  assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
   const accepted = await post("maintainer-recovery/submit", {
     ...request, prepared: prepared.body,
-    signers: [bootstrap, second, third].map((maintainer) => sign(harness, maintainer, prepared.body)),
+    signers: await Promise.all([bootstrap, second, third].map((maintainer) =>
+      sign(harness, maintainer, prepared.body))),
   });
   assert.equal(accepted.status, 202, JSON.stringify(accepted.body));
-  assert.equal(harness.simulator.getLedger().activeMaintainerCount, 3n);
+  assert.equal((await harness.simulator.getLedger()).activeMaintainerCount, 3n);
 });

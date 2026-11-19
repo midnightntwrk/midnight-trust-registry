@@ -5,32 +5,47 @@ import { join } from "node:path";
 
 import { createOperatorWorkspace } from "@midnightntwrk/trust-registry-cli";
 import { TrustRegistrySimulatorClient } from "@midnightntwrk/trust-registry-client/simulator";
-import { deriveJubjubPublicKeyFromSeed, encodeJubjubSignature, signJubjubPayloadFromSeed } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
+import { deriveJubjubPublicKeyFromSeed, encodeJubjubSignature, signJubjubDigest, signJubjubPayloadFromSeed } from "@midnight-ntwrk/midnight-did-jubjub-schnorr";
+import { bytes32Commitment } from "@midnightntwrk/trust-registry-client";
 import {
   computeAuthorizationScopeCommitment,
+  computeApplicationEvidenceCommitment,
+  computeIssuerStatusPolicyBindingCommitment,
   computePendingApplicationPayloadCommitment,
   createScopedIdentifier,
   mutationIntentDigestBytes,
+  sha256Hex,
+  type ApplicationEvidenceSignatureVerifier,
   type ApplicationEvidenceSubmission,
   type MutationIntent,
 } from "@midnightntwrk/trust-registry-domain";
+import { decodeCanonicalJubjubSignatureHex, verifyApplicationEvidenceCommitmentSignature } from "@midnightntwrk/trust-registry-contract";
+import { createMaintainerFixture } from "@midnightntwrk/trust-registry-contract/testing";
 import {
+  applicationStatusAttestationDigest,
   createIssuerAuthorizationScopeFixture,
+  capturePrivateApplicationStatusWitness,
+  createApplicationVpScenarioFixture,
+  createAttestedApplicationStatusSource,
   createIssuerScenarioFixture,
   createMidnightDid,
   createMidnightDidLedgerFixture,
   createMidnightDidResolver,
   LocalTrustRegistryIntegrationHarness,
   VP_FIXTURE_TIME_MS,
+  VP_FIXTURE_NONCE,
 } from "@midnightntwrk/trust-registry-integration";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { FileApplicationAdmissionStore } from "../file-application-admission.js";
+import type { FinalizedIssuerSnapshot } from "../local-issuer-proposal-port.js";
+import type { LocalIssuerProposalTerms } from "../local-issuer-proposal-terms.js";
+import { createCapturedIssuerLiveEvidenceVerifier, verifyCapturedIssuerStatus } from "../private-issuer-status.js";
 import { computeOperatorWorkspaceCommitment } from "../workspace-commitment.js";
 
 const label = "file-admission";
 const harness = new LocalTrustRegistryIntegrationHarness(label);
-const workspace = createOperatorWorkspace({ label });
+const workspace = await createOperatorWorkspace({ label });
 const issuer = createIssuerScenarioFixture(label);
 const scope = createIssuerAuthorizationScopeFixture(issuer);
 const governedResource = { type: "credentialFamily" as const, id: issuer.resourceId };
@@ -116,17 +131,17 @@ describe("file application admission store", () => {
     expect(await second.readForSubjectDid(createMidnightDid("other-applicant"), applicationId)).toBeNull();
     expect(await second.readForSubjectDid(issuer.subjectDid, "application:unknown:v1")).toBeNull();
     const archiveHarness = new LocalTrustRegistryIntegrationHarness(label);
-    archiveHarness.proposeIssuer(issuer);
-    const eventHash = archiveHarness.archiveIssuer(issuer);
-    const bundle = archiveHarness.buildIssuerHistoricalEvidence(issuer);
+    await archiveHarness.proposeIssuer(issuer);
+    const eventHash = await archiveHarness.archiveIssuer(issuer);
+    const bundle = await archiveHarness.buildIssuerHistoricalEvidence(issuer);
     const observation = {
       authorizationId: pending.authorizationId,
       binding: pending.binding,
       status: "archived" as const,
       archiveEventHash: `0x${Buffer.from(eventHash).toString("hex")}`,
     };
-    const verify = () => {
-      new TrustRegistrySimulatorClient(archiveHarness.simulator).verifyIssuerAuthorizationBundle(
+    const verify = async () => {
+      await new TrustRegistrySimulatorClient(archiveHarness.simulator).verifyIssuerAuthorizationBundle(
         bundle, { expectedRegistryId: archiveHarness.registryId, requireActive: false },
       );
       return bundle.authorization?.status === "archived"
@@ -142,7 +157,7 @@ describe("file application admission store", () => {
     expect((await second.listForSubjectDid(issuer.subjectDid))[0]?.summary.status).toBe("archived");
     expect(await second.readForSubjectDid(issuer.subjectDid, applicationId)).toEqual(archived);
     expect(await second.readPending(applicationId)).toBeNull();
-    await expect(second.acceptEvidence(applicationId, evidence(), now))
+    await expect(second.acceptEvidence(applicationId, await evidence(), now))
       .rejects.toMatchObject({ reason: "unknown-application" });
     const replacement = signedApplication("23", {
       applicationId: `${applicationId}:replacement`,
@@ -159,7 +174,7 @@ describe("file application admission store", () => {
     const second = store(path);
     const pending = await first.register(signedApplication(), now);
     expect(await second.readPending(applicationId)).toEqual(pending);
-    const signedEvidence = evidence();
+    const signedEvidence = await evidence();
     const receipt = await second.acceptEvidence(applicationId, signedEvidence, now);
     expect(await first.resolveAcceptedEvidence(applicationId)).toEqual({ evidence: signedEvidence, receipt });
     const captured = await first.readCapturedAdmission(applicationId);
@@ -175,6 +190,161 @@ describe("file application admission store", () => {
     const raw = await readFile(path, "utf8");
     expect(raw).not.toContain('"presentation":');
     expect(raw).not.toContain("private-vp-body");
+    expect((await stat(path)).mode & 0o777).toBe(0o600);
+  });
+
+  it("stores a bounded status witness privately with its accepted evidence", async () => {
+    const path = await storePath();
+    const admission = store(path);
+    await admission.register(signedApplication(), now);
+    const scenario = await createApplicationVpScenarioFixture();
+    const witness = capturePrivateApplicationStatusWitness({
+      material: scenario.material,
+      nonce: VP_FIXTURE_NONCE,
+      signed: scenario.signedStatusAttestation,
+    });
+    const source = createAttestedApplicationStatusSource({
+      resolver: scenario.input.resolver,
+      fetchAttestation: async () => scenario.signedStatusAttestation,
+    });
+    const status = await source({
+      material: scenario.material,
+      binding: scenario.fixtureStatusPolicyBinding,
+      nonce: VP_FIXTURE_NONCE,
+      evaluatedAtMs: VP_FIXTURE_TIME_MS,
+    });
+    const original = await evidence();
+    const envelope = {
+      ...original.envelope,
+      challengeHash: witness.signed.statement.challengeHash,
+      statusDecisionCommitment: status.statusDecisionCommitment,
+    };
+    const commitment = computeApplicationEvidenceCommitment(envelope);
+    const signedEvidence = { envelope, commitment, signature: harness.signApplicationEvidenceCommitment(commitment) };
+    await expect(admission.acceptEvidence(applicationId, signedEvidence, now, {
+      ...witness, nonce: `0x${"22".repeat(32)}`,
+    })).rejects.toThrow(/differs/u);
+    expect(await admission.readCapturedPrivateAdmission(applicationId, commitment)).toBeNull();
+    await admission.acceptEvidence(applicationId, signedEvidence, now, witness);
+    const reopened = store(path);
+    const privateCapture = await reopened.readCapturedPrivateAdmission(applicationId, commitment);
+    expect(privateCapture).toEqual({
+      pending: await reopened.readPending(applicationId),
+      accepted: await reopened.resolveAcceptedEvidence(applicationId),
+      privateStatusWitness: witness,
+    });
+    expect(privateCapture).not.toBeNull();
+    const freshNonce = `0x${"44".repeat(32)}`;
+    const freshStatement = {
+      ...scenario.signedStatusAttestation.statement,
+      challengeHash: sha256Hex(Buffer.from(freshNonce.slice(2), "hex")),
+    };
+    const freshSigned = {
+      statement: freshStatement,
+      proof: {
+        ...scenario.signedStatusAttestation.proof,
+        signature: `0x${Buffer.from(encodeJubjubSignature(signJubjubDigest(
+          19n, applicationStatusAttestationDigest(freshStatement),
+        ))).toString("hex")}`,
+      },
+    };
+    const verifierPublicKey = deriveJubjubPublicKeyFromSeed(createMaintainerFixture("evidence-verifier", 41).seed);
+    const verifyEvidenceSignature: ApplicationEvidenceSignatureVerifier = (value, signature, verifier) => {
+      if (signature.algorithm !== "jubjub-schnorr" || verifier.did !== harness.evidenceVerifier.did
+        || !verifier.keyIds.includes(signature.keyId)) return false;
+      try {
+        return verifyApplicationEvidenceCommitmentSignature(
+          verifierPublicKey,
+          bytes32Commitment(signature.keyId),
+          Buffer.from(value.slice(2), "hex"),
+          decodeCanonicalJubjubSignatureHex(signature.value),
+        );
+      } catch {
+        return false;
+      }
+    };
+    const refreshInput = {
+      captured: privateCapture!,
+      expectedAdmission: await reopened.readCapturedAdmission(applicationId),
+      submittedEvidence: signedEvidence,
+      authorizationId: issuer.authorizationId,
+      authorizedVerifiers: [harness.evidenceVerifier],
+      verifyEvidenceSignature,
+      statusPolicyBinding: scenario.fixtureStatusPolicyBinding,
+      resolver: scenario.input.resolver,
+      fetchFreshAttestation: async () => freshSigned,
+      freshNonce,
+      trustedTimeMs: VP_FIXTURE_TIME_MS,
+    };
+    const refreshed = await verifyCapturedIssuerStatus(refreshInput);
+    expect(refreshed.statusDecisionCommitment).toMatch(/^0x[0-9a-f]{64}$/u);
+    expect(JSON.stringify(refreshed)).not.toContain("privateStatusWitness");
+    const terms: LocalIssuerProposalTerms = {
+      format: "tr-local-issuer-proposal-terms-v1",
+      networkId: "undeployed",
+      contractAddress: `0x${"ab".repeat(32)}`,
+      expectedGenesisHash: `0x${"cd".repeat(32)}`,
+      applicationId,
+      authorizationId: issuer.authorizationId,
+      evidenceCommitment: commitment,
+      trustLevel: "approved",
+      statusPolicyBinding: scenario.fixtureStatusPolicyBinding,
+    };
+    const snapshot = { finalizedBlockHash: `0x${"ef".repeat(32)}` } as FinalizedIssuerSnapshot;
+    const verifierDependencies = {
+      sourceRevision: "a".repeat(40),
+      readCapturedPrivateAdmission: (id, evidenceCommitment) =>
+        reopened.readCapturedPrivateAdmission(id, evidenceCommitment),
+      readAuthorizedVerifiers: async () => [harness.evidenceVerifier],
+      verifyEvidenceSignature,
+      resolver: scenario.input.resolver,
+      fetchFreshAttestation: async () => freshSigned,
+      readFreshNonce: async () => freshNonce,
+    } satisfies Parameters<typeof createCapturedIssuerLiveEvidenceVerifier>[0];
+    const verifier = createCapturedIssuerLiveEvidenceVerifier(verifierDependencies);
+    const verificationInput = {
+      terms,
+      ...refreshInput.expectedAdmission,
+      submittedEvidence: signedEvidence,
+      snapshot,
+      trustedTimeMs: VP_FIXTURE_TIME_MS,
+    };
+    await expect(verifier(verificationInput)).resolves.toMatchObject({
+      format: "tr-live-issuer-evidence-verification-v1",
+      sourceRevision: "a".repeat(40),
+      contractAddress: terms.contractAddress,
+      finalizedBlockHash: snapshot.finalizedBlockHash,
+      evidenceCommitment: commitment,
+      statusPolicyBindingCommitment: computeIssuerStatusPolicyBindingCommitment(terms.statusPolicyBinding),
+    });
+    await expect(verifier({ ...verificationInput, submittedEvidence: original })).rejects
+      .toThrow(/private status witness is unavailable/u);
+    await expect(createCapturedIssuerLiveEvidenceVerifier({
+      ...verifierDependencies,
+      fetchFreshAttestation: async () => { throw new Error("VC status authority unavailable"); },
+    })(verificationInput)).rejects.toThrow(/VC status authority unavailable/u);
+    await expect(verifyCapturedIssuerStatus({
+      ...refreshInput, verifyEvidenceSignature: () => false,
+    })).rejects.toThrow(/signature/u);
+    await expect(verifyCapturedIssuerStatus({
+      ...refreshInput,
+      expectedAdmission: { ...refreshInput.expectedAdmission, accepted: null },
+    })).rejects.toThrow(/differs from the proposal/u);
+    await expect(verifyCapturedIssuerStatus({
+      ...refreshInput,
+      statusPolicyBinding: {
+        ...scenario.fixtureStatusPolicyBinding,
+        statusPolicyContentCommitment: sha256Hex("substituted-status-policy"),
+      },
+    })).rejects.toThrow(/private witness/u);
+    privateCapture!.privateStatusWitness.nonce = `0x${"33".repeat(32)}`;
+    expect((await reopened.readCapturedPrivateAdmission(applicationId, commitment))?.privateStatusWitness).toEqual(witness);
+    expect(await reopened.readCapturedPrivateAdmission(applicationId, original.commitment)).toBeNull();
+    expect(await reopened.resolveAcceptedEvidence(applicationId)).toEqual({
+      evidence: signedEvidence,
+      receipt: expect.any(Object),
+    });
+    expect(JSON.stringify(await reopened.readCapturedAdmission(applicationId))).not.toContain(witness.nonce);
     expect((await stat(path)).mode & 0o777).toBe(0o600);
   });
 
@@ -207,13 +377,14 @@ describe("file application admission store", () => {
         policy: { ...workspace.snapshot.policy, version: "v2" },
       },
     };
-    await expect(admission.acceptEvidence(applicationId, evidence(), now))
+    await expect(admission.acceptEvidence(applicationId, await evidence(), now))
       .rejects.toMatchObject({ reason: "stale-policy" });
     currentWorkspace = workspace;
     await expect(admission.acceptEvidence(applicationId, {
-      ...evidence(), presentation: "private-vp-body",
+      ...await evidence(), presentation: "private-vp-body",
     } as ApplicationEvidenceSubmission, now)).rejects.toThrow();
-    const tampered = { ...evidence(), envelope: { ...evidence().envelope, subjectDid: harness.maintainerDid } };
+    const signedEvidence = await evidence();
+    const tampered = { ...signedEvidence, envelope: { ...signedEvidence.envelope, subjectDid: harness.maintainerDid } };
     await expect(admission.acceptEvidence(applicationId, tampered, now))
       .rejects.toMatchObject({ reason: "mismatched-evidence" });
     expect(await admission.resolveAcceptedEvidence(applicationId)).toBeNull();

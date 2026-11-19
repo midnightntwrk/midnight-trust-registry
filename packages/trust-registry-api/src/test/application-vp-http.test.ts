@@ -4,6 +4,7 @@ import { createOperatorWorkspace } from "@midnightntwrk/trust-registry-cli";
 import {
   computeAuthorizationScopeCommitment,
   issuerGovernedResourceId,
+  sha256Hex,
   type ApplicationChallengeBinding,
 } from "@midnightntwrk/trust-registry-domain";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -40,6 +41,32 @@ const verifier = {
   keyIds: [`${binding.evidenceVerifierDid}#key-1`],
   algorithms: ["jubjub-schnorr" as const],
 };
+const privateWitness = (nonce: string, challengeHash: string) => {
+  const method = `${binding.subjectDid}#assertion-1`;
+  return {
+    format: "tr-private-application-status-witness-v1" as const,
+    nonce,
+    signed: {
+      statement: {
+        version: "tr-application-status-attestation-v1" as const,
+        statusRegistryId: sha256Hex("status-registry"),
+        statusAuthorityMethodId: method,
+        statusHandleCommitment: sha256Hex("status-handle"),
+        credentialBodyRoot: sha256Hex("credential-body"),
+        challengeHash,
+        active: true,
+        observedAt: new Date(START).toISOString(),
+        expiresAt: new Date(START + 60_000).toISOString(),
+      },
+      proof: { verificationMethodId: method, algorithm: "jubjub-schnorr" as const, signature: "0x1234" },
+    },
+    credentialBodyRoot: sha256Hex("credential-body"),
+    statusRegistryId: sha256Hex("status-registry"),
+    statusHandleCommitment: sha256Hex("status-handle"),
+    authorityControllerAddress: sha256Hex("authority-controller"),
+    authorityMethodId: sha256Hex("authority-method"),
+  };
+};
 
 async function listen(server: Server): Promise<string> {
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -68,7 +95,7 @@ describe("application VP HTTP intake", () => {
 
   async function start(configurePort = true) {
     server = createTrustRegistryApiServer({
-      source: createInMemorySource(createOperatorWorkspace({ label: "vp-http" }).snapshot),
+      source: createInMemorySource((await createOperatorWorkspace({ label: "vp-http" })).snapshot),
       clock: () => new Date(nowMs).toISOString(),
       ...(configurePort ? { applicationVp: port } : {}),
     });
@@ -309,6 +336,48 @@ describe("application VP HTTP intake", () => {
     expect(port.authorizeRequest).toHaveBeenCalledTimes(5);
     expect(port.verifyPresentation).toHaveBeenCalledOnce();
     expect((await post("submissions", { nonce: issued.nonce, challengeHash: issued.challengeHash, presentation })).status).toBe(409);
+  });
+
+  it("passes a challenge-bound private witness to persistence without returning it over HTTP", async () => {
+    await start();
+    const issued = await (await post("challenges", {})).json() as { nonce: string; challengeHash: string };
+    const presentation = { nonce: issued.nonce, subjectDid: binding.subjectDid,
+      scopeCommitment: binding.scopeCommitment, secret: "private-vp" };
+    const witness = privateWitness(issued.nonce, issued.challengeHash);
+    vi.mocked(port.verifyPresentation).mockImplementationOnce(async () => ({
+      nonce: issued.nonce, subjectDid: binding.subjectDid, scopeCommitment: binding.scopeCommitment,
+      presentationHash: sha256Hex("presentation"), claimsCommitment: sha256Hex("claims"),
+      statusDecisionCommitment: sha256Hex("status-decision"),
+      verifiedAt: new Date(nowMs).toISOString(), expiresAt: new Date(nowMs + 60_000).toISOString(),
+      privateStatusWitness: witness,
+    }));
+    const response = await post("submissions", { nonce: issued.nonce,
+      challengeHash: issued.challengeHash, presentation });
+    expect(response.status).toBe(202);
+    const body = await response.text();
+    expect(body).not.toContain("privateStatusWitness");
+    expect(body).not.toContain(witness.credentialBodyRoot);
+    expect(port.persistRedactedEvidence).toHaveBeenCalledWith(binding.applicationId, expect.any(Object), witness);
+  });
+
+  it("rejects a verifier-supplied private witness from a different challenge", async () => {
+    await start();
+    const issued = await (await post("challenges", {})).json() as { nonce: string; challengeHash: string };
+    vi.mocked(port.verifyPresentation).mockImplementationOnce(async () => ({
+      nonce: issued.nonce, subjectDid: binding.subjectDid, scopeCommitment: binding.scopeCommitment,
+      presentationHash: sha256Hex("presentation"), claimsCommitment: sha256Hex("claims"),
+      statusDecisionCommitment: sha256Hex("status-decision"),
+      verifiedAt: new Date(nowMs).toISOString(), expiresAt: new Date(nowMs + 60_000).toISOString(),
+      privateStatusWitness: { ...privateWitness(issued.nonce, issued.challengeHash),
+        nonce: `0x${"22".repeat(32)}` },
+    }));
+    const response = await post("submissions", { nonce: issued.nonce,
+      challengeHash: issued.challengeHash,
+      presentation: { nonce: issued.nonce, subjectDid: binding.subjectDid,
+        scopeCommitment: binding.scopeCommitment, secret: "private-vp" },
+    });
+    expect(response.status).toBe(403);
+    expect(port.persistRedactedEvidence).not.toHaveBeenCalled();
   });
 
   it("fails closed for unavailable or corrupted accepted evidence", async () => {

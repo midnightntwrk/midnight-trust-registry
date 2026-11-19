@@ -59,8 +59,8 @@ const roles = [
     execute: "executeRecognitionDecisionWithSignatures" },
 ];
 
-const sign = (harness, maintainer, prepared) => {
-  const ledger = harness.simulator.getLedger();
+const sign = async (harness, maintainer, prepared) => {
+  const ledger = await harness.simulator.getLedger();
   const publicKey = deriveJubjubPublicKeyFromSeed(maintainer.seed);
   const signature = signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed, ledger.registryId, ledger.deploymentNetworkIdCommitment,
@@ -74,8 +74,8 @@ const sign = (harness, maintainer, prepared) => {
   };
 };
 
-const signCompact = (harness, maintainer, prepared) => {
-  const ledger = harness.simulator.getLedger();
+const signCompact = async (harness, maintainer, prepared) => {
+  const ledger = await harness.simulator.getLedger();
   return {
     keyId: maintainer.keyId,
     publicKey: deriveJubjubPublicKeyFromSeed(maintainer.seed),
@@ -92,31 +92,31 @@ const startCase = async (context, role, action, label) => {
   const second = createMaintainerScenarioFixture(`${label}-second`);
   const third = createMaintainerScenarioFixture(`${label}-third`);
   const target = role.fixture(`${label}-target`);
-  harness.authorizeMaintainer(second);
-  harness.authorizeMaintainer(third);
-  harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+  await harness.authorizeMaintainer(second);
+  await harness.authorizeMaintainer(third);
+  await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
   const [prepareProposal, signProposal, executeProposal] = role.proposal;
-  const evidence = role.name === "recognition" ? undefined : harness.createApplicationEvidence({
+  const evidence = role.name === "recognition" ? undefined : await harness.createApplicationEvidence({
     applicationId: role.id(target), subjectDid: target.subjectDid,
     role: role.name, scope: role.scope(harness, target),
     governedResource: role.resource(harness, target),
   });
   const proposal = role.name === "recognition"
-    ? harness[prepareProposal](target) : harness[prepareProposal](target, evidence);
-  const verifierSignature = harness[signProposal](proposal);
-  const proposalSigners = [signCompact(harness, second, proposal), signCompact(harness, third, proposal)];
+    ? await harness[prepareProposal](target) : await harness[prepareProposal](target, evidence);
+  const verifierSignature = await harness[signProposal](proposal);
+  const proposalSigners = [await signCompact(harness, second, proposal), await signCompact(harness, third, proposal)];
   if (role.name === "recognition") {
-    harness[executeProposal](target, proposalSigners, verifierSignature, proposal);
+    await harness[executeProposal](target, proposalSigners, verifierSignature, proposal);
   } else {
-    harness[executeProposal](target, evidence, proposalSigners, verifierSignature);
+    await harness[executeProposal](target, evidence, proposalSigners, verifierSignature);
   }
   if (action === "activate") {
-    const approval = harness[role.prepare](target, "approve");
-    harness[role.execute](target, "approve", [
-      signCompact(harness, second, approval), signCompact(harness, third, approval),
+    const approval = await harness[role.prepare](target, "approve");
+    await harness[role.execute](target, "approve", [
+      await signCompact(harness, second, approval), await signCompact(harness, third, approval),
     ]);
   }
-  const snapshot = publishSimulatorSnapshot(harness, { label });
+  const snapshot = await publishSimulatorSnapshot(harness, { label });
   const server = createTrustRegistryApiServer({
     source: { mode: "memory", loadSnapshot: async () => snapshot },
     governedMembershipActions: {
@@ -124,14 +124,14 @@ const startCase = async (context, role, action, label) => {
         if (requestRole !== role.name || id !== role.id(target)) {
           throw new GovernedMembershipActionRejectedError("unknown-authorization");
         }
-        return harness[role.prepare](target, requestedAction);
+        return await harness[role.prepare](target, requestedAction);
       },
       async execute(requestRole, id, requestedAction, signers) {
         if (requestRole !== role.name || id !== role.id(target)) {
           throw new GovernedMembershipActionRejectedError("unknown-authorization");
         }
         try {
-          const eventHash = harness[role.execute](target, requestedAction, signers);
+          const eventHash = await harness[role.execute](target, requestedAction, signers);
           return { eventHash: asHex(eventHash) };
         } catch {
           throw new GovernedMembershipActionRejectedError("invalid-signers");
@@ -152,7 +152,7 @@ const startCase = async (context, role, action, label) => {
   const preparedResponse = await fetch(endpoint);
   const prepared = await preparedResponse.json();
   assert.equal(preparedResponse.status, 200, JSON.stringify(prepared));
-  const signers = [sign(harness, second, prepared), sign(harness, third, prepared)];
+  const signers = [await sign(harness, second, prepared), await sign(harness, third, prepared)];
   const submit = async (candidateSigners) => {
     const response = await fetch(endpoint, {
       method: "POST", headers: { "content-type": "application/json" },
@@ -171,18 +171,18 @@ for (const role of roles) {
         const fixture = await startCase(context, role, action,
           `isolated-${role.name}-${action}-${rejection}`);
         const { signers, submit, harness, target, prepared } = fixture;
-        const before = harness.simulator.getLedger().governanceActionCount;
+        const before = (await harness.simulator.getLedger()).governanceActionCount;
         const rejectedSigners = rejection === "insufficient-quorum" ? signers.slice(0, 1)
           : rejection === "duplicate-signer" ? [signers[0], signers[0]]
-            : [signers[0], sign(harness, target, prepared)];
+            : [signers[0], await sign(harness, target, prepared)];
         const rejected = await submit(rejectedSigners);
         assert.equal(rejected.status, 403, JSON.stringify(rejected.body));
         assert.equal(rejected.body.type.slice(rejected.body.type.lastIndexOf("/") + 1),
           rejection === "duplicate-signer" ? "invalid-governed-signature" : "governed-action-rejected");
-        assert.equal(harness.simulator.getLedger().governanceActionCount, before);
+        assert.equal((await harness.simulator.getLedger()).governanceActionCount, before);
         const accepted = await submit(signers);
         assert.equal(accepted.status, 202, JSON.stringify(accepted.body));
-        assert.equal(harness.simulator.getLedger().governanceActionCount, before + 1n);
+        assert.equal((await harness.simulator.getLedger()).governanceActionCount, before + 1n);
       });
     }
   }

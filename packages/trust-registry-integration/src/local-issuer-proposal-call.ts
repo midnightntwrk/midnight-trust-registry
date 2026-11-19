@@ -1,7 +1,6 @@
 import { Buffer } from "node:buffer";
 
 import { submitCallTx, type ContractProviders } from "@midnight-ntwrk/midnight-js-contracts";
-import { getNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import { bytes32Commitment } from "@midnightntwrk/trust-registry-client";
 import {
   buildCanonicalMaintainerAuthorizationBundle,
@@ -116,7 +115,7 @@ const assertPinnedGenesisHash = (value: string): void => {
 export function prepareUnsignedLocalIssuerProposalCall(
   input: UnsignedLocalIssuerProposalCall, ledger: Ledger,
 ): LocalIssuerProposalSigningContext {
-  if (input.networkId !== "undeployed" || getNetworkId() !== input.networkId
+  if (input.networkId !== "undeployed"
     || !/^0x[0-9a-f]{64}$/u.test(input.contractAddress)
     || /^0x0{64}$/u.test(input.contractAddress)
     || input.registryId.length === 0 || input.registryId.includes("\0")
@@ -311,6 +310,7 @@ const submitPreparedLocalIssuerProposal = async (
   const providers = assertReadyBeforeBroadcast === undefined ? input.providers : {
     ...input.providers,
     midnightProvider: {
+      supportedEras: guardedProvider.supportedEras,
       submitTx: async (tx: Parameters<typeof input.providers.midnightProvider.submitTx>[0]) => {
         return guardedProvider.submitTxWithBroadcastGuard!(tx, assertReadyBeforeBroadcast);
       },

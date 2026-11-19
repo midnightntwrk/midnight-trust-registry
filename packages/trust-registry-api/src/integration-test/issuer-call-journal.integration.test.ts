@@ -5,7 +5,6 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import { bytes32Commitment } from "@midnightntwrk/trust-registry-client";
 import {
   EvidenceVerifierKeyStatus,
@@ -27,6 +26,8 @@ import {
 import {
   FileProposalSubmissionJournal,
   ProposalSubmissionAlreadyPendingError,
+  ProposalSubmissionAttributionRequiredError,
+  ProposalSubmissionBlockedByReservationError,
   ProposalSubmissionConflictError,
   ProposalSubmissionOutcomeUnknownError,
 } from "../proposal-submission-journal.js";
@@ -133,7 +134,6 @@ describe("issuer SDK handoff with private journal", () => {
   let path: string;
 
   beforeEach(async () => {
-    setNetworkId("undeployed");
     mocks.submitCallTx.mockReset();
     directory = await mkdtemp(join(tmpdir(), "tr-issuer-call-journal-"));
     path = join(directory, "journal.json");
@@ -200,6 +200,32 @@ describe("issuer SDK handoff with private journal", () => {
     expect(mocks.submitCallTx).toHaveBeenCalledOnce();
   });
 
+  it("keeps a Ledger 9 balance rejection reserved and blocks all further proposals", async () => {
+    const journal = new FileProposalSubmissionJournal(path);
+    await journal.bindDeployment(registryLabel, contractAddress, genesisHash);
+    const balanceFailure = new Error("Custom error: 138: BalanceCheckOverspend");
+    mocks.submitCallTx.mockRejectedValueOnce(balanceFailure);
+
+    const outcome = await submitLocalIssuerProposalCall(input(journal)).catch((error: unknown) => error);
+    expect(outcome).toBeInstanceOf(ProposalSubmissionOutcomeUnknownError);
+    expect((outcome as ProposalSubmissionOutcomeUnknownError).cause).toBe(balanceFailure);
+    expect(await journal.read("issuer", authorizationLabel)).toMatchObject({
+      state: "reserved", eventHash: null,
+      reservationContext: { actionSequence: "3" },
+    });
+
+    const reopened = new FileProposalSubmissionJournal(path);
+    await reopened.assertDeploymentBinding(registryLabel, contractAddress, genesisHash);
+    await expect(submitLocalIssuerProposalCall(input(reopened)))
+      .rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
+    await expect(reopened.executeOnce(
+      "issuer", "issuer:another-proposal", `0x${"1".repeat(64)}`,
+      async () => { throw new Error("must not submit"); },
+      { actionSequence: "3", actionKind: `0x${"2".repeat(64)}`, actionPayloadHash: `0x${"3".repeat(64)}` },
+    )).rejects.toBeInstanceOf(ProposalSubmissionBlockedByReservationError);
+    expect(mocks.submitCallTx).toHaveBeenCalledOnce();
+  });
+
   it("uses the persisted reservation after the pinned provider loses its process-local guards", async () => {
     const journal = new FileProposalSubmissionJournal(path);
     await journal.bindDeployment(registryLabel, contractAddress, genesisHash);
@@ -217,6 +243,8 @@ describe("issuer SDK handoff with private journal", () => {
       data: { block: { height: 0, hash: genesisHash.slice(2) } },
     })));
     try {
+      const { LedgerTransaction } = await import("../../../trust-registry-integration/node_modules/@midnight-ntwrk/midnight-js-types/dist/index.js");
+      vi.spyOn(LedgerTransaction, "require").mockImplementation((value) => value as never);
       const config = {
         nodeWsUrl: "ws://node:9944", indexerHttpUrl: "http://node:8088/graphql",
         indexerWsUrl: "ws://node:8088/graphql/ws", allowedHosts: ["node"],
@@ -232,7 +260,9 @@ describe("issuer SDK handoff with private journal", () => {
       });
       mocks.submitCallTx.mockImplementation(async (providers: Parameters<typeof submitLocalIssuerProposalCall>[0]["providers"]) => {
         await providers.midnightProvider.submitTx({
-          identifiers: () => ["tx-ambiguous"], serialize: () => new Uint8Array([1, 2, 3]),
+          era: "v9", stage: "Finalized",
+          deserialize: () => ({ identifiers: () => ["tx-ambiguous"] }),
+          serialize: () => new Uint8Array([1, 2, 3]),
         } as never);
         throw new Error("response lost after broadcast");
       });
@@ -252,6 +282,7 @@ describe("issuer SDK handoff with private journal", () => {
       expect(broadcast).toHaveBeenCalledOnce();
       expect(mocks.submitCallTx).toHaveBeenCalledOnce();
     } finally {
+      vi.restoreAllMocks();
       vi.unstubAllGlobals();
     }
   });
@@ -262,7 +293,7 @@ describe("issuer SDK handoff with private journal", () => {
     expect(mocks.submitCallTx).not.toHaveBeenCalled();
   });
 
-  it("retains an ambiguous attempt until finalized reconciliation, then blocks replay after reopen", async () => {
+  it("retains an ambiguous attempt even if an identical proposal is finalized later", async () => {
     const journal = new FileProposalSubmissionJournal(path);
     await journal.bindDeployment(registryLabel, contractAddress, genesisHash);
     const request = input(journal);
@@ -280,13 +311,14 @@ describe("issuer SDK handoff with private journal", () => {
       .toBe("reserved");
     await expect(submitLocalIssuerProposalCall(input(restarted)))
       .rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);
-    expect((await restarted.reconcile("issuer", authorizationLabel,
-      async () => ({ eventHash, evidenceCommitment }))).state).toBe("observed");
+    await expect(restarted.reconcile("issuer", authorizationLabel,
+      async () => ({ eventHash, evidenceCommitment })))
+      .rejects.toBeInstanceOf(ProposalSubmissionAttributionRequiredError);
 
     const reopened = new FileProposalSubmissionJournal(path);
     await reopened.assertDeploymentBinding(registryLabel, contractAddress, genesisHash);
     expect(await reopened.read("issuer", authorizationLabel)).toMatchObject({
-      state: "observed", eventHash, evidenceCommitment,
+      state: "reserved", eventHash: null, evidenceCommitment,
     });
     await expect(submitLocalIssuerProposalCall(input(reopened)))
       .rejects.toBeInstanceOf(ProposalSubmissionAlreadyPendingError);

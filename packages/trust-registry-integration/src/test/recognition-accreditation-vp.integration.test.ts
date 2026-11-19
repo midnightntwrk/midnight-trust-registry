@@ -37,33 +37,33 @@ describe("independently signed recognition accreditation VP", () => {
   it("requires maintainer quorum before resolving an anchor from the Compact policy commitment", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("accreditor-policy");
     const second = createMaintainerScenarioFixture("accreditor-policy-second");
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(createMaintainerScenarioFixture("accreditor-policy-third"));
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(createMaintainerScenarioFixture("accreditor-policy-third"));
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
     const anchor = {
       ...RECOGNITION_VP_FIXTURE_ANCHOR,
       targetRegistryId: harness.registryId,
       policyId: harness.policyId,
-      policyVersion: `v${(harness.simulator.getLedger().governancePolicyVersion + 1n).toString()}`,
+      policyVersion: `v${((await harness.simulator.getLedger()).governancePolicyVersion + 1n).toString()}`,
     };
-    const before = harness.simulator.getLedger().governanceActionCount;
-    expect(() => harness.governRecognitionAccreditorAnchor(anchor)).toThrow(/threshold/u);
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
-    harness.governRecognitionAccreditorAnchor(anchor, [second]);
+    const before = (await harness.simulator.getLedger()).governanceActionCount;
+    await expect(harness.governRecognitionAccreditorAnchor(anchor)).rejects.toThrow(/threshold/u);
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before);
+    await harness.governRecognitionAccreditorAnchor(anchor, [second]);
     const evaluatedAtMs = Math.max(NOW, Date.parse(harness.policyRecord.effectiveFrom) + 1000);
-    const resolved = harness.resolveCurrentRecognitionAccreditorAnchor({
+    const resolved = await harness.resolveCurrentRecognitionAccreditorAnchor({
       recognizedRegistryId: anchor.recognizedRegistryId,
       scopeResourceType: anchor.scopeResourceType,
       scopeResourceId: anchor.scopeResourceId,
       evaluatedAtMs,
     });
     expect(resolved.anchor).toEqual(anchor);
-    expect(() => harness.resolveCurrentRecognitionAccreditorAnchor({
+    await expect(harness.resolveCurrentRecognitionAccreditorAnchor({
       recognizedRegistryId: "registry:external:wrong",
       scopeResourceType: anchor.scopeResourceType,
       scopeResourceId: anchor.scopeResourceId,
       evaluatedAtMs,
-    })).toThrow(/exact scope/u);
+    })).rejects.toThrow(/exact scope/u);
   });
 
   it("commits to exact submitted bodies but canonicalizes proof object order", async () => {

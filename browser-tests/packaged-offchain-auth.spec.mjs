@@ -82,7 +82,7 @@ test("packaged fixture host signs in off-chain DID in both portals without grant
   const actorKeyId = `${actorDid}/keys#auth`;
   let host;
   try {
-    await writeWorkspaceToFile(workspacePath, createOperatorWorkspace({ label: "packaged-browser-auth" }));
+    await writeWorkspaceToFile(workspacePath, await createOperatorWorkspace({ label: "packaged-browser-auth" }));
     await mkdir(portalRoot);
     for (const role of ["admin", "applicant"]) {
       await cp(join("packages", `trust-registry-${role === "admin" ? "admin-console" : "applicant-portal"}`, "dist"),

@@ -2,14 +2,13 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { CompiledContract } from "@midnight-ntwrk/compact-js";
-import { signatureVerifyingKey, type JubjubPoint } from "@midnight-ntwrk/compact-runtime";
+import { ContractState, type JubjubPoint, type SigningKey } from "@midnight-ntwrk/compact-runtime";
 import { deployContract, type ContractProviders } from "@midnight-ntwrk/midnight-js-contracts";
-import { getNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
-import type { SigningKey } from "@midnight-ntwrk/midnight-js-protocol/compact-runtime";
 import { bytes32Commitment, bytes32Hex } from "@midnightntwrk/trust-registry-client";
 import { MaintainerStatus, TrustRegistryContract, trustRegistryWitnesses, type TrustRegistryPrivateState } from "@midnightntwrk/trust-registry-contract";
 
 import { hasExactFieldNames } from "./exact-field-names.js";
+import { maintenanceSigningKeyHex } from "./maintenance-verifying-key.js";
 import {
   FinalizedDeploymentImageInvalidError,
   type FinalizedRegistryBootstrapReader,
@@ -247,6 +246,20 @@ export async function deployLocalTrustRegistryStaged(input: {
   });
 }
 
+export function selectStagedInitialOperation(state: ContractState, initialVerifierKeyName: string): ContractState {
+  const initialOperation = state.operation(initialVerifierKeyName);
+  if (initialOperation === undefined) {
+    throw new Error("Initial staged operation is absent from the compiled contract state");
+  }
+  // Compact emits blank slots for every circuit; Ledger 9 rejects any slot without a verifier key.
+  const stagedState = new ContractState();
+  stagedState.data = state.data;
+  stagedState.maintenanceAuthority = state.maintenanceAuthority;
+  stagedState.balance = state.balance;
+  stagedState.setOperation(initialVerifierKeyName, initialOperation);
+  return stagedState;
+}
+
 export function stagedBootstrapContract(initialVerifierKeyName: string):
   new (witnesses: typeof trustRegistryWitnesses) => TrustRegistryContract.Contract<TrustRegistryPrivateState> {
   const full = new TrustRegistryContract.Contract(trustRegistryWitnesses).provableCircuits;
@@ -259,6 +272,14 @@ export function stagedBootstrapContract(initialVerifierKeyName: string):
       for (const name of Object.keys(this.provableCircuits)) {
         if (name !== initialVerifierKeyName) Reflect.deleteProperty(this.provableCircuits, name);
       }
+    }
+
+    override async initialState(
+      ...args: Parameters<TrustRegistryContract.Contract<TrustRegistryPrivateState>["initialState"]>
+    ) {
+      const initialized = await super.initialState(...args);
+      return { ...initialized, currentContractState: selectStagedInitialOperation(
+        initialized.currentContractState, initialVerifierKeyName) };
     }
   };
 }
@@ -274,7 +295,7 @@ async function deployPinnedTrustRegistry(input: {
   readerFactory: () => Promise<FinalizedRegistryBootstrapReader>;
 }): Promise<PublicRegistryDeploymentResult> {
   const { network, bootstrap } = input;
-  if (getNetworkId() !== network.networkId) {
+  if (input.providers.config.networkId !== network.networkId) {
     throw new Error("Midnight.js network does not match the pinned deployment network");
   }
   if (bootstrap.registryId.length === 0 || bootstrap.registryId.includes("\0")) {
@@ -296,7 +317,7 @@ async function deployPinnedTrustRegistry(input: {
     throw new Error("Initial staged verifier key is not present in the release manifest");
   }
   await verifyInstalledVerifierKeyAssets(input.releaseManifest);
-  const expectedAuthorityKey = `0x${signatureVerifyingKey(input.contractMaintenanceSigningKey).toLowerCase()}`;
+  const expectedAuthorityKey = maintenanceSigningKeyHex(input.contractMaintenanceSigningKey);
 
   const checkpoint = await input.checkpointSource.readCurrentFinalizedCheckpoint();
   if (checkpoint === null || checkpoint.networkId !== network.networkId) {
@@ -399,7 +420,7 @@ export async function readPostDeploymentLocalTrustRegistry(input: {
   maintenancePolicy: PublicRegistryMaintenancePolicy;
 }): Promise<PublicRegistryDeploymentReadback> {
   const localNetworkId = getLocalNetworkProfile().networkId;
-  if (input.network.networkId !== localNetworkId || getNetworkId() !== localNetworkId) {
+  if (input.network.networkId !== localNetworkId || input.receipt.networkId !== localNetworkId) {
     throw new Error("Local post-deployment readback requires the standalone network profile");
   }
   return readPostDeploymentPinnedTrustRegistry({

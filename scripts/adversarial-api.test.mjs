@@ -13,9 +13,9 @@ import { createTrustRegistryApiServer } from "../packages/trust-registry-api/dis
 const startIssuerApi = async (context, label) => {
   const harness = new LocalTrustRegistryIntegrationHarness(label);
   const issuer = createIssuerScenarioFixture(`${label}-issuer`);
-  harness.authorizeIssuer(issuer);
+  await harness.authorizeIssuer(issuer);
   const fixtures = { label, issuers: [{ fixture: issuer, label: "issuer" }] };
-  let snapshot = publishSimulatorSnapshot(harness, fixtures);
+  let snapshot = await publishSimulatorSnapshot(harness, fixtures);
   const server = createTrustRegistryApiServer({
     source: { mode: "memory", loadSnapshot: async () => snapshot },
   });
@@ -62,13 +62,13 @@ const startIssuerApi = async (context, label) => {
     }
     return response.json();
   };
-  const refresh = (nextFixtures = fixtures) => {
-    snapshot = publishSimulatorSnapshot(harness, nextFixtures, snapshot);
+  const refresh = async (nextFixtures = fixtures) => {
+    snapshot = await publishSimulatorSnapshot(harness, nextFixtures, snapshot);
   };
-  const transition = (action) => {
-    harness[action](issuer);
-    refresh();
-    return harness.buildIssuerHistoricalEvidence(issuer);
+  const transition = async (action) => {
+    await harness[action](issuer);
+    await refresh();
+    return await harness.buildIssuerHistoricalEvidence(issuer);
   };
   return { harness, issuer, base, evaluate, queryTrqp, refresh, transition };
 };
@@ -91,8 +91,8 @@ test("issuer-wrong-resource-api", async (context) => {
 test("verifier-wrong-resource-api", async (context) => {
   const { harness, issuer, base, refresh } = await startIssuerApi(context, "isolated-wrong-verifier-resource-api");
   const verifier = createVerifierScenarioFixture("isolated-verifier-api-scope");
-  harness.authorizeVerifier(verifier);
-  refresh({
+  await harness.authorizeVerifier(verifier);
+  await refresh({
     label: "isolated-wrong-verifier-resource-api",
     issuers: [{ fixture: issuer, label: "issuer" }],
     verifiers: [{ fixture: verifier, label: "verifier" }],
@@ -112,7 +112,7 @@ test("verifier-wrong-resource-api", async (context) => {
 
 test("issuer-active-api", async (context) => {
   const { harness, issuer, evaluate } = await startIssuerApi(context, "isolated-active-api");
-  const bundle = harness.evaluateCurrentIssuerDecision(issuer);
+  const bundle = await harness.evaluateCurrentIssuerDecision(issuer);
   const decision = await evaluate(bundle.authorization.activeFrom);
   assert.equal(decision.trustedAtTime, true);
   assert.equal(decision.statusAtTime, "active");
@@ -120,7 +120,7 @@ test("issuer-active-api", async (context) => {
 
 test("issuer-active-trqp", async (context) => {
   const { harness, issuer, evaluate, queryTrqp } = await startIssuerApi(context, "isolated-active-trqp");
-  const activeAt = harness.evaluateCurrentIssuerDecision(issuer).authorization.activeFrom;
+  const activeAt = (await harness.evaluateCurrentIssuerDecision(issuer)).authorization.activeFrom;
   const publicDecision = await evaluate(activeAt);
   const trqpDecision = await queryTrqp(activeAt);
   assert.equal(publicDecision.trustedAtTime, true);
@@ -130,18 +130,18 @@ test("issuer-active-trqp", async (context) => {
 const startHistoricalThresholdApi = async (context, label) => {
   const { harness, issuer, base, refresh } =
     await startIssuerApi(context, label);
-  const old = harness.evaluateCurrentIssuerDecision(issuer);
+  const old = await harness.evaluateCurrentIssuerDecision(issuer);
   const oldAt = new Date(Date.parse(old.epoch.validFrom) + 1).toISOString();
   const second = createMaintainerScenarioFixture(`${label}-second`);
   const third = createMaintainerScenarioFixture(`${label}-third`);
   const currentIssuer = createIssuerScenarioFixture(`${label}-current`);
-  harness.authorizeMaintainer(second);
-  harness.authorizeMaintainer(third);
-  harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
-  harness.proposeIssuer(currentIssuer, [second]);
-  harness.approveIssuer(currentIssuer, [second]);
-  harness.activateIssuer(currentIssuer, [second]);
-  refresh({
+  await harness.authorizeMaintainer(second);
+  await harness.authorizeMaintainer(third);
+  await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+  await harness.proposeIssuer(currentIssuer, [second]);
+  await harness.approveIssuer(currentIssuer, [second]);
+  await harness.activateIssuer(currentIssuer, [second]);
+  await refresh({
     label,
     issuers: [{ fixture: issuer, label: "historical" }, { fixture: currentIssuer, label: "current" }],
   });
@@ -164,7 +164,7 @@ test("issuer-historical-api-after-threshold-change", async (context) => {
   assert.equal(decision.statusAtTime, "active");
   assert.equal(decision.bundle.policy.version, old.policy.version);
   assert.notEqual(decision.bundle.policy.version,
-    harness.evaluateCurrentIssuerDecision(currentIssuer).policy.version);
+    (await harness.evaluateCurrentIssuerDecision(currentIssuer)).policy.version);
 });
 
 test("issuer-historical-trqp-after-threshold-change", async (context) => {
@@ -185,24 +185,24 @@ test("issuer-historical-trqp-after-threshold-change", async (context) => {
   assert.equal(answer.bundle.epoch.epochId, old.epoch.epochId);
   assert.equal(answer.bundle.policy.version, old.policy.version);
   assert.notEqual(answer.bundle.policy.version,
-    harness.evaluateCurrentIssuerDecision(currentIssuer).policy.version);
+    (await harness.evaluateCurrentIssuerDecision(currentIssuer)).policy.version);
 });
 
 const startHistoricalVerifierThresholdApi = async (context, label) => {
   const { harness, issuer, base, refresh } = await startIssuerApi(context, label);
   const verifier = createVerifierScenarioFixture(`${label}-verifier`);
-  harness.authorizeVerifier(verifier);
-  const old = harness.evaluateCurrentVerifierDecision(verifier);
+  await harness.authorizeVerifier(verifier);
+  const old = await harness.evaluateCurrentVerifierDecision(verifier);
   const oldAt = new Date(Date.parse(old.epoch.validFrom) + 1).toISOString();
-  refresh({ label, issuers: [{ fixture: issuer, label: "issuer" }],
+  await refresh({ label, issuers: [{ fixture: issuer, label: "issuer" }],
     verifiers: [{ fixture: verifier, label: "historical-verifier" }] });
   const second = createMaintainerScenarioFixture(`${label}-second`);
   const third = createMaintainerScenarioFixture(`${label}-third`);
-  harness.authorizeMaintainer(second);
-  harness.authorizeMaintainer(third);
-  harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
-  harness.revokeVerifier(verifier, [second]);
-  refresh({ label, issuers: [{ fixture: issuer, label: "issuer" }],
+  await harness.authorizeMaintainer(second);
+  await harness.authorizeMaintainer(third);
+  await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+  await harness.revokeVerifier(verifier, [second]);
+  await refresh({ label, issuers: [{ fixture: issuer, label: "issuer" }],
     verifiers: [{ fixture: verifier, label: "historical-verifier" }] });
   return { harness, verifier, base, old, oldAt };
 };
@@ -244,9 +244,9 @@ test("verifier-historical-trqp-after-threshold-change", async (context) => {
 
 test("issuer-suspended-api", async (context) => {
   const { harness, issuer, evaluate, transition } = await startIssuerApi(context, "isolated-suspended-api");
-  const active = harness.evaluateCurrentIssuerDecision(issuer);
+  const active = await harness.evaluateCurrentIssuerDecision(issuer);
   assert.equal((await evaluate(active.authorization.activeFrom)).trustedAtTime, true);
-  const suspended = transition("suspendIssuer");
+  const suspended = await transition("suspendIssuer");
   const decision = await evaluate(suspended.authorization.suspendedAt);
   assert.equal(decision.trustedAtTime, false);
   assert.equal(decision.statusAtTime, "suspended");
@@ -254,8 +254,8 @@ test("issuer-suspended-api", async (context) => {
 
 test("issuer-historical-api-after-suspension", async (context) => {
   const { harness, issuer, evaluate, transition } = await startIssuerApi(context, "isolated-suspension-history-api");
-  const active = harness.evaluateCurrentIssuerDecision(issuer);
-  transition("suspendIssuer");
+  const active = await harness.evaluateCurrentIssuerDecision(issuer);
+  await transition("suspendIssuer");
   const decision = await evaluate(active.authorization.activeFrom);
   assert.equal(decision.trustedAtTime, true);
   assert.equal(decision.statusAtTime, "active");
@@ -263,10 +263,10 @@ test("issuer-historical-api-after-suspension", async (context) => {
 
 test("issuer-revoked-api", async (context) => {
   const { harness, issuer, evaluate, transition } = await startIssuerApi(context, "isolated-revoked-api");
-  const active = harness.evaluateCurrentIssuerDecision(issuer);
+  const active = await harness.evaluateCurrentIssuerDecision(issuer);
   assert.equal((await evaluate(active.authorization.activeFrom)).trustedAtTime, true);
-  transition("suspendIssuer");
-  const revoked = transition("revokeIssuer");
+  await transition("suspendIssuer");
+  const revoked = await transition("revokeIssuer");
   const decision = await evaluate(revoked.authorization.revokedAt);
   assert.equal(decision.trustedAtTime, false);
   assert.equal(decision.statusAtTime, "revoked");
@@ -274,9 +274,9 @@ test("issuer-revoked-api", async (context) => {
 
 test("issuer-historical-api-after-revocation", async (context) => {
   const { harness, issuer, evaluate, transition } = await startIssuerApi(context, "isolated-revocation-history-api");
-  const active = harness.evaluateCurrentIssuerDecision(issuer);
-  transition("suspendIssuer");
-  transition("revokeIssuer");
+  const active = await harness.evaluateCurrentIssuerDecision(issuer);
+  await transition("suspendIssuer");
+  await transition("revokeIssuer");
   const decision = await evaluate(active.authorization.activeFrom);
   assert.equal(decision.trustedAtTime, true);
   assert.equal(decision.statusAtTime, "active");
@@ -285,9 +285,9 @@ test("issuer-historical-api-after-revocation", async (context) => {
 test("issuer-suspended-trqp", async (context) => {
   const { harness, issuer, evaluate, queryTrqp, transition } =
     await startIssuerApi(context, "isolated-suspended-trqp");
-  const activeAt = harness.evaluateCurrentIssuerDecision(issuer).authorization.activeFrom;
+  const activeAt = (await harness.evaluateCurrentIssuerDecision(issuer)).authorization.activeFrom;
   assert.equal((await queryTrqp(activeAt)).authorized, true);
-  const suspended = transition("suspendIssuer");
+  const suspended = await transition("suspendIssuer");
   const at = suspended.authorization.suspendedAt;
   assert.equal((await evaluate(at)).trustedAtTime, false);
   assert.equal((await queryTrqp(at)).authorized, false);
@@ -296,8 +296,8 @@ test("issuer-suspended-trqp", async (context) => {
 test("issuer-historical-trqp-after-suspension", async (context) => {
   const { harness, issuer, evaluate, queryTrqp, transition } =
     await startIssuerApi(context, "isolated-suspension-history-trqp");
-  const activeAt = harness.evaluateCurrentIssuerDecision(issuer).authorization.activeFrom;
-  transition("suspendIssuer");
+  const activeAt = (await harness.evaluateCurrentIssuerDecision(issuer)).authorization.activeFrom;
+  await transition("suspendIssuer");
   assert.equal((await evaluate(activeAt)).trustedAtTime, true);
   assert.equal((await queryTrqp(activeAt)).authorized, true);
 });
@@ -305,10 +305,10 @@ test("issuer-historical-trqp-after-suspension", async (context) => {
 test("issuer-revoked-trqp", async (context) => {
   const { harness, issuer, evaluate, queryTrqp, transition } =
     await startIssuerApi(context, "isolated-revoked-trqp");
-  const activeAt = harness.evaluateCurrentIssuerDecision(issuer).authorization.activeFrom;
+  const activeAt = (await harness.evaluateCurrentIssuerDecision(issuer)).authorization.activeFrom;
   assert.equal((await queryTrqp(activeAt)).authorized, true);
-  transition("suspendIssuer");
-  const revoked = transition("revokeIssuer");
+  await transition("suspendIssuer");
+  const revoked = await transition("revokeIssuer");
   const at = revoked.authorization.revokedAt;
   assert.equal((await evaluate(at)).trustedAtTime, false);
   assert.equal((await queryTrqp(at)).authorized, false);
@@ -317,9 +317,9 @@ test("issuer-revoked-trqp", async (context) => {
 test("issuer-historical-trqp-after-revocation", async (context) => {
   const { harness, issuer, evaluate, queryTrqp, transition } =
     await startIssuerApi(context, "isolated-revocation-history-trqp");
-  const activeAt = harness.evaluateCurrentIssuerDecision(issuer).authorization.activeFrom;
-  transition("suspendIssuer");
-  transition("revokeIssuer");
+  const activeAt = (await harness.evaluateCurrentIssuerDecision(issuer)).authorization.activeFrom;
+  await transition("suspendIssuer");
+  await transition("revokeIssuer");
   assert.equal((await evaluate(activeAt)).trustedAtTime, true);
   assert.equal((await queryTrqp(activeAt)).authorized, true);
 });

@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { getNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
-import { ContractMaintenanceAuthority, MaintenanceUpdate, ReplaceAuthority } from "@midnight-ntwrk/midnight-js-protocol/ledger";
+import { ContractMaintenanceAuthority, MaintenanceUpdate, ReplaceAuthority } from "@midnightntwrk/ledger-v9";
 
 import {
   readPostDeploymentLocalTrustRegistry,
@@ -45,7 +44,8 @@ export function committeeMaintenanceUpdateSha256(input: {
   validateMaintenancePolicy({ mode: "committee", verifyingKeys: [...input.committee],
     threshold: input.threshold });
   const authority = new ContractMaintenanceAuthority(
-    input.committee.map((key) => key.slice(2)), input.threshold, input.currentCounter + 1n,
+    input.committee.map((key) => ({ tag: "schnorr" as const, value: key.slice(2) })),
+    input.threshold, input.currentCounter + 1n,
   );
   const update = new MaintenanceUpdate(input.contractAddress.slice(2),
     [new ReplaceAuthority(authority)], input.currentCounter);
@@ -81,7 +81,7 @@ async function reconcilePinnedCommitteeTransition(
   readPostDeployment: () => Promise<PublicRegistryDeploymentReadback>,
 ): Promise<MaintenanceTransitionReconciliation> {
   const { approval } = input;
-  if (getNetworkId() !== approval.network.networkId || approval.receipt.networkId !== approval.network.networkId) {
+  if (approval.receipt.networkId !== approval.network.networkId) {
     throw new Error("Midnight.js network does not match the approved transition network");
   }
   if (!HASH.test(input.approvedUpdateSha256) || !BLOCK.test(input.approvedFinalizedBlockHash)

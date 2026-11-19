@@ -839,12 +839,17 @@ export pure circuit schnorrChallengeDigest(
 }
 
 pure circuit maintainerPublicKeyCommitment(publicKey: JubjubPoint): Bytes<32> {
-  return upgradeFromTransient(transientHash<JubjubPoint>(publicKey));
+  // ZKIR v3 cannot synthesize transientHash<JubjubPoint>; bind both coordinates explicitly.
+  return persistentHash<Vector<3, Bytes<32>>>([
+    pad(32, "tr:maintainer-key:v2"),
+    (jubjubPointX(publicKey) as Bytes<32>),
+    (jubjubPointY(publicKey) as Bytes<32>)
+  ]);
 }
 
 pure circuit assertNonIdentitySignerPoint(point: JubjubPoint): [] {
   assert(
-    jubjubPointX(point) != 0 || jubjubPointY(point) != 1,
+    jubjubPointX(point) != (0 as Field) || jubjubPointY(point) != (1 as Field),
     "Jubjub signer point must not be identity"
   );
 }
@@ -854,12 +859,12 @@ circuit assertPrimeOrderMaintainerKey(publicKey: JubjubPoint): [] {
   const subgroupCheck = ecAdd(
     ecMul(
       publicKey,
-      6554484396890773809930967563523245729705921265872317281365359162392183254198 as Field
+      (6554484396890773809930967563523245729705921265872317281365359162392183254198 as Field) as JubjubScalar
     ),
     publicKey
   );
   assert(
-    jubjubPointX(subgroupCheck) == 0 && jubjubPointY(subgroupCheck) == 1,
+    jubjubPointX(subgroupCheck) == (0 as Field) && jubjubPointY(subgroupCheck) == (1 as Field),
     "Maintainer public key must have prime order"
   );
 }
@@ -867,16 +872,16 @@ circuit assertPrimeOrderMaintainerKey(publicKey: JubjubPoint): [] {
 circuit assertPrimeOrderEvidenceVerifierKey(publicKey: JubjubPoint): [] {
   const x = jubjubPointX(publicKey);
   const y = jubjubPointY(publicKey);
-  assert(x != 0 || y != 1, "Evidence verifier public key must not be identity");
+  assert(x != (0 as Field) || y != (1 as Field), "Evidence verifier public key must not be identity");
   const subgroupCheck = ecAdd(
     ecMul(
       publicKey,
-      6554484396890773809930967563523245729705921265872317281365359162392183254198 as Field
+      (6554484396890773809930967563523245729705921265872317281365359162392183254198 as Field) as JubjubScalar
     ),
     publicKey
   );
   assert(
-    jubjubPointX(subgroupCheck) == 0 && jubjubPointY(subgroupCheck) == 1,
+    jubjubPointX(subgroupCheck) == (0 as Field) && jubjubPointY(subgroupCheck) == (1 as Field),
     "Evidence verifier public key must have prime order"
   );
 }

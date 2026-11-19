@@ -34,7 +34,7 @@ import { GovernedIssuerProposalRejectedError, type PreparedGovernedIssuerProposa
 import { GovernedMembershipActionRejectedError, type PreparedGovernedMembershipAction } from "../governed-membership-actions.js";
 import { createTrustRegistryApiServer } from "../server.js";
 
-const signHttpAction = (
+const signHttpAction = async (
   harness: LocalTrustRegistryIntegrationHarness,
   maintainer: MaintainerScenarioFixture,
   prepared: Pick<PreparedGovernedMembershipAction,
@@ -45,7 +45,7 @@ const signHttpAction = (
   const signature = signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
     fromHex(prepared.registryId),
-    harness.simulator.getLedger().deploymentNetworkIdCommitment,
+    (await harness.simulator.getLedger()).deploymentNetworkIdCommitment,
     Buffer.from(harness.simulator.contractAddress, "hex"),
     fromHex(prepared.policyCommitment),
     fromHex(prepared.actionKind),
@@ -64,9 +64,9 @@ describe("published VP proof to governed issuer decision", () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const second = createMaintainerScenarioFixture("vp-quorum-second");
     const third = createMaintainerScenarioFixture("vp-quorum-third");
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(third);
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(third);
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
     harness.advanceEvidenceTimeBy(60_000);
     const issuer = createIssuerScenarioFixture("vp");
     const scope = createIssuerAuthorizationScopeFixture(issuer);
@@ -114,7 +114,7 @@ describe("published VP proof to governed issuer decision", () => {
       evaluatedAt: new Date(VP_FIXTURE_TIME_MS).toISOString(),
       propose: async ({ evidence }: { evidence: ApplicationEvidenceSubmission }) => {
         expect(evidence.signature.keyId).toBe(harness.evidenceVerifier.keyIds[0]);
-        expect(harness.verifyApplicationEvidenceSignature(
+        expect(await harness.verifyApplicationEvidenceSignature(
           evidence.commitment, evidence.signature, harness.evidenceVerifier,
         )).toBe(true);
         return evidence;
@@ -153,20 +153,20 @@ describe("published VP proof to governed issuer decision", () => {
       ...input, ...wrongScope,
     })).rejects.toMatchObject({ category: "ineligible" });
     expect(await challengeService.isLive({ binding, nonce: issued.nonce, challengeHash: issued.challengeHash })).toBe(true);
-    expect(harness.simulator.getLedger().issuerAuthorizationCount).toBe(0n);
+    expect((await harness.simulator.getLedger()).issuerAuthorizationCount).toBe(0n);
 
     const submitted = await consumeChallengeAndSubmitApplication(input);
     expect(submitted.envelope.evidenceVerifierDid).toBe(harness.evidenceVerifier.did);
     expect(JSON.stringify(submitted)).not.toContain("private-presentation-payload");
-    expect(harness.simulator.getLedger().issuerAuthorizationCount).toBe(0n);
+    expect((await harness.simulator.getLedger()).issuerAuthorizationCount).toBe(0n);
     await expect(consumeChallengeAndSubmitApplication(input)).rejects.toThrow(/already consumed/u);
-    expect(harness.simulator.getLedger().issuerAuthorizationCount).toBe(0n);
+    expect((await harness.simulator.getLedger()).issuerAuthorizationCount).toBe(0n);
 
     const fixtures = {
       label: "vp-governed",
       issuers: [{ label: "vp", fixture: issuer }],
     };
-    let snapshot = publishSimulatorSnapshot(harness, { label: fixtures.label });
+    let snapshot = await publishSimulatorSnapshot(harness, { label: fixtures.label });
     const server = createTrustRegistryApiServer({
       source: { mode: "memory", loadSnapshot: async () => snapshot },
       governedIssuerProposals: {
@@ -175,7 +175,7 @@ describe("published VP proof to governed issuer decision", () => {
             throw new GovernedIssuerProposalRejectedError("unknown-authorization");
           }
           try {
-            return harness.prepareIssuerProposalAction(issuer, evidence, expectedEvidence);
+            return await harness.prepareIssuerProposalAction(issuer, evidence, expectedEvidence);
           } catch {
             throw new GovernedIssuerProposalRejectedError("invalid-evidence");
           }
@@ -186,13 +186,13 @@ describe("published VP proof to governed issuer decision", () => {
           }
           let accepted: Uint8Array;
           try {
-            accepted = harness.executeIssuerProposalWithSignatures(
+            accepted = await harness.executeIssuerProposalWithSignatures(
               issuer, evidence, signers, verifierSignature, expectedEvidence,
             );
           } catch {
             throw new GovernedIssuerProposalRejectedError("invalid-signers");
           }
-          snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
+          snapshot = await publishSimulatorSnapshot(harness, fixtures, snapshot);
           return { eventHash: `0x${Buffer.from(accepted).toString("hex")}` };
         },
       },
@@ -201,7 +201,7 @@ describe("published VP proof to governed issuer decision", () => {
           if (role !== "issuer" || authorizationId !== issuer.authorizationId) {
             throw new GovernedMembershipActionRejectedError("unknown-authorization");
           }
-          return harness.prepareIssuerDecisionAction(issuer, action);
+          return await harness.prepareIssuerDecisionAction(issuer, action);
         },
         async execute(role, authorizationId, action, signers) {
           if (role !== "issuer" || authorizationId !== issuer.authorizationId) {
@@ -209,11 +209,11 @@ describe("published VP proof to governed issuer decision", () => {
           }
           let accepted: Uint8Array;
           try {
-            accepted = harness.executeIssuerDecisionWithSignatures(issuer, action, signers);
+            accepted = await harness.executeIssuerDecisionWithSignatures(issuer, action, signers);
           } catch {
             throw new GovernedMembershipActionRejectedError("invalid-signers");
           }
-          snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
+          snapshot = await publishSimulatorSnapshot(harness, fixtures, snapshot);
           return { eventHash: `0x${Buffer.from(accepted).toString("hex")}` };
         },
       },
@@ -236,7 +236,7 @@ describe("published VP proof to governed issuer decision", () => {
       const proposalPrepared = await proposalPreparedResponse.json() as PreparedGovernedIssuerProposal;
       expect(proposalPrepared.evidenceHash).toBe(submitted.commitment);
       const verifierSignature = harness.signIssuerProposalEvidence(
-        harness.prepareIssuerProposalAction(issuer, submitted, expectedEvidence),
+        await harness.prepareIssuerProposalAction(issuer, submitted, expectedEvidence),
       );
       const proposalAccepted = await fetch(`${proposalEndpoint}/submit`, {
         method: "POST",
@@ -244,16 +244,16 @@ describe("published VP proof to governed issuer decision", () => {
         body: JSON.stringify({
           evidence: submitted,
           prepared: proposalPrepared,
-          signers: [signHttpAction(harness, second, proposalPrepared), signHttpAction(harness, third, proposalPrepared)],
+          signers: [await signHttpAction(harness, second, proposalPrepared), await signHttpAction(harness, third, proposalPrepared)],
           evidenceVerifierSignature: `0x${Buffer.from(encodeJubjubSignature(verifierSignature)).toString("hex")}`,
         }),
       });
       expect(proposalAccepted.status).toBe(202);
       const proposalEvent = (await proposalAccepted.json()).eventHash as string;
-      const proposal = harness.simulator.getIssuerProposalEvidence(issuer.authorizationIdCommitment);
+      const proposal = await harness.simulator.getIssuerProposalEvidence(issuer.authorizationIdCommitment);
       expect(proposalEvent).toBe(`0x${Buffer.from(proposal.proposalGovernanceEventHash).toString("hex")}`);
       expect(Buffer.from(proposal.evidenceCommitment)).toEqual(Buffer.from(submitted.commitment.slice(2), "hex"));
-      expect(harness.simulator.getLedger().issuerAuthorizationCount).toBe(1n);
+      expect((await harness.simulator.getLedger()).issuerAuthorizationCount).toBe(1n);
       for (const action of ["approve", "activate"] as const) {
         const endpoint = `${base}/v1/governed/issuer/${issuer.authorizationId}/actions/${action}`;
         const preparedResponse = await fetch(endpoint);
@@ -264,13 +264,13 @@ describe("published VP proof to governed issuer decision", () => {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             prepared,
-            signers: [signHttpAction(harness, second, prepared), signHttpAction(harness, third, prepared)],
+            signers: [await signHttpAction(harness, second, prepared), await signHttpAction(harness, third, prepared)],
           }),
         });
         expect(accepted.status).toBe(202);
         expect((await accepted.json()).eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
       }
-      const decision = harness.evaluateCurrentIssuerDecision(issuer, {
+      const decision = await harness.evaluateCurrentIssuerDecision(issuer, {
         expectedRegistryId: harness.registryId,
       });
       expect(decision.authorization?.status).toBe("active");

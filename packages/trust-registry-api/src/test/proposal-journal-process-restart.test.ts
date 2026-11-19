@@ -58,7 +58,7 @@ describe("durable local proposal quarantine across fresh journal and provider ca
     expect(await readFile(path)).toEqual(reserved);
     expect(await child(path, "observed")).toEqual(["provider-created"]);
     expect(await child(path, "retry")).toEqual(["provider-created", "blocked"]);
-    expect(await child(path, "other")).toEqual(["provider-created", "submission-callback"]);
+    expect(await child(path, "other")).toEqual(["provider-created", "blocked"]);
   }, 90_000);
 
   it("never calls the provider when reservation persistence fails", async () => {

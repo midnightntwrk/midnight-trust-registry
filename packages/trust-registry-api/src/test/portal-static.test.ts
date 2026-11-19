@@ -88,7 +88,7 @@ describe("same-origin local portals", () => {
         await writeFile(join(root, role, "index.js"), "export {};");
       }
       server = createTrustRegistryApiServer({
-        source: createInMemorySource(createDemoSnapshot()),
+        source: createInMemorySource(await createDemoSnapshot()),
         nonApiGetHandler: await createPortalStaticHandler(root),
       });
       await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));

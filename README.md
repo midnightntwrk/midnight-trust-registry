@@ -1,5 +1,12 @@
 # Midnight Trust Registry
 
+> **Ledger 9 migration in progress.** This branch pins the official local
+> Ledger 9 node, indexer, proof server, Compact, Midnight.js, and DID cohort.
+> Browser and simulator journeys pass with published VC RC1 packages, but a
+> deployed Trust Registry with finalized readback has not been qualified. See the
+> [migration plan](docs/plans/ledger9-migration.md). The `ledger8` branch
+> preserves the historical 0.1.0 source.
+
 `midnight-trust-registry` owns the trust-policy and registry-governance workstream for Midnight identity. It defines how issuers, verifiers, credential resources, and external authorities become trusted without moving DID resolution or verifiable credential issuance into this repository.
 
 The repository contains a simulator-first contract, client, API, and local app
@@ -10,8 +17,8 @@ responsibilities.
 The [0.1.0 release scope](docs/guide/release-0.1.0.md) is a **non-production,
 self-hosted local/offline Ledger 8 reference**. Fixture/demo journeys and a
 healthy predeployment stack are not deployed end-to-end qualification. Public
-networks, Ledger 9, npm/GHCR publication, and production readiness are separate
-follow-up work.
+networks, Ledger 9 deployment, npm/GHCR publication, and production readiness
+are separate follow-up work.
 
 ## Scope
 

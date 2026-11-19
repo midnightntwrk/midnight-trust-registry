@@ -135,10 +135,12 @@ export const buildCanonicalMaintainerAuthorizationBundle = (
       throw new Error("Maintainer authorization bundle contains a duplicate key ID");
     }
   }
+  // Inactive slots are ignored by the circuit, but Ledger 9 must still decode their points.
+  const paddingPoint = deriveJubjubPublicKeyFromSeed(new Uint8Array(32).fill(1));
   const emptySigner = (): MaintainerAuthorizationSigner => ({
     keyId: new Uint8Array(32),
-    publicKey: { x: 0n, y: 0n },
-    signature: { announcement: { x: 0n, y: 0n }, response: 0n },
+    publicKey: paddingPoint,
+    signature: { announcement: paddingPoint, response: 0n },
   });
   const padded = [...signers];
   while (padded.length < 5) padded.push(emptySigner());

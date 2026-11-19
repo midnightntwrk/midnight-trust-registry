@@ -141,9 +141,16 @@ export class ProposalSubmissionBlockedByReservationError extends Error {
 }
 
 export class ProposalSubmissionConflictError extends Error {
-  constructor() {
-    super("Proposal submission conflicts with recorded evidence or event");
+  constructor(message = "Proposal submission conflicts with recorded evidence or event") {
+    super(message);
     this.name = "ProposalSubmissionConflictError";
+  }
+}
+
+export class ProposalSubmissionAttributionRequiredError extends ProposalSubmissionConflictError {
+  constructor() {
+    super("Finalized proposal matches a reservation without an attributable submission receipt");
+    this.name = "ProposalSubmissionAttributionRequiredError";
   }
 }
 
@@ -603,6 +610,9 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
       || (current.eventHash !== null && current.eventHash !== observation.eventHash)) {
       throw new ProposalSubmissionConflictError();
     }
+    if (current.state === "reserved" && current.eventHash === null) {
+      throw new ProposalSubmissionAttributionRequiredError();
+    }
     return this.withWrite(async () => {
       const storage = await this.readStorage();
       const archived = storage.archived.find((entry) => entry.role === current.role
@@ -619,6 +629,9 @@ export class FileProposalSubmissionJournal implements ProposalSubmissionJournal 
         || attempt.evidenceCommitment !== observation.evidenceCommitment
         || (attempt.eventHash !== null && attempt.eventHash !== observation.eventHash)) {
         throw new ProposalSubmissionConflictError();
+      }
+      if (attempt.state === "reserved" && attempt.eventHash === null) {
+        throw new ProposalSubmissionAttributionRequiredError();
       }
       if (attempt.state === "observed") return structuredClone(attempt);
       attempt.state = "observed";

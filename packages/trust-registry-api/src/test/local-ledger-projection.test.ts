@@ -69,23 +69,23 @@ const policyHistory = (versions: [bigint, Uint8Array, bigint][]) => ({
     versions.map(([version, , effectiveFrom]) => [version, effectiveFrom]), String),
 });
 
-const fixture = () => {
+const fixture = async () => {
   const harness = new LocalTrustRegistryIntegrationHarness("api-ledger-coverage");
   const issuer = createIssuerScenarioFixture("coverage-issuer");
   const secondIssuer = createIssuerScenarioFixture("coverage-second-issuer");
   const verifier = createVerifierScenarioFixture("coverage-verifier");
   const auditor = createAuditorScenarioFixture("coverage-auditor");
   const recognition = createRecognitionScenarioFixture("coverage-recognition");
-  harness.authorizeIssuer(issuer);
-  harness.authorizeIssuer(secondIssuer);
-  harness.authorizeVerifier(verifier);
-  harness.authorizeAuditor(auditor);
-  harness.authorizeRecognition(recognition);
-  const issuerEvidence = harness.evaluateCurrentIssuerDecision(issuer);
-  const secondIssuerEvidence = harness.evaluateCurrentIssuerDecision(secondIssuer);
-  const verifierEvidence = harness.evaluateCurrentVerifierDecision(verifier);
-  const auditorEvidence = harness.evaluateCurrentAuditorDecision(auditor);
-  const recognitionEvidence = harness.evaluateCurrentRecognitionDecision(recognition);
+  await harness.authorizeIssuer(issuer);
+  await harness.authorizeIssuer(secondIssuer);
+  await harness.authorizeVerifier(verifier);
+  await harness.authorizeAuditor(auditor);
+  await harness.authorizeRecognition(recognition);
+  const issuerEvidence = await harness.evaluateCurrentIssuerDecision(issuer);
+  const secondIssuerEvidence = await harness.evaluateCurrentIssuerDecision(secondIssuer);
+  const verifierEvidence = await harness.evaluateCurrentVerifierDecision(verifier);
+  const auditorEvidence = await harness.evaluateCurrentAuditorDecision(auditor);
+  const recognitionEvidence = await harness.evaluateCurrentRecognitionDecision(recognition);
   const epochs = collectDistinctEpochs([
     issuerEvidence, secondIssuerEvidence, verifierEvidence, auditorEvidence, recognitionEvidence,
   ]);
@@ -110,13 +110,13 @@ const fixture = () => {
     evidenceArchive: [],
     notes: [],
   });
-  return { snapshot, ledger: harness.simulator.getLedger(),
+  return { snapshot, ledger: await harness.simulator.getLedger(),
     contractAddress: Uint8Array.from(Buffer.from(harness.simulator.contractAddress, "hex")) };
 };
 
 describe("finalized Compact projection coverage", () => {
   it("does not serve file-backed lists as complete local-ledger projections", async () => {
-    const { snapshot } = fixture();
+    const { snapshot } = await fixture();
     const source: TrustRegistryApiStateSource = {
       mode: "local-ledger",
       async loadSnapshot() { return snapshot; },
@@ -138,7 +138,7 @@ describe("finalized Compact projection coverage", () => {
   });
 
   it("resolves local current records by finalized selection, not lifecycle timestamps", async () => {
-    const { snapshot } = fixture();
+    const { snapshot } = await fixture();
     const currentIssuer = snapshot.issuerEntries[1]!;
     const olderIssuer = { ...snapshot.issuerEntries[0]!, authorization: {
       ...snapshot.issuerEntries[0]!.authorization,
@@ -243,8 +243,8 @@ describe("finalized Compact projection coverage", () => {
     })).toThrow(/inconsistent/u);
   });
 
-  it("matches all current ledger maps and rejects omitted or forged entries", () => {
-    const { snapshot, ledger } = fixture();
+  it("matches all current ledger maps and rejects omitted or forged entries", async () => {
+    const { snapshot, ledger } = await fixture();
     expect(() => assertLocalLedgerProjectionMatchesSnapshot(snapshot, ledger)).not.toThrow();
     expect(() => assertLocalLedgerProjectionMatchesSnapshot({ ...snapshot, issuerEntries: [] }, ledger))
       .toThrow(/issuer candidate does not cover/u);
@@ -272,8 +272,8 @@ describe("finalized Compact projection coverage", () => {
     }, ledger)).toThrow(/Recognition candidate record differs/u);
   });
 
-  it("rejects stale epoch coverage and changed policy commitments", () => {
-    const { snapshot, ledger } = fixture();
+  it("rejects stale epoch coverage and changed policy commitments", async () => {
+    const { snapshot, ledger } = await fixture();
     expect(() => assertLocalLedgerProjectionMatchesSnapshot({ ...snapshot,
       epochs: snapshot.epochs.slice(1),
     }, ledger)).toThrow(/epoch candidate does not cover/u);
@@ -289,8 +289,8 @@ describe("finalized Compact projection coverage", () => {
     })).toThrow(/registry or policy differs/u);
   });
 
-  it("rejects missing and redirected current-scope index entries", () => {
-    const { snapshot, ledger } = fixture();
+  it("rejects missing and redirected current-scope index entries", async () => {
+    const { snapshot, ledger } = await fixture();
     const emptyIndex = revisionMap<Uint8Array, Uint8Array>([], (key) => Buffer.from(key).toString("hex"));
     expect(() => assertLocalLedgerProjectionMatchesSnapshot(snapshot, {
       ...ledger,
@@ -315,8 +315,8 @@ describe("finalized Compact projection coverage", () => {
     } as typeof ledger)).toThrow(/recognition finalized current-scope index is incomplete/u);
   });
 
-  it("rejects stale total and active counters for every current record map", () => {
-    const { snapshot, ledger } = fixture();
+  it("rejects stale total and active counters for every current record map", async () => {
+    const { snapshot, ledger } = await fixture();
     for (const [label, field] of [
       ["issuer", "issuerAuthorizationCount"],
       ["verifier", "verifierAuthorizationCount"],
@@ -342,8 +342,8 @@ describe("finalized Compact projection coverage", () => {
     })).toThrow(/Epoch finalized counter differs/u);
   });
 
-  it("rejects inconsistent current lifecycle sequences", () => {
-    const { snapshot, ledger } = fixture();
+  it("rejects inconsistent current lifecycle sequences", async () => {
+    const { snapshot, ledger } = await fixture();
     const keyOf = (key: Uint8Array) => Buffer.from(key).toString("hex");
     const issuerRecords = revisionMap(
       [...ledger.issuerAuthorizationRecords].map(([key, record], index) => [key,
@@ -371,8 +371,8 @@ describe("finalized Compact projection coverage", () => {
     } as typeof ledger)).toThrow(/recognition finalized lifecycle sequences are inconsistent/u);
   });
 
-  it("anchors every included bundle to the Compact epoch and publication signer", () => {
-    const { snapshot, ledger, contractAddress } = fixture();
+  it("anchors every included bundle to the Compact epoch and publication signer", async () => {
+    const { snapshot, ledger, contractAddress } = await fixture();
     const input = { snapshot, ledger, contractAddress,
       expectedNetworkId: "undeployed" as const, sequenceToTimestamp };
     expect(() => assertLocalLedgerEvidenceMatchesSnapshot(input)).not.toThrow();
@@ -423,7 +423,7 @@ describe("finalized Compact projection coverage", () => {
 
 describe("local ledger-bound API source", () => {
   it("rejects a FIFO snapshot without waiting for a writer", async () => {
-    const { ledger, contractAddress } = fixture();
+    const { ledger, contractAddress } = await fixture();
     const directory = await mkdtemp(join(tmpdir(), "tr-local-fifo-snapshot-"));
     try {
       const snapshotPath = join(directory, "snapshot-fifo");
@@ -449,7 +449,7 @@ describe("local ledger-bound API source", () => {
   });
 
   it("bounds a stalled finalized reader and refuses further reads until restart", async () => {
-    const { contractAddress } = fixture();
+    const { contractAddress } = await fixture();
     let readerCalls = 0;
     let resolveLate: (value: null) => void = () => {};
     const stalled = new Promise<null>((resolve) => { resolveLate = resolve; });
@@ -487,7 +487,7 @@ describe("local ledger-bound API source", () => {
   });
 
   it("retries a null finalized read but latches a provider error", async () => {
-    const { snapshot, ledger, contractAddress } = fixture();
+    const { snapshot, ledger, contractAddress } = await fixture();
     const directory = await mkdtemp(join(tmpdir(), "tr-local-reader-retry-"));
     try {
       const snapshotPath = join(directory, "snapshot.json");
@@ -533,7 +533,7 @@ describe("local ledger-bound API source", () => {
   });
 
   it("exposes proposal readback only from the same snapshot-bound finalized view", async () => {
-    const { snapshot, ledger, contractAddress } = fixture();
+    const { snapshot, ledger, contractAddress } = await fixture();
     const directory = await mkdtemp(join(tmpdir(), "tr-local-proposal-readback-"));
     let server: ReturnType<typeof createTrustRegistryApiServer> | undefined;
     try {
@@ -647,7 +647,7 @@ describe("local ledger-bound API source", () => {
   });
 
   it("re-reads the finalized view for every HTTP query and fails closed", async () => {
-    const { snapshot, ledger, contractAddress } = fixture();
+    const { snapshot, ledger, contractAddress } = await fixture();
     const directory = await mkdtemp(join(tmpdir(), "tr-local-ledger-api-"));
     const snapshotPath = join(directory, "snapshot.json");
     const address = `0x${Buffer.from(contractAddress).toString("hex")}`;

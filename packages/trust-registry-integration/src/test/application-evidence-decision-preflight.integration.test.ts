@@ -15,28 +15,28 @@ import {
 } from "../local-simulator-harness.js";
 
 describe("accepted application evidence at the decision boundary", () => {
-  it("does not prepare stale verifier, auditor, or maintainer approvals after policy revision", () => {
+  it("does not prepare stale verifier, auditor, or maintainer approvals after policy revision", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("evidence-decision-preflight");
     const second = createMaintainerScenarioFixture("evidence-decision-second");
     const third = createMaintainerScenarioFixture("evidence-decision-third");
     const fourth = createMaintainerScenarioFixture("evidence-decision-fourth");
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(third);
-    harness.authorizeMaintainer(fourth);
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(third);
+    await harness.authorizeMaintainer(fourth);
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
 
     const verifier = createVerifierScenarioFixture("evidence-decision-verifier");
     const auditor = createAuditorScenarioFixture("evidence-decision-auditor");
     const candidate = createMaintainerScenarioFixture("evidence-decision-candidate");
-    harness.proposeVerifier(verifier);
-    harness.proposeAuditor(auditor);
-    harness.proposeMaintainer(candidate);
-    expect(harness.prepareVerifierDecisionAction(verifier, "approve").evidenceHash).toHaveLength(32);
-    expect(harness.prepareAuditorDecisionAction(auditor, "approve").evidenceHash).toHaveLength(32);
-    expect(harness.prepareMaintainerDecisionAction(candidate, "approve").evidenceHash).toHaveLength(32);
+    await harness.proposeVerifier(verifier);
+    await harness.proposeAuditor(auditor);
+    await harness.proposeMaintainer(candidate);
+    expect((await harness.prepareVerifierDecisionAction(verifier, "approve")).evidenceHash).toHaveLength(32);
+    expect((await harness.prepareAuditorDecisionAction(auditor, "approve")).evidenceHash).toHaveLength(32);
+    expect((await harness.prepareMaintainerDecisionAction(candidate, "approve")).evidenceHash).toHaveLength(32);
 
-    harness.updateMaintainerThresholdPolicy(3n, 1n, 2n, [second]);
-    const before = harness.simulator.getLedger().governanceActionCount;
+    await harness.updateMaintainerThresholdPolicy(3n, 1n, 2n, [second]);
+    const before = (await harness.simulator.getLedger()).governanceActionCount;
     for (const prepare of [
       () => harness.prepareVerifierDecisionAction(verifier, "approve"),
       () => harness.prepareVerifierDecisionAction(verifier, "activate"),
@@ -45,71 +45,71 @@ describe("accepted application evidence at the decision boundary", () => {
       () => harness.prepareMaintainerDecisionAction(candidate, "approve"),
       () => harness.prepareMaintainerDecisionAction(candidate, "activate"),
     ]) {
-      expect(prepare).toThrow();
+      await expect(prepare()).rejects.toThrow();
     }
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before);
   });
 
-  it("does not prepare any applicant approval after accepted evidence expires", () => {
+  it("does not prepare any applicant approval after accepted evidence expires", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("evidence-decision-expiry");
     const issuer = createIssuerScenarioFixture("evidence-expiry-issuer");
     const verifier = createVerifierScenarioFixture("evidence-expiry-verifier");
     const auditor = createAuditorScenarioFixture("evidence-expiry-auditor");
     const candidate = createMaintainerScenarioFixture("evidence-expiry-maintainer");
-    harness.proposeIssuer(issuer);
-    harness.proposeVerifier(verifier);
-    harness.proposeAuditor(auditor);
-    harness.proposeMaintainer(candidate);
+    await harness.proposeIssuer(issuer);
+    await harness.proposeVerifier(verifier);
+    await harness.proposeAuditor(auditor);
+    await harness.proposeMaintainer(candidate);
 
     harness.advanceEvidenceTimeBy(24 * 60 * 60 * 1000 + 1);
-    const before = harness.simulator.getLedger().governanceActionCount;
+    const before = (await harness.simulator.getLedger()).governanceActionCount;
     for (const prepare of [
       () => harness.prepareIssuerDecisionAction(issuer, "approve"),
       () => harness.prepareVerifierDecisionAction(verifier, "approve"),
       () => harness.prepareAuditorDecisionAction(auditor, "approve"),
       () => harness.prepareMaintainerDecisionAction(candidate, "approve"),
     ]) {
-      expect(prepare).toThrow();
+      await expect(prepare()).rejects.toThrow();
     }
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before);
   });
 
-  it("rechecks the current issuer and verifier scope before preparing approval", () => {
+  it("rechecks the current issuer and verifier scope before preparing approval", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("evidence-decision-scope");
     const issuer = createIssuerScenarioFixture("evidence-scope-issuer");
     const verifier = createVerifierScenarioFixture("evidence-scope-verifier");
-    harness.proposeIssuer(issuer);
-    harness.proposeVerifier(verifier);
+    await harness.proposeIssuer(issuer);
+    await harness.proposeVerifier(verifier);
 
     const changedIssuer = {
       ...issuer,
       authorizationScope: { ...issuer.authorizationScope, schemaVersion: "2.0.0" },
     };
     const changedVerifier = { ...verifier, requestProfileId: `${verifier.requestProfileId}-changed` };
-    expect(() => harness.prepareIssuerDecisionAction(changedIssuer, "approve")).toThrow();
-    expect(() => harness.prepareVerifierDecisionAction(changedVerifier, "approve")).toThrow();
+    await expect(harness.prepareIssuerDecisionAction(changedIssuer, "approve")).rejects.toThrow();
+    await expect(harness.prepareVerifierDecisionAction(changedVerifier, "approve")).rejects.toThrow();
   });
 
-  it("rejects pending approvals after verifier-key rotation and accepts fresh evidence", () => {
+  it("rejects pending approvals after verifier-key rotation and accepts fresh evidence", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("evidence-decision-key-rotation");
     const pendingIssuer = createIssuerScenarioFixture("evidence-key-pending-issuer");
     const pendingVerifier = createVerifierScenarioFixture("evidence-key-pending-verifier");
     const pendingAuditor = createAuditorScenarioFixture("evidence-key-pending-auditor");
     const pendingMaintainer = createMaintainerScenarioFixture("evidence-key-pending-maintainer");
-    harness.proposeIssuer(pendingIssuer);
-    harness.proposeVerifier(pendingVerifier);
-    harness.proposeAuditor(pendingAuditor);
-    harness.proposeMaintainer(pendingMaintainer);
+    await harness.proposeIssuer(pendingIssuer);
+    await harness.proposeVerifier(pendingVerifier);
+    await harness.proposeAuditor(pendingAuditor);
+    await harness.proposeMaintainer(pendingMaintainer);
     const previousKeyId = harness.evidenceVerifier.keyIds[0];
-    const previousKey = harness.simulator.getIssuerProposalEvidence(
+    const previousKey = (await harness.simulator.getIssuerProposalEvidence(
       pendingIssuer.authorizationIdCommitment,
-    ).evidenceVerifierAuthorizationId;
+    )).evidenceVerifierAuthorizationId;
 
-    harness.rotateEvidenceVerifierKey("replacement");
+    await harness.rotateEvidenceVerifierKey("replacement");
     expect(harness.evidenceVerifier.keyIds).toHaveLength(1);
     expect(harness.evidenceVerifier.keyIds[0]).not.toBe(previousKeyId);
-    expect(harness.simulator.getLedger().evidenceVerifierKeyCount).toBe(2n);
-    expect(harness.simulator.getEvidenceVerifierKey(previousKey).status)
+    expect((await harness.simulator.getLedger()).evidenceVerifierKeyCount).toBe(2n);
+    expect((await harness.simulator.getEvidenceVerifierKey(previousKey)).status)
       .toBe(EvidenceVerifierKeyStatus.retired);
     for (const prepare of [
       () => harness.prepareIssuerDecisionAction(pendingIssuer, "approve"),
@@ -117,21 +117,21 @@ describe("accepted application evidence at the decision boundary", () => {
       () => harness.prepareAuditorDecisionAction(pendingAuditor, "approve"),
       () => harness.prepareMaintainerDecisionAction(pendingMaintainer, "approve"),
     ]) {
-      expect(prepare).toThrow();
+      await expect(prepare()).rejects.toThrow();
     }
 
     const nextIssuer = createIssuerScenarioFixture("evidence-key-next-issuer");
     const nextVerifier = createVerifierScenarioFixture("evidence-key-next-verifier");
     const nextAuditor = createAuditorScenarioFixture("evidence-key-next-auditor");
     const nextMaintainer = createMaintainerScenarioFixture("evidence-key-next-maintainer");
-    harness.proposeIssuer(nextIssuer);
-    harness.proposeVerifier(nextVerifier);
-    harness.proposeAuditor(nextAuditor);
-    harness.proposeMaintainer(nextMaintainer);
-    const replacementKey = harness.simulator.getIssuerProposalEvidence(
+    await harness.proposeIssuer(nextIssuer);
+    await harness.proposeVerifier(nextVerifier);
+    await harness.proposeAuditor(nextAuditor);
+    await harness.proposeMaintainer(nextMaintainer);
+    const replacementKey = (await harness.simulator.getIssuerProposalEvidence(
       nextIssuer.authorizationIdCommitment,
-    ).evidenceVerifierAuthorizationId;
-    expect(harness.simulator.getEvidenceVerifierKey(replacementKey).status)
+    )).evidenceVerifierAuthorizationId;
+    expect((await harness.simulator.getEvidenceVerifierKey(replacementKey)).status)
       .toBe(EvidenceVerifierKeyStatus.active);
     for (const prepare of [
       () => harness.prepareIssuerDecisionAction(nextIssuer, "approve"),
@@ -139,61 +139,61 @@ describe("accepted application evidence at the decision boundary", () => {
       () => harness.prepareAuditorDecisionAction(nextAuditor, "approve"),
       () => harness.prepareMaintainerDecisionAction(nextMaintainer, "approve"),
     ]) {
-      expect(prepare().evidenceHash).toHaveLength(32);
+      expect((await prepare()).evidenceHash).toHaveLength(32);
     }
   });
 
-  it("rejects evidence before signing when the verifier key is suspended or revoked", () => {
+  it("rejects evidence before signing when the verifier key is suspended or revoked", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("evidence-decision-key-suspension");
     const issuer = createIssuerScenarioFixture("evidence-key-suspended-issuer");
     const verifier = createVerifierScenarioFixture("evidence-key-suspended-verifier");
-    harness.proposeIssuer(issuer);
-    harness.proposeVerifier(verifier);
-    const keyAuthorizationId = harness.simulator.getIssuerProposalEvidence(
+    await harness.proposeIssuer(issuer);
+    await harness.proposeVerifier(verifier);
+    const keyAuthorizationId = (await harness.simulator.getIssuerProposalEvidence(
       issuer.authorizationIdCommitment,
-    ).evidenceVerifierAuthorizationId;
+    )).evidenceVerifierAuthorizationId;
 
-    harness.suspendEvidenceVerifierKey("incident");
-    expect(harness.simulator.getEvidenceVerifierKey(keyAuthorizationId).status)
+    await harness.suspendEvidenceVerifierKey("incident");
+    expect((await harness.simulator.getEvidenceVerifierKey(keyAuthorizationId)).status)
       .toBe(EvidenceVerifierKeyStatus.suspended);
     const auditor = createAuditorScenarioFixture("evidence-key-suspended-auditor");
     const scope = createAuditorAuthorizationScopeFixture(auditor);
-    const evidence = harness.createApplicationEvidence({
+    const evidence = await harness.createApplicationEvidence({
       applicationId: auditor.authorizationId,
       subjectDid: auditor.subjectDid,
       role: "auditor",
       scope,
     });
-    const before = harness.simulator.getLedger().governanceActionCount;
-    expect(() => harness.prepareIssuerDecisionAction(issuer, "approve")).toThrow();
-    expect(() => harness.prepareVerifierDecisionAction(verifier, "approve")).toThrow();
-    expect(() => harness.assertApplicationEvidence({
+    const before = (await harness.simulator.getLedger()).governanceActionCount;
+    await expect(harness.prepareIssuerDecisionAction(issuer, "approve")).rejects.toThrow();
+    await expect(harness.prepareVerifierDecisionAction(verifier, "approve")).rejects.toThrow();
+    await expect(harness.assertApplicationEvidence({
       evidence,
       applicationId: auditor.authorizationId,
       subjectDid: auditor.subjectDid,
       role: "auditor",
       scope,
-    })).toThrow();
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
+    })).rejects.toThrow();
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before);
 
-    harness.revokeEvidenceVerifierKey("compromise");
-    expect(harness.simulator.getEvidenceVerifierKey(keyAuthorizationId).status)
+    await harness.revokeEvidenceVerifierKey("compromise");
+    expect((await harness.simulator.getEvidenceVerifierKey(keyAuthorizationId)).status)
       .toBe(EvidenceVerifierKeyStatus.revoked);
-    expect(() => harness.prepareIssuerDecisionAction(issuer, "approve")).toThrow();
-    expect(() => harness.assertApplicationEvidence({
+    await expect(harness.prepareIssuerDecisionAction(issuer, "approve")).rejects.toThrow();
+    await expect(harness.assertApplicationEvidence({
       evidence,
       applicationId: auditor.authorizationId,
       subjectDid: auditor.subjectDid,
       role: "auditor",
       scope,
-    })).toThrow();
+    })).rejects.toThrow();
   });
 
-  it("snapshots accepted evidence before crossing the Compact proposal boundary", () => {
+  it("snapshots accepted evidence before crossing the Compact proposal boundary", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("evidence-snapshot-boundary");
     const verifier = createVerifierScenarioFixture("evidence-snapshot-verifier");
     const scope = createVerifierAuthorizationScopeFixture(verifier);
-    const evidence = harness.createApplicationEvidence({
+    const evidence = await harness.createApplicationEvidence({
       applicationId: verifier.authorizationId,
       subjectDid: verifier.subjectDid,
       role: "verifier",
@@ -205,9 +205,9 @@ describe("accepted application evidence at the decision boundary", () => {
       governedResource: { type: "requestProfile", id: verifier.scopeResourceId },
       uncloneable: () => true,
     } as SimulatorApplicationEvidenceExpectation;
-    const before = harness.simulator.getLedger().governanceActionCount;
-    expect(() => harness.proposeVerifierWithApplicationEvidence(verifier, evidence, expectation)).toThrow();
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
-    expect(() => harness.simulator.getVerifierAuthorization(verifier.authorizationIdCommitment)).toThrow();
+    const before = (await harness.simulator.getLedger()).governanceActionCount;
+    await expect(harness.proposeVerifierWithApplicationEvidence(verifier, evidence, expectation)).rejects.toThrow();
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before);
+    await expect(harness.simulator.getVerifierAuthorization(verifier.authorizationIdCommitment)).rejects.toThrow();
   });
 });

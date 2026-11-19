@@ -177,9 +177,13 @@ export function installedImageIdFromArchive(archive, reference) {
     throw new Error("Container archive lacks a readable OCI index");
   }
   const annotations = index?.manifests?.[0]?.annotations;
+  const mirror = source.startsWith("midnightntwrk/")
+    ? `midnight-ntwrk/${source.slice("midnightntwrk/".length)}` : null;
   const approvedSource = annotations === undefined
-    || (Object.keys(annotations).length === 1
-      && annotations["containerd.io/distribution.source.docker.io"] === source);
+    || (annotations["containerd.io/distribution.source.docker.io"] === source
+      && Object.keys(annotations).every((key) => key === "containerd.io/distribution.source.docker.io"
+        || (key === "containerd.io/distribution.source.ghcr.io"
+          && mirror !== null && annotations[key] === mirror)));
   if (index?.schemaVersion !== 2 || index.manifests?.length !== 1
     || index.annotations !== undefined || !approvedSource
     || index.manifests[0]?.digest !== `sha256:${expected}`) {
@@ -196,6 +200,33 @@ export function installedImageIdFromArchive(archive, reference) {
     oci = JSON.parse(manifest);
   } catch {
     throw new Error("Container archive lacks a readable image config manifest");
+  }
+  if (Array.isArray(oci?.manifests)) {
+    if (oci.schemaVersion !== 2 || oci.manifests.length < 1 || oci.manifests.length > 32) {
+      throw new Error("Container archive has an invalid platform index");
+    }
+    /** @type {Array<{ platform?: { os?: string, architecture?: string }, digest?: string, mediaType?: string }>} */
+    const descriptors = oci.manifests;
+    const matching = descriptors.filter((entry) => entry?.platform?.os === "linux"
+      && entry.platform.architecture === "arm64");
+    const selected = matching.length === 1 ? matching[0] : null;
+    const childDigest = /^sha256:([0-9a-f]{64})$/u.exec(selected?.digest ?? "")?.[1];
+    if (!childDigest || !["application/vnd.oci.image.manifest.v1+json",
+      "application/vnd.docker.distribution.manifest.v2+json"].includes(selected?.mediaType ?? "")) {
+      throw new Error("Container archive lacks a unique Linux/arm64 image manifest");
+    }
+    const child = archiveMember(archive, `blobs/sha256/${childDigest}`);
+    if (createHash("sha256").update(child).digest("hex") !== childDigest) {
+      throw new Error("Container archive platform manifest bytes disagree with the OCI index");
+    }
+    try {
+      oci = JSON.parse(child);
+    } catch {
+      throw new Error("Container archive platform manifest is invalid JSON");
+    }
+  }
+  if (oci?.schemaVersion !== 2 || Array.isArray(oci.manifests)) {
+    throw new Error("Container archive lacks a flat image manifest");
   }
   const configPath = legacy?.length === 1 ? legacy[0]?.Config : undefined;
   const configDigest = /^blobs\/sha256\/([0-9a-f]{64})$/u.exec(configPath ?? "")?.[1];

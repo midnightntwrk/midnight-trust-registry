@@ -4,6 +4,7 @@ dist/
 .turbo/
 coverage/
 logs/tests/
+**/logs/tests/
 test-results/
 artifacts/
 *.tsbuildinfo

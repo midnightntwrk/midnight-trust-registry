@@ -3,6 +3,7 @@ import { appendFile } from "node:fs/promises";
 import {
   FileProposalSubmissionJournal,
   ProposalSubmissionAlreadyPendingError,
+  ProposalSubmissionAttributionRequiredError,
   ProposalSubmissionOutcomeUnknownError,
 } from "../packages/trust-registry-api/dist/proposal-submission-journal.js";
 
@@ -58,9 +59,14 @@ if (phase === "crash") {
 } else if (phase === "reconcile") {
   const pending = await journal.reconcile("issuer", authorizationId, async () => null);
   if (pending.state !== "reserved") throw new Error("Unobserved reservation was released");
-  const observed = await journal.reconcile("issuer", authorizationId,
-    async () => ({ eventHash, evidenceCommitment }));
-  state = observed.state;
+  try {
+    await journal.reconcile("issuer", authorizationId,
+      async () => ({ eventHash, evidenceCommitment }));
+    throw new Error("Unattributed finalized proposal released the reservation");
+  } catch (error) {
+    if (!(error instanceof ProposalSubmissionAttributionRequiredError)) throw error;
+  }
+  state = (await journal.read("issuer", authorizationId))?.state;
 } else {
   throw new Error("Unknown journal restart phase");
 }

@@ -88,6 +88,8 @@ describe("governed evidence verifier DID-key binding", () => {
 
   it("checks the actual Compact key record before and after governed rotation", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("did-bound-key-lifecycle");
+    await harness.ready;
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(2n);
     const verifierDid = harness.evidenceVerifier.did;
     const firstResolver = createMidnightDidResolver([
       createMidnightDidLedgerFixture(verifierDid, {
@@ -97,7 +99,7 @@ describe("governed evidence verifier DID-key binding", () => {
     await expect(harness.verifyCurrentEvidenceVerifierDidKey(firstResolver, MidnightNetwork.Undeployed))
       .resolves.toEqual({ didStateVersion: 1n });
 
-    harness.rotateEvidenceVerifierKey("did-method-rotation");
+    await harness.rotateEvidenceVerifierKey("did-method-rotation");
     await expect(harness.verifyCurrentEvidenceVerifierDidKey(firstResolver, MidnightNetwork.Undeployed))
       .rejects.toThrow(/not a current DID assertion key/u);
     const rotatedResolver = createMidnightDidResolver([
@@ -108,7 +110,7 @@ describe("governed evidence verifier DID-key binding", () => {
     ]);
     await expect(harness.verifyCurrentEvidenceVerifierDidKey(rotatedResolver, MidnightNetwork.Undeployed))
       .resolves.toEqual({ didStateVersion: 2n });
-    harness.suspendEvidenceVerifierKey("did-bound-suspension");
+    await harness.suspendEvidenceVerifierKey("did-bound-suspension");
     await expect(harness.verifyCurrentEvidenceVerifierDidKey(rotatedResolver, MidnightNetwork.Undeployed))
       .rejects.toThrow(/not active/u);
   });

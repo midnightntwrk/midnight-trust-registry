@@ -55,7 +55,7 @@ describe("Compact-backed policy revision over HTTP", () => {
   it("fails closed without a governed policy port", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("policy-http-unavailable");
     const server = createTrustRegistryApiServer({
-      source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "unavailable" }) },
+      source: { mode: "memory", loadSnapshot: async () => await publishSimulatorSnapshot(harness, { label: "unavailable" }) },
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     try {
@@ -78,15 +78,15 @@ describe("Compact-backed policy revision over HTTP", () => {
     const third = createMaintainerScenarioFixture("policy-http-third");
     const fourth = createMaintainerScenarioFixture("policy-http-fourth");
     const outsider = createMaintainerScenarioFixture("policy-http-outsider");
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(third);
-    harness.authorizeMaintainer(fourth);
-    harness.updateMaintainerThresholdPolicy(2n, 2n, 2n);
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(third);
+    await harness.authorizeMaintainer(fourth);
+    await harness.updateMaintainerThresholdPolicy(2n, 2n, 2n);
     const thresholds = { default: "3", emergency: "3", archival: "3" };
     const port: GovernedPolicyActionPort = {
       async prepareThresholds(value) {
         try {
-          return harness.prepareThresholdPolicyRevisionAction(
+          return await harness.prepareThresholdPolicyRevisionAction(
             BigInt(value.default), BigInt(value.emergency), BigInt(value.archival),
           );
         } catch (error) {
@@ -96,7 +96,7 @@ describe("Compact-backed policy revision over HTTP", () => {
       },
       async executeThresholds(value, signers) {
         try {
-          return { eventHash: hex(harness.executeThresholdPolicyRevisionWithSignatures(
+          return { eventHash: hex(await harness.executeThresholdPolicyRevisionWithSignatures(
             BigInt(value.default), BigInt(value.emergency), BigInt(value.archival), signers,
           )) };
         } catch {
@@ -108,14 +108,14 @@ describe("Compact-backed policy revision over HTTP", () => {
       },
       async executeEvidenceVerifier(signers) {
         try {
-          return { eventHash: hex(harness.executeEvidenceVerifierRegistrationWithSignatures(signers)) };
+          return { eventHash: hex(await harness.executeEvidenceVerifierRegistrationWithSignatures(signers)) };
         } catch {
           throw new GovernedPolicyActionRejectedError();
         }
       },
     };
     const server = createTrustRegistryApiServer({
-      source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "policy-http" }) },
+      source: { mode: "memory", loadSnapshot: async () => await publishSimulatorSnapshot(harness, { label: "policy-http" }) },
       governedPolicyActions: port,
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -138,13 +138,13 @@ describe("Compact-backed policy revision over HTTP", () => {
       expect(preparedResponse.status).toBe(200);
       expect(preparedResponse.headers.get("cache-control")).toBe("no-store");
       const revision = await preparedResponse.json() as PreparedGovernedPolicyAction;
-      expect(revision.networkIdCommitment).toBe(hex(harness.simulator.getLedger().deploymentNetworkIdCommitment));
+      expect(revision.networkIdCommitment).toBe(hex((await harness.simulator.getLedger()).deploymentNetworkIdCommitment));
       expect(revision.contractAddress).toBe(`0x${harness.simulator.contractAddress}`);
       const secondVote = signPrepared(second, revision);
       const thirdVote = signPrepared(third, revision);
       const submitRevision = (prepared: PreparedGovernedPolicyAction, signers: unknown[]) =>
         post("thresholds/submit", { thresholds, prepared, signers });
-      const before = harness.simulator.getLedger().governanceActionCount;
+      const before = (await harness.simulator.getLedger()).governanceActionCount;
       expect((await submitRevision(revision, [secondVote])).status).toBe(403);
       expect((await submitRevision(revision, [secondVote, secondVote])).status).toBe(403);
       expect((await submitRevision(revision, [secondVote, signPrepared(outsider, revision)])).status).toBe(403);
@@ -159,15 +159,15 @@ describe("Compact-backed policy revision over HTTP", () => {
       ])).status).toBe(400);
       expect((await submitRevision({ ...revision, policyCommitment: hex(new Uint8Array(32)) },
         [secondVote, thirdVote])).status).toBe(409);
-      expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
+      expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before);
 
       const revised = await submitRevision(revision, [secondVote, thirdVote]);
       expect(revised.status).toBe(202);
       expect((await revised.json()).eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
       expect((await submitRevision(revision, [secondVote, thirdVote])).status).toBe(409);
-      expect(harness.simulator.getLedger().maintainerThreshold).toBe(3n);
+      expect((await harness.simulator.getLedger()).maintainerThreshold).toBe(3n);
       const issuer = createIssuerScenarioFixture("policy-http-issuer");
-      expect(() => harness.proposeIssuer(issuer, [second, third])).toThrow();
+      await expect(harness.proposeIssuer(issuer, [second, third])).rejects.toThrow();
 
       const registrationResponse = await post("evidence-verifier/prepare", {});
       expect(registrationResponse.status).toBe(200);
@@ -187,7 +187,7 @@ describe("Compact-backed policy revision over HTTP", () => {
         [bootstrapVote, bootstrapVote, thirdRegistrationVote])).status).toBe(403);
       expect((await submitRegistration({ ...registration, actionSequence: revision.actionSequence },
         [bootstrapVote, secondRegistrationVote, thirdRegistrationVote])).status).toBe(409);
-      expect(harness.simulator.getLedger().governanceActionCount).toBe(before + 1n);
+      expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before + 1n);
 
       const registered = await submitRegistration(registration,
         [bootstrapVote, secondRegistrationVote, thirdRegistrationVote]);
@@ -195,9 +195,9 @@ describe("Compact-backed policy revision over HTTP", () => {
       expect((await registered.json()).eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
       expect((await submitRegistration(registration,
         [bootstrapVote, secondRegistrationVote, thirdRegistrationVote])).status).toBe(409);
-      expect(() => harness.proposeIssuer(issuer, [second])).toThrow();
-      harness.proposeIssuer(issuer, [second, third]);
-      expect(harness.simulator.getLedger().governanceActionCount).toBe(before + 3n);
+      await expect(harness.proposeIssuer(issuer, [second])).rejects.toThrow();
+      await harness.proposeIssuer(issuer, [second, third]);
+      expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before + 3n);
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
@@ -216,18 +216,18 @@ describe("Compact-backed policy revision over HTTP", () => {
       async executeEvidenceVerifier() { throw new GovernedPolicyActionRejectedError(); },
       async prepareEvidenceVerifierTransition(input) {
         try {
-          return input.action === "rotate"
+          return await (input.action === "rotate"
             ? harness.prepareEvidenceVerifierRotationAction(label.rotate)
-            : harness.prepareEvidenceVerifierStatusAction(input.action, label[input.action]);
+            : harness.prepareEvidenceVerifierStatusAction(input.action, label[input.action]));
         } catch {
           throw new GovernedPolicyActionRejectedError();
         }
       },
       async executeEvidenceVerifierTransition(input, signers) {
         try {
-          const eventHash = input.action === "rotate"
+          const eventHash = await (input.action === "rotate"
             ? harness.executeEvidenceVerifierRotationWithSignatures(label.rotate, signers)
-            : harness.executeEvidenceVerifierStatusWithSignatures(input.action, label[input.action], signers);
+            : harness.executeEvidenceVerifierStatusWithSignatures(input.action, label[input.action], signers));
           return { eventHash: hex(eventHash) };
         } catch {
           throw new GovernedPolicyActionRejectedError();
@@ -235,7 +235,7 @@ describe("Compact-backed policy revision over HTTP", () => {
       },
     };
     const server = createTrustRegistryApiServer({
-      source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness, {
+      source: { mode: "memory", loadSnapshot: async () => await publishSimulatorSnapshot(harness, {
         label: "key-lifecycle-http",
       }) },
       governedPolicyActions: port,
@@ -248,7 +248,7 @@ describe("Compact-backed policy revision over HTTP", () => {
       const post = (path: string, body: unknown) => fetch(`${base}/${path}`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
       });
-      const planned = harness.prepareEvidenceVerifierRotationAction(label.rotate);
+      const planned = await harness.prepareEvidenceVerifierRotationAction(label.rotate);
       const rotation = {
         authorizationId: hex(planned.authorizationId),
         reasonHash: hex(planned.reasonHash),
@@ -273,23 +273,23 @@ describe("Compact-backed policy revision over HTTP", () => {
       const vote = signPrepared(bootstrap, prepared);
       const submit = (action: string, input: object, context: PreparedGovernedPolicyAction, signers: unknown[]) =>
         post(`${action}/submit`, { ...input, prepared: context, signers });
-      const before = harness.simulator.getLedger().governanceActionCount;
+      const before = (await harness.simulator.getLedger()).governanceActionCount;
       expect((await submit("rotate", rotation, { ...prepared, reasonHash: hex(new Uint8Array(32)) }, [vote]))
         .status).toBe(409);
       expect((await submit("rotate", rotation, prepared, [signPrepared(outsider, prepared)])).status).toBe(403);
       expect((await submit("rotate", rotation, prepared, [{ ...vote, signature: "0x01" }])).status).toBe(400);
-      expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
+      expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before);
       const rotated = await submit("rotate", rotation, prepared, [vote]);
       expect(rotated.status).toBe(202);
       expect((await rotated.json()).eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
-      expect(harness.simulator.getEvidenceVerifierKey(planned.authorizationId).status)
+      expect((await harness.simulator.getEvidenceVerifierKey(planned.authorizationId)).status)
         .toBe(EvidenceVerifierKeyStatus.retired);
-      expect(harness.simulator.getEvidenceVerifierKey(planned.newAuthorizationId!).status)
+      expect((await harness.simulator.getEvidenceVerifierKey(planned.newAuthorizationId!)).status)
         .toBe(EvidenceVerifierKeyStatus.active);
       expect((await submit("rotate", rotation, prepared, [vote])).status).toBe(409);
 
       for (const action of ["suspend", "revoke"] as const) {
-        const plan = harness.prepareEvidenceVerifierStatusAction(action, label[action]);
+        const plan = await harness.prepareEvidenceVerifierStatusAction(action, label[action]);
         const input = { authorizationId: hex(plan.authorizationId), reasonHash: hex(plan.reasonHash) };
         const response = await post(`${action}/prepare`, input);
         expect(response.status).toBe(200);
@@ -298,7 +298,7 @@ describe("Compact-backed policy revision over HTTP", () => {
         const result = await submit(action, input, context, [signPrepared(bootstrap, context)]);
         expect(result.status).toBe(202);
         expect((await result.json()).eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
-        expect(harness.simulator.getEvidenceVerifierKey(plan.authorizationId).status)
+        expect((await harness.simulator.getEvidenceVerifierKey(plan.authorizationId)).status)
           .toBe(action === "suspend" ? EvidenceVerifierKeyStatus.suspended : EvidenceVerifierKeyStatus.revoked);
         expect((await submit(action, input, context, [signPrepared(bootstrap, context)])).status).toBe(409);
       }
@@ -310,9 +310,9 @@ describe("Compact-backed policy revision over HTTP", () => {
   it("retains an old-policy issuer decision through the historical HTTP evidence route", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("policy-http-history");
     const issuer = createIssuerScenarioFixture("policy-http-history-issuer");
-    harness.authorizeIssuer(issuer);
+    await harness.authorizeIssuer(issuer);
     const fixtures = { label: "policy-http-history", issuers: [{ fixture: issuer, label: "issuer" }] };
-    const beforeRevision = publishSimulatorSnapshot(harness, fixtures);
+    const beforeRevision = await publishSimulatorSnapshot(harness, fixtures);
     const oldBundle = beforeRevision.issuerEntries[0]?.evidence;
     if (oldBundle?.authorization === undefined) throw new Error("Active issuer evidence missing");
     const oldEpochStart = Date.parse(oldBundle.epoch.validFrom);
@@ -323,11 +323,11 @@ describe("Compact-backed policy revision over HTTP", () => {
 
     const second = createMaintainerScenarioFixture("policy-http-history-second");
     const third = createMaintainerScenarioFixture("policy-http-history-third");
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(third);
-    harness.updateMaintainerThresholdPolicy(2n, 2n, 2n);
-    harness.revokeIssuer(issuer, [second]);
-    const snapshot = publishSimulatorSnapshot(harness, fixtures, beforeRevision);
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(third);
+    await harness.updateMaintainerThresholdPolicy(2n, 2n, 2n);
+    await harness.revokeIssuer(issuer, [second]);
+    const snapshot = await publishSimulatorSnapshot(harness, fixtures, beforeRevision);
     expect(snapshot.issuerEntries[0]?.authorization.status).toBe("revoked");
     expect(snapshot.evidenceArchive).toContainEqual(oldBundle);
     expect(Date.parse(snapshot.issuerEntries[0]?.evidence.epoch.validFrom ?? "")).toBeGreaterThan(
@@ -388,9 +388,9 @@ describe("Compact-backed policy revision over HTTP", () => {
     const harness = new LocalTrustRegistryIntegrationHarness("policy-http-atomic-recovery");
     const second = createMaintainerScenarioFixture("policy-http-recovery-second");
     const target = createMaintainerScenarioFixture("policy-http-recovery-target");
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(target);
-    harness.updateMaintainerThresholdPolicy(2n, 2n, 2n);
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(target);
+    await harness.updateMaintainerThresholdPolicy(2n, 2n, 2n);
     const targetId = hex(target.maintainerIdCommitment);
     const thresholds = { default: "1", emergency: "1", archival: "1" };
     const port: GovernedPolicyActionPort = {
@@ -401,7 +401,7 @@ describe("Compact-backed policy revision over HTTP", () => {
       async prepareMaintainerRecovery(maintainerId, evidenceHash, value) {
         if (maintainerId !== targetId) throw new GovernedPolicyActionRejectedError();
         try {
-          return harness.prepareAtomicMaintainerRecoveryAction(
+          return await harness.prepareAtomicMaintainerRecoveryAction(
             target, bytes(evidenceHash), BigInt(value.default), BigInt(value.emergency), BigInt(value.archival),
           );
         } catch (error) {
@@ -414,7 +414,7 @@ describe("Compact-backed policy revision over HTTP", () => {
       async executeMaintainerRecovery(maintainerId, evidenceHash, value, signers) {
         if (maintainerId !== targetId) throw new GovernedPolicyActionRejectedError();
         try {
-          return { eventHash: hex(harness.executeAtomicMaintainerRecoveryWithSignatures(
+          return { eventHash: hex(await harness.executeAtomicMaintainerRecoveryWithSignatures(
             target, bytes(evidenceHash), BigInt(value.default), BigInt(value.emergency), BigInt(value.archival), signers,
           )) };
         } catch {
@@ -423,7 +423,7 @@ describe("Compact-backed policy revision over HTTP", () => {
       },
     };
     const server = createTrustRegistryApiServer({
-      source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "recovery" }) },
+      source: { mode: "memory", loadSnapshot: async () => await publishSimulatorSnapshot(harness, { label: "recovery" }) },
       governedPolicyActions: port,
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -462,7 +462,7 @@ describe("Compact-backed policy revision over HTTP", () => {
       const bootstrapVote = signPrepared(bootstrap, prepared);
       const secondVote = signPrepared(second, prepared);
       const targetVote = signPrepared(target, prepared);
-      const before = harness.simulator.getLedger().governanceActionCount;
+      const before = (await harness.simulator.getLedger()).governanceActionCount;
       const submit = (context: PreparedGovernedPolicyAction, signers: unknown[]) =>
         post("submit", { ...request, prepared: context, signers });
       expect((await submit(prepared, [bootstrapVote])).status).toBe(403);
@@ -474,15 +474,15 @@ describe("Compact-backed policy revision over HTTP", () => {
         prepared,
         signers: [bootstrapVote, secondVote],
       })).status).toBe(409);
-      expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
+      expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before);
       const recovered = await submit(prepared, [bootstrapVote, secondVote]);
       expect(recovered.status).toBe(202);
       const receipt = await recovered.json() as { eventHash: string };
       expect(receipt.eventHash).toMatch(/^0x[0-9a-f]{64}$/u);
-      expect(harness.simulator.getLedger().governanceActionCount).toBe(before + 1n);
-      expect(harness.simulator.getLedger().activeMaintainerCount).toBe(2n);
-      expect(harness.simulator.getLedger().maintainerThreshold).toBe(1n);
-      expect(harness.simulator.getMaintainerMembership(target.maintainerIdCommitment).status)
+      expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before + 1n);
+      expect((await harness.simulator.getLedger()).activeMaintainerCount).toBe(2n);
+      expect((await harness.simulator.getLedger()).maintainerThreshold).toBe(1n);
+      expect((await harness.simulator.getMaintainerMembership(target.maintainerIdCommitment)).status)
         .toBe(AuthorizationStatus.suspended);
       expect((await submit(prepared, [bootstrapVote, secondVote])).status).toBe(409);
     } finally {

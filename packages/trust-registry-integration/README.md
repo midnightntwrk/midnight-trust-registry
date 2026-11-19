@@ -9,16 +9,16 @@ signature, signing time, and revocation/expiry statuses; callers still own
 their bounded input reads, pinned public keyring, and fixed GPG execution.
 Passing this policy does not authenticate ledger finality or qualify a release.
 
-The local-only package exports its Ledger 8 consumer source as
+The local-only package exports its Ledger 9 consumer source as
 `@midnightntwrk/trust-registry-integration/fixtures/vc-authority-consumer.compact`.
-Compile it with the repository's pinned Compact compiler and the published
-`@midnight-ntwrk/credential-compact` include path. The packed-artifact smoke
-gate's `--vc-consumer` option tests that clean-install boundary, pinned
-authority-domain construction, issuer/verifier proof acceptance, and forged
-signature, wrong-scope, and replay rejection. Source integration tests add
+Compile it with the repository's pinned Compact compiler and published VC
+`1.0.0-rc1` package cohort. The
+packed-artifact smoke gate's `--vc-consumer` option tests that clean-install
+boundary and pinned authority-domain construction. It checks issuer/verifier
+proof acceptance plus forged signature, wrong-scope, and replay rejection.
+Source integration tests add
 verified Trust Registry decisions and the broader negative matrix. Neither
-path proves deployed
-cross-contract synchronization or network finality.
+path proves deployed cross-contract synchronization or network finality. The
 
 Current coverage:
 
@@ -78,6 +78,27 @@ Current coverage:
   and invalid signed answers
   never establish eligibility. The transport does not authenticate Midnight
   finality or provide an independent live status-registry proof.
+  `createCanonicalApplicationVpFamilyAdapter` is the non-fixture parser for
+  this application's `tr-application-vp-credential-v1` and
+  `tr-application-vp-presentation-v1` signed bodies. It rejects noncanonical
+  JSON, unknown fields, and fixture-only versions; resolves the holder and
+  status-authority DID methods; and binds the exact body roots, issuer,
+  holder, signed credential schema ID and full issuer-scope commitment, status
+  handle, role scope, challenge,
+  origin, registry, deployment, and policy before the qualified VP verifier
+  accepts the proofs. Prefer `createGovernedCanonicalApplicationVpFamilyAdapter`:
+  it requires an exact `schema` issuer grant selection, derives the signed
+  credential schema ID and full issuer scope from that grant, and uses
+  authenticated finalized decision readers. The lower-level factory requires
+  the host to pin the same schema and scope commitment and supply an
+  independently verified `issuerEligibility` callback.
+  Both require a signed status source such as
+  `createHttpApplicationStatusSource`.
+  Neither callback can be derived from the presented credential. A body-level
+  claims commitment is not a general VC schema or an independently proven
+  disclosure claim. This adapter has fixture-DID/proof tests only; it does
+  not establish a deployed DID, published Registry decision epoch, live
+  VC-owned status service, or release-qualified actor journey.
 
 - local simulator trust-decision flows for issuer, verifier, and recognition
 - `prepareIssuerProposalAction`/`executeIssuerProposalWithSignatures` and

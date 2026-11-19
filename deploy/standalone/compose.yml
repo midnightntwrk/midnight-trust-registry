@@ -1,15 +1,17 @@
-# Development qualification stack, derived from midnight-examples
-# 7c8c0a0fb0cc8f8f573757185a7710b7ce06ce0d (hello-world/compose.yml).
-# Exact image bytes and provenance require separate install-inventory approval.
-name: ${TR_STACK_NAME:-tr-standalone-local-smoke}
+# Isolated Ledger 9 qualification stack, never the shared midnight-network project.
+# For shared-stack development use the repo's read-only check:ledger9-local-stack command.
+# Existing Ledger 8 volumes are not reusable. Image provenance needs install-inventory approval.
+name: ${TR_STACK_NAME:-tr-standalone-ledger9-local}
 
 services:
   node:
-    image: midnightntwrk/midnight-node@sha256:eeaf8e3c5b6bb4a6eb53daa3d15c66e68e751014890fb76f42f3c021da7cebf5
+    image: midnightntwrk/midnight-node@sha256:0c1ad548d523c1109aa1f16daab1bf72dcb78c7e17b8a8c6d97424ad0eba7b8a
+    labels:
+      org.midnight.localnet.scope: trust-registry-isolated
     platform: linux/arm64
     ports:
       - "127.0.0.1:${TR_NODE_PORT:-29944}:9944"
-    networks: [ledger]
+    networks: [ledger, host-access]
     volumes:
       - node-data:/node/chain
     environment:
@@ -28,12 +30,14 @@ services:
       start_period: 20s
 
   indexer:
-    image: midnightntwrk/indexer-standalone@sha256:ff3f511ab81e7e337b76dd794cfbe0da8d22c43b915ac457557f937bb6e5f868
+    image: midnightntwrk/indexer-standalone@sha256:119f35db548ba1c390845f215bb1e928e73038bef7c315825aee0461bd54499d
+    labels:
+      org.midnight.localnet.scope: trust-registry-isolated
     platform: linux/arm64
     restart: on-failure
     ports:
       - "127.0.0.1:${TR_INDEXER_PORT:-28088}:8088"
-    networks: [ledger]
+    networks: [ledger, host-access]
     volumes:
       - indexer-data:/data
     environment:
@@ -57,12 +61,14 @@ services:
         condition: service_healthy
 
   proof-server:
-    image: midnightntwrk/proof-server@sha256:1288b69dde74551f8bd9a50eba0609e468bd7d3874d3e00d7dd0f45f35800797
+    image: midnightntwrk/proof-server@sha256:5617e26aa76d06c44f4bee667c37eb71ccf02fefe0e5848100fa84001282d515
+    labels:
+      org.midnight.localnet.scope: trust-registry-isolated
     platform: linux/arm64
     command: [midnight-proof-server, -v]
     ports:
       - "127.0.0.1:${TR_PROOF_PORT:-26300}:6300"
-    networks: [ledger]
+    networks: [ledger, host-access]
     volumes:
       - ${TR_PROOF_PARAMS_DIR:?absolute path to pinned proof parameters required}:/.cache/midnight/zk-params:ro
     environment:
@@ -72,6 +78,8 @@ services:
 networks:
   ledger:
     internal: true
+  # Only infrastructure joins this bridge so localhost port bindings work on Docker Desktop.
+  host-access: {}
 
 volumes:
   node-data:

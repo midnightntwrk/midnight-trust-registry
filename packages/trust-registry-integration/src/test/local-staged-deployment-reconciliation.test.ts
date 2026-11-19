@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import { bytes32Commitment, bytes32Hex } from "@midnightntwrk/trust-registry-client";
 import {
   deriveJubjubPublicKeyFromSeed, MaintainerStatus,
@@ -26,8 +25,8 @@ const authority = `0x${"d".repeat(64)}`;
 const network = {
   networkId: "undeployed" as const,
   rpcUrl: "http://127.0.0.1:29944",
-  indexerHttpUrl: "http://127.0.0.1:28088/graphql",
-  indexerWsUrl: "ws://127.0.0.1:28088/graphql/ws",
+  indexerHttpUrl: "http://127.0.0.1:28088/api/v4/graphql",
+  indexerWsUrl: "ws://127.0.0.1:28088/api/v4/graphql/ws",
   expectedGenesisHash: `0x${"b".repeat(64)}`,
   allowedHosts: ["127.0.0.1"],
 };
@@ -80,7 +79,6 @@ const image = (): FinalizedRegistryDeploymentImage => ({
 });
 
 beforeEach(() => {
-  setNetworkId("undeployed");
   vi.clearAllMocks();
 });
 

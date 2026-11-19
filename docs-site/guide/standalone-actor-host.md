@@ -39,6 +39,56 @@ they do not cryptographically prove DID, VC, status, or finality verification.
 The adapter's actual verification rules, trust anchors, endpoint allowlist,
 and failure behavior require separate implementation and review.
 
+`FileApplicationAdmissionStore.acceptEvidence` can atomically retain an optional
+`tr-private-application-status-witness-v1` record with the redacted evidence
+and receipt in its mode-0600 private admission file. Construct it with
+`capturePrivateApplicationStatusWitness` from the verified VP-derived credential
+body root, status binding, nonce, and signed status decision. The store checks
+its internal consistency and accepted challenge hash; it does **not** verify
+the status signature or decision commitment. The private
+`readCapturedPrivateAdmission` method requires an independently pinned accepted
+evidence commitment and returns the pending record, accepted evidence, and
+witness from one private state revision. Public admission reads remain
+redacted. The HTTP intake forwards this
+record only when its trusted `verifyPresentation` callback supplies it, after
+checking the consumed challenge; it never returns the record over HTTP. The
+qualified VP verifier carries the record when its status adapter uses
+`createAttestedApplicationStatusSource` after DID-signature and governed-binding
+verification. The host must still provide an authenticated status endpoint,
+qualified issuer eligibility and private persistence, or require a new
+applicant presentation, then verify it
+against the accepted evidence and current governed status-policy binding.
+Do not infer current status from the old `statusDecisionCommitment`, persist raw
+VP claims in the public application record, or return a fabricated
+`tr-live-issuer-evidence-verification-v1` result. Missing witness, unavailable
+status authority, or changed binding must stop the proposal before its journal
+reservation. The VC-owned status service remains implementation work for the
+Ledger 9 actor qualification issue. `refreshCapturedApplicationStatus` is a
+read-only building block for that host:
+it first audits the private intake witness against the accepted challenge and
+status-decision commitment, then checks a distinct-nonce, current signed
+status attestation at trusted time. Its validity never exceeds the accepted
+evidence expiry. It does not authenticate the accepted
+application, select a governed issuer, or authorize a
+registry mutation; those remain host responsibilities.
+`verifyCapturedIssuerStatus` adds the issuer admission-pair check, evidence
+signature verification against the host's authenticated authorized-verifier
+set, and private-witness status refresh in one read-only call. Pass the same
+public admission pair used to prepare the proposal as `expectedAdmission`; the
+helper rejects a private witness read from a different admission revision. It returns only
+the fresh decision and validity. The host must still authenticate that
+verifier set, the private file, governed status binding, DID state, trusted
+time, finalized deployment, and provider code before using the result in the
+opt-in writer; this helper does not grant a role or submit a transaction.
+`createCapturedIssuerLiveEvidenceVerifier` composes that helper with the
+protected file read for the opt-in issuer port. It retrieves the witness by
+application ID and accepted evidence commitment, rechecks it against the exact
+public admission pair, obtains the host's authorized-verifier set and a new
+nonce, and fails closed if the witness or fresh status is unavailable. Its
+deployment-bound result is still only as trustworthy as the host's DID
+resolver, VC-owned status authority, verifier-set source, time, and finalized
+snapshot. Fixture callbacks do not turn it into a live actor qualification.
+
 ## Run the acceptance case
 
 1. Verify the exact signed API plan and detached issuer-writer approval against

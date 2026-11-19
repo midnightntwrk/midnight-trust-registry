@@ -1,0 +1,364 @@
+import { lstat, readFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { checkLedger9LocalStack, localnetInputFromEnvironment } from "./check-ledger9-local-stack.mjs";
+import { verifyKeylessZkirAgainstFullSource, verifyKeylessZkirBundle,
+  verifyKeylessZkirStreaming } from "./keyless-zkir-bundle.mjs";
+
+const ADDRESS = /^0x[0-9a-f]{64}$/u;
+const CANONICAL_ISSUER_RESOURCE_ID = /^tr:issuer-resource:v1:[0-9a-f]{64}$/u;
+const hex32 = (value) => {
+  if (!(value instanceof Uint8Array) || value.length !== 32) {
+    throw new Error("Finalized epoch contains a non-bytes32 commitment");
+  }
+  return `0x${Buffer.from(value).toString("hex")}`;
+};
+
+export function parseRegistryReadArgs(args, env = process.env) {
+  let contractAddress;
+  let issuerLabel;
+  let issuerResourceId;
+  let verifierLabel;
+  let auditorLabel;
+  let recognitionLabel;
+  let manifestPath;
+  let keylessDir;
+  let keylessManifestSha256;
+  let keylessGenerator;
+  let keylessGeneratorSha256;
+  let expectedSourceRevision;
+  let epochId;
+  for (let index = 0; index < args.length; index += 2) {
+    const flag = args[index];
+    const value = args[index + 1];
+    if (!value || !["--address", "--issuer-label", "--issuer-resource-id", "--verifier-label", "--auditor-label", "--recognition-label", "--manifest", "--keyless-dir", "--keyless-manifest-sha256", "--keyless-generator", "--keyless-generator-sha256", "--expect-source-revision", "--epoch-id"].includes(flag)) {
+      throw new Error("Usage: read-ledger9-registry.mjs --address 0x... [--issuer-label label --issuer-resource-id canonical-id] [--verifier-label label] [--auditor-label label] [--recognition-label label] [--manifest path | --keyless-dir path --keyless-manifest-sha256 SHA256 --expect-source-revision SHA [--keyless-generator path --keyless-generator-sha256 SHA256]] [--epoch-id 0x...]");
+    }
+    if (flag === "--address" && contractAddress === undefined) contractAddress = value;
+    else if (flag === "--issuer-label" && issuerLabel === undefined) issuerLabel = value;
+    else if (flag === "--issuer-resource-id" && issuerResourceId === undefined) issuerResourceId = value;
+    else if (flag === "--verifier-label" && verifierLabel === undefined) verifierLabel = value;
+    else if (flag === "--auditor-label" && auditorLabel === undefined) auditorLabel = value;
+    else if (flag === "--recognition-label" && recognitionLabel === undefined) recognitionLabel = value;
+    else if (flag === "--manifest" && manifestPath === undefined) manifestPath = value;
+    else if (flag === "--keyless-dir" && keylessDir === undefined) keylessDir = value;
+    else if (flag === "--keyless-manifest-sha256" && keylessManifestSha256 === undefined) keylessManifestSha256 = value;
+    else if (flag === "--keyless-generator" && keylessGenerator === undefined) keylessGenerator = value;
+    else if (flag === "--keyless-generator-sha256" && keylessGeneratorSha256 === undefined) keylessGeneratorSha256 = value;
+    else if (flag === "--expect-source-revision" && expectedSourceRevision === undefined) expectedSourceRevision = value;
+    else if (flag === "--epoch-id" && epochId === undefined) epochId = value;
+    else throw new Error(`Duplicate option: ${flag}`);
+  }
+  if (!ADDRESS.test(contractAddress ?? "") || /^0x0{64}$/u.test(contractAddress)) {
+    throw new Error("A nonzero, lowercase 0x-prefixed contract address is required");
+  }
+  if (issuerLabel !== undefined && (issuerLabel.length === 0 || issuerLabel.length > 256
+    || issuerLabel.trim() !== issuerLabel || issuerLabel.includes("\0"))) {
+    throw new Error("Issuer label is invalid");
+  }
+  if (issuerResourceId !== undefined && (issuerLabel === undefined
+    || !CANONICAL_ISSUER_RESOURCE_ID.test(issuerResourceId))) {
+    throw new Error("Issuer resource id requires an issuer label and canonical composite id");
+  }
+  if (verifierLabel !== undefined && (verifierLabel.length === 0 || verifierLabel.length > 256
+    || verifierLabel.trim() !== verifierLabel || verifierLabel.includes("\0"))) {
+    throw new Error("Verifier label is invalid");
+  }
+  if (auditorLabel !== undefined && (auditorLabel.length === 0 || auditorLabel.length > 256
+    || auditorLabel.trim() !== auditorLabel || auditorLabel.includes("\0"))) {
+    throw new Error("Auditor label is invalid");
+  }
+  if (recognitionLabel !== undefined && (recognitionLabel.length === 0 || recognitionLabel.length > 256
+    || recognitionLabel.trim() !== recognitionLabel || recognitionLabel.includes("\0"))) {
+    throw new Error("Recognition label is invalid");
+  }
+  if (epochId !== undefined && (!ADDRESS.test(epochId) || /^0x0{64}$/u.test(epochId))) {
+    throw new Error("Epoch id must be a nonzero lowercase bytes32 commitment");
+  }
+  if (manifestPath !== undefined && keylessDir !== undefined) {
+    throw new Error("Release and local keyless manifests are mutually exclusive");
+  }
+  if (keylessDir !== undefined
+    ? (keylessManifestSha256 === undefined || !/^[0-9a-f]{64}$/u.test(keylessManifestSha256)
+      || expectedSourceRevision === undefined)
+    : keylessManifestSha256 !== undefined) {
+    throw new Error("Local keyless readback requires its exact manifest SHA-256 and source revision");
+  }
+  if ((keylessGenerator === undefined) !== (keylessGeneratorSha256 === undefined)
+    || (keylessGenerator !== undefined && (keylessDir === undefined
+      || !/^[0-9a-f]{64}$/u.test(keylessGeneratorSha256)))) {
+    throw new Error("Streaming keyless readback requires a keyless candidate, generator, and exact trusted generator SHA-256");
+  }
+  if (expectedSourceRevision !== undefined
+    && ((manifestPath === undefined && keylessDir === undefined)
+      || !/^[0-9a-f]{40}$/u.test(expectedSourceRevision))) {
+    throw new Error("Expected source revision requires a manifest and an exact lowercase 40-character Git SHA");
+  }
+  if (!ADDRESS.test(env.TR_EXPECTED_GENESIS_HASH ?? "")
+    || !ADDRESS.test(env.TR_EXPECTED_CHECKPOINT_HASH ?? "")
+    || !Number.isSafeInteger(Number(env.TR_EXPECTED_CHECKPOINT_HEIGHT))
+    || Number(env.TR_EXPECTED_CHECKPOINT_HEIGHT) < 1) {
+    throw new Error("Pin TR_EXPECTED_GENESIS_HASH and a non-genesis checkpoint height/hash before reading registry state");
+  }
+  return { contractAddress, issuerLabel, issuerResourceId, verifierLabel, auditorLabel, recognitionLabel,
+    manifestPath, keylessDir, keylessManifestSha256, keylessGenerator, keylessGeneratorSha256,
+    expectedSourceRevision, epochId };
+}
+
+export function assertFinalizedVerifierKeyCatalog(image, manifest, circuitNames, expectedSourceRevision) {
+  const hashes = manifest?.verifierKeySha256;
+  const expected = [...circuitNames].sort();
+  if (!["tr-release-candidate-manifest-v2", "tr-release-candidate-manifest-v3"].includes(manifest?.format)
+    || !/^[0-9a-f]{40}$/u.test(manifest?.sourceRevision ?? "")
+    || hashes === null || typeof hashes !== "object" || Array.isArray(hashes)
+    || expected.length === 0 || new Set(expected).size !== expected.length
+    || !sameNames(Object.keys(hashes), expected)
+    || expected.some((name) => !/^[0-9a-f]{64}$/u.test(hashes[name]))) {
+    throw new Error("Release manifest has an invalid or incomplete verifier-key catalog");
+  }
+  if (!sameNames(Object.keys(image.verifierKeySha256), expected)
+    || expected.some((name) => image.verifierKeySha256[name] !== hashes[name])) {
+    throw new Error("Finalized verifier keys disagree with the source-matched release manifest");
+  }
+  if (expectedSourceRevision !== undefined && manifest.sourceRevision !== expectedSourceRevision) {
+    throw new Error("Release manifest source revision disagrees with the expected checkout");
+  }
+  return { sourceRevision: manifest.sourceRevision, verifierKeyCatalogMatched: true };
+}
+
+/** Compare a verified local keyless candidate to finalized keys; it is not a release manifest. */
+export function assertFinalizedKeylessVerifierKeyCatalog(image, manifest, circuitNames, expectedSourceRevision) {
+  const expected = [...circuitNames].sort();
+  const keys = manifest?.keys;
+  if (manifest?.format !== "tr-keyless-zkir-v1"
+    || manifest.sourceRevision !== expectedSourceRevision
+    || !/^[0-9a-f]{40}$/u.test(expectedSourceRevision)
+    || keys === null || typeof keys !== "object" || Array.isArray(keys)
+    || expected.length === 0 || new Set(expected).size !== expected.length
+    || !sameNames(Object.keys(keys), expected.flatMap((name) => [`${name}.prover`, `${name}.verifier`]))
+    || expected.some((name) => !/^[0-9a-f]{64}$/u.test(keys[`${name}.prover`])
+      || !/^[0-9a-f]{64}$/u.test(keys[`${name}.verifier`]))) {
+    throw new Error("Local keyless candidate has an invalid source or incomplete key catalog");
+  }
+  if (!sameNames(Object.keys(image.verifierKeySha256), expected)
+    || expected.some((name) => image.verifierKeySha256[name] !== keys[`${name}.verifier`])) {
+    throw new Error("Finalized verifier keys disagree with the local keyless candidate");
+  }
+  return { sourceRevision: expectedSourceRevision, verifierKeyCatalogMatched: true,
+    evidenceKind: "local-keyless-candidate", releaseQualified: false };
+}
+
+function sameNames(left, right) {
+  return left.length === right.length && left.sort().every((name, index) => name === right[index]);
+}
+
+async function readBoundedManifest(path) {
+  const stat = await lstat(path);
+  if (!stat.isFile() || stat.size === 0 || stat.size > 16 * 1024 * 1024) {
+    throw new Error("Release manifest must be a bounded regular file");
+  }
+  return JSON.parse(await readFile(path, "utf8"));
+}
+
+async function verifiedKeylessManifest(keylessDir, manifestSha256, sourceRevision,
+  generator, generatorSha256) {
+  if (generator === undefined) {
+    return (await verifyKeylessZkirAgainstFullSource(keylessDir,
+      resolve(dirname(fileURLToPath(import.meta.url)), "../contracts/trust-registry/src/managed/trust-registry"),
+      manifestSha256, sourceRevision)).manifest;
+  }
+  await verifyKeylessZkirStreaming(keylessDir, manifestSha256, generator, generatorSha256, sourceRevision);
+  return (await verifyKeylessZkirBundle(keylessDir, manifestSha256)).manifest;
+}
+
+function summarizeEpoch(ledger, id) {
+  if (!ledger.epochCommitmentIds.member(id)) return null;
+  const record = ledger.epochCommitmentRecords.lookup(id);
+  if (hex32(record.epochId) !== hex32(id)) {
+    throw new Error("Finalized epoch record has a different identifier");
+  }
+  return {
+    idCommitment: hex32(id),
+    stateRoot: hex32(record.stateRoot),
+    eventRoot: hex32(record.eventRoot),
+    policyRoot: hex32(record.policyRoot),
+    publicationPolicyCommitment: hex32(record.publicationPolicyCommitment),
+    publicationEventHash: hex32(record.publicationEventHash),
+    validFromSequence: record.validFromSequence.toString(),
+    validUntilSequence: record.validUntilSequence.toString(),
+    publishedAtSequence: record.publishedAtSequence.toString(),
+  };
+}
+
+export function summarizeFinalizedRegistry(image, attached, contractAddress, issuerSelection, epochId,
+  verifierSelection, auditorSelection, recognitionSelection) {
+  if (!image || image.networkId !== "undeployed") {
+    throw new Error("Finalized Ledger 9 registry image is unavailable for this contract");
+  }
+  const ledger = image.ledger;
+  const issuer = issuerSelection && ledger.issuerAuthorizationRecords.member(issuerSelection.id)
+    ? ledger.issuerAuthorizationRecords.lookup(issuerSelection.id) : null;
+  const issuerStatus = issuer === null ? null : issuerSelection.statusNames[issuer.status];
+  if (issuer !== null && typeof issuerStatus !== "string") {
+    throw new Error("Finalized issuer has an unknown authorization status");
+  }
+  const verifier = verifierSelection && ledger.verifierAuthorizationRecords.member(verifierSelection.id)
+    ? ledger.verifierAuthorizationRecords.lookup(verifierSelection.id) : null;
+  const verifierStatus = verifier === null ? null : verifierSelection.statusNames[verifier.status];
+  if (verifier !== null && typeof verifierStatus !== "string") {
+    throw new Error("Finalized verifier has an unknown authorization status");
+  }
+  const auditor = auditorSelection && ledger.auditorAuthorizationRecords.member(auditorSelection.id)
+    ? ledger.auditorAuthorizationRecords.lookup(auditorSelection.id) : null;
+  const auditorStatus = auditor === null ? null : auditorSelection.statusNames[auditor.status];
+  if (auditor !== null && typeof auditorStatus !== "string") {
+    throw new Error("Finalized auditor has an unknown authorization status");
+  }
+  const recognition = recognitionSelection && ledger.recognitionRecords.member(recognitionSelection.id)
+    ? ledger.recognitionRecords.lookup(recognitionSelection.id) : null;
+  const recognitionStatus = recognition === null ? null : recognitionSelection.statusNames[recognition.status];
+  if (recognition !== null && typeof recognitionStatus !== "string") {
+    throw new Error("Finalized recognition has an unknown authorization status");
+  }
+  let currentEpoch = null;
+  if (ledger.epochCommitmentCount > 0n) {
+    const id = ledger.latestEpochCommitmentId;
+    if (!ledger.epochCommitmentIds.member(id)) {
+      throw new Error("Finalized latest epoch is absent from the commitment index");
+    }
+    currentEpoch = summarizeEpoch(ledger, id);
+  }
+  const selectedEpoch = epochId === undefined ? undefined
+    : summarizeEpoch(ledger, Buffer.from(epochId.slice(2), "hex"));
+  const issuerLifecycleEventRoot = issuer === null ? null : hex32(issuer.lifecycleEventHash);
+  const verifierLifecycleEventRoot = verifier === null ? null : hex32(verifier.lifecycleEventHash);
+  const auditorLifecycleEventRoot = auditor === null ? null : hex32(auditor.lifecycleEventHash);
+  const recognitionLifecycleEventRoot = recognition === null ? null : hex32(recognition.lifecycleEventHash);
+  const decisionEpoch = selectedEpoch === undefined ? currentEpoch : selectedEpoch;
+  return {
+    network: "undeployed",
+    nodeVersion: attached.nodeVersion,
+    protocolVersion: attached.protocolVersion,
+    genesisHash: attached.genesisHash,
+    indexedHeight: attached.indexedHeight,
+    contractAddress,
+    finalizedBlockHash: image.finalizedBlockHash,
+    verifierKeyCount: Object.keys(image.verifierKeySha256).length,
+    maintenanceCounter: image.maintenanceAuthority.counter.toString(),
+    governanceActionCount: ledger.governanceActionCount.toString(),
+    publishedEpochCount: ledger.epochCommitmentCount.toString(),
+    currentEpoch,
+    ...(epochId === undefined ? {} : { selectedEpoch }),
+    activeMaintainers: ledger.activeMaintainerCount.toString(),
+    requiredEpochPublishSigners: ledger.maintainerThreshold.toString(),
+    evidenceVerifierKeys: ledger.evidenceVerifierKeyCount.toString(),
+    activeIssuers: ledger.activeIssuerAuthorizationCount.toString(),
+    activeVerifiers: ledger.activeVerifierAuthorizationCount.toString(),
+    activeAuditors: ledger.activeAuditorAuthorizationCount.toString(),
+    activeRecognitions: ledger.activeRecognitionCount.toString(),
+    ...(issuerSelection === undefined ? {} : { issuer: issuer === null
+      ? { label: issuerSelection.label, found: false }
+      : { label: issuerSelection.label, found: true, status: issuerStatus,
+        proposedAtSequence: issuer.proposedAtSequence.toString(),
+        authorizedAtSequence: issuer.authorizedAtSequence.toString(),
+        activeFromSequence: issuer.activeFromSequence.toString(),
+        statusPolicyBindingCommitment: hex32(issuer.statusPolicyBindingCommitment),
+        ...(issuerSelection.resourceIdCommitment === undefined ? {}
+          : { canonicalResourceIdCommitmentMatches: Buffer.from(issuer.resourceId)
+            .equals(Buffer.from(issuerSelection.resourceIdCommitment)) }),
+        lifecycleEventRoot: issuerLifecycleEventRoot,
+        epochEventRootMatchesLifecycle: decisionEpoch !== null
+          && decisionEpoch.eventRoot === issuerLifecycleEventRoot } }),
+    ...(verifierSelection === undefined ? {} : { verifier: verifier === null
+      ? { label: verifierSelection.label, found: false }
+      : { label: verifierSelection.label, found: true, status: verifierStatus,
+        proposedAtSequence: verifier.proposedAtSequence.toString(),
+        authorizedAtSequence: verifier.authorizedAtSequence.toString(),
+        activeFromSequence: verifier.activeFromSequence.toString(),
+        lifecycleEventRoot: verifierLifecycleEventRoot,
+        epochEventRootMatchesLifecycle: decisionEpoch !== null
+          && decisionEpoch.eventRoot === verifierLifecycleEventRoot } }),
+    ...(auditorSelection === undefined ? {} : { auditor: auditor === null
+      ? { label: auditorSelection.label, found: false }
+      : { label: auditorSelection.label, found: true, status: auditorStatus,
+        proposedAtSequence: auditor.proposedAtSequence.toString(),
+        authorizedAtSequence: auditor.authorizedAtSequence.toString(),
+        activeFromSequence: auditor.activeFromSequence.toString(),
+        lifecycleEventRoot: auditorLifecycleEventRoot,
+        epochEventRootMatchesLifecycle: decisionEpoch !== null
+          && decisionEpoch.eventRoot === auditorLifecycleEventRoot } }),
+    ...(recognitionSelection === undefined ? {} : { recognition: recognition === null
+      ? { label: recognitionSelection.label, found: false }
+      : { label: recognitionSelection.label, found: true, status: recognitionStatus,
+        proposedAtSequence: recognition.proposedAtSequence.toString(),
+        authorizedAtSequence: recognition.authorizedAtSequence.toString(),
+        effectiveFromSequence: recognition.effectiveFromSequence.toString(),
+        lifecycleEventRoot: recognitionLifecycleEventRoot,
+        epochEventRootMatchesLifecycle: decisionEpoch !== null
+          && decisionEpoch.eventRoot === recognitionLifecycleEventRoot } }),
+  };
+}
+
+export async function readLedger9Registry(args = process.argv.slice(2), env = process.env) {
+  const { contractAddress, issuerLabel, issuerResourceId, verifierLabel, auditorLabel, recognitionLabel,
+    manifestPath, keylessDir, keylessManifestSha256, keylessGenerator, keylessGeneratorSha256,
+    expectedSourceRevision, epochId } = parseRegistryReadArgs(args, env);
+  const attached = await checkLedger9LocalStack(localnetInputFromEnvironment(env));
+  const [{ bytes32Commitment }, { AuthorizationStatus, TrustRegistryContract, trustRegistryWitnesses },
+    { createLocalNetworkDeploymentActionReader }] =
+    await Promise.all([
+      import("@midnightntwrk/trust-registry-client"),
+      import("@midnightntwrk/trust-registry-contract"),
+      import("@midnightntwrk/trust-registry-integration"),
+    ]);
+  const network = {
+    networkId: "undeployed",
+    expectedGenesisHash: env.TR_EXPECTED_GENESIS_HASH,
+    expectedCheckpointHeight: Number(env.TR_EXPECTED_CHECKPOINT_HEIGHT),
+    expectedCheckpointHash: env.TR_EXPECTED_CHECKPOINT_HASH,
+    rpcUrl: attached.urls.nodeRpcUrl,
+    indexerHttpUrl: attached.urls.indexerHttpUrl,
+    indexerWsUrl: attached.urls.indexerWsUrl,
+    allowedHosts: ["127.0.0.1"],
+  };
+  const reader = await createLocalNetworkDeploymentActionReader(network);
+  const image = await reader.readCurrentFinalizedLedger(contractAddress);
+  const issuerSelection = issuerLabel === undefined ? undefined : {
+    label: issuerLabel, id: bytes32Commitment(issuerLabel), statusNames: AuthorizationStatus,
+    resourceIdCommitment: issuerResourceId === undefined ? undefined : bytes32Commitment(issuerResourceId),
+  };
+  const verifierSelection = verifierLabel === undefined ? undefined : {
+    label: verifierLabel, id: bytes32Commitment(verifierLabel), statusNames: AuthorizationStatus,
+  };
+  const auditorSelection = auditorLabel === undefined ? undefined : {
+    label: auditorLabel, id: bytes32Commitment(auditorLabel), statusNames: AuthorizationStatus,
+  };
+  const recognitionSelection = recognitionLabel === undefined ? undefined : {
+    label: recognitionLabel, id: bytes32Commitment(recognitionLabel), statusNames: AuthorizationStatus,
+  };
+  const circuitNames = Object.keys(new TrustRegistryContract.Contract(trustRegistryWitnesses).provableCircuits);
+  const catalog = manifestPath !== undefined
+    ? assertFinalizedVerifierKeyCatalog(image, await readBoundedManifest(manifestPath), circuitNames,
+      expectedSourceRevision)
+    : keylessDir !== undefined
+      ? assertFinalizedKeylessVerifierKeyCatalog(image,
+        await verifiedKeylessManifest(keylessDir, keylessManifestSha256, expectedSourceRevision,
+          keylessGenerator, keylessGeneratorSha256),
+        circuitNames, expectedSourceRevision)
+      : {};
+  return { ...summarizeFinalizedRegistry(image, attached, contractAddress, issuerSelection, epochId, verifierSelection,
+    auditorSelection, recognitionSelection),
+    ...catalog,
+    ...(keylessDir === undefined ? {} : { keylessVerification: keylessGenerator === undefined
+      ? "full-output" : "streamed-keygen" }) };
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  try {
+    console.log(JSON.stringify(await readLedger9Registry()));
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
+}

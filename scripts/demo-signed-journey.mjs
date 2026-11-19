@@ -104,7 +104,7 @@ const temporaryDirectory = await mkdtemp(join(tmpdir(), "trust-registry-signed-d
 const workspacePath = join(temporaryDirectory, "workspace.json");
 let server;
 try {
-  const workspace = createOperatorWorkspace({ label: "signed-demo" });
+  const workspace = await createOperatorWorkspace({ label: "signed-demo" });
   const maintainerDid = workspace.snapshot.registry.maintainerDids[0];
   if (maintainerDid === undefined) throw new Error("fixture maintainer missing");
   await writeWorkspaceToFile(workspacePath, workspace);

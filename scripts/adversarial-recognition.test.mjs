@@ -13,15 +13,15 @@ import { createTrustRegistryApiServer } from "../packages/trust-registry-api/dis
 const startRecognitionCase = async (context, label) => {
   const harness = new LocalTrustRegistryIntegrationHarness(label);
   const recognition = createRecognitionScenarioFixture(`${label}-recognition`);
-  harness.authorizeRecognition(recognition);
+  await harness.authorizeRecognition(recognition);
   const client = new TrustRegistrySimulatorClient(harness.simulator);
-  const active = harness.evaluateCurrentRecognitionDecision(recognition);
+  const active = await harness.evaluateCurrentRecognitionDecision(recognition);
   const activeAt = active.recognition.effectiveFrom;
-  assert.ok(client.verifyRecognitionBundle(active, {
+  assert.ok(await client.verifyRecognitionBundle(active, {
     expectedRegistryId: harness.registryId, evaluationTime: activeAt,
   }));
   const fixtures = { label, recognitions: [{ fixture: recognition, label: "recognition" }] };
-  let snapshot = publishSimulatorSnapshot(harness, fixtures);
+  let snapshot = await publishSimulatorSnapshot(harness, fixtures);
   const server = createTrustRegistryApiServer({
     source: { mode: "memory", loadSnapshot: async () => snapshot },
   });
@@ -68,10 +68,10 @@ const startRecognitionCase = async (context, label) => {
     assert.equal(result.status, 200, JSON.stringify(result.payload));
     return result.payload;
   };
-  const change = (action) => {
-    harness[action](recognition);
-    snapshot = publishSimulatorSnapshot(harness, fixtures, snapshot);
-    return harness.buildRecognitionHistoricalEvidence(recognition);
+  const change = async (action) => {
+    await harness[action](recognition);
+    snapshot = await publishSimulatorSnapshot(harness, fixtures, snapshot);
+    return await harness.buildRecognitionHistoricalEvidence(recognition);
   };
   return { harness, recognition, client, active, activeAt, post, selection,
     evaluate, trqpRequest, queryTrqp, change };
@@ -89,8 +89,8 @@ test("recognition-wrong-external-registry-api", async (context) => {
 
 test("recognition-not-issuer-authorization", async (context) => {
   const { active, client } = await startRecognitionCase(context, "isolated-recognition-not-issuer");
-  assert.ok(client.verifyRecognitionBundle(active, {}));
-  assert.throws(() => client.verifyIssuerAuthorizationBundle(active, {}),
+  assert.ok(await client.verifyRecognitionBundle(active, {}));
+  await assert.rejects(client.verifyIssuerAuthorizationBundle(active, {}),
     /does not contain issuer authorization/iu);
 });
 
@@ -133,8 +133,8 @@ for (const stage of [
 ]) {
   const staged = async (context, label) => {
     const fixture = await startRecognitionCase(context, label);
-    if (stage.name === "revoked") fixture.change("suspendRecognition");
-    const changed = fixture.change(stage.action);
+    if (stage.name === "revoked") await fixture.change("suspendRecognition");
+    const changed = await fixture.change(stage.action);
     assert.equal(changed.recognition.status, stage.name);
     return { ...fixture, changed };
   };
@@ -169,9 +169,9 @@ for (const stage of [
   test(`recognition-historical-after-${stage.suffix}`, async (context) => {
     const { harness, client, active, activeAt, changed } =
       await staged(context, `isolated-recognition-history-${stage.name}-client`);
-    assert.throws(() => client.verifyRecognitionBundle(changed, { expectedRegistryId: harness.registryId }),
+    await assert.rejects(client.verifyRecognitionBundle(changed, { expectedRegistryId: harness.registryId }),
       /not active/iu);
-    assert.ok(client.verifyRecognitionBundle(active, {
+    assert.ok(await client.verifyRecognitionBundle(active, {
       expectedRegistryId: harness.registryId, evaluationTime: activeAt,
     }));
   });

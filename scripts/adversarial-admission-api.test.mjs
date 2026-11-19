@@ -77,7 +77,7 @@ const startCase = async (context, role, label) => {
   const target = role.fixture(`${label}-target`);
   const scope = role.scope(harness, target);
   const governedResource = role.resource(harness, target);
-  const evidence = harness.createApplicationEvidence({
+  const evidence = await harness.createApplicationEvidence({
     applicationId: role.id(target), subjectDid: target.subjectDid,
     role: role.name, scope, governedResource,
   });
@@ -93,12 +93,12 @@ const startCase = async (context, role, label) => {
     createdAt: new Date(VP_FIXTURE_TIME_MS).toISOString(),
   }]]);
   const accepted = new Map([[applicationId, { evidence, receipt: acceptedReceipt(applicationId, evidence) }]]);
-  const snapshot = publishSimulatorSnapshot(harness, { label });
+  const snapshot = await publishSimulatorSnapshot(harness, { label });
   const port = {
     async prepare(id, submitted) {
       if (id !== role.id(target)) throw new role.rejected("unknown-authorization");
       try {
-        return harness[role.prepare](target, submitted);
+        return await harness[role.prepare](target, submitted);
       } catch {
         throw new role.rejected("invalid-evidence");
       }
@@ -106,7 +106,7 @@ const startCase = async (context, role, label) => {
     async execute(id, submitted, signers, verifierSignature) {
       if (id !== role.id(target)) throw new role.rejected("unknown-authorization");
       try {
-        return { eventHash: asHex(harness[role.execute](
+        return { eventHash: asHex(await harness[role.execute](
           target, submitted, signers, verifierSignature,
         )) };
       } catch {
@@ -155,7 +155,7 @@ const assertAcceptedPrepare = async (fixture) => {
   assert.equal(prepared.status, 200, JSON.stringify(prepared.body));
   return prepared.body;
 };
-const shortLivedEvidence = (harness, evidence) => {
+const shortLivedEvidence = async (harness, evidence) => {
   const envelope = {
     ...evidence.envelope,
     expiresAt: new Date(Date.parse(evidence.envelope.verifiedAt) + 1).toISOString(),
@@ -163,7 +163,7 @@ const shortLivedEvidence = (harness, evidence) => {
   const commitment = computeApplicationEvidenceCommitment(envelope);
   const shortened = { envelope, commitment,
     signature: harness.signApplicationEvidenceCommitment(commitment) };
-  assert.equal(harness.verifyApplicationEvidenceSignature(
+  assert.equal(await harness.verifyApplicationEvidenceSignature(
     commitment, shortened.signature, harness.evidenceVerifier,
   ), true);
   harness.advanceEvidenceTimeBy(1000);
@@ -173,22 +173,22 @@ const shortLivedEvidence = (harness, evidence) => {
 for (const role of roleSpecs) {
   test(`${role.name}-expired-evidence-api-preflight`, async (context) => {
     const fixture = await startCase(context, role, `isolated-${role.name}-expired-preflight`);
-    const shortened = shortLivedEvidence(fixture.harness, fixture.evidence);
-    const before = fixture.harness.simulator.getLedger().governanceActionCount;
-    assert.throws(() => fixture.harness[role.prepare](fixture.target, shortened), /expired/iu);
-    assert.equal(fixture.harness.simulator.getLedger().governanceActionCount, before);
+    const shortened = await shortLivedEvidence(fixture.harness, fixture.evidence);
+    const before = (await fixture.harness.simulator.getLedger()).governanceActionCount;
+    await assert.rejects(fixture.harness[role.prepare](fixture.target, shortened), /expired/iu);
+    assert.equal((await fixture.harness.simulator.getLedger()).governanceActionCount, before);
     await assertAcceptedPrepare(fixture);
   });
 
   test(`${role.name}-expired-accepted-evidence-api`, async (context) => {
     const fixture = await startCase(context, role, `isolated-${role.name}-expired-admission`);
-    const shortened = shortLivedEvidence(fixture.harness, fixture.evidence);
+    const shortened = await shortLivedEvidence(fixture.harness, fixture.evidence);
     fixture.accepted.set(fixture.applicationId, {
       evidence: shortened, receipt: acceptedReceipt(fixture.applicationId, shortened),
     });
-    const before = fixture.harness.simulator.getLedger().governanceActionCount;
+    const before = (await fixture.harness.simulator.getLedger()).governanceActionCount;
     assertProblem(await fixture.prepare(shortened), 403, "governed-proposal-rejected");
-    assert.equal(fixture.harness.simulator.getLedger().governanceActionCount, before);
+    assert.equal((await fixture.harness.simulator.getLedger()).governanceActionCount, before);
     fixture.accepted.set(fixture.applicationId, {
       evidence: fixture.evidence, receipt: acceptedReceipt(fixture.applicationId, fixture.evidence),
     });
@@ -200,7 +200,7 @@ for (const role of roleSpecs) {
     const otherRole = roleSpecs.find((candidate) => candidate.name !== role.name);
     assert.ok(otherRole);
     const other = otherRole.fixture(`isolated-${role.name}-cross-role-other`);
-    const otherEvidence = fixture.harness.createApplicationEvidence({
+    const otherEvidence = await fixture.harness.createApplicationEvidence({
       applicationId: otherRole.id(other), subjectDid: other.subjectDid,
       role: otherRole.name, scope: otherRole.scope(fixture.harness, other),
       governedResource: otherRole.resource(fixture.harness, other),
@@ -240,10 +240,10 @@ test("issuer-altered-evidence-commitment-integration-preflight", async (context)
   const fixture = await startCase(context, roleSpecs[0], "isolated-issuer-altered-preflight");
   const altered = { ...fixture.evidence,
     commitment: `${fixture.evidence.commitment.slice(0, -1)}${fixture.evidence.commitment.endsWith("0") ? "1" : "0"}` };
-  const before = fixture.harness.simulator.getLedger().governanceActionCount;
-  assert.throws(() => fixture.harness.prepareIssuerProposalAction(fixture.target, altered),
+  const before = (await fixture.harness.simulator.getLedger()).governanceActionCount;
+  await assert.rejects(fixture.harness.prepareIssuerProposalAction(fixture.target, altered),
     /commitment|evidence/iu);
-  assert.equal(fixture.harness.simulator.getLedger().governanceActionCount, before);
+  assert.equal((await fixture.harness.simulator.getLedger()).governanceActionCount, before);
   await assertAcceptedPrepare(fixture);
 });
 
@@ -251,8 +251,8 @@ test("issuer-unauthorized-evidence-verifier-api", async (context) => {
   const fixture = await startCase(context, roleSpecs[0], "isolated-issuer-unauthorized-verifier-api");
   const prepared = await assertAcceptedPrepare(fixture);
   const bootstrap = createMaintainerFixture("bootstrap", 17);
-  bootstrap.keyId = Buffer.from(fixture.harness.simulator.getLedger().lastAuthorizedMaintainerKeyId);
-  const ledger = fixture.harness.simulator.getLedger();
+  bootstrap.keyId = Buffer.from((await fixture.harness.simulator.getLedger()).lastAuthorizedMaintainerKeyId);
+  const ledger = await fixture.harness.simulator.getLedger();
   const publicKey = deriveJubjubPublicKeyFromSeed(bootstrap.seed);
   const signature = signDeploymentBoundMaintainerActionFromSeed(
     bootstrap.seed, ledger.registryId, ledger.deploymentNetworkIdCommitment,
@@ -262,7 +262,7 @@ test("issuer-unauthorized-evidence-verifier-api", async (context) => {
   const signers = [{ keyId: asHex(bootstrap.keyId),
     publicKey: { x: publicKey.x.toString(), y: publicKey.y.toString() },
     signature: asHex(encodeJubjubSignature(signature)) }];
-  const compactPrepared = fixture.harness.prepareIssuerProposalAction(fixture.target, fixture.evidence);
+  const compactPrepared = await fixture.harness.prepareIssuerProposalAction(fixture.target, fixture.evidence);
   const outsider = createMaintainerScenarioFixture("isolated-issuer-unauthorized-verifier-key");
   const wrong = signIssuerProposalEvidenceFromSeed(outsider.seed, compactPrepared.registryId,
     compactPrepared.networkIdCommitment, compactPrepared.contractAddress,
@@ -271,10 +271,10 @@ test("issuer-unauthorized-evidence-verifier-api", async (context) => {
     evidence: fixture.evidence, prepared, signers,
     evidenceVerifierSignature: asHex(encodeJubjubSignature(verifierSignature)),
   });
-  const before = fixture.harness.simulator.getLedger().governanceActionCount;
+  const before = (await fixture.harness.simulator.getLedger()).governanceActionCount;
   assertProblem(await submit(wrong), 403, "governed-proposal-rejected");
-  assert.equal(fixture.harness.simulator.getLedger().governanceActionCount, before);
-  const good = fixture.harness.signIssuerProposalEvidence(compactPrepared);
+  assert.equal((await fixture.harness.simulator.getLedger()).governanceActionCount, before);
+  const good = await fixture.harness.signIssuerProposalEvidence(compactPrepared);
   const accepted = await submit(good);
   assert.equal(accepted.status, 202, JSON.stringify(accepted.body));
 });

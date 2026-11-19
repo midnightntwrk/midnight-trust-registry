@@ -15,7 +15,6 @@ import {
   signIssuerProposalEvidenceFromSeed,
   TrustRegistryContract,
 } from "@midnightntwrk/trust-registry-contract";
-import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import { describe, expect, it, vi } from "vitest";
 
 import { createTrustRegistryApiServer } from "../server.js";
@@ -202,7 +201,6 @@ describe("local issuer proposal terms", () => {
   });
 
   it("prepares a signable payload only for the selected policy and current verifier key", async () => {
-    setNetworkId("undeployed");
     const policySnapshot = GovernancePolicySnapshotSchema.parse({
       format: "tr-policy-snapshot-v1",
       registryId: binding.registryId,
@@ -660,9 +658,10 @@ describe("proposal admission", () => {
     }
   });
 
-  it("refuses a combined VP and proposal server without a receipt-backed admission port", () => {
+  it("refuses a combined VP and proposal server without a receipt-backed admission port", async () => {
+    const workspace = await createOperatorWorkspace({ label: "proposal-admission" });
     expect(() => createTrustRegistryApiServer({
-      source: createInMemorySource(createOperatorWorkspace({ label: "proposal-admission" }).snapshot),
+      source: createInMemorySource(workspace.snapshot),
       applicationVp: {
         challengeStore: new InMemoryApplicationChallengeStore(),
         authorizeRequest: async () => "did:midnight:issuer:unused",

@@ -22,7 +22,7 @@ import { preflightMutationIntentActor } from "../mutation-intent-actor-binding.j
 import { MutationIntentDidResolutionUnavailableError } from "../mutation-intent-verifier.js";
 import { computeOperatorWorkspaceCommitment } from "../workspace-commitment.js";
 
-const workspace = createOperatorWorkspace({ label: "actor-binding" });
+const workspace = await createOperatorWorkspace({ label: "actor-binding" });
 const applicantDid = createMidnightDid("actor-binding:applicant");
 const maintainerDid = workspace.snapshot.registry.maintainerDids[0];
 if (maintainerDid === undefined) throw new Error("missing bootstrap maintainer");

@@ -1,4 +1,3 @@
-import { getNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import {
   ContractMaintenanceAuthority,
   Intent,
@@ -6,9 +5,10 @@ import {
   ReplaceAuthority,
   verifySignature,
   type Signature,
+  type SignatureVerifyingKey,
   type UnprovenTransaction,
-} from "@midnight-ntwrk/midnight-js-protocol/ledger";
-import { Transaction } from "@midnight-ntwrk/midnight-js-types";
+  Transaction,
+} from "@midnightntwrk/ledger-v9";
 
 import type { FinalizedRegistryDeploymentImage } from "./finalized-deployment-action-reader.js";
 import {
@@ -60,6 +60,7 @@ export type PreparedCommitteeTransition = {
 
 const KEY = /^0x[0-9a-f]{64}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
+const schnorrKey = (hex: string): SignatureVerifyingKey => ({ tag: "schnorr", value: hex.slice(2) });
 
 /** Builds a single-use committee transition from a separately pinned finalized image. */
 export function prepareCommitteeTransitionFromFinalizedImage(
@@ -67,8 +68,8 @@ export function prepareCommitteeTransitionFromFinalizedImage(
   image: FinalizedRegistryDeploymentImage,
 ): PreparedCommitteeTransition {
   const { network, receipt, bootstrap, governance, maintenancePolicy } = input;
-  if (getNetworkId() !== network.networkId || receipt.networkId !== network.networkId) {
-    throw new Error("Midnight.js network does not match the approved transition network");
+  if (receipt.networkId !== network.networkId) {
+    throw new Error("Deployment receipt does not match the approved transition network");
   }
   if (input.stagedVerifierKeyInstallation && network.networkId !== "undeployed") {
     throw new Error("Staged verifier-key transition is local-only");
@@ -106,7 +107,7 @@ export function prepareCommitteeTransitionFromFinalizedImage(
   }
 
   const nextAuthority = new ContractMaintenanceAuthority(
-    maintenancePolicy.verifyingKeys.map((key) => key.slice(2)),
+    maintenancePolicy.verifyingKeys.map(schnorrKey),
     maintenancePolicy.threshold,
     current.counter + 1n,
   );
@@ -117,7 +118,7 @@ export function prepareCommitteeTransitionFromFinalizedImage(
   );
   const dataToSign = Uint8Array.from(update.dataToSign);
   const networkId = network.networkId;
-  const expectedKey = input.bootstrapMaintenanceVerifyingKey.slice(2);
+  const expectedKey = schnorrKey(input.bootstrapMaintenanceVerifyingKey);
   const committeeVerifyingKeys = Object.freeze([...maintenancePolicy.verifyingKeys]);
 
   return {
@@ -131,8 +132,8 @@ export function prepareCommitteeTransitionFromFinalizedImage(
     expiresAt: expiresAt.toISOString(),
     dataToSign: Uint8Array.from(dataToSign),
     authorize(signature: Signature): UnprovenTransaction {
-      if (getNetworkId() !== networkId || Date.now() >= expiresAt.getTime()) {
-        throw new Error("Committee transition network changed or signing window expired");
+      if (Date.now() >= expiresAt.getTime()) {
+        throw new Error("Committee transition signing window expired");
       }
       let valid = false;
       try {
@@ -159,9 +160,6 @@ export async function preparePublicNetworkCommitteeTransition(
   if ((input.network.networkId as string) === "undeployed") {
     throw new Error("Public committee transition does not accept the undeployed network");
   }
-  if (getNetworkId() !== input.network.networkId) {
-    throw new Error("Midnight.js network does not match the approved transition network");
-  }
   const reader = await createPublicNetworkDeploymentActionReader(input.network);
   const image = await reader.readCurrentFinalizedDeploymentImage(
     input.receipt.contractAddress,
@@ -175,7 +173,7 @@ export async function preparePublicNetworkCommitteeTransition(
 export async function prepareLocalNetworkCommitteeTransition(
   input: LocalCommitteeTransitionApproval,
 ): Promise<PreparedCommitteeTransition> {
-  if (input.network.networkId !== "undeployed" || getNetworkId() !== "undeployed") {
+  if (input.network.networkId !== "undeployed") {
     throw new Error("Local committee transition requires the undeployed network");
   }
   const reader = await createLocalNetworkDeploymentActionReader(input.network);

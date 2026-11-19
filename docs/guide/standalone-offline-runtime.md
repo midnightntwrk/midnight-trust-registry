@@ -1,5 +1,13 @@
 # Standalone Offline Runtime Qualification
 
+Ledger 9 migration note: this guide retains the Ledger 8 `0.1.0` release
+qualification procedure. The current Ledger 9 development Compose stack has a
+Docker Desktop `host-access` bridge and reports `internalNetworkOnly: false`;
+it is not an offline-qualified runtime. Use the
+[Ledger 9 migration plan](../plans/ledger9-migration.md) for current stack
+versions, validation, and remaining gates. Do not apply the historical v6
+install or relay procedure below to the current development stack.
+
 Status: **0.1.0 release-candidate gate**, not a claim that the full stack is deployed or
 supported offline. Online access is allowed during installation; after setup,
 the running Trust Registry must not depend on public network services.
@@ -86,18 +94,18 @@ Use the builder below to generate a v6 inventory; do not hand-edit it.
       { "path": "bls_midnight_2p13", "sha256": "<sha256>" },
       { "path": "bls_midnight_2p14", "sha256": "<sha256>" },
       { "path": "bls_midnight_2p15", "sha256": "<sha256>" },
-      { "path": "dust/9/spend.prover", "sha256": "<sha256>" },
-      { "path": "dust/9/spend.verifier", "sha256": "<sha256>" },
-      { "path": "dust/9/spend.bzkir", "sha256": "<sha256>" },
-      { "path": "zswap/9/spend.prover", "sha256": "<sha256>" },
-      { "path": "zswap/9/spend.verifier", "sha256": "<sha256>" },
-      { "path": "zswap/9/spend.bzkir", "sha256": "<sha256>" },
-      { "path": "zswap/9/output.prover", "sha256": "<sha256>" },
-      { "path": "zswap/9/output.verifier", "sha256": "<sha256>" },
-      { "path": "zswap/9/output.bzkir", "sha256": "<sha256>" },
-      { "path": "zswap/9/sign.prover", "sha256": "<sha256>" },
-      { "path": "zswap/9/sign.verifier", "sha256": "<sha256>" },
-      { "path": "zswap/9/sign.bzkir", "sha256": "<sha256>" }
+      { "path": "dust/10/spend.prover", "sha256": "<sha256>" },
+      { "path": "dust/10/spend.verifier", "sha256": "<sha256>" },
+      { "path": "dust/10/spend.bzkir", "sha256": "<sha256>" },
+      { "path": "zswap/10/spend.prover", "sha256": "<sha256>" },
+      { "path": "zswap/10/spend.verifier", "sha256": "<sha256>" },
+      { "path": "zswap/10/spend.bzkir", "sha256": "<sha256>" },
+      { "path": "zswap/10/output.prover", "sha256": "<sha256>" },
+      { "path": "zswap/10/output.verifier", "sha256": "<sha256>" },
+      { "path": "zswap/10/output.bzkir", "sha256": "<sha256>" },
+      { "path": "zswap/10/sign.prover", "sha256": "<sha256>" },
+      { "path": "zswap/10/sign.verifier", "sha256": "<sha256>" },
+      { "path": "zswap/10/sign.bzkir", "sha256": "<sha256>" }
     ]
   }
 }
@@ -122,6 +130,21 @@ from a successful key-generation smoke.
 
 From a clean, GPG-signed and DCO-signed source commit with full generated
 contract artifacts already present, run `pnpm run artifacts:standalone-install`.
+When Docker must not be used, a new **v3 ledger-only** bundle may reuse the
+three pinned node/indexer/prover archives from an already verified v3-v7
+install bundle:
+
+```sh
+node scripts/build-standalone-install.mjs --preflight --reuse-image-bundle <absolute-verified-prior-install-directory>
+node scripts/build-standalone-install.mjs --reuse-image-bundle <absolute-verified-prior-install-directory>
+```
+
+The prior bundle is fully reverified, its image role/digest pins must exactly
+match current Compose, and each copied archive is rehashed. Packages, manifest
+and Compose come from the new signed source; proof parameters are copied from
+the current local parameter source and pinned by new inventory hashes. This
+does not bring forward the prior API/portal images and does not qualify actor
+journeys; use a new complete same-source candidate for that gate.
 To include a separately built API image from the **same signed source SHA**,
 run instead:
 
@@ -447,9 +470,11 @@ install, packet-level egress denial, actor journeys, or release qualification.
 ## Offline Runtime Boundary
 
 The repository includes `deploy/standalone/compose.yml` as an **isolated
-development smoke stack**, derived from a pinned `midnight-examples` revision.
-It uses arm64 image digests, separate `tr-standalone-local-smoke` volumes, an
-internal container network, and a read-only proof-parameter bind mount.
+development smoke stack** on Ledger 9. It uses arm64 image digests, separate
+`tr-standalone-ledger9-local` volumes, an internal ledger bridge plus a
+project-private host-access bridge, and a read-only proof-parameter bind mount.
+The host-access bridge is for local node, indexer, and proof-server port
+forwarding; it is not an egress-denied offline actor environment.
 Provision `TR_INDEXER_PASSWORD`, a 64-character hex `TR_INDEXER_SECRET`, and
 an absolute `TR_PROOF_PARAMS_DIR` pointing to the checked cache in a private,
 untracked environment file before running
@@ -788,6 +813,22 @@ use a new staged plan to bypass an unresolved reservation from an earlier
 attempt; reconcile the earlier journal and chain with a human recovery decision
 first. The development-only public genesis wallet and 1-of-3 committee remain
 unsuitable for release approval.
+
+For a new policy-bound staged installation, use
+`tr-local-staged-deployment-plan-v2` instead of v1 and include absolute
+`policyRecordPath` and lowercase SHA-256 `policyRecordSha256` fields. The
+record must be canonical JSON and an active v1 governance policy for the bootstrap registry with
+one-maintainer thresholds. The deploy helper verifies its approved bytes and
+derives the canonical policy snapshot commitment before submission; it rejects
+a provider whose bootstrap commitment differs. Preserve the approved record
+with the deployment journal for API policy-history validation. V1 plans remain
+readable for existing development attempts but do not establish an
+interpretable policy record. Changing an existing plan or provider hash is
+not a recovery method; use a fresh approval and journal only after resolving
+any earlier attempt.
+The repository's `scripts/local-policy-bound-smoke-provider.mjs` consumes the
+approved policy input for a **new development-only** v2 plan. It still uses
+the public local test wallet and is not a release-custody provider.
 
 For a staged deployment with a finalized receipt, insert one remaining key at
 a time through `node scripts/standalone-setup-wizard.mjs insert-key
@@ -1455,8 +1496,8 @@ For a **development-only** real-ledger deployment smoke, the repository-owned
 Use it only against the dedicated `undeployed` loopback stack, with the public
 local genesis wallet seed documented by `midnight-examples`. Set
 `TR_SMOKE_WALLET_SEED` to that public seed, `TR_SMOKE_STATE_DIR` to the private
-setup directory, and `TR_SMOKE_PROOF_URL` to the temporary loopback proof
-relay. The module rejects public-network IDs, non-loopback endpoints, a
+setup directory, and `TR_SMOKE_PROOF_URL` to the loopback proof-server
+endpoint. The module rejects public-network IDs, non-loopback endpoints, a
 different wallet seed, and a non-private state directory. It saves a random
 bootstrap maintenance signing key as `smoke-maintenance-key` (mode 0600)
 before wallet submission. Keep that file with the one-attempt journal for
@@ -1469,8 +1510,12 @@ the observed setup before reserving the attempt. Running this smoke can
 produce local-ledger evidence only after a real receipt and finalized readback;
 the 1-of-3 transition and release approvals remain separate, open gates.
 
-The dedicated internal Docker network used in development does not expose its
-configured loopback ports to the host on the tested Docker Desktop setup.
+The following relay procedure applies only to the historical internal-only
+Ledger 8 bundle, not the current Ledger 9 development Compose stack. The
+current stack uses its named `host-access` bridge for direct loopback ports
+and must not be described as offline-qualified.
+The older dedicated internal Docker network did not expose its configured
+loopback ports to the host on the tested Docker Desktop setup.
 For an **online installation or deployment window only**, run a temporary
 fixed-destination relay using the already verified, loaded API image, then attach that
 one container to the selected internal ledger network. The relay has no configurable
@@ -1544,8 +1589,12 @@ finality, mempool, and any candidate contract state before a signed recovery
 decision. Stop and remove the relay after collecting the observation.
 
 Run `node scripts/check-standalone-topology.mjs` against the selected
-`TR_STACK_NAME` project (the default is `tr-standalone-local-smoke`) after the
-offline cold start. It reads
+`TR_STACK_NAME` project (the current Compose default is
+`tr-standalone-ledger9-local`) after an offline cold start. The strict topology
+observer verifies the named internal ledger bridge and, when present, the
+development Compose stack's dedicated host-access bridge. It reports
+`internalNetworkOnly: false` for the latter, so that observation does not
+qualify as an internal-only offline runtime. It reads
 Docker metadata without changing containers or volumes and fails on extra
 network attachments, missing persistence mounts, a writable proof cache,
 fetch-enabled proof server, non-loopback or unexpected published ports, or

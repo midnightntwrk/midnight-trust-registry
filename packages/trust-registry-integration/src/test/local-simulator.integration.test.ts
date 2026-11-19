@@ -43,7 +43,7 @@ import { LocalTrustRegistryIntegrationHarness } from "../local-simulator-harness
 describe("trust registry local simulator integration", () => {
   it.each(["issuer", "verifier", "auditor", "recognition", "maintainer"] as const)(
     "archives denied %s proposals without erasing history or trapping their scopes",
-    (role) => {
+    async (role) => {
       const harness = new LocalTrustRegistryIntegrationHarness("proposal-denial");
       const issuer = createIssuerScenarioFixture("denied-issuer");
       const verifier = createVerifierScenarioFixture("denied-verifier");
@@ -55,7 +55,7 @@ describe("trust registry local simulator integration", () => {
         issuer: {
           propose: () => harness.proposeIssuer(issuer),
           archive: () => harness.archiveIssuer(issuer),
-          readStatus: () => harness.simulator.getIssuerAuthorization(issuer.authorizationIdCommitment).status,
+          readStatus: async () => (await harness.simulator.getIssuerAuthorization(issuer.authorizationIdCommitment)).status,
           proposeReplacement: () => harness.proposeIssuer({
             ...issuer,
             authorizationId: `${issuer.authorizationId}:replacement`,
@@ -65,7 +65,7 @@ describe("trust registry local simulator integration", () => {
         verifier: {
           propose: () => harness.proposeVerifier(verifier),
           archive: () => harness.archiveVerifier(verifier),
-          readStatus: () => harness.simulator.getVerifierAuthorization(verifier.authorizationIdCommitment).status,
+          readStatus: async () => (await harness.simulator.getVerifierAuthorization(verifier.authorizationIdCommitment)).status,
           proposeReplacement: () => harness.proposeVerifier({
             ...verifier,
             authorizationId: `${verifier.authorizationId}:replacement`,
@@ -75,7 +75,7 @@ describe("trust registry local simulator integration", () => {
         auditor: {
           propose: () => harness.proposeAuditor(auditor),
           archive: () => harness.archiveAuditor(auditor),
-          readStatus: () => harness.simulator.getAuditorAuthorization(auditor.authorizationIdCommitment).status,
+          readStatus: async () => (await harness.simulator.getAuditorAuthorization(auditor.authorizationIdCommitment)).status,
           proposeReplacement: () => harness.proposeAuditor({
             ...auditor,
             authorizationId: `${auditor.authorizationId}:replacement`,
@@ -85,7 +85,7 @@ describe("trust registry local simulator integration", () => {
         recognition: {
           propose: () => harness.proposeRecognition(recognition),
           archive: () => harness.archiveRecognition(recognition),
-          readStatus: () => harness.simulator.getRecognition(recognition.recognitionIdCommitment).status,
+          readStatus: async () => (await harness.simulator.getRecognition(recognition.recognitionIdCommitment)).status,
           proposeReplacement: () => harness.proposeRecognition({
             ...recognition,
             recognitionId: `${recognition.recognitionId}:replacement`,
@@ -95,7 +95,7 @@ describe("trust registry local simulator integration", () => {
         maintainer: {
           propose: () => harness.proposeMaintainer(maintainer),
           archive: () => harness.archiveMaintainer(maintainer),
-          readStatus: () => harness.simulator.getMaintainerMembership(maintainer.maintainerIdCommitment).status,
+          readStatus: async () => (await harness.simulator.getMaintainerMembership(maintainer.maintainerIdCommitment)).status,
           proposeReplacement: () => harness.proposeMaintainer({
             ...maintainer,
             maintainerId: `${maintainer.maintainerId}:replacement`,
@@ -105,41 +105,41 @@ describe("trust registry local simulator integration", () => {
       };
 
       const entry = cases[role];
-      entry.propose();
-      expect(entry.readStatus()).toBe(ContractAuthorizationStatus.proposed);
-      expect(entry.proposeReplacement).toThrow(/live authorization|live recognition|live membership/u);
-      const beforeArchive = harness.simulator.getLedger().governanceActionCount;
-      entry.archive();
-      expect(entry.readStatus()).toBe(ContractAuthorizationStatus.archived);
-      expect(harness.simulator.getLedger().governanceActionCount).toBe(beforeArchive + 1n);
-      expect(entry.proposeReplacement).not.toThrow();
-      expect(entry.readStatus()).toBe(ContractAuthorizationStatus.archived);
+      await entry.propose();
+      expect(await entry.readStatus()).toBe(ContractAuthorizationStatus.proposed);
+      await expect(entry.proposeReplacement()).rejects.toThrow(/live authorization|live recognition|live membership/u);
+      const beforeArchive = (await harness.simulator.getLedger()).governanceActionCount;
+      await entry.archive();
+      expect(await entry.readStatus()).toBe(ContractAuthorizationStatus.archived);
+      expect((await harness.simulator.getLedger()).governanceActionCount).toBe(beforeArchive + 1n);
+      await expect(entry.proposeReplacement()).resolves.toBeDefined();
+      expect(await entry.readStatus()).toBe(ContractAuthorizationStatus.archived);
     },
   );
 
-  it("requires the current maintainer quorum to deny a pending issuer proposal", () => {
+  it("requires the current maintainer quorum to deny a pending issuer proposal", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("proposal-denial-quorum");
     const second = createMaintainerScenarioFixture("denial-second-maintainer");
     const issuer = createIssuerScenarioFixture("denial-quorum-issuer");
-    harness.authorizeMaintainer(second);
-    harness.proposeIssuer(issuer);
-    harness.authorizeMaintainer(createMaintainerScenarioFixture("denial-third-maintainer"));
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    await harness.authorizeMaintainer(second);
+    await harness.proposeIssuer(issuer);
+    await harness.authorizeMaintainer(createMaintainerScenarioFixture("denial-third-maintainer"));
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
 
-    const before = harness.simulator.getLedger().governanceActionCount;
-    expect(() => harness.archiveIssuer(issuer)).toThrow();
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
-    expect(harness.simulator.getIssuerAuthorization(issuer.authorizationIdCommitment).status)
+    const before = (await harness.simulator.getLedger()).governanceActionCount;
+    await expect(harness.archiveIssuer(issuer)).rejects.toThrow();
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before);
+    expect((await harness.simulator.getIssuerAuthorization(issuer.authorizationIdCommitment)).status)
       .toBe(ContractAuthorizationStatus.proposed);
 
-    const eventHash = harness.archiveIssuer(issuer, [second]);
-    const record = harness.simulator.getIssuerAuthorization(issuer.authorizationIdCommitment);
+    const eventHash = await harness.archiveIssuer(issuer, [second]);
+    const record = await harness.simulator.getIssuerAuthorization(issuer.authorizationIdCommitment);
     expect(record.status).toBe(ContractAuthorizationStatus.archived);
     expect(record.archivedAtSequence).toBe(before);
     expect(record.lifecycleEventHash).toEqual(eventHash);
   });
 
-  it("proposes every supported issuer resource against its canonical scope", () => {
+  it("proposes every supported issuer resource against its canonical scope", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     for (const resourceType of [
       IssuerResourceType.credentialFamily,
@@ -149,43 +149,43 @@ describe("trust registry local simulator integration", () => {
       IssuerResourceType.statusMethodRequirement,
     ]) {
       const issuer = createIssuerScenarioFixture(`resource-${resourceType}`, resourceType);
-      expect(() => harness.proposeIssuer(issuer)).not.toThrow();
+      await expect(harness.proposeIssuer(issuer)).resolves.toBeDefined();
       const scope = createIssuerAuthorizationScopeFixture(issuer);
       const governedResource = {
         type: (["credentialFamily", "schema", "schemaVersion", "credentialDefinition", "statusMethodRequirement"] as const)[resourceType]!,
         id: issuer.resourceId,
       };
-      expect(() => harness.createApplicationEvidence({
+      await expect(harness.createApplicationEvidence({
         applicationId: issuer.authorizationId,
         subjectDid: issuer.subjectDid,
         role: "issuer",
         scope,
         governedResource: { ...governedResource, id: "unapproved-resource" },
-      })).toThrow(/outside the scope/);
-      const validEvidence = harness.createApplicationEvidence({
+      })).rejects.toThrow(/outside the scope/);
+      const validEvidence = await harness.createApplicationEvidence({
         applicationId: issuer.authorizationId,
         subjectDid: issuer.subjectDid,
         role: "issuer",
         scope,
         governedResource,
       });
-      expect(() => harness.assertApplicationEvidence({
+      await expect(harness.assertApplicationEvidence({
         evidence: validEvidence,
         applicationId: issuer.authorizationId,
         subjectDid: issuer.subjectDid,
         role: "issuer",
         scope,
         governedResource: { ...governedResource, id: "unapproved-resource" },
-      })).toThrow(/outside the scope/);
-      expect(() => harness.createApplicationEvidence({
+      })).rejects.toThrow(/outside the scope/);
+      await expect(harness.createApplicationEvidence({
         applicationId: issuer.authorizationId,
         subjectDid: issuer.subjectDid,
         role: "issuer",
         scope,
-      })).toThrow(/explicit governed resource/);
-      expect(() => harness.proposeIssuerWithApplicationEvidence(
+      })).rejects.toThrow(/explicit governed resource/);
+      await expect(harness.proposeIssuerWithApplicationEvidence(
         issuer,
-        harness.createApplicationEvidence({
+        await harness.createApplicationEvidence({
           applicationId: issuer.authorizationId,
           subjectDid: issuer.subjectDid,
           role: "issuer",
@@ -198,14 +198,14 @@ describe("trust registry local simulator integration", () => {
           challengeHash: sha256Hex("unused"),
           governedResource,
         },
-      )).toThrow(/proposal scope does not match/);
+      )).rejects.toThrow(/proposal scope does not match/);
     }
   });
 
   it.each([
     [IssuerResourceType.schemaVersion, "schemaVersion"],
     [IssuerResourceType.statusMethodRequirement, "statusMethodRequirement"],
-  ] as const)("keeps two %s issuer resources with the same bare value distinct", (resourceType, resourceKind) => {
+  ] as const)("keeps two %s issuer resources with the same bare value distinct", async (resourceType, resourceKind) => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const first = createIssuerScenarioFixture(`composite-first-${resourceKind}`, resourceType);
     const secondFixture = createIssuerScenarioFixture(`composite-second-${resourceKind}`, resourceType);
@@ -219,62 +219,62 @@ describe("trust registry local simulator integration", () => {
     expect(first.authorizationScope.statusMethod).toBe(second.authorizationScope.statusMethod);
     expect(first.resourceId).not.toBe(second.resourceId);
 
-    expect(() => harness.createApplicationEvidence({
+    await expect(harness.createApplicationEvidence({
       applicationId: second.authorizationId,
       subjectDid: second.subjectDid,
       role: "issuer",
       scope: second.authorizationScope,
       governedResource: { type: resourceKind, id: first.resourceId },
-    })).toThrow(/outside the scope/);
+    })).rejects.toThrow(/outside the scope/);
 
-    harness.authorizeIssuer(first);
-    harness.authorizeIssuer(second);
+    await harness.authorizeIssuer(first);
+    await harness.authorizeIssuer(second);
     for (const fixture of [first, second]) {
-      const current = harness.simulator.getCurrentIssuerAuthorization(
+      const current = await harness.simulator.getCurrentIssuerAuthorization(
         fixture.subjectDidCommitment,
         fixture.resourceType,
         fixture.resourceIdCommitment,
       );
       expect(Buffer.from(current.authorizationId)).toEqual(Buffer.from(fixture.authorizationIdCommitment));
-      const historical = harness.buildIssuerHistoricalEvidence(fixture);
+      const historical = await harness.buildIssuerHistoricalEvidence(fixture);
       expect(historical.authorization?.resourceId).toBe(fixture.resourceId);
-      const active = harness.evaluateCurrentIssuerDecision(fixture);
+      const active = await harness.evaluateCurrentIssuerDecision(fixture);
       expect(active.authorization?.authorizationId).toBe(fixture.authorizationId);
     }
     const client = new TrustRegistrySimulatorClient(harness.simulator);
-    expect(() => client.verifyIssuerAuthorizationBundle(harness.buildIssuerHistoricalEvidence(second), {
+    await expect(client.verifyIssuerAuthorizationBundle(await harness.buildIssuerHistoricalEvidence(second), {
       expectedResourceId: first.resourceId,
-    })).toThrow(/resource mismatch/i);
-    expect(() => harness.simulator.assertIssuerAuthorized(
+    })).rejects.toThrow(/resource mismatch/i);
+    await expect(harness.simulator.assertIssuerAuthorized(
       first.subjectDidCommitment,
       resourceType,
       bytes32Commitment(resourceKind === "schemaVersion" ? "1.0.0" : "midnight-status-registry-v1"),
-    )).toThrow();
+    )).rejects.toThrow();
   });
 
-  it("preserves issuer application history before activation", () => {
+  it("preserves issuer application history before activation", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("application");
 
-    harness.proposeIssuer(issuer);
+    await harness.proposeIssuer(issuer);
 
-    expect(() => harness.evaluateCurrentIssuerDecision(issuer)).toThrow(/not active/i);
-    const proposedBundle = harness.buildIssuerHistoricalEvidence(issuer);
+    await expect(harness.evaluateCurrentIssuerDecision(issuer)).rejects.toThrow(/not active/i);
+    const proposedBundle = await harness.buildIssuerHistoricalEvidence(issuer);
     expect(proposedBundle.authorization?.status).toBe("proposed");
     expect(proposedBundle.authorization?.authorizedAt).toBeUndefined();
     expect(proposedBundle.authorization?.activeFrom).toBeUndefined();
 
-    harness.approveIssuer(issuer);
+    await harness.approveIssuer(issuer);
 
-    expect(() => harness.evaluateCurrentIssuerDecision(issuer)).toThrow(/not active/i);
-    const authorizedBundle = harness.buildIssuerHistoricalEvidence(issuer);
+    await expect(harness.evaluateCurrentIssuerDecision(issuer)).rejects.toThrow(/not active/i);
+    const authorizedBundle = await harness.buildIssuerHistoricalEvidence(issuer);
     expect(authorizedBundle.authorization?.status).toBe("authorized");
     expect(authorizedBundle.authorization?.authorizedAt).toBeDefined();
     expect(authorizedBundle.authorization?.activeFrom).toBeUndefined();
 
-    harness.activateIssuer(issuer);
+    await harness.activateIssuer(issuer);
 
-    const activeBundle = harness.evaluateCurrentIssuerDecision(issuer, {
+    const activeBundle = await harness.evaluateCurrentIssuerDecision(issuer, {
       expectedRegistryId: harness.registryId,
     });
     expect(activeBundle.authorization?.status).toBe("active");
@@ -284,10 +284,10 @@ describe("trust registry local simulator integration", () => {
   it.each([
     [1, "approval", ContractAuthorizationStatus.proposed],
     [2, "activation", ContractAuthorizationStatus.authorized],
-  ] as const)("rejects evidence expired before issuer %s", (minutes, transition, status) => {
+  ] as const)("rejects evidence expired before issuer %s", async (minutes, transition, status) => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture(`expires-before-${transition}`);
-    const original = harness.createApplicationEvidence({
+    const original = await harness.createApplicationEvidence({
       applicationId: issuer.authorizationId,
       subjectDid: issuer.subjectDid,
       role: "issuer",
@@ -299,39 +299,39 @@ describe("trust registry local simulator integration", () => {
       expiresAt: new Date(Date.parse(original.envelope.verifiedAt) + minutes * 60_000).toISOString(),
     };
     const commitment = computeApplicationEvidenceCommitment(envelope);
-    harness.proposeIssuerWithApplicationEvidence(issuer, {
+    await harness.proposeIssuerWithApplicationEvidence(issuer, {
       envelope,
       commitment,
       signature: harness.signApplicationEvidenceCommitment(commitment),
     });
-    if (transition === "activation") harness.approveIssuer(issuer);
+    if (transition === "activation") await harness.approveIssuer(issuer);
     harness.advanceEvidenceTimeBy(minutes * 60_000);
 
-    expect(() => transition === "approval"
+    await expect(transition === "approval"
       ? harness.approveIssuer(issuer)
-      : harness.activateIssuer(issuer)).toThrow(/expiresAt|expired/);
-    expect(harness.simulator.getIssuerAuthorization(issuer.authorizationIdCommitment).status).toBe(status);
+      : harness.activateIssuer(issuer)).rejects.toThrow(/expiresAt|expired/);
+    expect((await harness.simulator.getIssuerAuthorization(issuer.authorizationIdCommitment)).status).toBe(status);
   });
 
-  it("expires an idle issuer proposal without advancing the governance sequence", () => {
+  it("expires an idle issuer proposal without advancing the governance sequence", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("idle-expiry");
-    harness.proposeIssuer(issuer);
-    const sequence = harness.simulator.getLedger().governanceActionCount;
+    await harness.proposeIssuer(issuer);
+    const sequence = (await harness.simulator.getLedger()).governanceActionCount;
 
     harness.advanceEvidenceTimeBy(24 * 60 * 60 * 1000);
 
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(sequence);
-    expect(() => harness.approveIssuer(issuer)).toThrow(/expiresAt|expired/);
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(sequence);
-    expect(harness.simulator.getIssuerAuthorization(issuer.authorizationIdCommitment).status)
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(sequence);
+    await expect(harness.approveIssuer(issuer)).rejects.toThrow(/expiresAt|expired/);
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(sequence);
+    expect((await harness.simulator.getIssuerAuthorization(issuer.authorizationIdCommitment)).status)
       .toBe(ContractAuthorizationStatus.proposed);
   });
 
-  it("rejects malformed application evidence before an issuer proposal reaches Compact", () => {
+  it("rejects malformed application evidence before an issuer proposal reaches Compact", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("application-evidence-negative");
-    const validEvidence = harness.createApplicationEvidence({
+    const validEvidence = await harness.createApplicationEvidence({
       applicationId: issuer.authorizationId,
       subjectDid: issuer.subjectDid,
       role: "issuer",
@@ -406,55 +406,55 @@ describe("trust registry local simulator integration", () => {
         envelope: { ...validEvidence.envelope, ...mutation.envelope },
         signature: { ...validEvidence.signature, ...mutation.signature },
       };
-      expect(() => {
+      await expect(async () => {
         if (_name !== "expired evidence") {
           evidence.commitment = computeApplicationEvidenceCommitment(evidence.envelope);
         }
-        harness.proposeIssuerWithApplicationEvidence(issuer, evidence);
-      }).toThrow(expectedError);
+        await harness.proposeIssuerWithApplicationEvidence(issuer, evidence);
+      }).rejects.toThrow(expectedError);
     }
   });
 
-  it("binds validated application evidence for issuer, verifier, auditor, and maintainer proposals", () => {
+  it("binds validated application evidence for issuer, verifier, auditor, and maintainer proposals", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("application-evidence-issuer");
     const verifier = createVerifierScenarioFixture("application-evidence-verifier");
     const auditor = createAuditorScenarioFixture("application-evidence-auditor");
     const maintainer = createMaintainerScenarioFixture("application-evidence-maintainer");
 
-    const issuerEvidence = harness.createApplicationEvidence({
+    const issuerEvidence = await harness.createApplicationEvidence({
       applicationId: issuer.authorizationId,
       subjectDid: issuer.subjectDid,
       role: "issuer",
       scope: createIssuerAuthorizationScopeFixture(issuer),
       governedResource: { type: "credentialFamily", id: issuer.resourceId },
     });
-    harness.proposeIssuerWithApplicationEvidence(issuer, issuerEvidence);
-    harness.proposeVerifier(verifier);
-    harness.proposeAuditor(auditor);
-    harness.proposeMaintainer(maintainer);
+    await harness.proposeIssuerWithApplicationEvidence(issuer, issuerEvidence);
+    await harness.proposeVerifier(verifier);
+    await harness.proposeAuditor(auditor);
+    await harness.proposeMaintainer(maintainer);
 
     expect(
-      Array.from(harness.simulator.getIssuerAuthorization(issuer.authorizationIdCommitment).evidenceHash),
+      Array.from((await harness.simulator.getIssuerAuthorization(issuer.authorizationIdCommitment)).evidenceHash),
     ).toEqual(Array.from(Buffer.from(issuerEvidence.commitment.slice(2), "hex")));
-    expect(harness.simulator.getVerifierAuthorization(verifier.authorizationIdCommitment).status).toBe(
+    expect((await harness.simulator.getVerifierAuthorization(verifier.authorizationIdCommitment)).status).toBe(
       ContractAuthorizationStatus.proposed,
     );
-    expect(harness.simulator.getAuditorAuthorization(auditor.authorizationIdCommitment).status).toBe(
+    expect((await harness.simulator.getAuditorAuthorization(auditor.authorizationIdCommitment)).status).toBe(
       ContractAuthorizationStatus.proposed,
     );
-    expect(harness.simulator.getMaintainerMembership(maintainer.maintainerIdCommitment).status).toBe(
+    expect((await harness.simulator.getMaintainerMembership(maintainer.maintainerIdCommitment)).status).toBe(
       ContractAuthorizationStatus.proposed,
     );
   });
 
-  it("authorizes an issuer and emits a valid active evidence bundle", () => {
+  it("authorizes an issuer and emits a valid active evidence bundle", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("degree");
 
-    harness.authorizeIssuer(issuer);
+    await harness.authorizeIssuer(issuer);
 
-    const bundle = harness.evaluateCurrentIssuerDecision(issuer, {
+    const bundle = await harness.evaluateCurrentIssuerDecision(issuer, {
       expectedRegistryId: harness.registryId,
     });
 
@@ -471,42 +471,42 @@ describe("trust registry local simulator integration", () => {
     expect(bundle.epoch.maintainerSignatures).toHaveLength(1);
   });
 
-  it("rejects current issuer trust after suspension and revocation but preserves historical evidence through archival", () => {
+  it("rejects current issuer trust after suspension and revocation but preserves historical evidence through archival", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("passport");
 
-    harness.authorizeIssuer(issuer);
-    harness.suspendIssuer(issuer);
+    await harness.authorizeIssuer(issuer);
+    await harness.suspendIssuer(issuer);
 
-    expect(() => harness.evaluateCurrentIssuerDecision(issuer)).toThrow(/not active/i);
-    const suspendedBundle = harness.buildIssuerHistoricalEvidence(issuer);
+    await expect(harness.evaluateCurrentIssuerDecision(issuer)).rejects.toThrow(/not active/i);
+    const suspendedBundle = await harness.buildIssuerHistoricalEvidence(issuer);
     expect(suspendedBundle.authorization?.status).toBe("suspended");
     const anchoredStatusPolicy = suspendedBundle.authorization?.statusPolicyBindingCommitment;
     expect(anchoredStatusPolicy).toBe(
       computeIssuerStatusPolicyBindingCommitment(suspendedBundle.statusPolicyBinding!),
     );
 
-    harness.revokeIssuer(issuer);
-    expect(() => harness.evaluateCurrentIssuerDecision(issuer)).toThrow(/not active/i);
-    const revokedBundle = harness.buildIssuerHistoricalEvidence(issuer);
+    await harness.revokeIssuer(issuer);
+    await expect(harness.evaluateCurrentIssuerDecision(issuer)).rejects.toThrow(/not active/i);
+    const revokedBundle = await harness.buildIssuerHistoricalEvidence(issuer);
     expect(revokedBundle.authorization?.status).toBe("revoked");
     expect(revokedBundle.authorization?.statusPolicyBindingCommitment).toBe(anchoredStatusPolicy);
 
-    harness.archiveIssuer(issuer);
-    const archivedBundle = harness.buildIssuerHistoricalEvidence(issuer);
+    await harness.archiveIssuer(issuer);
+    const archivedBundle = await harness.buildIssuerHistoricalEvidence(issuer);
     expect(archivedBundle.authorization?.status).toBe("archived");
     expect(archivedBundle.authorization?.statusPolicyBindingCommitment).toBe(anchoredStatusPolicy);
     expect(archivedBundle.authorization?.archivedAt).toBeDefined();
   });
 
-  it("enforces scoped maintainer quorum rules for issuer onboarding, emergency action, and archival action", () => {
+  it("enforces scoped maintainer quorum rules for issuer onboarding, emergency action, and archival action", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const secondMaintainer = createMaintainerScenarioFixture("quorum-second");
     const issuer = createIssuerScenarioFixture("quorum-onboarding");
 
-    harness.authorizeMaintainer(secondMaintainer);
-    harness.authorizeMaintainer(createMaintainerScenarioFixture("quorum-third"));
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    await harness.authorizeMaintainer(secondMaintainer);
+    await harness.authorizeMaintainer(createMaintainerScenarioFixture("quorum-third"));
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
     expect(resolveGovernancePolicyTemplate(harness.policyRecord, "member")).toMatchObject({
       requiredMaintainerThreshold: 2,
     });
@@ -519,46 +519,47 @@ describe("trust registry local simulator integration", () => {
       requiredMaintainerThreshold: 2,
     });
 
-    expect(() => harness.proposeIssuer(issuer)).toThrow(/action threshold/i);
+    await expect(harness.proposeIssuer(issuer)).rejects.toThrow(/action threshold/i);
 
-    harness.proposeIssuer(issuer, [secondMaintainer]);
-    harness.approveIssuer(issuer, [secondMaintainer]);
-    harness.activateIssuer(issuer, [secondMaintainer]);
+    await harness.proposeIssuer(issuer, [secondMaintainer]);
+    await harness.approveIssuer(issuer, [secondMaintainer]);
+    await harness.activateIssuer(issuer, [secondMaintainer]);
 
-    const activeBundle = harness.evaluateCurrentIssuerDecision(issuer, {
+    const activeBundle = await harness.evaluateCurrentIssuerDecision(issuer, {
       expectedRegistryId: harness.registryId,
     });
     expect(activeBundle.authorization?.status).toBe("active");
 
-    harness.suspendIssuer(issuer);
+    await harness.suspendIssuer(issuer);
 
-    expect(() => harness.evaluateCurrentIssuerDecision(issuer)).toThrow(/not active/i);
-    const suspendedBundle = harness.buildIssuerHistoricalEvidence(issuer);
+    await expect(harness.evaluateCurrentIssuerDecision(issuer)).rejects.toThrow(/not active/i);
+    const suspendedBundle = await harness.buildIssuerHistoricalEvidence(issuer);
     expect(suspendedBundle.authorization?.status).toBe("suspended");
 
-    expect(() => harness.archiveIssuer(issuer)).toThrow(/action threshold/i);
+    await expect(harness.archiveIssuer(issuer)).rejects.toThrow(/action threshold/i);
 
-    harness.archiveIssuer(issuer, [secondMaintainer]);
+    await harness.archiveIssuer(issuer, [secondMaintainer]);
 
-    const archivedBundle = harness.buildIssuerHistoricalEvidence(issuer);
+    const archivedBundle = await harness.buildIssuerHistoricalEvidence(issuer);
     expect(archivedBundle.authorization?.status).toBe("archived");
   });
 
-  it("verifies the complete simulator epoch witness against its committed publication event", () => {
+  it("verifies the complete simulator epoch witness against its committed publication event", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("epoch-quorum-witness");
     const secondMaintainer = createMaintainerScenarioFixture("epoch-quorum-second");
     const issuer = createIssuerScenarioFixture("epoch-quorum-issuer");
-    harness.authorizeMaintainer(secondMaintainer);
-    harness.authorizeMaintainer(createMaintainerScenarioFixture("epoch-quorum-third"));
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
-    harness.proposeIssuer(issuer, [secondMaintainer]);
-    harness.approveIssuer(issuer, [secondMaintainer]);
-    harness.activateIssuer(issuer, [secondMaintainer]);
+    await harness.authorizeMaintainer(secondMaintainer);
+    await harness.authorizeMaintainer(createMaintainerScenarioFixture("epoch-quorum-third"));
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    await harness.proposeIssuer(issuer, [secondMaintainer]);
+    await harness.approveIssuer(issuer, [secondMaintainer]);
+    await harness.activateIssuer(issuer, [secondMaintainer]);
 
-    const bundle = harness.evaluateCurrentIssuerDecision(issuer);
+    const bundle = await harness.evaluateCurrentIssuerDecision(issuer);
     const epochId = bundle.epoch.epochId;
-    const record = harness.simulator.getEpochCommitment(bytes32Commitment(epochId));
-    const witness = harness.getEpochPublicationWitness(epochId);
+    const record = await harness.simulator.getEpochCommitment(bytes32Commitment(epochId));
+    const witness = await harness.getEpochPublicationWitness(epochId);
+    const ledger = await harness.simulator.getLedger();
     const contractAddress = encodeContractAddress(harness.simulator.contractAddress);
     expect(witness.signatures).toHaveLength(2);
     expect(witness.eventHash).toBe(`0x${Buffer.from(record.publicationEventHash).toString("hex")}`);
@@ -600,13 +601,13 @@ describe("trust registry local simulator integration", () => {
     });
     const context = {
       registryIdCommitment: harness.registryIdCommitment,
-      networkIdCommitment: harness.simulator.getLedger().deploymentNetworkIdCommitment,
+      networkIdCommitment: ledger.deploymentNetworkIdCommitment,
       contractAddress,
       epochIdCommitment: bytes32Commitment(epochId),
       firstSignerKeyIdCommitment: record.maintainerKeyId,
       activeMaintainersAtPublication: witness.signatures.map((signer) => {
         const keyIdCommitment = bytes32Commitment(signer.keyId);
-        const maintainer = harness.simulator.getLedger().maintainerRecords.lookup(keyIdCommitment);
+        const maintainer = ledger.maintainerRecords.lookup(keyIdCommitment);
         return { keyId: signer.keyId, keyIdCommitment, publicKey: maintainer.publicKey };
       }),
     };
@@ -630,10 +631,10 @@ describe("trust registry local simulator integration", () => {
         context,
       )).toThrow();
     }
-    expect(() => harness.getEpochPublicationWitness("epoch:missing")).toThrow(/not available/u);
+    await expect(harness.getEpochPublicationWitness("epoch:missing")).rejects.toThrow(/not available/u);
   });
 
-  it("keeps historical evidence on the original policy after a signed threshold revision", () => {
+  it("keeps historical evidence on the original policy after a signed threshold revision", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const beforeRevision = createIssuerScenarioFixture("before-policy-revision");
     const latePublished = createIssuerScenarioFixture("late-published-policy-revision");
@@ -641,22 +642,22 @@ describe("trust registry local simulator integration", () => {
     const secondMaintainer = createMaintainerScenarioFixture("revision-second");
     const client = new TrustRegistrySimulatorClient(harness.simulator);
 
-    harness.authorizeIssuer(beforeRevision);
-    const originalBundle = harness.evaluateCurrentIssuerDecision(beforeRevision);
-    harness.authorizeIssuer(latePublished);
-    harness.authorizeMaintainer(secondMaintainer);
-    harness.authorizeMaintainer(createMaintainerScenarioFixture("revision-third"));
-    const revisionSequence = harness.simulator.getLedger().governanceActionCount;
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
-    expect(harness.simulator.getLedger().governancePolicyEffectiveFromByVersion.lookup(2n))
+    await harness.authorizeIssuer(beforeRevision);
+    const originalBundle = await harness.evaluateCurrentIssuerDecision(beforeRevision);
+    await harness.authorizeIssuer(latePublished);
+    await harness.authorizeMaintainer(secondMaintainer);
+    await harness.authorizeMaintainer(createMaintainerScenarioFixture("revision-third"));
+    const revisionSequence = (await harness.simulator.getLedger()).governanceActionCount;
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    expect((await harness.simulator.getLedger()).governancePolicyEffectiveFromByVersion.lookup(2n))
       .toBe(revisionSequence + 1n);
 
-    harness.proposeIssuer(afterRevision, [secondMaintainer]);
-    harness.approveIssuer(afterRevision, [secondMaintainer]);
-    harness.activateIssuer(afterRevision, [secondMaintainer]);
-    const currentBundle = harness.evaluateCurrentIssuerDecision(afterRevision);
-    const historicalBundle = harness.buildIssuerHistoricalEvidence(beforeRevision);
-    const latePublishedBundle = harness.buildIssuerHistoricalEvidence(latePublished);
+    await harness.proposeIssuer(afterRevision, [secondMaintainer]);
+    await harness.approveIssuer(afterRevision, [secondMaintainer]);
+    await harness.activateIssuer(afterRevision, [secondMaintainer]);
+    const currentBundle = await harness.evaluateCurrentIssuerDecision(afterRevision);
+    const historicalBundle = await harness.buildIssuerHistoricalEvidence(beforeRevision);
+    const latePublishedBundle = await harness.buildIssuerHistoricalEvidence(latePublished);
 
     expect(historicalBundle.policy.version).toBe("v1");
     expect(currentBundle.policy.version).toBe("v2");
@@ -666,7 +667,7 @@ describe("trust registry local simulator integration", () => {
     expect(historicalBundle.epoch.policyRoot).toBe(originalBundle.epoch.policyRoot);
     expect(latePublishedBundle.epoch.policyRoot).toBe(originalBundle.epoch.policyRoot);
     expect(currentBundle.epoch.policyRoot).not.toBe(originalBundle.epoch.policyRoot);
-    const latePublishedRecord = client.getEpochCommitmentById(
+    const latePublishedRecord = await client.getEpochCommitmentById(
       latePublishedBundle.epoch.epochId,
     );
     expect(`0x${Buffer.from(latePublishedRecord.publicationPolicyCommitment).toString("hex")}`)
@@ -679,44 +680,42 @@ describe("trust registry local simulator integration", () => {
         deriveGovernancePolicySnapshot(currentBundle.policy),
       ),
     );
-    expect(harness.simulator.getLedger().governancePolicyVersion).toBe(2n);
-    expect(() => client.verifyIssuerAuthorizationBundle(historicalBundle, {})).not.toThrow();
-    expect(() => client.verifyIssuerAuthorizationBundle(latePublishedBundle, {})).not.toThrow();
-    expect(() => client.verifyIssuerAuthorizationBundle(currentBundle, {})).not.toThrow();
-    expect(() => client.verifyIssuerAuthorizationBundle(historicalBundle, {
+    expect((await harness.simulator.getLedger()).governancePolicyVersion).toBe(2n);
+    await expect(client.verifyIssuerAuthorizationBundle(historicalBundle, {})).resolves.toBeDefined();
+    await expect(client.verifyIssuerAuthorizationBundle(latePublishedBundle, {})).resolves.toBeDefined();
+    await expect(client.verifyIssuerAuthorizationBundle(currentBundle, {})).resolves.toBeDefined();
+    await expect(client.verifyIssuerAuthorizationBundle(historicalBundle, {
       evaluationTime: currentBundle.policy.effectiveFrom,
-    })).toThrow(/policy snapshot is superseded/i);
-    expect(() => harness.assertPublishedEpochEvidence(historicalBundle, {
+    })).rejects.toThrow(/policy snapshot is superseded/i);
+    await expect(harness.assertPublishedEpochEvidence(historicalBundle, {
       evaluationTime: currentBundle.policy.effectiveFrom,
-    })).toThrow(/policy snapshot is superseded/i);
-    expect(() => client.verifyIssuerAuthorizationBundle(
+    })).rejects.toThrow(/policy snapshot is superseded/i);
+    await expect(client.verifyIssuerAuthorizationBundle(
       { ...historicalBundle, policy: { ...historicalBundle.policy, version: "v9" } },
       {},
-    )).toThrow(/not committed to the ledger/i);
-    expect(() => client.verifyIssuerAuthorizationBundle(historicalBundle, {
+    )).rejects.toThrow(/not committed to the ledger/i);
+    await expect(client.verifyIssuerAuthorizationBundle(historicalBundle, {
       evaluationTime: "not-a-date",
-    })).toThrow(/invalid timestamp/i);
-    expect(() =>
-      client.verifyIssuerAuthorizationBundle(
+    })).rejects.toThrow(/invalid timestamp/i);
+    await expect(client.verifyIssuerAuthorizationBundle(
         {
           ...historicalBundle,
           policy: { ...historicalBundle.policy, version: "v2" },
         },
         {},
-      ),
-    ).toThrow(/committed ledger version/i);
-    harness.assertPublishedEpochEvidence(historicalBundle);
-    harness.assertPublishedEpochEvidence(latePublishedBundle);
-    harness.assertPublishedEpochEvidence(currentBundle);
+      )).rejects.toThrow(/committed ledger version/i);
+    await harness.assertPublishedEpochEvidence(historicalBundle);
+    await harness.assertPublishedEpochEvidence(latePublishedBundle);
+    await harness.assertPublishedEpochEvidence(currentBundle);
   });
 
-  it("authorizes a verifier for a composite request scope and emits a valid active evidence bundle", () => {
+  it("authorizes a verifier for a composite request scope and emits a valid active evidence bundle", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const verifier = createVerifierScenarioFixture("age-gate");
 
-    harness.authorizeVerifier(verifier);
+    await harness.authorizeVerifier(verifier);
 
-    const bundle = harness.evaluateCurrentVerifierDecision(verifier, {
+    const bundle = await harness.evaluateCurrentVerifierDecision(verifier, {
       expectedRegistryId: harness.registryId,
     });
 
@@ -727,7 +726,7 @@ describe("trust registry local simulator integration", () => {
     expect(bundle.subjectDid).toBe(verifier.subjectDid);
   });
 
-  it("keeps same-profile verifier purposes distinct in current and historical evidence", () => {
+  it("keeps same-profile verifier purposes distinct in current and historical evidence", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const first = createVerifierScenarioFixture("same-profile-purpose");
     const otherPurpose = "research";
@@ -744,80 +743,78 @@ describe("trust registry local simulator integration", () => {
       scopeResourceId: otherResourceId,
       requestResourceIdCommitment: bytes32Commitment(otherResourceId),
     };
-    harness.authorizeVerifier(first);
-    harness.authorizeVerifier(second);
-    expect(Buffer.from(harness.simulator.getVerifierAuthorization(second.authorizationIdCommitment).requestResourceId))
+    await harness.authorizeVerifier(first);
+    await harness.authorizeVerifier(second);
+    expect(Buffer.from((await harness.simulator.getVerifierAuthorization(second.authorizationIdCommitment)).requestResourceId))
       .toEqual(Buffer.from(bytes32Commitment(otherResourceId)));
-    expect(harness.evaluateCurrentVerifierDecision(first).authorization?.resourceId).toBe(first.scopeResourceId);
-    expect(harness.evaluateCurrentVerifierDecision(second).authorization?.resourceId).toBe(otherResourceId);
-    expect(harness.buildVerifierHistoricalEvidence(first).authorization?.authorizationId).toBe(first.authorizationId);
-    expect(harness.buildVerifierHistoricalEvidence(second).authorization?.authorizationId).toBe(authorizationId);
+    expect((await harness.evaluateCurrentVerifierDecision(first)).authorization?.resourceId).toBe(first.scopeResourceId);
+    expect((await harness.evaluateCurrentVerifierDecision(second)).authorization?.resourceId).toBe(otherResourceId);
+    expect((await harness.buildVerifierHistoricalEvidence(first)).authorization?.authorizationId).toBe(first.authorizationId);
+    expect((await harness.buildVerifierHistoricalEvidence(second)).authorization?.authorizationId).toBe(authorizationId);
   });
 
-  it("preserves verifier application history before activation", () => {
+  it("preserves verifier application history before activation", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const verifier = createVerifierScenarioFixture("employment-application");
 
-    harness.proposeVerifier(verifier);
+    await harness.proposeVerifier(verifier);
 
-    expect(() => harness.evaluateCurrentVerifierDecision(verifier)).toThrow(/not active/i);
-    const proposedBundle = harness.buildVerifierHistoricalEvidence(verifier);
+    await expect(harness.evaluateCurrentVerifierDecision(verifier)).rejects.toThrow(/not active/i);
+    const proposedBundle = await harness.buildVerifierHistoricalEvidence(verifier);
     expect(proposedBundle.authorization?.status).toBe("proposed");
     expect(proposedBundle.authorization?.authorizedAt).toBeUndefined();
     expect(proposedBundle.authorization?.activeFrom).toBeUndefined();
 
-    harness.approveVerifier(verifier);
+    await harness.approveVerifier(verifier);
 
-    expect(() => harness.evaluateCurrentVerifierDecision(verifier)).toThrow(/not active/i);
-    const authorizedBundle = harness.buildVerifierHistoricalEvidence(verifier);
+    await expect(harness.evaluateCurrentVerifierDecision(verifier)).rejects.toThrow(/not active/i);
+    const authorizedBundle = await harness.buildVerifierHistoricalEvidence(verifier);
     expect(authorizedBundle.authorization?.status).toBe("authorized");
     expect(authorizedBundle.authorization?.authorizedAt).toBeDefined();
     expect(authorizedBundle.authorization?.activeFrom).toBeUndefined();
 
-    harness.activateVerifier(verifier);
+    await harness.activateVerifier(verifier);
 
-    const activeBundle = harness.evaluateCurrentVerifierDecision(verifier, {
+    const activeBundle = await harness.evaluateCurrentVerifierDecision(verifier, {
       expectedRegistryId: harness.registryId,
     });
     expect(activeBundle.authorization?.status).toBe("active");
     expect(activeBundle.authorization?.activeFrom).toBeDefined();
   });
 
-  it("rejects verifier trust for wrong registry, mismatched scope, and revoked lifecycle state", () => {
+  it("rejects verifier trust for wrong registry, mismatched scope, and revoked lifecycle state", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const verifier = createVerifierScenarioFixture("employment");
 
-    harness.authorizeVerifier(verifier);
+    await harness.authorizeVerifier(verifier);
 
-    expect(() =>
-      harness.evaluateCurrentVerifierDecision(verifier, {
+    await expect(harness.evaluateCurrentVerifierDecision(verifier, {
         expectedRegistryId: "registry:other:trusted",
-      }),
-    ).toThrow(/registry mismatch/i);
+      })).rejects.toThrow(/registry mismatch/i);
 
     const mismatchedScope = {
       ...verifier,
       allowedPredicateSetCommitment: verifier.allowedAttributeSetCommitment,
     };
-    expect(() => harness.evaluateCurrentVerifierDecision(mismatchedScope)).toThrow(
+    await expect(harness.evaluateCurrentVerifierDecision(mismatchedScope)).rejects.toThrow(
       /scope is not registered/i,
     );
 
-    harness.revokeVerifier(verifier);
-    expect(() => harness.evaluateCurrentVerifierDecision(verifier)).toThrow(
+    await harness.revokeVerifier(verifier);
+    await expect(harness.evaluateCurrentVerifierDecision(verifier)).rejects.toThrow(
       /not active/i,
     );
-    const revokedBundle = harness.buildVerifierHistoricalEvidence(verifier);
+    const revokedBundle = await harness.buildVerifierHistoricalEvidence(verifier);
     expect(revokedBundle.authorization?.status).toBe("revoked");
   });
 
-  it("authorizes an external recognition and emits a valid active evidence bundle", () => {
+  it("authorizes an external recognition and emits a valid active evidence bundle", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const recognition = createRecognitionScenarioFixture("gaia-x");
 
-    harness.authorizeRecognition(recognition);
+    await harness.authorizeRecognition(recognition);
 
-    const bundle = harness.evaluateCurrentRecognitionDecision(recognition, {
+    const bundle = await harness.evaluateCurrentRecognitionDecision(recognition, {
       expectedRegistryId: harness.registryId,
     });
 
@@ -835,116 +832,114 @@ describe("trust registry local simulator integration", () => {
     expect(bundle.subjectDid).toBe(recognition.recognizedAuthorityDid);
     expect(bundle.authorization).toBeUndefined();
     const client = new TrustRegistrySimulatorClient(harness.simulator);
-    expect(() => client.verifyIssuerAuthorizationBundle(bundle, {})).toThrow(
+    await expect(client.verifyIssuerAuthorizationBundle(bundle, {})).rejects.toThrow(
       /does not contain issuer authorization/i,
     );
-    expect(() => client.verifyVerifierAuthorizationBundle(bundle, {})).toThrow(
+    await expect(client.verifyVerifierAuthorizationBundle(bundle, {})).rejects.toThrow(
       /does not contain verifier authorization/i,
     );
-    expect(() => harness.simulator.assertIssuerAuthorized(
+    await expect(harness.simulator.assertIssuerAuthorized(
       recognition.recognizedAuthorityDidCommitment,
       IssuerResourceType.credentialFamily,
       recognition.scopeResourceIdCommitment,
-    )).toThrow(/not registered|not active/i);
-    expect(() => client.getCurrentMaintainerMembership(
+    )).rejects.toThrow(/not registered|not active/i);
+    await expect(client.getCurrentMaintainerMembership(
       recognition.recognizedAuthorityDid,
-    )).toThrow(/not registered/i);
+    )).rejects.toThrow(/not registered/i);
   });
 
-  it("preserves recognition application history before activation", () => {
+  it("preserves recognition application history before activation", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const recognition = createRecognitionScenarioFixture("gaia-x-application");
 
-    harness.proposeRecognition(recognition);
+    await harness.proposeRecognition(recognition);
 
-    expect(() => harness.evaluateCurrentRecognitionDecision(recognition)).toThrow(
+    await expect(harness.evaluateCurrentRecognitionDecision(recognition)).rejects.toThrow(
       /not active/i,
     );
-    const proposedBundle = harness.buildRecognitionHistoricalEvidence(recognition);
+    const proposedBundle = await harness.buildRecognitionHistoricalEvidence(recognition);
     expect(proposedBundle.recognition?.status).toBe("proposed");
     expect(proposedBundle.recognition?.authorizedAt).toBeUndefined();
     expect(proposedBundle.recognition?.effectiveFrom).toBeUndefined();
 
-    harness.approveRecognition(recognition);
+    await harness.approveRecognition(recognition);
 
-    expect(() => harness.evaluateCurrentRecognitionDecision(recognition)).toThrow(
+    await expect(harness.evaluateCurrentRecognitionDecision(recognition)).rejects.toThrow(
       /not active/i,
     );
-    const authorizedBundle = harness.buildRecognitionHistoricalEvidence(recognition);
+    const authorizedBundle = await harness.buildRecognitionHistoricalEvidence(recognition);
     expect(authorizedBundle.recognition?.status).toBe("authorized");
     expect(authorizedBundle.recognition?.authorizedAt).toBeDefined();
     expect(authorizedBundle.recognition?.effectiveFrom).toBeUndefined();
 
-    harness.activateRecognition(recognition);
+    await harness.activateRecognition(recognition);
 
-    const activeBundle = harness.evaluateCurrentRecognitionDecision(recognition, {
+    const activeBundle = await harness.evaluateCurrentRecognitionDecision(recognition, {
       expectedRegistryId: harness.registryId,
     });
     expect(activeBundle.recognition?.status).toBe("active");
     expect(activeBundle.recognition?.effectiveFrom).toBeDefined();
   });
 
-  it("rejects current recognition after suspension and revocation but preserves historical evidence through archival", () => {
+  it("rejects current recognition after suspension and revocation but preserves historical evidence through archival", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const recognition = createRecognitionScenarioFixture("eidas");
 
-    harness.authorizeRecognition(recognition);
-    harness.suspendRecognition(recognition);
+    await harness.authorizeRecognition(recognition);
+    await harness.suspendRecognition(recognition);
 
-    expect(() => harness.evaluateCurrentRecognitionDecision(recognition)).toThrow(
+    await expect(harness.evaluateCurrentRecognitionDecision(recognition)).rejects.toThrow(
       /not active/i,
     );
-    const suspendedBundle = harness.buildRecognitionHistoricalEvidence(recognition);
+    const suspendedBundle = await harness.buildRecognitionHistoricalEvidence(recognition);
     expect(suspendedBundle.recognition?.status).toBe("suspended");
 
-    harness.revokeRecognition(recognition);
-    expect(() => harness.evaluateCurrentRecognitionDecision(recognition)).toThrow(
+    await harness.revokeRecognition(recognition);
+    await expect(harness.evaluateCurrentRecognitionDecision(recognition)).rejects.toThrow(
       /not active/i,
     );
-    const revokedBundle = harness.buildRecognitionHistoricalEvidence(recognition);
+    const revokedBundle = await harness.buildRecognitionHistoricalEvidence(recognition);
     expect(revokedBundle.recognition?.status).toBe("revoked");
 
-    harness.archiveRecognition(recognition);
-    const archivedBundle = harness.buildRecognitionHistoricalEvidence(recognition);
+    await harness.archiveRecognition(recognition);
+    const archivedBundle = await harness.buildRecognitionHistoricalEvidence(recognition);
     expect(archivedBundle.recognition?.status).toBe("archived");
     expect(archivedBundle.recognition?.archivedAt).toBeDefined();
   });
 
-  it("rejects recognition trust for wrong registry, mismatched scope, and revoked lifecycle state", () => {
+  it("rejects recognition trust for wrong registry, mismatched scope, and revoked lifecycle state", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const recognition = createRecognitionScenarioFixture("ebsi");
 
-    harness.authorizeRecognition(recognition);
+    await harness.authorizeRecognition(recognition);
 
-    expect(() =>
-      harness.evaluateCurrentRecognitionDecision(recognition, {
+    await expect(harness.evaluateCurrentRecognitionDecision(recognition, {
         expectedRegistryId: "registry:other:trusted",
-      }),
-    ).toThrow(/registry mismatch/i);
+      })).rejects.toThrow(/registry mismatch/i);
 
     const mismatchedScope = {
       ...recognition,
       scopeResourceIdCommitment: recognition.scopeResourceTypeCommitment,
     };
-    expect(() => harness.evaluateCurrentRecognitionDecision(mismatchedScope)).toThrow(
+    await expect(harness.evaluateCurrentRecognitionDecision(mismatchedScope)).rejects.toThrow(
       /scope is not registered/i,
     );
 
-    harness.revokeRecognition(recognition);
-    expect(() => harness.evaluateCurrentRecognitionDecision(recognition)).toThrow(
+    await harness.revokeRecognition(recognition);
+    await expect(harness.evaluateCurrentRecognitionDecision(recognition)).rejects.toThrow(
       /not active/i,
     );
-    const revokedBundle = harness.buildRecognitionHistoricalEvidence(recognition);
+    const revokedBundle = await harness.buildRecognitionHistoricalEvidence(recognition);
     expect(revokedBundle.recognition?.status).toBe("revoked");
   });
 
-  it("authorizes a trusted auditor and emits a valid active evidence bundle", () => {
+  it("authorizes a trusted auditor and emits a valid active evidence bundle", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const auditor = createAuditorScenarioFixture("iso-27001");
 
-    harness.authorizeAuditor(auditor);
+    await harness.authorizeAuditor(auditor);
 
-    const bundle = harness.evaluateCurrentAuditorDecision(auditor, {
+    const bundle = await harness.evaluateCurrentAuditorDecision(auditor, {
       expectedRegistryId: harness.registryId,
     });
 
@@ -955,7 +950,7 @@ describe("trust registry local simulator integration", () => {
     expect(bundle.subjectDid).toBe(auditor.subjectDid);
   });
 
-  it("keeps same-profile auditor credential scopes distinct in current and historical evidence", () => {
+  it("keeps same-profile auditor credential scopes distinct in current and historical evidence", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const first = createAuditorScenarioFixture("same-profile-credential-scope");
     const credentialScopeCommitment = sha256Hex("audit:other-credential-scope");
@@ -972,82 +967,82 @@ describe("trust registry local simulator integration", () => {
       scopeResourceId: otherResourceId,
       requestResourceIdCommitment: bytes32Commitment(otherResourceId),
     };
-    harness.authorizeAuditor(first);
-    harness.authorizeAuditor(second);
-    expect(Buffer.from(harness.simulator.getAuditorAuthorization(second.authorizationIdCommitment).requestResourceId))
+    await harness.authorizeAuditor(first);
+    await harness.authorizeAuditor(second);
+    expect(Buffer.from((await harness.simulator.getAuditorAuthorization(second.authorizationIdCommitment)).requestResourceId))
       .toEqual(Buffer.from(bytes32Commitment(otherResourceId)));
-    expect(harness.evaluateCurrentAuditorDecision(first).authorization?.resourceId).toBe(first.scopeResourceId);
-    expect(harness.evaluateCurrentAuditorDecision(second).authorization?.resourceId).toBe(otherResourceId);
-    expect(harness.buildAuditorHistoricalEvidence(first).authorization?.authorizationId).toBe(first.authorizationId);
-    expect(harness.buildAuditorHistoricalEvidence(second).authorization?.authorizationId).toBe(authorizationId);
+    expect((await harness.evaluateCurrentAuditorDecision(first)).authorization?.resourceId).toBe(first.scopeResourceId);
+    expect((await harness.evaluateCurrentAuditorDecision(second)).authorization?.resourceId).toBe(otherResourceId);
+    expect((await harness.buildAuditorHistoricalEvidence(first)).authorization?.authorizationId).toBe(first.authorizationId);
+    expect((await harness.buildAuditorHistoricalEvidence(second)).authorization?.authorizationId).toBe(authorizationId);
   });
 
-  it("rejects current auditor trust after suspension and revocation but preserves historical evidence through archival", () => {
+  it("rejects current auditor trust after suspension and revocation but preserves historical evidence through archival", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const auditor = createAuditorScenarioFixture("gdpr");
 
-    harness.authorizeAuditor(auditor);
-    harness.suspendAuditor(auditor);
+    await harness.authorizeAuditor(auditor);
+    await harness.suspendAuditor(auditor);
 
-    expect(() => harness.evaluateCurrentAuditorDecision(auditor)).toThrow(/not active/i);
-    const suspendedBundle = harness.buildAuditorHistoricalEvidence(auditor);
+    await expect(harness.evaluateCurrentAuditorDecision(auditor)).rejects.toThrow(/not active/i);
+    const suspendedBundle = await harness.buildAuditorHistoricalEvidence(auditor);
     expect(suspendedBundle.authorization?.status).toBe("suspended");
 
-    harness.revokeAuditor(auditor);
-    expect(() => harness.evaluateCurrentAuditorDecision(auditor)).toThrow(/not active/i);
-    const revokedBundle = harness.buildAuditorHistoricalEvidence(auditor);
+    await harness.revokeAuditor(auditor);
+    await expect(harness.evaluateCurrentAuditorDecision(auditor)).rejects.toThrow(/not active/i);
+    const revokedBundle = await harness.buildAuditorHistoricalEvidence(auditor);
     expect(revokedBundle.authorization?.status).toBe("revoked");
 
-    harness.archiveAuditor(auditor);
-    const archivedBundle = harness.buildAuditorHistoricalEvidence(auditor);
+    await harness.archiveAuditor(auditor);
+    const archivedBundle = await harness.buildAuditorHistoricalEvidence(auditor);
     expect(archivedBundle.authorization?.status).toBe("archived");
     expect(archivedBundle.authorization?.archivedAt).toBeDefined();
   });
 
-  it("governs maintainer membership through proposal, approval, activation, and lifecycle state changes", () => {
+  it("governs maintainer membership through proposal, approval, activation, and lifecycle state changes", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const candidate = createMaintainerScenarioFixture("governed");
 
-    harness.proposeMaintainer(candidate);
+    await harness.proposeMaintainer(candidate);
     expect(
-      harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment).status,
+      (await harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment)).status,
     ).toBe(ContractAuthorizationStatus.proposed);
 
-    harness.approveMaintainer(candidate);
+    await harness.approveMaintainer(candidate);
     expect(
-      harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment).status,
+      (await harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment)).status,
     ).toBe(ContractAuthorizationStatus.authorized);
 
-    harness.activateMaintainer(candidate);
-    const activeMembership = harness.simulator.getCurrentMaintainerMembership(
+    await harness.activateMaintainer(candidate);
+    const activeMembership = await harness.simulator.getCurrentMaintainerMembership(
       candidate.subjectDidCommitment,
     );
     expect(activeMembership.status).toBe(ContractAuthorizationStatus.active);
-    expect(harness.simulator.getLedger().activeMaintainerCount).toBe(2n);
+    expect((await harness.simulator.getLedger()).activeMaintainerCount).toBe(2n);
 
-    harness.suspendMaintainer(candidate);
+    await harness.suspendMaintainer(candidate);
     expect(
-      harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment).status,
+      (await harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment)).status,
     ).toBe(ContractAuthorizationStatus.suspended);
-    expect(harness.simulator.getLedger().activeMaintainerCount).toBe(1n);
+    expect((await harness.simulator.getLedger()).activeMaintainerCount).toBe(1n);
 
-    harness.revokeMaintainer(candidate);
+    await harness.revokeMaintainer(candidate);
     expect(
-      harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment).status,
+      (await harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment)).status,
     ).toBe(ContractAuthorizationStatus.revoked);
 
-    harness.archiveMaintainer(candidate);
+    await harness.archiveMaintainer(candidate);
     expect(
-      harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment).status,
+      (await harness.simulator.getMaintainerMembership(candidate.maintainerIdCommitment)).status,
     ).toBe(ContractAuthorizationStatus.archived);
   });
 
-  it("rejects duplicate live maintainer identity enrollment and self-voted deactivation", () => {
+  it("rejects duplicate live maintainer identity enrollment and self-voted deactivation", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const candidate = createMaintainerScenarioFixture("self");
     candidate.subjectDidCommitment = harness.maintainerDidCommitment;
 
-    expect(() => harness.proposeMaintainer(candidate)).toThrow(
+    await expect(harness.proposeMaintainer(candidate)).rejects.toThrow(
       /already has a live membership/i,
     );
 
@@ -1055,56 +1050,57 @@ describe("trust registry local simulator integration", () => {
       maintainerIdCommitment: harness.maintainerIdCommitment,
       maintainerId: harness.maintainerId,
       subjectDidCommitment: harness.maintainerDidCommitment,
-      keyId: harness.simulator.getLedger().lastAuthorizedMaintainerKeyId,
+      keyId: (await harness.simulator.getLedger()).lastAuthorizedMaintainerKeyId,
       seed: new Uint8Array(32),
       subjectDid: harness.maintainerDid,
       trustLevel: "bootstrap-maintainer",
     };
 
-    expect(() => harness.suspendMaintainer(bootstrapMembership)).toThrow(
+    await expect(harness.suspendMaintainer(bootstrapMembership)).rejects.toThrow(
       /own DID/i,
     );
   });
 
-  it("rejects non-self maintainer removal that would break a live threshold", () => {
+  it("rejects non-self maintainer removal that would break a live threshold", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("removal-threshold");
     const second = createMaintainerScenarioFixture("removal-threshold-second");
     const third = createMaintainerScenarioFixture("removal-threshold-third");
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(third);
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 1n, [second]);
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(third);
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 1n, [second]);
+    const ledger = await harness.simulator.getLedger();
     const bootstrapMembership = {
       maintainerIdCommitment: harness.maintainerIdCommitment,
       maintainerId: harness.maintainerId,
       subjectDidCommitment: harness.maintainerDidCommitment,
-      keyId: harness.simulator.getLedger().lastAuthorizedMaintainerKeyId,
+      keyId: ledger.lastAuthorizedMaintainerKeyId,
       seed: new Uint8Array(32),
       subjectDid: harness.maintainerDid,
       trustLevel: "bootstrap-maintainer",
     };
-    const prepared = harness.prepareMaintainerDecisionAction(bootstrapMembership, "suspend");
-    const sequence = harness.simulator.getLedger().governanceActionCount;
-    expect(() => harness.executeMaintainerDecisionWithSignatures(bootstrapMembership, "suspend", [{
+    const prepared = await harness.prepareMaintainerDecisionAction(bootstrapMembership, "suspend");
+    const sequence = ledger.governanceActionCount;
+    await expect(harness.executeMaintainerDecisionWithSignatures(bootstrapMembership, "suspend", [{
       keyId: second.keyId,
       publicKey: deriveJubjubPublicKeyFromSeed(second.seed),
       signature: signDeploymentBoundMaintainerActionFromSeed(
         second.seed, prepared.registryId,
-        harness.simulator.getLedger().deploymentNetworkIdCommitment,
+        ledger.deploymentNetworkIdCommitment,
         Buffer.from(harness.simulator.contractAddress, "hex"),
         prepared.policyCommitment,
         prepared.actionKind, prepared.actionPayloadHash, prepared.actionSequence,
       ),
-    }])).toThrow(/non-conflicted removal quorum/i);
-    expect(harness.simulator.getLedger().governanceActionCount).toBe(sequence);
-    expect(harness.simulator.getLedger().activeMaintainerCount).toBe(3n);
+    }])).rejects.toThrow(/non-conflicted removal quorum/i);
+    expect((await harness.simulator.getLedger()).governanceActionCount).toBe(sequence);
+    expect((await harness.simulator.getLedger()).activeMaintainerCount).toBe(3n);
   });
 
-  it("rejects evidence from an incompatible contract format at both verification boundaries", () => {
+  it("rejects evidence from an incompatible contract format at both verification boundaries", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("format-boundary");
-    harness.authorizeIssuer(issuer);
-    const bundle = harness.evaluateCurrentIssuerDecision(issuer);
-    harness.publishRegistryEpoch();
+    await harness.authorizeIssuer(issuer);
+    const bundle = await harness.evaluateCurrentIssuerDecision(issuer);
+    await harness.publishRegistryEpoch();
     const applicationInput = {
       applicationId: issuer.authorizationId,
       subjectDid: issuer.subjectDid,
@@ -1112,10 +1108,10 @@ describe("trust registry local simulator integration", () => {
       scope: createIssuerAuthorizationScopeFixture(issuer),
       governedResource: { type: "credentialFamily" as const, id: issuer.resourceId },
     };
-    const applicationEvidence = harness.createApplicationEvidence(applicationInput);
+    const applicationEvidence = await harness.createApplicationEvidence(applicationInput);
     const client = new TrustRegistrySimulatorClient(harness.simulator);
-    const ledger = harness.simulator.getLedger();
-    const spy = vi.spyOn(harness.simulator, "getLedger").mockReturnValue({
+    const ledger = await harness.simulator.getLedger();
+    const spy = vi.spyOn(harness.simulator, "getLedger").mockResolvedValue({
       ...ledger,
       contractVersion: 2n,
     });
@@ -1129,51 +1125,50 @@ describe("trust registry local simulator integration", () => {
       throw new Error("Issuer record read should not precede the format gate");
     });
     try {
-      expect(() => harness.publishRegistryEpoch()).toThrow(/Unsupported trust registry format/);
-      expect(() => harness.createApplicationEvidence(applicationInput)).toThrow(/Unsupported trust registry format/);
-      expect(() => harness.assertApplicationEvidence({
+      await expect(harness.publishRegistryEpoch()).rejects.toThrow(/Unsupported trust registry format/);
+      await expect(harness.createApplicationEvidence(applicationInput)).rejects.toThrow(/Unsupported trust registry format/);
+      await expect(harness.assertApplicationEvidence({
         ...applicationInput,
         evidence: applicationEvidence,
-      })).toThrow(/Unsupported trust registry format/);
-      expect(() => harness.assertPublishedEpochEvidence(bundle)).toThrow(/Unsupported trust registry format/);
-      expect(() => harness.readIssuerAuthorizationStatus(issuer)).toThrow(/Unsupported trust registry format/);
-      expect(() => harness.buildIssuerHistoricalEvidence(issuer)).toThrow(/Unsupported trust registry format/);
-      expect(() => harness.evaluateCurrentIssuerDecision(issuer)).toThrow(/Unsupported trust registry format/);
+      })).rejects.toThrow(/Unsupported trust registry format/);
+      await expect(harness.assertPublishedEpochEvidence(bundle)).rejects.toThrow(/Unsupported trust registry format/);
+      await expect(harness.readIssuerAuthorizationStatus(issuer)).rejects.toThrow(/Unsupported trust registry format/);
+      await expect(harness.buildIssuerHistoricalEvidence(issuer)).rejects.toThrow(/Unsupported trust registry format/);
+      await expect(harness.evaluateCurrentIssuerDecision(issuer)).rejects.toThrow(/Unsupported trust registry format/);
       const verifier = createVerifierScenarioFixture("format-boundary");
-      expect(() => harness.readVerifierAuthorizationStatus(verifier)).toThrow(/Unsupported trust registry format/);
-      expect(() => harness.buildVerifierHistoricalEvidence(verifier)).toThrow(/Unsupported trust registry format/);
-      expect(() => harness.evaluateCurrentVerifierDecision(verifier)).toThrow(/Unsupported trust registry format/);
+      await expect(harness.readVerifierAuthorizationStatus(verifier)).rejects.toThrow(/Unsupported trust registry format/);
+      await expect(harness.buildVerifierHistoricalEvidence(verifier)).rejects.toThrow(/Unsupported trust registry format/);
+      await expect(harness.evaluateCurrentVerifierDecision(verifier)).rejects.toThrow(/Unsupported trust registry format/);
       const auditor = createAuditorScenarioFixture("format-boundary");
-      expect(() => harness.buildAuditorHistoricalEvidence(auditor)).toThrow(/Unsupported trust registry format/);
-      expect(() => harness.evaluateCurrentAuditorDecision(auditor)).toThrow(/Unsupported trust registry format/);
+      await expect(harness.buildAuditorHistoricalEvidence(auditor)).rejects.toThrow(/Unsupported trust registry format/);
+      await expect(harness.evaluateCurrentAuditorDecision(auditor)).rejects.toThrow(/Unsupported trust registry format/);
       const recognition = createRecognitionScenarioFixture("format-boundary");
-      expect(() => harness.readRecognitionStatus(recognition)).toThrow(/Unsupported trust registry format/);
-      expect(() => harness.buildRecognitionHistoricalEvidence(recognition)).toThrow(/Unsupported trust registry format/);
-      expect(() => harness.evaluateCurrentRecognitionDecision(recognition)).toThrow(/Unsupported trust registry format/);
-      expect(() => client.verifyIssuerAuthorizationBundle(bundle, {})).toThrow(/Unsupported trust registry format/);
+      await expect(harness.readRecognitionStatus(recognition)).rejects.toThrow(/Unsupported trust registry format/);
+      await expect(harness.buildRecognitionHistoricalEvidence(recognition)).rejects.toThrow(/Unsupported trust registry format/);
+      await expect(harness.evaluateCurrentRecognitionDecision(recognition)).rejects.toThrow(/Unsupported trust registry format/);
+      await expect(client.verifyIssuerAuthorizationBundle(bundle, {})).rejects.toThrow(/Unsupported trust registry format/);
       expect(epochRead).not.toHaveBeenCalled();
       expect(simulatorEpochRead).not.toHaveBeenCalled();
       expect(issuerRecordRead).not.toHaveBeenCalled();
-      expect(() => new TrustRegistrySimulatorClient(harness.simulator)).toThrow(/Unsupported trust registry format/);
     } finally {
       issuerRecordRead.mockRestore();
       simulatorEpochRead.mockRestore();
       epochRead.mockRestore();
       spy.mockRestore();
     }
-    expect(() => harness.assertPublishedEpochEvidence({
+    await expect(harness.assertPublishedEpochEvidence({
       ...bundle,
       policy: { ...bundle.policy, version: "vx" },
-    })).toThrow("Policy version is invalid");
+    })).rejects.toThrow("Policy version is invalid");
   });
 
-  it("rejects anchored evidence with a wrong root, a stale epoch window, or a tampered maintainer signature", () => {
+  it("rejects anchored evidence with a wrong root, a stale epoch window, or a tampered maintainer signature", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness();
     const issuer = createIssuerScenarioFixture("university");
     const client = new TrustRegistrySimulatorClient(harness.simulator);
 
-    harness.authorizeIssuer(issuer);
-    const bundle = harness.evaluateCurrentIssuerDecision(issuer);
+    await harness.authorizeIssuer(issuer);
+    const bundle = await harness.evaluateCurrentIssuerDecision(issuer);
     const originalSignature = bundle.epoch.maintainerSignatures[0];
     if (originalSignature === undefined) {
       throw new Error("expected an epoch maintainer signature");
@@ -1184,25 +1179,21 @@ describe("trust registry local simulator integration", () => {
     const flipLastNibble = (hash: string): string =>
       `${hash.slice(0, -1)}${hash.endsWith("0") ? "1" : "0"}`;
 
-    expect(() =>
-      harness.assertPublishedEpochEvidence({
+    await expect(harness.assertPublishedEpochEvidence({
         ...bundle,
         epoch: {
           ...bundle.epoch,
           stateRoot: bundle.epoch.eventRoot,
         },
-      }),
-    ).toThrow(/state root mismatch/i);
+      })).rejects.toThrow(/state root mismatch/i);
 
-    expect(() =>
-      harness.assertPublishedEpochEvidence(bundle, {
+    await expect(harness.assertPublishedEpochEvidence(bundle, {
         evaluationTime: new Date(
           Date.parse(bundle.epoch.validUntil) + 60_000,
         ).toISOString(),
-      }),
-    ).toThrow(/stale/i);
+      })).rejects.toThrow(/stale/i);
 
-    expect(() => harness.assertPublishedEpochEvidence({
+    await expect(harness.assertPublishedEpochEvidence({
       ...bundle,
       epoch: {
         ...bundle.epoch,
@@ -1212,25 +1203,25 @@ describe("trust registry local simulator integration", () => {
           signature: `0x${"00".repeat(96)}`,
         }] as unknown as typeof bundle.epoch.maintainerSignatures,
       },
-    })).toThrow("Epoch commitment must include exactly one maintainer signature");
+    })).rejects.toThrow("Epoch commitment must include exactly one maintainer signature");
 
-    expect(() => harness.assertPublishedEpochEvidence({
+    await expect(harness.assertPublishedEpochEvidence({
       ...bundle,
       epoch: {
         ...bundle.epoch,
         maintainerSignatures: [] as unknown as typeof bundle.epoch.maintainerSignatures,
       },
-    })).toThrow("Epoch commitment must include exactly one maintainer signature");
+    })).rejects.toThrow("Epoch commitment must include exactly one maintainer signature");
 
-    expect(() => harness.assertPublishedEpochEvidence({
+    await expect(harness.assertPublishedEpochEvidence({
       ...bundle,
       epoch: {
         ...bundle.epoch,
         maintainerSignatures: [{ ...originalSignature, keyId: `${harness.registryDid}#key-1` }],
       },
-    })).toThrow(/DID method does not match its ledger key commitment/u);
+    })).rejects.toThrow(/DID method does not match its ledger key commitment/u);
 
-    const epochRecord = harness.simulator.getEpochCommitment(
+    const epochRecord = await harness.simulator.getEpochCommitment(
       bytes32Commitment(bundle.epoch.epochId),
     );
     for (const malformed of [
@@ -1240,12 +1231,12 @@ describe("trust registry local simulator integration", () => {
       new Uint8Array(33),
       new Uint8Array(32),
     ]) {
-      const malformedLedger = vi.spyOn(harness.simulator, "getEpochCommitment").mockReturnValue({
+      const malformedLedger = vi.spyOn(harness.simulator, "getEpochCommitment").mockResolvedValue({
         ...epochRecord,
         publicationPolicyCommitment: malformed as never,
       });
       try {
-        expect(() => harness.assertPublishedEpochEvidence(bundle)).toThrow(
+        await expect(harness.assertPublishedEpochEvidence(bundle)).rejects.toThrow(
           "Epoch publication policy commitment is missing or malformed",
         );
       } finally {
@@ -1253,8 +1244,7 @@ describe("trust registry local simulator integration", () => {
       }
     }
 
-    expect(() =>
-      harness.assertPublishedEpochEvidence({
+    await expect(harness.assertPublishedEpochEvidence({
         ...bundle,
         epoch: {
           ...bundle.epoch,
@@ -1266,11 +1256,10 @@ describe("trust registry local simulator integration", () => {
             },
           ],
         },
-      }),
-    ).toThrow(/invalid/i);
+      })).rejects.toThrow(/invalid/i);
 
     try {
-      harness.assertPublishedEpochEvidence({
+      await harness.assertPublishedEpochEvidence({
         ...bundle,
         epoch: {
           ...bundle.epoch,
@@ -1286,14 +1275,14 @@ describe("trust registry local simulator integration", () => {
       expect(error).toHaveProperty("cause.message", "Jubjub signature encoding is invalid");
     }
 
-    const malformedSequence = vi.spyOn(harness.simulator, "getEpochCommitment").mockReturnValue({
+    const malformedSequence = vi.spyOn(harness.simulator, "getEpochCommitment").mockResolvedValue({
       ...epochRecord,
       publishedAtSequence: "invalid" as never,
     });
     try {
       let verifierFault: unknown;
       try {
-        harness.assertPublishedEpochEvidence(bundle);
+        await harness.assertPublishedEpochEvidence(bundle);
       } catch (error) {
         verifierFault = error;
       }
@@ -1303,7 +1292,7 @@ describe("trust registry local simulator integration", () => {
       malformedSequence.mockRestore();
     }
 
-    expect(() => harness.assertPublishedEpochEvidence({
+    await expect(harness.assertPublishedEpochEvidence({
       ...bundle,
       epoch: {
         ...bundle.epoch,
@@ -1312,18 +1301,17 @@ describe("trust registry local simulator integration", () => {
           signature: `0x${"00".repeat(96)}`,
         }],
       },
-    })).toThrow("Epoch maintainer signature encoding is invalid");
+    })).rejects.toThrow("Epoch maintainer signature encoding is invalid");
 
-    expect(() => harness.assertPublishedEpochEvidence({
+    await expect(harness.assertPublishedEpochEvidence({
       ...bundle,
       epoch: {
         ...bundle.epoch,
         maintainerSignatures: [{ ...originalSignature, algorithm: "ed25519" }],
       },
-    })).toThrow(/signature algorithm is unsupported/);
+    })).rejects.toThrow(/signature algorithm is unsupported/);
 
-    expect(() =>
-      client.verifyIssuerAuthorizationBundle(
+    await expect(client.verifyIssuerAuthorizationBundle(
         {
           ...bundle,
           inclusionProof: {
@@ -1332,11 +1320,9 @@ describe("trust registry local simulator integration", () => {
           },
         },
         {},
-      ),
-    ).toThrow(/leaf hash/i);
+      )).rejects.toThrow(/leaf hash/i);
 
-    expect(() =>
-      client.verifyIssuerAuthorizationBundle(
+    await expect(client.verifyIssuerAuthorizationBundle(
         {
           ...bundle,
           inclusionProof: {
@@ -1345,7 +1331,6 @@ describe("trust registry local simulator integration", () => {
           },
         },
         {},
-      ),
-    ).toThrow(/event sibling/i);
+      )).rejects.toThrow(/event sibling/i);
   });
 });

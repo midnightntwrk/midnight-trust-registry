@@ -188,7 +188,7 @@ describe("DID-signed HTTP mutation journey", () => {
   it("moves an issuer application to an epoch while refusing unsigned, replayed, and substituted writes", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "tr-signed-http-"));
     const workspacePath = join(tempDir, "workspace.json");
-    const initial = createOperatorWorkspace({ label: "signed-http-registry" });
+    const initial = await createOperatorWorkspace({ label: "signed-http-registry" });
     await writeWorkspaceToFile(workspacePath, initial);
     const maintainerDid = initial.snapshot.registry.maintainerDids[0];
     if (maintainerDid === undefined) throw new Error("maintainer fixture missing");
@@ -305,7 +305,7 @@ describe("DID-signed HTTP mutation journey", () => {
   it("rejects an intent that expires during DID resolution without consuming its nonce", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "tr-signed-expiry-"));
     const workspacePath = join(tempDir, "workspace.json");
-    const workspace = createOperatorWorkspace({ label: "signed-expiry" });
+    const workspace = await createOperatorWorkspace({ label: "signed-expiry" });
     await writeWorkspaceToFile(workspacePath, workspace);
     const baseResolver = createMidnightDidResolver([
       createMidnightDidLedgerFixture(fixture.subjectDid, {
@@ -351,7 +351,7 @@ describe("DID-signed HTTP mutation journey", () => {
     const workspacePath = join(tempDir, "workspace.json");
     const expiredKey = sha256Hex("expired-signed-intent");
     const initial = {
-      ...createOperatorWorkspace({ label: "signed-pruning" }),
+      ...await createOperatorWorkspace({ label: "signed-pruning" }),
       consumedMutationNonces: { [expiredKey]: {
         actorKey: sha256Hex("expired-actor"), expiresAt: "2026-10-10T00:00:59.999Z",
       } },
@@ -381,7 +381,7 @@ describe("DID-signed HTTP mutation journey", () => {
     tempDir = await mkdtemp(join(tmpdir(), "tr-signed-capacity-"));
     const workspacePath = join(tempDir, "workspace.json");
     const initial = {
-      ...createOperatorWorkspace({ label: "signed-capacity" }),
+      ...await createOperatorWorkspace({ label: "signed-capacity" }),
       consumedMutationNonces: Object.fromEntries(
         Array.from({ length: MAX_CONSUMED_MUTATION_NONCES }, (_, index) => [
           `0x${index.toString(16).padStart(64, "0")}`,
@@ -414,7 +414,7 @@ describe("DID-signed HTTP mutation journey", () => {
   it("returns an actor-scoped capacity problem before one caller can exhaust the global window", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "tr-signed-actor-capacity-"));
     const workspacePath = join(tempDir, "workspace.json");
-    const initialWorkspace = createOperatorWorkspace({ label: "signed-actor-capacity" });
+    const initialWorkspace = await createOperatorWorkspace({ label: "signed-actor-capacity" });
     const actorKey = sha256Hex(JSON.stringify([
       "tr:mutation:actor:v1", initialWorkspace.snapshot.registry.registryId, fixture.subjectDid,
     ]));
@@ -469,7 +469,7 @@ describe("DID-signed HTTP mutation journey", () => {
     const workspacePath = join(tempDir, "workspace.json");
     const highWater = "2026-10-10T00:01:30.000Z";
     const initial = {
-      ...createOperatorWorkspace({ label: "signed-clock" }), mutationNonceClock: highWater,
+      ...await createOperatorWorkspace({ label: "signed-clock" }), mutationNonceClock: highWater,
     };
     await writeWorkspaceToFile(workspacePath, initial);
     const resolver = createMidnightDidResolver([createMidnightDidLedgerFixture(fixture.subjectDid, {
@@ -498,7 +498,7 @@ describe("DID-signed HTTP mutation journey", () => {
   it("accepts exact verifier, auditor, and recognition scopes without promoting recognition to membership", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "tr-signed-roles-"));
     const workspacePath = join(tempDir, "workspace.json");
-    const initial = createOperatorWorkspace({ label: "signed-role-registry" });
+    const initial = await createOperatorWorkspace({ label: "signed-role-registry" });
     await writeWorkspaceToFile(workspacePath, initial);
     const verifier = createVerifierScenarioFixture("signed-verifier");
     const auditor = createAuditorScenarioFixture("signed-auditor");
@@ -545,8 +545,8 @@ describe("DID-signed HTTP mutation journey", () => {
         actorDid: maintainerDid, actorRole: "maintainer" as const, seed: maintainerSeed,
         record: {
           targetId: recognition.recognitionId,
-          scopeCommitment: (() => {
-            const next = applyWorkspaceOperation(initial, {
+          scopeCommitment: await (async () => {
+            const next = await applyWorkspaceOperation(initial, {
               operation: "submit", target: "recognition", label: "signed-recognition",
             });
             const entry = resolveWorkspaceOperationRecord(next, {
@@ -581,7 +581,7 @@ describe("DID-signed HTTP mutation journey", () => {
   it("blocks legacy recognition submit when a governed recognition proposal port is configured", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "tr-guarded-recognition-"));
     const workspacePath = join(tempDir, "workspace.json");
-    const initial = createOperatorWorkspace({ label: "guarded-recognition" });
+    const initial = await createOperatorWorkspace({ label: "guarded-recognition" });
     await writeWorkspaceToFile(workspacePath, initial);
     const recognition = createRecognitionScenarioFixture("guarded-recognition");
     const maintainerDid = initial.snapshot.registry.maintainerDids[0];
@@ -606,7 +606,7 @@ describe("DID-signed HTTP mutation journey", () => {
     });
     const url = await listen(server);
     const operation = { operation: "submit", target: "recognition", label: "guarded-recognition" } as const;
-    const next = applyWorkspaceOperation(initial, operation);
+    const next = await applyWorkspaceOperation(initial, operation);
     const entry = resolveWorkspaceOperationRecord(next, operation);
     if (!("recognition" in entry)) throw new Error("recognition fixture missing");
     const intent = buildIntent(initial, operation, maintainerDid, "maintainer", "77", {

@@ -5,9 +5,8 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { sampleSigningKey, signatureVerifyingKey } from "@midnight-ntwrk/compact-runtime";
-import { InsertVerifierKeyTxFailedError } from "@midnight-ntwrk/midnight-js-contracts";
-import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
+import { sampleSigningKey } from "@midnight-ntwrk/compact-runtime";
+import { TxFailedError, type Ledger9FinalizedMaintenanceTxData } from "@midnight-ntwrk/midnight-js-contracts";
 import { bytes32Commitment, bytes32Hex } from "@midnightntwrk/trust-registry-client";
 import {
   deriveJubjubPublicKeyFromSeed, MaintainerStatus,
@@ -24,6 +23,7 @@ import {
   reconcileLocalVerifierKeyInsertion,
   submitLocalVerifierKeyInsertion,
 } from "../local-verifier-key-install.js";
+import { maintenanceSigningKeyHex } from "../maintenance-verifying-key.js";
 
 const mocks = vi.hoisted(() => ({
   readImage: vi.fn(), readPinnedKey: vi.fn(), submitInsert: vi.fn(), compiledContract: vi.fn(),
@@ -51,7 +51,7 @@ const sourceRevision = "a".repeat(40);
 const genesis = `0x${"b".repeat(64)}`;
 const address = `0x${"c".repeat(64)}`;
 const signingKey = sampleSigningKey();
-const bootstrapKey = `0x${signatureVerifyingKey(signingKey).toLowerCase()}`;
+const bootstrapKey = maintenanceSigningKeyHex(signingKey);
 const network = {
   networkId: "undeployed" as const,
   rpcUrl: "http://node:9944",
@@ -81,6 +81,10 @@ const receipt = {
   networkId: "undeployed", contractAddress: address,
   txId: "deploy-tx", blockHash: `0x${"e".repeat(64)}`, blockHeight: 10,
 };
+const finalizedMaintenance = (txId: string, blockHash: string, blockHeight: number) => ({
+  era: "v9",
+  public: { era: "v9", txId, blockHash, blockHeight },
+}) as Ledger9FinalizedMaintenanceTxData;
 const input = () => ({
   network, sourceRevision, receipt, bootstrap, releaseManifest,
   bootstrapMaintenanceVerifyingKey: bootstrapKey,
@@ -90,14 +94,17 @@ const input = () => ({
 const providers = () => {
   let stored: typeof signingKey | null = null;
   return {
+    config: { networkId: "undeployed" },
     privateStateProvider: {
       getSigningKey: vi.fn(async () => stored),
       setSigningKey: vi.fn(async (_address: string, key: typeof signingKey) => { stored = key; }),
     },
     publicDataProvider: {
       queryContractState: vi.fn(async () => ({
-        operation: () => undefined,
-        maintenanceAuthority: { counter: 0n },
+        contractState: { era: "v9", deserialize: () => ({
+          operation: () => undefined,
+          maintenanceAuthority: { counter: 0n },
+        }) },
       })),
     },
   } as never;
@@ -136,7 +143,6 @@ const journal = async () => {
 };
 
 beforeEach(() => {
-  setNetworkId("undeployed");
   vi.clearAllMocks();
   mocks.compiledContract.mockReturnValue({ circuit: "key" });
 });
@@ -201,9 +207,7 @@ describe("local verifier-key insertion", () => {
   it("reserves once, stores only public receipt, and rejects changed approval", async () => {
     const file = await journal();
     const plan = planLocalVerifierKeyInsertion(input(), image());
-    const submit = vi.fn(async () => ({
-      txId: "insert-tx", blockHash: "1".repeat(64), blockHeight: 21,
-    }) as never);
+    const submit = vi.fn(async () => finalizedMaintenance("insert-tx", "1".repeat(64), 21));
     await expect(file.executeOnce(plan, submit)).resolves.toEqual({
       outcome: "succeeded", txId: "insert-tx", blockHash: `0x${"1".repeat(64)}`, blockHeight: 21,
     });
@@ -234,19 +238,31 @@ describe("local verifier-key insertion", () => {
     await expect(link.inspect()).rejects.toBeInstanceOf(VerifierKeyInsertionJournalInvalidError);
   });
 
+  it("does not record an older-era maintenance receipt as a Ledger 9 result", async () => {
+    const file = await journal();
+    const plan = planLocalVerifierKeyInsertion(input(), image());
+    await expect(file.executeOnce(plan, async () => ({
+      ...finalizedMaintenance("wrong-era", "2".repeat(64), 22),
+      public: { era: "v8", txId: "wrong-era", blockHash: "2".repeat(64), blockHeight: 22 },
+    } as never))).rejects.toBeInstanceOf(VerifierKeyInsertionOutcomeUnknownError);
+    expect((await file.inspect())?.submitted).toBeNull();
+  });
+
   it("retains a finalized failed update receipt without permitting a retry", async () => {
     const file = await journal();
     const plan = planLocalVerifierKeyInsertion(input(), image());
-    const finalized = { txId: "failed-tx", blockHash: "2".repeat(64), blockHeight: 22 };
+    const finalized = finalizedMaintenance("failed-tx", "2".repeat(64), 22);
     await expect(file.executeOnce(plan, async () => {
-      throw new InsertVerifierKeyTxFailedError(finalized as never);
+      throw new TxFailedError("insert-verifier-key", finalized.public, {
+        contractAddress: address.slice(2), circuitId: names[1]!,
+      });
     })).rejects.toMatchObject({
       receipt: { outcome: "failed", txId: "failed-tx", blockHash: `0x${"2".repeat(64)}` },
     });
     expect((await file.inspect())?.submitted?.outcome).toBe("failed");
     await expect(reconcileLocalVerifierKeyInsertion({ ...input(), journal: file }))
       .resolves.toMatchObject({ status: "failed-on-chain", receipt: { txId: "failed-tx" } });
-    await expect(file.executeOnce(plan, async () => finalized as never))
+    await expect(file.executeOnce(plan, async () => finalized))
       .rejects.toBeInstanceOf(VerifierKeyInsertionAlreadyReservedError);
   });
 
@@ -266,7 +282,7 @@ describe("local verifier-key insertion", () => {
     mocks.readPinnedKey.mockResolvedValue(new Uint8Array([1, 2, 3]));
     mocks.submitInsert.mockImplementation(async () => {
       expect((await file.inspect())?.reservation.circuitName).toBe(names[1]);
-      return { txId: "insert-tx", blockHash: "1".repeat(64), blockHeight: 21 };
+      return finalizedMaintenance("insert-tx", "1".repeat(64), 21);
     });
     const outcome = await submitLocalVerifierKeyInsertion({
       ...input(), journal: file, providers: providers(),
@@ -291,9 +307,7 @@ describe("local verifier-key insertion", () => {
 
     const pending = await journal();
     mocks.readPinnedKey.mockResolvedValue(new Uint8Array([1, 2, 3]));
-    mocks.submitInsert.mockResolvedValue({
-      txId: "insert-tx", blockHash: "1".repeat(64), blockHeight: 21,
-    });
+    mocks.submitInsert.mockResolvedValue(finalizedMaintenance("insert-tx", "1".repeat(64), 21));
     const outcome = await submitLocalVerifierKeyInsertion({
       ...input(), journal: pending, providers: providers(),
     });
@@ -330,6 +344,7 @@ describe("local verifier-key insertion", () => {
 
     const unreadable = await journal();
     const badProviders = {
+      config: { networkId: "undeployed" },
       privateStateProvider: {
         getSigningKey: async () => null,
         setSigningKey: async () => {},
@@ -343,6 +358,17 @@ describe("local verifier-key insertion", () => {
     expect(mocks.submitInsert).not.toHaveBeenCalled();
   });
 
+  it("rejects a verifier-key provider configured for another network", async () => {
+    const file = await journal();
+    await expect(submitLocalVerifierKeyInsertion({
+      ...input(), journal: file,
+      providers: { ...(providers() as object), config: { networkId: "preview" } } as never,
+    })).rejects.toThrow(/approved network/u);
+    expect(await file.inspect()).toBeNull();
+    expect(mocks.readImage).not.toHaveBeenCalled();
+    expect(mocks.submitInsert).not.toHaveBeenCalled();
+  });
+
   it("rejects a stale indexer maintenance counter before reservation", async () => {
     const file = await journal();
     mocks.readImage.mockResolvedValue(image());
@@ -351,8 +377,10 @@ describe("local verifier-key insertion", () => {
       publicDataProvider: { queryContractState: ReturnType<typeof vi.fn> };
     };
     stale.publicDataProvider.queryContractState.mockResolvedValue({
-      operation: () => undefined,
-      maintenanceAuthority: { counter: 1n },
+      contractState: { era: "v9", deserialize: () => ({
+        operation: () => undefined,
+        maintenanceAuthority: { counter: 1n },
+      }) },
     });
     await expect(submitLocalVerifierKeyInsertion({
       ...input(), journal: file, providers: stale as never,
@@ -400,9 +428,7 @@ describe("local verifier-key insertion", () => {
   it("recognizes a successful submitted receipt only after its key is finalized", async () => {
     const file = await journal();
     const plan = planLocalVerifierKeyInsertion(input(), image());
-    await file.executeOnce(plan, async () => ({
-      txId: "insert-tx", blockHash: "1".repeat(64), blockHeight: 21,
-    }) as never);
+    await file.executeOnce(plan, async () => finalizedMaintenance("insert-tx", "1".repeat(64), 21));
     mocks.readImage.mockResolvedValue({ ...image(), finalizedBlockHash: `0x${"1".repeat(64)}` });
     await expect(reconcileLocalVerifierKeyInsertion({ ...input(), journal: file }))
       .resolves.toEqual({ status: "pending" });

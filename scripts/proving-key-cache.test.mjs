@@ -6,7 +6,22 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
 
-import { synchronizeProvingKeys } from "./proving-key-cache.mjs";
+import { findZkirBinary, synchronizeProvingKeys } from "./proving-key-cache.mjs";
+
+test("finds the pinned Ledger 9 ZKIR binary and rejects ambiguous installs", () => {
+  const root = mkdtempSync(join(tmpdir(), "tr-zkir-binary-"));
+  try {
+    const platform = join(root, "versions", "0.36.0", "x86_64-linux");
+    mkdirSync(platform, { recursive: true });
+    const binary = join(platform, "zkir-v3");
+    writeFileSync(binary, "fixture");
+    assert.equal(findZkirBinary("0.36.0", root), binary);
+    writeFileSync(join(platform, "zkir"), "ambiguous");
+    assert.throws(() => findZkirBinary("0.36.0", root), /Expected one pinned zkir binary/u);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("Quality covers every proving-key shard exactly once", () => {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -18,7 +33,15 @@ test("Quality covers every proving-key shard exactly once", () => {
   const verify = job.steps.find((step) => step.name === "Verify and complete shard proving keys");
   assert.equal(verify.run, `node scripts/proving-key-cache.mjs \${{ matrix.shard }} ${shards.length}`);
   assert.equal(job.needs, "quality");
-  assert.equal(job.if, "needs.quality.outputs.proving_required == 'true'");
+  assert.equal(job.if, "needs.quality.outputs.proving_required == 'true' && !inputs.keyless_linux");
+  const keyless = workflow.jobs["keyless-linux"];
+  assert.equal(keyless.needs, "quality");
+  assert.equal(keyless.if, "github.event_name == 'workflow_dispatch' && inputs.keyless_linux");
+  const generate = keyless.steps.find((step) => step.name === "Create and verify keyless candidate");
+  assert.match(generate.run, /keyless-zkir-bundle\.mjs create-streaming/u);
+  assert.equal(generate.env.COMPACT_VERSION, "${{ steps.compact-version.outputs.version }}");
+  assert.ok(generate.run.includes('"$COMPACT_VERSION"'));
+  assert.ok(!generate.run.includes("${{"));
 });
 
 test("reuses matching circuits and regenerates only changed or corrupted keys", () => {

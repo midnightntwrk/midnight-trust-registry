@@ -117,7 +117,7 @@ describe("pending application registration over private HTTP", () => {
 
   it("fails closed without an injected registration port and never advertises private CORS", async () => {
     server = createTrustRegistryApiServer({
-      source: createInMemorySource(createOperatorWorkspace({ label: "no-registration-port" }).snapshot),
+      source: createInMemorySource((await createOperatorWorkspace({ label: "no-registration-port" })).snapshot),
     });
     const base = await listen(server);
     const path = `${base}/v1/pending-applications`;
@@ -143,7 +143,7 @@ describe("pending application registration over private HTTP", () => {
     const issuerScope = createIssuerAuthorizationScopeFixture(issuer);
     const issuerResource = { type: "credentialFamily" as const, id: issuer.resourceId };
     const state: PendingApplicationRegistrationState = {
-      workspace: createOperatorWorkspace({ label }), applications: [], consumedNonces: [],
+      workspace: await createOperatorWorkspace({ label }), applications: [], consumedNonces: [],
     };
     const registration = new InMemoryPendingApplicationRegistrationPort(state, evidenceVerifierDid, resolver);
     server = createTrustRegistryApiServer({
@@ -170,17 +170,17 @@ describe("pending application registration over private HTTP", () => {
       governedResource: issuerResource,
     });
     expect((await post(replacement)).status).toBe(409);
-    harness.proposeIssuer(issuer);
-    const eventHash = harness.archiveIssuer(issuer);
-    const bundle = harness.buildIssuerHistoricalEvidence(issuer);
+    await harness.proposeIssuer(issuer);
+    const eventHash = await harness.archiveIssuer(issuer);
+    const bundle = await harness.buildIssuerHistoricalEvidence(issuer);
     const observation = {
       authorizationId: pending.authorizationId,
       binding: pending.binding,
       status: "archived" as const,
       archiveEventHash: `0x${Buffer.from(eventHash).toString("hex")}`,
     };
-    const verify = () => {
-      new TrustRegistrySimulatorClient(harness.simulator).verifyIssuerAuthorizationBundle(
+    const verify = async () => {
+      await new TrustRegistrySimulatorClient(harness.simulator).verifyIssuerAuthorizationBundle(
         bundle, { expectedRegistryId: harness.registryId, requireActive: false },
       );
       return bundle.authorization?.status === "archived"
@@ -198,7 +198,7 @@ describe("pending application registration over private HTTP", () => {
 
   it("registers a DID-signed exact scope, then admits one challenge-bound VP for that pending record", async () => {
     const state: PendingApplicationRegistrationState = {
-      workspace: createOperatorWorkspace({ label: "auditor-http-registration" }),
+      workspace: await createOperatorWorkspace({ label: "auditor-http-registration" }),
       applications: [],
       consumedNonces: [],
     };
@@ -307,7 +307,7 @@ describe("pending application registration over private HTTP", () => {
 
   it("registers issuer, verifier, and maintainer applications over the same signed endpoint", async () => {
     const state: PendingApplicationRegistrationState = {
-      workspace: createOperatorWorkspace({ label: "multi-role-http-registration" }),
+      workspace: await createOperatorWorkspace({ label: "multi-role-http-registration" }),
       applications: [], consumedNonces: [],
     };
     const registration = new InMemoryPendingApplicationRegistrationPort(state, evidenceVerifierDid, resolver);

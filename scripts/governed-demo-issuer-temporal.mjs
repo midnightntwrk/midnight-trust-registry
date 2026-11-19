@@ -7,11 +7,11 @@ export async function runIssuerTemporalLifecycle(adversarialMatrix, {
   vcAuthorityAnchor, vcAuthoritySeed, vcAuthorityKeyIdCommitment, vcConsumer,
   issuerBundle, activeAt, evaluateIssuerAt, queryTrqpIssuerAt, expectHttp,
 }) {
-  const candidateCoSignedProposal = harness.proposeIssuer(
+  const candidateCoSignedProposal = await harness.proposeIssuer(
     createIssuerScenarioFixture("governed-demo-candidate-proposal"), [candidate],
   );
-  harness.suspendIssuer(issuer);
-  publishSnapshot();
+  await harness.suspendIssuer(issuer);
+  await publishSnapshot();
   const suspendedBundle = await expectHttp(await fetch(
     `${base}/v1/authorizations/issuer/${issuer.authorizationId}/evidence`,
   ), 200);
@@ -25,7 +25,7 @@ export async function runIssuerTemporalLifecycle(adversarialMatrix, {
     apiBundle: suspendedBundle, state: "suspended", previousJourney: vcConsumer,
     apiBase: base,
   });
-  adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(suspendedBundle, {
+  await adversarialMatrix.expectRejected(() => client.verifyIssuerAuthorizationBundle(suspendedBundle, {
     expectedRegistryId: harness.registryId,
   }), {
     id: "issuer-suspended",
@@ -63,7 +63,7 @@ export async function runIssuerTemporalLifecycle(adversarialMatrix, {
     invariant: "TRQP agrees with the earlier active issuer decision after suspension",
     boundary: "adapter", trusted: historicalAfterSuspension.trustedAtTime,
   });
-  adversarialMatrix.expectVerified(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
+  await adversarialMatrix.expectVerifiedAsync(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
     expectedRegistryId: harness.registryId,
     evaluationTime: activeAt,
   }), {
@@ -71,8 +71,8 @@ export async function runIssuerTemporalLifecycle(adversarialMatrix, {
     invariant: "A later suspension does not erase the issuer's earlier active authorization",
     boundary: "client",
   });
-  harness.revokeIssuer(issuer);
-  publishSnapshot();
+  await harness.revokeIssuer(issuer);
+  await publishSnapshot();
   const revokedBundle = await expectHttp(await fetch(
     `${base}/v1/authorizations/issuer/${issuer.authorizationId}/evidence`,
   ), 200);
@@ -86,7 +86,7 @@ export async function runIssuerTemporalLifecycle(adversarialMatrix, {
     apiBundle: revokedBundle, state: "revoked", previousJourney: suspendedConsumer,
     apiBase: base,
   });
-  adversarialMatrix.expectThrown(() => client.verifyIssuerAuthorizationBundle(revokedBundle, {
+  await adversarialMatrix.expectRejected(() => client.verifyIssuerAuthorizationBundle(revokedBundle, {
     expectedRegistryId: harness.registryId,
   }), {
     id: "issuer-revoked",
@@ -124,7 +124,7 @@ export async function runIssuerTemporalLifecycle(adversarialMatrix, {
     invariant: "TRQP agrees with the earlier active issuer decision after revocation",
     boundary: "adapter", trusted: historicalAfterRevocation.trustedAtTime,
   });
-  adversarialMatrix.expectVerified(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
+  await adversarialMatrix.expectVerifiedAsync(() => client.verifyIssuerAuthorizationBundle(issuerBundle, {
     expectedRegistryId: harness.registryId,
     evaluationTime: activeAt,
   }), {

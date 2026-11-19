@@ -33,7 +33,7 @@ import { acceptedProposalAdmission } from "./fixtures/accepted-proposal-admissio
 
 const bytes = (value: string): Uint8Array => Buffer.from(value.slice(2), "hex");
 
-const signPrepared = (
+const signPrepared = async (
   harness: LocalTrustRegistryIntegrationHarness,
   maintainer: MaintainerScenarioFixture,
   prepared: PreparedGovernedVerifierProposal,
@@ -42,7 +42,7 @@ const signPrepared = (
   const signature = signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
     bytes(prepared.registryId),
-    harness.simulator.getLedger().deploymentNetworkIdCommitment,
+    (await harness.simulator.getLedger()).deploymentNetworkIdCommitment,
     Buffer.from(harness.simulator.contractAddress, "hex"),
     bytes(prepared.policyCommitment),
     bytes(prepared.actionKind),
@@ -60,7 +60,7 @@ describe("Compact-backed verifier proposals over HTTP", () => {
   it("requires an injected proposal port", async () => {
     const harness = new LocalTrustRegistryIntegrationHarness("verifier-proposal-unavailable");
     const server = createTrustRegistryApiServer({
-      source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness, { label: "unavailable" }) },
+      source: { mode: "memory", loadSnapshot: async () => await publishSimulatorSnapshot(harness, { label: "unavailable" }) },
     });
     try {
       await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -80,11 +80,11 @@ describe("Compact-backed verifier proposals over HTTP", () => {
     const second = createMaintainerScenarioFixture("verifier-http-second");
     const third = createMaintainerScenarioFixture("verifier-http-third");
     const verifier = createVerifierScenarioFixture("verifier-http-candidate");
-    harness.authorizeMaintainer(second);
-    harness.authorizeMaintainer(third);
-    harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+    await harness.authorizeMaintainer(second);
+    await harness.authorizeMaintainer(third);
+    await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
     const scope = createVerifierAuthorizationScopeFixture(verifier);
-    const evidence = harness.createApplicationEvidence({
+    const evidence = await harness.createApplicationEvidence({
       applicationId: verifier.authorizationId,
       subjectDid: verifier.subjectDid,
       role: "verifier",
@@ -98,14 +98,14 @@ describe("Compact-backed verifier proposals over HTTP", () => {
           throw new GovernedVerifierProposalRejectedError("unknown-authorization");
         }
         try {
-          return harness.prepareVerifierProposalAction(verifier, submitted);
+          return await harness.prepareVerifierProposalAction(verifier, submitted);
         } catch {
           throw new GovernedVerifierProposalRejectedError("invalid-evidence");
         }
       },
       async preflightSubmission(_authorizationId, _evidence, signers, signature, context) {
         preflights += 1;
-        const ledger = harness.simulator.getLedger();
+        const ledger = await harness.simulator.getLedger();
         if (BigInt(signers.length) < ledger.maintainerThreshold) {
           throw new GovernedVerifierProposalRejectedError("invalid-signers");
         }
@@ -124,7 +124,7 @@ describe("Compact-backed verifier proposals over HTTP", () => {
           throw new GovernedVerifierProposalRejectedError("unknown-authorization");
         }
         try {
-          const eventHash = harness.executeVerifierProposalWithSignatures(
+          const eventHash = await harness.executeVerifierProposalWithSignatures(
             verifier, submitted, signers, verifierSignature,
           );
           return { eventHash: `0x${Buffer.from(eventHash).toString("hex")}` };
@@ -143,7 +143,7 @@ describe("Compact-backed verifier proposals over HTTP", () => {
     const directory = await mkdtemp(join(tmpdir(), "tr-verifier-preflight-"));
     const journal = new FileProposalSubmissionJournal(join(directory, "journal.json"));
     const server = createTrustRegistryApiServer({
-      source: { mode: "memory", loadSnapshot: async () => publishSimulatorSnapshot(harness,
+      source: { mode: "memory", loadSnapshot: async () => await publishSimulatorSnapshot(harness,
         { label: "verifier-proposal-http", verifiers: [{ label: "candidate", fixture: verifier }] }) },
       governedVerifierProposals: port,
       proposalSubmissionJournal: journal,
@@ -166,9 +166,9 @@ describe("Compact-backed verifier proposals over HTTP", () => {
       expect(preparedResponse.headers.get("cache-control")).toBe("no-store");
       const prepared = await preparedResponse.json() as PreparedGovernedVerifierProposal;
       expect(prepared.evidenceHash).toBe(evidence.commitment);
-      const signature = harness.signVerifierProposalEvidence(harness.prepareVerifierProposalAction(verifier, evidence));
-      const first = signPrepared(harness, second, prepared);
-      const other = signPrepared(harness, third, prepared);
+      const signature = harness.signVerifierProposalEvidence(await harness.prepareVerifierProposalAction(verifier, evidence));
+      const first = await signPrepared(harness, second, prepared);
+      const other = await signPrepared(harness, third, prepared);
       const submit = (context: PreparedGovernedVerifierProposal, evidenceVerifierSignature: string,
         signers = [first, other]) => post("submit", { evidence, prepared: context, signers, evidenceVerifierSignature });
       const encoded = `0x${Buffer.from(encodeJubjubSignature(signature)).toString("hex")}`;
@@ -201,7 +201,7 @@ describe("Compact-backed verifier proposals over HTTP", () => {
       expect(recorded?.state).toBe("submitted");
       expect(recorded?.reservationContext).toEqual({ actionSequence: prepared.actionSequence,
         actionKind: prepared.actionKind, actionPayloadHash: prepared.actionPayloadHash });
-      expect(harness.simulator.getLedger().verifierAuthorizationCount).toBe(1n);
+      expect((await harness.simulator.getLedger()).verifierAuthorizationCount).toBe(1n);
       expect((await submit(prepared, encoded)).status).toBe(409);
       expect(await (await post("resolve", { evidence })).json()).toEqual({
         state: "observed", eventHash: receipt.eventHash,

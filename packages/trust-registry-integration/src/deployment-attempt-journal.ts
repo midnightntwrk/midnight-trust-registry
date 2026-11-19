@@ -3,10 +3,8 @@ import { constants } from "node:fs";
 import { lstat, open } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
-import { signatureVerifyingKey } from "@midnight-ntwrk/compact-runtime";
+import type { SigningKey } from "@midnight-ntwrk/compact-runtime";
 import type { ContractProviders } from "@midnight-ntwrk/midnight-js-contracts";
-import { getNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
-import type { SigningKey } from "@midnight-ntwrk/midnight-js-protocol/compact-runtime";
 import { bytes32Commitment, bytes32Hex } from "@midnightntwrk/trust-registry-client";
 import { TrustRegistryContract, trustRegistryWitnesses, type TrustRegistryPrivateState } from "@midnightntwrk/trust-registry-contract";
 import { z } from "zod";
@@ -22,6 +20,7 @@ import {
 import type { LocalNetworkDeploymentActionReaderConfig } from "./local-network-deployment-action-reader.js";
 import type { PublicNetworkDeploymentActionReaderConfig } from "./public-network-deployment-action-reader.js";
 import { hasExactFieldNames } from "./exact-field-names.js";
+import { maintenanceSigningKeyHex } from "./maintenance-verifying-key.js";
 import { verifyInstalledVerifierKeyAssets } from "./verifier-asset-preflight.js";
 
 type RegistryContract = TrustRegistryContract.Contract<TrustRegistryPrivateState>;
@@ -92,9 +91,6 @@ export class DeploymentAttemptJournalInvalidError extends Error {
 
 function reservationFor(intent: DeploymentAttemptIntent): z.infer<typeof Reservation> {
   const { network, bootstrap, releaseManifest } = intent;
-  if (getNetworkId() !== network.networkId) {
-    throw new Error("Midnight.js network does not match the approved deployment network");
-  }
   if (!Revision.safeParse(intent.sourceRevision).success
     || !Hex32.safeParse(network.expectedGenesisHash).success
     || /^0x0{64}$/u.test(network.expectedGenesisHash)
@@ -145,7 +141,7 @@ function reservationFor(intent: DeploymentAttemptIntent): z.infer<typeof Reserva
       y: bootstrap.maintainerPublicKey.y.toString(),
     },
     maintainerThreshold: bootstrap.maintainerThreshold.toString(),
-    bootstrapMaintenanceVerifyingKey: `0x${signatureVerifyingKey(intent.contractMaintenanceSigningKey).toLowerCase()}`,
+    bootstrapMaintenanceVerifyingKey: maintenanceSigningKeyHex(intent.contractMaintenanceSigningKey),
     verifierKeySha256,
     ...(intent.initialVerifierKeyName === undefined ? {} : {
       initialVerifierKeyName: intent.initialVerifierKeyName,
@@ -298,6 +294,9 @@ export async function deployPublicTrustRegistryOnce(input: {
   if ((input.network.networkId as string) === "undeployed") {
     throw new Error("Public deployment journal does not accept the undeployed network");
   }
+  if (input.providers.config.networkId !== input.network.networkId) {
+    throw new Error("Deployment providers do not match the approved network");
+  }
   await verifyInstalledVerifierKeyAssets(input.releaseManifest);
   return input.journal.executeOnce(input, () => deployPublicTrustRegistry(input));
 }
@@ -314,6 +313,9 @@ export async function deployLocalTrustRegistryOnce(input: {
 }): Promise<PublicRegistryDeploymentResult> {
   if (input.network.networkId !== "undeployed") {
     throw new Error("Local deployment journal requires the undeployed network");
+  }
+  if (input.providers.config.networkId !== input.network.networkId) {
+    throw new Error("Deployment providers do not match the approved network");
   }
   await verifyInstalledVerifierKeyAssets(input.releaseManifest);
   return input.journal.executeOnce(input, () => deployLocalTrustRegistry(input));
@@ -332,6 +334,9 @@ export async function deployLocalTrustRegistryStagedOnce(input: {
 }): Promise<PublicRegistryDeploymentResult> {
   if (input.network.networkId !== "undeployed") {
     throw new Error("Staged local deployment journal requires the undeployed network");
+  }
+  if (input.providers.config.networkId !== input.network.networkId) {
+    throw new Error("Deployment providers do not match the approved network");
   }
   await verifyInstalledVerifierKeyAssets(input.releaseManifest);
   return input.journal.executeOnce(input, () => deployLocalTrustRegistryStaged(input));

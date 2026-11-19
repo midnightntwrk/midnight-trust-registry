@@ -12,6 +12,11 @@ const compose = join(root, "deploy/standalone/compose.yml");
 const offlineCompose = join(root, "deploy/standalone/compose.offline.yml");
 const project = "tr-standalone-local-rendercheck";
 const services = ["indexer", "node", "proof-server"];
+export const ledger9Images = {
+  node: "midnightntwrk/midnight-node@sha256:0c1ad548d523c1109aa1f16daab1bf72dcb78c7e17b8a8c6d97424ad0eba7b8a",
+  indexer: "midnightntwrk/indexer-standalone@sha256:119f35db548ba1c390845f215bb1e928e73038bef7c315825aee0461bd54499d",
+  "proof-server": "midnightntwrk/proof-server@sha256:5617e26aa76d06c44f4bee667c37eb71ccf02fefe0e5848100fa84001282d515",
+};
 const ports = { indexer: [8088, "28088"], node: [9944, "29944"],
   "proof-server": [6300, "26300"] };
 
@@ -31,12 +36,15 @@ export function syntheticRenderEnvironment(inherited = process.env) {
 export function checkRenderedStandaloneCompose(config, offline) {
   assert.equal(config.name, project);
   assert.deepEqual(Object.keys(config.services).sort(), services);
-  assert.deepEqual(Object.keys(config.networks), ["ledger"]);
+  assert.deepEqual(Object.keys(config.networks).sort(), ["host-access", "ledger"]);
   assert.equal(config.networks.ledger.internal, true);
   assert.equal(config.networks.ledger.name, `${project}_ledger`);
+  assert.equal(config.networks["host-access"].name, `${project}_host-access`);
+  assert.notEqual(config.networks["host-access"].internal, true);
+  assert.notEqual(config.networks["host-access"].external, true);
   for (const service of services) {
     const actual = config.services[service];
-    assert.deepEqual(Object.keys(actual.networks), ["ledger"]);
+    assert.deepEqual(Object.keys(actual.networks).sort(), ["host-access", "ledger"]);
     assert.equal(actual.ports?.length, 1);
     const [target, published] = ports[service];
     assert.equal(actual.ports[0].host_ip, "127.0.0.1");
@@ -46,6 +54,8 @@ export function checkRenderedStandaloneCompose(config, offline) {
     if (offline) {
       assert.equal(actual.pull_policy, "never");
       assert.equal(actual.image, `tr-standalone/${service}:synthetic-render-only`);
+    } else {
+      assert.equal(actual.image, ledger9Images[service]);
     }
   }
   assert.equal(config.services.indexer.environment.APP__INFRA__NODE__URL, "ws://node:9944");

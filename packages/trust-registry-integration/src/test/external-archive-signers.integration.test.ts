@@ -21,6 +21,7 @@ import {
 
 type PreparedActionSigningContext = {
   registryId: Uint8Array;
+  networkIdCommitment: Uint8Array;
   policyCommitment: Uint8Array;
   actionKind: Uint8Array;
   actionPayloadHash: Uint8Array;
@@ -37,7 +38,7 @@ const signPrepared = (
   signature: signDeploymentBoundMaintainerActionFromSeed(
     maintainer.seed,
     action.registryId,
-    harness.simulator.getLedger().deploymentNetworkIdCommitment,
+    action.networkIdCommitment,
     Buffer.from(harness.simulator.contractAddress, "hex"),
     action.policyCommitment,
     action.actionKind,
@@ -47,39 +48,40 @@ const signPrepared = (
 });
 
 type ArchiveScenario = {
-  prepare: () => PreparedActionSigningContext;
-  execute: (signers: readonly MaintainerCoAuthorizer[]) => Uint8Array;
+  propose: () => Promise<unknown>;
+  prepare: () => Promise<PreparedActionSigningContext>;
+  execute: (signers: readonly MaintainerCoAuthorizer[]) => Promise<Uint8Array>;
 };
 
 const scenarios = {
   issuer: (harness: LocalTrustRegistryIntegrationHarness): ArchiveScenario => {
     const fixture = createIssuerScenarioFixture("archive-issuer");
-    harness.proposeIssuer(fixture);
     return {
+      propose: () => harness.proposeIssuer(fixture),
       prepare: () => harness.prepareIssuerDecisionAction(fixture, "archive"),
       execute: (signers) => harness.executeIssuerDecisionWithSignatures(fixture, "archive", signers),
     };
   },
   verifier: (harness: LocalTrustRegistryIntegrationHarness): ArchiveScenario => {
     const fixture = createVerifierScenarioFixture("archive-verifier");
-    harness.proposeVerifier(fixture);
     return {
+      propose: () => harness.proposeVerifier(fixture),
       prepare: () => harness.prepareVerifierDecisionAction(fixture, "archive"),
       execute: (signers) => harness.executeVerifierDecisionWithSignatures(fixture, "archive", signers),
     };
   },
   auditor: (harness: LocalTrustRegistryIntegrationHarness): ArchiveScenario => {
     const fixture = createAuditorScenarioFixture("archive-auditor");
-    harness.proposeAuditor(fixture);
     return {
+      propose: () => harness.proposeAuditor(fixture),
       prepare: () => harness.prepareAuditorDecisionAction(fixture, "archive"),
       execute: (signers) => harness.executeAuditorDecisionWithSignatures(fixture, "archive", signers),
     };
   },
   maintainer: (harness: LocalTrustRegistryIntegrationHarness): ArchiveScenario => {
     const fixture = createMaintainerScenarioFixture("archive-maintainer");
-    harness.proposeMaintainer(fixture);
     return {
+      propose: () => harness.proposeMaintainer(fixture),
       prepare: () => harness.prepareMaintainerDecisionAction(fixture, "archive"),
       execute: (signers) => harness.executeMaintainerDecisionWithSignatures(fixture, "archive", signers),
     };
@@ -88,23 +90,24 @@ const scenarios = {
 
 describe("externally signed proposal archival", () => {
   for (const [role, createScenario] of Object.entries(scenarios)) {
-    it(`requires a fresh maintainer quorum to archive a proposed ${role}`, () => {
+    it(`requires a fresh maintainer quorum to archive a proposed ${role}`, async () => {
       const harness = new LocalTrustRegistryIntegrationHarness(`archive-${role}`);
       const second = createMaintainerScenarioFixture(`${role}-second`);
       const third = createMaintainerScenarioFixture(`${role}-third`);
-      harness.authorizeMaintainer(second);
-      harness.authorizeMaintainer(third);
+      await harness.authorizeMaintainer(second);
+      await harness.authorizeMaintainer(third);
       const scenario = createScenario(harness);
-      harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
+      await scenario.propose();
+      await harness.updateMaintainerThresholdPolicy(2n, 1n, 2n);
 
-      const prepared = scenario.prepare();
+      const prepared = await scenario.prepare();
       const signers = [signPrepared(harness, second, prepared), signPrepared(harness, third, prepared)];
-      const before = harness.simulator.getLedger().governanceActionCount;
-      expect(() => scenario.execute(signers.slice(0, 1))).toThrow();
-      expect(harness.simulator.getLedger().governanceActionCount).toBe(before);
-      scenario.execute(signers);
-      expect(harness.simulator.getLedger().governanceActionCount).toBe(before + 1n);
-      expect(() => scenario.execute(signers)).toThrow();
+      const before = (await harness.simulator.getLedger()).governanceActionCount;
+      await expect(scenario.execute(signers.slice(0, 1))).rejects.toThrow();
+      expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before);
+      await scenario.execute(signers);
+      expect((await harness.simulator.getLedger()).governanceActionCount).toBe(before + 1n);
+      await expect(scenario.execute(signers)).rejects.toThrow();
     });
   }
 });

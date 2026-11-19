@@ -1,5 +1,12 @@
 # Self-hosted standalone: first operator run
 
+::: warning Ledger 9 migration
+This guide describes the historical 0.1.0 Ledger 8 release process. Do not
+apply its exact-source bundle steps to the Ledger 9 migration branch. In a
+source checkout, read `docs/plans/ledger9-migration.md` for the current local
+trial and its unqualified deployment status.
+:::
+
 The first 0.1.0 release candidate targets a **local Midnight ledger with an
 offline runtime**. Installation may use the network. Preview, Preprod, Mainnet,
 and Kubernetes are not part of this qualification. Start with a dedicated

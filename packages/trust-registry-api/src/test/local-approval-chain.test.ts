@@ -67,7 +67,7 @@ it("verifies signed standalone approvals and rejects substitution", async () => 
     await writeFile(inventoryPath, inventoryBytes);
     const expectedGenesisHash = `0x${"d".repeat(64)}`;
     const contractAddress = `0x${"e".repeat(64)}`;
-    const committee = Array.from({ length: 3 }, () => `0x${signatureVerifyingKey(sampleSigningKey())}`);
+    const committee = Array.from({ length: 3 }, () => `0x${signatureVerifyingKey(sampleSigningKey()).value}`);
     const plan = { sourceRevision, installInventorySha256, releaseManifestSha256,
       networkId: "undeployed", rpcUrl: "http://127.0.0.1:29944",
       expectedGenesisHash, contractAddress,

@@ -5,7 +5,6 @@ import { lstat, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import {
   createLocalNetworkDeploymentActionReader,
   deployLocalTrustRegistryOnce,
@@ -14,11 +13,17 @@ import {
   getLocalNetworkProfile,
   reconcileLocalStagedDeployment,
 } from "@midnightntwrk/trust-registry-integration";
+import {
+  GovernancePolicyRecordSchema,
+  computeGovernancePolicySnapshotCommitment,
+  deriveGovernancePolicySnapshot,
+} from "@midnightntwrk/trust-registry-domain";
 
 import { checkLocalLedgerPreflight } from "./local-ledger-preflight.mjs";
 import { loadRecheckedApprovedProvider, readApprovedProviderIdentity } from "./approved-provider-identity.mjs";
 import { assertApprovedProviderImportBoundary, assertApprovedProviderTree } from "./immutable-provider-tree.mjs";
 import { validateLocalDeploymentPlan } from "./local-deployment-plan-policy.mjs";
+import { parseCanonicalSignedJson } from "./standalone-signed-document-policy.mjs";
 
 export { validateLocalDeploymentPlan };
 
@@ -48,6 +53,35 @@ async function regularFile(path) {
   return readFile(path);
 }
 
+/** @param {LocalDeploymentPlan} plan */
+async function approvedPolicyCommitment(plan) {
+  if (plan.format !== "tr-local-staged-deployment-plan-v2") return null;
+  const bytes = await regularFile(plan.policyRecordPath);
+  if (createHash("sha256").update(bytes).digest("hex") !== plan.policyRecordSha256) {
+    throw new Error("Approved policy record bytes changed after plan approval");
+  }
+  const record = GovernancePolicyRecordSchema.parse(parseCanonicalSignedJson(bytes, "Approved policy record"));
+  const snapshot = deriveGovernancePolicySnapshot(record);
+  if (record.version !== "v1" || record.status !== "active"
+    || snapshot.thresholds.some(({ threshold }) => threshold !== 1)) {
+    throw new Error("Bootstrap policy must be active v1 with one-maintainer thresholds");
+  }
+  return { registryId: record.registryId,
+    commitment: computeGovernancePolicySnapshotCommitment(snapshot) };
+}
+
+/** @param {unknown} bootstrap
+ * @param {{registryId: string, commitment: string}} expected */
+function assertApprovedBootstrapPolicy(bootstrap, expected) {
+  if (!isRecord(bootstrap) || bootstrap.registryId !== expected.registryId
+    || bootstrap.maintainerThreshold !== 1n
+    || !(bootstrap.governancePolicyCommitment instanceof Uint8Array)
+    || bootstrap.governancePolicyCommitment.length !== 32
+    || `0x${Buffer.from(bootstrap.governancePolicyCommitment).toString("hex")}` !== expected.commitment) {
+    throw new Error("Provider bootstrap disagrees with the approved canonical policy record");
+  }
+}
+
 /** The provider module is privileged code; the approved hash is checked before import. */
 /** @param {LocalDeploymentPlan} plan
  * @param {DeploymentDependencies} dependencies
@@ -55,6 +89,7 @@ async function regularFile(path) {
  * @param {"createLocalDeploymentMaterial" | "createLocalMaintenanceMaterial"} factoryName */
 async function loadApprovedMaterial(plan, dependencies, approval, factoryName) {
   validateLocalDeploymentPlan(plan);
+  const approvedPolicy = await approvedPolicyCommitment(plan);
   const manifestBytes = await regularFile(plan.releaseManifestPath);
   if (approval.expectedReleaseManifestSha256
     && createHash("sha256").update(manifestBytes).digest("hex") !== approval.expectedReleaseManifestSha256) {
@@ -79,7 +114,6 @@ async function loadApprovedMaterial(plan, dependencies, approval, factoryName) {
     const tree = assertApprovedProviderTree(plan.providerModulePath, process.env.TR_IMMUTABLE_PROVIDER_ROOT);
     assertApprovedProviderImportBoundary(tree.root);
   }
-  setNetworkId(getLocalNetworkProfile().networkId);
   await (dependencies.validateEndpoints ?? createLocalNetworkDeploymentActionReader)(plan.network);
   await (dependencies.observe ?? checkLocalLedgerPreflight)({
     format: "tr-local-ledger-pin-v1",
@@ -97,9 +131,22 @@ async function loadApprovedMaterial(plan, dependencies, approval, factoryName) {
     throw new Error(`Approved provider module must export ${factoryName}`);
   }
   const material = await /** @type {(input: {network: LocalDeploymentPlan["network"],
-   * releaseManifest: DeploymentInput["releaseManifest"]}) => Promise<unknown>} */ (factory)({
+   * releaseManifest: DeploymentInput["releaseManifest"], approvedPolicy?:
+   * {registryId: string, commitment: string}}) => Promise<unknown>} */ (factory)({
     network: plan.network, releaseManifest: manifest,
+    ...(factoryName === "createLocalDeploymentMaterial" && approvedPolicy !== null
+      ? { approvedPolicy } : {}),
   });
+  if (factoryName === "createLocalDeploymentMaterial" && approvedPolicy !== null) {
+    try {
+      assertApprovedBootstrapPolicy(isRecord(material) ? material.bootstrap : null, approvedPolicy);
+    } catch (error) {
+      if (isRecord(material) && typeof material.stop === "function") {
+        try { await material.stop(); } catch { console.error("Provider cleanup failed after policy rejection"); }
+      }
+      throw error;
+    }
+  }
   return { manifest, material };
 }
 
@@ -138,6 +185,7 @@ export async function runLocalDeployment(plan, dependencies = {}, approval = {})
       journal: new FileDeploymentAttemptJournal(plan.journalPath),
     };
     const result = plan.format === "tr-local-staged-deployment-plan-v1"
+      || plan.format === "tr-local-staged-deployment-plan-v2"
       ? await (dependencies.deployOnce ?? deployLocalTrustRegistryStagedOnce)({
         ...deploymentInput, initialVerifierKeyName: plan.initialVerifierKeyName,
       })
@@ -165,7 +213,8 @@ export async function runLocalDeployment(plan, dependencies = {}, approval = {})
  * @param {DeploymentDependencies} [dependencies]
  * @param {DeploymentApproval} [approval] */
 export async function reconcileLocalDeployment(plan, dependencies = {}, approval = {}) {
-  if (plan?.format !== "tr-local-staged-deployment-plan-v1") {
+  if (plan?.format !== "tr-local-staged-deployment-plan-v1"
+    && plan?.format !== "tr-local-staged-deployment-plan-v2") {
     throw new Error("Read-only deployment reconciliation requires a staged local plan");
   }
   const { manifest, material } = await loadApprovedDeploymentMaterial(plan, dependencies, approval);
