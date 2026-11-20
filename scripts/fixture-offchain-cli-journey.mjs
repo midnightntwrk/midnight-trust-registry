@@ -41,7 +41,8 @@ async function runActorCli(command, input) {
   });
   child.stdin.end(JSON.stringify(input));
   const code = await exited;
-  assert.equal(stderr.includes(input.session.accessToken), false);
+  const token = input.session?.accessToken ?? input.accessToken;
+  if (token !== undefined) assert.equal(stderr.includes(token), false);
   return { code, stdout, stderr };
 }
 
@@ -153,6 +154,40 @@ try {
   const contractAddress = fixtureHash("contract");
   assert.equal(challenge.genesisHash, expectedGenesisHash);
   assert.equal(challenge.contractAddress, contractAddress);
+  for (const purpose of ["applicant-session", "maintainer-session"]) {
+    const expected = { actorDid, actorKeyId, purpose, origin, registryId: challenge.registryId,
+      genesisHash: expectedGenesisHash, contractAddress };
+    const invalid = await runActorCli("api-did-challenge", { ...expected, origin: "https://elsewhere.invalid" });
+    assert.equal(invalid.code, 1);
+    assert.equal(invalid.stdout, "");
+    const issued = await runActorCli("api-did-challenge", expected);
+    assert.equal(issued.code, 0, issued.stderr);
+    const { challenge: cliChallenge, digest } = JSON.parse(issued.stdout);
+    assert.equal(digest, `0x${Buffer.from(actorAuthenticationDigestBytes(cliChallenge)).toString("hex")}`);
+    const signature = { keyId: actorKeyId, algorithm: "ed25519",
+      value: `0x${signEd25519(null, Buffer.from(digest.slice(2), "hex"), privateKey).toString("hex")}` };
+    const response = { expected, challenge: cliChallenge, signature };
+    const wrongScope = await runActorCli("api-did-sign-in", { ...response,
+      expected: { ...expected, purpose: purpose === "applicant-session" ? "maintainer-session" : "applicant-session" } });
+    assert.equal(wrongScope.code, 1);
+    assert.equal(wrongScope.stdout, "");
+    const authenticated = await runActorCli("api-did-sign-in", response);
+    assert.equal(authenticated.code, 0, authenticated.stderr);
+    const identity = JSON.parse(authenticated.stdout);
+    assert.equal(identity.purpose, purpose);
+    assert.equal(identity.actorDid, actorDid);
+    assert.equal(Object.hasOwn(identity, "role"), false);
+    assert.equal(Object.hasOwn(identity, "vpEligible"), false);
+    const replayed = await runActorCli("api-did-sign-in", response);
+    assert.equal(replayed.code, 1);
+    assert.match(replayed.stderr, /HTTP 401/u);
+    const loggedOut = await runActorCli("api-did-sign-out", identity);
+    assert.equal(loggedOut.code, 0, loggedOut.stderr);
+    assert.deepEqual(JSON.parse(loggedOut.stdout), { status: "signed-out" });
+    await expectStatus(await fetch(`${origin}/v1/actor-authentication/session`, {
+      headers: { authorization: `Bearer ${identity.accessToken}` },
+    }), 401);
+  }
   let signedChallenges = 0;
   const signer = {
     getIdentity: async () => ({ actorDid, actorKeyId }),

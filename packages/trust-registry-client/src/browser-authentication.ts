@@ -44,15 +44,23 @@ export type ActorDidSession<P extends ActorAuthenticationPurpose = ActorAuthenti
   expiresAt: string;
 };
 
-export type SignInActorDidInput<P extends ActorAuthenticationPurpose> = {
+type ActorDidChallengeContext<P extends ActorAuthenticationPurpose> = {
   apiBase: string;
   pageOrigin: string;
   registryId: string;
   purpose: P;
   deploymentIdentity?: { expectedGenesisHash: string; contractAddress: string };
-  signer: ActorDidSigner;
   fetchImpl?: typeof fetch;
   clock?: () => number;
+};
+
+export type SignInActorDidInput<P extends ActorAuthenticationPurpose> = ActorDidChallengeContext<P> & {
+  signer: ActorDidSigner;
+};
+
+export type RequestActorDidChallengeInput<P extends ActorAuthenticationPurpose> = ActorDidChallengeContext<P> & {
+  actorDid: string;
+  actorKeyId: string;
 };
 
 export function isSameOriginPrivateApi(apiBase: string, pageOrigin: string): boolean {
@@ -82,21 +90,11 @@ async function responsePayload(response: Response, action: string): Promise<unkn
   }
 }
 
-/** The external signer owns the private key; this client holds only an ephemeral identity session. */
-export async function signInActorDid<P extends ActorAuthenticationPurpose>(
-  input: SignInActorDidInput<P>,
-): Promise<ActorDidSession<P>> {
-  const base = sameOriginApi(input.apiBase, input.pageOrigin);
-  const fetchImpl = input.fetchImpl ?? fetch;
-  const clock = input.clock ?? Date.now;
-  const { actorDid, actorKeyId } = await input.signer.getIdentity();
-  const challengeResponse = await fetchImpl(`${base}/v1/actor-authentication/challenges`, {
-    method: "POST", credentials: "omit", cache: "no-store", redirect: "error",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ actorDid, actorKeyId, purpose: input.purpose }),
-  });
-  const challengeValue = await responsePayload(challengeResponse, "DID challenge");
-  const parsed = ActorAuthenticationChallengeSchema.safeParse(challengeValue);
+function checkedChallenge<P extends ActorAuthenticationPurpose>(
+  input: RequestActorDidChallengeInput<P>, challenge: unknown,
+): ActorAuthenticationChallenge {
+  const { actorDid, actorKeyId } = input;
+  const parsed = ActorAuthenticationChallengeSchema.safeParse(challenge);
   if (!parsed.success || parsed.data.actorDid !== actorDid || parsed.data.actorKeyId !== actorKeyId
     || parsed.data.registryId !== input.registryId || parsed.data.origin !== input.pageOrigin
     || parsed.data.purpose !== input.purpose
@@ -107,11 +105,34 @@ export async function signInActorDid<P extends ActorAuthenticationPurpose>(
       || parsed.data.contractAddress !== input.deploymentIdentity.contractAddress))) {
     throw new Error("DID challenge does not match this actor and registry.");
   }
-  const challenge = parsed.data;
-  if (Date.parse(challenge.expiresAt) <= clock()) throw new Error("DID challenge has expired.");
-  const signed = ActorAuthenticationSignatureSchema.safeParse(await input.signer.signDigest({
-    challenge, digest: actorAuthenticationDigestBytes(challenge),
-  }));
+  if (Date.parse(parsed.data.expiresAt) <= (input.clock ?? Date.now)()) {
+    throw new Error("DID challenge has expired.");
+  }
+  return parsed.data;
+}
+
+export async function requestActorDidChallenge<P extends ActorAuthenticationPurpose>(
+  input: RequestActorDidChallengeInput<P>,
+): Promise<ActorAuthenticationChallenge> {
+  const base = sameOriginApi(input.apiBase, input.pageOrigin);
+  const response = await (input.fetchImpl ?? fetch)(`${base}/v1/actor-authentication/challenges`, {
+    method: "POST", credentials: "omit", cache: "no-store", redirect: "error",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ actorDid: input.actorDid, actorKeyId: input.actorKeyId, purpose: input.purpose }),
+  });
+  return checkedChallenge(input, await responsePayload(response, "DID challenge"));
+}
+
+/** Exchange a challenge signed externally; only an identity session is returned. */
+export async function completeActorDidSignIn<P extends ActorAuthenticationPurpose>(
+  input: RequestActorDidChallengeInput<P> & { challenge: unknown; signature: unknown },
+): Promise<ActorDidSession<P>> {
+  const base = sameOriginApi(input.apiBase, input.pageOrigin);
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const clock = input.clock ?? Date.now;
+  const { actorDid, actorKeyId } = input;
+  const challenge = checkedChallenge(input, input.challenge);
+  const signed = ActorAuthenticationSignatureSchema.safeParse(input.signature);
   if (!signed.success || signed.data.keyId !== actorKeyId
     || signed.data.algorithm !== (challenge.version === "tr-actor-authentication-v1"
       ? "jubjub-schnorr" : "ed25519")) {
@@ -136,6 +157,18 @@ export async function signInActorDid<P extends ActorAuthenticationPurpose>(
   return { actorDid, actorKeyId, purpose: input.purpose, origin: input.pageOrigin, registryId: input.registryId,
     genesisHash: challenge.genesisHash, contractAddress: challenge.contractAddress,
     accessToken: value.accessToken, expiresAt: value.expiresAt as string };
+}
+
+/** The external signer owns the private key; this client holds only an ephemeral identity session. */
+export async function signInActorDid<P extends ActorAuthenticationPurpose>(
+  input: SignInActorDidInput<P>,
+): Promise<ActorDidSession<P>> {
+  sameOriginApi(input.apiBase, input.pageOrigin);
+  const { actorDid, actorKeyId } = await input.signer.getIdentity();
+  const context = { ...input, actorDid, actorKeyId };
+  const challenge = await requestActorDidChallenge(context);
+  const signature = await input.signer.signDigest({ challenge, digest: actorAuthenticationDigestBytes(challenge) });
+  return completeActorDidSignIn({ ...context, challenge, signature });
 }
 
 export async function signOutActorDid(input: {
