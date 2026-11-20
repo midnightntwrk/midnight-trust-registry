@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 
-import { runActorApiCommand } from "./actor-api.js";
+import { runActorApiCommand, runActorDidCommand } from "./actor-api.js";
 import { createDemoSnapshot } from "./demo-snapshot.js";
 import { serializeJson } from "./model.js";
 import { renderAuditReport, type AuditReportKind } from "./report.js";
@@ -62,6 +62,10 @@ type CommandName =
   | "api-register"
   | "api-reconcile"
   | "api-applications"
+  | "api-did-challenge"
+  | "api-did-sign-in"
+  | "api-did-session"
+  | "api-did-sign-out"
   | "help";
 
 type CliIo = {
@@ -96,6 +100,10 @@ Commands:
   api-register     Register an externally signed pending application via an applicant DID session on stdin
   api-reconcile    Check the exact signed request after an unknown registration outcome
   api-applications List this DID session's pending applications via stdin
+  api-did-challenge  Request a DID challenge and digest using pinned context on stdin
+  api-did-sign-in    Exchange a challenge and external signature for an identity session
+  api-did-session    Check the identity session on stdin without printing the bearer
+  api-did-sign-out   Revoke the identity session on stdin
 
 Actor API commands require --api-base; the DID session on stdin carries its sign-in origin.
 Pass the ephemeral session JSON through stdin; never put the bearer on a command line.
@@ -673,7 +681,8 @@ export const runCli = async (
   }
 
   try {
-    switch (command as CommandName) {
+    const commandName = command as CommandName;
+    switch (commandName) {
       case "init-demo":
         return await runInitDemo(rest, io);
       case "init-workspace":
@@ -710,6 +719,11 @@ export const runCli = async (
         return await runActorApiCommand("api-reconcile", rest, io);
       case "api-applications":
         return await runActorApiCommand("api-applications", rest, io);
+      case "api-did-challenge":
+      case "api-did-sign-in":
+      case "api-did-session":
+      case "api-did-sign-out":
+        return await runActorDidCommand(commandName, rest, io);
       case "help":
         io.stdout(HELP_TEXT);
         return 0;

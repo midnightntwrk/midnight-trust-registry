@@ -9,6 +9,46 @@ For the owner-managed shared Ledger 9 chain, use the separate
 [local development guide](ledger9-local-development.md); it does not replace
 the historical Ledger 8 standalone release procedure below.
 
+## Sign in headlessly with a Midnight DID
+
+Use an off-chain Midnight DID with an Ed25519 authentication key for this
+phase. For a local deployment, the API operator opts in with
+`--local-offchain-auth-store`. For isolated testing, run
+`pnpm run fixture:offchain-auth:smoke` after building the runtime. A session
+proves control of a DID; it grants no registry role and does not replace
+signed requests or existing approval checks.
+
+Prepare `expected.json` with `actorDid`, `actorKeyId`, `purpose`
+(`applicant-session` or `maintainer-session`), `origin`, `registryId`,
+`genesisHash`, and `contractAddress`. Get the registry and deployment pins
+from the independently approved API configuration, not from the challenge.
+`API_ORIGIN` must match `origin` exactly.
+
+```sh
+umask 077
+trust-registry api-did-challenge --api-base "$API_ORIGIN" < expected.json > challenge.json
+# Have your external signer sign the decoded digest bytes and write signature.json.
+jq -n --slurpfile expected expected.json --slurpfile issued challenge.json \
+  --slurpfile signature signature.json \
+  '{expected:$expected[0],challenge:$issued[0].challenge,signature:$signature[0]}' |
+  trust-registry api-did-sign-in --api-base "$API_ORIGIN" > session.json
+trust-registry api-did-session --api-base "$API_ORIGIN" < session.json
+trust-registry api-did-sign-out --api-base "$API_ORIGIN" < session.json
+```
+
+Sign the bytes represented by `challenge.json`'s `digest` field, not the
+hexadecimal string. The signature object has `keyId`, `algorithm: "ed25519"`,
+and a `value` containing the 0x-prefixed hexadecimal signature. Keep the
+private key in the signer and the short-lived session out of logs, arguments,
+and version control. Use a private working directory and discard the session
+file after signing out.
+
+`api-did-session` checks the identity with the API and returns only the DID,
+key ID, and purpose. It exits nonzero if the API rejects the session or reports
+a different identity. To reproduce the signer interoperability test with
+OpenSSL 3 and disposable fixture keys, run
+`TR_FIXTURE_DID_OPENSSL=1 pnpm run fixture:offchain-auth:smoke` after building.
+
 ## Choose the test you need
 
 | Goal | Run | Passing result means |

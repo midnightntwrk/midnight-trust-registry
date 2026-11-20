@@ -443,7 +443,7 @@ test("fixture policy revision requires a separate evidence-verifier registration
       confirmations.push(dialog.message());
       await dialog.accept();
     });
-    await page.goto(`${base}/?apiBase=${encodeURIComponent(base)}`);
+    await page.goto(`${base}/?demo=1&apiBase=${encodeURIComponent(base)}`);
     await expect(page.locator(".source-badge")).toHaveText("Practice workspace");
     await page.locator(".advanced-workflows > summary").click();
     await page.locator("#task-policy > summary").click();

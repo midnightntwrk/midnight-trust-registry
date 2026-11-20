@@ -1,23 +1,36 @@
 import { parseArgs } from "node:util";
 
-import { listApplicantApplications, reconcileApplicantApplication, registerApplicantApplication } from "@midnightntwrk/trust-registry-client/browser-authentication";
-import { SignedPendingApplicationSchema } from "@midnightntwrk/trust-registry-domain/browser";
+import { completeActorDidSignIn, inspectActorDidSession, listApplicantApplications, reconcileApplicantApplication,
+  registerApplicantApplication, requestActorDidChallenge, signOutActorDid } from "@midnightntwrk/trust-registry-client/browser-authentication";
+import { actorAuthenticationDigestBytes, ActorAuthenticationChallengeSchema,
+  ActorAuthenticationSignatureSchema, SignedPendingApplicationSchema } from "@midnightntwrk/trust-registry-domain/browser";
 import { z } from "zod";
 
 import { serializeJson } from "./model.js";
 
 const MAX_INPUT_BYTES = 128 * 1024;
 
-const ApplicantSessionSchema = z.strictObject({
+const ActorSessionSchema = z.strictObject({
   actorDid: z.string().startsWith("did:midnight:"),
   actorKeyId: z.string().min(1),
-  purpose: z.literal("applicant-session"),
+  purpose: z.enum(["applicant-session", "maintainer-session"]),
   origin: z.string().url(),
   registryId: z.string().min(1),
   genesisHash: z.string().regex(/^0x[0-9a-f]{64}$/u),
   contractAddress: z.string().regex(/^0x[0-9a-f]{64}$/u),
   accessToken: z.string().regex(/^trsa_[A-Za-z0-9_-]{43}$/u),
   expiresAt: z.string().datetime({ offset: true }),
+});
+
+const ApplicantSessionSchema = ActorSessionSchema.extend({ purpose: z.literal("applicant-session") });
+const DidContextSchema = ActorSessionSchema.pick({
+  actorDid: true, actorKeyId: true, purpose: true, origin: true, registryId: true,
+  genesisHash: true, contractAddress: true,
+});
+const SignedChallengeInputSchema = z.strictObject({
+  expected: DidContextSchema,
+  challenge: ActorAuthenticationChallengeSchema,
+  signature: ActorAuthenticationSignatureSchema,
 });
 
 const ApplicantInputSchema = z.strictObject({
@@ -47,12 +60,7 @@ async function readInput(io: ActorCliIo): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-/** A caller supplies an ephemeral session and signed intent; the CLI never handles a private key. */
-export async function runActorApiCommand(
-  command: "api-register" | "api-reconcile" | "api-applications",
-  argv: readonly string[],
-  io: ActorCliIo,
-): Promise<number> {
+async function readActorCommand(argv: readonly string[], io: ActorCliIo) {
   const parsed = parseArgs({
     args: [...argv], allowPositionals: false, strict: true,
     options: { "api-base": { type: "string" } },
@@ -66,6 +74,55 @@ export async function runActorApiCommand(
   } catch {
     throw new Error("actor API stdin must contain one JSON object");
   }
+  return { apiBase, raw };
+}
+
+/** The signer is external. The challenge and session are transferred over stdin/stdout, not argv. */
+export async function runActorDidCommand(
+  command: "api-did-challenge" | "api-did-sign-in" | "api-did-session" | "api-did-sign-out",
+  argv: readonly string[],
+  io: ActorCliIo,
+): Promise<number> {
+  const { apiBase, raw } = await readActorCommand(argv, io);
+  if (command === "api-did-session" || command === "api-did-sign-out") {
+    const session = ActorSessionSchema.safeParse(raw);
+    if (!session.success) throw new Error("DID session stdin must contain an identity session");
+    const input = { apiBase, pageOrigin: session.data.origin, session: session.data };
+    if (command === "api-did-session") {
+      io.stdout(serializeJson(await inspectActorDidSession(input)));
+    } else {
+      await signOutActorDid(input);
+      io.stdout(serializeJson({ status: "signed-out" }));
+    }
+    return 0;
+  }
+  const context = (expected: z.infer<typeof DidContextSchema>) => ({
+    apiBase, pageOrigin: expected.origin, registryId: expected.registryId, purpose: expected.purpose,
+    actorDid: expected.actorDid, actorKeyId: expected.actorKeyId,
+    deploymentIdentity: { expectedGenesisHash: expected.genesisHash, contractAddress: expected.contractAddress },
+  });
+  if (command === "api-did-challenge") {
+    const input = DidContextSchema.safeParse(raw);
+    if (!input.success) throw new Error("DID challenge stdin must contain an independently pinned actor context");
+    const challenge = await requestActorDidChallenge(context(input.data));
+    io.stdout(serializeJson({ challenge, digest: `0x${Buffer.from(actorAuthenticationDigestBytes(challenge)).toString("hex")}` }));
+    return 0;
+  }
+  const input = SignedChallengeInputSchema.safeParse(raw);
+  if (!input.success) throw new Error("DID sign-in stdin must contain the pinned context, challenge, and external signature");
+  io.stdout(serializeJson(await completeActorDidSignIn({
+    ...context(input.data.expected), challenge: input.data.challenge, signature: input.data.signature,
+  })));
+  return 0;
+}
+
+/** A caller supplies an ephemeral session and signed intent; the CLI never handles a private key. */
+export async function runActorApiCommand(
+  command: "api-register" | "api-reconcile" | "api-applications",
+  argv: readonly string[],
+  io: ActorCliIo,
+): Promise<number> {
+  const { apiBase, raw } = await readActorCommand(argv, io);
   const input = ApplicantInputSchema.safeParse(raw);
   if (!input.success) throw new Error("actor API stdin contains an invalid applicant session or signed request");
   const pageOrigin = input.data.session.origin;

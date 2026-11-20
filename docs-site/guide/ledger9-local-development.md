@@ -160,11 +160,16 @@ screenshot and a shared-chain transaction into one claimed actor journey.
 
 ## Live actor qualification still needed
 
+Test [Midnight DID sign-in](end-to-end-testing.md#sign-in-headlessly-with-a-midnight-did)
+independently of registry role eligibility. The offline installer and new
+VP-based authorization are deferred; existing signed intent, eligibility, and
+governance checks still apply to any operations that require them.
+
 The API's opt-in `createBoundLocalIssuerProposalPort` requires a deployment-
 specific, independently reviewed adapter for accepted VP admission, DID and
 VC-status verification, trusted time, authenticated finalized readback,
 immutable source-matched provider code, signed writer approval, and a
-one-shot journal. The packaged read-only CLI and demo do not supply it. DID
+one-shot journal. The packaged CLI and demo do not supply it. DID
 sign-in proves identity only; VP eligibility and governed authorization are
 separate.
 
