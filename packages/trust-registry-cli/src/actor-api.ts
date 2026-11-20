@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util";
 
-import { completeActorDidSignIn, listApplicantApplications, reconcileApplicantApplication,
+import { completeActorDidSignIn, inspectActorDidSession, listApplicantApplications, reconcileApplicantApplication,
   registerApplicantApplication, requestActorDidChallenge, signOutActorDid } from "@midnightntwrk/trust-registry-client/browser-authentication";
 import { actorAuthenticationDigestBytes, ActorAuthenticationChallengeSchema,
   ActorAuthenticationSignatureSchema, SignedPendingApplicationSchema } from "@midnightntwrk/trust-registry-domain/browser";
@@ -79,16 +79,21 @@ async function readActorCommand(argv: readonly string[], io: ActorCliIo) {
 
 /** The signer is external. The challenge and session are transferred over stdin/stdout, not argv. */
 export async function runActorDidCommand(
-  command: "api-did-challenge" | "api-did-sign-in" | "api-did-sign-out",
+  command: "api-did-challenge" | "api-did-sign-in" | "api-did-session" | "api-did-sign-out",
   argv: readonly string[],
   io: ActorCliIo,
 ): Promise<number> {
   const { apiBase, raw } = await readActorCommand(argv, io);
-  if (command === "api-did-sign-out") {
+  if (command === "api-did-session" || command === "api-did-sign-out") {
     const session = ActorSessionSchema.safeParse(raw);
-    if (!session.success) throw new Error("DID sign-out stdin must contain an identity session");
-    await signOutActorDid({ apiBase, pageOrigin: session.data.origin, session: session.data });
-    io.stdout(serializeJson({ status: "signed-out" }));
+    if (!session.success) throw new Error("DID session stdin must contain an identity session");
+    const input = { apiBase, pageOrigin: session.data.origin, session: session.data };
+    if (command === "api-did-session") {
+      io.stdout(serializeJson(await inspectActorDidSession(input)));
+    } else {
+      await signOutActorDid(input);
+      io.stdout(serializeJson({ status: "signed-out" }));
+    }
     return 0;
   }
   const context = (expected: z.infer<typeof DidContextSchema>) => ({

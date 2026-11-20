@@ -171,12 +171,38 @@ export async function signInActorDid<P extends ActorAuthenticationPurpose>(
   return completeActorDidSignIn({ ...context, challenge, signature });
 }
 
-export async function signOutActorDid(input: {
+type ActorDidSessionRequest = {
   apiBase: string;
   pageOrigin: string;
   session: ActorDidSession;
   fetchImpl?: typeof fetch;
-}): Promise<void> {
+};
+
+/** Confirm that the API still accepts this identity without returning the bearer. */
+export async function inspectActorDidSession(input: ActorDidSessionRequest): Promise<
+  Pick<ActorDidSession, "actorDid" | "actorKeyId" | "purpose">
+> {
+  const base = sameOriginApi(input.apiBase, input.pageOrigin);
+  const { actorDid, actorKeyId, purpose, origin, accessToken } = input.session;
+  if (origin !== input.pageOrigin || !TOKEN_PATTERN.test(accessToken)) {
+    throw new Error("DID session does not match this page.");
+  }
+  const response = await (input.fetchImpl ?? fetch)(`${base}/v1/actor-authentication/session`, {
+    method: "GET", credentials: "omit", cache: "no-store", redirect: "error",
+    headers: { authorization: `Bearer ${accessToken}` },
+  });
+  const payload = await responsePayload(response, "DID session check");
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("DID session check returned an invalid identity.");
+  }
+  const value = payload as Record<string, unknown>;
+  if (value.actorDid !== actorDid || value.actorKeyId !== actorKeyId || value.purpose !== purpose) {
+    throw new Error("DID session check returned a mismatched identity.");
+  }
+  return { actorDid, actorKeyId, purpose };
+}
+
+export async function signOutActorDid(input: ActorDidSessionRequest): Promise<void> {
   const base = sameOriginApi(input.apiBase, input.pageOrigin);
   if (input.session.origin !== input.pageOrigin) throw new Error("DID session origin does not match this page.");
   const response = await (input.fetchImpl ?? fetch)(`${base}/v1/actor-authentication/session`, {

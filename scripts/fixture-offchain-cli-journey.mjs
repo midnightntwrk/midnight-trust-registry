@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createHash, generateKeyPairSync, sign as signEd25519 } from "node:crypto";
 import { createServer } from "node:net";
-import { cp, mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -106,6 +106,12 @@ try {
       join(portalRoot, role), { recursive: true });
   }
   const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const useOpenSsl = process.env.TR_FIXTURE_DID_OPENSSL === "1";
+  const signerKeyPath = join(directory, "external-key.pem");
+  const signerDigestPath = join(directory, "external-digest.bin");
+  if (useOpenSsl) {
+    await writeFile(signerKeyPath, privateKey.export({ type: "pkcs8", format: "pem" }), { mode: 0o600 });
+  }
   const publicJwk = publicKey.export({ format: "jwk" });
   const actorDid = createLongFormOffchainMidnightDIDString({
     version: 1, alsoKnownAs: [],
@@ -164,8 +170,12 @@ try {
     assert.equal(issued.code, 0, issued.stderr);
     const { challenge: cliChallenge, digest } = JSON.parse(issued.stdout);
     assert.equal(digest, `0x${Buffer.from(actorAuthenticationDigestBytes(cliChallenge)).toString("hex")}`);
-    const signature = { keyId: actorKeyId, algorithm: "ed25519",
-      value: `0x${signEd25519(null, Buffer.from(digest.slice(2), "hex"), privateKey).toString("hex")}` };
+    const digestBytes = Buffer.from(digest.slice(2), "hex");
+    if (useOpenSsl) await writeFile(signerDigestPath, digestBytes, { mode: 0o600 });
+    const cliSignature = useOpenSsl
+      ? execFileSync("openssl", ["pkeyutl", "-sign", "-rawin", "-inkey", signerKeyPath, "-in", signerDigestPath])
+      : signEd25519(null, digestBytes, privateKey);
+    const signature = { keyId: actorKeyId, algorithm: "ed25519", value: `0x${cliSignature.toString("hex")}` };
     const response = { expected, challenge: cliChallenge, signature };
     const wrongScope = await runActorCli("api-did-sign-in", { ...response,
       expected: { ...expected, purpose: purpose === "applicant-session" ? "maintainer-session" : "applicant-session" } });
@@ -178,12 +188,23 @@ try {
     assert.equal(identity.actorDid, actorDid);
     assert.equal(Object.hasOwn(identity, "role"), false);
     assert.equal(Object.hasOwn(identity, "vpEligible"), false);
+    const inspected = await runActorCli("api-did-session", identity);
+    assert.equal(inspected.code, 0, inspected.stderr);
+    assert.deepEqual(JSON.parse(inspected.stdout), { actorDid, actorKeyId, purpose });
+    const mismatched = await runActorCli("api-did-session", { ...identity, actorKeyId: actorDid + "#other" });
+    assert.equal(mismatched.code, 1);
+    assert.equal(mismatched.stdout, "");
+    assert.match(mismatched.stderr, /mismatched identity/u);
     const replayed = await runActorCli("api-did-sign-in", response);
     assert.equal(replayed.code, 1);
     assert.match(replayed.stderr, /HTTP 401/u);
     const loggedOut = await runActorCli("api-did-sign-out", identity);
     assert.equal(loggedOut.code, 0, loggedOut.stderr);
     assert.deepEqual(JSON.parse(loggedOut.stdout), { status: "signed-out" });
+    const revoked = await runActorCli("api-did-session", identity);
+    assert.equal(revoked.code, 1);
+    assert.equal(revoked.stdout, "");
+    assert.match(revoked.stderr, /HTTP 401/u);
     await expectStatus(await fetch(`${origin}/v1/actor-authentication/session`, {
       headers: { authorization: `Bearer ${identity.accessToken}` },
     }), 401);

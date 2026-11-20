@@ -32,7 +32,7 @@ jq -n --slurpfile expected expected.json --slurpfile issued challenge.json \
   --slurpfile signature signature.json \
   '{expected:$expected[0],challenge:$issued[0].challenge,signature:$signature[0]}' |
   trust-registry api-did-sign-in --api-base "$API_ORIGIN" > session.json
-# Use the session on stdin for authenticated API commands.
+trust-registry api-did-session --api-base "$API_ORIGIN" < session.json
 trust-registry api-did-sign-out --api-base "$API_ORIGIN" < session.json
 ```
 
@@ -42,6 +42,12 @@ and a `value` containing the 0x-prefixed hexadecimal signature. Keep the
 private key in the signer and the short-lived session out of logs, arguments,
 and version control. Use a private working directory and discard the session
 file after signing out.
+
+`api-did-session` checks the identity with the API and returns only the DID,
+key ID, and purpose. It exits nonzero if the API rejects the session or reports
+a different identity. To reproduce the signer interoperability test with
+OpenSSL 3 and disposable fixture keys, run
+`TR_FIXTURE_DID_OPENSSL=1 pnpm run fixture:offchain-auth:smoke` after building.
 
 ## Choose the test you need
 

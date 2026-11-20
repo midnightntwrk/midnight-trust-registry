@@ -64,6 +64,7 @@ type CommandName =
   | "api-applications"
   | "api-did-challenge"
   | "api-did-sign-in"
+  | "api-did-session"
   | "api-did-sign-out"
   | "help";
 
@@ -101,6 +102,7 @@ Commands:
   api-applications List this DID session's pending applications via stdin
   api-did-challenge  Request a DID challenge and digest using pinned context on stdin
   api-did-sign-in    Exchange a challenge and external signature for an identity session
+  api-did-session    Check the identity session on stdin without printing the bearer
   api-did-sign-out   Revoke the identity session on stdin
 
 Actor API commands require --api-base; the DID session on stdin carries its sign-in origin.
@@ -719,6 +721,7 @@ export const runCli = async (
         return await runActorApiCommand("api-applications", rest, io);
       case "api-did-challenge":
       case "api-did-sign-in":
+      case "api-did-session":
       case "api-did-sign-out":
         return await runActorDidCommand(commandName, rest, io);
       case "help":
