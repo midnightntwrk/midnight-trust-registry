@@ -135,7 +135,7 @@
     "@midnightntwrk/trust-registry-integration": "workspace:*",
     "@midnightntwrk/trust-registry-openid-federation-adapter": "workspace:*",
     "@midnightntwrk/trust-registry-trqp-adapter": "workspace:*",
-    "@playwright/test": "1.65.0",
+    "@playwright/test": "1.65.1",
     "@types/node": "^24.0.10",
     "@typescript-eslint/eslint-plugin": "^8.35.1",
     "@typescript-eslint/parser": "^8.35.1",
@@ -148,6 +148,6 @@
     "turbo": "^2.10.13",
     "typescript": "^5.8.3",
     "vitest": "^4.1.12",
-    "ws": "8.22.2"
+    "ws": "8.23.0"
   }
 }
