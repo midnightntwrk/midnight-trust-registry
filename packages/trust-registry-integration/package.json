@@ -52,8 +52,8 @@
   },
   "dependencies": {
     "@midnight-ntwrk/compact-js": "3.0.2",
-    "@midnight-ntwrk/credential-compact": "1.0.0-rc1",
-    "@midnight-ntwrk/credential-did-midnight": "1.0.0-rc1",
+    "@midnight-ntwrk/credential-compact": "1.0.0-rc2",
+    "@midnight-ntwrk/credential-did-midnight": "1.0.0-rc2",
     "@midnight-ntwrk/midnight-did": "1.0.0-rc1",
     "@midnight-ntwrk/midnight-did-contract": "1.0.0-rc1",
     "@midnight-ntwrk/midnight-did-domain": "1.0.0-rc1",
